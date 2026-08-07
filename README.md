@@ -2,7 +2,7 @@
 
 Windows video compressor and upscaler. Built for Discord limits, but useful for any FFmpeg job that needs a smaller file or to upscale a video for YouTube.
 
-[![Release](https://img.shields.io/github/v/release/aechXIII/Tuck?style=flat-square&color=7C3AED)](https://github.com/aechXIII/Tuck/releases) [![License: MIT](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE) [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-lightgrey?style=flat-square)]()
+[![Release](https://img.shields.io/github/v/release/aechXIII/Tuck?style=flat-square&color=3B6AD8)](https://github.com/aechXIII/Tuck/releases) [![License: MIT](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE) [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-lightgrey?style=flat-square)]() [![Buy Me a Coffee](https://img.shields.io/badge/support-Buy%20Me%20a%20Coffee-F5A623?style=flat-square&logo=buy-me-a-coffee)](https://buymeacoffee.com/aechxiii)
 
 ![Tuck](docs/screenshots/Tuck_GUI.png)
 
