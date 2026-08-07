@@ -1,0 +1,150 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Install FFmpeg
+        run: |
+          choco install ffmpeg --yes --no-progress
+          ffmpeg -version
+          ffprobe -version
+
+      - name: Ruff format check
+        run: ruff format --check tuck/ tests/
+
+      - name: Ruff lint
+        run: ruff check tuck/ tests/
+
+      - name: Pyright
+        run: pyright tuck/
+
+      - name: Validate version consistency
+        run: |
+          $tag = "${{ github.ref_name }}".TrimStart('v')
+          Write-Host "Tag version: $tag"
+
+          # Read pyproject.toml version
+          $pyproject = Get-Content pyproject.toml -Raw
+          if ($pyproject -match 'version\s*=\s*"([^"]+)"') {
+            $pyprojectVer = $matches[1]
+            Write-Host "pyproject.toml version: $pyprojectVer"
+            if ($pyprojectVer -ne $tag) {
+              Write-Error "pyproject.toml version ($pyprojectVer) does not match tag ($tag)"
+              exit 1
+            }
+          } else {
+            Write-Error "Could not parse version from pyproject.toml"
+            exit 1
+          }
+
+          # Read __init__.py version
+          $init = Get-Content tuck/__init__.py -Raw
+          if ($init -match '__version__\s*=\s*"([^"]+)"') {
+            $initVer = $matches[1]
+            Write-Host "__init__.py version: $initVer"
+            if ($initVer -ne $tag) {
+              Write-Error "__init__.py version ($initVer) does not match tag ($tag)"
+              exit 1
+            }
+          } else {
+            Write-Error "Could not parse version from __init__.py"
+            exit 1
+          }
+
+          # Read installer.iss version
+          $iss = Get-Content scripts/installer.iss -Raw
+          if ($iss -match 'MyAppVersion\s+"([^"]+)"') {
+            $issVer = $matches[1]
+            Write-Host "installer.iss version: $issVer"
+            if ($issVer -ne $tag) {
+              Write-Error "installer.iss version ($issVer) does not match tag ($tag)"
+              exit 1
+            }
+          } else {
+            Write-Error "Could not parse version from installer.iss"
+            exit 1
+          }
+
+          Write-Host "All version strings agree: $tag"
+
+      - name: Run tests
+        run: pytest
+
+      - name: Build with PyInstaller
+        run: pyinstaller scripts/tuck.spec
+
+      - name: Smoke test packaged executable (CLI)
+        run: |
+          $version = & "dist\Tuck\TuckCli.exe" --version
+          Write-Host "Packaged version: $version"
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Packaged executable --version failed with exit code $LASTEXITCODE"
+            exit 1
+          }
+          if ($version -notmatch 'Tuck \d+\.\d+\.\d+') {
+            Write-Error "Unexpected version output: $version"
+            exit 1
+          }
+
+      - name: Verify GUI executable exists
+        run: |
+          if (-not (Test-Path "dist\Tuck\Tuck.exe")) {
+            Write-Error "GUI executable (windowed) not found"
+            exit 1
+          }
+          Write-Host "GUI executable present: dist\Tuck\Tuck.exe"
+
+      - name: Create installer
+        uses: Minionguyjpro/Inno-Setup-Action@v1.2.8
+        with:
+          path: scripts/installer.iss
+
+      - name: Compute installer SHA-256
+        run: |
+          $installer = Get-ChildItem scripts/Output/Tuck-Setup-*.exe | Select-Object -First 1
+          $hash = (Get-FileHash -Path $installer.FullName -Algorithm SHA256).Hash.ToLower()
+          "$hash  $($installer.Name)" | Out-File -Encoding ASCII -FilePath "$($installer.FullName).sha256"
+          Write-Host "Installer SHA-256: $hash"
+
+      - name: Extract release notes
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart('v')
+          $content = Get-Content CHANGELOG.md -Raw
+          $pattern = "(?s)## \[$([regex]::Escape($version))\].*?(?=\r?\n## \[|\z)"
+          $match = [regex]::Match($content, $pattern)
+          if (-not $match.Success) {
+            Write-Error "No changelog entry found for $version"
+            exit 1
+          }
+          $match.Value.Trim() | Set-Content release-notes.md -Encoding utf8
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            scripts/Output/Tuck-Setup-*.exe
+            scripts/Output/Tuck-Setup-*.exe.sha256
+          body_path: release-notes.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

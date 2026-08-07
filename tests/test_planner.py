@@ -1,0 +1,767 @@
+from pathlib import Path
+
+import pytest
+
+from tuck.models import (
+    DEFAULT_PROFILES,
+    FPS_MODE_CUSTOM,
+    FPS_MODE_SOURCE,
+    PROFILE_ID_4K_UPSCALE,
+    PROFILE_ID_1440P_UPSCALE,
+    PROFILE_ID_DISCORD_FREE,
+    PROFILE_ID_DISCORD_NITRO,
+    RC_EXPLICIT_BITRATE,
+    RC_TARGET_SIZE,
+    RES_MODE_CUSTOM,
+    RES_MODE_LIMIT,
+    RES_MODE_SOURCE,
+    SCALER_BICUBIC,
+    SCALER_LANCZOS,
+    SCALER_NEIGHBOR,
+    WORKFLOW_COMPRESSION,
+    WORKFLOW_UPSCALE,
+    PlanRequest,
+    Profile,
+    find_profile_by_id,
+)
+from tuck.planner import _make_even, _resolve_output_collision, _scale_resolution, plan
+
+
+class TestScaleResolution:
+    def test_no_scaling_when_within_limits(self):
+        w, h = _scale_resolution(640, 480, 1920, 1080)
+        assert w == 640
+        assert h == 480
+
+    def test_scale_down_width(self):
+        w, h = _scale_resolution(3840, 2160, 1920, 1080)
+        assert w == 1920
+        assert h == 1080
+
+    def test_scale_down_height(self):
+        w, h = _scale_resolution(1080, 1920, 1920, 1080)
+        assert w <= 1080
+        assert h <= 1080
+
+    def test_even_dimensions(self):
+        w, h = _scale_resolution(1921, 1081, 1920, 1080)
+        assert w % 2 == 0
+        assert h % 2 == 0
+
+    def test_square_input(self):
+        w, h = _scale_resolution(4000, 4000, 1000, 1000)
+        assert w == 1000
+        assert h == 1000
+
+    def test_make_even(self):
+        w, h = _make_even(1919, 1079)
+        assert w == 1918
+        assert h == 1078
+        w2, h2 = _make_even(1920, 1080)
+        assert w2 == 1920
+        assert h2 == 1080
+
+
+class TestPlan:
+    def test_plan_with_default_profile(self, skip_if_no_ffprobe, sample_video_path):
+        profile = find_profile_by_id(DEFAULT_PROFILES, PROFILE_ID_DISCORD_FREE)
+        p = plan(str(sample_video_path), profile)
+        assert p.source == str(sample_video_path)
+        assert "_tucked" in str(p.output) and p.output.endswith(".mp4")
+        assert p.profile_id == PROFILE_ID_DISCORD_FREE
+        assert p.target_width > 0
+        assert p.target_height > 0
+        assert p.video_bitrate > 0
+
+    def test_plan_source_preserve_resolution(self, skip_if_no_ffprobe, sample_video_path):
+
+        profile = Profile(
+            name="test",
+            profile_id="test-src",
+            resolution_mode=RES_MODE_SOURCE,
+            fps_mode=FPS_MODE_SOURCE,
+            target_size_bytes=100 * 1024 * 1024,
+        )
+        p = plan(str(sample_video_path), profile)
+        if p.source_info:
+            assert abs(p.target_width - p.source_info.width) <= 1
+            assert abs(p.target_height - p.source_info.height) <= 1
+
+            if p.target_width == p.source_info.width and p.target_height == p.source_info.height:
+                assert p.apply_scale is False
+
+    def test_plan_source_preserve_fps(self, skip_if_no_ffprobe, sample_video_path):
+
+        profile = Profile(
+            name="test",
+            profile_id="test-src2",
+            resolution_mode=RES_MODE_SOURCE,
+            fps_mode=FPS_MODE_SOURCE,
+            target_size_bytes=100 * 1024 * 1024,
+        )
+        p = plan(str(sample_video_path), profile)
+        if p.source_info:
+            assert p.target_fps == p.source_info.fps
+            assert p.apply_fps_filter is False
+
+    def test_plan_limit_resolution(self, skip_if_no_ffprobe, sample_video_path):
+
+        profile = Profile(
+            name="test",
+            profile_id="test-limit",
+            resolution_mode=RES_MODE_LIMIT,
+            max_width=320,
+            max_height=240,
+            fps_mode=FPS_MODE_SOURCE,
+            target_size_bytes=100 * 1024 * 1024,
+        )
+        p = plan(str(sample_video_path), profile)
+        assert p.target_width <= 320
+        assert p.target_height <= 240
+
+    def test_plan_custom_resolution(self, skip_if_no_ffprobe, sample_video_path):
+
+        profile = Profile(
+            name="test",
+            profile_id="test-cust",
+            resolution_mode=RES_MODE_CUSTOM,
+            custom_width=640,
+            custom_height=360,
+            fps_mode=FPS_MODE_SOURCE,
+            target_size_bytes=100 * 1024 * 1024,
+        )
+        p = plan(str(sample_video_path), profile)
+
+        assert p.target_width == 640
+        assert p.target_height == 360
+        assert p.apply_scale is True
+
+    def test_plan_custom_fps(self, skip_if_no_ffprobe, sample_video_path):
+
+        profile = Profile(
+            name="test",
+            profile_id="test-cfps",
+            resolution_mode=RES_MODE_SOURCE,
+            fps_mode=FPS_MODE_CUSTOM,
+            custom_fps=15.0,
+            target_size_bytes=100 * 1024 * 1024,
+        )
+        p = plan(str(sample_video_path), profile)
+        if p.source_info:
+            assert p.target_fps <= p.source_info.fps
+
+    def test_compression_explicit_bitrate_is_rejected(self, skip_if_no_ffprobe, sample_video_path):
+        profile = Profile(
+            name="test",
+            profile_id="test-ebr",
+            resolution_mode=RES_MODE_SOURCE,
+            fps_mode=FPS_MODE_SOURCE,
+            rate_control=RC_EXPLICIT_BITRATE,
+            explicit_bitrate=2_000_000,
+            target_size_bytes=100 * 1024 * 1024,
+        )
+        with pytest.raises(ValueError, match="requires rate_control 'target_size'"):
+            plan(str(sample_video_path), profile)
+
+    def test_plan_with_output_dir(self, skip_if_no_ffprobe, sample_video_path, tmp_path):
+        profile = find_profile_by_id(DEFAULT_PROFILES, PROFILE_ID_DISCORD_FREE)
+        out_dir = tmp_path / "output"
+        out_dir.mkdir()
+        p = plan(str(sample_video_path), profile, output_dir=str(out_dir))
+        assert Path(p.output).parent == out_dir
+
+    def test_plan_output_differs_from_source(self, skip_if_no_ffprobe, sample_video_path):
+        profile = find_profile_by_id(DEFAULT_PROFILES, PROFILE_ID_DISCORD_FREE)
+        p = plan(str(sample_video_path), profile)
+        assert Path(p.output) != Path(p.source)
+
+    def test_plan_target_size_respected(self, skip_if_no_ffprobe, sample_video_path):
+        profile = find_profile_by_id(DEFAULT_PROFILES, PROFILE_ID_DISCORD_NITRO)
+        p = plan(str(sample_video_path), profile)
+        assert p.target_size == 500 * 1024 * 1024
+
+    def test_plan_audio_bitrate_zero_when_no_audio(self, skip_if_no_ffprobe, sample_video_path):
+        profile = find_profile_by_id(DEFAULT_PROFILES, PROFILE_ID_DISCORD_FREE)
+        p = plan(str(sample_video_path), profile)
+        if not p.source_info.has_audio:
+            assert p.audio_bitrate == 0
+
+    def test_plan_estimated_size_within_target(self, skip_if_no_ffprobe, sample_video_path):
+        profile = find_profile_by_id(DEFAULT_PROFILES, PROFILE_ID_DISCORD_FREE)
+        p = plan(str(sample_video_path), profile)
+        assert p.estimated_size <= p.target_size * 1.1
+
+    def test_plan_output_collision(self, skip_if_no_ffprobe, sample_video_path, tmp_path):
+        profile = find_profile_by_id(DEFAULT_PROFILES, PROFILE_ID_DISCORD_FREE)
+        out_dir = tmp_path / "collision"
+        out_dir.mkdir()
+        colliding = out_dir / f"{Path(sample_video_path).stem}_tucked.mp4"
+        colliding.write_text("placeholder")
+        p = plan(str(sample_video_path), profile, output_dir=str(out_dir))
+        assert Path(p.output) != colliding
+        assert "_1" in Path(p.output).stem
+
+    def test_plan_explicit_output_path(self, skip_if_no_ffprobe, sample_video_path, tmp_path):
+        profile = find_profile_by_id(DEFAULT_PROFILES, PROFILE_ID_DISCORD_FREE)
+        out = tmp_path / "custom_output.mp4"
+        p = plan(str(sample_video_path), profile, output=str(out))
+        assert Path(p.output) == out
+
+    def test_plan_resolution_never_upscaled(self, skip_if_no_ffprobe, sample_video_path):
+        profile = Profile(
+            name="test",
+            profile_id="test-noup",
+            max_width=3840,
+            max_height=2160,
+            target_size_bytes=10 * 1024 * 1024,
+            resolution_mode=RES_MODE_LIMIT,
+        )
+        p = plan(str(sample_video_path), profile)
+        if p.source_info:
+            assert p.target_width <= p.source_info.width
+            assert p.target_height <= p.source_info.height
+
+    def test_plan_custom_resolution_allows_upscale(self, skip_if_no_ffprobe, sample_video_path):
+        profile = Profile(
+            name="test",
+            profile_id="test-upscale",
+            resolution_mode=RES_MODE_CUSTOM,
+            custom_width=3840,
+            custom_height=2160,
+            fps_mode=FPS_MODE_SOURCE,
+            target_size_bytes=100 * 1024 * 1024,
+            scaler=SCALER_LANCZOS,
+        )
+        p = plan(str(sample_video_path), profile)
+        assert p.target_width == 3840
+        assert p.target_height == 2160
+        assert p.apply_scale is True
+        assert p.scaler == SCALER_LANCZOS
+
+    def test_plan_scaler_passed_through(self, skip_if_no_ffprobe, sample_video_path):
+        for scaler in ["bilinear", "bicubic", "lanczos", "nearest"]:
+            profile = Profile(
+                name="test",
+                profile_id=f"test-scaler-{scaler}",
+                resolution_mode=RES_MODE_CUSTOM,
+                custom_width=640,
+                custom_height=360,
+                fps_mode=FPS_MODE_SOURCE,
+                target_size_bytes=100 * 1024 * 1024,
+                scaler=scaler,
+            )
+            p = plan(str(sample_video_path), profile)
+            assert p.scaler == scaler
+
+    def test_plan_request_scaler_override(self, skip_if_no_ffprobe, sample_video_path):
+        """Request scaler overrides profile scaler."""
+        profile = Profile(
+            name="test",
+            profile_id="test-scaler-override",
+            resolution_mode=RES_MODE_CUSTOM,
+            custom_width=640,
+            custom_height=360,
+            fps_mode=FPS_MODE_SOURCE,
+            target_size_bytes=100 * 1024 * 1024,
+            scaler=SCALER_BICUBIC,
+        )
+        req = PlanRequest(
+            source=str(sample_video_path),
+            scaler=SCALER_LANCZOS,
+        )
+        p = plan(str(sample_video_path), profile, request=req)
+        assert p.scaler == SCALER_LANCZOS
+
+    def test_plan_request_no_scaler_uses_profile(self, skip_if_no_ffprobe, sample_video_path):
+        """When request has no scaler, profile scaler is used."""
+        profile = Profile(
+            name="test",
+            profile_id="test-scaler-profile",
+            resolution_mode=RES_MODE_CUSTOM,
+            custom_width=640,
+            custom_height=360,
+            fps_mode=FPS_MODE_SOURCE,
+            target_size_bytes=100 * 1024 * 1024,
+            scaler=SCALER_NEIGHBOR,
+        )
+        req = PlanRequest(source=str(sample_video_path))
+        p = plan(str(sample_video_path), profile, request=req)
+        assert p.scaler == SCALER_NEIGHBOR
+
+    def test_plan_original_video_bitrate_stored(self, skip_if_no_ffprobe, sample_video_path):
+        profile = find_profile_by_id(DEFAULT_PROFILES, PROFILE_ID_DISCORD_FREE)
+        p = plan(str(sample_video_path), profile)
+        assert p.original_video_bitrate == p.video_bitrate
+
+    def test_plan_request_overrides_profile(self, skip_if_no_ffprobe, sample_video_path):
+
+        profile = Profile(
+            name="test",
+            profile_id="test-override",
+            resolution_mode=RES_MODE_SOURCE,
+            fps_mode=FPS_MODE_SOURCE,
+            rate_control=RC_TARGET_SIZE,
+            target_size_bytes=100 * 1024 * 1024,
+        )
+        req = PlanRequest(
+            source=str(sample_video_path),
+            profile_id="test-override",
+            resolution_mode=RES_MODE_CUSTOM,
+            custom_width=320,
+            custom_height=240,
+            fps_mode=FPS_MODE_CUSTOM,
+            custom_fps=15.0,
+            rate_control=RC_TARGET_SIZE,
+        )
+        p = plan(str(sample_video_path), profile, request=req)
+        assert p.resolution_mode == RES_MODE_CUSTOM
+        assert p.fps_mode == FPS_MODE_CUSTOM
+        assert p.rate_control == RC_TARGET_SIZE
+        assert p.video_bitrate > 0
+
+    def test_plan_request_none_fields_no_override(self, skip_if_no_ffprobe, sample_video_path):
+
+        profile = Profile(
+            name="test",
+            profile_id="test-none-override",
+            resolution_mode=RES_MODE_CUSTOM,
+            custom_width=640,
+            custom_height=360,
+            fps_mode=FPS_MODE_CUSTOM,
+            custom_fps=15.0,
+            rate_control=RC_TARGET_SIZE,
+            audio_bitrate=192_000,
+            target_size_bytes=100 * 1024 * 1024,
+        )
+
+        req = PlanRequest(source=str(sample_video_path))
+        p = plan(str(sample_video_path), profile, request=req)
+        assert p.resolution_mode == RES_MODE_CUSTOM
+        assert p.fps_mode == FPS_MODE_CUSTOM
+        assert p.rate_control == RC_TARGET_SIZE
+        assert p.video_bitrate > 0
+
+        assert p.audio_bitrate == 0
+
+    def test_plan_request_audio_bitrate_fallback(self, skip_if_no_ffprobe, sample_video_path):
+
+        profile = Profile(
+            name="test",
+            profile_id="test-audio-fb",
+            resolution_mode=RES_MODE_SOURCE,
+            fps_mode=FPS_MODE_SOURCE,
+            rate_control=RC_TARGET_SIZE,
+            audio_bitrate=256_000,
+            target_size_bytes=100 * 1024 * 1024,
+        )
+
+        req = PlanRequest(
+            source=str(sample_video_path),
+            resolution_mode=RES_MODE_SOURCE,
+        )
+        p = plan(str(sample_video_path), profile, request=req)
+
+        assert p.audio_bitrate == 0
+
+    def test_plan_request_audio_bitrate_override(self, skip_if_no_ffprobe, sample_video_path):
+
+        profile = Profile(
+            name="test",
+            profile_id="test-audio-ov",
+            resolution_mode=RES_MODE_SOURCE,
+            fps_mode=FPS_MODE_SOURCE,
+            rate_control=RC_TARGET_SIZE,
+            audio_bitrate=128_000,
+            target_size_bytes=100 * 1024 * 1024,
+        )
+        req = PlanRequest(
+            source=str(sample_video_path),
+            audio_bitrate=320_000,
+        )
+        p = plan(str(sample_video_path), profile, request=req)
+
+        assert p.audio_bitrate == 0
+
+    def test_plan_request_target_size_override(self, skip_if_no_ffprobe, sample_video_path):
+
+        profile = Profile(
+            name="test",
+            profile_id="test-ts-override",
+            resolution_mode=RES_MODE_SOURCE,
+            fps_mode=FPS_MODE_SOURCE,
+            rate_control=RC_TARGET_SIZE,
+            audio_bitrate=128_000,
+            target_size_bytes=500 * 1024 * 1024,  # 500 MB profile
+        )
+
+        req = PlanRequest(
+            source=str(sample_video_path),
+            target_size_bytes=50 * 1024 * 1024,
+        )
+        p = plan(str(sample_video_path), profile, request=req)
+        assert p.target_size == 50 * 1024 * 1024
+
+    def test_plan_video_encoder_from_profile(self, skip_if_no_ffprobe, sample_video_path):
+        """Profile video_encoder is used when request has no override."""
+        profile = Profile(
+            name="test",
+            profile_id="test-ve-profile",
+            resolution_mode=RES_MODE_SOURCE,
+            fps_mode=FPS_MODE_SOURCE,
+            target_size_bytes=100 * 1024 * 1024,
+            video_encoder="libx265",
+        )
+        p = plan(str(sample_video_path), profile)
+        assert p.video_encoder == "libx265"
+
+    def test_plan_video_encoder_request_override(self, skip_if_no_ffprobe, sample_video_path):
+        """Request video_encoder overrides profile video_encoder."""
+        profile = Profile(
+            name="test",
+            profile_id="test-ve-override",
+            resolution_mode=RES_MODE_SOURCE,
+            fps_mode=FPS_MODE_SOURCE,
+            target_size_bytes=100 * 1024 * 1024,
+            video_encoder="libx264",
+        )
+        req = PlanRequest(
+            source=str(sample_video_path),
+            video_encoder="libx265",
+        )
+        p = plan(str(sample_video_path), profile, request=req)
+        assert p.video_encoder == "libx265"
+
+    def test_plan_crf_from_profile(self, skip_if_no_ffprobe, sample_video_path):
+        """Profile crf is used when request has no override."""
+        profile = Profile(
+            name="test",
+            profile_id="test-crf-profile",
+            resolution_mode=RES_MODE_SOURCE,
+            fps_mode=FPS_MODE_SOURCE,
+            target_size_bytes=100 * 1024 * 1024,
+            crf=18,
+        )
+        p = plan(str(sample_video_path), profile)
+        assert p.crf == 18
+
+    def test_plan_crf_request_override(self, skip_if_no_ffprobe, sample_video_path):
+        """Request crf overrides profile crf."""
+        profile = Profile(
+            name="test",
+            profile_id="test-crf-override",
+            resolution_mode=RES_MODE_SOURCE,
+            fps_mode=FPS_MODE_SOURCE,
+            target_size_bytes=100 * 1024 * 1024,
+            crf=23,
+        )
+        req = PlanRequest(
+            source=str(sample_video_path),
+            crf=30,
+        )
+        p = plan(str(sample_video_path), profile, request=req)
+        assert p.crf == 30
+
+    def test_plan_tune_from_profile(self, skip_if_no_ffprobe, sample_video_path):
+        """Profile tune is used when request has no override."""
+        profile = Profile(
+            name="test",
+            profile_id="test-tune-profile",
+            resolution_mode=RES_MODE_SOURCE,
+            fps_mode=FPS_MODE_SOURCE,
+            target_size_bytes=100 * 1024 * 1024,
+            tune="animation",
+        )
+        p = plan(str(sample_video_path), profile)
+        assert p.tune == "animation"
+
+    def test_plan_tune_request_override(self, skip_if_no_ffprobe, sample_video_path):
+        """Request tune overrides profile tune."""
+        profile = Profile(
+            name="test",
+            profile_id="test-tune-override",
+            resolution_mode=RES_MODE_SOURCE,
+            fps_mode=FPS_MODE_SOURCE,
+            target_size_bytes=100 * 1024 * 1024,
+            tune="film",
+        )
+        req = PlanRequest(
+            source=str(sample_video_path),
+            tune="grain",
+        )
+        p = plan(str(sample_video_path), profile, request=req)
+        assert p.tune == "grain"
+
+    def test_plan_request_none_encoder_fields_no_override(
+        self, skip_if_no_ffprobe, sample_video_path
+    ):
+        """When request has None for encoder fields, profile defaults are used."""
+        profile = Profile(
+            name="test",
+            profile_id="test-enc-none",
+            resolution_mode=RES_MODE_SOURCE,
+            fps_mode=FPS_MODE_SOURCE,
+            target_size_bytes=100 * 1024 * 1024,
+            video_encoder="libx265",
+            crf=18,
+            tune="animation",
+        )
+        req = PlanRequest(source=str(sample_video_path))
+        p = plan(str(sample_video_path), profile, request=req)
+        assert p.video_encoder == "libx265"
+        assert p.crf == 18
+        assert p.tune == "animation"
+
+
+class TestOutputCollision:
+    def test_no_collision_when_file_does_not_exist(self, tmp_path):
+        output = tmp_path / "output.mp4"
+        result = _resolve_output_collision(output)
+        assert result == output
+
+    def test_collision_appends_counter(self, tmp_path):
+        output = tmp_path / "output.mp4"
+        output.write_text("existing")
+        result = _resolve_output_collision(output)
+        assert result != output
+        assert result.parent == output.parent
+        assert "_1" in result.stem
+
+    def test_multiple_collisions_increment(self, tmp_path):
+        output = tmp_path / "output.mp4"
+        output.write_text("existing")
+        (tmp_path / "output_1.mp4").write_text("existing")
+        (tmp_path / "output_2.mp4").write_text("existing")
+        result = _resolve_output_collision(output)
+        assert result.name == "output_3.mp4"
+
+    def test_duplicate_pending_plans_get_different_paths(self, tmp_path):
+        output = tmp_path / "output.mp4"
+        first = _resolve_output_collision(output)
+        assert first == output
+        output.write_text("first encode done")
+        second = _resolve_output_collision(output)
+        assert second != output
+        assert second.name == "output_1.mp4"
+
+
+class TestUpscaleWorkflow:
+    def test_upscale_profile_plan_has_zero_bitrate(self, skip_if_no_ffprobe, sample_video_path):
+        """Upscale workflow sets video_bitrate=0 and estimated_size=0."""
+        profile = find_profile_by_id(DEFAULT_PROFILES, PROFILE_ID_1440P_UPSCALE)
+        p = plan(str(sample_video_path), profile)
+        assert p.workflow == WORKFLOW_UPSCALE
+        assert p.video_bitrate == 0
+        assert p.estimated_size == 0
+        assert p.target_width == 2560
+        assert p.target_height == 1440
+
+    def test_upscale_4k_profile_dimensions(self, skip_if_no_ffprobe, sample_video_path):
+        """4K upscale profile targets 3840x2160."""
+        profile = find_profile_by_id(DEFAULT_PROFILES, PROFILE_ID_4K_UPSCALE)
+        p = plan(str(sample_video_path), profile)
+        assert p.workflow == WORKFLOW_UPSCALE
+        assert p.target_width == 3840
+        assert p.target_height == 2160
+        assert p.video_bitrate == 0
+
+    def test_upscale_profile_uses_crf_from_profile(self, skip_if_no_ffprobe, sample_video_path):
+        """Upscale profile passes CRF value through to plan."""
+        profile = Profile(
+            name="test",
+            profile_id="test-upscale-crf",
+            resolution_mode=RES_MODE_CUSTOM,
+            custom_width=1920,
+            custom_height=1080,
+            fps_mode=FPS_MODE_SOURCE,
+            target_size_bytes=500 * 1024 * 1024,
+            workflow=WORKFLOW_UPSCALE,
+            crf=18,
+            two_pass=False,
+        )
+        p = plan(str(sample_video_path), profile)
+        assert p.crf == 18
+        assert p.two_pass is False
+
+    def test_upscale_request_override_workflow(self, skip_if_no_ffprobe, sample_video_path):
+        """Request workflow override propagates to plan."""
+        profile = Profile(
+            name="test",
+            profile_id="test-wf-override",
+            resolution_mode=RES_MODE_CUSTOM,
+            custom_width=1920,
+            custom_height=1080,
+            fps_mode=FPS_MODE_SOURCE,
+            target_size_bytes=100 * 1024 * 1024,
+            workflow=WORKFLOW_COMPRESSION,
+            two_pass=False,
+        )
+        req = PlanRequest(
+            source=str(sample_video_path),
+            workflow=WORKFLOW_UPSCALE,
+        )
+        p = plan(str(sample_video_path), profile, request=req)
+        assert p.workflow == WORKFLOW_UPSCALE
+        assert p.video_bitrate == 0
+
+    def test_upscale_request_override_rate_control_method(
+        self, skip_if_no_ffprobe, sample_video_path
+    ):
+        """Request rate_control_method override propagates to plan."""
+        profile = Profile(
+            name="test",
+            profile_id="test-rcm-override",
+            resolution_mode=RES_MODE_CUSTOM,
+            custom_width=1920,
+            custom_height=1080,
+            fps_mode=FPS_MODE_SOURCE,
+            target_size_bytes=500 * 1024 * 1024,
+            workflow=WORKFLOW_UPSCALE,
+            rate_control_method="crf",
+            crf=18,
+            two_pass=False,
+        )
+        req = PlanRequest(
+            source=str(sample_video_path),
+            rate_control_method="cbr",
+            rate_control="explicit_bitrate",
+            explicit_bitrate=5_000_000,
+            qp=20,
+        )
+        p = plan(str(sample_video_path), profile, request=req)
+        assert p.rate_control_method == "cbr"
+        assert p.qp == 20
+
+    def test_upscale_request_override_qp(self, skip_if_no_ffprobe, sample_video_path):
+        """Request qp override propagates to plan."""
+        profile = Profile(
+            name="test",
+            profile_id="test-qp-override",
+            resolution_mode=RES_MODE_CUSTOM,
+            custom_width=1920,
+            custom_height=1080,
+            fps_mode=FPS_MODE_SOURCE,
+            target_size_bytes=500 * 1024 * 1024,
+            workflow=WORKFLOW_UPSCALE,
+            rate_control_method="cqp",
+            video_encoder="h264_nvenc",
+            qp=23,
+            two_pass=False,
+        )
+        req = PlanRequest(
+            source=str(sample_video_path),
+            qp=18,
+        )
+        p = plan(str(sample_video_path), profile, request=req)
+        assert p.qp == 18
+
+    def test_upscale_explicit_bitrate_reaches_the_encoder(
+        self, skip_if_no_ffprobe, sample_video_path
+    ):
+        profile = Profile(
+            name="test",
+            profile_id="test-upscale-cbr",
+            resolution_mode=RES_MODE_CUSTOM,
+            custom_width=1920,
+            custom_height=1080,
+            fps_mode=FPS_MODE_SOURCE,
+            workflow=WORKFLOW_UPSCALE,
+            rate_control=RC_EXPLICIT_BITRATE,
+            rate_control_method="cbr",
+            video_encoder="h264_nvenc",
+            explicit_bitrate=5_000_000,
+            two_pass=False,
+        )
+
+        p = plan(str(sample_video_path), profile)
+
+        assert p.video_bitrate == 5_000_000
+        assert p.explicit_bitrate == 5_000_000
+        assert p.estimated_size == 0
+
+
+class TestEncoderRateControlCompatibility:
+    def test_cpu_encoders_accept_crf(self):
+        """CPU encoders accept CRF rate control method."""
+        from tuck.models import _validate_rc_method_for_encoder
+
+        _validate_rc_method_for_encoder("crf", "libx264")
+        _validate_rc_method_for_encoder("crf", "libx265")
+
+    def test_cpu_encoders_accept_cbr(self):
+        """CPU encoders accept CBR rate control method."""
+        from tuck.models import _validate_rc_method_for_encoder
+
+        _validate_rc_method_for_encoder("cbr", "libx264")
+        _validate_rc_method_for_encoder("cbr", "libx265")
+
+    def test_cpu_encoders_reject_cqp(self):
+        """CPU encoders reject CQP rate control method."""
+        import pytest
+
+        from tuck.models import _validate_rc_method_for_encoder
+
+        with pytest.raises(ValueError, match="not supported for libx264"):
+            _validate_rc_method_for_encoder("cqp", "libx264")
+        with pytest.raises(ValueError, match="not supported for libx265"):
+            _validate_rc_method_for_encoder("cqp", "libx265")
+
+    def test_cpu_encoders_reject_vbr(self):
+        """CPU encoders reject VBR rate control method."""
+        import pytest
+
+        from tuck.models import _validate_rc_method_for_encoder
+
+        with pytest.raises(ValueError, match="not supported for libx264"):
+            _validate_rc_method_for_encoder("vbr", "libx264")
+
+    def test_nvenc_encoders_accept_cqp_cbr_vbr(self):
+        """NVENC encoders accept CQP, CBR, VBR."""
+        from tuck.models import _validate_rc_method_for_encoder
+
+        for enc in ("h264_nvenc", "hevc_nvenc"):
+            _validate_rc_method_for_encoder("cqp", enc)
+            _validate_rc_method_for_encoder("cbr", enc)
+            _validate_rc_method_for_encoder("vbr", enc)
+
+    def test_nvenc_encoders_reject_crf(self):
+        """NVENC encoders reject CRF."""
+        import pytest
+
+        from tuck.models import _validate_rc_method_for_encoder
+
+        with pytest.raises(ValueError, match="not supported for h264_nvenc"):
+            _validate_rc_method_for_encoder("crf", "h264_nvenc")
+
+    def test_amf_encoders_accept_cqp_cbr_vbr(self):
+        """AMF encoders accept CQP, CBR, VBR."""
+        from tuck.models import _validate_rc_method_for_encoder
+
+        for enc in ("h264_amf", "hevc_amf"):
+            _validate_rc_method_for_encoder("cqp", enc)
+            _validate_rc_method_for_encoder("cbr", enc)
+            _validate_rc_method_for_encoder("vbr", enc)
+
+    def test_amf_encoders_reject_crf(self):
+        """AMF encoders reject CRF."""
+        import pytest
+
+        from tuck.models import _validate_rc_method_for_encoder
+
+        with pytest.raises(ValueError, match="not supported for h264_amf"):
+            _validate_rc_method_for_encoder("crf", "h264_amf")
+
+    def test_all_six_encoders_in_allowlist(self):
+        """All six encoders are in the valid set."""
+        from tuck.models import _VALID_VIDEO_ENCODERS
+
+        expected = {"libx264", "libx265", "h264_nvenc", "hevc_nvenc", "h264_amf", "hevc_amf"}
+        assert expected == _VALID_VIDEO_ENCODERS
+
+    def test_invalid_encoder_rejected(self):
+        """Unknown encoder is rejected."""
+        import pytest
+
+        from tuck.models import _validate_rc_method_for_encoder
+
+        with pytest.raises(ValueError, match="rate_control_method"):
+            _validate_rc_method_for_encoder("crf", "bogus_encoder")

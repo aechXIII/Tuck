@@ -1,0 +1,380 @@
+from __future__ import annotations
+
+import hashlib
+import http.server
+import logging
+import mimetypes
+import os
+import re
+import secrets
+import subprocess
+import threading
+from pathlib import Path
+from socketserver import ThreadingTCPServer
+
+logger = logging.getLogger(__name__)
+
+
+# SO_REUSEADDR lets the server restart quickly; daemon threads don't block process exit
+class _MediaTCPServer(ThreadingTCPServer):
+    allow_reuse_address = True
+    daemon_threads = True
+
+
+for ext, mime in [
+    (".mp4", "video/mp4"),
+    (".webm", "video/webm"),
+    (".mkv", "video/x-matroska"),
+    (".mov", "video/quicktime"),
+    (".avi", "video/x-msvideo"),
+    (".flv", "video/x-flv"),
+    (".m4v", "video/x-m4v"),
+    (".wmv", "video/x-ms-wmv"),
+    (".jpg", "image/jpeg"),
+    (".png", "image/png"),
+]:
+    mimetypes.add_type(mime, ext)
+
+_MAX_THUMBNAIL_DIM = 480  # Maximum width/height for thumbnails
+_THUMBNAIL_TIMEOUT = 15  # seconds
+_THUMBNAIL_SEEK = 0.5  # seek to this fraction of duration (50%)
+_TOKEN_BYTES = 32  # bytes for each token
+
+
+class _TokenRequestHandler(http.server.BaseHTTPRequestHandler):
+    server_instance: MediaServer | None = None
+
+    def do_GET(self) -> None:
+        server = self.server_instance
+        if server is None:
+            self._send_error(500, "Server not initialized")
+            return
+
+        path = self.path.lstrip("/")
+        if "/" not in path:
+            self._send_error(400, "Invalid request path")
+            return
+
+        token, _rest = path.split("/", 1)
+
+        with server._lock:
+            served_path = server._tokens.get(token)
+
+        if served_path is None:
+            self._send_error(403, "Invalid or expired token")
+            return
+
+        file_path = Path(served_path)
+        if not file_path.is_file():
+            self._send_error(404, "File not found")
+            return
+
+        mime_type, _ = mimetypes.guess_type(str(file_path))
+        if mime_type is None:
+            mime_type = "application/octet-stream"
+
+        file_size = file_path.stat().st_size
+
+        range_header = self.headers.get("Range")
+        if range_header:
+            self._handle_range(file_path, mime_type, file_size, range_header)
+        else:
+            self._handle_full(file_path, mime_type, file_size)
+
+    def _handle_full(self, file_path: Path, mime_type: str, file_size: int) -> None:
+        self.send_response(200)
+        self.send_header("Content-Type", mime_type)
+        self.send_header("Content-Length", str(file_size))
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        with open(file_path, "rb") as f:
+            while True:
+                chunk = f.read(65536)
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+
+    def _handle_range(
+        self, file_path: Path, mime_type: str, file_size: int, range_header: str
+    ) -> None:
+
+        all_range_values = self.headers.get_all("Range")
+        if all_range_values is not None and len(all_range_values) > 1:
+            self._send_error(416, "Multiple Range headers not supported", file_size)
+            return
+
+        m = re.fullmatch(r"bytes=(\d*)-(\d*)", range_header.strip())
+        if not m:
+            self._send_error(416, "Invalid Range header", file_size)
+            return
+
+        start_str, end_str = m.group(1), m.group(2)
+
+        if start_str == "" and end_str == "":
+            self._send_error(416, "Invalid Range header", file_size)
+            return
+
+        if file_size == 0:
+            self._send_error(416, "Empty file", file_size)
+            return
+
+        if start_str == "":
+            suffix = int(end_str)
+            if suffix <= 0:
+                self._send_error(416, "Invalid suffix range", file_size)
+                return
+            start = max(0, file_size - suffix)
+            end = file_size - 1
+        else:
+            start = int(start_str)
+            end = int(end_str) if end_str else file_size - 1
+
+        if end < start:
+            self._send_error(416, "Range end must be >= start", file_size)
+            return
+
+        if start >= file_size:
+            self._send_error(416, "Range not satisfiable", file_size)
+            return
+
+        end = min(end, file_size - 1)
+
+        content_length = end - start + 1
+        self.send_response(206)
+        self.send_header("Content-Type", mime_type)
+        self.send_header("Content-Length", str(content_length))
+        self.send_header("Content-Range", f"bytes {start}-{end}/{file_size}")
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+
+        with open(file_path, "rb") as f:
+            f.seek(start)
+            remaining = content_length
+            while remaining > 0:
+                chunk = f.read(min(remaining, 65536))
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+                remaining -= len(chunk)
+
+    def _send_error(self, code: int, message: str, file_size: int = -1) -> None:
+        self.send_response(code)
+        self.send_header("Content-Type", "text/plain")
+        if code == 416 and file_size >= 0:
+            self.send_header("Content-Range", f"bytes */{file_size}")
+        self.end_headers()
+        self.wfile.write(message.encode("utf-8"))
+
+    def log_message(self, fmt: str, *args: object) -> None:
+
+        logger.debug("MediaServer: %s", fmt % args)
+
+
+class MediaServer:
+    def __init__(self) -> None:
+        self._host = "127.0.0.1"
+        self._port = 0  # OS-assigned
+        self._tokens: dict[str, str] = {}  # token -> file path
+        self._lock = threading.Lock()
+        self._server: _MediaTCPServer | None = None
+        self._thread: threading.Thread | None = None
+        self._running = False
+
+        self._thumb_dir: Path | None = None
+
+    @property
+    def port(self) -> int:
+        if self._server:
+            return self._server.server_address[1]
+        return 0
+
+    def register_file(self, file_path: str | Path) -> str:
+        file_path = Path(file_path).resolve()
+        if not file_path.is_file():
+            raise ValueError(f"File not found: {file_path}")
+
+        token = secrets.token_hex(_TOKEN_BYTES)
+        with self._lock:
+            to_remove = [t for t, p in self._tokens.items() if p == str(file_path)]
+            for t in to_remove:
+                del self._tokens[t]
+            self._tokens[token] = str(file_path)
+        return token
+
+    def get_url(self, token: str) -> str:
+
+        with self._lock:
+            file_path = self._tokens.get(token)
+        if file_path is None:
+            raise ValueError("Unknown or expired token")
+        fname = Path(file_path).name
+        return f"http://{self._host}:{self.port}/{token}/{fname}"
+
+    def unregister_token(self, token: str) -> None:
+        with self._lock:
+            self._tokens.pop(token, None)
+
+    def start(self) -> None:
+
+        if self._running:
+            return
+
+        class Handler(_TokenRequestHandler):
+            pass
+
+        Handler.server_instance = self  # type: ignore[assignment]
+
+        self._server = _MediaTCPServer((self._host, self._port), Handler)
+        self._port = self._server.server_address[1]
+        self._running = True
+        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+        self._thread.start()
+        logger.info("Media server started on %s:%d", self._host, self._port)
+
+    # joins the server thread for at most 2 seconds; daemon threads die with the process
+    def stop(self) -> None:
+        self._running = False
+        if self._server:
+            try:
+                self._server.shutdown()
+                self._server.server_close()
+            except Exception:
+                pass
+            self._server = None
+        if self._thread and self._thread.is_alive():
+            self._thread.join(timeout=2)
+        with self._lock:
+            self._tokens.clear()
+        logger.info("Media server stopped")
+
+    def set_thumbnail_cache_dir(self, cache_dir: Path) -> None:
+        self._thumb_dir = cache_dir
+        cache_dir.mkdir(parents=True, exist_ok=True)
+
+    def generate_thumbnail(
+        self, file_path: str | Path, timeout: float = _THUMBNAIL_TIMEOUT
+    ) -> str | None:
+
+        file_path = Path(file_path).resolve()
+        if not file_path.is_file():
+            return None
+
+        if self._thumb_dir is None:
+            return None
+
+        stat = file_path.stat()
+        cache_key = hashlib.sha256(
+            f"{file_path}:{stat.st_size}:{stat.st_mtime}".encode()
+        ).hexdigest()[:32]
+        thumb_path = self._thumb_dir / f"thumb_{cache_key}.jpg"
+
+        if thumb_path.exists() and thumb_path.stat().st_size > 0:
+            return str(thumb_path)
+
+        from .engine import _find_ffmpeg
+
+        ffmpeg = _find_ffmpeg()
+        if not ffmpeg:
+            logger.warning("Cannot generate thumbnail: ffmpeg not found")
+            return None
+
+        try:
+            candidate = _find_ffprobe()
+            duration_str = "1"
+            if candidate:
+                try:
+                    cmd_probe = [
+                        candidate,
+                        "-v",
+                        "quiet",
+                        "-print_format",
+                        "json",
+                        "-show_format",
+                        str(file_path),
+                    ]
+                    result = subprocess.run(
+                        cmd_probe,
+                        capture_output=True,
+                        text=True,
+                        timeout=10,
+                        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+                    )
+                    if result.returncode == 0:
+                        import json
+
+                        data = json.loads(result.stdout)
+                        dur = float(data.get("format", {}).get("duration", 0))
+                        if dur > 0:
+                            duration_str = str(dur * _THUMBNAIL_SEEK)
+                except Exception:
+                    pass
+
+            vf_filter = (
+                f"scale='min({_MAX_THUMBNAIL_DIM},iw)':"
+                f"'min({_MAX_THUMBNAIL_DIM},ih)':"
+                f"force_original_aspect_ratio=decrease"
+            )
+            cmd = [
+                ffmpeg,
+                "-y",
+                "-ss",
+                duration_str,
+                "-i",
+                str(file_path),
+                "-vframes",
+                "1",
+                "-vf",
+                vf_filter,
+                "-f",
+                "image2",
+                str(thumb_path),
+            ]
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                timeout=timeout,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+            )
+            if result.returncode != 0:
+                stderr_tail = result.stderr.strip()[-500:] if result.stderr else ""
+                logger.warning(
+                    "Thumbnail ffmpeg failed for %s (rc=%d): %s",
+                    file_path.name,
+                    result.returncode,
+                    stderr_tail,
+                )
+
+            if thumb_path.exists() and thumb_path.stat().st_size > 0:
+                return str(thumb_path)
+            return None
+        except (subprocess.TimeoutExpired, Exception) as e:
+            logger.warning("Thumbnail generation failed for %s: %s", file_path.name, e)
+            return None
+
+
+_media_server: MediaServer | None = None
+
+
+def get_media_server() -> MediaServer:
+    global _media_server
+    if _media_server is None:
+        _media_server = MediaServer()
+    return _media_server
+
+
+def _find_ffprobe() -> str | None:
+
+    import shutil as _shutil
+
+    found = _shutil.which("ffprobe")
+    if found:
+        return found
+    for c in [
+        r"C:\ffmpeg\bin\ffprobe.exe",
+        r"C:\Program Files\ffmpeg\bin\ffprobe.exe",
+    ]:
+        if Path(c).is_file():
+            return c
+    return None

@@ -1,0 +1,5 @@
+packaging>=23.0
+rich>=13.7
+platformdirs>=4.0
+pywebview==6.2.1
+pywin32>=306; sys_platform == "win32"

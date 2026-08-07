@@ -1,0 +1,60 @@
+nul
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+eggs/
+*.egg
+.wheel/
+
+# Virtual environments
+.venv/
+venv/
+env/
+.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Tests
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Linting
+.ruff_cache/
+
+# Logs
+*.log
+.logs/
+
+# Build artifacts
+*.spec.lock
+warn-*.txt
+
+# PyInstaller
+dist/
+build/
+*.manifest
+
+# Inno Setup
+scripts/Output/
+
+# Package
+*.tar.gz
+*.whl
