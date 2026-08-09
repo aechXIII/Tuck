@@ -345,21 +345,40 @@ label.chk input:checked + .chk-box::after { content:'✓'; color:#fff; font-size
 .mod-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:200; display:none; align-items:center; justify-content:center; }
 .mod-overlay.open { display:flex; }
 .mod-box { background:#1a1a26; border:1px solid var(--border2); border-radius:12px; padding:20px; min-width:420px; max-width:560px; max-height:80vh; overflow-y:auto; display:flex; flex-direction:column; gap:12px; box-shadow:0 20px 60px rgba(0,0,0,0.5); }
-.mod-box.settings-modal { width:min(900px,calc(100vw - 24px)); height:min(650px,calc(100vh - 24px)); max-width:900px; min-width:0; max-height:none; overflow:hidden; padding:0; display:grid; grid-template-columns:190px minmax(0,1fr); grid-template-rows:auto minmax(0,1fr) auto; gap:0; }
-.settings-head { grid-column:1 / -1; padding:18px 20px; display:flex; align-items:center; gap:12px; border-bottom:1px solid var(--border2); }
-.settings-head h2 { flex:1; }
-.settings-tabs { grid-row:2 / 4; display:flex; flex-direction:column; align-items:stretch; gap:2px; padding:12px; border-right:1px solid var(--border2); background:#151520; overflow-y:auto; }
-.settings-tabs button { background:transparent; border:0; border-radius:6px; color:var(--muted); padding:9px 10px; cursor:pointer; font:600 12px var(--font); text-align:left; }
+.mod-box.confirm-dialog { width:min(390px,calc(100vw - 32px)); min-width:0; padding:22px; gap:10px; }
+.confirm-dialog h2 { color:#eeeef6; font-size:15px; letter-spacing:0; text-transform:none; }
+.confirm-copy { color:var(--muted); font-size:12px; line-height:1.5; }
+.confirm-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:10px; }
+.confirm-actions .btn1, .confirm-actions .btn2 { width:auto; min-width:105px; }
+.confirm-actions .danger { background:#a32940; }
+.confirm-actions .danger:hover { background:#c23852; }
+.settings-workspace { position:fixed; inset:0; z-index:180; display:none; align-items:center; justify-content:center; padding:24px; background:rgba(0,0,0,.62); }
+body.settings-open .settings-workspace { display:flex; }
+.settings-dialog { width:min(920px,calc(100vw - 32px)); height:min(680px,calc(100vh - 32px)); display:grid; grid-template-columns:205px minmax(0,1fr); grid-template-rows:52px minmax(0,1fr); overflow:hidden; background:#191925; border:1px solid var(--border2); border-radius:14px; box-shadow:0 24px 70px rgba(0,0,0,.58); }
+.settings-topbar { grid-column:1 / -1; display:flex; align-items:center; gap:12px; min-height:52px; padding:0 16px 0 18px; background:#191925; border-bottom:1px solid var(--border2); }
+.settings-wordmark { color:#a78bfa; font-weight:600; letter-spacing:.08em; }
+.settings-top-title { color:var(--muted); font-size:12px; }
+.settings-topbar .mbtn { margin-left:auto; }
+.settings-sidebar { grid-column:1; grid-row:2; min-height:0; overflow-y:auto; padding:18px 12px; border-right:1px solid var(--border2); background:#13131d; }
+.settings-nav-group { display:flex; flex-direction:column; gap:3px; margin:0; padding:0; border:0; }
+.settings-nav-group + .settings-nav-group { margin-top:20px; }
+.settings-nav-label { color:#666678; font:700 9px var(--font); letter-spacing:1px; padding:0 10px 7px; text-transform:uppercase; }
+.settings-tabs { display:flex; flex-direction:column; align-items:stretch; gap:3px; }
+.settings-tabs button { display:block; width:100%; flex:none; background:transparent; border:0; border-radius:6px; color:var(--muted); padding:9px 10px; cursor:pointer; font:600 12px var(--font); text-align:left; }
 .settings-tabs button:hover { color:var(--text); background:#1d1d2b; }
 .settings-tabs button.on { color:#fff; background:var(--accent); }
 .settings-tabs button:focus-visible { outline:2px solid var(--accent-light); outline-offset:-2px; }
-.settings-page { min-height:0; overflow-y:auto; padding:20px; }
+.settings-main { grid-column:2; grid-row:2; min-width:0; min-height:0; display:grid; grid-template-rows:minmax(0,1fr) auto; }
+.settings-page { min-height:0; overflow-y:auto; padding:24px 28px 30px; }
+.settings-page-inner { max-width:860px; }
 .settings-page .settings-sec:first-child { border-top:0; padding-top:0; margin-top:0; }
-.settings-actions { grid-column:2; display:flex; justify-content:flex-end; gap:8px; padding:14px 20px; border-top:1px solid var(--border2); background:#151520; }
-.settings-actions.split { display:block; }
+.settings-actions { display:flex; align-items:center; gap:8px; min-height:57px; padding:10px 28px; border-top:1px solid var(--border2); background:#171722; }
+.settings-actions:empty { display:none; }
+.settings-action-spacer { flex:1; }
+.settings-actions > .btn1 { width:auto; min-width:130px; }
+.settings-unsaved { color:#f7c66b; font-size:11px; visibility:hidden; }
+.settings-unsaved.on { visibility:visible; }
 .settings-actions .btn1, .settings-actions .btn2 { min-width:110px; min-height:34px; }
-.settings-actions .footer-pair { display:flex; gap:8px; margin-bottom:8px; }
-.settings-actions .footer-pair .btn2 { flex:1; }
 .settings-actions .footer-primary { width:100%; }
 .settings-title { color:var(--accent-light); font-size:13px; text-transform:uppercase; letter-spacing:1px; margin-bottom:14px; }
 .settings-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
@@ -376,15 +395,53 @@ label.chk input:checked + .chk-box::after { content:'✓'; color:#fff; font-size
 .profile-editor-task button { flex:1; border:0; background:var(--input-bg); color:var(--muted); padding:9px; font:600 12px var(--font); cursor:pointer; }
 .profile-editor-task button.on { background:var(--accent); color:#fff; }
 .status-card { background:var(--card-bg); border:1px solid var(--border2); border-radius:8px; padding:12px; margin-bottom:10px; }
-.file-naming { background:var(--card-bg); border:1px solid var(--border2); border-radius:8px; margin-top:14px; padding:16px; }
+.file-naming { background:transparent; border:0; border-top:1px solid var(--border2); border-radius:0; margin-top:0; padding:20px 0; }
 .file-naming h3 { color:var(--accent-light); font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:14px; }
 .file-naming .settings-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px 18px; }
-.file-naming .settings-field { background:var(--input-bg); border:1px solid var(--border2); border-radius:var(--radius); padding:10px; }
+.file-naming .settings-field { background:transparent; border:0; padding:0; }
 .file-naming .settings-field > label { margin-bottom:7px; }
 .file-naming .settings-field input { background:var(--input-bg); border:1px solid var(--border2); border-radius:var(--radius); color:var(--text); font:13px var(--font); min-width:0; padding:6px 8px; width:100%; }
 .file-naming-help, .file-naming-example { background:var(--input-bg); border:1px solid var(--border2); border-radius:var(--radius); padding:10px; }
 .file-naming-example .example-out { margin-top:6px; min-height:38px; padding:10px; }
-@media (max-width:620px) { .mod-box.settings-modal { grid-template-columns:1fr; grid-template-rows:auto auto minmax(0,1fr) auto; width:calc(100vw - 16px); height:calc(100vh - 16px); } .settings-head { grid-column:1; } .settings-tabs { grid-row:2; flex-direction:row; border-right:0; border-bottom:1px solid var(--border2); padding:8px; overflow-x:auto; } .settings-tabs button { white-space:nowrap; } .settings-page { grid-row:3; } .settings-actions { grid-column:1; grid-row:4; } .settings-grid { grid-template-columns:1fr; } .settings-grid .full { grid-column:auto; } }
+.settings-card { background:transparent; border:0; border-top:1px solid var(--border2); border-radius:0; padding:20px 0; }
+.settings-card:first-child { border-top:0; padding-top:0; }
+.settings-card + .settings-card { margin-top:0; }
+.settings-card-title { color:#a78bfa; font-size:11px; font-weight:600; letter-spacing:.08em; margin-bottom:4px; text-transform:uppercase; }
+.settings-card-copy { color:var(--muted); font-size:10px; margin-bottom:14px; }
+.settings-support-actions .btn1 { width:auto; white-space:nowrap; }
+.settings-profile-filterbar { display:flex; align-items:center; margin-bottom:6px; padding:0 0 12px; border-bottom:1px solid var(--border2); }
+.profile-filters { display:flex; width:100%; gap:2px; min-width:0; padding:3px; background:#11111a; border:1px solid #29293a; border-radius:8px; }
+.profile-filters button { flex:1 1 0; min-width:0; border:0 !important; border-radius:5px !important; padding:6px 13px; background:transparent !important; color:var(--muted); }
+.profile-filters button:hover { color:var(--text); background:#20202e !important; }
+.profile-filters button.on { color:#ddd2ff; background:#2a1c48 !important; box-shadow:inset 0 0 0 1px rgba(139,92,246,.35); }
+.settings-advanced { border-top:1px solid var(--border2); margin-top:18px; padding-top:12px; }
+.settings-advanced summary { color:var(--accent-light); cursor:pointer; font:600 11px var(--font); }
+.settings-advanced-body { padding-top:12px; }
+.settings-list { display:flex; flex-direction:column; }
+.settings-list-row { display:flex; align-items:center; gap:10px; min-height:58px; padding:12px 4px; border-bottom:1px solid var(--border2); }
+.settings-list-main { flex:1; min-width:0; }
+.settings-list-main strong { display:block; color:#eeeef6; font-size:12px; font-weight:500; }
+.settings-list-main > span { display:block; color:var(--muted); font-size:10px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.settings-list-main .status-warn { color:#f7c66b; margin-top:4px; }
+.settings-badge { display:inline-flex !important; width:max-content; margin-top:4px; padding:2px 7px; border-radius:999px; color:#6ee7a7 !important; background:rgba(110,231,167,.1); }
+.profile-actions-menu { position:relative; }
+.profile-actions-menu summary { list-style:none; }
+.profile-actions-menu summary::-webkit-details-marker { display:none; }
+.profile-actions-popover { position:absolute; z-index:5; top:36px; right:0; width:128px; display:flex; flex-direction:column; padding:5px; background:#20202e; border:1px solid var(--border2); border-radius:7px; box-shadow:0 12px 28px rgba(0,0,0,.4); }
+.profile-actions-popover button { border:0; border-radius:5px; padding:7px 8px; color:var(--text); background:transparent; cursor:pointer; font:11px var(--font); text-align:left; }
+.profile-actions-popover button:hover { background:#2a1c48; }
+.profile-actions-popover button.danger { color:#f48b9e; }
+.settings-status-table { display:flex; flex-direction:column; }
+.settings-status-row { display:grid; grid-template-columns:95px minmax(0,1fr) 76px; gap:12px; align-items:center; min-height:52px; border-bottom:1px solid var(--border2); }
+.settings-status-row > div { min-width:0; font-size:11px; }
+.settings-status-value { color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.settings-status-actions { display:flex; justify-content:flex-end; gap:6px; }
+.settings-status-actions .btn2 { min-width:68px; text-align:center; }
+.settings-support-actions { display:flex; flex-wrap:wrap; gap:8px; }
+.settings-token-row { display:flex; flex-wrap:wrap; gap:5px; margin-top:7px; }
+.settings-token { border:1px solid #4b3a72; border-radius:999px; color:#c4b5fd; background:#2a1c48; padding:3px 8px; cursor:pointer; font:10px var(--mono); }
+.settings-token:hover { border-color:#8b5cf6; }
+@media (max-width:720px) { .settings-workspace { padding:12px; } .settings-dialog { width:calc(100vw - 24px); height:calc(100vh - 24px); grid-template-columns:170px minmax(0,1fr); } .settings-sidebar { padding:16px 9px; } .settings-page { padding:20px 18px 24px; } .settings-actions { padding:10px 18px; } .settings-grid { grid-template-columns:1fr; } .settings-grid .full { grid-column:auto; } .settings-status-row { grid-template-columns:80px minmax(0,1fr); padding:8px 0; } .settings-status-actions { grid-column:2; justify-content:flex-start; } }
 .status-card strong { display:block; color:#e8e8f0; margin-bottom:4px; }
 .status-good { color:#86efac; }
 .status-warn { color:#fbbf24; }
@@ -467,7 +524,7 @@ input[type=range]:focus-visible::-webkit-slider-thumb { outline:2px solid var(--
 <body>
 <div id="tb">
   <span id="tb-logo">Tuck</span>
-  <button class="tbbtn" onclick="openSettings()">Settings</button>
+  <button class="tbbtn" id="settings-toggle" onclick="toggleSettings()">Settings</button>
 </div>
 <div id="main">
   <div id="left">
@@ -561,6 +618,36 @@ input[type=range]:focus-visible::-webkit-slider-thumb { outline:2px solid var(--
     </div>
   </div>
 </div>
+<div class="settings-workspace" id="settings-workspace" onclick="if(event.target===this)closeSettings()">
+  <div class="settings-dialog" role="dialog" aria-modal="true" aria-label="Settings">
+  <header class="settings-topbar"><span class="settings-wordmark">Tuck</span><span class="settings-top-title">Settings</span><button class="mbtn" onclick="closeSettings()" aria-label="Close settings" title="Close">✕</button></header>
+  <nav class="settings-sidebar" aria-label="Settings sections">
+    <div class="settings-tabs">
+      <div class="settings-nav-group">
+        <div class="settings-nav-label">Preferences</div>
+        <button id="settings-nav-general" onclick="navigateSettings('general')">General</button>
+        <button id="settings-nav-output" onclick="navigateSettings('output')">Output &amp; naming</button>
+      </div>
+      <div class="settings-nav-group">
+        <div class="settings-nav-label">Library</div>
+        <button id="settings-nav-profiles" onclick="navigateSettings('profiles')">Profiles</button>
+      </div>
+      <div class="settings-nav-group">
+        <div class="settings-nav-label">Integrations</div>
+        <button id="settings-nav-explorer" onclick="navigateSettings('explorer')">Windows integration</button>
+      </div>
+      <div class="settings-nav-group">
+        <div class="settings-nav-label">Support</div>
+        <button id="settings-nav-system" onclick="navigateSettings('system')">System &amp; support</button>
+      </div>
+    </div>
+  </nav>
+  <section class="settings-main">
+    <main class="settings-page" id="settings-page"><div class="settings-page-inner"></div></main>
+    <footer class="settings-actions" id="settings-actions"></footer>
+  </section>
+  </div>
+</div>
 <div id="qbar">
   <span id="qcnt">0/0</span><progress id="qprog" value="0" max="100" aria-label="Queue progress"></progress>
   <span id="qeta">ETA --</span><span id="qfname"></span>
@@ -593,7 +680,7 @@ function esc(s) { var d = document.createElement('div'); d.textContent = s; retu
 function escJS(s) { return s.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'\\"'); }
 function fmtt(s) { var m=Math.floor(s/60),sec=Math.floor(s%60),h=Math.floor(m/60); if(h)return h+':'+('0'+m%60).slice(-2)+':'+('0'+sec).slice(-2); return m+':'+('0'+sec).slice(-2); }
 var toastId = 0;
-var _confirmCbs = {};
+var pendingConfirm = null;
 function toast(msg, kind) {
   kind = kind || '';
   var id = 't'+(++toastId), ct = byId('toast-ct');
@@ -604,12 +691,12 @@ function toast(msg, kind) {
 }
 function dismissToast(id) { var el = byId(id); if (el) { el.style.opacity='0'; el.style.transition='opacity .2s'; setTimeout(function(){ if (el.parentNode) el.parentNode.removeChild(el); }, 200); } }
 function confirmToast(msg, cb) {
-  var id = 'tc'+(++toastId), ct = byId('toast-ct');
-  _confirmCbs[id] = cb;
-  var div = document.createElement('div'); div.className = 'toast'; div.id = id;
-  div.innerHTML = '<span class="tmsg">'+msg+'</span><button class="tbbtn" style="color:#22c55e;font-weight:700;flex-shrink:0" onclick="var f=_confirmCbs[\''+id+'\'];dismissToast(\''+id+'\');if(f)f()">Yes</button><button class="tbbtn" style="color:var(--muted);flex-shrink:0" onclick="dismissToast(\''+id+'\');delete _confirmCbs[\''+id+'\']">No</button>';
-  ct.appendChild(div);
+  var lower=msg.toLowerCase(),discard=lower.indexOf('discard')>=0,remove=lower.indexOf('remove')>=0||lower.indexOf('delete')>=0||lower.indexOf('cancel')>=0,install=lower.indexOf('install')>=0,title=discard?'Unsaved changes':install?'Install update':remove?'Confirm removal':'Confirm action',confirmLabel=discard?'Discard changes':install?'Install update':lower.indexOf('delete')>=0?'Delete':lower.indexOf('remove')>=0?'Remove':lower.indexOf('cancel')>=0?'Cancel processing':'Continue',cancelLabel=discard?'Keep editing':'Go back';
+  pendingConfirm=cb;
+  var box=byId('mod-box');box.className='mod-box confirm-dialog';box.innerHTML='<h2 id="confirm-title"></h2><p class="confirm-copy" id="confirm-copy"></p><div class="confirm-actions"><button class="btn2" onclick="closeMod()">'+cancelLabel+'</button><button class="btn1 '+((discard||remove)?'danger':'')+'" onclick="acceptConfirm()">'+confirmLabel+'</button></div>';
+  byId('confirm-title').textContent=title;byId('confirm-copy').textContent=msg;byId('mod-overlay').classList.add('open');
 }
+function acceptConfirm(){var cb=pendingConfirm;closeMod();if(cb)cb();}
 
 function profileControlState() {
   return {pid:byId('prof-sel').value,size:byId('sz-slider').value,rm:byId('res-mode').value,rw:byId('res-w').value,rh:byId('res-h').value,fps:byId('fps-val').value,ka:byId('keep-audio').checked,abr:byId('audio-br').value,tp:byId('two-pass').value,pre:byId('preset-sel').value,sc:byId('scaler-sel').value,enc:byId('enc-sel').value,rc:byId('rc-sel').value,q:byId('quality-val').value,br:byId('br-val').value,tu:byId('tune-sel').value};
@@ -635,10 +722,10 @@ function resetToProfile() {
 }
 
 function showMod(html) { var box=byId('mod-box'); box.className='mod-box'; box.innerHTML=html; byId('mod-overlay').classList.add('open'); }
-function closeMod() { byId('mod-overlay').classList.remove('open'); }
+function closeMod() { byId('mod-overlay').classList.remove('open'); pendingConfirm=null; }
 function showUpdateModal(update) { showMod('<h2>Update available</h2><div>Version <strong id="update-version"></strong> · <span id="update-size"></span></div><h3>What\'s new</h3><pre class="update-notes" id="update-notes"></pre><div class="brow"><button class="btn2" onclick="closeMod()">Later</button><button class="btn1" onclick="downloadUpdate()">Download update</button></div>'); byId('update-version').textContent='v'+update.version; byId('update-size').textContent=(update.size_mb||0).toFixed(1)+' MB'; byId('update-notes').textContent=update.notes||'No release notes provided.'; }
 function downloadUpdate() { api.downloadUpdate().then(function(started){ if (!started.ok) { toast('Download failed: '+started.error, 'err'); return; } var button=byId('mod-box').querySelector('.btn1'); button.disabled=true; var timer=setInterval(async function(){ var progress=await api.getDownloadProgress(); if (progress.downloading) { button.textContent='Downloading '+(progress.progress||0)+'%'; return; } clearInterval(timer); if (progress.error) { button.disabled=false; button.textContent='Download update'; toast('Download failed: '+progress.error, 'err'); return; } if (progress.done) confirmToast('Update downloaded. Install now?', function(){ api.installUpdate().then(async function(installed){ if (installed.ok) await api.closeWindow(); else toast('Install failed: '+installed.error, 'err'); }); }); },500); }); }
-function closeActiveModal() { if (byId('mod-box').classList.contains('settings-modal')) closeSettings(); else closeMod(); }
+function closeActiveModal() { closeMod(); }
 
 var startupData = null;
 var queueTimer = null;
@@ -1857,19 +1944,22 @@ function savePayload(name) {
 }
 
 var settingsPage = 'general', settingsView = 'page', settingsProfileId = '', settingsFilter = 'all', editorOriginal = null, editorSnapshot = '';
-function showSettingsModal(html) { var box=byId('mod-box');box.className='mod-box settings-modal';box.innerHTML=html;byId('mod-overlay').classList.add('open'); }
 function valueOr(value, fallback) { return value===undefined||value===null?fallback:value; }
 function settingsShell(page, content, actions) {
-  var tabs=[['general','General'],['profiles','Profiles'],['explorer','Explorer integration'],['system','System']], nav='';
-  tabs.forEach(function(t){var active=t[0]===page;nav+='<button aria-current="'+(active?'page':'false')+'" class="'+(active?'on':'')+'" onclick="navigateSettings(\''+t[0]+'\')">'+t[1]+'</button>';});
-  showSettingsModal('<div class="settings-head"><h2>Settings</h2><button class="mbtn" aria-label="Close settings" onclick="closeSettings()">✕</button></div><nav class="settings-tabs" aria-label="Settings sections">'+nav+'</nav><div class="settings-page">'+content+'</div><div class="settings-actions '+(actions.split?'split':'')+'">'+actions.html+'</div>');
+  var actionBar=byId('settings-actions');
+  document.body.classList.add('settings-open');
+  byId('settings-page').innerHTML='<div class="settings-page-inner">'+content+'</div>';
+  actionBar.className='settings-actions '+(actions.split?'split':'');
+  actionBar.innerHTML=actions.html?(actions.plain?actions.html:'<span class="settings-unsaved" id="settings-unsaved">Unsaved changes</span><span class="settings-action-spacer"></span>'+actions.html):'';
+  ['general','output','profiles','explorer','system'].forEach(function(name){var button=byId('settings-nav-'+name),active=name===page;button.classList.toggle('on',active);button.setAttribute('aria-current',active?'page':'false');});
 }
+function toggleSettings(){if(document.body.classList.contains('settings-open'))closeSettings();else openSettings();}
 function settingButton(label, action, primary) { return '<button class="'+(primary?'btn1':'btn2')+'" onclick="'+action+'">'+label+'</button>'; }
 function profileSummary(p) { var up=(p.workflow||'compression')==='upscale', res=p.resolution_mode==='custom'?(p.custom_width||p.max_width)+' × '+(p.custom_height||p.max_height):'Source resolution', fps=p.fps_mode==='custom'?Math.round(p.custom_fps||p.max_fps||30)+' FPS':'Source FPS', audio=p.keep_audio?'Keep audio':(p.audio_bitrate_kbps||128)+' kbps audio'; return (up?'Upscale':'Compress')+' · '+(up?'':Math.round((p.target_size_bytes||0)/(1024*1024))+' MB · ')+res+' · '+fps+' · '+audio; }
 async function refreshPMList(filter) {
   settingsFilter=filter||settingsFilter; var list=byId('pm-list');if(!list)return;var profiles=await api.getProfilesJson();list.innerHTML='';
   ['all','compression','upscale'].forEach(function(k){var b=byId('pm-'+k);if(b)b.classList.toggle('on',k===settingsFilter);});
-  profiles.forEach(function(p){if(settingsFilter!=='all'&&(p.workflow||'compression')!==settingsFilter)return;var row=document.createElement('div');row.className='mrow';row.innerHTML='<div class="mi"><div class="mti">'+esc(p.name)+(p.profile_id===appSettings.default_profile_id?' <span class="status-good" style="font-size:10px">Default</span>':'')+'</div><div class="mme profile-summary">'+esc(profileSummary(p))+'</div></div><button class="mbtn" title="Edit" aria-label="Edit profile '+esc(p.name)+'" onclick="editProf(\''+escJS(p.profile_id)+'\')">✎</button><button class="mbtn" title="Duplicate" aria-label="Duplicate profile '+esc(p.name)+'" onclick="dupProf(\''+escJS(p.profile_id)+'\')">⧉</button><button class="mbtn danger" title="Delete" aria-label="Delete profile '+esc(p.name)+'" onclick="delProf(\''+escJS(p.profile_id)+'\',\''+escJS(p.name)+'\')">✕</button>';list.appendChild(row);});
+  profiles.forEach(function(p){if(settingsFilter!=='all'&&(p.workflow||'compression')!==settingsFilter)return;var row=document.createElement('div'),badge=p.profile_id===appSettings.default_profile_id?'<span class="settings-badge">Default</span>':'';row.className='settings-list-row';row.innerHTML='<div class="settings-list-main"><strong>'+esc(p.name)+'</strong><span>'+esc(profileSummary(p))+'</span>'+badge+'</div><button class="btn2" onclick="editProf(\''+escJS(p.profile_id)+'\')">Edit</button><details class="profile-actions-menu"><summary class="mbtn" aria-label="More actions for '+esc(p.name)+'">•••</summary><div class="profile-actions-popover"><button onclick="dupProf(\''+escJS(p.profile_id)+'\')">Duplicate</button><button class="danger" onclick="delProf(\''+escJS(p.profile_id)+'\',\''+escJS(p.name)+'\')">Delete</button></div></details>';list.appendChild(row);});
   if(!list.children.length)list.innerHTML='<div class="settings-empty">No matching profiles.</div>';
 }
 async function editProf(pid) { openSettings('profiles','editor',pid); }
@@ -1898,25 +1988,83 @@ async function hydrateEditor(){populateEditorEncoders();var p=null;if(settingsPr
 function editorDirty(){return editorSnapshot&&JSON.stringify(pePayload())!==editorSnapshot;}
 function backToProfiles(){if(editorDirty())confirmToast('Discard unsaved profile changes?',function(){settingsView='page';settingsProfileId='';openSettings('profiles');});else{settingsView='page';settingsProfileId='';openSettings('profiles');}}
 async function saveProfEdit(){var r=settingsProfileId?await api.updateProfile(settingsProfileId,JSON.stringify(pePayload())):await api.createProfile(JSON.stringify(pePayload()));if(r.ok){await loadSettings();settingsView='page';settingsProfileId='';openSettings('profiles');toast('Profile saved.','ok');}else toast(r.error,'err');}
-async function openSettings(page,view,profileId){if(!api)return;settingsPage=page||settingsPage;settingsView=view||'page';if(profileId!==undefined)settingsProfileId=profileId;var s=await api.getSettings(),profiles=s.profiles||[];if(settingsPage==='profiles'&&settingsView==='editor'){settingsShell('profiles',profileEditorHTML(),{html:settingButton('Cancel','backToProfiles()')+settingButton('Save','saveProfEdit()',true)});await hydrateEditor();return;}var content='',actions={html:''};if(settingsPage==='general'){var options=profiles.map(function(p){return '<option value="'+esc(p.profile_id)+'">'+esc(p.name)+'</option>';}).join(''),scalers=['Bilinear','Bicubic','Lanczos','Point','Neighbor'].map(function(x){return '<option '+(x.toLowerCase()===(s.default_scaler||'neighbor')?'selected':'')+'>'+x+'</option>';}).join('');content='<h3 class="settings-title">General</h3><div class="settings-sec"><h3>Output folder</h3><div class="row"><div id="set-od" class="settings-readonly" style="flex:1" data-path="'+esc(s.output_dir||'')+'">'+esc(s.output_dir||'Same folder as source')+'</div><button class="btn2" onclick="browseOut()">Browse…</button><button class="btn2" onclick="clearOut()">Clear</button></div><span class="help-tip">Leave empty to save each export alongside its source file.</span></div><section class="file-naming"><h3>File naming</h3><div class="settings-grid"><div class="settings-field"><label for="set-cs">Compress suffix</label><input id="set-cs" value="'+esc(s.compression_suffix||'_tucked_{size}')+'" oninput="settingsDirty=true;updateExampleOutput()"></div><div class="settings-field"><label for="set-us">Upscale suffix</label><input id="set-us" value="'+esc(s.upscale_suffix||'_upscaled_{width}x{height}')+'" oninput="settingsDirty=true"></div><div class="file-naming-help full"><span>Supported tokens</span><span class="help-tip">Compress: {size}. Upscale: {width}, {height}.</span></div><div class="file-naming-example full"><span>Live example filename</span><div class="example-out" id="ex-out"></div></div></div></section><div class="settings-sec"><h3>Defaults</h3><div class="settings-grid"><div class="settings-field"><label for="set-dp">Default profile</label><select id="set-dp" onchange="settingsDirty=true">'+options+'</select></div><div class="settings-field"><label for="set-ds">Default scaler</label><select id="set-ds" onchange="settingsDirty=true">'+scalers+'</select></div></div></div>';actions={html:settingButton('Cancel','closeSettings()')+settingButton('Save changes','saveSettings()',true)};}else if(settingsPage==='profiles'){content='<h3 class="settings-title">Profiles</h3><div class="ft"><button id="pm-all" class="on" onclick="refreshPMList(\'all\')">All</button><button id="pm-compression" onclick="refreshPMList(\'compression\')">Compress</button><button id="pm-upscale" onclick="refreshPMList(\'upscale\')">Upscale</button></div><div id="pm-list" style="display:flex;flex-direction:column;gap:6px;margin-top:10px"></div>';actions={split:true,html:'<div class="footer-pair">'+settingButton('Import','importProfs()')+settingButton('Export','exportProfs()')+'</div>'+settingButton('+ New profile','newProf()',true)};}else if(settingsPage==='explorer'){content='<h3 class="settings-title">Explorer integration</h3><div id="st-list" style="display:flex;flex-direction:column;gap:6px"></div>';actions={html:settingButton('+ Add shortcut','instProfSt()',true)};}else{var ready=s.ffmpeg_available&&s.ffprobe_available,encoders=s.available_encoders||[];content='<h3 class="settings-title">System</h3><div class="settings-sec"><h3>FFmpeg</h3><div class="status-card"><strong class="'+(ready?'status-good':'status-warn')+'">'+(ready?'Ready':'Missing')+'</strong><span class="help-tip">'+esc(ready?(s.ffmpeg_path||'FFmpeg detected'):'Install FFmpeg, restart Tuck, then refresh this page.')+'</span><span class="help-tip">Supported encoders: '+esc(encoders.join(', ')||'None detected')+'</span><button class="btn2" style="margin-top:10px" onclick="copyDiagnostics()">Copy diagnostics</button><button class="btn2" style="margin-top:10px" onclick="openSettings(\'system\')">Refresh status</button></div></div><div class="settings-sec"><h3>Updates</h3><div class="status-card"><strong>Tuck '+esc(s.version||'')+'</strong><label class="chk"><input id="set-check-updates" type="checkbox" '+(s.check_updates?'checked':'')+'><span class="chk-box"></span><span>Check for updates on startup</span></label><button class="btn2" style="margin-top:10px" onclick="checkUpdatesFromSettings()">Check now</button><span class="help-tip">'+(s.last_update_check?'Last checked: '+esc(s.last_update_check):'Current update status: ready to check.')+'</span></div></div>';actions={html:settingButton('Cancel','closeSettings()')+settingButton('Save changes','saveSystemSettings()',true)};}settingsShell(settingsPage,content,actions);if(settingsPage==='general'){byId('set-dp').value=s.default_profile_id||'';settingsDirty=false;updateExampleOutput();}if(settingsPage==='profiles')await refreshPMList(settingsFilter);if(settingsPage==='explorer')await refreshSTList();if(settingsPage==='general')decorateGeneralSettings(s);if(settingsPage==='system')decorateSystemSettings(s);}
-function decorateGeneralSettings(s){var page=byId('mod-box').querySelector('.settings-page');if(!page)return;var checked=s.clear_completed_automatically?'checked':'';page.insertAdjacentHTML('beforeend','<div class="settings-sec"><h3>Queue</h3><label class="chk"><input id="set-auto-clear" type="checkbox" '+checked+' onchange="saveAutoClear(this.checked)"><span class="chk-box"></span><span>Clear completed jobs automatically</span></label><span class="help-tip">Removes completed clips from Files; failed and cancelled jobs remain for inspection or retry.</span></div>');}
-function decorateSystemSettings(s){var page=byId('mod-box').querySelector('.settings-page');if(!page)return;var ffmpeg=page.querySelector('.settings-sec');if(ffmpeg){ffmpeg.insertAdjacentHTML('beforeend','<div class="settings-grid" style="margin-top:12px"><div class="settings-field full"><label for="set-ffmpeg">Custom FFmpeg path</label><div class="row"><div id="set-ffmpeg" class="settings-readonly" style="flex:1" data-path="'+esc(s.ffmpeg_path||'')+'">'+esc(s.ffmpeg_path||'Use PATH or automatic detection')+'</div><button class="btn2" onclick="browseFfmpeg()">Browse…</button><button class="btn2" onclick="clearFfmpeg()">Clear</button></div></div><div class="settings-field full"><label for="set-ffprobe">Custom FFprobe path</label><div class="row"><div id="set-ffprobe" class="settings-readonly" style="flex:1" data-path="'+esc(s.ffprobe_path||'')+'">'+esc(s.ffprobe_path||'Use PATH or automatic detection')+'</div><button class="btn2" onclick="browseFfprobe()">Browse…</button><button class="btn2" onclick="clearFfprobe()">Clear</button></div></div></div><div class="settings-field full" style="margin-top:12px"><label for="set-encoder-cache-days">Encoder detection cache</label><div class="row"><select id="set-encoder-cache-days" style="flex:0 0 90px"><option value="0">Disabled</option><option value="1">1 day</option><option value="7">7 days</option><option value="30">30 days</option><option value="90">90 days</option></select><button class="btn2" style="white-space:nowrap" onclick="refreshEncoders()">Refresh now</button></div><span class="help-tip">Skipping hardware probes until the cache expires makes startup faster.</span></div>');byId('set-encoder-cache-days').value=String(s.encoder_cache_days||0);}}
-function clearPath(id, placeholder){byId(id).dataset.path='';byId(id).textContent=placeholder;}
-async function browseFfmpeg(){var r=await api.pickFfmpegFile();if(r.ok&&r.path){byId('set-ffmpeg').dataset.path=r.path;byId('set-ffmpeg').textContent=r.path;}}
-async function browseFfprobe(){var r=await api.pickFfprobeFile();if(r.ok&&r.path){byId('set-ffprobe').dataset.path=r.path;byId('set-ffprobe').textContent=r.path;}}
-function clearFfmpeg(){clearPath('set-ffmpeg','Use PATH or automatic detection');}
-function clearFfprobe(){clearPath('set-ffprobe','Use PATH or automatic detection');}
-async function saveSystemSettings(){var data={ffmpeg_path:byId('set-ffmpeg').dataset.path||'',ffprobe_path:byId('set-ffprobe').dataset.path||'',encoder_cache_days:parseInt(byId('set-encoder-cache-days').value),check_updates:byId('set-check-updates').checked},r=await api.saveSettings(JSON.stringify(data));if(r.ok){appSettings=Object.assign(appSettings,data);await loadSettings();closeMod();toast('Settings saved.','ok');}else toast(r.error,'err');}
-async function saveAutoClear(enabled){var r=await api.saveSettings(JSON.stringify({clear_completed_automatically:enabled}));if(r.ok)appSettings.clear_completed_automatically=enabled;else toast(r.error,'err');}
-async function refreshEncoders(){var r=await api.refreshEncoders();if(r.ok){availEncoders=r.available_encoders||[];updateEncOpts();toast('Encoder detection refreshed.','ok');openSettings('system');}else toast(r.error||'Could not refresh encoders.','err');}
-function navigateSettings(page){if(settingsView==='editor')return backToProfiles();if(settingsPage==='general'&&settingsDirty)confirmToast('Discard unsaved settings?',function(){openSettings(page);});else openSettings(page);}
-function closeSettings(){if(settingsView==='editor')return backToProfiles();if(settingsPage==='general'&&settingsDirty)confirmToast('Discard unsaved settings?',closeMod);else closeMod();}
-async function browseOut(){var r=await api.pickFolder();if(r.ok&&r.path){byId('set-od').dataset.path=r.path;byId('set-od').textContent=r.path;settingsDirty=true;}}
-function clearOut(){clearPath('set-od','Same folder as source');settingsDirty=true;}
-async function saveSettings(){var data={default_profile_id:byId('set-dp').value,default_scaler:byId('set-ds').value.toLowerCase(),output_dir:byId('set-od').dataset.path||'',check_updates:appSettings.check_updates!==false,clear_completed_automatically:appSettings.clear_completed_automatically||false,compression_suffix:byId('set-cs').value.trim()||'_tucked_{size}',upscale_suffix:byId('set-us').value.trim()||'_upscaled_{width}x{height}',last_task:wf===1?'upscale':'compression',last_compress_profile_id:lastComp,last_upscale_profile_id:lastUpscale,left_sidebar_width:parseInt(byId('left').style.width)||240},r=await api.saveSettings(JSON.stringify(data));if(r.ok){appSettings=Object.assign(appSettings,data);settingsDirty=false;await loadSettings();toast('Settings saved.','ok');}else toast(r.error,'err');}
-function updateExampleOutput(){byId('ex-out').textContent='video'+(byId('set-cs').value.trim()||'_tucked_{size}').replace('{size}','10MB')+'.mp4';}
+
+function markSettingsDirty(){settingsDirty=true;var indicator=byId('settings-unsaved');if(indicator){indicator.textContent='Unsaved changes';indicator.classList.add('on');}}
+function generalSettingsHTML(s,profiles){
+  var options=profiles.map(function(p){return '<option value="'+esc(p.profile_id)+'">'+esc(p.name)+'</option>';}).join('');
+  var scalers=['Bilinear','Bicubic','Lanczos','Point','Neighbor'].map(function(x){return '<option '+(x.toLowerCase()===(s.default_scaler||'neighbor')?'selected':'')+'>'+x+'</option>';}).join('');
+  return '<div class="settings-card"><div class="settings-card-title">Task defaults</div><div class="settings-card-copy">Applied when a profile does not provide its own value.</div><div class="settings-grid"><div class="settings-field"><label for="set-dp">Default profile</label><select id="set-dp" onchange="markSettingsDirty()">'+options+'</select></div><div class="settings-field"><label for="set-ds">Default scaler</label><select id="set-ds" onchange="markSettingsDirty()">'+scalers+'</select></div></div></div><div class="settings-card"><div class="settings-card-title">Queue cleanup</div><div class="settings-card-copy">Choose what happens to successful jobs after processing.</div><label class="chk"><input id="set-auto-clear" type="checkbox" '+(s.clear_completed_automatically?'checked':'')+' onchange="markSettingsDirty()"><span class="chk-box"></span><span>Clear completed jobs automatically</span></label><span class="help-tip">Failed and cancelled jobs remain available for inspection or retry.</span></div>';
+}
+function outputSettingsHTML(s){
+  return '<div class="settings-card"><div class="settings-card-title">Output location</div><div class="settings-card-copy">Save beside each source file, or choose one folder for every completed export.</div><div class="row"><div id="set-od" class="settings-readonly" style="flex:1" data-path="'+esc(s.output_dir||'')+'">'+esc(s.output_dir||'Next to each source file')+'</div><button class="btn2" onclick="browseOut()">Browse…</button><button class="btn2" onclick="clearOut()">Use source folder</button></div></div><section class="file-naming"><h3>File names</h3><div class="settings-grid"><div class="settings-field"><label for="set-cs">Compress suffix</label><input id="set-cs" value="'+esc(s.compression_suffix||'_tucked_{size}')+'" oninput="markSettingsDirty();updateExampleOutput()"><div class="settings-token-row"><button class="settings-token" onclick="insertNamingToken(\'set-cs\',\'{size}\')">{size}</button></div></div><div class="settings-field"><label for="set-us">Upscale suffix</label><input id="set-us" value="'+esc(s.upscale_suffix||'_upscaled_{width}x{height}')+'" oninput="markSettingsDirty();updateExampleOutput()"><div class="settings-token-row"><button class="settings-token" onclick="insertNamingToken(\'set-us\',\'{width}\')">{width}</button><button class="settings-token" onclick="insertNamingToken(\'set-us\',\'{height}\')">{height}</button></div></div><div class="file-naming-example full"><span>Compress preview</span><div class="example-out" id="ex-out"></div></div><div class="file-naming-example full"><span>Upscale preview</span><div class="example-out" id="ex-up-out"></div></div></div></section>';
+}
+function profilesSettingsHTML(){
+  return '<div class="settings-profile-filterbar"><div class="ft profile-filters" role="group" aria-label="Filter profiles"><button id="pm-all" class="on" onclick="refreshPMList(\'all\')">All</button><button id="pm-compression" onclick="refreshPMList(\'compression\')">Compress</button><button id="pm-upscale" onclick="refreshPMList(\'upscale\')">Upscale</button></div></div><div id="pm-list" class="settings-list"></div>';
+}
+function explorerSettingsHTML(){
+  return '<div class="settings-card"><div class="settings-card-title">Windows Send to shortcuts</div><div class="settings-card-copy">Send videos into Tuck directly from File Explorer. Broken shortcuts can be repaired in place.</div><div id="st-list" class="settings-list"></div></div>';
+}
+function encoderDisplaySummary(encoders){
+  var labels=[];if(encoders.some(function(x){return x.indexOf('nvenc')>=0;}))labels.push('NVIDIA');if(encoders.some(function(x){return x.indexOf('amf')>=0;}))labels.push('AMD');if(encoders.some(function(x){return x.indexOf('qsv')>=0;}))labels.push('Intel');if(encoders.some(function(x){return x.indexOf('libx')===0;}))labels.push('CPU');return labels.join(' · ')||'None detected';
+}
+function systemSettingsHTML(s){
+  var ffmpegReady=!!s.ffmpeg_available,ffprobeReady=!!s.ffprobe_available,encoders=s.available_encoders||[];
+  return '<div class="settings-card"><div class="settings-card-title">System status</div><div class="settings-status-table" aria-label="System readiness"><div class="settings-status-row"><div>FFmpeg</div><div class="settings-status-value"><span class="'+(ffmpegReady?'status-good':'status-warn')+'">'+(ffmpegReady?'Ready':'Missing')+'</span> · '+esc(s.ffmpeg_path||s.detected_ffmpeg_path||'Automatic detection')+'</div><div class="settings-status-actions"><button class="btn2" onclick="browseFfmpeg()">Change</button></div></div><div class="settings-status-row"><div>FFprobe</div><div class="settings-status-value"><span class="'+(ffprobeReady?'status-good':'status-warn')+'">'+(ffprobeReady?'Ready':'Missing')+'</span> · '+esc(s.ffprobe_path||s.detected_ffprobe_path||'Automatic detection')+'</div><div class="settings-status-actions"><button class="btn2" onclick="browseFfprobe()">Change</button></div></div><div class="settings-status-row"><div>Encoders</div><div class="settings-status-value">'+esc(encoderDisplaySummary(encoders))+'</div><div class="settings-status-actions"><button class="btn2" onclick="refreshEncoders()">Rescan</button></div></div><div class="settings-status-row"><div>WebView2</div><div class="settings-status-value"><span class="status-good">Ready</span> · Edge runtime</div><div class="settings-status-actions"></div></div></div></div><div class="settings-card"><div class="settings-card-title">Updates</div><div class="settings-list-row"><div class="settings-list-main"><strong>Tuck '+esc(s.version||'')+'</strong><span>'+(s.last_update_check?'Last checked: '+esc(s.last_update_check):'Current update status: ready to check.')+'</span></div><button class="btn2" onclick="checkUpdatesFromSettings()">Check now</button></div><label class="chk" style="margin-top:12px"><input id="set-check-updates" type="checkbox" '+(s.check_updates?'checked':'')+' onchange="markSettingsDirty()"><span class="chk-box"></span><span>Check automatically at startup</span></label></div><div class="settings-card"><div class="settings-card-title">Support</div><div class="settings-card-copy">Copy a sanitized report containing versions, encoder status, and recent errors.</div><div class="settings-support-actions"><button class="btn1" onclick="copyDiagnostics()">Copy diagnostics</button><button class="btn2" onclick="openSupportFolder(\'logs\')">Open logs folder</button><button class="btn2" onclick="openSupportFolder(\'config\')">Open configuration folder</button></div></div><details class="settings-advanced"><summary>Advanced system settings</summary><div class="settings-advanced-body settings-grid"><div class="settings-field full"><label for="set-ffmpeg">Custom FFmpeg path</label><div class="row"><div id="set-ffmpeg" class="settings-readonly" style="flex:1" data-path="'+esc(s.ffmpeg_path||'')+'">'+esc(s.ffmpeg_path||'Use PATH or automatic detection')+'</div><button class="btn2" onclick="clearFfmpeg()">Use automatic</button></div></div><div class="settings-field full"><label for="set-ffprobe">Custom FFprobe path</label><div class="row"><div id="set-ffprobe" class="settings-readonly" style="flex:1" data-path="'+esc(s.ffprobe_path||'')+'">'+esc(s.ffprobe_path||'Use PATH or automatic detection')+'</div><button class="btn2" onclick="clearFfprobe()">Use automatic</button></div></div><div class="settings-field full"><label for="set-encoder-cache-days">Encoder detection cache</label><select id="set-encoder-cache-days" onchange="markSettingsDirty()"><option value="0">Disabled</option><option value="1">1 day</option><option value="7">7 days</option><option value="30">30 days</option><option value="90">90 days</option></select><span class="help-tip">Caching hardware probes makes startup faster.</span></div></div></details>';
+}
+async function openSettings(page,view,profileId){
+  if(!api)return;
+  settingsPage=page||settingsPage;settingsView=view||'page';if(profileId!==undefined)settingsProfileId=profileId;
+  var s=await api.getSettings(),profiles=s.profiles||[],content='',actions={html:''};
+  if(settingsPage==='profiles'&&settingsView==='editor'){
+    settingsShell('profiles',profileEditorHTML(),{html:settingButton('Cancel','backToProfiles()')+settingButton('Save profile','saveProfEdit()',true)});
+    await hydrateEditor();return;
+  }
+  if(settingsPage==='general'){
+    content=generalSettingsHTML(s,profiles);actions={html:settingButton('Save changes','saveSettings()',true)};
+  }else if(settingsPage==='output'){
+    content=outputSettingsHTML(s);actions={html:settingButton('Save changes','saveOutputSettings()',true)};
+  }else if(settingsPage==='profiles'){
+    content=profilesSettingsHTML();actions={plain:true,html:settingButton('Import','importProfs()')+settingButton('Export','exportProfs()')+'<span class="settings-action-spacer"></span>'+settingButton('+ New profile','newProf()',true)};
+  }else if(settingsPage==='explorer'){
+    content=explorerSettingsHTML();actions={html:settingButton('+ Add shortcut','instProfSt()',true)};
+  }else{
+    content=systemSettingsHTML(s);actions={html:settingButton('Save changes','saveSystemSettings()',true)};
+  }
+  settingsShell(settingsPage,content,actions);
+  settingsDirty=false;
+  if(settingsPage==='general')byId('set-dp').value=s.default_profile_id||'';
+  if(settingsPage==='output')updateExampleOutput();
+  if(settingsPage==='profiles')await refreshPMList(settingsFilter);
+  if(settingsPage==='explorer')await refreshSTList();
+  if(settingsPage==='system')byId('set-encoder-cache-days').value=String(s.encoder_cache_days||0);
+}
+function navigateSettings(page){
+  if(settingsView==='editor')return backToProfiles();
+  if(settingsDirty)confirmToast('Discard unsaved settings?',function(){settingsDirty=false;openSettings(page);});else openSettings(page);
+}
+function closeSettings(){
+  if(settingsView==='editor')return confirmToast('Discard unsaved profile changes?',function(){settingsView='page';settingsProfileId='';closeSettingsWorkspace();});
+  if(settingsDirty)return confirmToast('Discard unsaved settings?',function(){settingsDirty=false;closeSettingsWorkspace();});
+  closeSettingsWorkspace();
+}
+function closeSettingsWorkspace(){document.body.classList.remove('settings-open');}
+function clearPath(id,placeholder){byId(id).dataset.path='';byId(id).textContent=placeholder;}
+async function browseOut(){var r=await api.pickFolder();if(r.ok&&r.path){byId('set-od').dataset.path=r.path;byId('set-od').textContent=r.path;markSettingsDirty();}}
+function clearOut(){clearPath('set-od','Next to each source file');markSettingsDirty();}
+async function browseFfmpeg(){var r=await api.pickFfmpegFile();if(r.ok&&r.path){byId('set-ffmpeg').dataset.path=r.path;byId('set-ffmpeg').textContent=r.path;markSettingsDirty();}}
+async function browseFfprobe(){var r=await api.pickFfprobeFile();if(r.ok&&r.path){byId('set-ffprobe').dataset.path=r.path;byId('set-ffprobe').textContent=r.path;markSettingsDirty();}}
+function clearFfmpeg(){clearPath('set-ffmpeg','Use PATH or automatic detection');markSettingsDirty();}
+function clearFfprobe(){clearPath('set-ffprobe','Use PATH or automatic detection');markSettingsDirty();}
+async function persistSettings(data){var r=await api.saveSettings(JSON.stringify(data));if(r.ok){appSettings=Object.assign(appSettings,data);settingsDirty=false;var indicator=byId('settings-unsaved');if(indicator){indicator.textContent='Saved';indicator.classList.add('on');setTimeout(function(){if(indicator)indicator.classList.remove('on');},1200);}await loadSettings();toast('Settings saved.','ok');return true;}toast(r.error,'err');return false;}
+async function saveSettings(){await persistSettings({default_profile_id:byId('set-dp').value,default_scaler:byId('set-ds').value.toLowerCase(),clear_completed_automatically:byId('set-auto-clear').checked});}
+async function saveOutputSettings(){await persistSettings({output_dir:byId('set-od').dataset.path||'',compression_suffix:byId('set-cs').value.trim()||'_tucked_{size}',upscale_suffix:byId('set-us').value.trim()||'_upscaled_{width}x{height}'});}
+async function saveSystemSettings(){await persistSettings({ffmpeg_path:byId('set-ffmpeg').dataset.path||'',ffprobe_path:byId('set-ffprobe').dataset.path||'',encoder_cache_days:parseInt(byId('set-encoder-cache-days').value),check_updates:byId('set-check-updates').checked});}
+async function refreshEncoders(){if(settingsDirty){confirmToast('Refresh encoders and discard unsaved settings?',function(){settingsDirty=false;refreshEncoders();});return;}var r=await api.refreshEncoders();if(r.ok){availEncoders=r.available_encoders||[];updateEncOpts();toast('Encoder detection refreshed.','ok');openSettings('system');}else toast(r.error||'Could not refresh encoders.','err');}
+function insertNamingToken(id,token){var input=byId(id);if(!input.value.includes(token))input.value+=token;markSettingsDirty();updateExampleOutput();input.focus();}
+async function openSupportFolder(kind){var r=kind==='logs'?await api.openLogsFolder():await api.openConfigFolder();if(!r.ok)toast(r.error||'Could not open folder.','err');}
+function updateExampleOutput(){var compress=byId('set-cs'),upscale=byId('set-us');if(compress&&byId('ex-out'))byId('ex-out').textContent='video'+(compress.value.trim()||'_tucked_{size}').replace('{size}','10MB')+'.mp4';if(upscale&&byId('ex-up-out'))byId('ex-up-out').textContent='video'+(upscale.value.trim()||'_upscaled_{width}x{height}').replace('{width}','1920').replace('{height}','1080')+'.mp4';}
 function profileShortcutName(id){var p=allProfiles.find(function(x){return x.profile_id===id;});return p?p.name:'Profile shortcut';}
-async function refreshSTList(){var list=byId('st-list');if(!list)return;var r=await api.listSendtoShortcuts();list.innerHTML='';(r.shortcuts||[]).forEach(function(s){var row=document.createElement('div'),profile=s.type==='profile'?profileShortcutName(s.profile_id||s.name||''):'Default',status=s.status==='ok'?'Installed':s.status==='broken'?'Needs repair':s.status==='missing'?'Missing':s.status||'Unknown';row.className='mrow';row.innerHTML='<div class="mi"><div class="mti">'+esc(s.name||profile)+'</div><div class="mme">'+esc(profile)+' · '+esc(status)+'</div></div>';var repair=document.createElement('button');repair.className='mbtn';repair.title='Repair';repair.setAttribute('aria-label','Repair shortcut');repair.textContent='↻';repair.onclick=function(){repairSt(s);};var remove=document.createElement('button');remove.className='mbtn danger';remove.title='Remove';remove.setAttribute('aria-label','Remove shortcut');remove.textContent='✕';remove.onclick=function(){removeSt(s);};row.appendChild(repair);row.appendChild(remove);list.appendChild(row);});if(!list.children.length)list.innerHTML='<div class="settings-empty">No Explorer shortcuts installed.</div>';}
+async function refreshSTList(){var list=byId('st-list');if(!list)return;var r=await api.listSendtoShortcuts();list.innerHTML='';(r.shortcuts||[]).forEach(function(s){var row=document.createElement('div'),profile=s.type==='profile'?profileShortcutName(s.profile_id||s.name||''):'Default shortcut',status=s.status==='ok'?'Installed':s.status==='broken'?'Needs repair':s.status==='missing'?'Missing':s.status||'Unknown';row.className='settings-list-row';row.innerHTML='<div class="settings-list-main"><strong>'+esc(s.name||profile)+'</strong><span>'+esc(profile)+'</span><span class="'+(s.status==='ok'?'settings-badge':'status-warn')+'">'+esc(status)+'</span></div>';var repair=document.createElement('button');repair.className='btn2';repair.textContent='Repair';repair.onclick=function(){repairSt(s);};var remove=document.createElement('button');remove.className='btn2';remove.style.color='var(--danger)';remove.textContent='Remove';remove.onclick=function(){removeSt(s);};row.appendChild(repair);row.appendChild(remove);list.appendChild(row);});if(!list.children.length)list.innerHTML='<div class="settings-empty">No Explorer shortcuts installed.</div>';}
 async function instProfSt(){var profiles=await api.getProfilesJson(),content=settingsTitle('Add shortcut',"openSettings('explorer')")+'<div style="display:flex;flex-direction:column;gap:6px"><button class="mrow" onclick="instGenSt()"><div class="mi"><div class="mti">Tuck</div><div class="mme">Default shortcut</div></div></button>';profiles.forEach(function(p){content+='<button class="mrow" onclick="installProfileSt(\''+escJS(p.profile_id)+'\',\''+escJS(p.name)+'\')"><div class="mi"><div class="mti">'+esc(p.name)+'</div><div class="mme">'+esc(profileSummary(p))+'</div></div></button>';});content+='</div>';settingsShell('explorer',content,{html:''});}
 async function instGenSt(){var r=await api.installGenericSendto();if(r.ok)toast('Default Explorer shortcut installed.','ok');else toast(r.error||'Failed','err');openSettings('explorer');}
 async function installProfileSt(pid,name){var r=await api.installProfileSendto(pid,'start');if(r.ok)toast('Added "'+name+'" to Explorer.','ok');else toast(r.error||'Failed','err');openSettings('explorer');}
@@ -1957,8 +2105,10 @@ new ResizeObserver(function(entries){
 }).observe(byId('left'));
 window.addEventListener('keydown', function(e) {
   if (e.ctrlKey && e.key.toLowerCase()==='o') { e.preventDefault(); browse(); return; }
+  if (e.ctrlKey && e.key===',') { e.preventDefault(); toggleSettings(); return; }
   if (e.ctrlKey && e.key.toLowerCase()==='q') { e.preventDefault(); if (api) api.closeWindow(); return; }
   if (e.key==='Escape' && byId('mod-overlay').classList.contains('open')) { closeActiveModal(); return; }
+  if (e.key==='Escape' && document.body.classList.contains('settings-open')) { closeSettings(); return; }
   if (formFieldFocused()) return;
   if (e.key===' ') { e.preventDefault(); if (selPath) togglePlay(); }
   if (e.key==='ArrowDown') { e.preventDefault(); moveSelection(1); }

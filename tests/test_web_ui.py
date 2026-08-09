@@ -125,6 +125,8 @@ class TestJsApi:
         )
         api._api.get_diagnostics = lambda context_json="{}": '{"ok": true, "text": "diag"}'
         api._api.copy_text = lambda text: called.append(f"copy:{len(text)}") or '{"ok": true}'
+        api._api.open_logs_folder = lambda: called.append("logs") or '{"ok": true}'
+        api._api.open_config_folder = lambda: called.append("config") or '{"ok": true}'
 
         assert api.cancelItem("first") == {"ok": True}
         assert api.retryItem("second") == {"ok": True}
@@ -132,7 +134,9 @@ class TestJsApi:
         assert api.moveItem("third", 1) == {"ok": True}
         assert api.getDiagnostics("{}") == {"ok": True, "text": "diag"}
         assert api.copyText("hello") == {"ok": True}
-        assert called == ["first", "second", "third:1", "copy:5"]
+        assert api.openLogsFolder() == {"ok": True}
+        assert api.openConfigFolder() == {"ok": True}
+        assert called == ["first", "second", "third:1", "copy:5", "logs", "config"]
 
     def test_ffmpeg_picker_returns_selected_executable(self, tmp_path: Path) -> None:
         executable = tmp_path / "ffmpeg.exe"
@@ -142,6 +146,26 @@ class TestJsApi:
 
         assert api.pickFfmpegFile() == {"ok": True, "path": str(executable)}
         assert api.pickFfprobeFile() == {"ok": True, "path": str(executable)}
+
+
+def test_support_folder_opener_creates_and_opens_directory(tmp_path, monkeypatch) -> None:
+    import subprocess
+
+    from tuck.bridge import BridgeAPI
+
+    opened: list[list[str]] = []
+    monkeypatch.setattr(
+        subprocess,
+        "Popen",
+        lambda args, creationflags=0: opened.append(args),
+    )
+
+    folder = tmp_path / "logs"
+    response = json.loads(BridgeAPI._open_app_folder(folder))
+
+    assert response == {"ok": True, "path": str(folder)}
+    assert folder.is_dir()
+    assert opened == [["explorer", str(folder)]]
 
 
 def test_resource_path_locates_web_ui() -> None:
@@ -239,9 +263,9 @@ def test_clip_cards_use_icon_statuses_and_compact_metadata() -> None:
     assert "cancelQueueItem(\\'" in html
     assert "function clearDone()" in html
     assert "clips[p]._queueState==='completed'" in html
-    assert "Refresh status</button>" in html
+    assert ">Rescan</button>" in html
     assert "saveSystemSettings()" in html
-    assert "settingButton('Cancel','closeSettings()')" in html
+    assert 'aria-label="Close settings"' in html
     assert "settingButton('Save changes','saveSystemSettings()',true)" in html
     assert "s.last_update_check?'Last checked: '+esc(s.last_update_check)" in html
     assert 'class="settings-readonly"' in html
@@ -291,13 +315,24 @@ def test_profile_editor_uses_shared_encoder_rules() -> None:
     assert "?'explicit_bitrate':'target_size'" in html
 
 
-def test_settings_uses_stable_shell_and_required_pages() -> None:
+def test_settings_uses_compact_modal_and_grouped_navigation() -> None:
     html = Path("tuck/web/index.html").read_text(encoding="utf-8")
 
-    assert "settings-modal" in html
-    assert "['general','General'],['profiles','Profiles']" in html
-    assert "['explorer','Explorer integration'],['system','System']" in html
-    assert "height:min(650px,calc(100vh - 24px))" in html
+    assert 'id="settings-workspace"' in html
+    assert 'class="settings-dialog" role="dialog" aria-modal="true"' in html
+    assert ".settings-workspace { position:fixed; inset:0;" in html
+    assert "width:min(920px,calc(100vw - 32px))" in html
+    assert ".settings-nav-group { display:flex; flex-direction:column;" in html
+    assert ".settings-nav-group + .settings-nav-group { margin-top:20px; }" in html
+    assert ".settings-tabs button { display:block; width:100%;" in html
+    assert ">Preferences</div>" in html
+    assert ">Output &amp; naming</button>" in html
+    assert ">Library</div>" in html
+    assert ">Integrations</div>" in html
+    assert ">Support</div>" in html
+    assert ">Windows integration</button>" in html
+    assert ">System &amp; support</button>" in html
+    assert "function toggleSettings()" in html
     assert "function profileEditorHTML()" in html
     assert "Discard unsaved profile changes?" in html
     assert "function closeActiveModal()" in html
@@ -309,16 +344,16 @@ def test_queue_filename_and_sendto_copy_match_the_requested_design() -> None:
     assert "#qfname { color:#7a7a8c; font-size:11px; font-family:var(--mono);" in html
     assert "#btn-clear, #btn-cancel" in html
     assert "font-family:var(--mono);" in html
-    assert "Explorer integration" in html
+    assert "Windows integration" in html
     assert "for more handy processing." not in html
 
 
 def test_settings_file_naming_and_subsection_navigation_use_shared_layout() -> None:
     html = Path("tuck/web/index.html").read_text(encoding="utf-8")
 
-    assert ".file-naming { background:var(--card-bg);" in html
+    assert ".file-naming { background:transparent;" in html
     assert "grid-template-columns:repeat(2,minmax(0,1fr))" in html
-    assert ".file-naming .settings-field { background:var(--input-bg);" in html
+    assert ".file-naming .settings-field { background:transparent;" in html
     assert ".file-naming .settings-field input { background:var(--input-bg);" in html
     assert "font:13px var(--font);" in html
     assert ".settings-actions .btn1, .settings-actions .btn2" in html
@@ -327,3 +362,39 @@ def test_settings_file_naming_and_subsection_navigation_use_shared_layout() -> N
     assert "Back to profiles" not in html
     assert "button.mrow { font:inherit; text-align:left; width:100%; }" in html
     assert "settingsTitle('Add shortcut',\"openSettings('explorer')\")" in html
+
+
+def test_settings_separates_output_and_stages_all_persisted_changes() -> None:
+    html = Path("tuck/web/index.html").read_text(encoding="utf-8")
+
+    assert "function outputSettingsHTML(s)" in html
+    assert "function saveOutputSettings()" in html
+    assert 'id="ex-up-out"' in html
+    assert "function markSettingsDirty()" in html
+    assert "clear_completed_automatically:byId('set-auto-clear').checked" in html
+    assert "if(settingsDirty)confirmToast('Discard unsaved settings?'" in html
+    assert "box.className='mod-box confirm-dialog'" in html
+    assert "Discard changes" in html
+    assert "Keep editing" in html
+    assert "function acceptConfirm()" in html
+    assert "_confirmCbs" not in html
+    assert "Advanced system settings" in html
+    assert 'class="settings-topbar"' in html
+    assert 'id="settings-heading"' not in html
+    assert "var settingsMeta" not in html
+    assert "row.className='settings-list-row'" in html
+    assert 'class="settings-status-table"' in html
+    assert "function insertNamingToken(id,token)" in html
+    assert "function openSupportFolder(kind)" in html
+    assert "Open logs folder" in html
+    assert "Open configuration folder" in html
+    assert ".settings-status-row { display:grid;" in html
+    assert 'class="profile-actions-menu"' in html
+    assert 'class="profile-actions-popover"' in html
+    assert 'class="settings-profile-filterbar"' in html
+    assert ".profile-filters { display:flex; width:100%;" in html
+    assert ".profile-filters button { flex:1 1 0;" in html
+    assert 'aria-label="Filter profiles"' in html
+    assert ".profile-filters button.on { color:#ddd2ff;" in html
+    assert "actions={plain:true,html:settingButton('Import','importProfs()')" in html
+    assert "settingButton('+ New profile','newProf()',true)" in html

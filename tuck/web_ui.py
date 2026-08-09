@@ -99,6 +99,12 @@ class _JsApi:
     def copyText(self, text: str) -> dict[str, Any] | list[Any]:
         return self._call(self._api.copy_text, text)
 
+    def openLogsFolder(self) -> dict[str, Any] | list[Any]:
+        return self._call(self._api.open_logs_folder)
+
+    def openConfigFolder(self) -> dict[str, Any] | list[Any]:
+        return self._call(self._api.open_config_folder)
+
     def getSettings(self) -> dict[str, Any] | list[Any]:
         return self._call(self._api.get_settings)
 

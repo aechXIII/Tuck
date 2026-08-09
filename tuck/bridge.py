@@ -1001,6 +1001,23 @@ class BridgeAPI:
             return json.dumps({"ok": True})
         return json.dumps({"ok": False, "error": "Folder not found"})
 
+    def open_logs_folder(self) -> str:
+        return self._open_app_folder(self._settings.log_dir)
+
+    def open_config_folder(self) -> str:
+        return self._open_app_folder(self._settings.config_dir)
+
+    @staticmethod
+    def _open_app_folder(folder: Path) -> str:
+        import subprocess
+
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+            subprocess.Popen(["explorer", str(folder)], creationflags=0)
+            return json.dumps({"ok": True, "path": str(folder)})
+        except OSError as e:
+            return json.dumps({"ok": False, "error": str(e)})
+
     def copy_text(self, text: str) -> str:
         if not isinstance(text, str) or not text:
             return json.dumps({"ok": False, "error": "Nothing to copy"})
