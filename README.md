@@ -1,5 +1,3 @@
-
-https://github.com/user-attachments/assets/078e5aa5-5fec-4187-918d-9897e23889e1
 # Tuck
 
 Windows video compressor and upscaler. Built for Discord limits, but useful for any FFmpeg job that needs a smaller file or to upscale a video for YouTube.
