@@ -5,6 +5,7 @@ import logging
 import re
 import threading
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,12 @@ from .bridge_validation import (
     normalize_profile_ui_payload,
     parse_plan_request,
     validate_path,
+)
+from .diagnostics import build_diagnostics
+from .encoding.capabilities import (
+    clear_encoder_cache,
+    get_available_encoders,
+    get_encoder_capabilities,
 )
 from .engine import _find_ffmpeg, is_ffmpeg_available
 from .engine import get_available_encoders as _engine_available_encoders
@@ -25,7 +32,7 @@ from .models import (
     find_profile_by_id,
 )
 from .planner import plan
-from .probe import is_ffprobe_available
+from .probe import _find_ffprobe, is_ffprobe_available
 from .probe import probe as probe_video
 from .queue import get_queue
 from .settings import get_settings_manager
@@ -238,6 +245,10 @@ class BridgeAPI:
                         "rate_control_method": getattr(p, "rate_control_method", "crf"),
                         "cq": getattr(p, "cq", getattr(p, "qp", 23)),
                         "qp": getattr(p, "qp", 23),
+                        "trim_start": round(float(getattr(p, "trim_start", 0.0) or 0.0), 3),
+                        "trim_end": round(float(getattr(p, "trim_end", 0.0) or 0.0), 3),
+                        "trim_duration": round(float(p.trim_duration), 3),
+                        "has_trim": bool(p.has_trim),
                     },
                 }
             )
@@ -359,8 +370,13 @@ class BridgeAPI:
         return json.dumps({"ok": True})
 
     def clear_completed(self) -> str:
-        self._queue.clear_completed()
-        return json.dumps({"ok": True})
+        return json.dumps({"ok": True, "count": self._queue.clear_completed()})
+
+    def move_item(self, item_id: str, new_index: int) -> str:
+        if isinstance(new_index, bool) or not isinstance(new_index, int):
+            return json.dumps({"ok": False, "error": "new_index must be an integer"})
+        ok = self._queue.move_item(str(item_id), new_index)
+        return json.dumps({"ok": ok})
 
     def retry_item(self, item_id: str) -> str:
         item = self._queue.retry(str(item_id))
@@ -375,14 +391,87 @@ class BridgeAPI:
         return json.dumps({"ok": True})
 
     def get_queue_state(self) -> str:
-        items = self._queue.items
-        current = self._queue.current_item
+        items, current, pending_ids = self._queue.snapshot()
         return json.dumps(
             {
                 "items": [_item_to_dict(i) for i in items],
                 "current_id": current.id if current else None,
+                "pending_ids": pending_ids,
             }
         )
+
+    def get_diagnostics(self, context_json: str = "{}") -> str:
+        try:
+            raw = json.loads(context_json) if context_json else {}
+        except json.JSONDecodeError:
+            raw = {}
+        if not isinstance(raw, dict):
+            raw = {}
+
+        plan_obj = None
+        error = str(raw.get("error") or "")
+        stderr = str(raw.get("stderr") or "")
+        item_id = raw.get("item_id")
+        matched_item = None
+        if item_id:
+            for item in self._queue.items:
+                if item.id == str(item_id):
+                    matched_item = item
+                    plan_obj = item.plan
+                    if not error:
+                        error = item.error or ""
+                    if not stderr:
+                        stderr = getattr(item, "error_detail", "") or ""
+                    break
+        elif not error:
+            failed = [
+                i
+                for i in self._queue.items
+                if i.state.value == "failed" and (i.error or getattr(i, "error_detail", ""))
+            ]
+            if failed:
+                matched_item = failed[-1]
+                plan_obj = matched_item.plan
+                error = matched_item.error or error
+                stderr = getattr(matched_item, "error_detail", "") or stderr
+
+        extra: dict[str, Any] = {}
+        for key in (
+            "target_size_mb",
+            "resolution",
+            "fps",
+            "two_pass",
+            "preset",
+            "scaler",
+            "trim_start",
+            "trim_end",
+            "source_name",
+            "keep_audio",
+            "audio_bitrate_kbps",
+            "rate_control_method",
+        ):
+            if key in raw and raw[key] not in (None, ""):
+                extra[key] = raw[key]
+        if matched_item is not None:
+            extra["queue_item_id"] = matched_item.id
+            extra["queue_state"] = matched_item.state.value
+
+        text = build_diagnostics(
+            plan=plan_obj,
+            error=error,
+            stderr=stderr,
+            selected_encoder=str(raw.get("selected_encoder") or ""),
+            resolved_encoder=str(
+                raw.get("resolved_encoder")
+                or (getattr(plan_obj, "video_encoder", "") if plan_obj else "")
+            ),
+            workflow=str(
+                raw.get("workflow") or (getattr(plan_obj, "workflow", "") if plan_obj else "")
+            ),
+            profile_name=str(raw.get("profile_name") or ""),
+            extra=extra or None,
+        )
+        return json.dumps({"ok": True, "text": text})
 
     def install_profile_sendto(self, profile_id: str, action: str = "start") -> str:
 
@@ -459,11 +548,16 @@ class BridgeAPI:
         profiles = self._settings.get_profiles()
         return json.dumps(
             {
-                "theme": s.theme,
                 "default_profile_id": s.default_profile_id,
                 "default_scaler": getattr(s, "default_scaler", "neighbor"),
                 "output_dir": s.output_dir,
+                "ffmpeg_path": s.ffmpeg_path,
+                "ffprobe_path": s.ffprobe_path,
+                "encoder_cache_days": s.encoder_cache_days,
+                "detected_ffmpeg_path": _find_ffmpeg() or "",
+                "detected_ffprobe_path": _find_ffprobe() or "",
                 "check_updates": s.check_updates,
+                "last_update_check": s.last_update_check,
                 "clear_completed_automatically": getattr(s, "clear_completed_automatically", False),
                 "last_task": getattr(s, "last_task", "compression"),
                 "last_compress_profile_id": getattr(s, "last_compress_profile_id", ""),
@@ -475,9 +569,9 @@ class BridgeAPI:
                 or "_upscaled_{width}x{height}",
                 "version": __version__,
                 "ffmpeg_available": is_ffmpeg_available(),
-                "ffmpeg_path": _find_ffmpeg() or "",
                 "ffprobe_available": is_ffprobe_available(),
                 "available_encoders": sorted(_engine_available_encoders()),
+                "encoder_capabilities": get_encoder_capabilities().to_dict(),
                 "profiles": [
                     {
                         "profile_id": p.profile_id,
@@ -524,11 +618,16 @@ class BridgeAPI:
         if not isinstance(data, dict):
             return json.dumps({"ok": False, "error": "Expected JSON object"})
 
+        ffmpeg_path_changed = "ffmpeg_path" in data and data[
+            "ffmpeg_path"
+        ] != self._settings.get_setting("ffmpeg_path", "")
         allowed_keys = {
-            "theme",
             "default_profile_id",
             "default_scaler",
             "output_dir",
+            "ffmpeg_path",
+            "ffprobe_path",
+            "encoder_cache_days",
             "check_updates",
             "clear_completed_automatically",
             "last_task",
@@ -544,6 +643,10 @@ class BridgeAPI:
                     data[key], bool
                 ):
                     return json.dumps({"ok": False, "error": f"{key} must be boolean"})
+                if key == "encoder_cache_days" and (
+                    not isinstance(data[key], int) or not 0 <= data[key] <= 365
+                ):
+                    return json.dumps({"ok": False, "error": "encoder_cache_days must be 0 to 365"})
                 if key == "last_task" and data[key] not in ("compression", "upscale"):
                     return json.dumps(
                         {"ok": False, "error": "last_task must be compression or upscale"}
@@ -586,6 +689,12 @@ class BridgeAPI:
                         return json.dumps(
                             {"ok": False, "error": f"output_dir does not exist: {val}"}
                         )
+                if key in ("ffmpeg_path", "ffprobe_path"):
+                    val = data[key]
+                    if not isinstance(val, str):
+                        return json.dumps({"ok": False, "error": f"{key} must be string"})
+                    if val and not Path(val).is_file():
+                        return json.dumps({"ok": False, "error": f"File not found: {val}"})
                 if key in ("compression_suffix", "upscale_suffix"):
                     val = data[key]
                     if not isinstance(val, str) or not val.strip():
@@ -595,7 +704,14 @@ class BridgeAPI:
                 self._settings.set_setting(key, data[key])
 
         self._settings.save()
+        if ffmpeg_path_changed:
+            clear_encoder_cache(delete_disk=True)
         return json.dumps({"ok": True})
+
+    def refresh_encoders(self) -> str:
+        clear_encoder_cache(delete_disk=True)
+        encoders = get_available_encoders(refresh=True)
+        return json.dumps({"ok": True, "available_encoders": sorted(encoders)})
 
     def get_profiles_json(self) -> str:
 
@@ -803,6 +919,8 @@ class BridgeAPI:
         self._checking_updates = True
         try:
             info = _check_for_updates()
+            self._settings.set_setting("last_update_check", datetime.now(timezone.utc).isoformat())
+            self._settings.save()
             if info:
                 self._update_info = info
                 if info.checksum and not _SHA256_RE.match(info.checksum):
@@ -883,6 +1001,22 @@ class BridgeAPI:
             return json.dumps({"ok": True})
         return json.dumps({"ok": False, "error": "Folder not found"})
 
+    def copy_text(self, text: str) -> str:
+        if not isinstance(text, str) or not text:
+            return json.dumps({"ok": False, "error": "Nothing to copy"})
+        try:
+            import win32clipboard
+
+            win32clipboard.OpenClipboard()
+            try:
+                win32clipboard.EmptyClipboard()
+                win32clipboard.SetClipboardData(win32clipboard.CF_UNICODETEXT, text)
+            finally:
+                win32clipboard.CloseClipboard()
+            return json.dumps({"ok": True})
+        except Exception as e:
+            return json.dumps({"ok": False, "error": str(e)})
+
     def _validate_path(self, path: str) -> str:
         return validate_path(path)
 
@@ -902,10 +1036,14 @@ _normalize_profile_ui_payload = normalize_profile_ui_payload
 
 def _item_to_dict(item: QueueItem) -> dict[str, Any]:
     duration = 0.0
-    if item.plan is not None and item.plan.source_info is not None:
-        duration = float(item.plan.source_info.duration or 0.0)
+    if item.plan is not None:
+        duration = float(item.plan.trim_duration or 0.0)
+        if duration <= 0 and item.plan.source_info is not None:
+            duration = float(item.plan.source_info.duration or 0.0)
 
     two_pass = bool(item.plan.two_pass) if item.plan is not None else False
+    progress_info = item.progress_info.to_dict() if item.progress_info is not None else None
+    status = item.status_text or (progress_info["status_text"] if progress_info else "")
     return {
         "id": item.id,
         "source": Path(item.plan.source).name if item.plan else "",
@@ -913,15 +1051,21 @@ def _item_to_dict(item: QueueItem) -> dict[str, Any]:
         "output": Path(item.plan.output).name if item.plan else "",
         "state": item.state.value,
         "progress": round(item.progress, 1),
+        "progress_info": progress_info,
+        "status_text": status,
         "duration": duration,
         "two_pass": two_pass,
         "error": item.error,
+        "error_detail": getattr(item, "error_detail", "") or "",
         "result_path": item.result_path,
         "result_size": item.result_size,
         "result_size_mb": round(item.result_size / (1024 * 1024), 2) if item.result_size else 0,
         "added_at": item.added_at,
         "started_at": item.started_at,
         "finished_at": item.finished_at,
+        "trim_start": float(item.plan.trim_start) if item.plan else 0.0,
+        "trim_end": float(item.plan.trim_end) if item.plan else 0.0,
+        "has_trim": bool(item.plan.has_trim) if item.plan else False,
     }
 
 

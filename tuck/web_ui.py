@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 _VIDEO_FILE_FILTER = "Video files (*.mp4;*.mkv;*.webm;*.mov;*.avi;*.wmv;*.flv;*.m4v)"
 _JSON_FILE_FILTER = "JSON files (*.json)"
+_EXECUTABLE_FILE_FILTER = "Executable files (*.exe)"
 
 
 def _response(value: str) -> dict[str, Any] | list[Any]:
@@ -80,6 +81,9 @@ class _JsApi:
     def clearCompleted(self) -> dict[str, Any] | list[Any]:
         return self._call(self._api.clear_completed)
 
+    def moveItem(self, item_id: str, new_index: int) -> dict[str, Any] | list[Any]:
+        return self._call(self._api.move_item, item_id, new_index)
+
     def retryItem(self, item_id: str) -> dict[str, Any] | list[Any]:
         return self._call(self._api.retry_item, item_id)
 
@@ -89,11 +93,20 @@ class _JsApi:
     def getQueueState(self) -> dict[str, Any] | list[Any]:
         return self._call(self._api.get_queue_state)
 
+    def getDiagnostics(self, context_json: str = "{}") -> dict[str, Any] | list[Any]:
+        return self._call(self._api.get_diagnostics, context_json)
+
+    def copyText(self, text: str) -> dict[str, Any] | list[Any]:
+        return self._call(self._api.copy_text, text)
+
     def getSettings(self) -> dict[str, Any] | list[Any]:
         return self._call(self._api.get_settings)
 
     def saveSettings(self, settings_json: str) -> dict[str, Any] | list[Any]:
         return self._call(self._api.save_settings, settings_json)
+
+    def refreshEncoders(self) -> dict[str, Any] | list[Any]:
+        return self._call(self._api.refresh_encoders)
 
     def getProfilesJson(self) -> dict[str, Any] | list[Any]:
         return self._call(self._api.get_profiles_json)
@@ -192,6 +205,30 @@ class _JsApi:
             logger.exception("Folder picker failed")
             return {"ok": False, "error": str(e)}
 
+    def pickFfmpegFile(self) -> dict[str, Any]:
+        return self._pick_executable()
+
+    def pickFfprobeFile(self) -> dict[str, Any]:
+        return self._pick_executable()
+
+    def _pick_executable(self) -> dict[str, Any]:
+        if self._window is None:
+            return {"ok": False, "error": "Window not ready"}
+        try:
+            return {
+                "ok": True,
+                "path": _dialog_path(
+                    self._window.create_file_dialog(
+                        webview.FileDialog.OPEN,
+                        allow_multiple=False,
+                        file_types=(_EXECUTABLE_FILE_FILTER,),
+                    )
+                ),
+            }
+        except Exception as e:
+            logger.exception("Executable picker failed")
+            return {"ok": False, "error": str(e)}
+
     def pickImportFile(self) -> dict[str, Any]:
         if self._window is None:
             return {"ok": False, "error": "Window not ready"}
@@ -234,8 +271,9 @@ def _get_resource_path(relative: str) -> Path:
     return base / relative
 
 
-def _evaluate(window: webview.Window, function: str, value: object) -> None:
-    window.evaluate_js(f"window.{function}({json.dumps(value)})")
+def _evaluate(window: webview.Window, function: str, *values: object) -> None:
+    args = ", ".join(json.dumps(v) for v in values)
+    window.evaluate_js(f"window.{function}({args})")
 
 
 def _window_size(settings: Any) -> tuple[int, int]:
@@ -297,8 +335,8 @@ def _bind_drag_drop(window: webview.Window) -> None:
             len(accepted),
             len(rejected),
         )
-        if accepted:
-            _evaluate(window, "addFiles", accepted)
+        if accepted or rejected:
+            _evaluate(window, "addFiles", accepted, rejected)
 
     document = window.dom.get_element("html")
     if document is None:

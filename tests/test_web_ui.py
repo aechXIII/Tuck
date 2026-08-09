@@ -112,6 +112,7 @@ class TestJsApi:
         assert settings["left_sidebar_width"] == 240
         assert isinstance(settings["ffmpeg_available"], bool)
         assert isinstance(settings["ffprobe_available"], bool)
+        assert settings["encoder_cache_days"] == 7
 
     def test_exposes_queue_management_methods(self) -> None:
         api = _JsApi(_Bridge())
@@ -119,11 +120,28 @@ class TestJsApi:
         api._api.cancel_item = lambda item_id: called.append(item_id) or '{"ok": true}'
         api._api.retry_item = lambda item_id: called.append(item_id) or '{"ok": true}'
         api._api.stop_after_current = lambda: '{"ok": true}'
+        api._api.move_item = lambda item_id, new_index: (
+            called.append(f"{item_id}:{new_index}") or '{"ok": true}'
+        )
+        api._api.get_diagnostics = lambda context_json="{}": '{"ok": true, "text": "diag"}'
+        api._api.copy_text = lambda text: called.append(f"copy:{len(text)}") or '{"ok": true}'
 
         assert api.cancelItem("first") == {"ok": True}
         assert api.retryItem("second") == {"ok": True}
         assert api.stopAfterCurrent() == {"ok": True}
-        assert called == ["first", "second"]
+        assert api.moveItem("third", 1) == {"ok": True}
+        assert api.getDiagnostics("{}") == {"ok": True, "text": "diag"}
+        assert api.copyText("hello") == {"ok": True}
+        assert called == ["first", "second", "third:1", "copy:5"]
+
+    def test_ffmpeg_picker_returns_selected_executable(self, tmp_path: Path) -> None:
+        executable = tmp_path / "ffmpeg.exe"
+        executable.write_text("x")
+        api = _JsApi(_Bridge())
+        api._window = _DialogWindow(str(executable))
+
+        assert api.pickFfmpegFile() == {"ok": True, "path": str(executable)}
+        assert api.pickFfprobeFile() == {"ok": True, "path": str(executable)}
 
 
 def test_resource_path_locates_web_ui() -> None:
@@ -202,11 +220,54 @@ def test_clip_cards_use_icon_statuses_and_compact_metadata() -> None:
     html = Path("tuck/web/index.html").read_text(encoding="utf-8")
 
     assert 'role="img"' in html
-    assert "label=state[0]+(st==='failed'&&c._queueError?': '+c._queueError:'')" in html
+    assert "function clipStateBadge(p)" in html
+    assert "st==='failed'&&c._queueError" in html
     assert '<span class="c-error">' in html
+    assert "Finished: '+esc(clip.name)" in html
+    assert "appSettings.clear_completed_automatically" in html
     assert "Failed to process \"'+esc(clip.name)+'\": '+esc(errorSummary(item.error))" in html
     assert "flex-wrap:wrap" in html
     assert "completed:['Completed','✓','cst-completed']" in html
+    assert "function formatQueueStatus(item)" in html
+    assert "function copyDiagnostics" in html
+    assert "function beginClipReorder" in html
+    assert "Open folder" in html
+    assert "c-status-row" in html
+    assert "clipReorder" in html
+    assert "c-act link" in html
+    assert "function cancelQueueItem(itemId)" in html
+    assert "cancelQueueItem(\\'" in html
+    assert "function clearDone()" in html
+    assert "clips[p]._queueState==='completed'" in html
+    assert "Refresh status</button>" in html
+    assert "saveSystemSettings()" in html
+    assert "settingButton('Cancel','closeSettings()')" in html
+    assert "settingButton('Save changes','saveSystemSettings()',true)" in html
+    assert "s.last_update_check?'Last checked: '+esc(s.last_update_check)" in html
+    assert 'class="settings-readonly"' in html
+    assert "Clear completed jobs automatically" in html
+    assert 'onclick="clearOut()"' in html
+    assert 'onclick="clearFfmpeg()"' in html
+    assert 'onclick="clearFfprobe()"' in html
+    assert "st==='running'||st==='processing'||st==='pending'" in html
+    assert 'id="btn-diag"' not in html
+
+
+def test_queue_action_buttons_share_secondary_style() -> None:
+    html = Path("tuck/web/index.html").read_text(encoding="utf-8")
+
+    assert "#btn-stop-after, #btn-clear, #btn-cancel" in html
+
+
+def test_trim_handles_keep_the_resize_cursor_while_dragging() -> None:
+    html = Path("tuck/web/index.html").read_text(encoding="utf-8")
+
+    assert ".tl-handle {" in html
+    assert "cursor:ew-resize;" in html
+    assert "body.tl-trim-dragging *" in html
+    assert "cursor: ew-resize !important;" in html
+    assert "setTrimDragCursor(true);" in html
+    assert "setTrimDragCursor(false);" in html
 
 
 def test_profile_editor_uses_shared_encoder_rules() -> None:
@@ -214,7 +275,18 @@ def test_profile_editor_uses_shared_encoder_rules() -> None:
 
     assert "function peRateControls()" in html
     assert "function nativePresets(enc)" in html
-    assert "function isCpuEncoder(enc)" in html
+    assert html.count("function isCpuEncoder(enc)") == 1
+    assert "auto_compression:'Auto (best compression)'" in html
+    assert "auto_fast:'Auto (fastest available)'" in html
+    assert "function isAutoEncoder(enc)" in html
+    assert "byId('preset-sel').value='veryslow';}" in html
+    assert "byId('pe-preset').value='veryslow';}" in html
+    assert "if(!isAutoEncoder(id)&&availEncoders.length" in html
+    assert "set-encoder-cache-days" in html
+    assert "refreshEncoders()" in html
+    assert "enc==='libx265'||enc==='auto_compression'" in html
+    assert "twoPassEligible(task,byId('pe-enc').value)" in html
+    assert "!isAutoEncoder(byId('pe-enc').value)&&isCpuEncoder" in html
     assert "rate_control:task==='upscale'" in html
     assert "?'explicit_bitrate':'target_size'" in html
 

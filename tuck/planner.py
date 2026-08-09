@@ -3,8 +3,11 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+from .formatting import format_size
 from .models import (
-    AUDIO_OVERHEAD_FACTOR,
+    _AMF_ENCODERS,
+    _NVENC_ENCODERS,
+    ENCODER_AUTO,
     FPS_MODE_CUSTOM,
     FPS_MODE_LIMIT,
     FPS_MODE_SOURCE,
@@ -119,10 +122,44 @@ def plan(
         )
     validate_rate_control_matrix(workflow, rate_ctrl, rc_method, video_encoder, two_pass)
 
-    effective_duration = info.duration
+    if info.duration <= 0:
+        raise ValueError(f"Duration is zero or negative: {info.duration:.2f}s")
 
+    trim_start = 0.0
+    trim_end = float(info.duration)
+    if request is not None:
+        if request.trim_start is not None:
+            trim_start = float(request.trim_start)
+        if request.trim_end is not None:
+            trim_end = float(request.trim_end)
+
+    if trim_start < 0:
+        raise ValueError(f"trim_start must be >= 0 (got {trim_start:.3f}s)")
+    if trim_start >= info.duration:
+        raise ValueError(
+            f"trim_start ({trim_start:.3f}s) must be less than source duration "
+            f"({info.duration:.3f}s)"
+        )
+    if trim_end <= trim_start:
+        raise ValueError(
+            f"trim_end ({trim_end:.3f}s) must be greater than trim_start ({trim_start:.3f}s)"
+        )
+    if trim_end > info.duration + 0.05:
+        raise ValueError(
+            f"trim_end ({trim_end:.3f}s) exceeds source duration ({info.duration:.3f}s)"
+        )
+    trim_end = min(trim_end, float(info.duration))
+
+    effective_duration = trim_end - trim_start
     if effective_duration <= 0:
-        raise ValueError(f"Duration is zero or negative: {effective_duration:.2f}s")
+        raise ValueError(f"Trim window is zero or negative: {effective_duration:.3f}s")
+    user_trim = request is not None and (
+        request.trim_start is not None or request.trim_end is not None
+    )
+    if user_trim and effective_duration < 0.05:
+        raise ValueError(
+            f"Trim window is too short ({effective_duration:.3f}s). Select at least 0.05 seconds."
+        )
 
     target_size = profile.target_size_bytes
     if request is not None and request.target_size_bytes is not None:
@@ -162,7 +199,7 @@ def plan(
     if output.resolve() == source.resolve():
         raise ValueError("Output path must differ from source path")
 
-    output = _resolve_output_collision(output)
+    output = _resolve_output_collision(output, respect_reservation=False)
 
     if res_mode == RES_MODE_SOURCE:
         target_w, target_h = _make_even(info.width, info.height)
@@ -215,11 +252,11 @@ def plan(
     if not info.has_audio:
         audio_br = 0
         keep_audio = False
-    elif keep_audio:
+    elif keep_audio and info.audio_bitrate > 0:
         copy_audio = True
-        if audio_br <= 0:
-            audio_br = 128_000
-        audio_br = min(max(audio_br, 96_000), MAX_AUDIO_BITRATE)
+        audio_br = info.audio_bitrate
+    elif keep_audio:
+        audio_br = min(max(audio_br, 0), MAX_AUDIO_BITRATE)
     else:
         audio_br = min(audio_br, MAX_AUDIO_BITRATE)
 
@@ -247,27 +284,28 @@ def plan(
 
         if estimated_total > target_size:
             raise ValueError(
-                f"Estimated size ({_fmt_size(estimated_total)}) exceeds the "
-                f"hard profile limit ({_fmt_size(target_size)}). "
+                f"Estimated size ({format_size(estimated_total)}) exceeds the "
+                f"hard profile limit ({format_size(target_size)}). "
                 f"Lower the explicit bitrate or choose a larger profile."
             )
     else:
-        effective_target = target_size * (1.0 - AUDIO_OVERHEAD_FACTOR)
-        audio_size = (audio_br / 8) * effective_duration
-        if audio_size > effective_target * 0.15:
-            audio_size = effective_target * 0.15
-            audio_br = int((audio_size * 8) / effective_duration)
-        video_size_budget = effective_target - audio_size
-        if video_size_budget <= 0:
-            raise ValueError(
-                f"Target size ({_fmt_size(target_size)}) too small for "
-                f"{effective_duration:.1f}s video. Minimum needed: "
-                f"~{_fmt_size(int(audio_size + target_size * AUDIO_OVERHEAD_FACTOR + 1024))}"
-            )
-        video_br = int((video_size_budget * 8) / effective_duration)
-        video_br = max(video_br, MIN_VIDEO_BITRATE)
-        estimated_video = (video_br / 8) * effective_duration
-        estimated_total = int(estimated_video + audio_size + target_size * AUDIO_OVERHEAD_FACTOR)
+        from .encoding.target_size import calculate_target_size_bitrates
+
+        hardware = video_encoder in _NVENC_ENCODERS | _AMF_ENCODERS
+        if video_encoder == ENCODER_AUTO:
+            hardware = True
+        ts_plan = calculate_target_size_bitrates(
+            target_size,
+            effective_duration,
+            audio_br,
+            hardware_encoder=hardware,
+            min_video_bitrate=MIN_VIDEO_BITRATE,
+        )
+        video_br = ts_plan.video_bitrate
+        audio_br = ts_plan.audio_bitrate
+        if copy_audio and info.audio_bitrate > audio_br:
+            copy_audio = False
+        estimated_total = ts_plan.estimated_size
 
     enc_plan = EncodePlan(
         source=str(source),
@@ -303,22 +341,27 @@ def plan(
         rate_control_method=rc_method,
         cq=cq_val,
         qp=qp_val,
+        trim_start=trim_start,
+        trim_end=trim_end,
     )
 
     logger.info(
-        "Plan: %s -> %s | %dx%d@%.1ffps | mode=%s/%s/%s | "
+        "Plan: %s -> %s | %dx%d@%.1ffps | trim=%.2f-%.2f (%.2fs) | mode=%s/%s/%s | "
         "video=%dkbps audio=%dkbps | est=%s | workflow=%s rc=%s",
         source.name,
         Path(enc_plan.output).name,
         target_w,
         target_h,
         target_fps,
+        trim_start,
+        trim_end,
+        effective_duration,
         res_mode,
         fps_mode,
         rate_ctrl,
         video_br // 1000,
         audio_br // 1000,
-        _fmt_size(estimated_total),
+        format_size(estimated_total),
         workflow,
         rc_method,
     )
@@ -326,15 +369,31 @@ def plan(
     return enc_plan
 
 
-def _resolve_output_collision(output: Path) -> Path:
-    if not output.exists() and not _reservation_exists(output):
+def _reservation_path(output: Path) -> Path:
+    return output.with_suffix(output.suffix + ".reserved")
+
+
+def _reservation_exists(output: Path) -> bool:
+    return _reservation_path(output).exists()
+
+
+def _path_is_taken(output: Path, *, respect_reservation: bool = True) -> bool:
+    if output.exists():
+        return True
+    if not respect_reservation:
+        return False
+    return _reservation_exists(output)
+
+
+def _resolve_output_collision(output: Path, *, respect_reservation: bool = True) -> Path:
+    if not _path_is_taken(output, respect_reservation=respect_reservation):
         return output
     base = output.parent / output.stem
     suffix = output.suffix
     counter = 1
     while True:
         candidate = base.parent / f"{base.name}_{counter}{suffix}"
-        if not candidate.exists() and not _reservation_exists(candidate):
+        if not _path_is_taken(candidate, respect_reservation=respect_reservation):
             logger.info("Output collision resolved: %s -> %s", output, candidate)
             return candidate
         counter += 1
@@ -342,10 +401,6 @@ def _resolve_output_collision(output: Path) -> Path:
             raise ValueError(
                 f"Too many output file collisions for {output}. Clean up existing files."
             )
-
-
-def _reservation_exists(output: Path) -> bool:
-    return output.with_suffix(output.suffix + ".reserved").exists()
 
 
 def _scale_resolution(
@@ -365,12 +420,3 @@ def _scale_resolution(
 
 def _make_even(w: int, h: int) -> tuple[int, int]:
     return (w // 2 * 2, h // 2 * 2)
-
-
-def _fmt_size(bytes_val: int | float) -> str:
-    b = float(bytes_val)
-    for unit in ("B", "KB", "MB", "GB"):
-        if b < 1024:
-            return f"{b:.1f} {unit}"
-        b /= 1024
-    return f"{b:.1f} TB"

@@ -376,8 +376,8 @@ class SettingsManager:
         if data.get("default_profile_id") in (PROFILE_ID_LEGACY_CUSTOM, "tuck-default"):
             data["default_profile_id"] = PROFILE_ID_DISCORD_FREE
 
-        if "source_output_mode" not in data:
-            data["source_output_mode"] = "source"
+        for key in ("theme", "source_output_mode", "max_concurrent", "shortcut_installed"):
+            data.pop(key, None)
 
         return data
 

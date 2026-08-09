@@ -31,7 +31,11 @@ try:
     import win32com
 
     _pywin32_system32_dir = Path(pywin32_system32.__path__[0])
-    _pythoncom_dir = Path(pythoncom.__path__[0] if hasattr(pythoncom, "__path__") else os.path.dirname(pythoncom.__file__))
+    _pythoncom_dir = Path(
+        pythoncom.__path__[0]
+        if hasattr(pythoncom, "__path__")
+        else os.path.dirname(pythoncom.__file__)
+    )
     _win32com_dir = Path(win32com.__path__[0])
     _pywintypes_file = Path(pywintypes.__file__)
 
@@ -51,8 +55,10 @@ try:
     _pywin32_datas = []
 except ImportError:
     # pywin32 is unavailable; Send To shortcuts will not work in this build
-    print("WARNING: pywin32 not found in build environment. "
-          "Shortcut creation in frozen builds will not be available.")
+    print(
+        "WARNING: pywin32 not found in build environment. "
+        "Shortcut creation in frozen builds will not be available."
+    )
     _pywin32_binaries = []
     _pywin32_datas = []
 
@@ -65,7 +71,8 @@ a = Analysis(
         (str(_root / "assets" / "Tuck.ico"), "assets"),
         (str(_root / "LICENSE"), "."),
         (str(_root / "tuck" / "web"), "tuck/web"),
-    ] + _pywin32_datas,
+    ]
+    + _pywin32_datas,
     hiddenimports=[
         "tuck",
         "tuck.app",
@@ -83,6 +90,15 @@ a = Analysis(
         "tuck.media_server",
         "tuck.web_ui",
         "tuck.bridge_validation",
+        "tuck.diagnostics",
+        "tuck.formatting",
+        "tuck.encoding",
+        "tuck.encoding.capabilities",
+        "tuck.encoding.command",
+        "tuck.encoding.progress",
+        "tuck.encoding.runner",
+        "tuck.encoding.target_size",
+        "tuck.models.progress",
         "webview",
         "webview.platforms.edgechromium",
         "webview.platforms.winforms",
@@ -118,14 +134,13 @@ pyz = PYZ(a.pure)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
     [],
+    exclude_binaries=True,
     name="Tuck",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=[],
     runtime_tmpdir=None,
     console=False,
@@ -140,14 +155,13 @@ exe = EXE(
 exe_cli = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
     [],
+    exclude_binaries=True,
     name="TuckCli",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=[],
     runtime_tmpdir=None,
     console=True,
@@ -163,9 +177,10 @@ coll = COLLECT(
     exe,
     exe_cli,
     a.binaries,
+    a.zipfiles,
     a.datas,
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=[],
     name="Tuck",
 )

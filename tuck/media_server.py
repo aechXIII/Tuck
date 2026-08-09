@@ -81,19 +81,53 @@ class _TokenRequestHandler(http.server.BaseHTTPRequestHandler):
         else:
             self._handle_full(file_path, mime_type, file_size)
 
+    _CLIENT_GONE = (
+        ConnectionResetError,
+        ConnectionAbortedError,
+        BrokenPipeError,
+        TimeoutError,
+    )
+
+    @staticmethod
+    def _client_disconnected(exc: OSError) -> bool:
+        return getattr(exc, "winerror", None) in (10053, 10054) or getattr(exc, "errno", None) in (
+            32,
+            54,
+            104,
+        )
+
+    def _write_chunk(self, data: bytes) -> bool:
+        try:
+            self.wfile.write(data)
+            return True
+        except self._CLIENT_GONE:
+            return False
+        except OSError as exc:
+            if self._client_disconnected(exc):
+                return False
+            raise
+
     def _handle_full(self, file_path: Path, mime_type: str, file_size: int) -> None:
-        self.send_response(200)
-        self.send_header("Content-Type", mime_type)
-        self.send_header("Content-Length", str(file_size))
-        self.send_header("Accept-Ranges", "bytes")
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        with open(file_path, "rb") as f:
-            while True:
-                chunk = f.read(65536)
-                if not chunk:
-                    break
-                self.wfile.write(chunk)
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", mime_type)
+            self.send_header("Content-Length", str(file_size))
+            self.send_header("Accept-Ranges", "bytes")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            with open(file_path, "rb") as f:
+                while True:
+                    chunk = f.read(65536)
+                    if not chunk:
+                        break
+                    if not self._write_chunk(chunk):
+                        return
+        except self._CLIENT_GONE:
+            return
+        except OSError as exc:
+            if self._client_disconnected(exc):
+                return
+            raise
 
     def _handle_range(
         self, file_path: Path, mime_type: str, file_size: int, range_header: str
@@ -141,42 +175,62 @@ class _TokenRequestHandler(http.server.BaseHTTPRequestHandler):
         end = min(end, file_size - 1)
 
         content_length = end - start + 1
-        self.send_response(206)
-        self.send_header("Content-Type", mime_type)
-        self.send_header("Content-Length", str(content_length))
-        self.send_header("Content-Range", f"bytes {start}-{end}/{file_size}")
-        self.send_header("Accept-Ranges", "bytes")
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
+        try:
+            self.send_response(206)
+            self.send_header("Content-Type", mime_type)
+            self.send_header("Content-Length", str(content_length))
+            self.send_header("Content-Range", f"bytes {start}-{end}/{file_size}")
+            self.send_header("Accept-Ranges", "bytes")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
 
-        with open(file_path, "rb") as f:
-            f.seek(start)
-            remaining = content_length
-            while remaining > 0:
-                chunk = f.read(min(remaining, 65536))
-                if not chunk:
-                    break
-                self.wfile.write(chunk)
-                remaining -= len(chunk)
+            with open(file_path, "rb") as f:
+                f.seek(start)
+                remaining = content_length
+                while remaining > 0:
+                    chunk = f.read(min(remaining, 65536))
+                    if not chunk:
+                        break
+                    if not self._write_chunk(chunk):
+                        return
+                    remaining -= len(chunk)
+        except self._CLIENT_GONE:
+            return
+        except OSError as exc:
+            if self._client_disconnected(exc):
+                return
+            raise
 
     def _send_error(self, code: int, message: str, file_size: int = -1) -> None:
-        self.send_response(code)
-        self.send_header("Content-Type", "text/plain")
-        if code == 416 and file_size >= 0:
-            self.send_header("Content-Range", f"bytes */{file_size}")
-        self.end_headers()
-        self.wfile.write(message.encode("utf-8"))
+        try:
+            self.send_response(code)
+            self.send_header("Content-Type", "text/plain")
+            if code == 416 and file_size >= 0:
+                self.send_header("Content-Range", f"bytes */{file_size}")
+            self.end_headers()
+            self._write_chunk(message.encode("utf-8"))
+        except self._CLIENT_GONE:
+            return
+        except OSError:
+            return
 
     def log_message(self, fmt: str, *args: object) -> None:
-
         logger.debug("MediaServer: %s", fmt % args)
+
+    def log_error(self, fmt: str, *args: object) -> None:
+        msg = fmt % args if args else str(fmt)
+        lower = msg.lower()
+        if "10054" in msg or "10053" in msg or "forcibly closed" in lower or "aborted" in lower:
+            logger.debug("MediaServer client disconnected: %s", msg)
+            return
+        logger.warning("MediaServer: %s", msg)
 
 
 class MediaServer:
     def __init__(self) -> None:
         self._host = "127.0.0.1"
-        self._port = 0  # OS-assigned
-        self._tokens: dict[str, str] = {}  # token -> file path
+        self._port = 0
+        self._tokens: dict[str, str] = {}
         self._lock = threading.Lock()
         self._server: _MediaTCPServer | None = None
         self._thread: threading.Thread | None = None
@@ -349,7 +403,7 @@ class MediaServer:
             if thumb_path.exists() and thumb_path.stat().st_size > 0:
                 return str(thumb_path)
             return None
-        except (subprocess.TimeoutExpired, Exception) as e:
+        except Exception as e:
             logger.warning("Thumbnail generation failed for %s: %s", file_path.name, e)
             return None
 

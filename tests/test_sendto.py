@@ -164,8 +164,6 @@ class TestForeignCollisionSurvival:
     def test_foreign_lnk_survives_uninstall(self, tmp_path, monkeypatch):
 
         monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
-        monkeypatch.setattr("tuck.sendto._update_shortcut_setting", lambda _: None)
-
         monkeypatch.setattr("tuck.sendto._verify_lnk_ownership", lambda p: False)
 
         foreign_lnk = tmp_path / SENDTO_SHORTCUT_NAME
@@ -176,8 +174,6 @@ class TestForeignCollisionSurvival:
     def test_foreign_bat_survives_uninstall(self, tmp_path, monkeypatch):
 
         monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
-        monkeypatch.setattr("tuck.sendto._update_shortcut_setting", lambda _: None)
-
         foreign_bat = tmp_path / SENDTO_BATCH_NAME
         _make_foreign_bat(foreign_bat)
         uninstall_sendto()
@@ -206,8 +202,6 @@ class TestForeignCollisionSurvival:
     def test_owned_bat_deleted_uninstall(self, tmp_path, monkeypatch):
 
         monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
-        monkeypatch.setattr("tuck.sendto._update_shortcut_setting", lambda _: None)
-
         owned = tmp_path / SENDTO_BATCH_NAME
         _make_marker_bat(owned)
         assert owned.exists()
@@ -619,7 +613,6 @@ class TestBatchFallback:
     def test_install_sendto_batch_fallback(self, tmp_path, monkeypatch):
         monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
         monkeypatch.setattr("tuck.sendto._can_create_shortcuts", lambda: False)
-        monkeypatch.setattr("tuck.sendto._update_shortcut_setting", lambda _: None)
         monkeypatch.setattr("tuck.sendto._get_target_path", lambda: sys.executable)
         monkeypatch.setattr("tuck.sendto._get_working_dir", lambda: str(tmp_path))
 
@@ -646,8 +639,6 @@ class TestBatchFallback:
 
     def test_uninstall_sendto_removes_owned_bat(self, tmp_path, monkeypatch):
         monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
-        monkeypatch.setattr("tuck.sendto._update_shortcut_setting", lambda _: None)
-
         bat_path = tmp_path / SENDTO_BATCH_NAME
         _make_marker_bat(bat_path)
         assert bat_path.exists()
@@ -657,8 +648,6 @@ class TestBatchFallback:
     def test_uninstall_sendto_keeps_foreign_bat(self, tmp_path, monkeypatch):
 
         monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
-        monkeypatch.setattr("tuck.sendto._update_shortcut_setting", lambda _: None)
-
         bat_path = tmp_path / SENDTO_BATCH_NAME
         _make_foreign_bat(bat_path)
         uninstall_sendto()
@@ -915,8 +904,6 @@ class TestRemoveGenericSendTo:
         monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
         monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
         monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
-        monkeypatch.setattr("tuck.sendto._update_shortcut_setting", lambda _: None)
-
         import json
 
         from tuck.bridge import BridgeAPI
@@ -940,8 +927,6 @@ class TestRemoveGenericSendTo:
         monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
         monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
         monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
-        monkeypatch.setattr("tuck.sendto._update_shortcut_setting", lambda _: None)
-
         import json
 
         from tuck.bridge import BridgeAPI
@@ -962,8 +947,6 @@ class TestRemoveGenericSendTo:
         monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
         monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
         monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
-        monkeypatch.setattr("tuck.sendto._update_shortcut_setting", lambda _: None)
-
         import json
 
         from tuck.bridge import BridgeAPI

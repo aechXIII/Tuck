@@ -1,3 +1,5 @@
+import os
+import time
 from pathlib import Path
 
 import pytest
@@ -22,6 +24,7 @@ from tuck.models import (
     WORKFLOW_UPSCALE,
     PlanRequest,
     Profile,
+    VideoInfo,
     find_profile_by_id,
 )
 from tuck.planner import _make_even, _resolve_output_collision, _scale_resolution, plan
@@ -190,6 +193,36 @@ class TestPlan:
         profile = find_profile_by_id(DEFAULT_PROFILES, PROFILE_ID_DISCORD_FREE)
         p = plan(str(sample_video_path), profile)
         assert p.estimated_size <= p.target_size * 1.1
+
+    def test_target_size_reencodes_audio_when_copy_would_exceed_budget(self, tmp_path, monkeypatch):
+        source = tmp_path / "source.mp4"
+        source.write_bytes(b"source")
+        info = VideoInfo(
+            path=str(source),
+            duration=60.0,
+            width=1280,
+            height=720,
+            fps=30.0,
+            video_codec="h264",
+            audio_codec="aac",
+            audio_channels=2,
+            audio_sample_rate=48_000,
+            audio_bitrate=1_500_000,
+            has_audio=True,
+        )
+        monkeypatch.setattr("tuck.probe.probe", lambda _: info)
+        profile = Profile(
+            name="test",
+            profile_id="test-copy-audio-budget",
+            target_size_bytes=10 * 1024 * 1024,
+            keep_audio=True,
+        )
+
+        result = plan(source, profile)
+
+        assert not result.copy_audio
+        assert result.audio_bitrate < info.audio_bitrate
+        assert result.estimated_size <= result.target_size
 
     def test_plan_output_collision(self, skip_if_no_ffprobe, sample_video_path, tmp_path):
         profile = find_profile_by_id(DEFAULT_PROFILES, PROFILE_ID_DISCORD_FREE)
@@ -543,6 +576,32 @@ class TestOutputCollision:
         assert second != output
         assert second.name == "output_1.mp4"
 
+    def test_preview_ignores_reservation_marker(self, tmp_path):
+        output = tmp_path / "output.mp4"
+        output.with_suffix(".mp4.reserved").write_text("interrupted encode")
+
+        assert _resolve_output_collision(output, respect_reservation=False) == output
+
+    def test_execution_uses_a_new_path_for_reservation_marker(self, tmp_path):
+        output = tmp_path / "output.mp4"
+        marker = output.with_suffix(".mp4.reserved")
+        marker.write_text("active encode")
+
+        result = _resolve_output_collision(output)
+
+        assert result.name == "output_1.mp4"
+        assert marker.exists()
+
+    def test_execution_preserves_old_reservation_marker(self, tmp_path):
+        output = tmp_path / "output.mp4"
+        marker = output.with_suffix(".mp4.reserved")
+        marker.write_text("active encode")
+        old = time.time() - 86401
+        os.utime(marker, (old, old))
+
+        assert _resolve_output_collision(output).name == "output_1.mp4"
+        assert marker.exists()
+
 
 class TestUpscaleWorkflow:
     def test_upscale_profile_plan_has_zero_bitrate(self, skip_if_no_ffprobe, sample_video_path):
@@ -765,3 +824,52 @@ class TestEncoderRateControlCompatibility:
 
         with pytest.raises(ValueError, match="rate_control_method"):
             _validate_rc_method_for_encoder("crf", "bogus_encoder")
+
+
+class TestPlanTrim:
+    def test_plan_default_uses_full_duration(self, skip_if_no_ffprobe, sample_video_path):
+        profile = find_profile_by_id(DEFAULT_PROFILES, PROFILE_ID_DISCORD_FREE)
+        p = plan(str(sample_video_path), profile)
+        assert p.trim_start == 0.0
+        assert p.source_info is not None
+        assert abs(p.trim_end - p.source_info.duration) < 0.05
+        assert not p.has_trim
+        assert abs(p.trim_duration - p.source_info.duration) < 0.05
+
+    def test_plan_trim_shortens_duration_and_raises_bitrate(
+        self, skip_if_no_ffprobe, sample_video_path
+    ):
+        profile = find_profile_by_id(DEFAULT_PROFILES, PROFILE_ID_DISCORD_FREE)
+        full = plan(str(sample_video_path), profile)
+        assert full.source_info is not None
+        full_dur = full.source_info.duration
+        if full_dur < 1.0:
+            pytest.skip("sample too short for trim test")
+
+        req = PlanRequest(
+            source=str(sample_video_path),
+            trim_start=0.25,
+            trim_end=min(0.75, full_dur * 0.5),
+        )
+        trimmed = plan(str(sample_video_path), profile, request=req)
+        assert trimmed.has_trim
+        assert abs(trimmed.trim_start - 0.25) < 0.001
+        assert trimmed.trim_duration < full_dur
+        assert trimmed.video_bitrate > full.video_bitrate
+
+    def test_plan_trim_rejects_inverted_range(self, skip_if_no_ffprobe, sample_video_path):
+        profile = find_profile_by_id(DEFAULT_PROFILES, PROFILE_ID_DISCORD_FREE)
+        req = PlanRequest(source=str(sample_video_path), trim_start=2.0, trim_end=1.0)
+        with pytest.raises(ValueError, match="trim_end"):
+            plan(str(sample_video_path), profile, request=req)
+
+    def test_plan_trim_rejects_start_past_duration(self, skip_if_no_ffprobe, sample_video_path):
+        profile = find_profile_by_id(DEFAULT_PROFILES, PROFILE_ID_DISCORD_FREE)
+        full = plan(str(sample_video_path), profile)
+        assert full.source_info is not None
+        req = PlanRequest(
+            source=str(sample_video_path),
+            trim_start=full.source_info.duration + 5,
+        )
+        with pytest.raises(ValueError, match="trim_start"):
+            plan(str(sample_video_path), profile, request=req)

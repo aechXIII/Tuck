@@ -20,6 +20,8 @@ class TestCLISingleInstanceBypass:
         from tuck.app import _is_cli_invocation
 
         assert _is_cli_invocation(["tuck", "--version"])
+        assert _is_cli_invocation(["tuck", "--help"])
+        assert _is_cli_invocation(["tuck", "-h"])
 
     def test_no_args_is_not_cli_invocation(self):
 

@@ -31,7 +31,7 @@ def _is_cli_invocation(argv: list[str]) -> bool:
     if first in _CLI_SUBCOMMANDS:
         return True
 
-    return first == "--version"
+    return first in ("--version", "--help", "-h")
 
 
 def _is_sendto_invocation(argv: list[str]) -> bool:

@@ -35,11 +35,29 @@ def test_web_ui_starts_if_python_calls_init_after_bridge_injection() -> None:
 def test_web_ui_allows_manual_target_size_entry() -> None:
     html = Path("tuck/web/index.html").read_text(encoding="utf-8")
 
-    assert 'id="sz-badge" type="number"' in html
+    assert 'id="sz-badge" type="number" min="2"' in html
     assert "#sz-badge { width:48px;" in html
     assert "color:#c4b5fd;" in html
     assert "function onBadgeSize(v)" in html
     assert "byId('sz-slider').max=Math.max(500,size)" in html
+    assert "if (!size || size < 2)" in html
+
+
+def test_web_ui_checks_for_updates_on_startup_when_enabled() -> None:
+    html = Path("tuck/web/index.html").read_text(encoding="utf-8")
+
+    assert "if (appSettings.check_updates !== false) checkUpdates(true);" in html
+    assert "async function checkUpdates(silent)" in html
+    assert "if (!silent) toast('Running latest version.', 'ok');" in html
+
+
+def test_web_ui_shows_release_notes_in_an_update_modal() -> None:
+    html = Path("tuck/web/index.html").read_text(encoding="utf-8")
+
+    assert "function showUpdateModal(update)" in html
+    assert 'id="update-notes"' in html
+    assert "byId('update-notes').textContent=update.notes" in html
+    assert "showUpdateModal(r);" in html
 
 
 def test_installer_exposes_tuck_command_on_path() -> None:
@@ -51,3 +69,5 @@ def test_installer_exposes_tuck_command_on_path() -> None:
     assert "procedure RemoveTuckFromPath;" in installer
     assert 'Source: "tuck.cmd"; DestDir: "{app}"' in installer
     assert '"%~dp0TuckCli.exe" %*' in wrapper
+    assert "CloseApplications=yes" in installer
+    assert "CloseApplicationsFilter=Tuck.exe,TuckCli.exe" in installer

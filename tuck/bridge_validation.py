@@ -8,8 +8,9 @@ from typing import Any
 from .models import (
     _VALID_RC_METHODS,
     _VALID_SCALERS,
-    _VALID_VIDEO_ENCODERS,
+    _VALID_VIDEO_ENCODER_CHOICES,
     _VALID_WORKFLOWS,
+    MIN_TARGET_SIZE_BYTES,
     RC_TARGET_SIZE,
     WORKFLOW_COMPRESSION,
     PlanRequest,
@@ -135,6 +136,8 @@ def parse_plan_request(
         workflow=_opt_str(raw, "workflow"),
         rate_control_method=_opt_str(raw, "rate_control_method"),
         qp=_opt_int(raw, "qp"),
+        trim_start=_opt_float(raw, "trim_start"),
+        trim_end=_opt_float(raw, "trim_end"),
     )
     req.validate()
     return req
@@ -161,12 +164,14 @@ def normalize_profile_ui_payload(data: dict[str, Any]) -> dict[str, Any]:
             try:
                 if schema_name == "target_size_bytes":
                     data["target_size_bytes"] = int(float(raw) * 1024 * 1024)
+                    if data["target_size_bytes"] < MIN_TARGET_SIZE_BYTES:
+                        raise ValueError("target_size_mb must be at least 2")
                 elif schema_name == "audio_bitrate":
                     data["audio_bitrate"] = int(raw) * 1000
                 elif schema_name == "explicit_bitrate":
                     data["explicit_bitrate"] = int(raw) * 1000
             except (ValueError, TypeError) as e:
-                raise ValueError(f"Invalid value for {ui_name}: {raw!r}") from e
+                raise ValueError(str(e)) from e
 
     if "two_pass" in data and not isinstance(data["two_pass"], bool):
         raise ValueError(f"two_pass must be a boolean, not {type(data['two_pass']).__name__}")
@@ -176,9 +181,9 @@ def normalize_profile_ui_payload(data: dict[str, Any]) -> dict[str, Any]:
 
     if "video_encoder" in data:
         ve = data["video_encoder"]
-        if not isinstance(ve, str) or ve not in _VALID_VIDEO_ENCODERS:
+        if not isinstance(ve, str) or ve not in _VALID_VIDEO_ENCODER_CHOICES:
             raise ValueError(
-                f"video_encoder must be one of {sorted(_VALID_VIDEO_ENCODERS)}, not {ve!r}"
+                f"video_encoder must be one of {sorted(_VALID_VIDEO_ENCODER_CHOICES)}, not {ve!r}"
             )
 
     if "crf" in data:

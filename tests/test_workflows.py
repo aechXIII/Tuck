@@ -19,3 +19,11 @@ def test_release_workflow_uses_the_version_changelog_entry() -> None:
     assert "No changelog entry found" in workflow
     assert "body_path: release-notes.md" in workflow
     assert "generate_release_notes" not in workflow
+
+
+def test_pyinstaller_spec_builds_a_real_one_folder_app() -> None:
+    spec = Path("scripts/tuck.spec").read_text(encoding="utf-8")
+
+    assert spec.count("exclude_binaries=True") == 2
+    assert "a.zipfiles" in spec
+    assert "upx=True" not in spec

@@ -10,6 +10,9 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, ClassVar
 
+from .progress import EncodeProgress as EncodeProgress
+from .progress import EncodeStage as EncodeStage
+
 PROFILE_ID_DISCORD_FREE = "discord-10mb"
 PROFILE_ID_DISCORD_NITRO_BASIC = "discord-50mb"
 PROFILE_ID_DISCORD_NITRO = "discord-500mb"
@@ -29,6 +32,7 @@ BUILTIN_PROFILE_IDS: frozenset[str] = frozenset(
 DISCORD_FREE_LIMIT = 10 * 1024 * 1024
 DISCORD_NITRO_BASIC_LIMIT = 50 * 1024 * 1024
 DISCORD_NITRO_LIMIT = 500 * 1024 * 1024
+MIN_TARGET_SIZE_BYTES = 2 * 1024 * 1024
 
 PROFILE_SCHEMA_VERSION = 4
 
@@ -72,9 +76,17 @@ _VALID_SCALERS = frozenset(
     {SCALER_BILINEAR, SCALER_BICUBIC, SCALER_LANCZOS, SCALER_NEIGHBOR, SCALER_POINT}
 )
 
+ENCODER_AUTO = "auto"
+ENCODER_AUTO_COMPRESSION = "auto_compression"
+ENCODER_AUTO_FAST = "auto_fast"
+_AUTO_ENCODERS: frozenset[str] = frozenset(
+    {ENCODER_AUTO, ENCODER_AUTO_COMPRESSION, ENCODER_AUTO_FAST}
+)
+
 _VALID_VIDEO_ENCODERS: frozenset[str] = frozenset(
     {"libx264", "libx265", "h264_nvenc", "hevc_nvenc", "h264_amf", "hevc_amf"}
 )
+_VALID_VIDEO_ENCODER_CHOICES: frozenset[str] = _VALID_VIDEO_ENCODERS | _AUTO_ENCODERS
 
 _CPU_ENCODERS: frozenset[str] = frozenset({"libx264", "libx265"})
 _NVENC_ENCODERS: frozenset[str] = frozenset({"h264_nvenc", "hevc_nvenc"})
@@ -103,10 +115,12 @@ def _validate_tune_for_encoder(tune: str, video_encoder: str | None) -> None:
 def _validate_rc_method_for_encoder(rc_method: str, video_encoder: str) -> None:
     if rc_method not in _VALID_RC_METHODS:
         raise ValueError(f"rate_control_method must be one of {sorted(_VALID_RC_METHODS)}")
+    if video_encoder in _AUTO_ENCODERS:
+        return
     if video_encoder not in _VALID_VIDEO_ENCODERS:
         raise ValueError(
             f"rate_control_method: unknown video_encoder '{video_encoder}'; "
-            f"must be one of {sorted(_VALID_VIDEO_ENCODERS)}"
+            f"must be one of {sorted(_VALID_VIDEO_ENCODER_CHOICES)}"
         )
     if video_encoder in _CPU_ENCODERS:
         if rc_method not in (RCM_CRF, RCM_CBR):
@@ -137,12 +151,12 @@ def validate_rate_control_matrix(
     video_encoder: str,
     two_pass: bool,
 ) -> None:
-    """Enforce coherent workflow, size-strategy, and encoder combinations."""
     is_compression = workflow == WORKFLOW_COMPRESSION
     is_upscale = workflow == WORKFLOW_UPSCALE
     is_quality_method = rate_control_method in _QUALITY_RC_METHODS
     is_bitrate_method = rate_control_method in _BITRATE_RC_METHODS
-    is_cpu = video_encoder in _CPU_ENCODERS
+    is_auto = video_encoder in _AUTO_ENCODERS
+    is_cpu = video_encoder in _CPU_ENCODERS or is_auto
 
     if is_compression:
         if rate_control != RC_TARGET_SIZE:
@@ -165,7 +179,11 @@ def validate_rate_control_matrix(
             and not is_bitrate_method
         ):
             raise ValueError("Software Upscale requires CRF or an explicit bitrate method.")
-        if video_encoder in _NVENC_ENCODERS | _AMF_ENCODERS and rate_control_method == RCM_CRF:
+        if (
+            not is_auto
+            and video_encoder in _NVENC_ENCODERS | _AMF_ENCODERS
+            and rate_control_method == RCM_CRF
+        ):
             raise ValueError(
                 "Hardware Upscale requires constant quality or an explicit bitrate method."
             )
@@ -173,7 +191,7 @@ def validate_rate_control_matrix(
     if two_pass:
         if not is_compression:
             raise ValueError("Two-pass encoding is only available for Compression workflow.")
-        if not is_cpu:
+        if not is_cpu or video_encoder in (ENCODER_AUTO, ENCODER_AUTO_FAST):
             raise ValueError(
                 f"Two-pass encoding is only available for CPU encoders "
                 f"(libx264/libx265), not '{video_encoder}'."
@@ -192,12 +210,6 @@ def _normalize_legacy_rc_matrix(
     video_encoder: str,
     two_pass: bool,
 ) -> tuple[str, bool]:
-    """Normalize legacy/invalid rate-control combinations to safe defaults.
-
-    Returns (rate_control_method, two_pass) after normalization.
-    Migrates compression profiles from CRF→CBR and disables two-pass
-    where unsupported.
-    """
     is_compression = workflow == WORKFLOW_COMPRESSION
     is_upscale = workflow == WORKFLOW_UPSCALE
     is_quality_method = rate_control_method in _QUALITY_RC_METHODS
@@ -232,6 +244,7 @@ class VideoInfo:
     audio_codec: str = ""
     audio_channels: int = 0
     audio_sample_rate: int = 0
+    audio_bitrate: int = 0
     file_size: int = 0
     bitrate: int = 0
     has_audio: bool = False
@@ -283,6 +296,9 @@ class PlanRequest:
     rate_control_method: str | None = None
     qp: int | None = None
 
+    trim_start: float | None = None
+    trim_end: float | None = None
+
     def validate(self) -> None:
         if self.resolution_mode is not None and self.resolution_mode not in _VALID_RES_MODES:
             raise ValueError(f"Invalid resolution_mode: {self.resolution_mode!r}")
@@ -319,8 +335,8 @@ class PlanRequest:
         ):
             raise ValueError("explicit_bitrate must be >= 1000 bps")
 
-        if self.target_size_bytes is not None and self.target_size_bytes < 1024:
-            raise ValueError("target_size_bytes must be >= 1024")
+        if self.target_size_bytes is not None and self.target_size_bytes < MIN_TARGET_SIZE_BYTES:
+            raise ValueError("target_size_bytes must be at least 2 MB")
 
         if self.scaler is not None and self.scaler not in _VALID_SCALERS:
             if self.scaler == "nearest":
@@ -328,8 +344,11 @@ class PlanRequest:
             else:
                 raise ValueError(f"Invalid scaler: {self.scaler!r}")
 
-        if self.video_encoder is not None and self.video_encoder not in _VALID_VIDEO_ENCODERS:
-            raise ValueError(f"video_encoder must be one of {sorted(_VALID_VIDEO_ENCODERS)}")
+        if (
+            self.video_encoder is not None
+            and self.video_encoder not in _VALID_VIDEO_ENCODER_CHOICES
+        ):
+            raise ValueError(f"video_encoder must be one of {sorted(_VALID_VIDEO_ENCODER_CHOICES)}")
 
         if self.crf is not None and (self.crf < 0 or self.crf > 51):
             raise ValueError("crf must be between 0 and 51")
@@ -348,6 +367,17 @@ class PlanRequest:
 
         if self.preset is not None and self.preset not in _VALID_PRESETS:
             raise ValueError(f"preset must be one of {sorted(_VALID_PRESETS)}")
+
+        if self.trim_start is not None and self.trim_start < 0:
+            raise ValueError("trim_start must be >= 0")
+        if self.trim_end is not None and self.trim_end <= 0:
+            raise ValueError("trim_end must be > 0")
+        if (
+            self.trim_start is not None
+            and self.trim_end is not None
+            and self.trim_end <= self.trim_start
+        ):
+            raise ValueError("trim_end must be greater than trim_start")
 
         if (
             self.workflow is not None
@@ -398,6 +428,23 @@ class EncodePlan:
     rate_control_method: str = RCM_CBR
     cq: int = 23
     qp: int = 23
+    trim_start: float = 0.0
+    trim_end: float = 0.0
+
+    @property
+    def trim_duration(self) -> float:
+        if self.trim_end > self.trim_start:
+            return float(self.trim_end - self.trim_start)
+        if self.source_info is not None and self.source_info.duration > 0:
+            return float(self.source_info.duration)
+        return 0.0
+
+    @property
+    def has_trim(self) -> bool:
+        if self.trim_start > 0.001:
+            return True
+        full = float(self.source_info.duration) if self.source_info is not None else 0.0
+        return bool(full > 0 and self.trim_end > 0 and self.trim_end < full - 0.001)
 
     def to_dict(self) -> dict[str, Any]:
         import dataclasses
@@ -426,6 +473,8 @@ class EncodePlan:
             ("rate_control_method", RCM_CBR),
             ("cq", 23),
             ("qp", 23),
+            ("trim_start", 0.0),
+            ("trim_end", 0.0),
         ]:
             if field_name not in data:
                 data[field_name] = default
@@ -591,7 +640,10 @@ class QueueItem:
     plan: EncodePlan | None = None
     state: QueueState = QueueState.PENDING
     progress: float = 0.0
+    progress_info: EncodeProgress | None = None
+    status_text: str = ""
     error: str = ""
+    error_detail: str = ""
     result_path: str = ""
     result_size: int = 0
     added_at: str = ""
@@ -602,17 +654,14 @@ class QueueItem:
 @dataclass
 class AppSettings:
     version: int = 1
-    theme: str = "dark"
     default_profile_id: str = PROFILE_ID_DISCORD_FREE
     default_scaler: str = SCALER_NEIGHBOR
     output_dir: str = ""
-    source_output_mode: str = "source"
     ffmpeg_path: str = ""
     ffprobe_path: str = ""
-    max_concurrent: int = 1
+    encoder_cache_days: int = 7
     check_updates: bool = True
     last_update_check: str = ""
-    shortcut_installed: bool = False
     compression_suffix: str = "_tucked_{size}"
     upscale_suffix: str = "_upscaled_{width}x{height}"
     clear_completed_automatically: bool = False
@@ -775,6 +824,10 @@ _VALID_PRESETS = _X26X_PRESETS | _NVENC_PRESETS | _AMF_PRESETS
 
 
 def _validate_preset_for_encoder(preset: str, video_encoder: str) -> None:
+    if video_encoder in _AUTO_ENCODERS:
+        if preset not in _VALID_PRESETS:
+            raise ValueError(f"preset must be one of {sorted(_VALID_PRESETS)}")
+        return
     valid = (
         _X26X_PRESETS
         if video_encoder in _CPU_ENCODERS
@@ -820,6 +873,8 @@ _PROFILE_KNOWN = frozenset(
 
 
 def _native_preset_for_encoder(preset: str, video_encoder: str) -> str:
+    if video_encoder in _AUTO_ENCODERS:
+        return preset if preset in _VALID_PRESETS else "medium"
     if video_encoder in _CPU_ENCODERS:
         return preset if preset in _X26X_PRESETS else "medium"
     if video_encoder in _NVENC_ENCODERS:
@@ -906,8 +961,8 @@ def _validate_profile_dict(data: dict[str, Any]) -> None:
     tsize = data.get("target_size_bytes", 0)
     if not isinstance(tsize, (int, float)) or isinstance(tsize, bool):
         raise ValueError("target_size_bytes must be a number, not boolean")
-    if not math.isfinite(tsize) or tsize < 1024:
-        raise ValueError("target_size_bytes must be finite and >= 1024")
+    if not math.isfinite(tsize) or tsize < MIN_TARGET_SIZE_BYTES:
+        raise ValueError("target_size_bytes must be finite and at least 2 MB")
 
     for key in ("max_width", "max_height"):
         if key in data:
@@ -986,8 +1041,8 @@ def _validate_profile_dict(data: dict[str, Any]) -> None:
             raise ValueError(f"scaler must be one of {sorted(_VALID_SCALERS)}")
 
     video_encoder = data.get("video_encoder", "libx264")
-    if video_encoder not in _VALID_VIDEO_ENCODERS:
-        raise ValueError(f"video_encoder must be one of {sorted(_VALID_VIDEO_ENCODERS)}")
+    if video_encoder not in _VALID_VIDEO_ENCODER_CHOICES:
+        raise ValueError(f"video_encoder must be one of {sorted(_VALID_VIDEO_ENCODER_CHOICES)}")
 
     crf = data.get("crf", 23)
     if isinstance(crf, bool) or not isinstance(crf, (int, float)):

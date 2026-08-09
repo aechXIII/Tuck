@@ -46,6 +46,20 @@ body { font-family:var(--font); font-size:13px; color:var(--text); background:va
 .clip .c-st { position:absolute; top:7px; right:30px; width:12px; height:12px; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; line-height:1; }
 .cst-ready { color:var(--muted); }
 .cst-queued { color:#a78bfa; }
+.c-act { background:transparent; border:1px solid var(--border2); color:var(--accent-light); cursor:pointer; font:600 10px var(--font); padding:1px 6px; border-radius:4px; flex-shrink:0; white-space:nowrap; line-height:1.4; }
+.c-act:hover { background:rgba(124,58,237,0.12); border-color:var(--accent); color:#fff; }
+.c-act.link { border:none; padding:1px 0 1px 6px; background:transparent; }
+.c-act.link:hover { background:transparent; border:none; color:#c4b5fd; text-decoration:underline; }
+.c-status-row { display:flex; align-items:center; gap:8px; margin-top:3px; min-width:0; padding-right:18px; }
+.c-status { color:var(--accent-light); font-size:10px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; flex:1; }
+.c-status-row .c-act { margin-left:auto; }
+.clip.clip-drag { cursor:default; }
+.clip.dragging { cursor:grabbing; opacity:0.6; border-color:var(--accent); }
+.clip.drop-target { border-color:var(--accent-light); background:#1c1830; box-shadow:inset 0 0 0 1px var(--accent); }
+.clip .c-drag { position:absolute; left:5px; top:50%; transform:translateY(-50%); width:12px; height:28px; display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:11px; letter-spacing:-1px; cursor:grab; user-select:none; touch-action:none; z-index:2; }
+.clip .c-drag:active { cursor:grabbing; }
+.clip .c1 { padding-left:14px; }
+.clip .c2 { padding-right:38px; }
 .cst-processing { color:#fbbf24; }
 .cst-completed { color:#22c55e; }
 .cst-failed, .cst-cancelled { color:#fca5a5; }
@@ -58,13 +72,213 @@ body { font-family:var(--font); font-size:13px; color:var(--text); background:va
 #empty .empt-btn:focus-visible { outline:2px solid var(--accent-light); outline-offset:2px; }
 #stage { flex:1 1 0; min-height:0; background:#000; position:relative; display:none; }
 #stage video, #stage img { width:100%; height:100%; object-fit:contain; position:absolute; top:0; left:0; }
-#ctrls { height:44px; min-height:44px; background:#12121a; border-top:1px solid var(--border); display:none; align-items:center; padding:0 12px; gap:10px; }
-.pbtn { background:var(--card-bg); border:1px solid var(--border2); color:var(--text); border-radius:5px; width:30px; height:28px; cursor:pointer; font-size:13px; display:flex; align-items:center; justify-content:center; }
-.pbtn:hover { border-color:var(--accent); }
-.pbtn:focus-visible { outline:2px solid var(--accent-light); outline-offset:-1px; }
-#pbar { flex:1; height:28px; accent-color:var(--accent); }
-#ptime { color:#9a9aac; font-size:11px; font-family:var(--mono); min-width:90px; text-align:right; }
-#vbar { width:80px; accent-color:var(--accent); }
+#player-bar {
+  display:none;
+  background:linear-gradient(180deg, #101018 0%, #0c0c12 100%);
+  border-top:1px solid var(--border);
+  flex-shrink:0;
+  padding:10px 14px 12px;
+  gap:8px;
+  flex-direction:column;
+}
+#player-bar.on { display:flex; }
+#timeline {
+  position:relative;
+  width:100%;
+  height:22px;
+  display:flex;
+  align-items:center;
+  cursor:pointer;
+  user-select:none;
+  touch-action:none;
+  flex-shrink:0;
+}
+#timeline.trim-dragging,
+#timeline.trim-dragging .tl-track,
+#timeline.trim-dragging .tl-handle,
+body.tl-trim-dragging,
+body.tl-trim-dragging * {
+  cursor: ew-resize !important;
+}
+.tl-track {
+  position:relative;
+  width:100%;
+  height:6px;
+  background:#2a2a38;
+  border-radius:999px;
+  overflow:visible;
+}
+.tl-range {
+  position:absolute;
+  top:0; bottom:0; left:0; right:0;
+  background:var(--accent);
+  border-radius:999px;
+  opacity:0.95;
+  pointer-events:none;
+}
+.tl-dim {
+  position:absolute;
+  top:0; bottom:0;
+  background:rgba(0,0,0,0.5);
+  pointer-events:none;
+  border-radius:999px;
+  z-index:1;
+}
+.tl-playhead {
+  position:absolute;
+  top:50%;
+  width:2px;
+  height:14px;
+  margin-top:-7px;
+  margin-left:-1px;
+  background:#fff;
+  border-radius:1px;
+  pointer-events:none;
+  z-index:3;
+  box-shadow:0 0 6px rgba(0,0,0,.7);
+}
+.tl-handle {
+  position:absolute;
+  top:50%;
+  width:14px;
+  height:14px;
+  margin-top:-7px;
+  margin-left:-7px;
+  border-radius:50%;
+  background:#fff;
+  border:2px solid var(--accent-light);
+  cursor:ew-resize;
+  z-index:4;
+  box-shadow:0 1px 4px rgba(0,0,0,.5);
+  transition:transform .1s ease, background .1s ease;
+}
+.tl-handle:hover, .tl-handle:focus-visible {
+  background:#ede9fe;
+  outline:none;
+  transform:scale(1.12);
+}
+.tl-handle.dragging { background:#c4b5fd; z-index:5; transform:scale(1.15); cursor:ew-resize !important; }
+#player-row {
+  display:flex;
+  align-items:center;
+  gap:10px;
+  min-height:28px;
+  width:100%;
+}
+.pbtn {
+  background:#1a1a26;
+  border:1px solid #2a2a3a;
+  color:#e4e4ec;
+  border-radius:6px;
+  width:32px;
+  height:28px;
+  cursor:pointer;
+  font-size:12px;
+  line-height:1;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  flex-shrink:0;
+  padding:0;
+}
+.pbtn:hover { border-color:var(--accent); color:#fff; background:#221f33; }
+.pbtn:focus-visible { outline:2px solid var(--accent-light); outline-offset:1px; }
+.pbtn svg { width:14px; height:14px; display:block; fill:currentColor; }
+#ptime {
+  color:#a1a1b5;
+  font-size:11px;
+  font-family:var(--mono);
+  white-space:nowrap;
+  flex-shrink:0;
+  min-width:7.5em;
+  letter-spacing:0.02em;
+  line-height:28px;
+}
+#player-mid {
+  flex:1;
+  min-width:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  overflow:hidden;
+}
+#trim-label {
+  color:var(--accent-light);
+  font-size:11px;
+  font-family:var(--mono);
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  min-width:0;
+  line-height:28px;
+}
+#trim-label:empty { display:none; }
+#btn-trim-reset {
+  display:none;
+  flex-shrink:0;
+  background:transparent;
+  border:none;
+  color:var(--muted);
+  font:600 11px var(--font);
+  padding:0 4px;
+  height:28px;
+  line-height:28px;
+  cursor:pointer;
+}
+#btn-trim-reset.show { display:inline-block; }
+#btn-trim-reset:hover { color:var(--accent-light); }
+#btn-trim-reset:focus-visible { outline:2px solid var(--accent-light); outline-offset:2px; border-radius:2px; }
+#player-vol {
+  display:flex;
+  align-items:center;
+  gap:6px;
+  flex-shrink:0;
+  margin-left:auto;
+}
+#vbar {
+  -webkit-appearance:none;
+  appearance:none;
+  width:84px;
+  height:4px;
+  border-radius:999px;
+  background:#2a2a38;
+  outline:none;
+  flex-shrink:0;
+  cursor:pointer;
+  accent-color:var(--accent);
+}
+#vbar::-webkit-slider-runnable-track {
+  height:4px;
+  border-radius:999px;
+  background:#2a2a38;
+}
+#vbar::-webkit-slider-thumb {
+  -webkit-appearance:none;
+  appearance:none;
+  width:12px;
+  height:12px;
+  margin-top:-4px;
+  border-radius:50%;
+  background:var(--accent-light);
+  border:none;
+  box-shadow:0 0 0 2px rgba(167,139,250,0.2);
+  cursor:pointer;
+}
+#vbar::-moz-range-track {
+  height:4px;
+  border-radius:999px;
+  background:#2a2a38;
+  border:none;
+}
+#vbar::-moz-range-thumb {
+  width:12px;
+  height:12px;
+  border-radius:50%;
+  background:var(--accent-light);
+  border:none;
+  cursor:pointer;
+}
 #right { width:320px; min-width:280px; max-width:480px; height:100%; min-height:0; background:var(--panel); border-left:1px solid var(--border); display:flex; flex-direction:column; }
 #right-scroll { flex:1 1 0; min-height:0; overflow-y:auto; overflow-anchor:none; padding:14px 12px 10px; display:flex; flex-direction:column; gap:10px; }
 #right-foot { flex:0 0 auto; background:#0f0f18; border-top:1px solid var(--border); padding:10px 12px; display:flex; flex-direction:column; gap:6px; }
@@ -122,7 +336,7 @@ label.chk input:checked + .chk-box::after { content:'✓'; color:#fff; font-size
 #qprog::-webkit-progress-value { background:var(--accent); border-radius:3px; }
 #qeta { color:#7a7a8c; font-size:11px; font-family:var(--mono); min-width:70px; text-align:right; flex-shrink:0; }
 #qfname { color:#7a7a8c; font-size:11px; font-family:var(--mono); max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex-shrink:0; }
-#btn-clear, #btn-cancel { color:#7a7a8c; font-size:11px; font-family:var(--mono); }
+#btn-stop-after, #btn-clear, #btn-cancel { color:#7a7a8c; font-size:11px; font-family:var(--mono); }
 .qbtn { background:transparent; border:none; color:#777; cursor:pointer; font-size:13px; font-weight:600; padding:4px 10px; border-radius:6px; flex-shrink:0; transition:color .15s,background .15s; font-family:var(--font); }
 .qbtn:hover { background:#1a1a2a; color:#fff; }
 .qbtn:focus-visible { outline:2px solid var(--accent-light); outline-offset:-1px; }
@@ -176,6 +390,7 @@ label.chk input:checked + .chk-box::after { content:'✓'; color:#fff; font-size
 .status-warn { color:#fbbf24; }
 .settings-empty { color:var(--muted); padding:18px 0; text-align:center; }
 .mod-box h2 { color:var(--accent-light); font-size:13px; text-transform:uppercase; letter-spacing:1px; }
+.update-notes { background:var(--input-bg); border:1px solid var(--border2); border-radius:var(--radius); color:var(--text); font:12px/1.5 var(--mono); margin:0; max-height:240px; overflow:auto; padding:12px; white-space:pre-wrap; word-break:break-word; }
 .mod-box h3 { color:#a0a0b4; font-size:12px; font-weight:600; margin-top:2px; }
 .mod-btns { display:flex; gap:8px; justify-content:flex-end; margin-top:8px; }
 .mrow { background:var(--card-bg); border:1px solid #222233; border-radius:8px; padding:10px 12px; display:flex; align-items:center; gap:8px; cursor:pointer; transition:border-color .15s; }
@@ -264,12 +479,29 @@ input[type=range]:focus-visible::-webkit-slider-thumb { outline:2px solid var(--
       <h2>Drop videos anywhere</h2>
     </div>
     <div id="stage"><video id="vid"></video><img id="thumb" style="display:none"></div>
-    <div id="ctrls">
-      <button class="pbtn" id="btn-play" onclick="togglePlay()" aria-label="Play/Pause">▶</button>
-      <input type="range" id="pbar" min="0" max="1000" value="0" oninput="seek(this.value)" aria-label="Seek position">
-      <span id="ptime">0:00 / 0:00</span>
-      <button class="pbtn" id="btn-mute" onclick="toggleMute()" aria-label="Mute/Unmute">vol</button>
-      <input type="range" id="vbar" min="0" max="100" value="80" oninput="setVol(this.value)" aria-label="Volume">
+    <div id="player-bar">
+      <div id="timeline" role="slider" aria-label="Seek and trim timeline" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0" tabindex="0" title="Drag handles to trim · click track to seek">
+        <div class="tl-track" id="tl-track">
+          <div class="tl-dim" id="tl-dim-l" style="left:0;width:0"></div>
+          <div class="tl-range" id="tl-range"></div>
+          <div class="tl-dim" id="tl-dim-r" style="right:0;width:0"></div>
+          <div class="tl-playhead" id="tl-playhead" style="left:0%"></div>
+          <div class="tl-handle" id="tl-in" role="slider" aria-label="Trim start" tabindex="0" title="Trim start"></div>
+          <div class="tl-handle" id="tl-out" role="slider" aria-label="Trim end" tabindex="0" title="Trim end"></div>
+        </div>
+      </div>
+      <div id="player-row">
+        <button type="button" class="pbtn" id="btn-play" onclick="togglePlay()" aria-label="Play/Pause" title="Play/Pause">▶</button>
+        <span id="ptime">0:00 / 0:00</span>
+        <div id="player-mid">
+          <span id="trim-label"></span>
+          <button type="button" id="btn-trim-reset" onclick="clearTrim()" title="Use full video" aria-label="Reset trim">Reset trim</button>
+        </div>
+        <div id="player-vol">
+          <button type="button" class="pbtn" id="btn-mute" onclick="toggleMute()" aria-label="Mute" title="Mute"></button>
+          <input type="range" id="vbar" min="0" max="100" value="80" oninput="setVol(this.value)" aria-label="Volume">
+        </div>
+      </div>
     </div>
   </div>
   <div id="right">
@@ -286,8 +518,8 @@ input[type=range]:focus-visible::-webkit-slider-thumb { outline:2px solid var(--
       <div class="prof-row"><button class="btn2" onclick="saveProfileChanges()">Save changes</button><button class="btn2" onclick="saveProfileAs()">Save as new profile…</button></div>
       <div id="prof-reset-row" class="hid"><button class="btn2" style="width:100%;text-align:center" onclick="resetToProfile()">Reset to profile</button></div>
       <div class="gr" id="sz-grp">
-        <div class="grt"><span>Target Size</span><span style="float:right"><input class="badge" id="sz-badge" type="number" min="1" step="1" value="10" onchange="onBadgeSize(this.value)" aria-label="Target size in megabytes"><span class="badge" id="sz-unit">MB</span></span></div>
-        <input type="range" id="sz-slider" min="1" max="500" value="10" oninput="onSize(this.value)" aria-label="Target size in megabytes" aria-valuenow="10" aria-valuemin="1" aria-valuemax="500">
+        <div class="grt"><span>Target Size</span><span style="float:right"><input class="badge" id="sz-badge" type="number" min="2" step="1" value="10" onchange="onBadgeSize(this.value)" aria-label="Target size in megabytes"><span class="badge" id="sz-unit">MB</span></span></div>
+        <input type="range" id="sz-slider" min="2" max="500" value="10" oninput="onSize(this.value)" aria-label="Target size in megabytes" aria-valuenow="10" aria-valuemin="1" aria-valuemax="500">
         <div class="pset" id="sz-presets"></div>
         <span class="help-tip" id="calc-br">Calculated bitrate: --</span>
       </div>
@@ -331,7 +563,8 @@ input[type=range]:focus-visible::-webkit-slider-thumb { outline:2px solid var(--
 </div>
 <div id="qbar">
   <span id="qcnt">0/0</span><progress id="qprog" value="0" max="100" aria-label="Queue progress"></progress>
-  <span id="qeta">est. --</span><span id="qfname"></span>
+  <span id="qeta">ETA --</span><span id="qfname"></span>
+  <button class="qbtn" id="btn-stop-after" onclick="stopAfterCurrent()" aria-label="Stop after current job">Stop after current</button>
   <button class="qbtn danger" id="btn-cancel" onclick="cancelAll()" aria-label="Cancel processing">Cancel</button>
   <button class="qbtn" id="btn-clear" onclick="clearDone()" aria-label="Clear completed">Clear completed</button>
 </div>
@@ -403,16 +636,22 @@ function resetToProfile() {
 
 function showMod(html) { var box=byId('mod-box'); box.className='mod-box'; box.innerHTML=html; byId('mod-overlay').classList.add('open'); }
 function closeMod() { byId('mod-overlay').classList.remove('open'); }
+function showUpdateModal(update) { showMod('<h2>Update available</h2><div>Version <strong id="update-version"></strong> · <span id="update-size"></span></div><h3>What\'s new</h3><pre class="update-notes" id="update-notes"></pre><div class="brow"><button class="btn2" onclick="closeMod()">Later</button><button class="btn1" onclick="downloadUpdate()">Download update</button></div>'); byId('update-version').textContent='v'+update.version; byId('update-size').textContent=(update.size_mb||0).toFixed(1)+' MB'; byId('update-notes').textContent=update.notes||'No release notes provided.'; }
+function downloadUpdate() { api.downloadUpdate().then(function(started){ if (!started.ok) { toast('Download failed: '+started.error, 'err'); return; } var button=byId('mod-box').querySelector('.btn1'); button.disabled=true; var timer=setInterval(async function(){ var progress=await api.getDownloadProgress(); if (progress.downloading) { button.textContent='Downloading '+(progress.progress||0)+'%'; return; } clearInterval(timer); if (progress.error) { button.disabled=false; button.textContent='Download update'; toast('Download failed: '+progress.error, 'err'); return; } if (progress.done) confirmToast('Update downloaded. Install now?', function(){ api.installUpdate().then(async function(installed){ if (installed.ok) await api.closeWindow(); else toast('Install failed: '+installed.error, 'err'); }); }); },500); }); }
 function closeActiveModal() { if (byId('mod-box').classList.contains('settings-modal')) closeSettings(); else closeMod(); }
 
 var startupData = null;
 var queueTimer = null;
+var queueItemsById = {};
+var retryInFlight = {};
+var clipOrder = [];
 async function startApp() {
   if (!api || !startupData) return;
   var data = startupData;
   startupData = null;
   updateSizePresets(10);
   try { await loadSettings(); } catch(e) { console.error('Could not load settings', e); }
+  if (appSettings.check_updates !== false) checkUpdates(true);
   if (queueTimer === null) queueTimer = setInterval(function(){ pollQueue(); pollIpc(); }, 500);
   if (data.files && data.files.length) addFiles(data.files);
   if (data.sendto) handleSendto(data.sendto);
@@ -429,13 +668,36 @@ window.addEventListener('pywebviewready', function() {
   startApp();
 });
 
-document.body.addEventListener('dragover', function(e){ e.preventDefault(); e.stopPropagation(); byId('drag-overlay').classList.add('show'); });
-document.body.addEventListener('dragleave', function(e){ if(e.relatedTarget===null)byId('drag-overlay').classList.remove('show'); });
-document.body.addEventListener('drop', function(e){ e.preventDefault(); byId('drag-overlay').classList.remove('show'); });
+var dragDepth = 0;
+function isFileDrag(e) {
+  var types = e.dataTransfer && e.dataTransfer.types ? Array.prototype.slice.call(e.dataTransfer.types) : [];
+  return types.indexOf('Files') >= 0;
+}
+document.body.addEventListener('dragenter', function(e){
+  if (!isFileDrag(e)) return;
+  e.preventDefault(); e.stopPropagation(); dragDepth++; byId('drag-overlay').classList.add('show');
+});
+document.body.addEventListener('dragover', function(e){
+  if (!isFileDrag(e)) return;
+  e.preventDefault(); e.stopPropagation(); byId('drag-overlay').classList.add('show');
+});
+document.body.addEventListener('dragleave', function(e){
+  if (!isFileDrag(e) && dragDepth===0) return;
+  e.preventDefault(); e.stopPropagation(); dragDepth=Math.max(0,dragDepth-1); if(dragDepth===0)byId('drag-overlay').classList.remove('show');
+});
+document.body.addEventListener('drop', function(e){
+  dragDepth=0; byId('drag-overlay').classList.remove('show'); byId('drop-z').classList.remove('over');
+  if (isFileDrag(e)) e.preventDefault();
+});
 var dz = byId('drop-z');
-dz.addEventListener('dragover', function(e){ e.preventDefault(); e.stopPropagation(); dz.classList.add('over'); });
+dz.addEventListener('dragover', function(e){
+  if (!isFileDrag(e)) return;
+  e.preventDefault(); e.stopPropagation(); dz.classList.add('over');
+});
 dz.addEventListener('dragleave', function(e){ e.stopPropagation(); dz.classList.remove('over'); });
-dz.addEventListener('drop', function(e){ e.preventDefault(); e.stopPropagation(); dz.classList.remove('over'); });
+dz.addEventListener('drop', function(e){
+  e.preventDefault(); e.stopPropagation(); dz.classList.remove('over');
+});
 
 async function browse() {
   if (!api) return;
@@ -446,25 +708,39 @@ async function browse() {
   } catch(e) { toast('Could not add files.', 'err'); }
 }
 
-window.addFiles = function(paths) {
+window.addFiles = function(paths, rejected) {
   if (!Array.isArray(paths)) return;
-  var added = false;
+  var added = 0, skipped = 0, firstAdded = null;
   for (var i = 0; i < paths.length; i++) {
     if (typeof paths[i] !== 'string') continue;
     var p = paths[i];
-    if (clips[p]) continue;
-    var ext = p.split('.').pop().toLowerCase();
-    if (['mp4','mkv','webm','mov','avi','wmv','flv','m4v'].indexOf(ext) < 0) continue;
-    clips[p] = {path:p, name:p.split(/[\\/]/).pop(), probed:false, probing:false, probeData:null, planData:null, mediaToken:null, error:''};
-    added = true;
+    if (clips[p]) { skipped++; continue; }
+    clips[p] = {path:p, name:p.split(/[\\/]/).pop(), probed:false, probing:false, probeData:null, planData:null, mediaToken:null, error:'', trimStart:null, trimEnd:null};
+    if (clipOrder.indexOf(p) < 0) clipOrder.push(p);
+    if (!firstAdded) firstAdded = p;
+    added++;
   }
   renderClips();
   for (var k in clips) { if (clips.hasOwnProperty(k) && !clips[k].probed && !clips[k].probing) probeClip(k); }
-  if (added && !selPath) selectClip(Object.keys(clips)[0]);
+  if (added && !selPath) selectClip(firstAdded || clipOrder[0] || Object.keys(clips)[0]);
+  var rej = Array.isArray(rejected) ? rejected.length : 0;
+  if (rej && added) toast('Added '+added+' file'+(added===1?'':'s')+'; skipped '+rej+' unsupported.', 'err');
+  else if (rej && !added) toast('No supported video files in drop ('+rej+' skipped).', 'err');
+  else if (added > 1) toast('Added '+added+' files.', 'ok');
 };
 
+function orderedClipKeys() {
+  clipOrder = clipOrder.filter(function(p){ return !!clips[p]; });
+  var keys = Object.keys(clips);
+  for (var j = 0; j < keys.length; j++) {
+    if (clipOrder.indexOf(keys[j]) < 0) clipOrder.push(keys[j]);
+  }
+  return clipOrder.slice();
+}
+
 function renderClips() {
-  var keys = Object.keys(clips), cdiv = byId('clips'), el = byId('drop-z');
+  if (clipReorder && clipReorder.active) return;
+  var keys = orderedClipKeys(), cdiv = byId('clips'), el = byId('drop-z');
   cdiv.replaceChildren(el);
   byId('btn-rmall').style.display = keys.length ? 'block' : 'none';
   if (!keys.length) { el.classList.add('show'); updateActionButtons(); return; }
@@ -472,30 +748,179 @@ function renderClips() {
   for (var i = 0; i < keys.length; i++) {
     (function(p, c){
       var div = document.createElement('div');
-      div.className = 'clip' + (selPath === p ? ' sel' : '');
+      div.className = 'clip clip-drag' + (selPath === p ? ' sel' : '');
       div.setAttribute('tabindex', '0');
       div.setAttribute('role', 'option');
       div.setAttribute('aria-selected', selPath === p ? 'true' : 'false');
-      div.setAttribute('title', c.name);
-      div.onclick = function(){ selectClip(p); };
+      div.setAttribute('title', c.name + ' - drag handle to reorder');
+      div.dataset.clipPath = p;
+      if (c._queueItemId) div.dataset.queueItemId = c._queueItemId;
+      div.onclick = function(){
+        if (clipReorder && clipReorder.moved) { clipReorder.moved = false; return; }
+        selectClip(p);
+      };
       div.ondblclick = function(){ selectClip(p); togglePlay(); };
       div.onkeydown = function(e){ if (e.key==='Enter'||e.key===' ') { e.preventDefault(); selectClip(p); } if (e.key==='Delete') { e.preventDefault(); removeClip(p); } };
-      div.innerHTML = '<div class="c1"><div class="c2">' + esc(c.name) + '</div><div class="c3"><span class="c-meta">' + metaStr(c) + '</span><span class="c-time">' + clipDuration(c) + '</span></div></div>' + clipStateBadge(p) + '<button class="c4" onclick="event.stopPropagation();removeClip(\'' + escJS(p) + '\')" aria-label="Remove ' + esc(c.name) + '" tabindex="0">✕</button>';
+
+      var statusLabel = c._statusText || '';
+      if (!statusLabel && c._queueState==='completed') statusLabel = 'Completed';
+      if (!statusLabel && c._queueState==='pending') statusLabel = 'Pending';
+      if (!statusLabel && c._queueState==='running') statusLabel = 'Encoding';
+      if (!statusLabel && c._queueState==='failed') statusLabel = 'Failed';
+      if (!statusLabel && c._queueState==='cancelled') statusLabel = 'Cancelled';
+
+      var trailingActs = '';
+      if (c._queueState==='completed' && c._resultPath) {
+        trailingActs += '<button type="button" class="c-act link" data-no-reorder="1" onclick="event.stopPropagation();openResult(\''+escJS(c._resultPath)+'\')" title="Open folder" aria-label="Open folder">Open folder</button>';
+      }
+      if ((c._queueState==='pending'||c._queueState==='running'||c._queueState==='processing') && c._queueItemId) {
+        trailingActs += '<button type="button" class="c-act danger" data-no-reorder="1" onclick="event.stopPropagation();cancelQueueItem(\''+escJS(c._queueItemId)+'\')" title="Cancel" aria-label="Cancel">Cancel</button>';
+      }
+      if ((c._queueState==='failed'||c._queueState==='cancelled') && c._queueItemId) {
+        trailingActs += '<button type="button" class="c-act" data-no-reorder="1" onclick="event.stopPropagation();retryQueueItem(\''+escJS(c._queueItemId)+'\')" title="Retry" aria-label="Retry">Retry</button>';
+      }
+
+      var statusRow = '';
+      if (statusLabel || trailingActs) {
+        statusRow = '<div class="c-status-row">'
+          + (statusLabel ? '<span class="c-status">'+esc(statusLabel)+'</span>' : '<span class="c-status"></span>')
+          + trailingActs
+          + '</div>';
+      }
+
+      div.innerHTML = '<span class="c-drag" data-drag-handle="1" title="Drag to reorder" aria-label="Drag to reorder">⋮⋮</span>'
+        + '<div class="c1"><div class="c2">' + esc(c.name) + '</div>'
+        + '<div class="c3"><span class="c-meta">' + metaStr(c) + '</span><span class="c-time">' + clipDuration(c) + '</span></div>'
+        + statusRow
+        + '</div>'
+        + clipStateBadge(p)
+        + '<button class="c4" data-no-reorder="1" onclick="event.stopPropagation();removeClip(\'' + escJS(p) + '\')" aria-label="Remove ' + esc(c.name) + '" tabindex="0">✕</button>';
+
+      var handle = div.querySelector('[data-drag-handle]');
+      if (handle) {
+        handle.addEventListener('pointerdown', function(ev){ beginClipReorder(ev, p, div); });
+      }
       cdiv.appendChild(div);
     })(keys[i], clips[keys[i]]);
   }
   updateActionButtons();
 }
 
+var clipReorder = { active:false, moved:false, fromPath:null, overPath:null, startX:0, startY:0, el:null, pointerId:null };
+
+function clearDropTargets() {
+  var nodes = byId('clips').querySelectorAll('.drop-target');
+  for (var i = 0; i < nodes.length; i++) nodes[i].classList.remove('drop-target');
+}
+
+function beginClipReorder(e, path, el) {
+  if (!path || e.button !== 0) return;
+  if (orderedClipKeys().length < 2) return;
+  e.stopPropagation();
+  clipReorder.active = true;
+  clipReorder.moved = false;
+  clipReorder.fromPath = path;
+  clipReorder.overPath = null;
+  clipReorder.startX = e.clientX;
+  clipReorder.startY = e.clientY;
+  clipReorder.el = el;
+  clipReorder.pointerId = e.pointerId;
+  try { el.setPointerCapture(e.pointerId); } catch (err) {}
+  window.addEventListener('pointermove', onClipReorderMove, true);
+  window.addEventListener('pointerup', onClipReorderEnd, true);
+  window.addEventListener('pointercancel', onClipReorderEnd, true);
+}
+
+function onClipReorderMove(e) {
+  if (!clipReorder.active) return;
+  var dx = e.clientX - clipReorder.startX, dy = e.clientY - clipReorder.startY;
+  if (!clipReorder.moved && (dx*dx + dy*dy) < 16) return;
+  if (!clipReorder.moved) {
+    clipReorder.moved = true;
+    if (clipReorder.el) clipReorder.el.classList.add('dragging');
+  }
+  e.preventDefault();
+  var under = document.elementFromPoint(e.clientX, e.clientY);
+  var card = under && under.closest ? under.closest('.clip[data-clip-path]') : null;
+  clearDropTargets();
+  if (card && card.dataset.clipPath && card.dataset.clipPath !== clipReorder.fromPath) {
+    card.classList.add('drop-target');
+    clipReorder.overPath = card.dataset.clipPath;
+  } else {
+    clipReorder.overPath = null;
+  }
+}
+
+async function onClipReorderEnd() {
+  if (!clipReorder.active) return;
+  window.removeEventListener('pointermove', onClipReorderMove, true);
+  window.removeEventListener('pointerup', onClipReorderEnd, true);
+  window.removeEventListener('pointercancel', onClipReorderEnd, true);
+  var fromPath = clipReorder.fromPath;
+  var overPath = clipReorder.overPath;
+  var el = clipReorder.el;
+  var moved = clipReorder.moved;
+  if (el) {
+    try { if (clipReorder.pointerId != null) el.releasePointerCapture(clipReorder.pointerId); } catch (err) {}
+    el.classList.remove('dragging');
+  }
+  clearDropTargets();
+  clipReorder.active = false;
+  clipReorder.fromPath = null;
+  clipReorder.overPath = null;
+  clipReorder.el = null;
+  clipReorder.pointerId = null;
+  if (!moved || !fromPath || !overPath || fromPath === overPath) {
+    clipReorder.moved = false;
+    renderClips();
+    return;
+  }
+  var order = orderedClipKeys();
+  var fromIdx = order.indexOf(fromPath);
+  var toIdx = order.indexOf(overPath);
+  if (fromIdx < 0 || toIdx < 0) { clipReorder.moved = false; renderClips(); return; }
+  order.splice(fromIdx, 1);
+  order.splice(toIdx, 0, fromPath);
+  clipOrder = order;
+  clipReorder.moved = false;
+  renderClips();
+  await syncPendingQueueToClipOrder();
+}
+
+async function syncPendingQueueToClipOrder() {
+  if (!api || typeof api.moveItem !== 'function') return;
+  var desired = [];
+  for (var i = 0; i < clipOrder.length; i++) {
+    var c = clips[clipOrder[i]];
+    if (c && c._queueState === 'pending' && c._queueItemId) desired.push(c._queueItemId);
+  }
+  if (desired.length < 2) return;
+  try {
+    for (var j = 0; j < desired.length; j++) {
+      await api.moveItem(desired[j], j);
+    }
+  } catch (err) {}
+  await pollQueue();
+}
+
 function errorSummary(error, limit) { var text=String(error||'Unknown error').replace(/\s+/g,' ').trim(); return text.length>(limit||140)?text.substring(0,limit||140)+'…':text; }
 function clipStateBadge(p) {
   var c = clips[p], st = c._queueState||'';
-  var states = {pending:['Queued','●','cst-queued'],processing:['Processing','↻','cst-processing'],completed:['Completed','✓','cst-completed'],failed:['Failed','!','cst-failed'],cancelled:['Cancelled','!','cst-cancelled']};
-  var state = states[st] || (c.error ? ['Error','!','cst-failed'] : ['Ready','·','cst-ready']), label=state[0]+(st==='failed'&&c._queueError?': '+c._queueError:'');
+  var states = {pending:['Pending','●','cst-queued'],running:['Encoding','↻','cst-processing'],processing:['Encoding','↻','cst-processing'],completed:['Completed','✓','cst-completed'],failed:['Failed','!','cst-failed'],cancelled:['Cancelled','!','cst-cancelled']};
+  var label = c._statusText || (states[st] ? states[st][0] : '') || (c.error ? 'Error' : 'Ready');
+  if (st==='failed'&&c._queueError) label = 'Failed: '+c._queueError;
+  var state = states[st] || (c.error ? ['Error','!','cst-failed'] : ['Ready','·','cst-ready']);
   return '<span class="c-st '+state[2]+'" role="img" title="'+esc(label)+'" aria-label="'+esc(label)+'">'+state[1]+'</span>';
 }
 
-function clipDuration(c) { return c.probed && c.probeData.duration ? fmtt(c.probeData.duration) : ''; }
+function clipDuration(c) {
+  if (!c.probed || !c.probeData || !c.probeData.duration) return '';
+  var full = c.probeData.duration;
+  var ts = c.trimStart != null ? c.trimStart : 0;
+  var te = c.trimEnd != null ? c.trimEnd : full;
+  if (ts > 0.001 || te < full - 0.001) return fmtt(ts)+'–'+fmtt(te);
+  return fmtt(full);
+}
 function metaStr(c) {
   if (c._queueState==='failed'&&c._queueError) return '<span class="c-error">'+esc(errorSummary(c._queueError,100))+'</span>';
   if (c.error) return esc(errorSummary(c.error,100));
@@ -522,19 +947,22 @@ function selectClip(p) {
     clips[selPath].mediaToken = null;
   }
   selPath = p; renderClips();
-  byId('empty').style.display = 'none'; byId('stage').style.display = 'block'; byId('ctrls').style.display = 'flex';
+  byId('empty').style.display = 'none'; byId('stage').style.display = 'block'; byId('player-bar').classList.add('on');
   byId('thumb').style.display = 'none'; byId('vid').style.display = 'block'; byId('btn-play').textContent = '▶';
   loadMedia(p);
   var c = clips[p];
+  syncTimelineUI();
   if (!c.probed && !c.error) probeClip(p); else if (c.probed) { syncFpsToClip(); syncResolutionToClip(); reqPreview(); }
 }
 
 function removeClip(p) {
   if (clips[p] && clips[p].mediaToken) api.releaseMediaToken(clips[p].mediaToken);
   delete clips[p];
+  clipOrder = clipOrder.filter(function(x){ return x !== p; });
   if (selPath === p) {
-    selPath = null; byId('empty').style.display = 'flex'; byId('stage').style.display = 'none'; byId('ctrls').style.display = 'none';
+    selPath = null; byId('empty').style.display = 'flex'; byId('stage').style.display = 'none'; byId('player-bar').classList.remove('on');
     var v = byId('vid'); v.pause(); v.src = '';
+    if (clipOrder.length) selectClip(clipOrder[0]);
   }
   renderClips();
 }
@@ -545,7 +973,7 @@ function removeAllClips() {
   var hasActive = false;
   for (var i = 0; i < keys.length; i++) {
     var st = clips[keys[i]]._queueState||'';
-    if (st==='processing'||st==='pending') { hasActive = true; break; }
+    if (st==='running'||st==='processing'||st==='pending') { hasActive = true; break; }
   }
   if (hasActive) {
     confirmToast('Some files are still processing. Remove all anyway?', doRemoveAllClips);
@@ -558,8 +986,8 @@ function doRemoveAllClips() {
   for (var i = 0; i < keys.length; i++) {
     if (clips[keys[i]] && clips[keys[i]].mediaToken) api.releaseMediaToken(clips[keys[i]].mediaToken);
   }
-  clips = {}; selPath = null;
-  byId('empty').style.display = 'flex'; byId('stage').style.display = 'none'; byId('ctrls').style.display = 'none';
+  clips = {}; clipOrder = []; selPath = null;
+  byId('empty').style.display = 'flex'; byId('stage').style.display = 'none'; byId('player-bar').classList.remove('on');
   var v = byId('vid'); v.pause(); v.src = '';
   renderClips();
 }
@@ -575,7 +1003,7 @@ async function probeClip(p) {
   } catch(e) { c.error = 'Probe error'; }
   c.probing = false;
   renderClips();
-  if (selPath === p) { syncFpsToClip(); syncResolutionToClip(); reqPreview(); }
+  if (selPath === p) { syncFpsToClip(); syncResolutionToClip(); syncTimelineUI(); reqPreview(); }
 }
 
 async function loadMedia(p) {
@@ -600,16 +1028,363 @@ async function loadThumb(p) {
   } catch(e) {}
 }
 
-function togglePlay() { var v=byId('vid'); if(v.paused)v.play();else v.pause(); }
+function togglePlay() {
+  var v = byId('vid');
+  if (!v) return;
+  if (v.paused) {
+    var full = videoDuration();
+    if (full > 0) {
+      var b = clipTrimBounds(selPath ? clips[selPath] : null, full);
+      var end = clipHasTrim(selPath ? clips[selPath] : null, full) ? b.end : full;
+      var start = clipHasTrim(selPath ? clips[selPath] : null, full) ? b.start : 0;
+      if (v.currentTime >= end - 0.05) v.currentTime = start;
+    }
+    v.play();
+  } else {
+    v.pause();
+  }
+}
 function seekBy(seconds) { var v=byId('vid'); if(v.duration) v.currentTime=Math.max(0,Math.min(v.duration,v.currentTime+seconds)); }
 byId('vid').addEventListener('play',function(){byId('btn-play').textContent='⏸';});
 byId('vid').addEventListener('pause',function(){byId('btn-play').textContent='▶';});
 byId('vid').addEventListener('timeupdate',updateTime);
-byId('vid').addEventListener('durationchange',updateTime);
-function updateTime(){ var v=byId('vid'); if(!v.duration)return; var pct=v.currentTime/v.duration; byId('pbar').value=Math.round(pct*1000); byId('ptime').textContent=fmtt(v.currentTime)+' / '+fmtt(v.duration); }
-function seek(val){ var v=byId('vid'); if(v.duration)v.currentTime=(val/1000)*v.duration; }
-function toggleMute(){ var v=byId('vid'); if(muted||v.volume===0){v.volume=volBefore/100;byId('vbar').value=volBefore;muted=false;byId('btn-mute').textContent='vol';}else{volBefore=Math.round(v.volume*100)||80;v.volume=0;byId('vbar').value=0;muted=true;byId('btn-mute').textContent='mut';} }
-function setVol(vv){ var v=byId('vid'); v.volume=vv/100; muted=vv==0; byId('btn-mute').textContent=vv==0?'mut':'vol'; }
+byId('vid').addEventListener('durationchange',function(){ updateTime(); syncTimelineUI(); });
+byId('vid').addEventListener('loadedmetadata',function(){ updateTime(); syncTimelineUI(); });
+byId('vid').addEventListener('ended', function(){ loopPlayback(); });
+
+var _tlDrag = null;
+var _MIN_TRIM = 0.05;
+var _looping = false;
+
+function videoDuration() {
+  var v = byId('vid');
+  if (v && v.duration && isFinite(v.duration)) return v.duration;
+  if (selPath && clips[selPath] && clips[selPath].probeData) return clips[selPath].probeData.duration || 0;
+  return 0;
+}
+
+function clipTrimBounds(c, fullDur) {
+  var start = c && c.trimStart != null ? c.trimStart : 0;
+  var end = c && c.trimEnd != null ? c.trimEnd : fullDur;
+  if (!Number.isFinite(start) || start < 0) start = 0;
+  if (!Number.isFinite(end) || end <= 0) end = fullDur;
+  if (end > fullDur) end = fullDur;
+  if (end - start < _MIN_TRIM) {
+    if (start + _MIN_TRIM <= fullDur) end = start + _MIN_TRIM;
+    else start = Math.max(0, fullDur - _MIN_TRIM);
+  }
+  return { start: start, end: end };
+}
+
+function clipHasTrim(c, fullDur) {
+  if (!c || !fullDur) return false;
+  return (c.trimStart != null && c.trimStart > 0.001) || (c.trimEnd != null && c.trimEnd < fullDur - 0.001);
+}
+
+function loopPlayback() {
+  if (_looping) return;
+  var v = byId('vid');
+  if (!v) return;
+  var full = videoDuration();
+  if (full <= 0) return;
+  var c = selPath ? clips[selPath] : null;
+  var b = clipTrimBounds(c, full);
+  var start = clipHasTrim(c, full) ? b.start : 0;
+  _looping = true;
+  try {
+    v.currentTime = start;
+    var p = v.play();
+    if (p && typeof p.catch === 'function') p.catch(function(){});
+  } finally {
+    setTimeout(function(){ _looping = false; }, 80);
+  }
+}
+
+function paintTrimChrome() {
+  var full = videoDuration();
+  var c = selPath ? clips[selPath] : null;
+  var bounds = clipTrimBounds(c, full || 1);
+  var startPct = full > 0 ? (bounds.start / full) * 100 : 0;
+  var endPct = full > 0 ? (bounds.end / full) * 100 : 100;
+  byId('tl-range').style.left = startPct + '%';
+  byId('tl-range').style.width = Math.max(0, endPct - startPct) + '%';
+  byId('tl-dim-l').style.width = startPct + '%';
+  byId('tl-dim-r').style.width = Math.max(0, 100 - endPct) + '%';
+  byId('tl-in').style.left = startPct + '%';
+  byId('tl-out').style.left = endPct + '%';
+  var has = clipHasTrim(c, full);
+  byId('btn-trim-reset').classList.toggle('show', has);
+  var label = byId('trim-label');
+  if (has) {
+    label.textContent = fmtt(bounds.start)+'–'+fmtt(bounds.end)+' · '+fmtt(bounds.end - bounds.start);
+  } else {
+    label.textContent = '';
+  }
+  return { full: full, bounds: bounds, has: has };
+}
+
+function syncTimelineUI() {
+  paintTrimChrome();
+  updateTime();
+}
+
+function setPlayheadUI(sec, full) {
+  full = full || videoDuration();
+  sec = Number.isFinite(sec) ? sec : 0;
+  if (full > 0) {
+    byId('tl-playhead').style.left = Math.max(0, Math.min(100, (sec / full) * 100)) + '%';
+    byId('timeline').setAttribute('aria-valuemax', String(Math.round(full)));
+    byId('timeline').setAttribute('aria-valuenow', String(Math.round(sec)));
+  }
+  byId('ptime').textContent = fmtt(sec)+' / '+fmtt(full || 0);
+  _previewSec = sec;
+}
+
+function updateTime(){
+  if (_tlDrag && _previewSec != null) {
+    setPlayheadUI(_previewSec, videoDuration());
+    return;
+  }
+  var v = byId('vid');
+  var full = videoDuration();
+  var t = v && isFinite(v.currentTime) ? v.currentTime : 0;
+  setPlayheadUI(t, full);
+  if (v && !v.paused && !_looping && selPath && clips[selPath] && full > 0) {
+    var b = clipTrimBounds(clips[selPath], full);
+    if (clipHasTrim(clips[selPath], full) && t >= b.end - 0.04) {
+      loopPlayback();
+    }
+  }
+}
+
+var _previewSec = null;
+var _seekWanted = null;
+var _seekBusy = false;
+var _seekRaf = 0;
+var _seekSafety = 0;
+var _tlMoveRaf = 0;
+var _tlMoveEvent = null;
+
+function seekToRatio(ratio) {
+  var full = videoDuration();
+  if (!full || !isFinite(full)) return;
+  ratio = Math.max(0, Math.min(1, ratio));
+  seekPreview(ratio * full);
+}
+
+function seekPreview(sec) {
+  var v = byId('vid');
+  var full = videoDuration();
+  if (!v || !full || !isFinite(full) || !Number.isFinite(sec)) return;
+  sec = Math.max(0, Math.min(full, sec));
+  setPlayheadUI(sec, full);
+  if (!v.paused) {
+    try { v.pause(); } catch (err) {}
+  }
+  _seekWanted = sec;
+  if (!_seekRaf) {
+    _seekRaf = requestAnimationFrame(function() {
+      _seekRaf = 0;
+      flushVideoSeek();
+    });
+  }
+}
+
+function flushVideoSeek() {
+  var v = byId('vid');
+  if (!v || _seekWanted == null) return;
+  if (_seekBusy) return;
+  var sec = _seekWanted;
+  _seekWanted = null;
+  if (Math.abs((v.currentTime || 0) - sec) < 0.002) return;
+  _seekBusy = true;
+  var finished = false;
+  var done = function() {
+    if (finished) return;
+    finished = true;
+    v.removeEventListener('seeked', done);
+    v.removeEventListener('error', done);
+    if (_seekSafety) { clearTimeout(_seekSafety); _seekSafety = 0; }
+    _seekBusy = false;
+    if (_seekWanted != null) flushVideoSeek();
+  };
+  v.addEventListener('seeked', done);
+  v.addEventListener('error', done);
+  _seekSafety = setTimeout(done, 180);
+  try {
+    v.currentTime = sec;
+  } catch (err) {
+    done();
+  }
+}
+
+function timelineRatioFromEvent(e) {
+  var track = byId('tl-track');
+  var rect = track.getBoundingClientRect();
+  if (rect.width <= 0) return 0;
+  var x = (e.clientX != null ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0)) - rect.left;
+  return Math.max(0, Math.min(1, x / rect.width));
+}
+
+function applyTrimStart(sec) {
+  if (!selPath || !clips[selPath]) return null;
+  var c = clips[selPath];
+  var full = videoDuration() || (c.probeData && c.probeData.duration) || 0;
+  if (full <= 0) return null;
+  var end = c.trimEnd != null ? c.trimEnd : full;
+  sec = Math.max(0, Math.min(sec, end - _MIN_TRIM));
+  c.trimStart = sec <= 0.001 ? null : sec;
+  if (c.trimStart == null && c.trimEnd != null && c.trimEnd >= full - 0.001) c.trimEnd = null;
+  return c.trimStart != null ? c.trimStart : 0;
+}
+
+function applyTrimEnd(sec) {
+  if (!selPath || !clips[selPath]) return null;
+  var c = clips[selPath];
+  var full = videoDuration() || (c.probeData && c.probeData.duration) || 0;
+  if (full <= 0) return null;
+  var start = c.trimStart != null ? c.trimStart : 0;
+  sec = Math.min(full, Math.max(sec, start + _MIN_TRIM));
+  c.trimEnd = sec >= full - 0.001 ? null : sec;
+  if (c.trimEnd == null && c.trimStart != null && c.trimStart <= 0.001) c.trimStart = null;
+  return c.trimEnd != null ? c.trimEnd : full;
+}
+
+function clearTrim() {
+  if (!selPath || !clips[selPath]) return;
+  clips[selPath].trimStart = null;
+  clips[selPath].trimEnd = null;
+  paintTrimChrome();
+  seekPreview(0);
+  renderClips();
+  reqPreview();
+}
+
+function setTrimDragCursor(active) {
+  var tl = byId('timeline');
+  if (tl) tl.classList.toggle('trim-dragging', !!active);
+  document.body.classList.toggle('tl-trim-dragging', !!active);
+}
+
+function onTimelinePointerDown(e) {
+  if (e.button != null && e.button !== 0) return;
+  var target = e.target;
+  if (target && target.id === 'tl-in') _tlDrag = 'in';
+  else if (target && target.id === 'tl-out') _tlDrag = 'out';
+  else _tlDrag = 'seek';
+  if (target && target.classList && target.classList.contains('tl-handle')) {
+    target.classList.add('dragging');
+    setTrimDragCursor(true);
+  }
+  if (e.pointerId != null && e.currentTarget.setPointerCapture) {
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) {}
+  }
+  processTimelineMove(e);
+  e.preventDefault();
+}
+
+function processTimelineMove(e) {
+  if (!_tlDrag) return;
+  var ratio = timelineRatioFromEvent(e);
+  var full = videoDuration();
+  if (full <= 0) return;
+  var t = ratio * full;
+  if (_tlDrag === 'in') {
+    var start = applyTrimStart(t);
+    if (start == null) return;
+    paintTrimChrome();
+    seekPreview(start);
+  } else if (_tlDrag === 'out') {
+    var end = applyTrimEnd(t);
+    if (end == null) return;
+    paintTrimChrome();
+    seekPreview(end);
+  } else {
+    seekToRatio(ratio);
+  }
+}
+
+function onTimelinePointerMove(e) {
+  if (!_tlDrag) return;
+  _tlMoveEvent = e;
+  if (_tlMoveRaf) return;
+  _tlMoveRaf = requestAnimationFrame(function() {
+    _tlMoveRaf = 0;
+    var ev = _tlMoveEvent;
+    _tlMoveEvent = null;
+    if (ev) processTimelineMove(ev);
+  });
+  e.preventDefault();
+}
+
+function onTimelinePointerUp(e) {
+  if (!_tlDrag) return;
+  var wasTrim = _tlDrag === 'in' || _tlDrag === 'out';
+  if (_tlMoveRaf) {
+    cancelAnimationFrame(_tlMoveRaf);
+    _tlMoveRaf = 0;
+  }
+  if (_tlMoveEvent) {
+    processTimelineMove(_tlMoveEvent);
+    _tlMoveEvent = null;
+  }
+  byId('tl-in').classList.remove('dragging');
+  byId('tl-out').classList.remove('dragging');
+  setTrimDragCursor(false);
+  _tlDrag = null;
+  if (_previewSec != null) {
+    _seekWanted = _previewSec;
+    if (!_seekBusy) flushVideoSeek();
+  }
+  if (wasTrim) { renderClips(); reqPreview(); }
+}
+(function bindTimeline() {
+  var tl = byId('timeline');
+  if (!tl) return;
+  tl.addEventListener('pointerdown', onTimelinePointerDown);
+  tl.addEventListener('pointermove', onTimelinePointerMove);
+  tl.addEventListener('pointerup', onTimelinePointerUp);
+  tl.addEventListener('pointercancel', onTimelinePointerUp);
+  tl.addEventListener('keydown', function(e) {
+    var v = byId('vid'); if (!v || !v.duration) return;
+    var step = e.shiftKey ? 1 : 0.5;
+    if (e.key === 'ArrowLeft') { e.preventDefault(); seekToRatio(Math.max(0, (v.currentTime - step) / v.duration)); }
+    if (e.key === 'ArrowRight') { e.preventDefault(); seekToRatio(Math.min(1, (v.currentTime + step) / v.duration)); }
+  });
+})();
+
+var ICON_VOL = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9v6h3.5L14 19V5l-5.5 4H5zm11 1.2v3.6c.9-.5 1.5-1.4 1.5-2.5S16.9 10.7 16 10.2z"/></svg>';
+var ICON_MUTE = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9v6h3.5L14 19V5l-5.5 4H5zm11.1 1.1l-1.1 1.1 1.9 1.9-1.9 1.9 1.1 1.1 1.9-1.9 1.9 1.9 1.1-1.1-1.9-1.9 1.9-1.9-1.1-1.1-1.9 1.9-1.9-1.9z"/></svg>';
+function updateMuteIcon() {
+  var btn = byId('btn-mute');
+  if (!btn) return;
+  var isMuted = muted || (byId('vid') && byId('vid').volume === 0);
+  btn.innerHTML = isMuted ? ICON_MUTE : ICON_VOL;
+  btn.title = isMuted ? 'Unmute' : 'Mute';
+  btn.setAttribute('aria-label', isMuted ? 'Unmute' : 'Mute');
+}
+updateMuteIcon();
+function toggleMute(){
+  var v = byId('vid');
+  if (muted || v.volume === 0) {
+    v.volume = volBefore / 100;
+    byId('vbar').value = volBefore;
+    muted = false;
+  } else {
+    volBefore = Math.round(v.volume * 100) || 80;
+    v.volume = 0;
+    byId('vbar').value = 0;
+    muted = true;
+  }
+  updateMuteIcon();
+}
+function setVol(vv){
+  var v = byId('vid');
+  v.volume = vv / 100;
+  muted = vv == 0;
+  if (!muted) volBefore = parseInt(vv, 10) || volBefore;
+  updateMuteIcon();
+}
 
 function setWf(idx) {
   if (wf===idx) return;
@@ -711,8 +1486,8 @@ function applyProfile() {
   snapProf();
 }
 
-function onSize(v) { var size=parseInt(v); if (!size || size < 1) return; byId('sz-badge').value=size; byId('sz-slider').max=Math.max(500,size); byId('sz-slider').setAttribute('aria-valuenow', size); updateSizePresets(size); reqPreview(); updateDirty(); }
-function onBadgeSize(v) { var size=parseInt(v); if (!size || size < 1) { byId('sz-badge').value=byId('sz-slider').value; return; } byId('sz-slider').value=size; onSize(size); }
+function onSize(v) { var size=parseInt(v); if (!size || size < 2) return; byId('sz-badge').value=size; byId('sz-slider').max=Math.max(500,size); byId('sz-slider').setAttribute('aria-valuenow', size); updateSizePresets(size); reqPreview(); updateDirty(); }
+function onBadgeSize(v) { var size=parseInt(v); if (!size || size < 2) { byId('sz-badge').value=byId('sz-slider').value; return; } byId('sz-slider').value=size; onSize(size); }
 function updateSizePresets(v) { var c=byId('sz-presets'); c.innerHTML=''; [10,50,100,500].forEach(function(mb){ var b=document.createElement('button'); b.textContent=mb+' MB'; if(mb===v)b.classList.add('on'); b.onclick=function(){byId('sz-slider').value=mb;onSize(mb);}; c.appendChild(b); }); }
 function onUseSourceResolution() { byId('res-mode').value=byId('use-source-res').checked?'source':'custom'; if(byId('use-source-res').checked)syncResolutionToClip(true); onResMode(); }
 function onResMode() { var source=byId('res-mode').value==='source'; byId('res-w').disabled=source; byId('res-h').disabled=source; byId('scaler-row').classList.toggle('hid',source); reqPreview(); updateDirty(); }
@@ -735,14 +1510,15 @@ function syncFpsToClip(forceSourceValue) {
 function onKeepAudio() { byId('audio-br').disabled = byId('keep-audio').checked; reqPreview(); updateDirty(); }
 function onTwoPassChange() { reqPreview(); updateDirty(); }
 function toggleAdv() { var sec=byId('adv-sec'), open=sec.classList.contains('hid'); sec.classList.toggle('hid', !open); byId('adv-toggle').setAttribute('aria-expanded', String(open)); byId('adv-toggle').querySelector('.advanced-arrow').textContent=open?'⌃':'⌄'; }
-function onEncChange() { updatePresetOptions(); updateTuneOpts(); updateRcOpts(); gateTwoPass(); reqPreview(); updateDirty(); }
+function onEncChange() { updatePresetOptions(); if(byId('enc-sel').value==='auto_compression'){byId('two-pass').value='on';byId('preset-sel').value='veryslow';} updateTuneOpts(); updateRcOpts(); gateTwoPass(); reqPreview(); updateDirty(); }
 function onRcChange() { updateRcVis(); reqPreview(); updateDirty(); }
 
-function encoderLabel(id) { return {libx264:'H.264 · Software',libx265:'H.265 · Software',h264_nvenc:'NVIDIA H.264 · Hardware',hevc_nvenc:'NVIDIA H.265 · Hardware',h264_amf:'AMD H.264 · Hardware',hevc_amf:'AMD H.265 · Hardware'}[id] || id; }
-function encoderIds(current) { var all=['libx264','libx265','h264_nvenc','hevc_nvenc','h264_amf','hevc_amf'], avail=availEncoders.length?availEncoders:all; return all.filter(function(id){return avail.indexOf(id)>=0||id===current;}); }
-function isCpuEncoder(enc) { return enc==='libx264'||enc==='libx265'; }
-function encoderOption(id) { var o=document.createElement('option'); o.value=id; o.textContent=encoderLabel(id); return o; }
-function populateEncoders(id) { var sel=byId(id), cur=sel.value||'libx264', ids=encoderIds(cur); sel.innerHTML=''; ids.forEach(function(enc){sel.appendChild(encoderOption(enc));}); if(!sel.options.length)sel.appendChild(encoderOption('libx264')); sel.value=cur; }
+function encoderLabel(id) { return {auto_compression:'Auto (best compression)',auto_fast:'Auto (fastest available)',auto:'Auto (fastest available)',libx264:'H.264 · Software',libx265:'H.265 · Software',h264_nvenc:'NVIDIA H.264 · Hardware',hevc_nvenc:'NVIDIA H.265 · Hardware',h264_amf:'AMD H.264 · Hardware',hevc_amf:'AMD H.265 · Hardware'}[id] || id; }
+function encoderIds(current) { var all=['auto_compression','auto_fast','libx264','libx265','h264_nvenc','hevc_nvenc','h264_amf','hevc_amf'], avail=availEncoders.length?availEncoders:all.slice(2); return all.filter(function(id){return id==='auto_compression'||id==='auto_fast'||avail.indexOf(id)>=0||id===current;}); }
+function isAutoEncoder(enc) { return enc==='auto'||enc==='auto_compression'||enc==='auto_fast'; }
+function isCpuEncoder(enc) { return enc==='libx264'||enc==='libx265'||isAutoEncoder(enc); }
+function encoderOption(id) { var o=document.createElement('option'); o.value=id; o.textContent=encoderLabel(id); if(!isAutoEncoder(id)&&availEncoders.length&&availEncoders.indexOf(id)<0){o.disabled=true;o.textContent+=' (unavailable)';} return o; }
+function populateEncoders(id) { var sel=byId(id), cur=sel.value||'auto_compression', ids=encoderIds(cur); sel.innerHTML=''; ids.forEach(function(enc){sel.appendChild(encoderOption(enc));}); if(!sel.options.length)sel.appendChild(encoderOption('libx264')); if(ids.indexOf(cur)<0)cur=ids[0]||'libx264'; sel.value=cur; }
 function updateEncOpts() { populateEncoders('enc-sel'); }
 function tunesForEncoder(enc) { return enc==='libx265'?['none','psnr','ssim','grain','zerolatency','fastdecode','animation']:['none','film','animation','grain','stillimage','fastdecode','zerolatency']; }
 function populateTunes(id, enc) { var sel=byId(id), cur=sel.value, tunes=tunesForEncoder(enc); sel.innerHTML=''; tunes.forEach(function(t){var o=document.createElement('option');o.value=t;o.textContent=t;sel.appendChild(o);}); sel.value=tunes.indexOf(cur)>=0?cur:'none'; }
@@ -754,7 +1530,7 @@ function populatePresets(id, enc, speedId) { var sel=byId(id), cur=sel.value, pr
 function updatePresetOptions() { populatePresets('preset-sel',byId('enc-sel').value,'speed-sel'); }
 function rateControlOptions(workflow, enc) { return workflow==='upscale'?(isCpuEncoder(enc)?['CRF','CBR']:['CQ','CBR','VBR']):(isCpuEncoder(enc)?['CBR']:['CBR','VBR']); }
 function defaultRateControl(workflow, enc) { return workflow==='upscale'?(isCpuEncoder(enc)?'CRF':'CQ'):(isCpuEncoder(enc)?'CBR':'VBR'); }
-function twoPassEligible(workflow, enc) { return workflow==='compression'&&isCpuEncoder(enc); }
+function twoPassEligible(workflow, enc) { return workflow==='compression'&&(enc==='libx264'||enc==='libx265'||enc==='auto_compression'); }
 function populateRateControls(id, workflow, enc) { var sel=byId(id), cur=sel.value, opts=rateControlOptions(workflow,enc); sel.innerHTML='';opts.forEach(function(v){var o=document.createElement('option');o.value=v;o.textContent=v;sel.appendChild(o);});sel.value=opts.indexOf(cur)>=0?cur:defaultRateControl(workflow,enc); }
 function onSpeedChange() { byId('preset-sel').value=nativePresetForSpeed(byId('speed-sel').value); reqPreview(); updateDirty(); }
 function onNativePresetChange() { syncSpeedFromPreset(); reqPreview(); updateDirty(); }
@@ -788,6 +1564,12 @@ function buildReq(src) {
   if (rc==='CQ') req.cq=parseInt(byId('quality-val').value);
   if (up&&(rc==='CBR'||rc==='VBR')) { req.rate_control='explicit_bitrate'; req.explicit_bitrate=parseInt(byId('br-val').value)*1000; }
   if (up&&(byId('enc-sel').value==='libx264'||byId('enc-sel').value==='libx265')) { var tune=byId('tune-sel').value; if(tune!=='none') req.tune=tune; }
+  var c = clips[src];
+  if (c) {
+    var full = (c.probeData && c.probeData.duration) || 0;
+    if (c.trimStart != null && c.trimStart > 0.001) req.trim_start = Math.round(c.trimStart * 1000) / 1000;
+    if (c.trimEnd != null && (full <= 0 || c.trimEnd < full - 0.001)) req.trim_end = Math.round(c.trimEnd * 1000) / 1000;
+  }
   return req;
 }
 
@@ -800,7 +1582,7 @@ async function compressOne() {
 
 async function compressAll() {
   if (!api) return;
-  var keys = Object.keys(clips); if (!keys.length) { toast('Add clips first.', 'err'); return; }
+  var keys = orderedClipKeys(); if (!keys.length) { toast('Add clips first.', 'err'); return; }
   var reqs = []; for (var i = 0; i < keys.length; i++) reqs.push(buildReq(clips[keys[i]].path));
   var r = await api.enqueueBatch(JSON.stringify(reqs));
   if (!r.ok) toast('Error: '+(r.error||'Failed'), 'err');
@@ -810,43 +1592,215 @@ async function compressAll() {
 
 function mapQueueItems(items) {
   if (!items) return;
-  var map = {};
-  for (var i = 0; i < items.length; i++) { map[items[i].source_path] = items[i]; }
+  var completed = false, map = {};
+  queueItemsById = {};
+  for (var i = 0; i < items.length; i++) {
+    map[items[i].source_path] = items[i];
+    queueItemsById[items[i].id] = items[i];
+  }
   for (var pk in clips) {
     if (clips.hasOwnProperty(pk) && map[pk]) {
       var clip=clips[pk], previousState=clip._queueState, item=map[pk];
       clip._queueState = item.state;
+      clip._queueItemId = item.id;
+      clip._statusText = formatQueueStatus(item);
+      clip._progress = item.progress||0;
       if (item.error) clip._queueError = item.error;
+      if (item.state==='completed'&&previousState!=='completed') { toast('Finished: '+esc(clip.name), 'ok'); completed = true; }
       if (item.state==='failed'&&previousState!=='failed') toast('Failed to process "'+esc(clip.name)+'": '+esc(errorSummary(item.error)), 'err');
       if (item.result_size) clip._resultSize = item.result_size;
-    } else if (clips.hasOwnProperty(pk)) {
-      if (!clips[pk]._queueState || clips[pk]._queueState==='completed'||clips[pk]._queueState==='failed'||clips[pk]._queueState==='cancelled') {
-        // Keep completed/failed state
-      } else {
-        clips[pk]._queueState = null;
-      }
+      if (item.result_path) clip._resultPath = item.result_path;
+    } else if (clips.hasOwnProperty(pk) && clips[pk]._queueState && ['completed','failed','cancelled'].indexOf(clips[pk]._queueState)<0) {
+      clips[pk]._queueState = null;
+      clips[pk]._statusText = '';
     }
   }
+  if (completed && appSettings.clear_completed_automatically) setTimeout(clearDone, 0);
+}
+
+function formatQueueStatus(item) {
+  if (!item) return '';
+  if (item.status_text) {
+    var parts = [item.status_text];
+    if (item.state==='running') {
+      if (item.progress > 0) parts.push(Math.round(item.progress)+'%');
+      var pi = item.progress_info||{};
+      if (pi.speed) parts.push(pi.speed.toFixed(1)+'x');
+      if (pi.eta_seconds != null) parts.push('ETA '+formatEta(pi.eta_seconds));
+    }
+    return parts.join(' · ');
+  }
+  if (item.state==='pending') return 'Pending';
+  if (item.state==='running') return 'Encoding · '+Math.round(item.progress||0)+'%';
+  if (item.state==='completed') return 'Completed';
+  if (item.state==='failed') return 'Failed';
+  if (item.state==='cancelled') return 'Cancelled';
+  return item.state||'';
+}
+
+function formatEta(seconds) {
+  if (seconds == null || !(seconds >= 0)) return '--';
+  var total = Math.round(seconds), h = Math.floor(total/3600), m = Math.floor((total%3600)/60), s = total%60;
+  if (h > 0) return (h<10?'0':'')+h+':'+(m<10?'0':'')+m+':'+(s<10?'0':'')+s;
+  return (m<10?'0':'')+m+':'+(s<10?'0':'')+s;
 }
 
 async function pollQueue() {
   if (!api) return;
   try {
     var state = await api.getQueueState(), items = state.items||[], running=[], pending=[];
-    mapQueueItems(items); renderClips();
+    mapQueueItems(items);
+    if (!(clipReorder && clipReorder.active)) renderClips();
     for (var i=0;i<items.length;i++) { if(items[i].state==='running')running.push(items[i]); else if(items[i].state==='pending')pending.push(items[i]); }
     var done=0, failed=0; for(var j=0;j<items.length;j++){if(['completed','failed','cancelled'].indexOf(items[j].state)>=0)done++;if(items[j].state==='failed')failed++;}
-    var active=running.length+pending.length, total=done+active, busy=active>0;
-    if(lastQueueHadActive&&!busy)toast(failed?'Processing finished with '+failed+' failure'+(failed===1?'':'s')+'.':'Processing completed.',failed?'err':'ok');
-    lastQueueHadActive=busy; byId('qbar').classList.toggle('on',busy);
-    if(!busy)return;
+    var active=running.length+pending.length, total=done+active;
+    if(lastQueueHadActive&&!active)toast(failed?'Processing finished with '+failed+' failure'+(failed===1?'':'s')+'.':'Processing completed.',failed?'err':'ok');
+    lastQueueHadActive=active>0; byId('qbar').classList.toggle('on', items.length>0);
+    if(!items.length)return;
     if(running.length){
-      var item=running[0], dur=item.duration||0, prog=item.progress||0, work=dur*(item.two_pass?2:1), rem=Math.max(0,work*(1-Math.min(prog,100)/100));
-      byId('qcnt').textContent=(done+1)+'/'+total; byId('qprog').value=Math.round(prog); byId('qeta').textContent=dur>0&&prog>0?'est. '+rem.toFixed(1)+'s':'est. --'; byId('qfname').textContent=item.source||'?';
+      var item=running[0], prog=item.progress||0, pi=item.progress_info||{}, status=formatQueueStatus(item);
+      byId('qcnt').textContent=(done+1)+'/'+total;
+      byId('qprog').value=Math.round(prog);
+      byId('qeta').textContent=pi.eta_seconds!=null?'ETA '+formatEta(pi.eta_seconds):(prog>0?'ETA --':'ETA --');
+      byId('qfname').textContent=(item.source||'?')+(status?' · '+status:'');
+    }else if(pending.length){
+      byId('qcnt').textContent=done+'/'+total; byId('qprog').value=0; byId('qeta').textContent='ETA --'; byId('qfname').textContent=pending.length+' pending';
     }else{
-      byId('qcnt').textContent=done+'/'+total; byId('qprog').value=0; byId('qeta').textContent='est. --'; byId('qfname').textContent=pending.length+' pending';
+      byId('qcnt').textContent=done+'/'+total; byId('qprog').value=100; byId('qeta').textContent=''; byId('qfname').textContent='Queue idle';
     }
   } catch(e) {}
+}
+
+async function cancelQueueItem(itemId) {
+  if (!api || !itemId || typeof api.cancelItem !== 'function') return;
+  try {
+    var r = await api.cancelItem(itemId);
+    if (!r || !r.ok) toast((r && r.error) || 'Could not cancel item.', 'err');
+    await pollQueue();
+  } catch (err) { toast('Could not cancel item.', 'err'); }
+}
+
+async function retryQueueItem(itemId) {
+  if (!api || !itemId || retryInFlight[itemId]) return;
+  retryInFlight[itemId] = true;
+  try {
+    var r = await api.retryItem(itemId);
+    if (!r.ok) toast(r.error||'Could not retry.', 'err');
+    pollQueue();
+  } finally { delete retryInFlight[itemId]; }
+}
+
+async function openResult(path) {
+  if (!api || !path) return;
+  try {
+    var r = await api.openOutputFolder(path);
+    if (!r || !r.ok) toast((r && r.error) || 'Could not open folder.', 'err');
+  } catch (e) { toast('Could not open folder.', 'err'); }
+}
+
+function buildDiagnosticsContext(itemId) {
+  var ctx = {
+    workflow: wf===1?'upscale':'compression',
+    selected_encoder: byId('enc-sel') ? byId('enc-sel').value : '',
+    profile_name: byId('prof-sel') && byId('prof-sel').selectedOptions[0] ? byId('prof-sel').selectedOptions[0].textContent : '',
+    target_size_mb: byId('sz-slider') ? parseInt(byId('sz-slider').value, 10) : undefined,
+    resolution: (byId('res-mode') && byId('res-mode').value==='custom')
+      ? ((byId('res-w')?byId('res-w').value:'')+'x'+(byId('res-h')?byId('res-h').value:''))
+      : 'source',
+    fps: byId('use-source-fps') && byId('use-source-fps').checked ? 'source' : (byId('fps-val') ? byId('fps-val').value : undefined),
+    two_pass: byId('two-pass') ? byId('two-pass').value==='on' : undefined,
+    preset: byId('preset-sel') ? byId('preset-sel').value : undefined,
+    scaler: byId('scaler-sel') ? byId('scaler-sel').value : undefined,
+    keep_audio: byId('keep-audio') ? !!byId('keep-audio').checked : undefined,
+    audio_bitrate_kbps: byId('audio-br') ? parseInt(byId('audio-br').value, 10) : undefined,
+    rate_control_method: byId('rc-sel') ? byId('rc-sel').value : undefined
+  };
+  if (selPath && clips[selPath]) {
+    var c = clips[selPath];
+    ctx.source_name = c.name || selPath.split(/[\\/]/).pop();
+    if (c.trimStart != null) ctx.trim_start = c.trimStart;
+    if (c.trimEnd != null) ctx.trim_end = c.trimEnd;
+    if (c.planData) {
+      if (c.planData.video_encoder) ctx.resolved_encoder = c.planData.video_encoder;
+      if (c.planData.has_trim) {
+        ctx.trim_start = c.planData.trim_start;
+        ctx.trim_end = c.planData.trim_end;
+      }
+    }
+  }
+  if (itemId) {
+    ctx.item_id = itemId;
+    var item = queueItemsById[itemId];
+    if (item) {
+      if (item.error) ctx.error = item.error;
+      if (item.error_detail) ctx.stderr = item.error_detail;
+    }
+  } else {
+    var failedId = null;
+    for (var id in queueItemsById) {
+      if (queueItemsById.hasOwnProperty(id) && queueItemsById[id].state==='failed') failedId = id;
+    }
+    if (failedId) {
+      ctx.item_id = failedId;
+      var fi = queueItemsById[failedId];
+      if (fi.error) ctx.error = fi.error;
+      if (fi.error_detail) ctx.stderr = fi.error_detail;
+    }
+  }
+  return ctx;
+}
+
+async function copyDiagnostics(itemId) {
+  if (!api) { toast('App API not ready.', 'err'); return; }
+  var ctx = buildDiagnosticsContext(itemId);
+  try {
+    if (typeof api.getDiagnostics !== 'function') {
+      toast('Diagnostics is unavailable in this build.', 'err');
+      return;
+    }
+    var r = await api.getDiagnostics(JSON.stringify(ctx));
+    if (!r || !r.ok || !r.text) {
+      toast((r && r.error) || 'Could not build diagnostics.', 'err');
+      return;
+    }
+    var copied = false;
+    if (typeof api.copyText === 'function') {
+      var cr = await api.copyText(r.text);
+      copied = !!(cr && cr.ok);
+    }
+    if (!copied) {
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(r.text);
+          copied = true;
+        }
+      } catch (clipErr) {}
+    }
+    if (!copied) {
+      var ta = document.createElement('textarea');
+      ta.value = r.text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      try { copied = document.execCommand('copy'); } catch (cmdErr) { copied = false; }
+      document.body.removeChild(ta);
+    }
+    if (copied) toast('Diagnostics copied to clipboard.', 'ok');
+    else toast('Could not copy diagnostics.', 'err');
+  } catch (e) {
+    toast('Could not copy diagnostics.', 'err');
+  }
+}
+
+async function stopAfterCurrent() {
+  if (!api || typeof api.stopAfterCurrent !== 'function') return;
+  confirmToast('Finish the current job and cancel the rest?', async function(){
+    var r = await api.stopAfterCurrent();
+    if (!r || !r.ok) toast((r && r.error) || 'Could not stop queue.', 'err');
+    else { toast('Queue will stop after the current job.', 'ok'); pollQueue(); }
+  });
 }
 
 async function cancelAll() {
@@ -857,7 +1811,7 @@ async function cancelAll() {
     toast('Processing cancelled.', 'ok');
   });
 }
-async function clearDone() { if (api) { await api.clearCompleted(); pollQueue(); } }
+async function clearDone() { if (!api) return; var r=await api.clearCompleted(); if(r&&r.ok){for(var p in clips){if(clips.hasOwnProperty(p)&&clips[p]._queueState==='completed')removeClip(p);}toast(r.count===1?'Cleared 1 completed video.':'Cleared '+(r.count||0)+' completed videos.','ok');await pollQueue();}else toast((r&&r.error)||'Could not clear completed videos.','err'); }
 async function pollIpc() {
   if (!api) return;
   try {
@@ -911,7 +1865,6 @@ function settingsShell(page, content, actions) {
   showSettingsModal('<div class="settings-head"><h2>Settings</h2><button class="mbtn" aria-label="Close settings" onclick="closeSettings()">✕</button></div><nav class="settings-tabs" aria-label="Settings sections">'+nav+'</nav><div class="settings-page">'+content+'</div><div class="settings-actions '+(actions.split?'split':'')+'">'+actions.html+'</div>');
 }
 function settingButton(label, action, primary) { return '<button class="'+(primary?'btn1':'btn2')+'" onclick="'+action+'">'+label+'</button>'; }
-function isCpuEncoder(enc) { return enc==='libx264'||enc==='libx265'; }
 function profileSummary(p) { var up=(p.workflow||'compression')==='upscale', res=p.resolution_mode==='custom'?(p.custom_width||p.max_width)+' × '+(p.custom_height||p.max_height):'Source resolution', fps=p.fps_mode==='custom'?Math.round(p.custom_fps||p.max_fps||30)+' FPS':'Source FPS', audio=p.keep_audio?'Keep audio':(p.audio_bitrate_kbps||128)+' kbps audio'; return (up?'Upscale':'Compress')+' · '+(up?'':Math.round((p.target_size_bytes||0)/(1024*1024))+' MB · ')+res+' · '+fps+' · '+audio; }
 async function refreshPMList(filter) {
   settingsFilter=filter||settingsFilter; var list=byId('pm-list');if(!list)return;var profiles=await api.getProfilesJson();list.innerHTML='';
@@ -926,30 +1879,40 @@ async function delProf(pid,name) { confirmToast('Delete "'+name+'"?',function(){
 async function importProfs() { var r=await api.pickImportFile();if(!r.ok||!r.path)return;var result=await api.importProfilesFromFile(r.path);if(result.ok){await loadSettings();refreshPMList();toast('Profiles imported.','ok');}else toast(result.error,'err'); }
 async function exportProfs() { var r=await api.pickSaveFile('profiles.json');if(!r.ok||!r.path)return;var result=await api.exportProfilesToFile(r.path);if(result.ok)toast('Profiles exported.','ok');else toast(result.error,'err'); }
 function settingsTitle(title, action) { return '<div class="settings-title-row">'+(action?'<button class="settings-title-back" aria-label="Back" onclick="'+action+'">←</button>':'')+'<h3 class="settings-title">'+title+'</h3></div>'; }
-function profileEditorHTML() { return settingsTitle(settingsProfileId?'Edit profile':'New profile','backToProfiles()')+'<div class="settings-grid"><div class="settings-field full"><label for="pe-name">Profile name</label><input id="pe-name" type="text"></div><div class="settings-field full"><label>Task</label><div class="profile-editor-task"><button id="pe-c" onclick="peSetTask(\'compression\')">Compress</button><button id="pe-u" onclick="peSetTask(\'upscale\')">Upscale</button></div></div><div class="settings-sec full" id="pe-size-sec"><h3>Target Size</h3><div class="sl-row"><input id="pe-size-range" type="range" min="1" max="500" value="50" oninput="peSetSize(this.value)"><input id="pe-size" type="number" min="1" value="50" aria-label="Target size in MB" oninput="peSetSize(this.value)"><span>MB</span></div><div class="pset"><button onclick="peSetSize(10)">10 MB</button><button onclick="peSetSize(50)">50 MB</button><button onclick="peSetSize(100)">100 MB</button><button onclick="peSetSize(500)">500 MB</button></div></div><div class="settings-sec full"><h3>Resolution</h3><div class="info-row" id="pe-source-res-row"><span>Use source resolution</span><label class="chk"><input id="pe-source-res" type="checkbox" onchange="peVisibility()"><span class="chk-box"></span><span>Source</span></label></div><div class="row" id="pe-dim"><input id="pe-w" type="number" min="1" aria-label="Custom width"><span>×</span><input id="pe-h" type="number" min="1" aria-label="Custom height"></div><div id="pe-scaler-row" class="settings-field"><label for="pe-scaler">Scaler</label><select id="pe-scaler"><option>Bilinear</option><option>Bicubic</option><option>Lanczos</option><option>Point</option><option>Neighbor</option></select></div></div><div class="settings-sec full"><h3>Frame Rate</h3><div class="info-row"><span>Use source frame rate</span><label class="chk"><input id="pe-source-fps" type="checkbox" onchange="peVisibility()"><span class="chk-box"></span><span>Source</span></label></div><div id="pe-fps-row" class="sl-row"><input id="pe-fps-range" type="range" min="1" max="240" value="30" oninput="peSetFps(this.value)"><input id="pe-fps" type="number" min="1" max="240" value="30" aria-label="Custom frame rate" oninput="peSetFps(this.value)"><span>fps</span></div></div><div class="settings-sec full"><h3>Audio</h3><div class="info-row"><span>Keep source audio</span><label class="chk"><input id="pe-audio-source" type="checkbox" onchange="peVisibility()"><span class="chk-box"></span><span>Source</span></label></div><div class="settings-field"><label for="pe-audio">Audio bitrate (kbps)</label><input id="pe-audio" type="number" min="0" max="320"></div></div><div class="settings-sec full"><h3>Encoding</h3><div class="settings-field"><label for="pe-enc">Encoder</label><select id="pe-enc" onchange="peEncoderChanged()"></select></div><span class="setting-note">Hardware is faster; software can produce smaller files.</span><div class="settings-field"><label for="pe-speed">Encoding speed</label><select id="pe-speed" onchange="peSpeedChanged()"><option value="fast">Fast</option><option value="balanced">Balanced</option><option value="best">Best compression</option></select></div><div id="pe-two-pass-row" class="settings-field"><label for="pe-two-pass">Two-pass encoding</label><select id="pe-two-pass"><option value="on">On</option><option value="off">Off</option></select><span id="pe-two-pass-note" class="help-tip">Two-pass is available only for software compression.</span></div><button class="advanced-toggle" id="pe-advanced-button" onclick="peToggleAdvanced()" aria-expanded="false"><span>Advanced encoding</span><span class="advanced-arrow">⌄</span></button><div id="pe-advanced" class="hid"><div class="settings-field"><label for="pe-preset">Native FFmpeg preset</label><select id="pe-preset" onchange="pePresetChanged()"></select></div><div class="settings-field" id="pe-rc-row"><label for="pe-rc">Quality method</label><select id="pe-rc" onchange="peVisibility()"></select></div><div class="settings-field" id="pe-quality-row"><label id="pe-quality-label" for="pe-quality">CQ</label><input id="pe-quality" type="number" min="0" max="51"><span class="help-tip">Lower value = higher quality.</span></div><div class="settings-field" id="pe-bitrate-row"><label for="pe-bitrate">Bitrate (kbps)</label><input id="pe-bitrate" type="number" min="50" max="50000"></div><div class="settings-field" id="pe-tune-row"><label for="pe-tune">Tune</label><select id="pe-tune"></select></div></div></div></div>'; }
+function profileEditorHTML() { return settingsTitle(settingsProfileId?'Edit profile':'New profile','backToProfiles()')+'<div class="settings-grid"><div class="settings-field full"><label for="pe-name">Profile name</label><input id="pe-name" type="text"></div><div class="settings-field full"><label>Task</label><div class="profile-editor-task"><button id="pe-c" onclick="peSetTask(\'compression\')">Compress</button><button id="pe-u" onclick="peSetTask(\'upscale\')">Upscale</button></div></div><div class="settings-sec full" id="pe-size-sec"><h3>Target Size</h3><div class="sl-row"><input id="pe-size-range" type="range" min="2" max="500" value="50" oninput="peSetSize(this.value)"><input id="pe-size" type="number" min="2" value="50" aria-label="Target size in MB" oninput="peSetSize(this.value)"><span>MB</span></div><div class="pset"><button onclick="peSetSize(10)">10 MB</button><button onclick="peSetSize(50)">50 MB</button><button onclick="peSetSize(100)">100 MB</button><button onclick="peSetSize(500)">500 MB</button></div></div><div class="settings-sec full"><h3>Resolution</h3><div class="info-row" id="pe-source-res-row"><span>Use source resolution</span><label class="chk"><input id="pe-source-res" type="checkbox" onchange="peVisibility()"><span class="chk-box"></span><span>Source</span></label></div><div class="row" id="pe-dim"><input id="pe-w" type="number" min="1" aria-label="Custom width"><span>×</span><input id="pe-h" type="number" min="1" aria-label="Custom height"></div><div id="pe-scaler-row" class="settings-field"><label for="pe-scaler">Scaler</label><select id="pe-scaler"><option>Bilinear</option><option>Bicubic</option><option>Lanczos</option><option>Point</option><option>Neighbor</option></select></div></div><div class="settings-sec full"><h3>Frame Rate</h3><div class="info-row"><span>Use source frame rate</span><label class="chk"><input id="pe-source-fps" type="checkbox" onchange="peVisibility()"><span class="chk-box"></span><span>Source</span></label></div><div id="pe-fps-row" class="sl-row"><input id="pe-fps-range" type="range" min="1" max="240" value="30" oninput="peSetFps(this.value)"><input id="pe-fps" type="number" min="1" max="240" value="30" aria-label="Custom frame rate" oninput="peSetFps(this.value)"><span>fps</span></div></div><div class="settings-sec full"><h3>Audio</h3><div class="info-row"><span>Keep source audio</span><label class="chk"><input id="pe-audio-source" type="checkbox" onchange="peVisibility()"><span class="chk-box"></span><span>Source</span></label></div><div class="settings-field"><label for="pe-audio">Audio bitrate (kbps)</label><input id="pe-audio" type="number" min="0" max="320"></div></div><div class="settings-sec full"><h3>Encoding</h3><div class="settings-field"><label for="pe-enc">Encoder</label><select id="pe-enc" onchange="peEncoderChanged()"></select></div><span class="setting-note">Hardware is faster; software can produce smaller files.</span><div class="settings-field"><label for="pe-speed">Encoding speed</label><select id="pe-speed" onchange="peSpeedChanged()"><option value="fast">Fast</option><option value="balanced">Balanced</option><option value="best">Best compression</option></select></div><div id="pe-two-pass-row" class="settings-field"><label for="pe-two-pass">Two-pass encoding</label><select id="pe-two-pass"><option value="on">On</option><option value="off">Off</option></select><span id="pe-two-pass-note" class="help-tip">Two-pass is available only for software compression.</span></div><button class="advanced-toggle" id="pe-advanced-button" onclick="peToggleAdvanced()" aria-expanded="false"><span>Advanced encoding</span><span class="advanced-arrow">⌄</span></button><div id="pe-advanced" class="hid"><div class="settings-field"><label for="pe-preset">Native FFmpeg preset</label><select id="pe-preset" onchange="pePresetChanged()"></select></div><div class="settings-field" id="pe-rc-row"><label for="pe-rc">Quality method</label><select id="pe-rc" onchange="peVisibility()"></select></div><div class="settings-field" id="pe-quality-row"><label id="pe-quality-label" for="pe-quality">CQ</label><input id="pe-quality" type="number" min="0" max="51"><span class="help-tip">Lower value = higher quality.</span></div><div class="settings-field" id="pe-bitrate-row"><label for="pe-bitrate">Bitrate (kbps)</label><input id="pe-bitrate" type="number" min="50" max="50000"></div><div class="settings-field" id="pe-tune-row"><label for="pe-tune">Tune</label><select id="pe-tune"></select></div></div></div></div>'; }
 function peTask(){return byId('pe-u').classList.contains('on')?'upscale':'compression';}
 function peSetTask(task){byId('pe-c').classList.toggle('on',task==='compression');byId('pe-u').classList.toggle('on',task==='upscale');byId('pe-size-sec').classList.toggle('hid',task==='upscale');byId('pe-source-res-row').classList.toggle('hid',task==='upscale');if(task==='upscale')byId('pe-source-res').checked=false;peRateControls();peVisibility();}
-function peSetSize(value){var n=Math.max(1,parseInt(value)||1);byId('pe-size').value=n;byId('pe-size-range').max=Math.max(500,n);byId('pe-size-range').value=n;}
+function peSetSize(value){var n=Math.max(2,parseInt(value)||2);byId('pe-size').value=n;byId('pe-size-range').max=Math.max(500,n);byId('pe-size-range').value=n;}
 function peSetFps(value){var n=Math.max(1,Math.min(240,parseFloat(value)||30));byId('pe-fps').value=n;byId('pe-fps-range').value=n;}
 function populateEditorEncoders(){populateEncoders('pe-enc');}
 function pePresets(){populatePresets('pe-preset',byId('pe-enc').value,'pe-speed');}
 function peTunes(){populateTunes('pe-tune',byId('pe-enc').value);}
 function peRateControls(){populateRateControls('pe-rc',peTask(),byId('pe-enc').value);}
-function peEncoderChanged(){pePresets();peTunes();peRateControls();peVisibility();}
+function peEncoderChanged(){pePresets();if(byId('pe-enc').value==='auto_compression'){byId('pe-two-pass').value='on';byId('pe-preset').value='veryslow';}peTunes();peRateControls();peVisibility();}
 function peSpeedChanged(){byId('pe-preset').value=nativePresetForSpeed(byId('pe-speed').value,byId('pe-enc').value);}
 function pePresetChanged(){byId('pe-speed').value=speedForNativePreset(byId('pe-preset').value);}
-function peVisibility(){var up=peTask()==='upscale',source=byId('pe-source-res').checked,sourceFps=byId('pe-source-fps').checked,keep=byId('pe-audio-source').checked,rc=byId('pe-rc').value,cpu=isCpuEncoder(byId('pe-enc').value),quality=up&&(rc==='CRF'||rc==='CQ');byId('pe-dim').classList.toggle('hid',source);byId('pe-scaler-row').classList.toggle('hid',source);byId('pe-fps-row').classList.toggle('hid',sourceFps);byId('pe-audio').disabled=keep;byId('pe-two-pass-row').classList.toggle('hid',up);byId('pe-two-pass-note').classList.toggle('hid',!(!up&&!cpu));byId('pe-two-pass').disabled=up||!cpu;if(up||!cpu)byId('pe-two-pass').value='off';byId('pe-rc-row').classList.toggle('hid',!up);byId('pe-quality-row').classList.toggle('hid',!quality);byId('pe-bitrate-row').classList.toggle('hid',!(up&&(rc==='CBR'||rc==='VBR')));byId('pe-tune-row').classList.toggle('hid',!(up&&cpu));byId('pe-quality-label').textContent=rc==='CRF'?'CRF':'CQ';}
+function peVisibility(){var up=peTask()==='upscale',source=byId('pe-source-res').checked,sourceFps=byId('pe-source-fps').checked,keep=byId('pe-audio-source').checked,rc=byId('pe-rc').value,cpu=!isAutoEncoder(byId('pe-enc').value)&&isCpuEncoder(byId('pe-enc').value),twoPass=twoPassEligible(peTask(),byId('pe-enc').value),quality=up&&(rc==='CRF'||rc==='CQ');byId('pe-dim').classList.toggle('hid',source);byId('pe-scaler-row').classList.toggle('hid',source);byId('pe-fps-row').classList.toggle('hid',sourceFps);byId('pe-audio').disabled=keep;byId('pe-two-pass-row').classList.toggle('hid',up);byId('pe-two-pass-note').classList.toggle('hid',!(!up&&!twoPass));byId('pe-two-pass').disabled=!twoPass;if(!twoPass)byId('pe-two-pass').value='off';byId('pe-rc-row').classList.toggle('hid',!up);byId('pe-quality-row').classList.toggle('hid',!quality);byId('pe-bitrate-row').classList.toggle('hid',!(up&&(rc==='CBR'||rc==='VBR')));byId('pe-tune-row').classList.toggle('hid',!(up&&cpu));byId('pe-quality-label').textContent=rc==='CRF'?'CRF':'CQ';}
 function peToggleAdvanced(){var el=byId('pe-advanced'),open=el.classList.contains('hid');el.classList.toggle('hid',!open);byId('pe-advanced-button').setAttribute('aria-expanded',String(open));byId('pe-advanced-button').querySelector('.advanced-arrow').textContent=open?'⌃':'⌄';}
-function pePayload(){var original=editorOriginal||{},task=peTask(),rcDisplay=byId('pe-rc').value,rcMap={CRF:'crf',CQ:'cq',CBR:'cbr',VBR:'vbr'},rc=rcMap[rcDisplay],quality=parseInt(byId('pe-quality').value);if(!Number.isFinite(quality))quality=23;if(original.rate_control_method==='cqp'&&rcDisplay==='CQ')rc='cqp';var data={name:byId('pe-name').value.trim()||'Profile',target_size_mb:parseInt(byId('pe-size').value)||50,resolution_mode:byId('pe-source-res').checked?'source':'custom',custom_width:parseInt(byId('pe-w').value)||1920,custom_height:parseInt(byId('pe-h').value)||1080,max_width:parseInt(byId('pe-w').value)||1920,max_height:parseInt(byId('pe-h').value)||1080,fps_mode:byId('pe-source-fps').checked?'source':'custom',custom_fps:parseFloat(byId('pe-fps').value)||30,max_fps:parseFloat(byId('pe-fps').value)||30,audio_bitrate_kbps:parseInt(byId('pe-audio').value)||0,keep_audio:byId('pe-audio-source').checked,two_pass:task==='compression'&&isCpuEncoder(byId('pe-enc').value)&&byId('pe-two-pass').value==='on',preset:byId('pe-preset').value,scaler:byId('pe-scaler').value.toLowerCase(),video_encoder:byId('pe-enc').value,workflow:task,rate_control_method:rc,rate_control:task==='upscale'&&(rc==='cbr'||rc==='vbr')?'explicit_bitrate':'target_size',crf:rc==='crf'?quality:valueOr(original.crf,23),cq:rc==='cq'?quality:valueOr(original.cq,23),qp:rc==='cqp'?quality:valueOr(original.qp,23),tune:task==='upscale'&&isCpuEncoder(byId('pe-enc').value)&&(byId('pe-tune').value!=='none')?byId('pe-tune').value:''};if(task==='upscale'&&(rc==='cbr'||rc==='vbr'))data.explicit_bitrate_kbps=parseInt(byId('pe-bitrate').value)||2000;return data;}
+function pePayload(){var original=editorOriginal||{},task=peTask(),rcDisplay=byId('pe-rc').value,rcMap={CRF:'crf',CQ:'cq',CBR:'cbr',VBR:'vbr'},rc=rcMap[rcDisplay],quality=parseInt(byId('pe-quality').value);if(!Number.isFinite(quality))quality=23;if(original.rate_control_method==='cqp'&&rcDisplay==='CQ')rc='cqp';var data={name:byId('pe-name').value.trim()||'Profile',target_size_mb:parseInt(byId('pe-size').value)||50,resolution_mode:byId('pe-source-res').checked?'source':'custom',custom_width:parseInt(byId('pe-w').value)||1920,custom_height:parseInt(byId('pe-h').value)||1080,max_width:parseInt(byId('pe-w').value)||1920,max_height:parseInt(byId('pe-h').value)||1080,fps_mode:byId('pe-source-fps').checked?'source':'custom',custom_fps:parseFloat(byId('pe-fps').value)||30,max_fps:parseFloat(byId('pe-fps').value)||30,audio_bitrate_kbps:parseInt(byId('pe-audio').value)||0,keep_audio:byId('pe-audio-source').checked,two_pass:twoPassEligible(task,byId('pe-enc').value)&&byId('pe-two-pass').value==='on',preset:byId('pe-preset').value,scaler:byId('pe-scaler').value.toLowerCase(),video_encoder:byId('pe-enc').value,workflow:task,rate_control_method:rc,rate_control:task==='upscale'&&(rc==='cbr'||rc==='vbr')?'explicit_bitrate':'target_size',crf:rc==='crf'?quality:valueOr(original.crf,23),cq:rc==='cq'?quality:valueOr(original.cq,23),qp:rc==='cqp'?quality:valueOr(original.qp,23),tune:task==='upscale'&&isCpuEncoder(byId('pe-enc').value)&&(byId('pe-tune').value!=='none')?byId('pe-tune').value:''};if(task==='upscale'&&(rc==='cbr'||rc==='vbr'))data.explicit_bitrate_kbps=parseInt(byId('pe-bitrate').value)||2000;return data;}
 async function hydrateEditor(){populateEditorEncoders();var p=null;if(settingsProfileId){var profiles=await api.getProfilesJson();p=profiles.find(function(x){return x.profile_id===settingsProfileId;});}editorOriginal=p||{};var scaler=p?p.scaler:(appSettings.default_scaler||'neighbor'),fps=p?Math.round(valueOr(p.custom_fps,valueOr(p.max_fps,30))):30;byId('pe-name').value=p?p.name:'';peSetSize(p?Math.round(valueOr(p.target_size_bytes,50*1024*1024)/(1024*1024)):50);byId('pe-w').value=p?valueOr(p.custom_width,valueOr(p.max_width,1920)):1920;byId('pe-h').value=p?valueOr(p.custom_height,valueOr(p.max_height,1080)):1080;byId('pe-scaler').value=scaler==='neighbor'?'Neighbor':scaler[0].toUpperCase()+scaler.slice(1);byId('pe-source-res').checked=p?p.resolution_mode!=='custom':true;byId('pe-source-fps').checked=p?p.fps_mode!=='custom':true;peSetFps(fps);byId('pe-audio-source').checked=!!(p&&p.keep_audio);byId('pe-audio').value=p?valueOr(p.audio_bitrate_kbps,128):128;byId('pe-enc').value=p?valueOr(p.video_encoder,'libx264'):'libx264';peEncoderChanged();byId('pe-preset').value=p?valueOr(p.preset,nativePresetForSpeed('balanced',byId('pe-enc').value)):nativePresetForSpeed('balanced',byId('pe-enc').value);pePresetChanged();byId('pe-two-pass').value=p&&p.two_pass?'on':'off';byId('pe-quality').value=p?(p.rate_control_method==='crf'?valueOr(p.crf,23):(p.rate_control_method==='cqp'?valueOr(p.qp,23):valueOr(p.cq,23))):23;byId('pe-bitrate').value=p?valueOr(p.explicit_bitrate_kbps,2000):2000;peSetTask(p&&p.workflow==='upscale'?'upscale':'compression');byId('pe-rc').value={crf:'CRF',cq:'CQ',cqp:'CQ',cbr:'CBR',vbr:'VBR'}[p?p.rate_control_method:'cbr']||'CRF';peVisibility();editorSnapshot=JSON.stringify(pePayload());}
 function editorDirty(){return editorSnapshot&&JSON.stringify(pePayload())!==editorSnapshot;}
 function backToProfiles(){if(editorDirty())confirmToast('Discard unsaved profile changes?',function(){settingsView='page';settingsProfileId='';openSettings('profiles');});else{settingsView='page';settingsProfileId='';openSettings('profiles');}}
 async function saveProfEdit(){var r=settingsProfileId?await api.updateProfile(settingsProfileId,JSON.stringify(pePayload())):await api.createProfile(JSON.stringify(pePayload()));if(r.ok){await loadSettings();settingsView='page';settingsProfileId='';openSettings('profiles');toast('Profile saved.','ok');}else toast(r.error,'err');}
-async function openSettings(page,view,profileId){if(!api)return;settingsPage=page||settingsPage;settingsView=view||'page';if(profileId!==undefined)settingsProfileId=profileId;var s=await api.getSettings(),profiles=s.profiles||[];if(settingsPage==='profiles'&&settingsView==='editor'){settingsShell('profiles',profileEditorHTML(),{html:settingButton('Cancel','backToProfiles()')+settingButton('Save','saveProfEdit()',true)});await hydrateEditor();return;}var content='',actions={html:''};if(settingsPage==='general'){var options=profiles.map(function(p){return '<option value="'+esc(p.profile_id)+'">'+esc(p.name)+'</option>';}).join(''),scalers=['Bilinear','Bicubic','Lanczos','Point','Neighbor'].map(function(x){return '<option '+(x.toLowerCase()===(s.default_scaler||'neighbor')?'selected':'')+'>'+x+'</option>';}).join('');content='<h3 class="settings-title">General</h3><div class="settings-sec"><h3>Output folder</h3><div class="row"><div id="set-od" class="settings-readonly" style="flex:1" data-path="'+esc(s.output_dir||'')+'">'+esc(s.output_dir||'Same folder as source')+'</div><button class="btn2" onclick="browseOut()">Browse…</button></div><span class="help-tip">Leave unchanged to save each export alongside its source file.</span></div><section class="file-naming"><h3>File naming</h3><div class="settings-grid"><div class="settings-field"><label for="set-cs">Compress suffix</label><input id="set-cs" value="'+esc(s.compression_suffix||'_tucked_{size}')+'" oninput="settingsDirty=true;updateExampleOutput()"></div><div class="settings-field"><label for="set-us">Upscale suffix</label><input id="set-us" value="'+esc(s.upscale_suffix||'_upscaled_{width}x{height}')+'" oninput="settingsDirty=true"></div><div class="file-naming-help full"><span>Supported tokens</span><span class="help-tip">Compress: {size}. Upscale: {width}, {height}.</span></div><div class="file-naming-example full"><span>Live example filename</span><div class="example-out" id="ex-out"></div></div></div></section><div class="settings-sec"><h3>Defaults</h3><div class="settings-grid"><div class="settings-field"><label for="set-dp">Default profile</label><select id="set-dp" onchange="settingsDirty=true">'+options+'</select></div><div class="settings-field"><label for="set-ds">Default scaler</label><select id="set-ds" onchange="settingsDirty=true">'+scalers+'</select></div></div></div>';actions={html:settingButton('Cancel','closeSettings()')+settingButton('Save changes','saveSettings()',true)};}else if(settingsPage==='profiles'){content='<h3 class="settings-title">Profiles</h3><div class="ft"><button id="pm-all" class="on" onclick="refreshPMList(\'all\')">All</button><button id="pm-compression" onclick="refreshPMList(\'compression\')">Compress</button><button id="pm-upscale" onclick="refreshPMList(\'upscale\')">Upscale</button></div><div id="pm-list" style="display:flex;flex-direction:column;gap:6px;margin-top:10px"></div>';actions={split:true,html:'<div class="footer-pair">'+settingButton('Import','importProfs()')+settingButton('Export','exportProfs()')+'</div>'+settingButton('+ New profile','newProf()',true)};}else if(settingsPage==='explorer'){content='<h3 class="settings-title">Explorer integration</h3><div id="st-list" style="display:flex;flex-direction:column;gap:6px"></div>';actions={html:settingButton('+ Add shortcut','instProfSt()',true)};}else{var ready=s.ffmpeg_available&&s.ffprobe_available,encoders=s.available_encoders||[];content='<h3 class="settings-title">System</h3><div class="settings-sec"><h3>FFmpeg</h3><div class="status-card"><strong class="'+(ready?'status-good':'status-warn')+'">'+(ready?'Ready':'Missing')+'</strong><span class="help-tip">'+esc(ready?(s.ffmpeg_path||'FFmpeg detected'):'Install FFmpeg, restart Tuck, then refresh this page.')+'</span><span class="help-tip">Supported encoders: '+esc(encoders.join(', ')||'None detected')+'</span></div></div><div class="settings-sec"><h3>Updates</h3><div class="status-card"><strong>Tuck '+esc(s.version||'')+'</strong><label class="chk"><input type="checkbox" '+(s.check_updates?'checked':'')+' onchange="saveUpdatePreference(this.checked)"><span class="chk-box"></span><span>Check for updates on startup</span></label><button class="btn2" style="margin-top:10px" onclick="checkUpdatesFromSettings()">Check now</button><span class="help-tip">Current update status: ready to check.</span></div></div>';actions={html:settingButton('Refresh status','openSettings(\'system\')')};}settingsShell(settingsPage,content,actions);if(settingsPage==='general'){byId('set-dp').value=s.default_profile_id||'';settingsDirty=false;updateExampleOutput();}if(settingsPage==='profiles')await refreshPMList(settingsFilter);if(settingsPage==='explorer')await refreshSTList();}
+async function openSettings(page,view,profileId){if(!api)return;settingsPage=page||settingsPage;settingsView=view||'page';if(profileId!==undefined)settingsProfileId=profileId;var s=await api.getSettings(),profiles=s.profiles||[];if(settingsPage==='profiles'&&settingsView==='editor'){settingsShell('profiles',profileEditorHTML(),{html:settingButton('Cancel','backToProfiles()')+settingButton('Save','saveProfEdit()',true)});await hydrateEditor();return;}var content='',actions={html:''};if(settingsPage==='general'){var options=profiles.map(function(p){return '<option value="'+esc(p.profile_id)+'">'+esc(p.name)+'</option>';}).join(''),scalers=['Bilinear','Bicubic','Lanczos','Point','Neighbor'].map(function(x){return '<option '+(x.toLowerCase()===(s.default_scaler||'neighbor')?'selected':'')+'>'+x+'</option>';}).join('');content='<h3 class="settings-title">General</h3><div class="settings-sec"><h3>Output folder</h3><div class="row"><div id="set-od" class="settings-readonly" style="flex:1" data-path="'+esc(s.output_dir||'')+'">'+esc(s.output_dir||'Same folder as source')+'</div><button class="btn2" onclick="browseOut()">Browse…</button><button class="btn2" onclick="clearOut()">Clear</button></div><span class="help-tip">Leave empty to save each export alongside its source file.</span></div><section class="file-naming"><h3>File naming</h3><div class="settings-grid"><div class="settings-field"><label for="set-cs">Compress suffix</label><input id="set-cs" value="'+esc(s.compression_suffix||'_tucked_{size}')+'" oninput="settingsDirty=true;updateExampleOutput()"></div><div class="settings-field"><label for="set-us">Upscale suffix</label><input id="set-us" value="'+esc(s.upscale_suffix||'_upscaled_{width}x{height}')+'" oninput="settingsDirty=true"></div><div class="file-naming-help full"><span>Supported tokens</span><span class="help-tip">Compress: {size}. Upscale: {width}, {height}.</span></div><div class="file-naming-example full"><span>Live example filename</span><div class="example-out" id="ex-out"></div></div></div></section><div class="settings-sec"><h3>Defaults</h3><div class="settings-grid"><div class="settings-field"><label for="set-dp">Default profile</label><select id="set-dp" onchange="settingsDirty=true">'+options+'</select></div><div class="settings-field"><label for="set-ds">Default scaler</label><select id="set-ds" onchange="settingsDirty=true">'+scalers+'</select></div></div></div>';actions={html:settingButton('Cancel','closeSettings()')+settingButton('Save changes','saveSettings()',true)};}else if(settingsPage==='profiles'){content='<h3 class="settings-title">Profiles</h3><div class="ft"><button id="pm-all" class="on" onclick="refreshPMList(\'all\')">All</button><button id="pm-compression" onclick="refreshPMList(\'compression\')">Compress</button><button id="pm-upscale" onclick="refreshPMList(\'upscale\')">Upscale</button></div><div id="pm-list" style="display:flex;flex-direction:column;gap:6px;margin-top:10px"></div>';actions={split:true,html:'<div class="footer-pair">'+settingButton('Import','importProfs()')+settingButton('Export','exportProfs()')+'</div>'+settingButton('+ New profile','newProf()',true)};}else if(settingsPage==='explorer'){content='<h3 class="settings-title">Explorer integration</h3><div id="st-list" style="display:flex;flex-direction:column;gap:6px"></div>';actions={html:settingButton('+ Add shortcut','instProfSt()',true)};}else{var ready=s.ffmpeg_available&&s.ffprobe_available,encoders=s.available_encoders||[];content='<h3 class="settings-title">System</h3><div class="settings-sec"><h3>FFmpeg</h3><div class="status-card"><strong class="'+(ready?'status-good':'status-warn')+'">'+(ready?'Ready':'Missing')+'</strong><span class="help-tip">'+esc(ready?(s.ffmpeg_path||'FFmpeg detected'):'Install FFmpeg, restart Tuck, then refresh this page.')+'</span><span class="help-tip">Supported encoders: '+esc(encoders.join(', ')||'None detected')+'</span><button class="btn2" style="margin-top:10px" onclick="copyDiagnostics()">Copy diagnostics</button><button class="btn2" style="margin-top:10px" onclick="openSettings(\'system\')">Refresh status</button></div></div><div class="settings-sec"><h3>Updates</h3><div class="status-card"><strong>Tuck '+esc(s.version||'')+'</strong><label class="chk"><input id="set-check-updates" type="checkbox" '+(s.check_updates?'checked':'')+'><span class="chk-box"></span><span>Check for updates on startup</span></label><button class="btn2" style="margin-top:10px" onclick="checkUpdatesFromSettings()">Check now</button><span class="help-tip">'+(s.last_update_check?'Last checked: '+esc(s.last_update_check):'Current update status: ready to check.')+'</span></div></div>';actions={html:settingButton('Cancel','closeSettings()')+settingButton('Save changes','saveSystemSettings()',true)};}settingsShell(settingsPage,content,actions);if(settingsPage==='general'){byId('set-dp').value=s.default_profile_id||'';settingsDirty=false;updateExampleOutput();}if(settingsPage==='profiles')await refreshPMList(settingsFilter);if(settingsPage==='explorer')await refreshSTList();if(settingsPage==='general')decorateGeneralSettings(s);if(settingsPage==='system')decorateSystemSettings(s);}
+function decorateGeneralSettings(s){var page=byId('mod-box').querySelector('.settings-page');if(!page)return;var checked=s.clear_completed_automatically?'checked':'';page.insertAdjacentHTML('beforeend','<div class="settings-sec"><h3>Queue</h3><label class="chk"><input id="set-auto-clear" type="checkbox" '+checked+' onchange="saveAutoClear(this.checked)"><span class="chk-box"></span><span>Clear completed jobs automatically</span></label><span class="help-tip">Removes completed clips from Files; failed and cancelled jobs remain for inspection or retry.</span></div>');}
+function decorateSystemSettings(s){var page=byId('mod-box').querySelector('.settings-page');if(!page)return;var ffmpeg=page.querySelector('.settings-sec');if(ffmpeg){ffmpeg.insertAdjacentHTML('beforeend','<div class="settings-grid" style="margin-top:12px"><div class="settings-field full"><label for="set-ffmpeg">Custom FFmpeg path</label><div class="row"><div id="set-ffmpeg" class="settings-readonly" style="flex:1" data-path="'+esc(s.ffmpeg_path||'')+'">'+esc(s.ffmpeg_path||'Use PATH or automatic detection')+'</div><button class="btn2" onclick="browseFfmpeg()">Browse…</button><button class="btn2" onclick="clearFfmpeg()">Clear</button></div></div><div class="settings-field full"><label for="set-ffprobe">Custom FFprobe path</label><div class="row"><div id="set-ffprobe" class="settings-readonly" style="flex:1" data-path="'+esc(s.ffprobe_path||'')+'">'+esc(s.ffprobe_path||'Use PATH or automatic detection')+'</div><button class="btn2" onclick="browseFfprobe()">Browse…</button><button class="btn2" onclick="clearFfprobe()">Clear</button></div></div></div><div class="settings-field full" style="margin-top:12px"><label for="set-encoder-cache-days">Encoder detection cache</label><div class="row"><select id="set-encoder-cache-days" style="flex:0 0 90px"><option value="0">Disabled</option><option value="1">1 day</option><option value="7">7 days</option><option value="30">30 days</option><option value="90">90 days</option></select><button class="btn2" style="white-space:nowrap" onclick="refreshEncoders()">Refresh now</button></div><span class="help-tip">Skipping hardware probes until the cache expires makes startup faster.</span></div>');byId('set-encoder-cache-days').value=String(s.encoder_cache_days||0);}}
+function clearPath(id, placeholder){byId(id).dataset.path='';byId(id).textContent=placeholder;}
+async function browseFfmpeg(){var r=await api.pickFfmpegFile();if(r.ok&&r.path){byId('set-ffmpeg').dataset.path=r.path;byId('set-ffmpeg').textContent=r.path;}}
+async function browseFfprobe(){var r=await api.pickFfprobeFile();if(r.ok&&r.path){byId('set-ffprobe').dataset.path=r.path;byId('set-ffprobe').textContent=r.path;}}
+function clearFfmpeg(){clearPath('set-ffmpeg','Use PATH or automatic detection');}
+function clearFfprobe(){clearPath('set-ffprobe','Use PATH or automatic detection');}
+async function saveSystemSettings(){var data={ffmpeg_path:byId('set-ffmpeg').dataset.path||'',ffprobe_path:byId('set-ffprobe').dataset.path||'',encoder_cache_days:parseInt(byId('set-encoder-cache-days').value),check_updates:byId('set-check-updates').checked},r=await api.saveSettings(JSON.stringify(data));if(r.ok){appSettings=Object.assign(appSettings,data);await loadSettings();closeMod();toast('Settings saved.','ok');}else toast(r.error,'err');}
+async function saveAutoClear(enabled){var r=await api.saveSettings(JSON.stringify({clear_completed_automatically:enabled}));if(r.ok)appSettings.clear_completed_automatically=enabled;else toast(r.error,'err');}
+async function refreshEncoders(){var r=await api.refreshEncoders();if(r.ok){availEncoders=r.available_encoders||[];updateEncOpts();toast('Encoder detection refreshed.','ok');openSettings('system');}else toast(r.error||'Could not refresh encoders.','err');}
 function navigateSettings(page){if(settingsView==='editor')return backToProfiles();if(settingsPage==='general'&&settingsDirty)confirmToast('Discard unsaved settings?',function(){openSettings(page);});else openSettings(page);}
 function closeSettings(){if(settingsView==='editor')return backToProfiles();if(settingsPage==='general'&&settingsDirty)confirmToast('Discard unsaved settings?',closeMod);else closeMod();}
 async function browseOut(){var r=await api.pickFolder();if(r.ok&&r.path){byId('set-od').dataset.path=r.path;byId('set-od').textContent=r.path;settingsDirty=true;}}
-async function saveUpdatePreference(checkUpdates){var r=await api.saveSettings(JSON.stringify({check_updates:checkUpdates}));if(r.ok)appSettings.check_updates=checkUpdates;else toast(r.error,'err');}
+function clearOut(){clearPath('set-od','Same folder as source');settingsDirty=true;}
 async function saveSettings(){var data={default_profile_id:byId('set-dp').value,default_scaler:byId('set-ds').value.toLowerCase(),output_dir:byId('set-od').dataset.path||'',check_updates:appSettings.check_updates!==false,clear_completed_automatically:appSettings.clear_completed_automatically||false,compression_suffix:byId('set-cs').value.trim()||'_tucked_{size}',upscale_suffix:byId('set-us').value.trim()||'_upscaled_{width}x{height}',last_task:wf===1?'upscale':'compression',last_compress_profile_id:lastComp,last_upscale_profile_id:lastUpscale,left_sidebar_width:parseInt(byId('left').style.width)||240},r=await api.saveSettings(JSON.stringify(data));if(r.ok){appSettings=Object.assign(appSettings,data);settingsDirty=false;await loadSettings();toast('Settings saved.','ok');}else toast(r.error,'err');}
 function updateExampleOutput(){byId('ex-out').textContent='video'+(byId('set-cs').value.trim()||'_tucked_{size}').replace('{size}','10MB')+'.mp4';}
 function profileShortcutName(id){var p=allProfiles.find(function(x){return x.profile_id===id;});return p?p.name:'Profile shortcut';}
@@ -960,29 +1923,14 @@ async function installProfileSt(pid,name){var r=await api.installProfileSendto(p
 async function removeSt(data){confirmToast('Remove shortcut?',function(){(data.type==='generic'?api.removeGenericSendto():api.removeProfileSendto(data.profile_id||data.name||'')).then(function(r){if(r.ok)toast('Shortcut removed.','ok');else toast(r.error||'Failed','err');refreshSTList();});});}
 async function repairSt(data){var r=data.type==='generic'?await api.installGenericSendto():await api.repairProfileSendto(data.profile_id||data.name||'');if(r.ok)toast('Shortcut repaired.','ok');else toast(r.error||'Failed','err');refreshSTList();}
 
-async function checkUpdates() {
+async function checkUpdates(silent) {
   if (!api) return;
   var r = await api.checkForUpdates();
-  if (r.error) { toast('Update check failed: '+r.error, 'err'); return; }
-  if (!r.available) { toast('Running latest version.', 'ok'); return; }
-  confirmToast('Update available: v'+r.version+' ('+(r.size_mb||0).toFixed(1)+' MB). Download?', function(){
-    api.downloadUpdate().then(async function(started){
-      if (!started.ok) { toast('Download failed: '+started.error, 'err'); return; }
-      var timer = setInterval(async function() {
-        var progress = await api.getDownloadProgress();
-        if (progress.downloading) return;
-        clearInterval(timer);
-        if (progress.error) { toast('Download failed: '+progress.error, 'err'); return; }
-        if (progress.done) confirmToast('Update downloaded. Install now?', function(){
-          api.installUpdate().then(async function(installed){
-            if (installed.ok) await api.closeWindow(); else toast('Install failed: '+installed.error, 'err');
-          });
-        });
-      }, 500);
-    });
-  });
+  if (r.error) { if (!silent) toast('Update check failed: '+r.error, 'err'); return; }
+  if (!r.available) { if (!silent) toast('Running latest version.', 'ok'); return; }
+  showUpdateModal(r);
 }
-async function checkUpdatesFromSettings() { await checkUpdates(); }
+async function checkUpdatesFromSettings() { await checkUpdates(false); }
 
 window.handleIpcMeta = function(meta) {
   if (meta.profile_id) { var sel=byId('prof-sel'); for (var i=0;i<sel.options.length;i++){if(sel.options[i].value===meta.profile_id){sel.selectedIndex=i;onProfileChange();break;}} }
@@ -998,7 +1946,7 @@ function formFieldFocused() {
   return el && (el.matches('input, select, textarea, button') || el.isContentEditable);
 }
 function moveSelection(delta) {
-  var keys = Object.keys(clips); if (!keys.length) return;
+  var keys = orderedClipKeys(); if (!keys.length) return;
   var index = selPath ? keys.indexOf(selPath) : 0;
   index = Math.max(0, Math.min(keys.length-1, index+delta));
   selectClip(keys[index]);

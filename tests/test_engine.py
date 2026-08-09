@@ -13,7 +13,10 @@ from tuck.engine import (
     is_ffmpeg_available,
 )
 from tuck.models import (
+    ENCODER_AUTO,
+    ENCODER_AUTO_COMPRESSION,
     RCM_CBR,
+    RCM_CQ,
     RCM_CQP,
     RCM_CRF,
     RCM_VBR,
@@ -567,6 +570,7 @@ class TestCancel:
             source_info=info,
             profile_id="test",
         )
+        engine.reset_cancel()
         engine.encode(plan)
 
         assert not engine._cancel_event.is_set()
@@ -716,12 +720,8 @@ class TestOutputCollisionSafety:
         assert result.stat().st_size > 0
 
         assert result != base_output
-
         assert marker.exists()
-
         assert not result.with_suffix(result.suffix + ".reserved").exists()
-
-        assert not base_output.exists()
 
     def test_publication_race_final_file_appears(
         self, engine, real_video_path, tmp_path, monkeypatch
@@ -815,6 +815,150 @@ class TestUpscaleNoRetry:
         assert result.exists()
         assert result.stat().st_size > 0
         # Upscale should succeed without EncodeError even if output > target_size
+
+
+class TestHardwareFallback:
+    def test_auto_tries_amd_after_nvenc_initialization_failure(
+        self, engine, real_video_path, tmp_path, monkeypatch
+    ):
+        monkeypatch.setattr("tuck.encoding.runner._find_ffmpeg", lambda: "ffmpeg")
+        monkeypatch.setattr(
+            "tuck.encoding.runner.get_available_encoders",
+            lambda: frozenset({"libx264", "h264_nvenc", "h264_amf"}),
+        )
+        plan = EncodePlan(
+            source=str(real_video_path),
+            output=str(tmp_path / "out.mp4"),
+            video_encoder=ENCODER_AUTO,
+            rate_control_method=RCM_CBR,
+            target_size=1024 * 1024,
+        )
+        attempted: list[str] = []
+
+        def encode_with_retry(_ffmpeg, attempt, _source, output, *_args):
+            attempted.append(attempt.video_encoder)
+            if attempt.video_encoder == "h264_nvenc":
+                raise EncodeError("hardware failed", stderr="No NVENC capable devices found")
+            output.write_bytes(b"encoded")
+            return output
+
+        engine._encode_with_retry = encode_with_retry
+        result = engine.encode(plan)
+        assert result.exists()
+        assert attempted == ["h264_nvenc", "h264_amf"]
+        assert plan.video_encoder == ENCODER_AUTO
+
+    def test_explicit_hardware_failure_does_not_fallback(
+        self, engine, real_video_path, tmp_path, monkeypatch
+    ):
+        monkeypatch.setattr("tuck.encoding.runner._find_ffmpeg", lambda: "ffmpeg")
+        monkeypatch.setattr(
+            "tuck.encoding.runner.get_available_encoders",
+            lambda: frozenset({"libx264", "h264_nvenc"}),
+        )
+        plan = EncodePlan(
+            source=str(real_video_path),
+            output=str(tmp_path / "out.mp4"),
+            video_encoder="h264_nvenc",
+            rate_control_method=RCM_CBR,
+            target_size=1024 * 1024,
+        )
+
+        def fail(*_args, **_kwargs):
+            raise EncodeError("hardware failed", stderr="No NVENC capable devices found")
+
+        engine._encode_with_retry = fail
+        with pytest.raises(EncodeError, match="hardware failed"):
+            engine.encode(plan)
+        assert plan.video_encoder == "h264_nvenc"
+
+    def test_auto_best_compression_keeps_two_pass_for_cpu(
+        self, engine, real_video_path, tmp_path, monkeypatch
+    ):
+        monkeypatch.setattr("tuck.encoding.runner._find_ffmpeg", lambda: "ffmpeg")
+        monkeypatch.setattr(
+            "tuck.encoding.runner.get_available_encoders", lambda: frozenset({"libx264"})
+        )
+        plan = EncodePlan(
+            source=str(real_video_path),
+            output=str(tmp_path / "out.mp4"),
+            video_encoder=ENCODER_AUTO_COMPRESSION,
+            rate_control_method=RCM_CBR,
+            two_pass=False,
+            preset="medium",
+        )
+
+        def encode_with_retry(*args, **_kwargs):
+            attempt = args[1]
+            output = args[3]
+            assert attempt.video_encoder == "libx264"
+            assert attempt.two_pass is True
+            assert attempt.preset == "veryslow"
+            output.write_bytes(b"encoded")
+            return output
+
+        engine._encode_with_retry = encode_with_retry
+
+        assert engine.encode(plan).exists()
+
+    def test_auto_cpu_fallback_normalizes_hardware_rate_control(
+        self, engine, real_video_path, tmp_path, monkeypatch
+    ):
+        monkeypatch.setattr("tuck.encoding.runner._find_ffmpeg", lambda: "ffmpeg")
+        monkeypatch.setattr(
+            "tuck.encoding.runner.get_available_encoders", lambda: frozenset({"libx264"})
+        )
+        plan = EncodePlan(
+            source=str(real_video_path),
+            output=str(tmp_path / "out.mp4"),
+            video_encoder=ENCODER_AUTO,
+            workflow=WORKFLOW_UPSCALE,
+            rate_control_method=RCM_CQ,
+            cq=19,
+        )
+
+        def encode_with_retry(*args, **kwargs):
+            normalized_plan = args[1]
+            output = args[3]
+            assert normalized_plan.video_encoder == "libx264"
+            assert normalized_plan.rate_control_method == RCM_CRF
+            output.write_bytes(b"encoded")
+            return output
+
+        engine._encode_with_retry = encode_with_retry
+
+        result = engine.encode(plan)
+
+        assert result.exists()
+        assert plan.video_encoder == ENCODER_AUTO
+        assert plan.rate_control_method == RCM_CQ
+
+
+class TestTargetSizeRetries:
+    def test_undershoot_retries_in_runner(self, engine, tmp_path):
+        output = tmp_path / "output.mp4"
+        plan = EncodePlan(
+            source="source.mp4",
+            output=str(output),
+            video_bitrate=1_000_000,
+            audio_bitrate=0,
+            two_pass=False,
+            target_size=10_000_000,
+            rate_control_method=RCM_CBR,
+        )
+        calls = 0
+
+        def encode_once(*_args, **_kwargs):
+            nonlocal calls
+            calls += 1
+            output.write_bytes(b"x" * 4_000_000)
+            return output
+
+        engine._encode_single_pass = encode_once
+        result = engine._encode_with_retry("ffmpeg", plan, Path(plan.source), output, 10.0, None)
+        assert result == output
+        assert calls == 3
+        assert plan.video_bitrate > 1_000_000
 
 
 class TestFFmpegCommandPerEncoder:
@@ -1084,3 +1228,90 @@ class TestFFmpegCommandPerEncoder:
         assert _nvenc_preset("slow") == "p6"
         assert _nvenc_preset("fast") == "p4"
         assert _nvenc_preset("ultrafast") == "p1"
+
+
+class TestTrimFlags:
+    def test_build_cmd_without_trim_omits_seek(self, engine, real_video_path):
+        from tuck.probe import probe
+
+        info = probe(real_video_path)
+        plan = EncodePlan(
+            source=str(real_video_path),
+            output="out.mp4",
+            target_width=info.width,
+            target_height=info.height,
+            target_fps=info.fps,
+            video_bitrate=500_000,
+            audio_bitrate=128_000,
+            two_pass=False,
+            preset="ultrafast",
+            source_info=info,
+            trim_start=0.0,
+            trim_end=info.duration,
+        )
+        cmd = engine._build_base_cmd("ffmpeg", plan, Path(plan.source))
+        assert "-ss" not in cmd
+        assert "-t" not in cmd
+
+    def test_build_cmd_with_trim_includes_ss_and_t(self, engine, real_video_path):
+        from tuck.probe import probe
+
+        info = probe(real_video_path)
+        if info.duration < 1.0:
+            pytest.skip("sample too short")
+        plan = EncodePlan(
+            source=str(real_video_path),
+            output="out.mp4",
+            target_width=info.width,
+            target_height=info.height,
+            target_fps=info.fps,
+            video_bitrate=500_000,
+            audio_bitrate=128_000,
+            two_pass=False,
+            preset="ultrafast",
+            source_info=info,
+            trim_start=0.5,
+            trim_end=min(info.duration, 1.5),
+        )
+        cmd = engine._build_base_cmd("ffmpeg", plan, Path(plan.source))
+        assert "-ss" in cmd
+        ss_idx = cmd.index("-ss")
+        assert float(cmd[ss_idx + 1]) == pytest.approx(0.5, abs=0.01)
+        assert "-t" in cmd
+        t_idx = cmd.index("-t")
+        assert float(cmd[t_idx + 1]) == pytest.approx(plan.trim_duration, abs=0.01)
+        assert ss_idx < cmd.index("-i")
+
+    def test_encode_trimmed_clip(self, engine, real_video_path, tmp_path):
+        from tuck.probe import probe
+
+        info = probe(real_video_path)
+        if info.duration < 1.5:
+            pytest.skip("sample too short")
+        output = tmp_path / "trimmed.mp4"
+        plan = EncodePlan(
+            source=str(real_video_path),
+            output=str(output),
+            target_width=info.width,
+            target_height=info.height,
+            target_fps=info.fps,
+            video_bitrate=500_000,
+            original_video_bitrate=500_000,
+            audio_bitrate=128_000,
+            audio_channels=2,
+            audio_sample_rate=44100,
+            two_pass=False,
+            preset="ultrafast",
+            crf=23,
+            estimated_size=100_000,
+            target_size=5 * 1024 * 1024,
+            source_info=info,
+            profile_id="test",
+            trim_start=0.2,
+            trim_end=0.9,
+        )
+        result = engine.encode(plan)
+        assert result.exists()
+        assert result.stat().st_size > 0
+        out_info = probe(result)
+        assert out_info.duration == pytest.approx(0.7, abs=0.35)

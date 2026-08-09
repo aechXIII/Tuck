@@ -34,6 +34,18 @@ from tuck.models import (
 )
 
 
+def test_two_pass_accepts_auto_best_compression() -> None:
+    from tuck.models import validate_rate_control_matrix
+
+    validate_rate_control_matrix(
+        workflow="compression",
+        rate_control="target_size",
+        rate_control_method="cbr",
+        video_encoder="auto_compression",
+        two_pass=True,
+    )
+
+
 class TestProfile:
     def test_default_profile_has_stable_id(self):
         p = Profile(name="Test", profile_id=PROFILE_ID_DISCORD_FREE)
@@ -316,6 +328,26 @@ class TestBridgeUpdateProfileValidation:
         assert not resp["ok"]
         assert "unknown fields" in resp["error"]
 
+    def test_rejects_target_size_below_two_mb(self, tmp_path, monkeypatch):
+        import tuck.settings as settings_mod
+
+        monkeypatch.setattr(settings_mod, "_config_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
+
+        from tuck.bridge import BridgeAPI
+        from tuck.models import Profile
+
+        api = BridgeAPI()
+        api._settings.load()
+        profiles = api._settings.get_profiles()
+        profiles.append(Profile(name="Minimum size", profile_id="minimum-size"))
+        api._settings.set_profiles(profiles)
+
+        resp = json.loads(api.update_profile("minimum-size", '{"target_size_mb": 1}'))
+        assert not resp["ok"]
+        assert "at least 2" in resp["error"]
+
     def test_rejects_negative_target_size(self, tmp_path, monkeypatch):
         import tuck.settings as settings_mod
 
@@ -336,7 +368,7 @@ class TestBridgeUpdateProfileValidation:
         payload = '{"target_size_mb": -5}'
         resp = json.loads(api.update_profile("test-custom4", payload))
         assert not resp["ok"]
-        assert "target_size_bytes" in resp["error"]
+        assert "at least 2" in resp["error"]
 
 
 class TestProfileSerialization:

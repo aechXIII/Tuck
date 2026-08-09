@@ -566,7 +566,6 @@ def _cmd_settings(args) -> int:
         table = _table("SETTINGS", show_header=False)
         table.add_column(style="cyan")
         table.add_column()
-        table.add_row("Theme", s.theme)
         table.add_row("Default profile", s.default_profile_id)
         table.add_row("Output directory", s.output_dir or "Source directory")
         table.add_row("Check for updates", "yes" if s.check_updates else "no")

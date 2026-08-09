@@ -5,7 +5,7 @@
 ; TuckCli.exe for CLI operations (including uninstall cleanup)
 
 #define MyAppName "Tuck"
-#define MyAppVersion "0.1.0"
+#define MyAppVersion "0.2.0"
 #define MyAppPublisher "Tuck contributors"
 #define MyAppURL "https://github.com/aechXIII/Tuck"
 #define MyAppExeName "Tuck.exe"
@@ -31,6 +31,8 @@ WizardStyle=modern
 ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayName={#MyAppName}
 ChangesEnvironment=yes
+CloseApplications=yes
+CloseApplicationsFilter=Tuck.exe,TuckCli.exe
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"

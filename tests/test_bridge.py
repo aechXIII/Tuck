@@ -7,9 +7,29 @@ from tuck.models import (
     PROFILE_ID_DISCORD_FREE,
     EncodePlan,
     Profile,
+    QueueItem,
     QueueState,
     find_profile_by_id,
 )
+
+
+class TestBridgeQueueState:
+    def test_reads_queue_state_from_one_snapshot(self, monkeypatch):
+        api = BridgeAPI()
+        item = QueueItem(plan=EncodePlan(source="clip.mp4", output="out.mp4"))
+        monkeypatch.setattr(api._queue, "snapshot", lambda: ([item], item, [item.id]))
+        state = json.loads(api.get_queue_state())
+        assert state["current_id"] == item.id
+        assert state["pending_ids"] == [item.id]
+        assert state["items"][0]["id"] == item.id
+
+    def test_clear_completed_returns_removed_count(self):
+        api = BridgeAPI()
+        item = QueueItem(plan=EncodePlan(source="clip.mp4", output="out.mp4"))
+        item.state = QueueState.COMPLETED
+        api._queue._items[item.id] = item
+
+        assert json.loads(api.clear_completed()) == {"ok": True, "count": 1}
 
 
 class TestBridgeProfileLifecycle:
@@ -411,6 +431,75 @@ class TestBridgePlanRequest:
         assert req.custom_fps == 30.0
         assert req.rate_control == "explicit_bitrate"
         assert req.explicit_bitrate == 2_000_000
+
+    def test_queue_reorder_and_diagnostics(self, tmp_path, monkeypatch):
+        import tuck.settings as settings_mod
+
+        monkeypatch.setattr(settings_mod, "_config_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_settings_manager", None)
+
+        api = BridgeAPI()
+        api._settings.load()
+        plan = EncodePlan(source="a.mp4", output="a_out.mp4", target_size=1024 * 1024)
+        a = api._queue.enqueue(plan)
+        b = api._queue.enqueue(
+            EncodePlan(source="b.mp4", output="b_out.mp4", target_size=1024 * 1024)
+        )
+        r = json.loads(api.move_item(b.id, 0))
+        assert r["ok"]
+        state = json.loads(api.get_queue_state())
+        assert state["pending_ids"] == [b.id, a.id]
+        for invalid_index in (True, 1.9):
+            response = json.loads(api.move_item(a.id, invalid_index))
+            assert not response["ok"]
+            assert response["error"] == "new_index must be an integer"
+        diag = json.loads(api.get_diagnostics("{}"))
+        assert diag["ok"]
+        assert "Tuck version" in diag["text"]
+
+    def test_parse_plan_request_accepts_trim(self, tmp_path, monkeypatch):
+        import tuck.settings as settings_mod
+
+        monkeypatch.setattr(settings_mod, "_config_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
+
+        test_file = tmp_path / "test.mp4"
+        test_file.write_text("dummy")
+
+        api = BridgeAPI()
+        req = api._parse_plan_request(
+            {
+                "source": str(test_file),
+                "profile_id": "test-p",
+                "trim_start": 1.25,
+                "trim_end": 4.5,
+            }
+        )
+        assert req.trim_start == pytest.approx(1.25)
+        assert req.trim_end == pytest.approx(4.5)
+
+    def test_parse_plan_request_rejects_inverted_trim(self, tmp_path, monkeypatch):
+        import tuck.settings as settings_mod
+
+        monkeypatch.setattr(settings_mod, "_config_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
+
+        test_file = tmp_path / "test.mp4"
+        test_file.write_text("dummy")
+
+        api = BridgeAPI()
+        with pytest.raises(ValueError, match="trim_end"):
+            api._parse_plan_request(
+                {
+                    "source": str(test_file),
+                    "trim_start": 5.0,
+                    "trim_end": 1.0,
+                }
+            )
 
     def test_parse_plan_request_rejects_empty_source(self, tmp_path, monkeypatch):
         import tuck.settings as settings_mod
@@ -1189,6 +1278,35 @@ class TestBridgeWorkflowPropagation:
         assert "workflow" in p
         assert "rate_control_method" in p
         assert "qp" in p
+        assert resp["encoder_cache_days"] == 7
+        assert resp["last_update_check"] == ""
+
+    def test_save_settings_validates_encoder_cache_days(self, tmp_path, monkeypatch):
+        import tuck.settings as settings_mod
+
+        monkeypatch.setattr(settings_mod, "_config_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
+
+        api = BridgeAPI()
+        assert json.loads(api.save_settings(json.dumps({"encoder_cache_days": 30})))["ok"]
+        assert api._settings.load().encoder_cache_days == 30
+        assert not json.loads(api.save_settings(json.dumps({"encoder_cache_days": 366})))["ok"]
+
+    def test_saving_cache_duration_keeps_encoder_cache(self, tmp_path, monkeypatch):
+        import tuck.settings as settings_mod
+
+        monkeypatch.setattr(settings_mod, "_config_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
+        cleared: list[bool] = []
+        monkeypatch.setattr(
+            "tuck.bridge.clear_encoder_cache", lambda *, delete_disk: cleared.append(delete_disk)
+        )
+
+        api = BridgeAPI()
+        assert json.loads(api.save_settings(json.dumps({"encoder_cache_days": 30})))["ok"]
+        assert cleared == []
 
     def test_get_profiles_json_includes_workflow_fields(self, tmp_path, monkeypatch):
         """get_profiles_json response includes workflow, rate_control_method, qp."""
@@ -1561,7 +1679,6 @@ class TestBridgeRemoveGenericSendTo:
         monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
         monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
         monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
-        monkeypatch.setattr("tuck.sendto._update_shortcut_setting", lambda _: None)
 
         api = BridgeAPI()
         api._settings.load()

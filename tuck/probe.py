@@ -142,6 +142,7 @@ def probe(source: str | Path) -> VideoInfo:
     audio_codec = ""
     audio_channels = 0
     audio_sample_rate = 0
+    audio_bitrate = 0
     if audio_stream:
         audio_codec = audio_stream.get("codec_name", "")
         try:
@@ -152,6 +153,10 @@ def probe(source: str | Path) -> VideoInfo:
             audio_sample_rate = int(audio_stream.get("sample_rate", 0))
         except (ValueError, TypeError):
             logger.warning("Could not parse audio sample rate from ffprobe")
+        try:
+            audio_bitrate = int(audio_stream.get("bit_rate", 0))
+        except (ValueError, TypeError):
+            logger.warning("Could not parse audio bitrate from ffprobe")
 
     return VideoInfo(
         path=str(source),
@@ -163,6 +168,7 @@ def probe(source: str | Path) -> VideoInfo:
         audio_codec=audio_codec,
         audio_channels=audio_channels,
         audio_sample_rate=audio_sample_rate,
+        audio_bitrate=audio_bitrate,
         file_size=file_size,
         bitrate=bitrate,
         has_audio=has_audio,

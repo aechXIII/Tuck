@@ -103,13 +103,11 @@ def install_sendto() -> Path:
             description="Compress with Tuck",
             shortcut_type="generic",
         )
-        _update_shortcut_setting(True)
         logger.info("Send To shortcut created at %s", shortcut_path)
         return shortcut_path
     else:
         args = _get_args()
         batch = _create_batch_fallback(target, args, sendto)
-        _update_shortcut_setting(True)
         logger.info("Send To batch fallback created at %s", batch)
         return batch
 
@@ -156,8 +154,6 @@ def uninstall_sendto() -> None:
         if p.exists() and _is_tuck_shortcut(p):
             p.unlink()
             logger.info("Removed %s", p)
-
-    _update_shortcut_setting(False)
 
 
 def uninstall_profile_shortcut(profile_id: str) -> bool:
@@ -423,11 +419,3 @@ def _write_batch_file(batch_path: Path, target: str, arguments: list[str]) -> No
         ),
         encoding="ascii",
     )
-
-
-def _update_shortcut_setting(installed: bool) -> None:
-    from .settings import get_settings_manager
-
-    mgr = get_settings_manager()
-    mgr.set_setting("shortcut_installed", installed)
-    mgr.save()

@@ -43,6 +43,7 @@ class TestSettingsManager:
         s = mgr.load()
         assert s.default_profile_id == PROFILE_ID_DISCORD_FREE
         assert s.version == 1
+        assert s.encoder_cache_days == 7
 
     def test_get_profiles_returns_defaults(self, tmp_path, monkeypatch):
         import tuck.settings as settings_mod
@@ -78,6 +79,20 @@ class TestSettingsManager:
         s = mgr2.load()
         assert s.default_profile_id == PROFILE_ID_DISCORD_NITRO
         assert s.output_dir == str(tmp_path / "out")
+
+    def test_save_and_load_preserves_encoder_cache_days(self, tmp_path, monkeypatch):
+        import tuck.settings as settings_mod
+
+        monkeypatch.setattr(settings_mod, "_config_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
+
+        mgr = SettingsManager()
+        mgr.load()
+        mgr.set_setting("encoder_cache_days", 30)
+        mgr.save()
+
+        assert SettingsManager().load().encoder_cache_days == 30
 
     def test_reset_restores_defaults(self, tmp_path, monkeypatch):
         import tuck.settings as settings_mod
@@ -731,17 +746,17 @@ class TestStaleConcurrentMerge:
 
         sp = settings_path()
         disk = json.loads(sp.read_text(encoding="utf-8"))
-        disk["theme"] = "light"
+        disk["compression_suffix"] = "_disk_{size}"
         sp.write_text(json.dumps(disk), encoding="utf-8")
 
-        mgr.set_setting("max_concurrent", 4)
+        mgr.set_setting("left_sidebar_width", 280)
         mgr.save()
 
         mgr2 = SettingsManager()
         s = mgr2.load()
-        assert s.output_dir == str(tmp_path / "ours")  # our change
-        assert s.max_concurrent == 4  # our change
-        assert s.theme == "light"  # disk change we didn't touch
+        assert s.output_dir == str(tmp_path / "ours")
+        assert s.left_sidebar_width == 280
+        assert s.compression_suffix == "_disk_{size}"
 
     def test_profiles_merge_keeps_local_edit(self, tmp_path, monkeypatch):
 
@@ -849,22 +864,20 @@ class TestStaleConcurrentMerge:
         mgr.save()
 
         assert mgr._settings_snapshot is not None
-        mgr._settings_snapshot.pop("theme", None)
+        mgr._settings_snapshot.pop("compression_suffix", None)
 
-        mgr.set_setting("theme", "dark")
+        mgr.set_setting("compression_suffix", "_local_{size}")
 
         sp = settings_path()
         disk = json.loads(sp.read_text(encoding="utf-8"))
-        disk["theme"] = "light"
+        disk["compression_suffix"] = "_disk_{size}"
         sp.write_text(json.dumps(disk), encoding="utf-8")
 
         mgr.save()
 
         mgr2 = SettingsManager()
         s = mgr2.load()
-        assert s.theme == "dark", (
-            f"Expected locally-changed absent-snapshot field to survive, but got {s.theme!r}"
-        )
+        assert s.compression_suffix == "_local_{size}"
 
 
 class TestIndependentManagers:
@@ -917,18 +930,18 @@ class TestIndependentManagers:
 
         mgr1 = SettingsManager()
         mgr1.load()
-        mgr1.set_setting("theme", "light")
+        mgr1.set_setting("compression_suffix", "_first_{size}")
         mgr1.save()
 
         mgr2 = SettingsManager()
         mgr2.load()
-        mgr2.set_setting("max_concurrent", 8)
+        mgr2.set_setting("left_sidebar_width", 280)
         mgr2.save()
 
         mgr3 = SettingsManager()
         s = mgr3.load()
-        assert s.theme == "light"
-        assert s.max_concurrent == 8
+        assert s.compression_suffix == "_first_{size}"
+        assert s.left_sidebar_width == 280
 
 
 class TestV2UserProfileMigration:
