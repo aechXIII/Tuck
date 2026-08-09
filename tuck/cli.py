@@ -338,6 +338,7 @@ def _cmd_process(args) -> int:
 
 def _do_encode(plan, args) -> int:
     from .engine import FFmpegEngine
+    from .models import EncodeProgress
 
     engine = FFmpegEngine()
     target = (
@@ -368,7 +369,10 @@ def _do_encode(plan, args) -> int:
             task = progress.add_task("Processing", total=100)
             result = engine.encode(
                 plan,
-                on_progress=lambda pct: progress.update(task, completed=pct),
+                on_progress=lambda value: progress.update(
+                    task,
+                    completed=value.percent if isinstance(value, EncodeProgress) else value,
+                ),
             )
         size_mb = result.stat().st_size / (1024 * 1024)
         console.print(f"[success]✓ Complete[/success] [muted]{result} · {size_mb:.1f} MB[/muted]")

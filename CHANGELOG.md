@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.2.1] - 2026-08-09
+
+### Fixed
+- Send To compression progress
+
 ## [0.2.0] - 2026-08-09
 
 ### Added

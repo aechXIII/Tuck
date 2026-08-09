@@ -1,6 +1,7 @@
 from tuck.app import _parse_sendto_args
-from tuck.cli import _profile_with_resolution
+from tuck.cli import _do_encode, _profile_with_resolution
 from tuck.cli import main as cli_main
+from tuck.models import EncodePlan, EncodeProgress
 
 
 class TestCLISingleInstanceBypass:
@@ -316,6 +317,26 @@ class TestCLIExitCodes:
         dummy.write_text("not a real video")
         code = cli_main(["compress", str(dummy)])
         assert code == 2
+
+
+class TestConsoleProgress:
+    def test_encode_accepts_structured_progress(self, tmp_path, monkeypatch):
+        output = tmp_path / "output.mp4"
+
+        def fake_encode(_self, _plan, on_progress=None):
+            assert on_progress is not None
+            on_progress(EncodeProgress(percent=50.0))
+            output.write_bytes(b"ok")
+            return output
+
+        monkeypatch.setattr("tuck.engine.FFmpegEngine.encode", fake_encode)
+        plan = EncodePlan(
+            source=str(tmp_path / "input.mp4"),
+            output=str(output),
+            target_size=1024 * 1024,
+        )
+
+        assert _do_encode(plan, object()) == 0
 
 
 class TestParseSendtoArgs:
