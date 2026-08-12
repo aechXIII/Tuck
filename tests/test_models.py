@@ -19,12 +19,14 @@ from tuck.models import (
     SCALER_BILINEAR,
     SCALER_LANCZOS,
     SCALER_NEIGHBOR,
+    CropRect,
     EncodePlan,
     PlanRequest,
     Profile,
     QueueItem,
     QueueState,
     VideoInfo,
+    VideoTransform,
     dicts_to_profiles,
     estimate_size_from_bitrate,
     export_profiles_json,
@@ -32,6 +34,75 @@ from tuck.models import (
     import_profiles_json,
     profiles_to_dicts,
 )
+
+
+class TestVideoTransform:
+    def test_default_state(self):
+        assert VideoTransform() == VideoTransform(crop=None)
+
+    def test_valid_crop(self):
+        transform = VideoTransform(crop=CropRect(x=100, y=50, width=800, height=600))
+        transform.validate_for_source(1920, 1080)
+
+    @pytest.mark.parametrize(
+        ("crop", "message"),
+        [
+            (CropRect(x=0, y=0, width=1, height=1), "crop width and height"),
+        ],
+    )
+    def test_crop_requires_encoder_alignment(self, crop, message):
+        with pytest.raises(ValueError, match=message):
+            VideoTransform(crop=crop).validate_for_source(1920, 1080)
+
+    def test_negative_crop_coordinates(self):
+        with pytest.raises(ValueError, match="crop x"):
+            CropRect(x=-1, y=0, width=100, height=100)
+        with pytest.raises(ValueError, match="crop y"):
+            CropRect(x=0, y=-1, width=100, height=100)
+
+    @pytest.mark.parametrize("width,height", [(0, 100), (100, 0)])
+    def test_zero_crop_dimensions(self, width, height):
+        with pytest.raises(ValueError, match=r"crop (width|height)"):
+            CropRect(x=0, y=0, width=width, height=height)
+
+    def test_crop_beyond_source_bounds(self):
+        with pytest.raises(ValueError, match="inside source"):
+            VideoTransform(crop=CropRect(x=1600, y=0, width=400, height=600)).validate_for_source(
+                1920, 1080
+            )
+
+    def test_full_frame_crop(self):
+        transform = VideoTransform(crop=CropRect(x=0, y=0, width=1920, height=1080))
+        transform.validate_for_source(1920, 1080)
+
+    def test_odd_origin_is_allowed_for_exact_source_coordinates(self):
+        transform = VideoTransform(crop=CropRect(x=101, y=51, width=800, height=600))
+        transform.validate_for_source(1920, 1080)
+
+    @pytest.mark.parametrize("width,height", [(801, 600), (800, 601)])
+    def test_odd_output_dimensions_are_rejected_for_yuv420p(self, width, height):
+        with pytest.raises(ValueError, match="crop width and height"):
+            VideoTransform(crop=CropRect(x=0, y=0, width=width, height=height)).validate_for_source(
+                1920, 1080
+            )
+
+    def test_later_transform_fields_are_not_accepted(self):
+        with pytest.raises(ValueError, match="unsupported fields"):
+            VideoTransform.from_dict({"crop": None, "rotation": 90})
+
+    def test_serialization_round_trip(self):
+        transform = VideoTransform(crop=CropRect(x=0, y=0, width=1280, height=720))
+        assert VideoTransform.from_dict(transform.to_dict()) == transform
+
+    def test_encode_plan_round_trip_preserves_transform(self):
+        transform = VideoTransform(crop=CropRect(x=0, y=0, width=1280, height=720))
+        plan = EncodePlan(source="source.mp4", output="output.mp4", transform=transform)
+        assert EncodePlan.from_dict(plan.to_dict()).transform == transform
+
+    def test_old_encode_plan_without_transform_defaults_to_full_frame(self):
+        restored = EncodePlan.from_dict({"source": "source.mp4", "output": "output.mp4"})
+
+        assert restored.transform == VideoTransform()
 
 
 def test_two_pass_accepts_auto_best_compression() -> None:
@@ -530,6 +601,7 @@ class TestEncodePlan:
         assert plan.rate_control == RC_TARGET_SIZE
         assert plan.apply_scale is False
         assert plan.apply_fps_filter is False
+        assert plan.transform == VideoTransform()
 
 
 class TestQueueItem:

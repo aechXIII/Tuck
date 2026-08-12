@@ -3,7 +3,7 @@ import time
 from collections import deque
 from pathlib import Path
 
-from tuck.models import EncodePlan, QueueState
+from tuck.models import CropRect, EncodePlan, QueueState, VideoTransform
 from tuck.queue import ProcessingQueue
 
 
@@ -19,6 +19,19 @@ class TestQueueOrdering:
         c = q.enqueue(_plan("c"))
         assert q.pending_ids == [a.id, b.id, c.id]
 
+    def test_enqueue_snapshots_crop_state(self):
+        q = ProcessingQueue()
+        plan = _plan("crop")
+        original_crop = CropRect(10, 20, 200, 100)
+        plan.transform = VideoTransform(crop=original_crop)
+
+        item = q.enqueue(plan)
+        plan.transform = VideoTransform(crop=CropRect(30, 40, 120, 80))
+
+        assert item.plan is not None
+        assert item.plan is not plan
+        assert item.plan.transform.crop == original_crop
+
     def test_move_item_index(self):
         q = ProcessingQueue()
         a = q.enqueue(_plan("a"))
@@ -26,6 +39,20 @@ class TestQueueOrdering:
         c = q.enqueue(_plan("c"))
         assert q.move_item(c.id, 0)
         assert q.pending_ids == [c.id, a.id, b.id]
+
+    def test_reordering_does_not_change_crop(self):
+        q = ProcessingQueue()
+        first_plan = _plan("a")
+        crop = CropRect(11, 13, 200, 100)
+        first_plan.transform = VideoTransform(crop=crop)
+        first = q.enqueue(first_plan)
+        second = q.enqueue(_plan("b"))
+
+        assert q.move_item(first.id, 1)
+
+        assert q.pending_ids == [second.id, first.id]
+        assert first.plan is not None
+        assert first.plan.transform.crop == crop
 
     def test_snapshot_is_consistent(self):
         q = ProcessingQueue()
@@ -77,6 +104,8 @@ class TestQueueOrdering:
         plan = _plan("src")
         plan.trim_start = 1.0
         plan.trim_end = 5.0
+        crop = CropRect(11, 13, 200, 100)
+        plan.transform = VideoTransform(crop=crop)
         item = q.enqueue(plan)
         item.state = QueueState.FAILED
         item.error = "boom"
@@ -89,6 +118,7 @@ class TestQueueOrdering:
         assert retry.plan is not plan
         assert retry.plan == plan
         assert retry.plan.trim_start == 1.0
+        assert retry.plan.transform.crop == crop
         assert retry.progress == 0.0
         assert retry.id in q.pending_ids
 

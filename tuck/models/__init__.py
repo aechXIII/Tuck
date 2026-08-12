@@ -12,6 +12,8 @@ from typing import Any, ClassVar
 
 from .progress import EncodeProgress as EncodeProgress
 from .progress import EncodeStage as EncodeStage
+from .transforms import CropRect as CropRect
+from .transforms import VideoTransform as VideoTransform
 
 PROFILE_ID_DISCORD_FREE = "discord-10mb"
 PROFILE_ID_DISCORD_NITRO_BASIC = "discord-50mb"
@@ -75,7 +77,6 @@ _VALID_RC_METHODS = frozenset({RCM_CRF, RCM_CQP, RCM_CQ, RCM_CBR, RCM_VBR})
 _VALID_SCALERS = frozenset(
     {SCALER_BILINEAR, SCALER_BICUBIC, SCALER_LANCZOS, SCALER_NEIGHBOR, SCALER_POINT}
 )
-
 ENCODER_AUTO = "auto"
 ENCODER_AUTO_COMPRESSION = "auto_compression"
 ENCODER_AUTO_FAST = "auto_fast"
@@ -298,6 +299,7 @@ class PlanRequest:
 
     trim_start: float | None = None
     trim_end: float | None = None
+    transform: VideoTransform | None = None
 
     def validate(self) -> None:
         if self.resolution_mode is not None and self.resolution_mode not in _VALID_RES_MODES:
@@ -368,6 +370,9 @@ class PlanRequest:
         if self.preset is not None and self.preset not in _VALID_PRESETS:
             raise ValueError(f"preset must be one of {sorted(_VALID_PRESETS)}")
 
+        if self.transform is not None and not isinstance(self.transform, VideoTransform):
+            raise ValueError("transform must be a VideoTransform or None")
+
         if self.trim_start is not None and self.trim_start < 0:
             raise ValueError("trim_start must be >= 0")
         if self.trim_end is not None and self.trim_end <= 0:
@@ -430,6 +435,7 @@ class EncodePlan:
     qp: int = 23
     trim_start: float = 0.0
     trim_end: float = 0.0
+    transform: VideoTransform = field(default_factory=VideoTransform)
 
     @property
     def trim_duration(self) -> float:
@@ -460,6 +466,7 @@ class EncodePlan:
     def from_dict(cls, data: dict[str, Any]) -> EncodePlan:
         data = dict(data)
         info = data.pop("source_info", None)
+        transform_data = data.pop("transform", None)
         for field_name, default in [
             ("resolution_mode", RES_MODE_SOURCE),
             ("fps_mode", FPS_MODE_SOURCE),
@@ -479,6 +486,10 @@ class EncodePlan:
             if field_name not in data:
                 data[field_name] = default
         plan = cls(**{k: v for k, v in data.items() if k in _fields_for(cls)})
+        if transform_data is not None:
+            if not isinstance(transform_data, dict):
+                raise ValueError("transform must be an object or null")
+            plan.transform = VideoTransform.from_dict(transform_data)
         if info and isinstance(info, dict):
             plan.source_info = VideoInfo(
                 **{k: v for k, v in info.items() if k in _fields_for(VideoInfo)}

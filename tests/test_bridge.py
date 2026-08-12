@@ -2,13 +2,16 @@ import json
 
 import pytest
 
-from tuck.bridge import BridgeAPI, _pick_surviving_default
+from tuck.bridge import BridgeAPI, _item_to_dict, _pick_surviving_default
 from tuck.models import (
     PROFILE_ID_DISCORD_FREE,
+    CropRect,
     EncodePlan,
     Profile,
     QueueItem,
     QueueState,
+    VideoInfo,
+    VideoTransform,
     find_profile_by_id,
 )
 
@@ -23,6 +26,18 @@ class TestBridgeQueueState:
         assert state["pending_ids"] == [item.id]
         assert state["items"][0]["id"] == item.id
 
+    def test_queue_snapshot_exposes_crop(self):
+        crop = CropRect(11, 13, 200, 100)
+        item = QueueItem(
+            plan=EncodePlan(
+                source="clip.mp4",
+                output="out.mp4",
+                transform=VideoTransform(crop=crop),
+            )
+        )
+
+        assert _item_to_dict(item)["crop"] == crop.to_dict()
+
     def test_clear_completed_returns_removed_count(self):
         api = BridgeAPI()
         item = QueueItem(plan=EncodePlan(source="clip.mp4", output="out.mp4"))
@@ -30,6 +45,27 @@ class TestBridgeQueueState:
         api._queue._items[item.id] = item
 
         assert json.loads(api.clear_completed()) == {"ok": True, "count": 1}
+
+
+def test_bridge_reuses_probe_metadata_for_unchanged_video(tmp_path, monkeypatch):
+    source = tmp_path / "clip.mp4"
+    source.write_bytes(b"video")
+    info = VideoInfo(
+        path=str(source),
+        duration=1.0,
+        width=320,
+        height=240,
+        fps=30.0,
+        video_codec="h264",
+    )
+    calls = []
+    monkeypatch.setattr("tuck.bridge.probe_video", lambda path: calls.append(path) or info)
+    api = BridgeAPI()
+
+    assert api._probe_once(str(source)) is info
+    assert api._probe_once(str(source)) is info
+
+    assert calls == [str(source)]
 
 
 class TestBridgeProfileLifecycle:
@@ -480,6 +516,42 @@ class TestBridgePlanRequest:
         )
         assert req.trim_start == pytest.approx(1.25)
         assert req.trim_end == pytest.approx(4.5)
+
+    def test_parse_plan_request_accepts_source_space_crop(self, tmp_path, monkeypatch):
+        test_file = tmp_path / "test.mp4"
+        test_file.write_text("dummy")
+        api = BridgeAPI()
+
+        req = api._parse_plan_request(
+            {
+                "source": str(test_file),
+                "transform": {"crop": {"x": 11, "y": 13, "width": 200, "height": 100}},
+            }
+        )
+
+        assert req.transform == VideoTransform(crop=CropRect(11, 13, 200, 100))
+
+    def test_old_request_without_crop_remains_full_frame(self, tmp_path, monkeypatch):
+        test_file = tmp_path / "test.mp4"
+        test_file.write_text("dummy")
+        api = BridgeAPI()
+
+        req = api._parse_plan_request({"source": str(test_file)})
+
+        assert req.transform is None
+
+    def test_parse_plan_request_rejects_invalid_crop_shape(self, tmp_path, monkeypatch):
+        test_file = tmp_path / "test.mp4"
+        test_file.write_text("dummy")
+        api = BridgeAPI()
+
+        with pytest.raises(ValueError, match="crop width"):
+            api._parse_plan_request(
+                {
+                    "source": str(test_file),
+                    "transform": {"crop": {"x": 0, "y": 0, "width": 0, "height": 100}},
+                }
+            )
 
     def test_parse_plan_request_rejects_inverted_trim(self, tmp_path, monkeypatch):
         import tuck.settings as settings_mod

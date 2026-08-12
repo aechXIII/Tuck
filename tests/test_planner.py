@@ -22,9 +22,11 @@ from tuck.models import (
     SCALER_NEIGHBOR,
     WORKFLOW_COMPRESSION,
     WORKFLOW_UPSCALE,
+    CropRect,
     PlanRequest,
     Profile,
     VideoInfo,
+    VideoTransform,
     find_profile_by_id,
 )
 from tuck.planner import _make_even, _resolve_output_collision, _scale_resolution, plan
@@ -63,6 +65,57 @@ class TestScaleResolution:
         w2, h2 = _make_even(1920, 1080)
         assert w2 == 1920
         assert h2 == 1080
+
+
+class TestCropPlanning:
+    def test_no_crop_preserves_source_resolution(
+        self, skip_if_no_ffprobe, sample_video_path
+    ) -> None:
+        profile = Profile(name="No crop", resolution_mode=RES_MODE_SOURCE, two_pass=False)
+
+        result = plan(str(sample_video_path), profile)
+
+        assert result.transform.crop is None
+        assert result.source_info is not None
+        assert result.target_width == result.source_info.width
+        assert result.target_height == result.source_info.height
+        assert not result.apply_scale
+
+    def test_crop_defines_source_resolution_before_scaling(
+        self, skip_if_no_ffprobe, sample_video_path
+    ) -> None:
+        profile = Profile(name="Crop", resolution_mode=RES_MODE_SOURCE, two_pass=False)
+        crop = CropRect(10, 12, 40, 30)
+        request = PlanRequest(transform=VideoTransform(crop=crop))
+
+        result = plan(str(sample_video_path), profile, request=request)
+
+        assert result.transform.crop == crop
+        assert (result.target_width, result.target_height) == (40, 30)
+        assert not result.apply_scale
+
+    def test_crop_then_custom_scale(self, skip_if_no_ffprobe, sample_video_path) -> None:
+        profile = Profile(name="Crop scale", resolution_mode=RES_MODE_SOURCE, two_pass=False)
+        request = PlanRequest(
+            resolution_mode=RES_MODE_CUSTOM,
+            custom_width=32,
+            custom_height=24,
+            transform=VideoTransform(crop=CropRect(10, 12, 40, 30)),
+        )
+
+        result = plan(str(sample_video_path), profile, request=request)
+
+        assert (result.target_width, result.target_height) == (32, 24)
+        assert result.apply_scale
+
+    def test_crop_outside_probed_source_is_rejected(
+        self, skip_if_no_ffprobe, sample_video_path
+    ) -> None:
+        profile = Profile(name="Bad crop", two_pass=False)
+        request = PlanRequest(transform=VideoTransform(crop=CropRect(40, 40, 40, 30)))
+
+        with pytest.raises(ValueError, match="inside source"):
+            plan(str(sample_video_path), profile, request=request)
 
 
 class TestPlan:

@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from tuck.encoding.filters import build_video_filters
 from tuck.engine import (
     EncodeError,
     FFmpegEngine,
@@ -15,13 +16,16 @@ from tuck.engine import (
 from tuck.models import (
     ENCODER_AUTO,
     ENCODER_AUTO_COMPRESSION,
+    RC_EXPLICIT_BITRATE,
     RCM_CBR,
     RCM_CQ,
     RCM_CQP,
     RCM_CRF,
     RCM_VBR,
     WORKFLOW_UPSCALE,
+    CropRect,
     EncodePlan,
+    VideoTransform,
 )
 
 
@@ -342,6 +346,165 @@ class TestFFmpegEngine:
         assert removed >= 0
 
 
+def test_video_filter_builder_preserves_existing_filter_order() -> None:
+    assert build_video_filters(
+        crop=CropRect(10, 20, 800, 600),
+        scale_width=320,
+        scale_height=240,
+        scaler="lanczos",
+        frame_rate=24,
+    ) == ["crop=800:600:10:20:exact=1", "scale=320:240:flags=lanczos", "fps=24"]
+    assert build_video_filters() == []
+
+
+def test_build_base_cmd_applies_crop_without_scaling(engine, real_video_path, tmp_path) -> None:
+    from tuck.probe import probe
+
+    info = probe(real_video_path)
+    plan = EncodePlan(
+        source=str(real_video_path),
+        output=str(tmp_path / "crop.mp4"),
+        source_info=info,
+        transform=VideoTransform(crop=CropRect(10, 20, 200, 100)),
+    )
+
+    cmd = engine._build_base_cmd("ffmpeg", plan, Path(plan.source))
+
+    assert cmd[cmd.index("-vf") + 1] == "crop=200:100:10:20:exact=1"
+
+
+def test_cpu_encode_outputs_selected_crop_dimensions(engine, real_video_path, tmp_path) -> None:
+    from tuck.probe import probe
+
+    info = probe(real_video_path)
+    output = tmp_path / "cropped-output.mp4"
+    crop = CropRect(60, 40, 160, 120)
+    plan = EncodePlan(
+        source=str(real_video_path),
+        output=str(output),
+        target_width=crop.width,
+        target_height=crop.height,
+        target_fps=info.fps,
+        video_bitrate=500_000,
+        original_video_bitrate=500_000,
+        audio_bitrate=0,
+        two_pass=False,
+        preset="ultrafast",
+        target_size=10 * 1024 * 1024,
+        rate_control=RC_EXPLICIT_BITRATE,
+        rate_control_method=RCM_CBR,
+        source_info=info,
+        transform=VideoTransform(crop=crop),
+    )
+
+    result = engine.encode(plan)
+    result_info = probe(result)
+
+    assert (result_info.width, result_info.height) == (crop.width, crop.height)
+
+
+def test_cpu_encode_outputs_selected_crop_content(engine, tmp_path) -> None:
+    from tuck.engine import _find_ffmpeg
+    from tuck.probe import probe
+
+    ffmpeg = _find_ffmpeg()
+    if not ffmpeg:
+        pytest.skip("ffmpeg unavailable")
+
+    source = tmp_path / "split-colors.mp4"
+    create = subprocess.run(
+        [
+            ffmpeg,
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=red:size=320x240:rate=1:duration=1",
+            "-vf",
+            "drawbox=x=160:y=0:w=160:h=240:color=blue:t=fill",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "ultrafast",
+            str(source),
+        ],
+        capture_output=True,
+        timeout=30,
+        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+    )
+    if create.returncode != 0:
+        pytest.skip("cannot create split-color fixture")
+
+    info = probe(source)
+    crop = CropRect(160, 0, 160, 240)
+    output = tmp_path / "blue-half.mp4"
+    plan = EncodePlan(
+        source=str(source),
+        output=str(output),
+        target_width=crop.width,
+        target_height=crop.height,
+        target_fps=info.fps,
+        video_bitrate=500_000,
+        original_video_bitrate=500_000,
+        audio_bitrate=0,
+        two_pass=False,
+        preset="ultrafast",
+        target_size=10 * 1024 * 1024,
+        rate_control=RC_EXPLICIT_BITRATE,
+        rate_control_method=RCM_CBR,
+        source_info=info,
+        transform=VideoTransform(crop=crop),
+    )
+
+    result = engine.encode(plan)
+    decoded = subprocess.run(
+        [
+            ffmpeg,
+            "-v",
+            "error",
+            "-i",
+            str(result),
+            "-frames:v",
+            "1",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "rgb24",
+            "pipe:1",
+        ],
+        capture_output=True,
+        timeout=30,
+        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+    )
+    assert decoded.returncode == 0
+    center = ((crop.height // 2) * crop.width + crop.width // 2) * 3
+    red, green, blue = decoded.stdout[center : center + 3]
+    assert blue > 180
+    assert red < 70
+    assert green < 70
+
+
+@pytest.mark.parametrize("encoder", ["libx264", "h264_nvenc", "h264_amf"])
+def test_crop_filter_is_shared_by_all_encoder_commands(
+    encoder, engine, real_video_path, tmp_path
+) -> None:
+    from tuck.probe import probe
+
+    info = probe(real_video_path)
+    plan = EncodePlan(
+        source=str(real_video_path),
+        output=str(tmp_path / "crop.mp4"),
+        source_info=info,
+        video_encoder=encoder,
+        rate_control_method=RCM_CBR,
+        transform=VideoTransform(crop=CropRect(10, 20, 200, 100)),
+    )
+
+    cmd = engine._build_base_cmd("ffmpeg", plan, Path(plan.source))
+
+    assert cmd[cmd.index("-vf") + 1] == "crop=200:100:10:20:exact=1"
+
+
 class TestScalerFlags:
     def test_scaler_to_ffmpeg_flag_mappings(self):
         assert _scaler_to_ffmpeg_flag("bilinear") == "bilinear"
@@ -390,6 +553,27 @@ class TestScalerFlags:
             vf_index = cmd.index("-vf")
             vf_value = cmd[vf_index + 1]
             assert f"flags={expected_flag}" in vf_value
+
+    def test_build_base_cmd_unknown_scaler_uses_neighbor(self, engine, real_video_path, tmp_path):
+        from tuck.probe import probe
+
+        info = probe(real_video_path)
+        plan = EncodePlan(
+            source=str(real_video_path),
+            output=str(tmp_path / "out.mp4"),
+            target_width=320,
+            target_height=240,
+            target_fps=info.fps,
+            video_bitrate=500_000,
+            audio_bitrate=128_000,
+            two_pass=False,
+            source_info=info,
+            apply_scale=True,
+            scaler="bogus",
+        )
+
+        cmd = engine._build_base_cmd("ffmpeg", plan, Path(plan.source))
+        assert cmd[cmd.index("-vf") + 1] == "scale=320:240:flags=neighbor"
 
     def test_build_base_cmd_no_scale_no_vf_flags(self, engine, real_video_path, tmp_path):
         from tuck.probe import probe
@@ -959,6 +1143,59 @@ class TestTargetSizeRetries:
         assert result == output
         assert calls == 3
         assert plan.video_bitrate > 1_000_000
+
+    def test_target_size_retry_preserves_crop(self, engine, tmp_path):
+        output = tmp_path / "output.mp4"
+        crop = CropRect(11, 13, 200, 100)
+        plan = EncodePlan(
+            source="source.mp4",
+            output=str(output),
+            video_bitrate=1_000_000,
+            audio_bitrate=0,
+            two_pass=False,
+            target_size=10_000_000,
+            rate_control_method=RCM_CBR,
+            transform=VideoTransform(crop=crop),
+        )
+        seen = []
+
+        def encode_once(_ffmpeg, attempt_plan, *_args, **_kwargs):
+            seen.append(attempt_plan.transform.crop)
+            output.write_bytes(b"x" * 4_000_000)
+            return output
+
+        engine._encode_single_pass = encode_once
+
+        engine._encode_with_retry("ffmpeg", plan, Path(plan.source), output, 10.0, None)
+
+        assert seen == [crop, crop, crop]
+
+
+def test_two_pass_uses_identical_crop_filter_in_both_passes(
+    engine, real_video_path, tmp_path, monkeypatch
+) -> None:
+    from tuck.probe import probe
+
+    info = probe(real_video_path)
+    plan = EncodePlan(
+        source=str(real_video_path),
+        output=str(tmp_path / "output.mp4"),
+        source_info=info,
+        two_pass=True,
+        transform=VideoTransform(crop=CropRect(11, 13, 200, 100)),
+    )
+    commands = []
+    monkeypatch.setattr(
+        engine, "_run_pass", lambda command, *_args, **_kwargs: commands.append(command)
+    )
+
+    engine._encode_two_pass(
+        "ffmpeg", plan, Path(plan.source), Path(plan.output), info.duration, None
+    )
+
+    assert len(commands) == 2
+    assert commands[0][commands[0].index("-vf") + 1] == "crop=200:100:11:13:exact=1"
+    assert commands[1][commands[1].index("-vf") + 1] == "crop=200:100:11:13:exact=1"
 
 
 class TestFFmpegCommandPerEncoder:

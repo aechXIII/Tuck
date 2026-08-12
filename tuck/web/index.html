@@ -72,6 +72,23 @@ body { font-family:var(--font); font-size:13px; color:var(--text); background:va
 #empty .empt-btn:focus-visible { outline:2px solid var(--accent-light); outline-offset:2px; }
 #stage { flex:1 1 0; min-height:0; background:#000; position:relative; display:none; }
 #stage video, #stage img { width:100%; height:100%; object-fit:contain; position:absolute; top:0; left:0; }
+#crop-ui { position:absolute; inset:0; z-index:3; display:none; overflow:hidden; }
+#crop-ui.on { display:block; }
+.crop-dim { position:absolute; background:rgba(5,5,10,.66); pointer-events:none; }
+#crop-selection { position:absolute; border:2px solid var(--accent-light); cursor:move; touch-action:none; box-shadow:0 0 0 1px rgba(0,0,0,.75),inset 0 0 0 1px rgba(0,0,0,.35); }
+#crop-selection::before, #crop-selection::after { content:''; position:absolute; pointer-events:none; opacity:.7; }
+#crop-selection::before { left:33.333%; right:33.333%; top:0; bottom:0; border-left:1px solid rgba(255,255,255,.45); border-right:1px solid rgba(255,255,255,.45); }
+#crop-selection::after { top:33.333%; bottom:33.333%; left:0; right:0; border-top:1px solid rgba(255,255,255,.45); border-bottom:1px solid rgba(255,255,255,.45); }
+.crop-handle { position:absolute; z-index:2; width:12px; height:12px; border:2px solid #fff; border-radius:3px; background:var(--accent); box-shadow:0 1px 5px rgba(0,0,0,.75); }
+.crop-handle[data-handle="nw"] { left:2px; top:2px; cursor:nwse-resize; }
+.crop-handle[data-handle="n"] { left:50%; top:2px; margin-left:-6px; cursor:ns-resize; }
+.crop-handle[data-handle="ne"] { right:2px; top:2px; cursor:nesw-resize; }
+.crop-handle[data-handle="e"] { right:2px; top:50%; margin-top:-6px; cursor:ew-resize; }
+.crop-handle[data-handle="se"] { right:2px; bottom:2px; cursor:nwse-resize; }
+.crop-handle[data-handle="s"] { left:50%; bottom:2px; margin-left:-6px; cursor:ns-resize; }
+.crop-handle[data-handle="sw"] { left:2px; bottom:2px; cursor:nesw-resize; }
+.crop-handle[data-handle="w"] { left:2px; top:50%; margin-top:-6px; cursor:ew-resize; }
+body.crop-dragging, body.crop-dragging * { user-select:none !important; }
 #player-bar {
   display:none;
   background:linear-gradient(180deg, #101018 0%, #0c0c12 100%);
@@ -200,9 +217,13 @@ body.tl-trim-dragging * {
   display:flex;
   align-items:center;
   justify-content:center;
-  gap:8px;
+  gap:0;
   overflow:hidden;
 }
+.player-edit-group { display:flex; align-items:center; gap:6px; min-width:0; }
+#trim-edit-group { overflow:hidden; }
+#crop-edit-group { flex-shrink:0; }
+.player-edit-divider { width:1px; height:16px; margin:0 8px; background:var(--border2); flex-shrink:0; }
 #trim-label {
   color:var(--accent-light);
   font-size:11px;
@@ -214,6 +235,8 @@ body.tl-trim-dragging * {
   line-height:28px;
 }
 #trim-label:empty { display:none; }
+#crop-label { color:#a1a1b5; font-size:11px; font-family:var(--mono); white-space:nowrap; line-height:28px; }
+#crop-label.active { color:var(--accent-light); }
 #btn-trim-reset {
   display:none;
   flex-shrink:0;
@@ -229,6 +252,10 @@ body.tl-trim-dragging * {
 #btn-trim-reset.show { display:inline-block; }
 #btn-trim-reset:hover { color:var(--accent-light); }
 #btn-trim-reset:focus-visible { outline:2px solid var(--accent-light); outline-offset:2px; border-radius:2px; }
+#btn-crop-reset { display:none; flex-shrink:0; background:transparent; border:none; color:var(--muted); font:600 11px var(--font); padding:0 4px; height:28px; cursor:pointer; }
+#btn-crop-reset.show { display:inline-block; }
+#btn-crop-reset:hover { color:var(--accent-light); }
+#btn-crop-reset:focus-visible { outline:2px solid var(--accent-light); outline-offset:2px; border-radius:2px; }
 #player-vol {
   display:flex;
   align-items:center;
@@ -535,7 +562,13 @@ input[type=range]:focus-visible::-webkit-slider-thumb { outline:2px solid var(--
     <div id="empty">
       <h2>Drop videos anywhere</h2>
     </div>
-    <div id="stage"><video id="vid"></video><img id="thumb" style="display:none"></div>
+    <div id="stage">
+      <video id="vid"></video><img id="thumb" style="display:none">
+      <div id="crop-ui" aria-label="Video crop overlay">
+        <div class="crop-dim" id="crop-dim-top"></div><div class="crop-dim" id="crop-dim-bottom"></div><div class="crop-dim" id="crop-dim-left"></div><div class="crop-dim" id="crop-dim-right"></div>
+        <div id="crop-selection" aria-label="Crop selection"><span class="crop-handle" data-handle="nw"></span><span class="crop-handle" data-handle="n"></span><span class="crop-handle" data-handle="ne"></span><span class="crop-handle" data-handle="e"></span><span class="crop-handle" data-handle="se"></span><span class="crop-handle" data-handle="s"></span><span class="crop-handle" data-handle="sw"></span><span class="crop-handle" data-handle="w"></span></div>
+      </div>
+    </div>
     <div id="player-bar">
       <div id="timeline" role="slider" aria-label="Seek and trim timeline" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0" tabindex="0" title="Drag handles to trim · click track to seek">
         <div class="tl-track" id="tl-track">
@@ -551,8 +584,15 @@ input[type=range]:focus-visible::-webkit-slider-thumb { outline:2px solid var(--
         <button type="button" class="pbtn" id="btn-play" onclick="togglePlay()" aria-label="Play/Pause" title="Play/Pause">▶</button>
         <span id="ptime">0:00 / 0:00</span>
         <div id="player-mid">
-          <span id="trim-label"></span>
-          <button type="button" id="btn-trim-reset" onclick="clearTrim()" title="Use full video" aria-label="Reset trim">Reset trim</button>
+          <div class="player-edit-group" id="trim-edit-group" role="group" aria-label="Trim controls">
+            <span id="trim-label"></span>
+            <button type="button" id="btn-trim-reset" onclick="clearTrim()" title="Use full video" aria-label="Reset trim">Reset trim</button>
+          </div>
+          <span class="player-edit-divider" aria-hidden="true"></span>
+          <div class="player-edit-group" id="crop-edit-group" role="group" aria-label="Crop controls">
+            <span id="crop-label">Full frame</span>
+            <button type="button" id="btn-crop-reset" onclick="clearCrop()" title="Use full frame" aria-label="Reset crop">Reset crop</button>
+          </div>
         </div>
         <div id="player-vol">
           <button type="button" class="pbtn" id="btn-mute" onclick="toggleMute()" aria-label="Mute" title="Mute"></button>
@@ -802,7 +842,7 @@ window.addFiles = function(paths, rejected) {
     if (typeof paths[i] !== 'string') continue;
     var p = paths[i];
     if (clips[p]) { skipped++; continue; }
-    clips[p] = {path:p, name:p.split(/[\\/]/).pop(), probed:false, probing:false, probeData:null, planData:null, mediaToken:null, error:'', trimStart:null, trimEnd:null};
+    clips[p] = {path:p, name:p.split(/[\\/]/).pop(), probed:false, probing:false, probeData:null, planData:null, mediaToken:null, error:'', trimStart:null, trimEnd:null, crop:null};
     if (clipOrder.indexOf(p) < 0) clipOrder.push(p);
     if (!firstAdded) firstAdded = p;
     added++;
@@ -1014,6 +1054,7 @@ function metaStr(c) {
   if (!c.probed) return '…';
   var d = c.probeData, first = [];
   if (d.width && d.height) first.push(d.width+'×'+d.height);
+  if (c.crop) first.push('crop '+c.crop.width+'×'+c.crop.height);
   if (d.fps) first.push(Math.round(d.fps)+' fps');
   var second = c._fileSize ? formatBytes(c._fileSize) : '';
   if (c._resultSize && c._queueState==='completed') second += ' → '+formatBytes(c._resultSize);
@@ -1039,6 +1080,7 @@ function selectClip(p) {
   loadMedia(p);
   var c = clips[p];
   syncTimelineUI();
+  if (typeof paintCropOverlay === 'function') paintCropOverlay();
   if (!c.probed && !c.error) probeClip(p); else if (c.probed) { syncFpsToClip(); syncResolutionToClip(); reqPreview(); }
 }
 
@@ -1090,7 +1132,7 @@ async function probeClip(p) {
   } catch(e) { c.error = 'Probe error'; }
   c.probing = false;
   renderClips();
-  if (selPath === p) { syncFpsToClip(); syncResolutionToClip(); syncTimelineUI(); reqPreview(); }
+  if (selPath === p) { syncFpsToClip(); syncResolutionToClip(); syncTimelineUI(); if(typeof paintCropOverlay==='function')paintCropOverlay(); reqPreview(); }
 }
 
 async function loadMedia(p) {
@@ -1656,6 +1698,7 @@ function buildReq(src) {
     var full = (c.probeData && c.probeData.duration) || 0;
     if (c.trimStart != null && c.trimStart > 0.001) req.trim_start = Math.round(c.trimStart * 1000) / 1000;
     if (c.trimEnd != null && (full <= 0 || c.trimEnd < full - 0.001)) req.trim_end = Math.round(c.trimEnd * 1000) / 1000;
+    if (typeof cropTransformForRequest === 'function') { var transform=cropTransformForRequest(c); if(transform)req.transform=transform; }
   }
   return req;
 }
@@ -2117,5 +2160,6 @@ window.addEventListener('keydown', function(e) {
   if (e.key==='ArrowLeft') { e.preventDefault(); seekBy(-3); }
 });
 </script>
+<script src="crop.js"></script>
 </body>
 </html>

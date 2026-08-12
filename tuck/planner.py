@@ -20,6 +20,8 @@ from .models import (
     EncodePlan,
     PlanRequest,
     Profile,
+    VideoInfo,
+    VideoTransform,
     estimate_size_from_bitrate,
     validate_rate_control_matrix,
 )
@@ -38,11 +40,12 @@ def plan(
     request: PlanRequest | None = None,
     compression_suffix: str = "_tucked_{size}",
     upscale_suffix: str = "_upscaled_{width}x{height}",
+    source_info: VideoInfo | None = None,
 ) -> EncodePlan:
     from .probe import probe
 
     source = Path(source)
-    info = probe(source)
+    info = source_info if source_info is not None else probe(source)
 
     res_mode = profile.resolution_mode
     fps_mode = profile.fps_mode
@@ -150,6 +153,13 @@ def plan(
         )
     trim_end = min(trim_end, float(info.duration))
 
+    transform = (
+        request.transform
+        if request is not None and request.transform is not None
+        else VideoTransform()
+    )
+    transform.validate_for_source(info.width, info.height)
+
     effective_duration = trim_end - trim_start
     if effective_duration <= 0:
         raise ValueError(f"Trim window is zero or negative: {effective_duration:.3f}s")
@@ -201,9 +211,13 @@ def plan(
 
     output = _resolve_output_collision(output, respect_reservation=False)
 
+    crop = transform.crop
+    effective_width = crop.width if crop is not None else info.width
+    effective_height = crop.height if crop is not None else info.height
+
     if res_mode == RES_MODE_SOURCE:
-        target_w, target_h = _make_even(info.width, info.height)
-        apply_scale = info.width != target_w or info.height != target_h
+        target_w, target_h = _make_even(effective_width, effective_height)
+        apply_scale = effective_width != target_w or effective_height != target_h
     elif res_mode == RES_MODE_CUSTOM:
         cw = (
             request.custom_width
@@ -219,9 +233,9 @@ def plan(
         apply_scale = True
     elif res_mode == RES_MODE_LIMIT:
         target_w, target_h = _scale_resolution(
-            info.width, info.height, profile.max_width, profile.max_height
+            effective_width, effective_height, profile.max_width, profile.max_height
         )
-        apply_scale = target_w != info.width or target_h != info.height
+        apply_scale = target_w != effective_width or target_h != effective_height
     else:
         raise ValueError(f"Unknown resolution_mode: {res_mode!r}")
 
@@ -343,6 +357,7 @@ def plan(
         qp=qp_val,
         trim_start=trim_start,
         trim_end=trim_end,
+        transform=transform,
     )
 
     logger.info(

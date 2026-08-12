@@ -32,6 +32,23 @@ def test_web_ui_starts_if_python_calls_init_after_bridge_injection() -> None:
     assert "var p = paths[i];" in html
 
 
+def test_web_ui_contains_visual_crop_overlay_and_request_state() -> None:
+    html = Path("tuck/web/index.html").read_text(encoding="utf-8")
+    crop_js = Path("tuck/web/crop.js").read_text(encoding="utf-8")
+
+    assert 'id="crop-selection"' in html
+    assert "event.target.dataset.handle" in crop_js
+    assert html.count('class="crop-handle" data-handle=') == 8
+    assert '.crop-handle[data-handle="nw"] { left:2px; top:2px;' in html
+    assert '.crop-handle[data-handle="se"] { right:2px; bottom:2px;' in html
+    assert 'class="player-edit-divider"' in html
+    assert 'id="trim-edit-group"' in html
+    assert 'id="crop-edit-group"' in html
+    assert "cropTransformForRequest(c)" in html
+    assert "new ResizeObserver(paintCropOverlay)" in crop_js
+    assert "api.createPlan" not in crop_js
+
+
 def test_web_ui_allows_manual_target_size_entry() -> None:
     html = Path("tuck/web/index.html").read_text(encoding="utf-8")
 

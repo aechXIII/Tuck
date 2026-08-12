@@ -13,25 +13,16 @@ from ..models import (
     RCM_VBR,
     EncodePlan,
 )
+from . import filters as _filters
+from .filters import build_video_filters, join_video_filters
+
+scaler_to_ffmpeg_flag = _filters.scaler_to_ffmpeg_flag
 
 
 def fmt_ffmpeg_time(seconds: float) -> str:
     if seconds < 0:
         seconds = 0.0
     return f"{seconds:.3f}"
-
-
-_SCALER_TO_FFMPEG: dict[str, str] = {
-    "bilinear": "bilinear",
-    "bicubic": "bicubic",
-    "lanczos": "lanczos",
-    "nearest": "neighbor",
-    "point": "neighbor",
-}
-
-
-def scaler_to_ffmpeg_flag(scaler: str) -> str:
-    return _SCALER_TO_FFMPEG.get(scaler, "neighbor")
 
 
 _NVENC_PRESET_MAP: dict[str, str] = {
@@ -79,15 +70,16 @@ def build_base_cmd(
     ):
         cmd += ["-t", fmt_ffmpeg_time(trim_duration)]
 
-    vf_parts = []
-    if plan.apply_scale and plan.target_width > 0 and plan.target_height > 0:
-        scaler_flag = scaler_to_ffmpeg_flag(getattr(plan, "scaler", "neighbor"))
-        vf_parts.append(f"scale={plan.target_width}:{plan.target_height}:flags={scaler_flag}")
-    if plan.apply_fps_filter and plan.target_fps > 0:
-        vf_parts.append(f"fps={plan.target_fps}")
-
-    if vf_parts:
-        cmd += ["-vf", ",".join(vf_parts)]
+    crop = plan.transform.crop
+    video_filters = build_video_filters(
+        crop=crop,
+        scale_width=plan.target_width if plan.apply_scale else 0,
+        scale_height=plan.target_height if plan.apply_scale else 0,
+        scaler=getattr(plan, "scaler", "neighbor"),
+        frame_rate=plan.target_fps if plan.apply_fps_filter else 0.0,
+    )
+    if video_filters:
+        cmd += ["-vf", join_video_filters(video_filters)]
 
     encoder = getattr(plan, "video_encoder", "libx264")
     rc_method = getattr(plan, "rate_control_method", RCM_CRF)

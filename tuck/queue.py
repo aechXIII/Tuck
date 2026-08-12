@@ -53,7 +53,7 @@ class ProcessingQueue:
 
     def enqueue(self, plan: EncodePlan) -> QueueItem:
         item = QueueItem(
-            plan=plan,
+            plan=copy.deepcopy(plan),
             state=QueueState.PENDING,
             added_at=datetime.now(timezone.utc).isoformat(),
             status_text="Pending",

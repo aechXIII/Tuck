@@ -14,6 +14,7 @@ from .models import (
     RC_TARGET_SIZE,
     WORKFLOW_COMPRESSION,
     PlanRequest,
+    VideoTransform,
     _validate_preset_for_encoder,
     _validate_rc_method_for_encoder,
     _validate_tune_for_encoder,
@@ -104,6 +105,15 @@ def _opt_bool(raw: dict[str, Any], key: str) -> bool | None:
     return None
 
 
+def _parse_transform(raw: dict[str, Any]) -> VideoTransform | None:
+    if "transform" not in raw or raw["transform"] is None:
+        return None
+    transform = raw["transform"]
+    if not isinstance(transform, dict):
+        raise ValueError("transform must be an object or null")
+    return VideoTransform.from_dict(transform)
+
+
 def parse_plan_request(
     raw: dict[str, Any],
     validate_path_fn: Callable[[str], str],
@@ -138,6 +148,7 @@ def parse_plan_request(
         qp=_opt_int(raw, "qp"),
         trim_start=_opt_float(raw, "trim_start"),
         trim_end=_opt_float(raw, "trim_end"),
+        transform=_parse_transform(raw),
     )
     req.validate()
     return req

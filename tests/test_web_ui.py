@@ -170,6 +170,7 @@ def test_support_folder_opener_creates_and_opens_directory(tmp_path, monkeypatch
 
 def test_resource_path_locates_web_ui() -> None:
     assert _get_resource_path("tuck/web/index.html").is_file()
+    assert _get_resource_path("tuck/web/crop.js").is_file()
 
 
 def test_native_hwnd_requires_real_handle() -> None:

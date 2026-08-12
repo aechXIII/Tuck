@@ -29,6 +29,7 @@ from .models import (
     PlanRequest,
     Profile,
     QueueItem,
+    VideoInfo,
     find_profile_by_id,
 )
 from .planner import plan
@@ -55,7 +56,7 @@ class BridgeAPI:
         self._ipc_metadata: dict[str, str] = {}
         self._checking_updates: bool = False
 
-        self._probe_cache: dict[str, dict[str, Any]] = {}
+        self._probe_cache: dict[str, tuple[int, int, VideoInfo]] = {}
 
         self._preview_request_id: int = 0
 
@@ -140,9 +141,9 @@ class BridgeAPI:
         except (ValueError, FileNotFoundError) as e:
             return json.dumps({"ok": False, "error": str(e)})
         try:
-            info = probe_video(path)
+            info = self._probe_once(path)
 
-            self._probe_cache[path] = {
+            data = {
                 "path": info.path,
                 "duration": info.duration,
                 "duration_str": info.duration_str,
@@ -159,7 +160,7 @@ class BridgeAPI:
                 "bitrate_kbps": round(info.bitrate / 1000) if info.bitrate else 0,
                 "has_audio": info.has_audio,
             }
-            return json.dumps({"ok": True, "data": self._probe_cache[path]})
+            return json.dumps({"ok": True, "data": data})
         except Exception as e:
             return json.dumps({"ok": False, "error": str(e)})
 
@@ -207,6 +208,7 @@ class BridgeAPI:
                 request=req,
                 compression_suffix=cs,
                 upscale_suffix=us,
+                source_info=self._probe_once(req.source),
             )
             return json.dumps(
                 {
@@ -249,6 +251,7 @@ class BridgeAPI:
                         "trim_end": round(float(getattr(p, "trim_end", 0.0) or 0.0), 3),
                         "trim_duration": round(float(p.trim_duration), 3),
                         "has_trim": bool(p.has_trim),
+                        "crop": p.transform.crop.to_dict() if p.transform.crop else None,
                     },
                 }
             )
@@ -291,6 +294,7 @@ class BridgeAPI:
                 request=req,
                 compression_suffix=cs,
                 upscale_suffix=us,
+                source_info=self._probe_once(req.source),
             )
             item = self._queue.enqueue(enc_plan)
             return json.dumps({"ok": True, "item_id": item.id})
@@ -342,6 +346,7 @@ class BridgeAPI:
                     request=req,
                     compression_suffix=cs,
                     upscale_suffix=us,
+                    source_info=self._probe_once(req.source),
                 )
                 item = self._queue.enqueue(enc_plan)
                 enqueued.append(item.id)
@@ -1047,6 +1052,16 @@ class BridgeAPI:
 
         return parse_plan_request(raw, self._validate_path)
 
+    def _probe_once(self, path: str) -> VideoInfo:
+        stat = Path(path).stat()
+        cached = self._probe_cache.get(path)
+        signature = (stat.st_size, stat.st_mtime_ns)
+        if cached is not None and cached[:2] == signature:
+            return cached[2]
+        info = probe_video(path)
+        self._probe_cache[path] = (signature[0], signature[1], info)
+        return info
+
 
 _normalize_profile_ui_payload = normalize_profile_ui_payload
 
@@ -1083,6 +1098,11 @@ def _item_to_dict(item: QueueItem) -> dict[str, Any]:
         "trim_start": float(item.plan.trim_start) if item.plan else 0.0,
         "trim_end": float(item.plan.trim_end) if item.plan else 0.0,
         "has_trim": bool(item.plan.has_trim) if item.plan else False,
+        "crop": (
+            item.plan.transform.crop.to_dict()
+            if item.plan is not None and item.plan.transform.crop is not None
+            else None
+        ),
     }
 
 
