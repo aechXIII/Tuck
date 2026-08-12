@@ -12,8 +12,57 @@ from typing import Any, ClassVar
 
 from .progress import EncodeProgress as EncodeProgress
 from .progress import EncodeStage as EncodeStage
-from .transforms import CropRect as CropRect
-from .transforms import VideoTransform as VideoTransform
+from .transforms import (
+    CROP_ASPECT_1_1 as CROP_ASPECT_1_1,
+)
+from .transforms import (
+    CROP_ASPECT_4_3 as CROP_ASPECT_4_3,
+)
+from .transforms import (
+    CROP_ASPECT_9_16 as CROP_ASPECT_9_16,
+)
+from .transforms import (
+    CROP_ASPECT_16_9 as CROP_ASPECT_16_9,
+)
+from .transforms import (
+    CROP_ASPECT_FREE as CROP_ASPECT_FREE,
+)
+from .transforms import (
+    CROP_ASPECT_RATIOS as CROP_ASPECT_RATIOS,
+)
+from .transforms import (
+    SIZING_MODE_FILL as SIZING_MODE_FILL,
+)
+from .transforms import (
+    SIZING_MODE_FIT as SIZING_MODE_FIT,
+)
+from .transforms import (
+    SIZING_MODE_STRETCH as SIZING_MODE_STRETCH,
+)
+from .transforms import (
+    CropRect as CropRect,
+)
+from .transforms import (
+    OutputGeometry as OutputGeometry,
+)
+from .transforms import (
+    TransformGeometry as TransformGeometry,
+)
+from .transforms import (
+    VideoTransform as VideoTransform,
+)
+from .transforms import (
+    calculate_transform_geometry as calculate_transform_geometry,
+)
+from .transforms import (
+    crop_for_aspect as crop_for_aspect,
+)
+from .transforms import (
+    fill_crop_dimensions as fill_crop_dimensions,
+)
+from .transforms import (
+    fit_output_dimensions as fit_output_dimensions,
+)
 
 PROFILE_ID_DISCORD_FREE = "discord-10mb"
 PROFILE_ID_DISCORD_NITRO_BASIC = "discord-50mb"

@@ -7,6 +7,7 @@ from tuck.models import (
     PROFILE_ID_DISCORD_FREE,
     CropRect,
     EncodePlan,
+    OutputGeometry,
     Profile,
     QueueItem,
     QueueState,
@@ -37,6 +38,20 @@ class TestBridgeQueueState:
         )
 
         assert _item_to_dict(item)["crop"] == crop.to_dict()
+
+    def test_queue_snapshot_exposes_complete_transform(self):
+        transform = VideoTransform(
+            crop=CropRect(10, 20, 800, 600),
+            crop_aspect="4:3",
+            rotation=90,
+            flip_horizontal=True,
+            sizing_mode="fill",
+            output=OutputGeometry(1080, 1920),
+        )
+        item = QueueItem(
+            plan=EncodePlan(source="clip.mp4", output="out.mp4", transform=transform)
+        )
+        assert _item_to_dict(item)["transform"] == transform.to_dict()
 
     def test_clear_completed_returns_removed_count(self):
         api = BridgeAPI()
@@ -530,6 +545,22 @@ class TestBridgePlanRequest:
         )
 
         assert req.transform == VideoTransform(crop=CropRect(11, 13, 200, 100))
+
+    def test_parse_plan_request_accepts_complete_transform(self, tmp_path, monkeypatch):
+        test_file = tmp_path / "test.mp4"
+        test_file.write_text("dummy")
+        api = BridgeAPI()
+        transform = {
+            "crop": {"x": 10, "y": 20, "width": 800, "height": 600},
+            "crop_aspect": "4:3",
+            "rotation": 270,
+            "flip_horizontal": True,
+            "flip_vertical": True,
+            "sizing_mode": "fill",
+            "output": {"width": 1080, "height": 1920},
+        }
+        req = api._parse_plan_request({"source": str(test_file), "transform": transform})
+        assert req.transform == VideoTransform.from_dict(transform)
 
     def test_old_request_without_crop_remains_full_frame(self, tmp_path, monkeypatch):
         test_file = tmp_path / "test.mp4"

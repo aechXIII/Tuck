@@ -3,7 +3,7 @@ import time
 from collections import deque
 from pathlib import Path
 
-from tuck.models import CropRect, EncodePlan, QueueState, VideoTransform
+from tuck.models import CropRect, EncodePlan, OutputGeometry, QueueState, VideoTransform
 from tuck.queue import ProcessingQueue
 
 
@@ -31,6 +31,24 @@ class TestQueueOrdering:
         assert item.plan is not None
         assert item.plan is not plan
         assert item.plan.transform.crop == original_crop
+
+    def test_enqueue_snapshots_complete_transform_state(self):
+        q = ProcessingQueue()
+        plan = _plan("transform")
+        transform = VideoTransform(
+            crop=CropRect(10, 20, 800, 600),
+            crop_aspect="4:3",
+            rotation=90,
+            flip_horizontal=True,
+            flip_vertical=True,
+            sizing_mode="fill",
+            output=OutputGeometry(1080, 1920),
+        )
+        plan.transform = transform
+        item = q.enqueue(plan)
+        plan.transform = VideoTransform()
+        assert item.plan is not None
+        assert item.plan.transform == transform
 
     def test_move_item_index(self):
         q = ProcessingQueue()
@@ -121,6 +139,29 @@ class TestQueueOrdering:
         assert retry.plan.transform.crop == crop
         assert retry.progress == 0.0
         assert retry.id in q.pending_ids
+
+    def test_retry_retains_complete_transform_state(self):
+        q = ProcessingQueue()
+        plan = _plan("retry-transform")
+        transform = VideoTransform(
+            crop=CropRect(10, 20, 800, 600),
+            crop_aspect="4:3",
+            rotation=270,
+            flip_horizontal=True,
+            flip_vertical=True,
+            sizing_mode="fit",
+            output=OutputGeometry(1000, 1000),
+        )
+        plan.transform = transform
+        plan.trim_start = 1.5
+        plan.trim_end = 7.5
+        item = q.enqueue(plan)
+        item.state = QueueState.FAILED
+        q._pending.clear()
+        retry = q.retry(item.id)
+        assert retry is not None and retry.plan is not None
+        assert retry.plan.transform == transform
+        assert (retry.plan.trim_start, retry.plan.trim_end) == (1.5, 7.5)
 
     def test_retry_does_not_mutate_historical_plan(self, tmp_path, monkeypatch):
         q = ProcessingQueue()

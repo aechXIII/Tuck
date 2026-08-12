@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 from pathlib import Path
 
 from .formatting import format_size
@@ -18,10 +19,12 @@ from .models import (
     RES_MODE_SOURCE,
     WORKFLOW_UPSCALE,
     EncodePlan,
+    OutputGeometry,
     PlanRequest,
     Profile,
     VideoInfo,
     VideoTransform,
+    calculate_transform_geometry,
     estimate_size_from_bitrate,
     validate_rate_control_matrix,
 )
@@ -214,10 +217,16 @@ def plan(
     crop = transform.crop
     effective_width = crop.width if crop is not None else info.width
     effective_height = crop.height if crop is not None else info.height
+    if transform.rotation in (90, 270):
+        oriented_width, oriented_height = effective_height, effective_width
+    else:
+        oriented_width, oriented_height = effective_width, effective_height
 
-    if res_mode == RES_MODE_SOURCE:
-        target_w, target_h = _make_even(effective_width, effective_height)
-        apply_scale = effective_width != target_w or effective_height != target_h
+    if transform.output is not None:
+        requested_output = transform.output
+    elif res_mode == RES_MODE_SOURCE:
+        source_width, source_height = _make_even(oriented_width, oriented_height)
+        requested_output = OutputGeometry(source_width, source_height)
     elif res_mode == RES_MODE_CUSTOM:
         cw = (
             request.custom_width
@@ -229,15 +238,20 @@ def plan(
             if request and request.custom_height is not None and request.custom_height > 0
             else profile.custom_height
         )
-        target_w, target_h = _make_even(max(2, int(cw)), max(2, int(ch)))
-        apply_scale = True
+        requested_output = OutputGeometry(max(2, int(cw)), max(2, int(ch)))
     elif res_mode == RES_MODE_LIMIT:
-        target_w, target_h = _scale_resolution(
-            effective_width, effective_height, profile.max_width, profile.max_height
+        limit_width, limit_height = _scale_resolution(
+            oriented_width, oriented_height, profile.max_width, profile.max_height
         )
-        apply_scale = target_w != effective_width or target_h != effective_height
+        requested_output = OutputGeometry(limit_width, limit_height)
     else:
         raise ValueError(f"Unknown resolution_mode: {res_mode!r}")
+
+    transform = replace(transform, output=requested_output)
+    transform_geometry = calculate_transform_geometry(transform, info.width, info.height)
+    target_w = transform_geometry.output_width
+    target_h = transform_geometry.output_height
+    apply_scale = transform_geometry.requires_scale
 
     if target_w <= 0 or target_h <= 0:
         raise ValueError("Resolution scaling resulted in zero dimension")

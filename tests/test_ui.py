@@ -49,6 +49,30 @@ def test_web_ui_contains_visual_crop_overlay_and_request_state() -> None:
     assert "api.createPlan" not in crop_js
 
 
+def test_web_ui_contains_complete_transform_controls() -> None:
+    html = Path("tuck/web/index.html").read_text(encoding="utf-8")
+    crop_js = Path("tuck/web/crop.js").read_text(encoding="utf-8")
+    for value in ("free", "16:9", "9:16", "1:1", "4:3"):
+        assert f'<option value="{value}">' in html
+    assert 'data-sizing="fit"' in html
+    assert 'data-sizing="fill"' in html
+    assert 'data-sizing="stretch"' in html
+    assert '<details id="transform-toolbar"' in html
+    assert '<summary>Transform</summary>' in html
+    assert 'class="transform-controls" role="toolbar"' in html
+    assert '<details id="transform-toolbar" open' not in html
+    assert 'id="media-viewport"' in html
+    assert html.index('id="transform-toolbar"') < html.index('id="timeline"')
+    assert 'data-rotation="90"' in html
+    assert 'data-rotation="270"' in html
+    assert 'id="flip-horizontal"' in html
+    assert 'id="flip-vertical"' in html
+    assert "sizing_mode: clip.sizingMode || \"fit\"" in crop_js
+    assert "flip_horizontal: !!clip.flipHorizontal" in crop_js
+    assert "quarterTurn ? clip.probeData.height : clip.probeData.width" in crop_js
+    assert "paintTransformPreview(clip, size)" in crop_js
+
+
 def test_web_ui_allows_manual_target_size_entry() -> None:
     html = Path("tuck/web/index.html").read_text(encoding="utf-8")
 

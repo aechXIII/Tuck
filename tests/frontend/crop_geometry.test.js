@@ -49,6 +49,52 @@ test("reset removes stored crop state", () => {
   assert.equal(crop.resetCrop(), null);
 });
 
+test("aspect presets preserve center and stay inside landscape source", () => {
+  const current = { x: 300, y: 200, width: 800, height: 600 };
+  for (const aspect of ["16:9", "9:16", "1:1", "4:3"]) {
+    const result = crop.cropForAspect(current, aspect, 1920, 1080);
+    const parts = crop.aspectParts(aspect);
+    assert.equal(result.width * parts.height, result.height * parts.width);
+    assert.equal(result.x + result.width / 2, current.x + current.width / 2);
+    assert.equal(result.y + result.height / 2, current.y + current.height / 2);
+    assert.ok(result.x >= 0 && result.y >= 0);
+    assert.ok(result.x + result.width <= 1920);
+    assert.ok(result.y + result.height <= 1080);
+  }
+});
+
+test("aspect presets work for portrait and matching sources", () => {
+  assert.deepEqual(crop.cropForAspect(null, "9:16", 1080, 1920), {
+    x: 0,
+    y: 0,
+    width: 1080,
+    height: 1920,
+  });
+  const square = crop.cropForAspect(null, "1:1", 1080, 1920);
+  assert.deepEqual(square, { x: 0, y: 420, width: 1080, height: 1080 });
+});
+
+test("free aspect keeps the current crop", () => {
+  const current = { x: 300, y: 200, width: 800, height: 600 };
+  assert.deepEqual(crop.cropForAspect(current, "free", 1920, 1080), current);
+});
+
+test("locked corner resize preserves ratio and bounds", () => {
+  const original = { x: 240, y: 180, width: 640, height: 360 };
+  const result = crop.resizeCrop(original, "se", 1000, 1000, 1280, 720, "16:9");
+  assert.equal(result.width * 9, result.height * 16);
+  assert.ok(result.x >= 0 && result.y >= 0);
+  assert.ok(result.x + result.width <= 1280);
+  assert.ok(result.y + result.height <= 720);
+});
+
+test("locked edge resize preserves ratio and center", () => {
+  const original = { x: 320, y: 180, width: 640, height: 360 };
+  const result = crop.resizeCrop(original, "e", -160, 0, 1280, 720, "16:9");
+  assert.equal(result.width * 9, result.height * 16);
+  assert.equal(result.y + result.height / 2, original.y + original.height / 2);
+});
+
 test("coordinate conversion accounts for letterboxing", () => {
   const content = crop.containedRect(1000, 1000, 1920, 1080);
   assert.ok(Math.abs(content.left) < 0.001);
@@ -77,4 +123,31 @@ test("preview resize changes display geometry without changing source crop", () 
     1080
   );
   assert.deepEqual(recovered, { x: 320, y: 180 });
+});
+
+test("Fit, Fill, and Stretch produce distinct preview geometry", () => {
+  const selected = { x: 660, y: 0, width: 600, height: 1080 };
+  const output = { width: 1920, height: 1080 };
+  const fit = crop.previewTransformGeometry(
+    { crop: selected, output, rotation: 0, sizing_mode: "fit" },
+    1920,
+    1080
+  );
+  const fill = crop.previewTransformGeometry(
+    { crop: selected, output, rotation: 0, sizing_mode: "fill" },
+    1920,
+    1080
+  );
+  const stretch = crop.previewTransformGeometry(
+    { crop: selected, output, rotation: 0, sizing_mode: "stretch" },
+    1920,
+    1080
+  );
+  assert.deepEqual(fit.output, { width: 600, height: 1080 });
+  assert.ok(fill.fillCrop);
+  assert.equal(fill.fillCrop.width, 600);
+  assert.equal(Math.round(fill.fillCrop.height), 338);
+  assert.deepEqual(fill.output, output);
+  assert.equal(stretch.fillCrop, null);
+  assert.deepEqual(stretch.output, output);
 });

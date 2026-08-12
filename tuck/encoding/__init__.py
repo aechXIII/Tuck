@@ -9,7 +9,13 @@ from .capabilities import (
     select_auto_encoder,
 )
 from .command import build_base_cmd, nvenc_preset, scaler_to_ffmpeg_flag
-from .filters import build_crop_filter, build_video_filters, join_video_filters
+from .filters import (
+    build_crop_filter,
+    build_rotation_filters,
+    build_transform_filters,
+    build_video_filters,
+    join_video_filters,
+)
 from .progress import ProgressTracker, parse_ffmpeg_speed, parse_ffmpeg_time
 from .runner import (
     EncodeCancelled,
@@ -36,6 +42,8 @@ __all__ = [
     "TargetSizePlan",
     "build_base_cmd",
     "build_crop_filter",
+    "build_rotation_filters",
+    "build_transform_filters",
     "build_video_filters",
     "calculate_target_size_bitrates",
     "cleanup_cache",

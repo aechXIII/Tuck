@@ -21,6 +21,7 @@ from tuck.models import (
     SCALER_NEIGHBOR,
     CropRect,
     EncodePlan,
+    OutputGeometry,
     PlanRequest,
     Profile,
     QueueItem,
@@ -86,9 +87,26 @@ class TestVideoTransform:
                 1920, 1080
             )
 
-    def test_later_transform_fields_are_not_accepted(self):
-        with pytest.raises(ValueError, match="unsupported fields"):
-            VideoTransform.from_dict({"crop": None, "rotation": 90})
+    def test_complete_transform_fields_are_accepted(self):
+        transform = VideoTransform.from_dict(
+            {
+                "crop": None,
+                "crop_aspect": "9:16",
+                "rotation": 90,
+                "flip_horizontal": True,
+                "flip_vertical": True,
+                "sizing_mode": "fill",
+                "output": {"width": 1080, "height": 1920},
+            }
+        )
+        assert transform == VideoTransform(
+            crop_aspect="9:16",
+            rotation=90,
+            flip_horizontal=True,
+            flip_vertical=True,
+            sizing_mode="fill",
+            output=OutputGeometry(1080, 1920),
+        )
 
     def test_serialization_round_trip(self):
         transform = VideoTransform(crop=CropRect(x=0, y=0, width=1280, height=720))

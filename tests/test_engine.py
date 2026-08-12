@@ -573,7 +573,7 @@ class TestScalerFlags:
         )
 
         cmd = engine._build_base_cmd("ffmpeg", plan, Path(plan.source))
-        assert cmd[cmd.index("-vf") + 1] == "scale=320:240:flags=neighbor"
+        assert cmd[cmd.index("-vf") + 1] == "scale=320:240:flags=neighbor,setsar=1"
 
     def test_build_base_cmd_no_scale_no_vf_flags(self, engine, real_video_path, tmp_path):
         from tuck.probe import probe

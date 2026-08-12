@@ -252,6 +252,7 @@ class BridgeAPI:
                         "trim_duration": round(float(p.trim_duration), 3),
                         "has_trim": bool(p.has_trim),
                         "crop": p.transform.crop.to_dict() if p.transform.crop else None,
+                        "transform": p.transform.to_dict(),
                     },
                 }
             )
@@ -1103,6 +1104,7 @@ def _item_to_dict(item: QueueItem) -> dict[str, Any]:
             if item.plan is not None and item.plan.transform.crop is not None
             else None
         ),
+        "transform": item.plan.transform.to_dict() if item.plan is not None else None,
     }
 
 

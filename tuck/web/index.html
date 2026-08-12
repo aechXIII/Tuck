@@ -71,7 +71,8 @@ body { font-family:var(--font); font-size:13px; color:var(--text); background:va
 #empty .empt-btn:hover { background:#8b5cf6; }
 #empty .empt-btn:focus-visible { outline:2px solid var(--accent-light); outline-offset:2px; }
 #stage { flex:1 1 0; min-height:0; background:#000; position:relative; display:none; }
-#stage video, #stage img { width:100%; height:100%; object-fit:contain; position:absolute; top:0; left:0; }
+#media-viewport { position:absolute; inset:0; overflow:hidden; }
+#media-viewport video, #media-viewport img { width:100%; height:100%; object-fit:contain; position:absolute; top:0; left:0; transform-origin:0 0; }
 #crop-ui { position:absolute; inset:0; z-index:3; display:none; overflow:hidden; }
 #crop-ui.on { display:block; }
 .crop-dim { position:absolute; background:rgba(5,5,10,.66); pointer-events:none; }
@@ -256,6 +257,22 @@ body.tl-trim-dragging * {
 #btn-crop-reset.show { display:inline-block; }
 #btn-crop-reset:hover { color:var(--accent-light); }
 #btn-crop-reset:focus-visible { outline:2px solid var(--accent-light); outline-offset:2px; border-radius:2px; }
+#transform-toolbar { min-width:0; border-bottom:1px solid var(--border); }
+#transform-toolbar > summary { display:flex; align-items:center; justify-content:center; min-height:26px; color:var(--muted); cursor:pointer; font:600 10px var(--font); letter-spacing:.06em; list-style:none; text-transform:uppercase; user-select:none; }
+#transform-toolbar > summary::-webkit-details-marker { display:none; }
+#transform-toolbar > summary::after { content:''; width:5px; height:5px; margin:-3px 0 0 8px; border-right:1px solid currentColor; border-bottom:1px solid currentColor; transform:rotate(45deg); transition:transform .15s ease, margin .15s ease; }
+#transform-toolbar[open] > summary::after { margin-top:3px; transform:rotate(225deg); }
+#transform-toolbar > summary:hover { color:var(--accent-light); }
+#transform-toolbar > summary:focus-visible { border-radius:4px; outline:2px solid var(--accent-light); outline-offset:-2px; }
+.transform-controls { display:flex; align-items:flex-end; justify-content:center; flex-wrap:wrap; gap:10px; padding:5px 8px 10px; }
+.transform-field { display:flex; flex-direction:column; gap:3px; }
+.transform-field > span { color:var(--muted); font-size:9px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; }
+.transform-field select { min-width:108px; height:26px; padding:2px 7px; font-size:10px; }
+.transform-segment { display:flex; gap:2px; }
+.transform-segment button { height:26px; min-width:38px; padding:0 7px; border:1px solid transparent; border-radius:4px; background:transparent; color:var(--muted); cursor:pointer; font:600 10px var(--font); }
+.transform-segment button:hover { background:#191923; color:#fff; }
+.transform-segment button.on { border-color:#4a3a68; background:#241d35; color:#ddd2ff; }
+.transform-segment button:focus-visible { outline:2px solid var(--accent-light); outline-offset:1px; }
 #player-vol {
   display:flex;
   align-items:center;
@@ -563,13 +580,22 @@ input[type=range]:focus-visible::-webkit-slider-thumb { outline:2px solid var(--
       <h2>Drop videos anywhere</h2>
     </div>
     <div id="stage">
-      <video id="vid"></video><img id="thumb" style="display:none">
+      <div id="media-viewport"><video id="vid"></video><img id="thumb" style="display:none"></div>
       <div id="crop-ui" aria-label="Video crop overlay">
         <div class="crop-dim" id="crop-dim-top"></div><div class="crop-dim" id="crop-dim-bottom"></div><div class="crop-dim" id="crop-dim-left"></div><div class="crop-dim" id="crop-dim-right"></div>
         <div id="crop-selection" aria-label="Crop selection"><span class="crop-handle" data-handle="nw"></span><span class="crop-handle" data-handle="n"></span><span class="crop-handle" data-handle="ne"></span><span class="crop-handle" data-handle="e"></span><span class="crop-handle" data-handle="se"></span><span class="crop-handle" data-handle="s"></span><span class="crop-handle" data-handle="sw"></span><span class="crop-handle" data-handle="w"></span></div>
       </div>
     </div>
     <div id="player-bar">
+      <details id="transform-toolbar" ontoggle="paintCropOverlay()">
+        <summary>Transform</summary>
+        <div class="transform-controls" role="toolbar" aria-label="Video transform controls">
+          <label class="transform-field"><span>Crop ratio</span><select id="crop-aspect" onchange="setCropAspect(this.value)" aria-label="Crop aspect ratio"><option value="free">Free / Original</option><option value="16:9">16:9</option><option value="9:16">9:16</option><option value="1:1">1:1</option><option value="4:3">4:3</option></select></label>
+          <div class="transform-field"><span>Rotation</span><div class="transform-segment" role="group" aria-label="Video rotation"><button type="button" data-rotation="0" class="on" onclick="setVideoRotation(0)">0°</button><button type="button" data-rotation="270" onclick="setVideoRotation(270)">90° CCW</button><button type="button" data-rotation="90" onclick="setVideoRotation(90)">90° CW</button><button type="button" data-rotation="180" onclick="setVideoRotation(180)">180°</button></div></div>
+          <div class="transform-field"><span>Flip</span><div class="transform-segment" role="group" aria-label="Video flip"><button type="button" id="flip-horizontal" onclick="toggleVideoFlip('horizontal')">Horizontal</button><button type="button" id="flip-vertical" onclick="toggleVideoFlip('vertical')">Vertical</button></div></div>
+          <div class="transform-field"><span>Output sizing</span><div class="transform-segment" role="group" aria-label="Output sizing mode"><button type="button" data-sizing="fit" class="on" onclick="setSizingMode('fit')" title="Keep the entire selected image without distortion">Fit</button><button type="button" data-sizing="fill" onclick="setSizingMode('fill')" title="Fill the output dimensions and crop excess edges">Fill</button><button type="button" data-sizing="stretch" onclick="setSizingMode('stretch')" title="Force the selected image to the output dimensions and allow distortion">Stretch</button></div></div>
+        </div>
+      </details>
       <div id="timeline" role="slider" aria-label="Seek and trim timeline" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0" tabindex="0" title="Drag handles to trim · click track to seek">
         <div class="tl-track" id="tl-track">
           <div class="tl-dim" id="tl-dim-l" style="left:0;width:0"></div>
@@ -623,7 +649,7 @@ input[type=range]:focus-visible::-webkit-slider-thumb { outline:2px solid var(--
       <div class="gr">
         <div class="info-row"><span class="grt" style="margin:0">Resolution</span><label class="chk" id="res-source-wrap" style="font-size:11px"><input type="checkbox" id="use-source-res" checked onchange="onUseSourceResolution()"><span class="chk-box"></span><span>Source</span></label></div>
         <input type="hidden" id="res-mode" value="source">
-        <div class="row" id="res-cust" style="margin-top:8px"><input type="number" id="res-w" value="1920" style="flex:1;text-align:center" aria-label="Custom width"><span style="color:#6b6b7b;font-weight:700">×</span><input type="number" id="res-h" value="1080" style="flex:1;text-align:center" aria-label="Custom height"></div>
+        <div class="row" id="res-cust" style="margin-top:8px"><input type="number" id="res-w" value="1920" style="flex:1;text-align:center" aria-label="Custom width" onchange="onResolutionGeometryChanged()"><span style="color:#6b6b7b;font-weight:700">×</span><input type="number" id="res-h" value="1080" style="flex:1;text-align:center" aria-label="Custom height" onchange="onResolutionGeometryChanged()"></div>
         <div class="row hid" id="scaler-row" style="margin-top:4px"><span>Scaler</span><select id="scaler-sel" style="flex:1" aria-label="Scaler algorithm"><option>Bilinear</option><option>Bicubic</option><option>Lanczos</option><option>Point</option><option selected>Neighbor</option></select></div>
       </div>
       <div class="gr">
@@ -842,7 +868,7 @@ window.addFiles = function(paths, rejected) {
     if (typeof paths[i] !== 'string') continue;
     var p = paths[i];
     if (clips[p]) { skipped++; continue; }
-    clips[p] = {path:p, name:p.split(/[\\/]/).pop(), probed:false, probing:false, probeData:null, planData:null, mediaToken:null, error:'', trimStart:null, trimEnd:null, crop:null};
+    clips[p] = {path:p, name:p.split(/[\\/]/).pop(), probed:false, probing:false, probeData:null, planData:null, mediaToken:null, error:'', trimStart:null, trimEnd:null, crop:null, cropAspect:'free', rotation:0, flipHorizontal:false, flipVertical:false, sizingMode:'fit'};
     if (clipOrder.indexOf(p) < 0) clipOrder.push(p);
     if (!firstAdded) firstAdded = p;
     added++;
@@ -1055,6 +1081,8 @@ function metaStr(c) {
   var d = c.probeData, first = [];
   if (d.width && d.height) first.push(d.width+'×'+d.height);
   if (c.crop) first.push('crop '+c.crop.width+'×'+c.crop.height);
+  if (c.rotation) first.push(c.rotation+'°');
+  if (c.flipHorizontal || c.flipVertical) first.push(c.flipHorizontal && c.flipVertical ? 'flip H+V' : (c.flipHorizontal ? 'flip H' : 'flip V'));
   if (d.fps) first.push(Math.round(d.fps)+' fps');
   var second = c._fileSize ? formatBytes(c._fileSize) : '';
   if (c._resultSize && c._queueState==='completed') second += ' → '+formatBytes(c._resultSize);
@@ -1080,6 +1108,7 @@ function selectClip(p) {
   loadMedia(p);
   var c = clips[p];
   syncTimelineUI();
+  if (typeof syncTransformControls === 'function') syncTransformControls();
   if (typeof paintCropOverlay === 'function') paintCropOverlay();
   if (!c.probed && !c.error) probeClip(p); else if (c.probed) { syncFpsToClip(); syncResolutionToClip(); reqPreview(); }
 }
@@ -1132,7 +1161,7 @@ async function probeClip(p) {
   } catch(e) { c.error = 'Probe error'; }
   c.probing = false;
   renderClips();
-  if (selPath === p) { syncFpsToClip(); syncResolutionToClip(); syncTimelineUI(); if(typeof paintCropOverlay==='function')paintCropOverlay(); reqPreview(); }
+  if (selPath === p) { syncFpsToClip(); syncResolutionToClip(); syncTimelineUI(); if(typeof syncTransformControls==='function')syncTransformControls(); if(typeof paintCropOverlay==='function')paintCropOverlay(); reqPreview(); }
 }
 
 async function loadMedia(p) {
@@ -1619,7 +1648,8 @@ function onSize(v) { var size=parseInt(v); if (!size || size < 2) return; byId('
 function onBadgeSize(v) { var size=parseInt(v); if (!size || size < 2) { byId('sz-badge').value=byId('sz-slider').value; return; } byId('sz-slider').value=size; onSize(size); }
 function updateSizePresets(v) { var c=byId('sz-presets'); c.innerHTML=''; [10,50,100,500].forEach(function(mb){ var b=document.createElement('button'); b.textContent=mb+' MB'; if(mb===v)b.classList.add('on'); b.onclick=function(){byId('sz-slider').value=mb;onSize(mb);}; c.appendChild(b); }); }
 function onUseSourceResolution() { byId('res-mode').value=byId('use-source-res').checked?'source':'custom'; if(byId('use-source-res').checked)syncResolutionToClip(true); onResMode(); }
-function onResMode() { var source=byId('res-mode').value==='source'; byId('res-w').disabled=source; byId('res-h').disabled=source; byId('scaler-row').classList.toggle('hid',source); reqPreview(); updateDirty(); }
+function onResMode() { var source=byId('res-mode').value==='source'; byId('res-w').disabled=source; byId('res-h').disabled=source; byId('scaler-row').classList.toggle('hid',source); if(typeof paintCropOverlay==='function')paintCropOverlay(); reqPreview(); updateDirty(); }
+function onResolutionGeometryChanged() { if(typeof paintCropOverlay==='function')paintCropOverlay(); reqPreview(); updateDirty(); }
 function syncResolutionToClip(forceSourceValue) {
   if(!selPath||!clips[selPath]||!clips[selPath].probed)return;
   if(forceSourceValue||byId('use-source-res').checked){var d=clips[selPath].probeData;byId('res-w').value=d.width||1920;byId('res-h').value=d.height||1080;}
