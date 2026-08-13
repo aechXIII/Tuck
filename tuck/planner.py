@@ -26,6 +26,7 @@ from .models import (
     VideoTransform,
     calculate_transform_geometry,
     estimate_size_from_bitrate,
+    oriented_dimensions,
     validate_rate_control_matrix,
 )
 
@@ -214,13 +215,7 @@ def plan(
 
     output = _resolve_output_collision(output, respect_reservation=False)
 
-    crop = transform.crop
-    effective_width = crop.width if crop is not None else info.width
-    effective_height = crop.height if crop is not None else info.height
-    if transform.rotation in (90, 270):
-        oriented_width, oriented_height = effective_height, effective_width
-    else:
-        oriented_width, oriented_height = effective_width, effective_height
+    oriented_width, oriented_height = oriented_dimensions(transform, info.width, info.height)
 
     if transform.output is not None:
         requested_output = transform.output

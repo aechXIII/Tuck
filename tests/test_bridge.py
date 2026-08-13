@@ -48,9 +48,7 @@ class TestBridgeQueueState:
             sizing_mode="fill",
             output=OutputGeometry(1080, 1920),
         )
-        item = QueueItem(
-            plan=EncodePlan(source="clip.mp4", output="out.mp4", transform=transform)
-        )
+        item = QueueItem(plan=EncodePlan(source="clip.mp4", output="out.mp4", transform=transform))
         assert _item_to_dict(item)["transform"] == transform.to_dict()
 
     def test_clear_completed_returns_removed_count(self):
@@ -81,6 +79,31 @@ def test_bridge_reuses_probe_metadata_for_unchanged_video(tmp_path, monkeypatch)
     assert api._probe_once(str(source)) is info
 
     assert calls == [str(source)]
+
+
+def test_bridge_reprobes_when_source_changes(tmp_path, monkeypatch):
+    source = tmp_path / "clip.mp4"
+    source.write_bytes(b"video")
+    calls = []
+
+    def fake_probe(path):
+        calls.append(path)
+        return VideoInfo(
+            path=path,
+            duration=1.0,
+            width=320,
+            height=240,
+            fps=30.0,
+            video_codec="h264",
+        )
+
+    monkeypatch.setattr("tuck.bridge.probe_video", fake_probe)
+    api = BridgeAPI()
+    api._probe_once(str(source))
+    source.write_bytes(b"changed video")
+    api._probe_once(str(source))
+
+    assert calls == [str(source), str(source)]
 
 
 class TestBridgeProfileLifecycle:

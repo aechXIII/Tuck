@@ -63,6 +63,9 @@ from .transforms import (
 from .transforms import (
     fit_output_dimensions as fit_output_dimensions,
 )
+from .transforms import (
+    oriented_dimensions as oriented_dimensions,
+)
 
 PROFILE_ID_DISCORD_FREE = "discord-10mb"
 PROFILE_ID_DISCORD_NITRO_BASIC = "discord-50mb"

@@ -215,6 +215,32 @@ class TransformGeometry:
             self.output_height,
         )
 
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "selected_width": self.selected_width,
+            "selected_height": self.selected_height,
+            "oriented_width": self.oriented_width,
+            "oriented_height": self.oriented_height,
+            "fill_crop": self.fill_crop.to_dict() if self.fill_crop is not None else None,
+            "output_width": self.output_width,
+            "output_height": self.output_height,
+        }
+
+
+def oriented_dimensions(
+    transform: VideoTransform,
+    source_width: int,
+    source_height: int,
+) -> tuple[int, int]:
+    _positive_int(source_width, "source width")
+    _positive_int(source_height, "source height")
+    transform.validate_for_source(source_width, source_height)
+    selected_width = transform.crop.width if transform.crop is not None else source_width
+    selected_height = transform.crop.height if transform.crop is not None else source_height
+    if transform.rotation in (90, 270):
+        return selected_height, selected_width
+    return selected_width, selected_height
+
 
 def crop_for_aspect(
     source_width: int,
@@ -303,13 +329,13 @@ def calculate_transform_geometry(
 ) -> TransformGeometry:
     _positive_int(source_width, "source width")
     _positive_int(source_height, "source height")
-    transform.validate_for_source(source_width, source_height)
     selected_width = transform.crop.width if transform.crop is not None else source_width
     selected_height = transform.crop.height if transform.crop is not None else source_height
-    if transform.rotation in (90, 270):
-        oriented_width, oriented_height = selected_height, selected_width
-    else:
-        oriented_width, oriented_height = selected_width, selected_height
+    oriented_width, oriented_height = oriented_dimensions(
+        transform,
+        source_width,
+        source_height,
+    )
     requested = transform.output or OutputGeometry(oriented_width, oriented_height)
     fill_crop = None
     if transform.sizing_mode == SIZING_MODE_FIT:

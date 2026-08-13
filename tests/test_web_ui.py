@@ -15,6 +15,11 @@ from tuck.web_ui import (
 )
 
 
+def _web_source() -> str:
+    web_dir = Path("tuck/web")
+    return "\n".join(path.read_text(encoding="utf-8") for path in web_dir.iterdir())
+
+
 class _Bridge:
     def probe_file(self, path: str) -> str:
         return json.dumps({"ok": True, "path": path})
@@ -169,8 +174,22 @@ def test_support_folder_opener_creates_and_opens_directory(tmp_path, monkeypatch
 
 
 def test_resource_path_locates_web_ui() -> None:
-    assert _get_resource_path("tuck/web/index.html").is_file()
-    assert _get_resource_path("tuck/web/crop.js").is_file()
+    for name in (
+        "index.html",
+        "styles.css",
+        "settings.css",
+        "player.css",
+        "queue.css",
+        "transform.css",
+        "app.js",
+        "encoding-ui.js",
+        "player.js",
+        "queue.js",
+        "settings.js",
+        "crop.js",
+        "transform.js",
+    ):
+        assert _get_resource_path(f"tuck/web/{name}").is_file()
 
 
 def test_native_hwnd_requires_real_handle() -> None:
@@ -242,17 +261,18 @@ def test_drop_binding_targets_the_html_element() -> None:
 
 
 def test_clip_cards_use_icon_statuses_and_compact_metadata() -> None:
-    html = Path("tuck/web/index.html").read_text(encoding="utf-8")
+    html = _web_source()
 
     assert 'role="img"' in html
     assert "function clipStateBadge(p)" in html
-    assert "st==='failed'&&c._queueError" in html
+    assert 'st === "failed" && c._queueError' in html
     assert '<span class="c-error">' in html
-    assert "Finished: '+esc(clip.name)" in html
+    assert '"Finished: " + esc(clip.name)' in html
     assert "appSettings.clear_completed_automatically" in html
-    assert "Failed to process \"'+esc(clip.name)+'\": '+esc(errorSummary(item.error))" in html
-    assert "flex-wrap:wrap" in html
-    assert "completed:['Completed','✓','cst-completed']" in html
+    assert 'Failed to process "' in html
+    assert "esc(errorSummary(item.error))" in html
+    assert "flex-wrap: wrap" in html
+    assert 'completed: ["Completed", "✓", "cst-completed"]' in html
     assert "function formatQueueStatus(item)" in html
     assert "function copyDiagnostics" in html
     assert "function beginClipReorder" in html
@@ -261,34 +281,36 @@ def test_clip_cards_use_icon_statuses_and_compact_metadata() -> None:
     assert "clipReorder" in html
     assert "c-act link" in html
     assert "function cancelQueueItem(itemId)" in html
-    assert "cancelQueueItem(\\'" in html
+    assert "cancelQueueItem('" in html
     assert "function clearDone()" in html
-    assert "clips[p]._queueState==='completed'" in html
+    assert 'clips[p]._queueState === "completed"' in html
     assert ">Rescan</button>" in html
     assert "saveSystemSettings()" in html
     assert 'aria-label="Close settings"' in html
-    assert "settingButton('Save changes','saveSystemSettings()',true)" in html
-    assert "s.last_update_check?'Last checked: '+esc(s.last_update_check)" in html
+    assert 'settingButton("Save changes", "saveSystemSettings()", true)' in html
+    assert '"Last checked: " + esc(s.last_update_check)' in html
     assert 'class="settings-readonly"' in html
     assert "Clear completed jobs automatically" in html
     assert 'onclick="clearOut()"' in html
     assert 'onclick="clearFfmpeg()"' in html
     assert 'onclick="clearFfprobe()"' in html
-    assert "st==='running'||st==='processing'||st==='pending'" in html
+    assert 'st === "running" || st === "processing" || st === "pending"' in html
     assert 'id="btn-diag"' not in html
 
 
 def test_queue_action_buttons_share_secondary_style() -> None:
-    html = Path("tuck/web/index.html").read_text(encoding="utf-8")
+    html = _web_source()
 
-    assert "#btn-stop-after, #btn-clear, #btn-cancel" in html
+    assert "#btn-stop-after," in html
+    assert "#btn-clear," in html
+    assert "#btn-cancel" in html
 
 
 def test_trim_handles_keep_the_resize_cursor_while_dragging() -> None:
-    html = Path("tuck/web/index.html").read_text(encoding="utf-8")
+    html = _web_source()
 
     assert ".tl-handle {" in html
-    assert "cursor:ew-resize;" in html
+    assert "cursor: ew-resize;" in html
     assert "body.tl-trim-dragging *" in html
     assert "cursor: ew-resize !important;" in html
     assert "setTrimDragCursor(true);" in html
@@ -296,43 +318,48 @@ def test_trim_handles_keep_the_resize_cursor_while_dragging() -> None:
 
 
 def test_profile_editor_uses_shared_encoder_rules() -> None:
-    html = Path("tuck/web/index.html").read_text(encoding="utf-8")
+    html = _web_source()
 
     assert "function peRateControls()" in html
     assert "function nativePresets(enc)" in html
     assert html.count("function isCpuEncoder(enc)") == 1
-    assert "auto_compression:'Auto (best compression)'" in html
-    assert "auto_fast:'Auto (fastest available)'" in html
+    assert 'auto_compression: "Auto (best compression)"' in html
+    assert 'auto_fast: "Auto (fastest available)"' in html
     assert "function isAutoEncoder(enc)" in html
-    assert "byId('preset-sel').value='veryslow';}" in html
-    assert "byId('pe-preset').value='veryslow';}" in html
-    assert "if(!isAutoEncoder(id)&&availEncoders.length" in html
+    assert 'byId("preset-sel").value = "veryslow"' in html
+    assert 'byId("pe-preset").value = "veryslow"' in html
+    assert "!isAutoEncoder(id)" in html
+    assert "availEncoders.length" in html
     assert "set-encoder-cache-days" in html
     assert "refreshEncoders()" in html
-    assert "enc==='libx265'||enc==='auto_compression'" in html
-    assert "twoPassEligible(task,byId('pe-enc').value)" in html
-    assert "!isAutoEncoder(byId('pe-enc').value)&&isCpuEncoder" in html
-    assert "rate_control:task==='upscale'" in html
-    assert "?'explicit_bitrate':'target_size'" in html
+    assert 'enc === "libx265" || enc === "auto_compression"' in html
+    assert 'twoPassEligible(task, byId("pe-enc").value)' in html
+    assert '!isAutoEncoder(byId("pe-enc").value)' in html
+    assert 'task === "upscale" && (rc === "cbr" || rc === "vbr")' in html
+    assert '? "explicit_bitrate"' in html
+    assert ': "target_size"' in html
 
 
 def test_settings_uses_compact_modal_and_grouped_navigation() -> None:
-    html = Path("tuck/web/index.html").read_text(encoding="utf-8")
+    html = _web_source()
 
     assert 'id="settings-workspace"' in html
-    assert 'class="settings-dialog" role="dialog" aria-modal="true"' in html
-    assert ".settings-workspace { position:fixed; inset:0;" in html
-    assert "width:min(920px,calc(100vw - 32px))" in html
-    assert ".settings-nav-group { display:flex; flex-direction:column;" in html
-    assert ".settings-nav-group + .settings-nav-group { margin-top:20px; }" in html
-    assert ".settings-tabs button { display:block; width:100%;" in html
+    assert 'class="settings-dialog"' in html
+    assert 'role="dialog"' in html
+    assert 'aria-modal="true"' in html
+    assert ".settings-workspace {" in html
+    assert "width: min(920px, calc(100vw - 32px));" in html
+    assert ".settings-nav-group {" in html
+    assert "flex-direction: column;" in html
+    assert ".settings-nav-group + .settings-nav-group {" in html
+    assert ".settings-tabs button {" in html
     assert ">Preferences</div>" in html
-    assert ">Output &amp; naming</button>" in html
+    assert "Output &amp; naming" in html
     assert ">Library</div>" in html
     assert ">Integrations</div>" in html
     assert ">Support</div>" in html
-    assert ">Windows integration</button>" in html
-    assert ">System &amp; support</button>" in html
+    assert "Windows integration" in html
+    assert "System &amp; support" in html
     assert "function toggleSettings()" in html
     assert "function profileEditorHTML()" in html
     assert "Discard unsaved profile changes?" in html
@@ -340,41 +367,47 @@ def test_settings_uses_compact_modal_and_grouped_navigation() -> None:
 
 
 def test_queue_filename_and_sendto_copy_match_the_requested_design() -> None:
-    html = Path("tuck/web/index.html").read_text(encoding="utf-8")
+    html = _web_source()
 
-    assert "#qfname { color:#7a7a8c; font-size:11px; font-family:var(--mono);" in html
-    assert "#btn-clear, #btn-cancel" in html
-    assert "font-family:var(--mono);" in html
+    assert "#qfname {" in html
+    assert "font-size: 11px;" in html
+    assert "#btn-clear," in html
+    assert "#btn-cancel" in html
+    assert "font-family: var(--mono);" in html
     assert "Windows integration" in html
     assert "for more handy processing." not in html
 
 
 def test_settings_file_naming_and_subsection_navigation_use_shared_layout() -> None:
-    html = Path("tuck/web/index.html").read_text(encoding="utf-8")
+    html = _web_source()
 
-    assert ".file-naming { background:transparent;" in html
-    assert "grid-template-columns:repeat(2,minmax(0,1fr))" in html
-    assert ".file-naming .settings-field { background:transparent;" in html
-    assert ".file-naming .settings-field input { background:var(--input-bg);" in html
-    assert "font:13px var(--font);" in html
-    assert ".settings-actions .btn1, .settings-actions .btn2" in html
-    assert "min-height:34px;" in html
+    assert ".file-naming {" in html
+    assert "background: transparent;" in html
+    assert "grid-template-columns: repeat(2, minmax(0, 1fr));" in html
+    assert ".file-naming .settings-field {" in html
+    assert ".file-naming .settings-field input {" in html
+    assert "background: var(--input-bg);" in html
+    assert "font: 13px var(--font);" in html
+    assert ".settings-actions .btn1," in html
+    assert ".settings-actions .btn2" in html
+    assert "min-height: 34px;" in html
     assert "function settingsTitle(title, action)" in html
     assert "Back to profiles" not in html
-    assert "button.mrow { font:inherit; text-align:left; width:100%; }" in html
-    assert "settingsTitle('Add shortcut',\"openSettings('explorer')\")" in html
+    assert "button.mrow {" in html
+    assert "font: inherit;" in html
+    assert 'settingsTitle("Add shortcut", "openSettings(\'explorer\')")' in html
 
 
 def test_settings_separates_output_and_stages_all_persisted_changes() -> None:
-    html = Path("tuck/web/index.html").read_text(encoding="utf-8")
+    html = _web_source()
 
     assert "function outputSettingsHTML(s)" in html
     assert "function saveOutputSettings()" in html
     assert 'id="ex-up-out"' in html
     assert "function markSettingsDirty()" in html
-    assert "clear_completed_automatically:byId('set-auto-clear').checked" in html
-    assert "if(settingsDirty)confirmToast('Discard unsaved settings?'" in html
-    assert "box.className='mod-box confirm-dialog'" in html
+    assert 'clear_completed_automatically: byId("set-auto-clear").checked' in html
+    assert 'confirmToast("Discard unsaved settings?"' in html
+    assert 'box.className = "mod-box confirm-dialog"' in html
     assert "Discard changes" in html
     assert "Keep editing" in html
     assert "function acceptConfirm()" in html
@@ -383,19 +416,24 @@ def test_settings_separates_output_and_stages_all_persisted_changes() -> None:
     assert 'class="settings-topbar"' in html
     assert 'id="settings-heading"' not in html
     assert "var settingsMeta" not in html
-    assert "row.className='settings-list-row'" in html
+    assert 'row.className = "settings-list-row"' in html
     assert 'class="settings-status-table"' in html
-    assert "function insertNamingToken(id,token)" in html
+    assert "function insertNamingToken(id, token)" in html
     assert "function openSupportFolder(kind)" in html
     assert "Open logs folder" in html
     assert "Open configuration folder" in html
-    assert ".settings-status-row { display:grid;" in html
+    assert ".settings-status-row {" in html
+    assert "display: grid;" in html
     assert 'class="profile-actions-menu"' in html
     assert 'class="profile-actions-popover"' in html
     assert 'class="settings-profile-filterbar"' in html
-    assert ".profile-filters { display:flex; width:100%;" in html
-    assert ".profile-filters button { flex:1 1 0;" in html
+    assert ".profile-filters {" in html
+    assert "width: 100%;" in html
+    assert ".profile-filters button {" in html
+    assert "flex: 1 1 0;" in html
     assert 'aria-label="Filter profiles"' in html
-    assert ".profile-filters button.on { color:#ddd2ff;" in html
-    assert "actions={plain:true,html:settingButton('Import','importProfs()')" in html
-    assert "settingButton('+ New profile','newProf()',true)" in html
+    assert ".profile-filters button.on {" in html
+    assert "color: #ddd2ff;" in html
+    assert "plain: true" in html
+    assert 'settingButton("Import", "importProfs()")' in html
+    assert 'settingButton("+ New profile", "newProf()", true)' in html

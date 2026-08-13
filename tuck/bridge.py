@@ -7,9 +7,11 @@ import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from . import __version__
+from .bridge_serialization import plan_preview_dict
+from .bridge_serialization import queue_item_dict as _item_to_dict
 from .bridge_validation import (
     normalize_profile_ui_payload,
     parse_plan_request,
@@ -28,13 +30,13 @@ from .models import (
     PROFILE_ID_DISCORD_FREE,
     PlanRequest,
     Profile,
-    QueueItem,
     VideoInfo,
     find_profile_by_id,
 )
 from .planner import plan
 from .probe import _find_ffprobe, is_ffprobe_available
 from .probe import probe as probe_video
+from .probe_cache import ProbeCache
 from .queue import get_queue
 from .settings import get_settings_manager
 from .updater import UpdateChecker, UpdateInfo
@@ -56,9 +58,7 @@ class BridgeAPI:
         self._ipc_metadata: dict[str, str] = {}
         self._checking_updates: bool = False
 
-        self._probe_cache: dict[str, tuple[int, int, VideoInfo]] = {}
-
-        self._preview_request_id: int = 0
+        self._probe_cache = ProbeCache(lambda path: probe_video(path))
 
         self._media_server = get_media_server()
         self._media_server.set_thumbnail_cache_dir(self._settings.cache_dir / "thumbs")
@@ -214,46 +214,7 @@ class BridgeAPI:
                 {
                     "ok": True,
                     "_request_id": req_id,
-                    "data": {
-                        "source": p.source,
-                        "output": p.output,
-                        "profile_id": p.profile_id,
-                        "target_width": p.target_width,
-                        "target_height": p.target_height,
-                        "target_fps": round(p.target_fps, 2),
-                        "video_bitrate_kbps": round(p.video_bitrate / 1000),
-                        "audio_bitrate_kbps": round(p.audio_bitrate / 1000),
-                        "copy_audio": bool(getattr(p, "copy_audio", False)),
-                        "estimated_size": p.estimated_size,
-                        "estimated_size_mb": round(p.estimated_size / (1024 * 1024), 2),
-                        "target_size_mb": round(p.target_size / (1024 * 1024), 2),
-                        "two_pass": p.two_pass,
-                        "preset": p.preset,
-                        "resolution_mode": p.resolution_mode,
-                        "fps_mode": p.fps_mode,
-                        "rate_control": p.rate_control,
-                        "apply_scale": p.apply_scale,
-                        "apply_fps_filter": p.apply_fps_filter,
-                        "scaler": p.scaler,
-                        "video_encoder": getattr(p, "video_encoder", "libx264"),
-                        "crf": getattr(p, "crf", 23),
-                        "tune": getattr(p, "tune", ""),
-                        "explicit_bitrate_kbps": round(p.explicit_bitrate / 1000)
-                        if p.explicit_bitrate
-                        else 0,
-                        "source_name": Path(p.source).name,
-                        "output_name": Path(p.output).name,
-                        "workflow": getattr(p, "workflow", "compression"),
-                        "rate_control_method": getattr(p, "rate_control_method", "crf"),
-                        "cq": getattr(p, "cq", getattr(p, "qp", 23)),
-                        "qp": getattr(p, "qp", 23),
-                        "trim_start": round(float(getattr(p, "trim_start", 0.0) or 0.0), 3),
-                        "trim_end": round(float(getattr(p, "trim_end", 0.0) or 0.0), 3),
-                        "trim_duration": round(float(p.trim_duration), 3),
-                        "has_trim": bool(p.has_trim),
-                        "crop": p.transform.crop.to_dict() if p.transform.crop else None,
-                        "transform": p.transform.to_dict(),
-                    },
+                    "data": plan_preview_dict(p),
                 }
             )
         except Exception as e:
@@ -1054,58 +1015,10 @@ class BridgeAPI:
         return parse_plan_request(raw, self._validate_path)
 
     def _probe_once(self, path: str) -> VideoInfo:
-        stat = Path(path).stat()
-        cached = self._probe_cache.get(path)
-        signature = (stat.st_size, stat.st_mtime_ns)
-        if cached is not None and cached[:2] == signature:
-            return cached[2]
-        info = probe_video(path)
-        self._probe_cache[path] = (signature[0], signature[1], info)
-        return info
+        return self._probe_cache.get(path)
 
 
 _normalize_profile_ui_payload = normalize_profile_ui_payload
-
-
-def _item_to_dict(item: QueueItem) -> dict[str, Any]:
-    duration = 0.0
-    if item.plan is not None:
-        duration = float(item.plan.trim_duration or 0.0)
-        if duration <= 0 and item.plan.source_info is not None:
-            duration = float(item.plan.source_info.duration or 0.0)
-
-    two_pass = bool(item.plan.two_pass) if item.plan is not None else False
-    progress_info = item.progress_info.to_dict() if item.progress_info is not None else None
-    status = item.status_text or (progress_info["status_text"] if progress_info else "")
-    return {
-        "id": item.id,
-        "source": Path(item.plan.source).name if item.plan else "",
-        "source_path": item.plan.source if item.plan else "",
-        "output": Path(item.plan.output).name if item.plan else "",
-        "state": item.state.value,
-        "progress": round(item.progress, 1),
-        "progress_info": progress_info,
-        "status_text": status,
-        "duration": duration,
-        "two_pass": two_pass,
-        "error": item.error,
-        "error_detail": getattr(item, "error_detail", "") or "",
-        "result_path": item.result_path,
-        "result_size": item.result_size,
-        "result_size_mb": round(item.result_size / (1024 * 1024), 2) if item.result_size else 0,
-        "added_at": item.added_at,
-        "started_at": item.started_at,
-        "finished_at": item.finished_at,
-        "trim_start": float(item.plan.trim_start) if item.plan else 0.0,
-        "trim_end": float(item.plan.trim_end) if item.plan else 0.0,
-        "has_trim": bool(item.plan.has_trim) if item.plan else False,
-        "crop": (
-            item.plan.transform.crop.to_dict()
-            if item.plan is not None and item.plan.transform.crop is not None
-            else None
-        ),
-        "transform": item.plan.transform.to_dict() if item.plan is not None else None,
-    }
 
 
 def _pick_surviving_default(remaining: list[Profile]) -> str:
@@ -1120,6 +1033,6 @@ def _pick_surviving_default(remaining: list[Profile]) -> str:
             return pid
 
     if remaining:
-        return remaining[0].profile_id  # type: ignore[reportReturnType]
+        return cast(str, remaining[0].profile_id)
 
     return PROFILE_ID_DISCORD_FREE

@@ -14,7 +14,7 @@ from ..models import (
     EncodePlan,
 )
 from . import filters as _filters
-from .filters import build_video_filters, join_video_filters
+from .filters import build_plan_video_filters, join_video_filters
 
 scaler_to_ffmpeg_flag = _filters.scaler_to_ffmpeg_flag
 
@@ -70,25 +70,7 @@ def build_base_cmd(
     ):
         cmd += ["-t", fmt_ffmpeg_time(trim_duration)]
 
-    crop = plan.transform.crop
-    source_width = plan.source_info.width if plan.source_info is not None else 0
-    source_height = plan.source_info.height if plan.source_info is not None else 0
-    if crop is not None:
-        source_width = max(source_width, crop.x + crop.width)
-        source_height = max(source_height, crop.y + crop.height)
-    if source_width <= 0:
-        source_width = plan.target_width
-    if source_height <= 0:
-        source_height = plan.target_height
-    video_filters = build_video_filters(
-        transform=plan.transform,
-        source_width=source_width,
-        source_height=source_height,
-        scale_width=plan.target_width if plan.apply_scale else 0,
-        scale_height=plan.target_height if plan.apply_scale else 0,
-        scaler=getattr(plan, "scaler", "neighbor"),
-        frame_rate=plan.target_fps if plan.apply_fps_filter else 0.0,
-    )
+    video_filters = build_plan_video_filters(plan)
     if video_filters:
         cmd += ["-vf", join_video_filters(video_filters)]
 

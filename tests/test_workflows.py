@@ -27,3 +27,27 @@ def test_pyinstaller_spec_builds_a_real_one_folder_app() -> None:
     assert spec.count("exclude_binaries=True") == 2
     assert "a.zipfiles" in spec
     assert "upx=True" not in spec
+    assert '(str(_root / "tuck" / "web"), "tuck/web")' in spec
+
+
+def test_wheel_and_build_smoke_checks_include_split_web_assets() -> None:
+    pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
+    build_script = Path("scripts/build.ps1").read_text(encoding="utf-8")
+
+    assert 'tuck = ["web/*"]' in pyproject
+    for asset in (
+        "index.html",
+        "styles.css",
+        "settings.css",
+        "player.css",
+        "queue.css",
+        "transform.css",
+        "app.js",
+        "encoding-ui.js",
+        "player.js",
+        "queue.js",
+        "settings.js",
+        "crop.js",
+        "transform.js",
+    ):
+        assert asset in build_script
