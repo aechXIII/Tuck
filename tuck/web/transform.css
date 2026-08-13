@@ -163,10 +163,10 @@ body.crop-dragging * {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 26px;
+  min-height: 20px;
   color: var(--muted);
   cursor: pointer;
-  font: 600 10px var(--font);
+  font: 600 9px var(--font);
   letter-spacing: 0.06em;
   list-style: none;
   text-transform: uppercase;
@@ -203,42 +203,62 @@ body.crop-dragging * {
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  flex-wrap: wrap;
-  gap: 10px;
-  padding: 5px 8px 10px;
+  justify-content: safe center;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  gap: 8px;
+  padding: 2px 10px 6px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border2) transparent;
+}
+.transform-controls::-webkit-scrollbar {
+  height: 6px;
+}
+.transform-controls::-webkit-scrollbar-track {
+  background: transparent;
+}
+.transform-controls::-webkit-scrollbar-thumb {
+  background: var(--border2);
+  border-radius: 999px;
 }
 .transform-field {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  flex-shrink: 0;
+  gap: 2px;
 }
 .transform-field > span {
   color: var(--muted);
-  font-size: 9px;
+  font-size: 8px;
   font-weight: 600;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
+  white-space: nowrap;
 }
-.transform-field select {
-  min-width: 108px;
-  height: 26px;
-  padding: 2px 7px;
-  font-size: 10px;
+.transform-divider {
+  align-self: flex-end;
+  width: 1px;
+  height: 20px;
+  flex-shrink: 0;
+  background: var(--border2);
 }
 .transform-segment {
   display: flex;
-  gap: 2px;
+  gap: 1px;
+  flex-shrink: 0;
 }
 .transform-segment button {
-  height: 26px;
-  min-width: 38px;
-  padding: 0 7px;
+  position: relative;
+  height: 20px;
+  min-width: 28px;
+  padding: 0 5px;
   border: 1px solid transparent;
   border-radius: 4px;
   background: transparent;
   color: var(--muted);
   cursor: pointer;
-  font: 600 10px var(--font);
+  font: 600 9px var(--font);
+  flex-shrink: 0;
 }
 .transform-segment button:hover {
   background: #191923;
@@ -252,4 +272,45 @@ body.crop-dragging * {
 .transform-segment button:focus-visible {
   outline: 2px solid var(--accent-light);
   outline-offset: 1px;
+}
+.transform-segment button.icon {
+  width: 22px;
+  min-width: 22px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.transform-segment button.icon svg {
+  width: 12px;
+  height: 12px;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+}
+[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 7px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  background: #1c1c26;
+  border: 1px solid var(--border2);
+  color: var(--text);
+  font: 500 11px var(--font);
+  white-space: nowrap;
+  padding: 4px 7px;
+  border-radius: 5px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+[data-tip]:hover::after,
+[data-tip]:focus-visible::after {
+  opacity: 1;
+  transition-delay: 0.35s;
 }

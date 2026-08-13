@@ -433,9 +433,15 @@
 
   function syncTransformControls() {
     var clip = selectedClip();
-    var aspect = document.getElementById("crop-aspect");
     if (!clip) return;
-    if (aspect) aspect.value = clip.cropAspect || "free";
+    var aspect = clip.cropAspect || "free";
+    var aspectButtons = document.querySelectorAll("[data-aspect]");
+    for (var a = 0; a < aspectButtons.length; a++) {
+      aspectButtons[a].classList.toggle(
+        "on",
+        aspectButtons[a].dataset.aspect === aspect,
+      );
+    }
     var rotation = clip.rotation || 0;
     var rotationButtons = document.querySelectorAll("[data-rotation]");
     for (var i = 0; i < rotationButtons.length; i++) {

@@ -68,20 +68,48 @@
               role="toolbar"
               aria-label="Video transform controls"
             >
-              <label class="transform-field"
-                ><span>Crop ratio</span
-                ><select
-                  id="crop-aspect"
-                  onchange="setCropAspect(this.value)"
+              <div class="transform-field">
+                <span>Crop ratio</span>
+                <div
+                  class="transform-segment"
+                  role="group"
                   aria-label="Crop aspect ratio"
                 >
-                  <option value="free">Free / Original</option>
-                  <option value="16:9">16:9</option>
-                  <option value="9:16">9:16</option>
-                  <option value="1:1">1:1</option>
-                  <option value="4:3">4:3</option>
-                </select></label
-              >
+                  <button
+                    type="button"
+                    class="on"
+                    data-aspect="free"
+                    onclick="setCropAspect('free')"
+                  >
+                    Free</button
+                  ><button
+                    type="button"
+                    data-aspect="16:9"
+                    onclick="setCropAspect('16:9')"
+                  >
+                    16:9</button
+                  ><button
+                    type="button"
+                    data-aspect="9:16"
+                    onclick="setCropAspect('9:16')"
+                  >
+                    9:16</button
+                  ><button
+                    type="button"
+                    data-aspect="1:1"
+                    onclick="setCropAspect('1:1')"
+                  >
+                    1:1</button
+                  ><button
+                    type="button"
+                    data-aspect="4:3"
+                    onclick="setCropAspect('4:3')"
+                  >
+                    4:3
+                  </button>
+                </div>
+              </div>
+              <div class="transform-divider" aria-hidden="true"></div>
               <div class="transform-field">
                 <span>Rotation</span>
                 <div
@@ -91,32 +119,61 @@
                 >
                   <button
                     type="button"
+                    class="icon on"
                     data-rotation="0"
-                    class="on"
                     onclick="setVideoRotation(0)"
+                    data-tip="No rotation"
+                    aria-label="No rotation"
                   >
-                    0°</button
-                  ><button
+                    <svg viewBox="0 0 24 24">
+                      <rect x="4" y="4" width="16" height="16" rx="2"></rect>
+                    </svg>
+                  </button>
+                  <button
                     type="button"
+                    class="icon"
                     data-rotation="270"
                     onclick="setVideoRotation(270)"
+                    data-tip="Rotate 90° counterclockwise"
+                    aria-label="Rotate 90° counterclockwise"
                   >
-                    90° CCW</button
-                  ><button
+                    <svg viewBox="0 0 24 24">
+                      <polyline points="1 4 1 10 7 10"></polyline>
+                      <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+                    </svg>
+                  </button>
+                  <button
                     type="button"
+                    class="icon"
                     data-rotation="90"
                     onclick="setVideoRotation(90)"
+                    data-tip="Rotate 90° clockwise"
+                    aria-label="Rotate 90° clockwise"
                   >
-                    90° CW</button
-                  ><button
+                    <svg viewBox="0 0 24 24">
+                      <polyline points="23 4 23 10 17 10"></polyline>
+                      <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                    </svg>
+                  </button>
+                  <button
                     type="button"
+                    class="icon"
                     data-rotation="180"
                     onclick="setVideoRotation(180)"
+                    data-tip="Rotate 180°"
+                    aria-label="Rotate 180°"
                   >
-                    180°
+                    <svg viewBox="0 0 24 24">
+                      <polyline points="23 4 23 10 17 10"></polyline>
+                      <polyline points="1 20 1 14 7 14"></polyline>
+                      <path
+                        d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"
+                      ></path>
+                    </svg>
                   </button>
                 </div>
               </div>
+              <div class="transform-divider" aria-hidden="true"></div>
               <div class="transform-field">
                 <span>Flip</span>
                 <div
@@ -126,19 +183,47 @@
                 >
                   <button
                     type="button"
+                    class="icon"
                     id="flip-horizontal"
                     onclick="toggleVideoFlip('horizontal')"
+                    data-tip="Flip horizontal"
+                    aria-label="Flip horizontal"
                   >
-                    Horizontal</button
-                  ><button
+                    <svg viewBox="0 0 24 24">
+                      <line
+                        x1="12"
+                        y1="3"
+                        x2="12"
+                        y2="21"
+                        stroke-dasharray="3 3"
+                      ></line>
+                      <polyline points="7 8 3 12 7 16"></polyline>
+                      <polyline points="17 8 21 12 17 16"></polyline>
+                    </svg>
+                  </button>
+                  <button
                     type="button"
+                    class="icon"
                     id="flip-vertical"
                     onclick="toggleVideoFlip('vertical')"
+                    data-tip="Flip vertical"
+                    aria-label="Flip vertical"
                   >
-                    Vertical
+                    <svg viewBox="0 0 24 24">
+                      <line
+                        x1="3"
+                        y1="12"
+                        x2="21"
+                        y2="12"
+                        stroke-dasharray="3 3"
+                      ></line>
+                      <polyline points="8 7 12 3 16 7"></polyline>
+                      <polyline points="8 17 12 21 16 17"></polyline>
+                    </svg>
                   </button>
                 </div>
               </div>
+              <div class="transform-divider" aria-hidden="true"></div>
               <div class="transform-field">
                 <span>Output sizing</span>
                 <div
