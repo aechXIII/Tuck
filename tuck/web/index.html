@@ -1,2195 +1,706 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-<meta charset="UTF-8">
-<style>
-:root {
-  --bg: #0d0d12; --panel: #0f0f14; --card-bg: #14141c;
-  --input-bg: #12121a; --border: #1e1e2e; --border2: #2a2a3e;
-  --text: #d4d4dc; --muted: #6b6b7b; --dim: #555;
-  --accent: #7c3aed; --accent-light: #a78bfa; --danger: #ef4444;
-  --radius: 6px; --font: 'Segoe UI', system-ui, sans-serif;
-  --mono: 'Cascadia Code', 'Consolas', monospace;
-}
-* { margin:0; padding:0; box-sizing:border-box; }
-html, body { height:100%; }
-body { font-family:var(--font); font-size:13px; color:var(--text); background:var(--bg); display:flex; flex-direction:column; overflow:hidden; }
-#tb { height:42px; min-height:42px; background:#0a0a0f; border-bottom:1px solid #181826; display:flex; align-items:center; padding:0 16px; gap:2px; justify-content:flex-end; }
-#tb-logo { font-weight:700; font-size:14px; margin-right:auto; color:var(--muted); }
-.spacer { flex:1; }
-.tbbtn { background:transparent; border:none; color:#8a8aa0; padding:5px 11px; border-radius:6px; cursor:pointer; font-size:12px; font-weight:500; font-family:var(--font); transition:color .15s,background .15s; }
-.tbbtn:hover { background:#161622; color:#d4d4dc; }
-.tbbtn:focus-visible { outline:2px solid var(--accent-light); outline-offset:-1px; }
-#main { flex:1 1 0; min-height:0; display:flex; overflow:hidden; }
-#left { width:240px; min-width:180px; max-width:360px; height:100%; min-height:0; resize:horizontal; background:var(--panel); border-right:1px solid var(--border); display:flex; flex-direction:column; overflow:hidden; }
-#left-hdr { padding:8px 10px 6px; flex-shrink:0; display:flex; gap:6px; }
-#btn-add { flex:1; background:#1a1a26; border:1px dashed #3a3a5e; border-radius:8px; color:#c4b5fd; font-weight:600; padding:8px 10px; font-size:12px; cursor:pointer; font-family:var(--font); }
-#btn-add:hover { background:#221f33; border-color:var(--accent); color:#fff; }
-#btn-add:focus-visible { outline:2px solid var(--accent-light); outline-offset:1px; }
-#btn-rmall { background:transparent; border:1px solid transparent; border-radius:6px; color:var(--muted); cursor:pointer; font-size:16px; padding:2px 8px; font-family:var(--font); display:none; }
-#btn-rmall:hover { color:var(--danger); background:#2a1520; border-color:#3a1a2e; }
-#btn-rmall:focus-visible { outline:2px solid var(--accent-light); outline-offset:1px; }
-#clips { flex:1; overflow-y:auto; padding:0 10px 10px; }
-.clip { position:relative; background:var(--card-bg); border:1px solid #222233; border-radius:8px; padding:8px 10px; margin-bottom:6px; cursor:pointer; transition:border-color .15s,background .15s; }
-.clip:hover { border-color:var(--border2); background:#1a1a28; }
-.clip:focus-visible { outline:2px solid var(--accent-light); outline-offset:-2px; }
-.clip.sel { border-color:var(--accent); background:#1c1830; }
-.clip .c1 { min-width:0; }
-.clip .c2 { color:#e4e4ec; font-size:12px; font-weight:600; padding-right:38px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.clip .c3 { display:flex; flex-wrap:wrap; align-items:baseline; gap:2px 5px; color:var(--muted); font-size:10px; margin-top:2px; line-height:1.25; }
-.clip .c-meta { min-width:0; }
-.clip .c-error { color:#fca5a5; }
-.clip .c-time { color:var(--muted); font-size:9px; font-family:var(--mono); margin-left:auto; white-space:nowrap; }
-.clip .c4 { position:absolute; top:3px; right:3px; background:transparent; border:none; color:#666; cursor:pointer; font-size:14px; padding:4px 6px; border-radius:4px; }
-.clip .c4:hover { color:#fca5a5; background:#3a1524; }
-.clip .c4:focus-visible { outline:2px solid var(--accent-light); outline-offset:-1px; }
-.clip .c-st { position:absolute; top:7px; right:30px; width:12px; height:12px; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; line-height:1; }
-.cst-ready { color:var(--muted); }
-.cst-queued { color:#a78bfa; }
-.c-act { background:transparent; border:1px solid var(--border2); color:var(--accent-light); cursor:pointer; font:600 10px var(--font); padding:1px 6px; border-radius:4px; flex-shrink:0; white-space:nowrap; line-height:1.4; }
-.c-act:hover { background:rgba(124,58,237,0.12); border-color:var(--accent); color:#fff; }
-.c-act.link { border:none; padding:1px 0 1px 6px; background:transparent; }
-.c-act.link:hover { background:transparent; border:none; color:#c4b5fd; text-decoration:underline; }
-.c-status-row { display:flex; align-items:center; gap:8px; margin-top:3px; min-width:0; padding-right:18px; }
-.c-status { color:var(--accent-light); font-size:10px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; flex:1; }
-.c-status-row .c-act { margin-left:auto; }
-.clip.clip-drag { cursor:default; }
-.clip.dragging { cursor:grabbing; opacity:0.6; border-color:var(--accent); }
-.clip.drop-target { border-color:var(--accent-light); background:#1c1830; box-shadow:inset 0 0 0 1px var(--accent); }
-.clip .c-drag { position:absolute; left:5px; top:50%; transform:translateY(-50%); width:12px; height:28px; display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:11px; letter-spacing:-1px; cursor:grab; user-select:none; touch-action:none; z-index:2; }
-.clip .c-drag:active { cursor:grabbing; }
-.clip .c1 { padding-left:14px; }
-.clip .c2 { padding-right:38px; }
-.cst-processing { color:#fbbf24; }
-.cst-completed { color:#22c55e; }
-.cst-failed, .cst-cancelled { color:#fca5a5; }
-#center { flex:1 1 0; height:100%; min-height:0; background:#0a0a0e; display:flex; flex-direction:column; min-width:320px; }
-#empty { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; }
-#empty h2 { color:#666; font-size:18px; font-weight:600; }
-#empty p { color:#444; font-size:12px; }
-#empty .empt-btn { background:var(--accent); border:none; border-radius:var(--radius); color:#fff; font-weight:700; font-size:13px; padding:10px 24px; cursor:pointer; font-family:var(--font); margin-top:6px; }
-#empty .empt-btn:hover { background:#8b5cf6; }
-#empty .empt-btn:focus-visible { outline:2px solid var(--accent-light); outline-offset:2px; }
-#stage { flex:1 1 0; min-height:0; background:#000; position:relative; display:none; }
-#media-viewport { position:absolute; inset:0; overflow:hidden; }
-#media-viewport video, #media-viewport img { width:100%; height:100%; object-fit:contain; position:absolute; top:0; left:0; transform-origin:0 0; }
-#crop-ui { position:absolute; inset:0; z-index:3; display:none; overflow:hidden; }
-#crop-ui.on { display:block; }
-.crop-dim { position:absolute; background:rgba(5,5,10,.66); pointer-events:none; }
-#crop-selection { position:absolute; border:2px solid var(--accent-light); cursor:move; touch-action:none; box-shadow:0 0 0 1px rgba(0,0,0,.75),inset 0 0 0 1px rgba(0,0,0,.35); }
-#crop-selection::before, #crop-selection::after { content:''; position:absolute; pointer-events:none; opacity:.7; }
-#crop-selection::before { left:33.333%; right:33.333%; top:0; bottom:0; border-left:1px solid rgba(255,255,255,.45); border-right:1px solid rgba(255,255,255,.45); }
-#crop-selection::after { top:33.333%; bottom:33.333%; left:0; right:0; border-top:1px solid rgba(255,255,255,.45); border-bottom:1px solid rgba(255,255,255,.45); }
-.crop-handle { position:absolute; z-index:2; width:12px; height:12px; border:2px solid #fff; border-radius:3px; background:var(--accent); box-shadow:0 1px 5px rgba(0,0,0,.75); }
-.crop-handle[data-handle="nw"] { left:2px; top:2px; cursor:nwse-resize; }
-.crop-handle[data-handle="n"] { left:50%; top:2px; margin-left:-6px; cursor:ns-resize; }
-.crop-handle[data-handle="ne"] { right:2px; top:2px; cursor:nesw-resize; }
-.crop-handle[data-handle="e"] { right:2px; top:50%; margin-top:-6px; cursor:ew-resize; }
-.crop-handle[data-handle="se"] { right:2px; bottom:2px; cursor:nwse-resize; }
-.crop-handle[data-handle="s"] { left:50%; bottom:2px; margin-left:-6px; cursor:ns-resize; }
-.crop-handle[data-handle="sw"] { left:2px; bottom:2px; cursor:nesw-resize; }
-.crop-handle[data-handle="w"] { left:2px; top:50%; margin-top:-6px; cursor:ew-resize; }
-body.crop-dragging, body.crop-dragging * { user-select:none !important; }
-#player-bar {
-  display:none;
-  background:linear-gradient(180deg, #101018 0%, #0c0c12 100%);
-  border-top:1px solid var(--border);
-  flex-shrink:0;
-  padding:10px 14px 12px;
-  gap:8px;
-  flex-direction:column;
-}
-#player-bar.on { display:flex; }
-#timeline {
-  position:relative;
-  width:100%;
-  height:22px;
-  display:flex;
-  align-items:center;
-  cursor:pointer;
-  user-select:none;
-  touch-action:none;
-  flex-shrink:0;
-}
-#timeline.trim-dragging,
-#timeline.trim-dragging .tl-track,
-#timeline.trim-dragging .tl-handle,
-body.tl-trim-dragging,
-body.tl-trim-dragging * {
-  cursor: ew-resize !important;
-}
-.tl-track {
-  position:relative;
-  width:100%;
-  height:6px;
-  background:#2a2a38;
-  border-radius:999px;
-  overflow:visible;
-}
-.tl-range {
-  position:absolute;
-  top:0; bottom:0; left:0; right:0;
-  background:var(--accent);
-  border-radius:999px;
-  opacity:0.95;
-  pointer-events:none;
-}
-.tl-dim {
-  position:absolute;
-  top:0; bottom:0;
-  background:rgba(0,0,0,0.5);
-  pointer-events:none;
-  border-radius:999px;
-  z-index:1;
-}
-.tl-playhead {
-  position:absolute;
-  top:50%;
-  width:2px;
-  height:14px;
-  margin-top:-7px;
-  margin-left:-1px;
-  background:#fff;
-  border-radius:1px;
-  pointer-events:none;
-  z-index:3;
-  box-shadow:0 0 6px rgba(0,0,0,.7);
-}
-.tl-handle {
-  position:absolute;
-  top:50%;
-  width:14px;
-  height:14px;
-  margin-top:-7px;
-  margin-left:-7px;
-  border-radius:50%;
-  background:#fff;
-  border:2px solid var(--accent-light);
-  cursor:ew-resize;
-  z-index:4;
-  box-shadow:0 1px 4px rgba(0,0,0,.5);
-  transition:transform .1s ease, background .1s ease;
-}
-.tl-handle:hover, .tl-handle:focus-visible {
-  background:#ede9fe;
-  outline:none;
-  transform:scale(1.12);
-}
-.tl-handle.dragging { background:#c4b5fd; z-index:5; transform:scale(1.15); cursor:ew-resize !important; }
-#player-row {
-  display:flex;
-  align-items:center;
-  gap:10px;
-  min-height:28px;
-  width:100%;
-}
-.pbtn {
-  background:#1a1a26;
-  border:1px solid #2a2a3a;
-  color:#e4e4ec;
-  border-radius:6px;
-  width:32px;
-  height:28px;
-  cursor:pointer;
-  font-size:12px;
-  line-height:1;
-  display:inline-flex;
-  align-items:center;
-  justify-content:center;
-  flex-shrink:0;
-  padding:0;
-}
-.pbtn:hover { border-color:var(--accent); color:#fff; background:#221f33; }
-.pbtn:focus-visible { outline:2px solid var(--accent-light); outline-offset:1px; }
-.pbtn svg { width:14px; height:14px; display:block; fill:currentColor; }
-#ptime {
-  color:#a1a1b5;
-  font-size:11px;
-  font-family:var(--mono);
-  white-space:nowrap;
-  flex-shrink:0;
-  min-width:7.5em;
-  letter-spacing:0.02em;
-  line-height:28px;
-}
-#player-mid {
-  flex:1;
-  min-width:0;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  gap:0;
-  overflow:hidden;
-}
-.player-edit-group { display:flex; align-items:center; gap:6px; min-width:0; }
-#trim-edit-group { overflow:hidden; }
-#crop-edit-group { flex-shrink:0; }
-.player-edit-divider { width:1px; height:16px; margin:0 8px; background:var(--border2); flex-shrink:0; }
-#trim-label {
-  color:var(--accent-light);
-  font-size:11px;
-  font-family:var(--mono);
-  white-space:nowrap;
-  overflow:hidden;
-  text-overflow:ellipsis;
-  min-width:0;
-  line-height:28px;
-}
-#trim-label:empty { display:none; }
-#crop-label { color:#a1a1b5; font-size:11px; font-family:var(--mono); white-space:nowrap; line-height:28px; }
-#crop-label.active { color:var(--accent-light); }
-#btn-trim-reset {
-  display:none;
-  flex-shrink:0;
-  background:transparent;
-  border:none;
-  color:var(--muted);
-  font:600 11px var(--font);
-  padding:0 4px;
-  height:28px;
-  line-height:28px;
-  cursor:pointer;
-}
-#btn-trim-reset.show { display:inline-block; }
-#btn-trim-reset:hover { color:var(--accent-light); }
-#btn-trim-reset:focus-visible { outline:2px solid var(--accent-light); outline-offset:2px; border-radius:2px; }
-#btn-crop-reset { display:none; flex-shrink:0; background:transparent; border:none; color:var(--muted); font:600 11px var(--font); padding:0 4px; height:28px; cursor:pointer; }
-#btn-crop-reset.show { display:inline-block; }
-#btn-crop-reset:hover { color:var(--accent-light); }
-#btn-crop-reset:focus-visible { outline:2px solid var(--accent-light); outline-offset:2px; border-radius:2px; }
-#transform-toolbar { min-width:0; border-bottom:1px solid var(--border); }
-#transform-toolbar > summary { display:flex; align-items:center; justify-content:center; min-height:26px; color:var(--muted); cursor:pointer; font:600 10px var(--font); letter-spacing:.06em; list-style:none; text-transform:uppercase; user-select:none; }
-#transform-toolbar > summary::-webkit-details-marker { display:none; }
-#transform-toolbar > summary::after { content:''; width:5px; height:5px; margin:-3px 0 0 8px; border-right:1px solid currentColor; border-bottom:1px solid currentColor; transform:rotate(45deg); transition:transform .15s ease, margin .15s ease; }
-#transform-toolbar[open] > summary::after { margin-top:3px; transform:rotate(225deg); }
-#transform-toolbar > summary:hover { color:var(--accent-light); }
-#transform-toolbar > summary:focus-visible { border-radius:4px; outline:2px solid var(--accent-light); outline-offset:-2px; }
-.transform-controls { display:flex; align-items:flex-end; justify-content:center; flex-wrap:wrap; gap:10px; padding:5px 8px 10px; }
-.transform-field { display:flex; flex-direction:column; gap:3px; }
-.transform-field > span { color:var(--muted); font-size:9px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; }
-.transform-field select { min-width:108px; height:26px; padding:2px 7px; font-size:10px; }
-.transform-segment { display:flex; gap:2px; }
-.transform-segment button { height:26px; min-width:38px; padding:0 7px; border:1px solid transparent; border-radius:4px; background:transparent; color:var(--muted); cursor:pointer; font:600 10px var(--font); }
-.transform-segment button:hover { background:#191923; color:#fff; }
-.transform-segment button.on { border-color:#4a3a68; background:#241d35; color:#ddd2ff; }
-.transform-segment button:focus-visible { outline:2px solid var(--accent-light); outline-offset:1px; }
-#player-vol {
-  display:flex;
-  align-items:center;
-  gap:6px;
-  flex-shrink:0;
-  margin-left:auto;
-}
-#vbar {
-  -webkit-appearance:none;
-  appearance:none;
-  width:84px;
-  height:4px;
-  border-radius:999px;
-  background:#2a2a38;
-  outline:none;
-  flex-shrink:0;
-  cursor:pointer;
-  accent-color:var(--accent);
-}
-#vbar::-webkit-slider-runnable-track {
-  height:4px;
-  border-radius:999px;
-  background:#2a2a38;
-}
-#vbar::-webkit-slider-thumb {
-  -webkit-appearance:none;
-  appearance:none;
-  width:12px;
-  height:12px;
-  margin-top:-4px;
-  border-radius:50%;
-  background:var(--accent-light);
-  border:none;
-  box-shadow:0 0 0 2px rgba(167,139,250,0.2);
-  cursor:pointer;
-}
-#vbar::-moz-range-track {
-  height:4px;
-  border-radius:999px;
-  background:#2a2a38;
-  border:none;
-}
-#vbar::-moz-range-thumb {
-  width:12px;
-  height:12px;
-  border-radius:50%;
-  background:var(--accent-light);
-  border:none;
-  cursor:pointer;
-}
-#right { width:320px; min-width:280px; max-width:480px; height:100%; min-height:0; background:var(--panel); border-left:1px solid var(--border); display:flex; flex-direction:column; }
-#right-scroll { flex:1 1 0; min-height:0; overflow-y:auto; overflow-anchor:none; padding:14px 12px 10px; display:flex; flex-direction:column; gap:10px; }
-#right-foot { flex:0 0 auto; background:#0f0f18; border-top:1px solid var(--border); padding:10px 12px; display:flex; flex-direction:column; gap:6px; }
-.stitle { color:var(--accent-light); font-weight:700; font-size:11px; text-transform:uppercase; letter-spacing:1px; padding:4px 0; }
-select, input[type=text], input[type=number] { width:100%; background:var(--input-bg); border:1px solid var(--border2); border-radius:var(--radius); padding:6px 8px; color:var(--text); font-size:13px; font-family:var(--font); }
-select:focus, input:focus { outline:none; border-color:var(--accent); }
-select { cursor:pointer; }
-.gr { border:1px solid var(--border2); border-radius:var(--radius); padding:12px 10px; }
-.grt { color:var(--accent-light); font-weight:700; font-size:12px; margin-bottom:8px; overflow:hidden; }
-.row { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
-.row .sp { flex:1; }
-.badge { color:#c4b5fd; font-weight:700; font-size:14px; font-family:var(--mono); }
-#sz-badge { width:48px; padding:0; border:0; border-radius:0; background:transparent; color:#c4b5fd; text-align:right; }
-#sz-badge::-webkit-inner-spin-button, #sz-badge::-webkit-outer-spin-button { -webkit-appearance:none; margin:0; }
-#sz-badge:focus { outline:0; border-bottom:1px solid var(--accent); }
-#sz-unit { margin-left:3px; }
-.pset { display:flex; gap:4px; margin-top:4px; }
-.pset button { flex:1; background:#1a1a26; border:1px solid var(--border2); border-radius:var(--radius); color:var(--text); font-size:10px; font-weight:600; padding:5px 2px; cursor:pointer; font-family:var(--font); }
-.pset button:hover { border-color:var(--accent); color:#fff; }
-.pset button:focus-visible { outline:2px solid var(--accent-light); outline-offset:-1px; }
-.pset button.on { background:#2a1f45; border-color:var(--accent); color:#e9d5ff; }
-.info-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
-.sl-row { display:flex; align-items:center; gap:8px; }
-.sl-row input[type=range] { flex:1; }
-.btn1 { width:100%; background:var(--accent); border:none; border-radius:var(--radius); color:#fff; font-weight:700; font-size:13px; padding:8px 14px; cursor:pointer; font-family:var(--font); transition:opacity .15s; }
-.btn1:hover { background:#8b5cf6; }
-.btn1:focus-visible { outline:2px solid var(--accent-light); outline-offset:2px; }
-.btn1:disabled { opacity:.4; cursor:default; background:#4a3060; }
-.btn2 { background:var(--card-bg); border:1px solid var(--border2); border-radius:var(--radius); color:var(--text); padding:6px 12px; cursor:pointer; font-family:var(--font); font-size:12px; font-weight:600; }
-.btn2:hover { border-color:var(--accent); color:#fff; }
-.btn2:focus-visible { outline:2px solid var(--accent-light); outline-offset:-1px; }
-.disclosure { width:100%; background:transparent; border:0; color:var(--accent-light); cursor:pointer; font:600 12px var(--font); padding:6px 0 0; text-align:left; }
-.disclosure:focus-visible { outline:2px solid var(--accent-light); outline-offset:2px; }
-.setting-note { color:var(--muted); font-size:10px; margin-top:4px; }
-.brow { display:flex; gap:8px; }
-.brow .btn1, .brow .btn2 { flex:1; }
-.hid { display:none !important; }
-label.chk { display:flex; align-items:center; gap:8px; font-size:13px; cursor:pointer; user-select:none; }
-label.chk input[type=checkbox] { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
-label.chk input[type=checkbox]:focus-visible + .chk-box { outline:2px solid var(--accent-light); outline-offset:2px; }
-label.chk .chk-box { width:16px; height:16px; border:1.5px solid #3a3a56; border-radius:3px; flex-shrink:0; display:flex; align-items:center; justify-content:center; transition:all .15s; background:transparent; }
-label.chk:hover .chk-box { border-color:var(--accent); }
-label.chk input:checked + .chk-box { background:var(--accent); border-color:var(--accent); }
-label.chk input:checked + .chk-box::after { content:'✓'; color:#fff; font-size:10px; font-weight:700; line-height:1; }
-.prof-meta { font-size:10px; color:var(--muted); margin-top:-4px; display:flex; align-items:center; gap:6px; }
-.prof-meta .mod-badge { color:#fbbf24; font-weight:600; display:none; }
-.prof-meta .mod-badge.show { display:inline; }
-.prof-row { display:flex; gap:6px; }
-.prof-row .btn2 { flex:1; font-size:11px; padding:5px 8px; }
-#qbar { height:42px; min-height:42px; background:#0f0f18; border-top:1px solid var(--border); display:none; align-items:center; padding:0 16px; gap:12px; }
-#qbar.on { display:flex; }
-#qcnt { color:var(--accent-light); font-weight:700; font-size:12px; font-family:var(--mono); min-width:42px; flex-shrink:0; }
-#qprog { flex:1; height:6px; border:none; border-radius:3px; overflow:hidden; }
-#qprog::-webkit-progress-bar { background:#1a1a30; border-radius:3px; }
-#qprog::-webkit-progress-value { background:var(--accent); border-radius:3px; }
-#qeta { color:#7a7a8c; font-size:11px; font-family:var(--mono); min-width:70px; text-align:right; flex-shrink:0; }
-#qfname { color:#7a7a8c; font-size:11px; font-family:var(--mono); max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex-shrink:0; }
-#btn-stop-after, #btn-clear, #btn-cancel { color:#7a7a8c; font-size:11px; font-family:var(--mono); }
-.qbtn { background:transparent; border:none; color:#777; cursor:pointer; font-size:13px; font-weight:600; padding:4px 10px; border-radius:6px; flex-shrink:0; transition:color .15s,background .15s; font-family:var(--font); }
-.qbtn:hover { background:#1a1a2a; color:#fff; }
-.qbtn:focus-visible { outline:2px solid var(--accent-light); outline-offset:-1px; }
-.qbtn.danger:hover { color:var(--danger); background:#2a1520; }
-
-.mod-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:200; display:none; align-items:center; justify-content:center; }
-.mod-overlay.open { display:flex; }
-.mod-box { background:#1a1a26; border:1px solid var(--border2); border-radius:12px; padding:20px; min-width:420px; max-width:560px; max-height:80vh; overflow-y:auto; display:flex; flex-direction:column; gap:12px; box-shadow:0 20px 60px rgba(0,0,0,0.5); }
-.mod-box.confirm-dialog { width:min(390px,calc(100vw - 32px)); min-width:0; padding:22px; gap:10px; }
-.confirm-dialog h2 { color:#eeeef6; font-size:15px; letter-spacing:0; text-transform:none; }
-.confirm-copy { color:var(--muted); font-size:12px; line-height:1.5; }
-.confirm-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:10px; }
-.confirm-actions .btn1, .confirm-actions .btn2 { width:auto; min-width:105px; }
-.confirm-actions .danger { background:#a32940; }
-.confirm-actions .danger:hover { background:#c23852; }
-.settings-workspace { position:fixed; inset:0; z-index:180; display:none; align-items:center; justify-content:center; padding:24px; background:rgba(0,0,0,.62); }
-body.settings-open .settings-workspace { display:flex; }
-.settings-dialog { width:min(920px,calc(100vw - 32px)); height:min(680px,calc(100vh - 32px)); display:grid; grid-template-columns:205px minmax(0,1fr); grid-template-rows:52px minmax(0,1fr); overflow:hidden; background:#191925; border:1px solid var(--border2); border-radius:14px; box-shadow:0 24px 70px rgba(0,0,0,.58); }
-.settings-topbar { grid-column:1 / -1; display:flex; align-items:center; gap:12px; min-height:52px; padding:0 16px 0 18px; background:#191925; border-bottom:1px solid var(--border2); }
-.settings-wordmark { color:#a78bfa; font-weight:600; letter-spacing:.08em; }
-.settings-top-title { color:var(--muted); font-size:12px; }
-.settings-topbar .mbtn { margin-left:auto; }
-.settings-sidebar { grid-column:1; grid-row:2; min-height:0; overflow-y:auto; padding:18px 12px; border-right:1px solid var(--border2); background:#13131d; }
-.settings-nav-group { display:flex; flex-direction:column; gap:3px; margin:0; padding:0; border:0; }
-.settings-nav-group + .settings-nav-group { margin-top:20px; }
-.settings-nav-label { color:#666678; font:700 9px var(--font); letter-spacing:1px; padding:0 10px 7px; text-transform:uppercase; }
-.settings-tabs { display:flex; flex-direction:column; align-items:stretch; gap:3px; }
-.settings-tabs button { display:block; width:100%; flex:none; background:transparent; border:0; border-radius:6px; color:var(--muted); padding:9px 10px; cursor:pointer; font:600 12px var(--font); text-align:left; }
-.settings-tabs button:hover { color:var(--text); background:#1d1d2b; }
-.settings-tabs button.on { color:#fff; background:var(--accent); }
-.settings-tabs button:focus-visible { outline:2px solid var(--accent-light); outline-offset:-2px; }
-.settings-main { grid-column:2; grid-row:2; min-width:0; min-height:0; display:grid; grid-template-rows:minmax(0,1fr) auto; }
-.settings-page { min-height:0; overflow-y:auto; padding:24px 28px 30px; }
-.settings-page-inner { max-width:860px; }
-.settings-page .settings-sec:first-child { border-top:0; padding-top:0; margin-top:0; }
-.settings-actions { display:flex; align-items:center; gap:8px; min-height:57px; padding:10px 28px; border-top:1px solid var(--border2); background:#171722; }
-.settings-actions:empty { display:none; }
-.settings-action-spacer { flex:1; }
-.settings-actions > .btn1 { width:auto; min-width:130px; }
-.settings-unsaved { color:#f7c66b; font-size:11px; visibility:hidden; }
-.settings-unsaved.on { visibility:visible; }
-.settings-actions .btn1, .settings-actions .btn2 { min-width:110px; min-height:34px; }
-.settings-actions .footer-primary { width:100%; }
-.settings-title { color:var(--accent-light); font-size:13px; text-transform:uppercase; letter-spacing:1px; margin-bottom:14px; }
-.settings-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
-.settings-grid .full { grid-column:1 / -1; }
-.settings-field > label, .settings-field > span { display:block; color:#b4b4c4; font-size:11px; margin-bottom:4px; }
-.settings-readonly { min-height:33px; padding:7px 8px; background:var(--input-bg); border:1px solid var(--border2); border-radius:var(--radius); color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.profile-summary { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.settings-title-row { display:flex; align-items:center; gap:6px; margin-bottom:14px; }
-.settings-title-row .settings-title { margin-bottom:0; }
-.settings-title-back { background:transparent; border:0; border-radius:var(--radius); color:var(--accent-light); cursor:pointer; font:600 18px/1 var(--font); height:28px; padding:0; width:28px; }
-.settings-title-back:hover { background:#221f33; color:#fff; }
-.settings-title-back:focus-visible { outline:2px solid var(--accent-light); outline-offset:1px; }
-.profile-editor-task { display:flex; border:1px solid var(--border2); border-radius:var(--radius); overflow:hidden; }
-.profile-editor-task button { flex:1; border:0; background:var(--input-bg); color:var(--muted); padding:9px; font:600 12px var(--font); cursor:pointer; }
-.profile-editor-task button.on { background:var(--accent); color:#fff; }
-.status-card { background:var(--card-bg); border:1px solid var(--border2); border-radius:8px; padding:12px; margin-bottom:10px; }
-.file-naming { background:transparent; border:0; border-top:1px solid var(--border2); border-radius:0; margin-top:0; padding:20px 0; }
-.file-naming h3 { color:var(--accent-light); font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:14px; }
-.file-naming .settings-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px 18px; }
-.file-naming .settings-field { background:transparent; border:0; padding:0; }
-.file-naming .settings-field > label { margin-bottom:7px; }
-.file-naming .settings-field input { background:var(--input-bg); border:1px solid var(--border2); border-radius:var(--radius); color:var(--text); font:13px var(--font); min-width:0; padding:6px 8px; width:100%; }
-.file-naming-help, .file-naming-example { background:var(--input-bg); border:1px solid var(--border2); border-radius:var(--radius); padding:10px; }
-.file-naming-example .example-out { margin-top:6px; min-height:38px; padding:10px; }
-.settings-card { background:transparent; border:0; border-top:1px solid var(--border2); border-radius:0; padding:20px 0; }
-.settings-card:first-child { border-top:0; padding-top:0; }
-.settings-card + .settings-card { margin-top:0; }
-.settings-card-title { color:#a78bfa; font-size:11px; font-weight:600; letter-spacing:.08em; margin-bottom:4px; text-transform:uppercase; }
-.settings-card-copy { color:var(--muted); font-size:10px; margin-bottom:14px; }
-.settings-support-actions .btn1 { width:auto; white-space:nowrap; }
-.settings-profile-filterbar { display:flex; align-items:center; margin-bottom:6px; padding:0 0 12px; border-bottom:1px solid var(--border2); }
-.profile-filters { display:flex; width:100%; gap:2px; min-width:0; padding:3px; background:#11111a; border:1px solid #29293a; border-radius:8px; }
-.profile-filters button { flex:1 1 0; min-width:0; border:0 !important; border-radius:5px !important; padding:6px 13px; background:transparent !important; color:var(--muted); }
-.profile-filters button:hover { color:var(--text); background:#20202e !important; }
-.profile-filters button.on { color:#ddd2ff; background:#2a1c48 !important; box-shadow:inset 0 0 0 1px rgba(139,92,246,.35); }
-.settings-advanced { border-top:1px solid var(--border2); margin-top:18px; padding-top:12px; }
-.settings-advanced summary { color:var(--accent-light); cursor:pointer; font:600 11px var(--font); }
-.settings-advanced-body { padding-top:12px; }
-.settings-list { display:flex; flex-direction:column; }
-.settings-list-row { display:flex; align-items:center; gap:10px; min-height:58px; padding:12px 4px; border-bottom:1px solid var(--border2); }
-.settings-list-main { flex:1; min-width:0; }
-.settings-list-main strong { display:block; color:#eeeef6; font-size:12px; font-weight:500; }
-.settings-list-main > span { display:block; color:var(--muted); font-size:10px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.settings-list-main .status-warn { color:#f7c66b; margin-top:4px; }
-.settings-badge { display:inline-flex !important; width:max-content; margin-top:4px; padding:2px 7px; border-radius:999px; color:#6ee7a7 !important; background:rgba(110,231,167,.1); }
-.profile-actions-menu { position:relative; }
-.profile-actions-menu summary { list-style:none; }
-.profile-actions-menu summary::-webkit-details-marker { display:none; }
-.profile-actions-popover { position:absolute; z-index:5; top:36px; right:0; width:128px; display:flex; flex-direction:column; padding:5px; background:#20202e; border:1px solid var(--border2); border-radius:7px; box-shadow:0 12px 28px rgba(0,0,0,.4); }
-.profile-actions-popover button { border:0; border-radius:5px; padding:7px 8px; color:var(--text); background:transparent; cursor:pointer; font:11px var(--font); text-align:left; }
-.profile-actions-popover button:hover { background:#2a1c48; }
-.profile-actions-popover button.danger { color:#f48b9e; }
-.settings-status-table { display:flex; flex-direction:column; }
-.settings-status-row { display:grid; grid-template-columns:95px minmax(0,1fr) 76px; gap:12px; align-items:center; min-height:52px; border-bottom:1px solid var(--border2); }
-.settings-status-row > div { min-width:0; font-size:11px; }
-.settings-status-value { color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.settings-status-actions { display:flex; justify-content:flex-end; gap:6px; }
-.settings-status-actions .btn2 { min-width:68px; text-align:center; }
-.settings-support-actions { display:flex; flex-wrap:wrap; gap:8px; }
-.settings-token-row { display:flex; flex-wrap:wrap; gap:5px; margin-top:7px; }
-.settings-token { border:1px solid #4b3a72; border-radius:999px; color:#c4b5fd; background:#2a1c48; padding:3px 8px; cursor:pointer; font:10px var(--mono); }
-.settings-token:hover { border-color:#8b5cf6; }
-@media (max-width:720px) { .settings-workspace { padding:12px; } .settings-dialog { width:calc(100vw - 24px); height:calc(100vh - 24px); grid-template-columns:170px minmax(0,1fr); } .settings-sidebar { padding:16px 9px; } .settings-page { padding:20px 18px 24px; } .settings-actions { padding:10px 18px; } .settings-grid { grid-template-columns:1fr; } .settings-grid .full { grid-column:auto; } .settings-status-row { grid-template-columns:80px minmax(0,1fr); padding:8px 0; } .settings-status-actions { grid-column:2; justify-content:flex-start; } }
-.status-card strong { display:block; color:#e8e8f0; margin-bottom:4px; }
-.status-good { color:#86efac; }
-.status-warn { color:#fbbf24; }
-.settings-empty { color:var(--muted); padding:18px 0; text-align:center; }
-.mod-box h2 { color:var(--accent-light); font-size:13px; text-transform:uppercase; letter-spacing:1px; }
-.update-notes { background:var(--input-bg); border:1px solid var(--border2); border-radius:var(--radius); color:var(--text); font:12px/1.5 var(--mono); margin:0; max-height:240px; overflow:auto; padding:12px; white-space:pre-wrap; word-break:break-word; }
-.mod-box h3 { color:#a0a0b4; font-size:12px; font-weight:600; margin-top:2px; }
-.mod-btns { display:flex; gap:8px; justify-content:flex-end; margin-top:8px; }
-.mrow { background:var(--card-bg); border:1px solid #222233; border-radius:8px; padding:10px 12px; display:flex; align-items:center; gap:8px; cursor:pointer; transition:border-color .15s; }
-button.mrow { font:inherit; text-align:left; width:100%; }
-.mrow:hover { border-color:var(--border2); }
-.mrow:focus-visible { outline:2px solid var(--accent-light); outline-offset:-2px; }
-.mrow .mi { flex:1; }
-.mrow .mti { color:#e8e8f0; font-size:13px; font-weight:600; }
-.mrow .mme { color:var(--muted); font-size:11px; }
-.mbtn { background:transparent; border:1px solid transparent; border-radius:5px; color:#8a8a9a; font-size:12px; font-weight:600; cursor:pointer; width:28px; height:28px; display:flex; align-items:center; justify-content:center; }
-.mbtn:hover { background:var(--card-bg); border-color:#3a3a5e; color:#e8e8f0; }
-.mbtn:focus-visible { outline:2px solid var(--accent-light); outline-offset:-1px; }
-.mbtn.danger { color:#8a6a70; }
-.mbtn.danger:hover { background:#3a1524; border-color:var(--danger); color:#fecaca; }
-.ft { display:flex; gap:0; }
-.ft button { flex:1; background:var(--card-bg); border:1px solid #222233; color:#7a7a8c; font-size:11px; font-weight:600; padding:5px 8px; cursor:pointer; font-family:var(--font); }
-.ft button:first-child { border-radius:4px 0 0 4px; }
-.ft button:last-child { border-radius:0 4px 4px 0; }
-.ft button:hover { border-color:var(--accent); color:#b4b4c4; }
-.ft button:focus-visible { outline:2px solid var(--accent-light); outline-offset:-1px; }
-.ft button.on { background:#2a1f45; border-color:var(--accent); color:#c4b5fd; }
-#task-wf { display:flex; border:1px solid #2a2a3e; border-radius:6px; overflow:hidden; margin-bottom:10px; min-height:34px; }
-#task-wf button { flex:1 1 50%; display:block; background:#12121a; border:none; color:#b4b4c4; padding:8px 0; cursor:pointer; font-size:12px; font-weight:600; font-family:var(--font); text-align:center; transition:all .15s; border-right:1px solid #2a2a3e; outline:none; line-height:1; }
-#task-wf button:last-child { border-right:none; }
-#task-wf button.on { background:var(--accent); color:#fff; }
-#task-wf button:hover:not(.on) { color:#e4e4ec; background:#1a1a26; }
-#task-wf button:focus-visible { box-shadow:inset 0 0 0 2px var(--accent-light); }
-::-webkit-scrollbar { width:8px; }
-::-webkit-scrollbar-track { background:transparent; }
-::-webkit-scrollbar-thumb { background:var(--border2); border-radius:4px; }
-::-webkit-scrollbar-thumb:hover { background:var(--accent); }
-input[type=range] { -webkit-appearance:none; appearance:none; background:transparent; height:22px; cursor:pointer; width:100%; }
-input[type=range]::-webkit-slider-runnable-track { height:4px; background:var(--border2); border-radius:2px; }
-input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; appearance:none; width:16px; height:16px; border-radius:50%; background:var(--accent); margin-top:-6px; cursor:pointer; border:2px solid var(--accent-light); transition:transform .15s; }
-input[type=range]::-webkit-slider-thumb:hover { transform:scale(1.15); background:var(--accent-light); }
-input[type=range]:focus-visible { outline:none; }
-input[type=range]:focus-visible::-webkit-slider-thumb { outline:2px solid var(--accent-light); outline-offset:3px; }
-#toast-ct { position:fixed; top:18px; left:50%; transform:translateX(-50%); z-index:999; display:flex; flex-direction:column; gap:8px; pointer-events:none; }
-.toast { background:#1e1e30; border:1px solid var(--border2); border-radius:8px; padding:12px 16px; color:var(--text); font-size:13px; min-width:280px; max-width:420px; box-shadow:0 8px 32px rgba(0,0,0,0.5); pointer-events:auto; animation:toastIn .25s ease; display:flex; align-items:flex-start; gap:10px; }
-.toast.err { border-color:var(--danger); }
-.toast.ok { border-color:#22c55e; }
-.toast .tmsg { flex:1; line-height:1.4; }
-.toast .tcls { background:transparent; border:none; color:var(--muted); cursor:pointer; font-size:16px; padding:0 4px; flex-shrink:0; line-height:1; }
-.toast .tcls:hover { color:#fff; }
-@keyframes toastIn { from { opacity:0; transform:translateY(-12px); } to { opacity:1; transform:translateY(0); } }
-#drop-z { border:2px dashed #333355; border-radius:12px; margin:8px; padding:36px 20px; text-align:center; display:none; transition:border-color .2s,background .2s; }
-#drop-z.show { display:block; }
-#drop-z.over { border-color:var(--accent); background:rgba(124,58,237,0.08); border-style:solid; }
-#drop-z h3 { color:#777; font-size:14px; font-weight:600; }
-#drop-z p { color:var(--dim); font-size:11px; margin-top:6px; }
-#drag-overlay { position:fixed; inset:20px; z-index:500; background:rgba(10,10,19,0.9); border:3px dashed var(--accent); border-radius:20px; display:none; align-items:center; justify-content:center; pointer-events:none; }
-#drag-overlay.show { display:flex; }
-#drag-overlay h2 { color:var(--accent-light); font-size:26px; font-weight:700; }
-.sl-row input[type=number] { width:58px; text-align:center; -moz-appearance:textfield; }
-.sl-row input[type=number]::-webkit-inner-spin-button, .sl-row input[type=number]::-webkit-outer-spin-button { -webkit-appearance:none; margin:0; }
-@media (prefers-reduced-motion:reduce) {
-  .toast { animation:none; }
-  * { transition:none !important; animation:none !important; }
-}
-.settings-sec { border-top:1px solid var(--border2); padding-top:10px; margin-top:4px; }
-.settings-sec h3 { color:var(--accent-light); font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px; }
-.example-out { color:var(--muted); font-size:11px; background:var(--input-bg); padding:6px 8px; border-radius:var(--radius); border:1px solid var(--border2); word-break:break-all; }
-.help-tip { font-size:10px; color:var(--muted); margin-top:2px; display:block; }
-.enc-field { margin-top:8px; }
-.enc-field > label { display:block; color:#b4b4c4; font-size:11px; margin-bottom:4px; }
-.enc-field select, .enc-field input { width:100%; }
-.advanced-toggle { width:100%; margin-top:10px; padding:8px 0 0; border:0; border-top:1px solid var(--border2); background:transparent; color:var(--accent-light); cursor:pointer; display:flex; justify-content:space-between; font:600 12px var(--font); }
-.advanced-toggle:focus-visible { outline:2px solid var(--accent-light); outline-offset:2px; }
-.advanced-arrow { font-size:14px; line-height:10px; }
-#adv-sec .enc-field { margin-top:10px; }
-.quality-help { color:var(--muted); font-size:10px; margin-top:4px; }
-</style>
-</head>
-<body>
-<div id="tb">
-  <span id="tb-logo">Tuck</span>
-  <button class="tbbtn" id="settings-toggle" onclick="toggleSettings()">Settings</button>
-</div>
-<div id="main">
-  <div id="left">
-    <div id="left-hdr"><button id="btn-add" onclick="browse()">+ Add files</button><button id="btn-rmall" onclick="removeAllClips()" title="Remove all" aria-label="Remove all files">✕</button></div>
-    <div id="clips"><div id="drop-z" class="show"><h3>Drop here</h3><p>or use Add files above</p></div></div>
-  </div>
-  <div id="center">
-    <div id="empty">
-      <h2>Drop videos anywhere</h2>
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="settings.css" />
+    <link rel="stylesheet" href="player.css" />
+    <link rel="stylesheet" href="queue.css" />
+    <link rel="stylesheet" href="transform.css" />
+  </head>
+  <body>
+    <div id="tb">
+      <span id="tb-logo">Tuck</span>
+      <button class="tbbtn" id="settings-toggle" onclick="toggleSettings()">
+        Settings
+      </button>
     </div>
-    <div id="stage">
-      <div id="media-viewport"><video id="vid"></video><img id="thumb" style="display:none"></div>
-      <div id="crop-ui" aria-label="Video crop overlay">
-        <div class="crop-dim" id="crop-dim-top"></div><div class="crop-dim" id="crop-dim-bottom"></div><div class="crop-dim" id="crop-dim-left"></div><div class="crop-dim" id="crop-dim-right"></div>
-        <div id="crop-selection" aria-label="Crop selection"><span class="crop-handle" data-handle="nw"></span><span class="crop-handle" data-handle="n"></span><span class="crop-handle" data-handle="ne"></span><span class="crop-handle" data-handle="e"></span><span class="crop-handle" data-handle="se"></span><span class="crop-handle" data-handle="s"></span><span class="crop-handle" data-handle="sw"></span><span class="crop-handle" data-handle="w"></span></div>
-      </div>
-    </div>
-    <div id="player-bar">
-      <details id="transform-toolbar" ontoggle="paintCropOverlay()">
-        <summary>Transform</summary>
-        <div class="transform-controls" role="toolbar" aria-label="Video transform controls">
-          <label class="transform-field"><span>Crop ratio</span><select id="crop-aspect" onchange="setCropAspect(this.value)" aria-label="Crop aspect ratio"><option value="free">Free / Original</option><option value="16:9">16:9</option><option value="9:16">9:16</option><option value="1:1">1:1</option><option value="4:3">4:3</option></select></label>
-          <div class="transform-field"><span>Rotation</span><div class="transform-segment" role="group" aria-label="Video rotation"><button type="button" data-rotation="0" class="on" onclick="setVideoRotation(0)">0°</button><button type="button" data-rotation="270" onclick="setVideoRotation(270)">90° CCW</button><button type="button" data-rotation="90" onclick="setVideoRotation(90)">90° CW</button><button type="button" data-rotation="180" onclick="setVideoRotation(180)">180°</button></div></div>
-          <div class="transform-field"><span>Flip</span><div class="transform-segment" role="group" aria-label="Video flip"><button type="button" id="flip-horizontal" onclick="toggleVideoFlip('horizontal')">Horizontal</button><button type="button" id="flip-vertical" onclick="toggleVideoFlip('vertical')">Vertical</button></div></div>
-          <div class="transform-field"><span>Output sizing</span><div class="transform-segment" role="group" aria-label="Output sizing mode"><button type="button" data-sizing="fit" class="on" onclick="setSizingMode('fit')" title="Keep the entire selected image without distortion">Fit</button><button type="button" data-sizing="fill" onclick="setSizingMode('fill')" title="Fill the output dimensions and crop excess edges">Fill</button><button type="button" data-sizing="stretch" onclick="setSizingMode('stretch')" title="Force the selected image to the output dimensions and allow distortion">Stretch</button></div></div>
+    <div id="main">
+      <div id="left">
+        <div id="left-hdr">
+          <button id="btn-add" onclick="browse()">+ Add files</button
+          ><button
+            id="btn-rmall"
+            onclick="removeAllClips()"
+            title="Remove all"
+            aria-label="Remove all files"
+          >
+            ✕
+          </button>
         </div>
-      </details>
-      <div id="timeline" role="slider" aria-label="Seek and trim timeline" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0" tabindex="0" title="Drag handles to trim · click track to seek">
-        <div class="tl-track" id="tl-track">
-          <div class="tl-dim" id="tl-dim-l" style="left:0;width:0"></div>
-          <div class="tl-range" id="tl-range"></div>
-          <div class="tl-dim" id="tl-dim-r" style="right:0;width:0"></div>
-          <div class="tl-playhead" id="tl-playhead" style="left:0%"></div>
-          <div class="tl-handle" id="tl-in" role="slider" aria-label="Trim start" tabindex="0" title="Trim start"></div>
-          <div class="tl-handle" id="tl-out" role="slider" aria-label="Trim end" tabindex="0" title="Trim end"></div>
-        </div>
-      </div>
-      <div id="player-row">
-        <button type="button" class="pbtn" id="btn-play" onclick="togglePlay()" aria-label="Play/Pause" title="Play/Pause">▶</button>
-        <span id="ptime">0:00 / 0:00</span>
-        <div id="player-mid">
-          <div class="player-edit-group" id="trim-edit-group" role="group" aria-label="Trim controls">
-            <span id="trim-label"></span>
-            <button type="button" id="btn-trim-reset" onclick="clearTrim()" title="Use full video" aria-label="Reset trim">Reset trim</button>
-          </div>
-          <span class="player-edit-divider" aria-hidden="true"></span>
-          <div class="player-edit-group" id="crop-edit-group" role="group" aria-label="Crop controls">
-            <span id="crop-label">Full frame</span>
-            <button type="button" id="btn-crop-reset" onclick="clearCrop()" title="Use full frame" aria-label="Reset crop">Reset crop</button>
+        <div id="clips">
+          <div id="drop-z" class="show">
+            <h3>Drop here</h3>
+            <p>or use Add files above</p>
           </div>
         </div>
-        <div id="player-vol">
-          <button type="button" class="pbtn" id="btn-mute" onclick="toggleMute()" aria-label="Mute" title="Mute"></button>
-          <input type="range" id="vbar" min="0" max="100" value="80" oninput="setVol(this.value)" aria-label="Volume">
+      </div>
+      <div id="center">
+        <div id="empty">
+          <h2>Drop videos anywhere</h2>
+        </div>
+        <div id="stage">
+          <div id="media-viewport">
+            <video id="vid"></video><img id="thumb" style="display: none" />
+          </div>
+          <div id="crop-ui" aria-label="Video crop overlay">
+            <div class="crop-dim" id="crop-dim-top"></div>
+            <div class="crop-dim" id="crop-dim-bottom"></div>
+            <div class="crop-dim" id="crop-dim-left"></div>
+            <div class="crop-dim" id="crop-dim-right"></div>
+            <div id="crop-selection" aria-label="Crop selection">
+              <span class="crop-handle" data-handle="nw"></span
+              ><span class="crop-handle" data-handle="n"></span
+              ><span class="crop-handle" data-handle="ne"></span
+              ><span class="crop-handle" data-handle="e"></span
+              ><span class="crop-handle" data-handle="se"></span
+              ><span class="crop-handle" data-handle="s"></span
+              ><span class="crop-handle" data-handle="sw"></span
+              ><span class="crop-handle" data-handle="w"></span>
+            </div>
+          </div>
+        </div>
+        <div id="player-bar">
+          <details id="transform-toolbar" ontoggle="paintCropOverlay()">
+            <summary>Transform</summary>
+            <div
+              class="transform-controls"
+              role="toolbar"
+              aria-label="Video transform controls"
+            >
+              <label class="transform-field"
+                ><span>Crop ratio</span
+                ><select
+                  id="crop-aspect"
+                  onchange="setCropAspect(this.value)"
+                  aria-label="Crop aspect ratio"
+                >
+                  <option value="free">Free / Original</option>
+                  <option value="16:9">16:9</option>
+                  <option value="9:16">9:16</option>
+                  <option value="1:1">1:1</option>
+                  <option value="4:3">4:3</option>
+                </select></label
+              >
+              <div class="transform-field">
+                <span>Rotation</span>
+                <div
+                  class="transform-segment"
+                  role="group"
+                  aria-label="Video rotation"
+                >
+                  <button
+                    type="button"
+                    data-rotation="0"
+                    class="on"
+                    onclick="setVideoRotation(0)"
+                  >
+                    0°</button
+                  ><button
+                    type="button"
+                    data-rotation="270"
+                    onclick="setVideoRotation(270)"
+                  >
+                    90° CCW</button
+                  ><button
+                    type="button"
+                    data-rotation="90"
+                    onclick="setVideoRotation(90)"
+                  >
+                    90° CW</button
+                  ><button
+                    type="button"
+                    data-rotation="180"
+                    onclick="setVideoRotation(180)"
+                  >
+                    180°
+                  </button>
+                </div>
+              </div>
+              <div class="transform-field">
+                <span>Flip</span>
+                <div
+                  class="transform-segment"
+                  role="group"
+                  aria-label="Video flip"
+                >
+                  <button
+                    type="button"
+                    id="flip-horizontal"
+                    onclick="toggleVideoFlip('horizontal')"
+                  >
+                    Horizontal</button
+                  ><button
+                    type="button"
+                    id="flip-vertical"
+                    onclick="toggleVideoFlip('vertical')"
+                  >
+                    Vertical
+                  </button>
+                </div>
+              </div>
+              <div class="transform-field">
+                <span>Output sizing</span>
+                <div
+                  class="transform-segment"
+                  role="group"
+                  aria-label="Output sizing mode"
+                >
+                  <button
+                    type="button"
+                    data-sizing="fit"
+                    class="on"
+                    onclick="setSizingMode('fit')"
+                    title="Keep the entire selected image without distortion"
+                  >
+                    Fit</button
+                  ><button
+                    type="button"
+                    data-sizing="fill"
+                    onclick="setSizingMode('fill')"
+                    title="Fill the output dimensions and crop excess edges"
+                  >
+                    Fill</button
+                  ><button
+                    type="button"
+                    data-sizing="stretch"
+                    onclick="setSizingMode('stretch')"
+                    title="Force the selected image to the output dimensions and allow distortion"
+                  >
+                    Stretch
+                  </button>
+                </div>
+              </div>
+            </div>
+          </details>
+          <div
+            id="timeline"
+            role="slider"
+            aria-label="Seek and trim timeline"
+            aria-valuemin="0"
+            aria-valuemax="0"
+            aria-valuenow="0"
+            tabindex="0"
+            title="Drag handles to trim · click track to seek"
+          >
+            <div class="tl-track" id="tl-track">
+              <div class="tl-dim" id="tl-dim-l" style="left: 0; width: 0"></div>
+              <div class="tl-range" id="tl-range"></div>
+              <div
+                class="tl-dim"
+                id="tl-dim-r"
+                style="right: 0; width: 0"
+              ></div>
+              <div class="tl-playhead" id="tl-playhead" style="left: 0%"></div>
+              <div
+                class="tl-handle"
+                id="tl-in"
+                role="slider"
+                aria-label="Trim start"
+                tabindex="0"
+                title="Trim start"
+              ></div>
+              <div
+                class="tl-handle"
+                id="tl-out"
+                role="slider"
+                aria-label="Trim end"
+                tabindex="0"
+                title="Trim end"
+              ></div>
+            </div>
+          </div>
+          <div id="player-row">
+            <button
+              type="button"
+              class="pbtn"
+              id="btn-play"
+              onclick="togglePlay()"
+              aria-label="Play/Pause"
+              title="Play/Pause"
+            >
+              ▶
+            </button>
+            <span id="ptime">0:00 / 0:00</span>
+            <div id="player-mid">
+              <div
+                class="player-edit-group"
+                id="trim-edit-group"
+                role="group"
+                aria-label="Trim controls"
+              >
+                <span id="trim-label"></span>
+                <button
+                  type="button"
+                  id="btn-trim-reset"
+                  onclick="clearTrim()"
+                  title="Use full video"
+                  aria-label="Reset trim"
+                >
+                  Reset trim
+                </button>
+              </div>
+              <span class="player-edit-divider" aria-hidden="true"></span>
+              <div
+                class="player-edit-group"
+                id="crop-edit-group"
+                role="group"
+                aria-label="Crop controls"
+              >
+                <span id="crop-label">Full frame</span>
+                <button
+                  type="button"
+                  id="btn-crop-reset"
+                  onclick="clearCrop()"
+                  title="Use full frame"
+                  aria-label="Reset crop"
+                >
+                  Reset crop
+                </button>
+              </div>
+            </div>
+            <div id="player-vol">
+              <button
+                type="button"
+                class="pbtn"
+                id="btn-mute"
+                onclick="toggleMute()"
+                aria-label="Mute"
+                title="Mute"
+              ></button>
+              <input
+                type="range"
+                id="vbar"
+                min="0"
+                max="100"
+                value="80"
+                oninput="setVol(this.value)"
+                aria-label="Volume"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="right">
+        <div id="right-scroll">
+          <div class="stitle">Task</div>
+          <div id="task-wf" role="group" aria-label="Task selector">
+            <button class="on" id="wf-c" onclick="setWf(0)" aria-pressed="true">
+              Compress</button
+            ><button id="wf-u" onclick="setWf(1)" aria-pressed="false">
+              Upscale
+            </button>
+          </div>
+          <div class="stitle">Profile</div>
+          <select
+            id="prof-sel"
+            onchange="onProfileChange()"
+            aria-label="Select profile"
+          ></select>
+          <div class="prof-meta">
+            <span class="mod-badge" id="mod-badge">Modified</span>
+            <span style="flex: 1"></span>
+            <a
+              href="#"
+              style="
+                color: var(--muted);
+                font-size: 10px;
+                text-decoration: none;
+              "
+              onclick="openSettings('profiles')"
+              aria-label="Manage profiles"
+              >Manage profiles…</a
+            >
+          </div>
+          <div class="prof-row">
+            <button class="btn2" onclick="saveProfileChanges()">
+              Save changes</button
+            ><button class="btn2" onclick="saveProfileAs()">
+              Save as new profile…
+            </button>
+          </div>
+          <div id="prof-reset-row" class="hid">
+            <button
+              class="btn2"
+              style="width: 100%; text-align: center"
+              onclick="resetToProfile()"
+            >
+              Reset to profile
+            </button>
+          </div>
+          <div class="gr" id="sz-grp">
+            <div class="grt">
+              <span>Target Size</span
+              ><span style="float: right"
+                ><input
+                  class="badge"
+                  id="sz-badge"
+                  type="number"
+                  min="2"
+                  step="1"
+                  value="10"
+                  onchange="onBadgeSize(this.value)"
+                  aria-label="Target size in megabytes"
+                /><span class="badge" id="sz-unit">MB</span></span
+              >
+            </div>
+            <input
+              type="range"
+              id="sz-slider"
+              min="2"
+              max="500"
+              value="10"
+              oninput="onSize(this.value)"
+              aria-label="Target size in megabytes"
+              aria-valuenow="10"
+              aria-valuemin="1"
+              aria-valuemax="500"
+            />
+            <div class="pset" id="sz-presets"></div>
+            <span class="help-tip" id="calc-br">Calculated bitrate: --</span>
+          </div>
+          <div class="gr">
+            <div class="info-row">
+              <span class="grt" style="margin: 0">Resolution</span
+              ><label class="chk" id="res-source-wrap" style="font-size: 11px"
+                ><input
+                  type="checkbox"
+                  id="use-source-res"
+                  checked
+                  onchange="onUseSourceResolution()"
+                /><span class="chk-box"></span><span>Source</span></label
+              >
+            </div>
+            <input type="hidden" id="res-mode" value="source" />
+            <div class="row" id="res-cust" style="margin-top: 8px">
+              <input
+                type="number"
+                id="res-w"
+                value="1920"
+                style="flex: 1; text-align: center"
+                aria-label="Custom width"
+                onchange="onResolutionGeometryChanged()"
+              /><span style="color: #6b6b7b; font-weight: 700">×</span
+              ><input
+                type="number"
+                id="res-h"
+                value="1080"
+                style="flex: 1; text-align: center"
+                aria-label="Custom height"
+                onchange="onResolutionGeometryChanged()"
+              />
+            </div>
+            <div class="row hid" id="scaler-row" style="margin-top: 4px">
+              <span>Scaler</span
+              ><select
+                id="scaler-sel"
+                style="flex: 1"
+                aria-label="Scaler algorithm"
+              >
+                <option>Bilinear</option>
+                <option>Bicubic</option>
+                <option>Lanczos</option>
+                <option>Point</option>
+                <option selected>Neighbor</option>
+              </select>
+            </div>
+          </div>
+          <div class="gr">
+            <div class="info-row">
+              <span class="grt" style="margin: 0">Frame Rate</span
+              ><label class="chk" style="font-size: 11px"
+                ><input
+                  type="checkbox"
+                  id="use-source-fps"
+                  checked
+                  onchange="onUseSourceFps()"
+                /><span class="chk-box"></span><span>Source</span></label
+              >
+            </div>
+            <div class="row">
+              <span>Frame rate</span
+              ><span class="badge" id="fps-badge">30 fps</span>
+            </div>
+            <input
+              type="range"
+              id="fps-slider"
+              min="1"
+              max="240"
+              value="30"
+              oninput="onFpsSlider(this.value)"
+              aria-label="Target frame rate"
+              aria-valuenow="30"
+              aria-valuemin="1"
+              aria-valuemax="240"
+            />
+            <input type="hidden" id="fps-val" value="30" />
+          </div>
+          <div class="gr">
+            <div class="info-row">
+              <span class="grt" style="margin: 0">Audio</span
+              ><label class="chk" style="font-size: 11px"
+                ><input
+                  type="checkbox"
+                  id="keep-audio"
+                  onchange="onKeepAudio()"
+                /><span class="chk-box"></span><span>Source</span></label
+              >
+            </div>
+            <div class="enc-field">
+              <label for="audio-br">Bitrate (kbps)</label
+              ><input
+                type="number"
+                id="audio-br"
+                value="128"
+                min="0"
+                max="320"
+                aria-label="Audio bitrate"
+              />
+            </div>
+          </div>
+          <div class="gr">
+            <div class="grt">Encoding</div>
+            <div class="enc-field">
+              <label for="enc-sel">Encoder</label
+              ><select
+                id="enc-sel"
+                onchange="onEncChange()"
+                aria-label="Video encoder"
+              ></select>
+            </div>
+            <div class="setting-note" id="encoder-note">
+              Hardware is faster; software can produce smaller files.
+            </div>
+            <div class="enc-field">
+              <label for="speed-sel">Encoding speed</label
+              ><select
+                id="speed-sel"
+                onchange="onSpeedChange()"
+                aria-label="Encoding speed"
+              >
+                <option value="fast">Fast</option>
+                <option value="balanced" selected>Balanced</option>
+                <option value="best">Best compression</option>
+              </select>
+            </div>
+            <div class="enc-field" id="two-pass-wrap">
+              <label for="two-pass">Two-pass encoding</label
+              ><select
+                id="two-pass"
+                onchange="onTwoPassChange()"
+                aria-label="Two-pass encoding"
+              >
+                <option value="on" selected>On</option>
+                <option value="off">Off</option>
+              </select>
+            </div>
+            <span class="setting-note hid" id="two-pass-note"
+              >Two-pass is available only for software compression.</span
+            >
+            <button
+              class="advanced-toggle"
+              id="adv-toggle"
+              type="button"
+              aria-expanded="false"
+              onclick="toggleAdv()"
+            >
+              <span>Advanced encoding</span
+              ><span class="advanced-arrow" aria-hidden="true">⌄</span>
+            </button>
+            <div class="hid" id="adv-sec">
+              <div class="enc-field">
+                <label for="preset-sel">Native FFmpeg preset</label
+                ><select
+                  id="preset-sel"
+                  onchange="onNativePresetChange()"
+                  aria-label="Native FFmpeg preset"
+                ></select>
+              </div>
+              <div class="enc-field" id="rate-control-row">
+                <label id="rate-label" for="rc-sel">Quality method</label
+                ><select
+                  id="rc-sel"
+                  onchange="onRcChange()"
+                  aria-label="Rate control method"
+                ></select>
+              </div>
+              <div class="enc-field hid" id="quality-row">
+                <label id="quality-label" for="quality-val">CQ value</label
+                ><input
+                  type="number"
+                  id="quality-val"
+                  value="23"
+                  min="0"
+                  max="51"
+                  onchange="reqPreview();updateDirty()"
+                  aria-label="Quality value"
+                />
+                <div class="quality-help">Lower value = higher quality.</div>
+              </div>
+              <div class="enc-field hid" id="br-row">
+                <label for="br-val">Bitrate (kbps)</label
+                ><input
+                  type="number"
+                  id="br-val"
+                  value="2000"
+                  min="50"
+                  max="50000"
+                  onchange="reqPreview();updateDirty()"
+                  aria-label="Explicit bitrate"
+                />
+              </div>
+              <div class="enc-field hid" id="tune-row">
+                <label for="tune-sel">Tune</label
+                ><select
+                  id="tune-sel"
+                  onchange="reqPreview();updateDirty()"
+                  aria-label="Encoder tune"
+                ></select>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div id="right-foot">
+          <button class="btn1" id="btn-one" onclick="compressOne()">
+            Compress selected
+          </button>
+          <button
+            class="btn2"
+            style="width: 100%"
+            id="btn-all"
+            onclick="compressAll()"
+          >
+            Compress all
+          </button>
         </div>
       </div>
     </div>
-  </div>
-  <div id="right">
-    <div id="right-scroll">
-      <div class="stitle">Task</div>
-      <div id="task-wf" role="group" aria-label="Task selector"><button class="on" id="wf-c" onclick="setWf(0)" aria-pressed="true">Compress</button><button id="wf-u" onclick="setWf(1)" aria-pressed="false">Upscale</button></div>
-      <div class="stitle">Profile</div>
-      <select id="prof-sel" onchange="onProfileChange()" aria-label="Select profile"></select>
-      <div class="prof-meta">
-        <span class="mod-badge" id="mod-badge">Modified</span>
-        <span style="flex:1"></span>
-        <a href="#" style="color:var(--muted);font-size:10px;text-decoration:none" onclick="openSettings('profiles')" aria-label="Manage profiles">Manage profiles…</a>
-      </div>
-      <div class="prof-row"><button class="btn2" onclick="saveProfileChanges()">Save changes</button><button class="btn2" onclick="saveProfileAs()">Save as new profile…</button></div>
-      <div id="prof-reset-row" class="hid"><button class="btn2" style="width:100%;text-align:center" onclick="resetToProfile()">Reset to profile</button></div>
-      <div class="gr" id="sz-grp">
-        <div class="grt"><span>Target Size</span><span style="float:right"><input class="badge" id="sz-badge" type="number" min="2" step="1" value="10" onchange="onBadgeSize(this.value)" aria-label="Target size in megabytes"><span class="badge" id="sz-unit">MB</span></span></div>
-        <input type="range" id="sz-slider" min="2" max="500" value="10" oninput="onSize(this.value)" aria-label="Target size in megabytes" aria-valuenow="10" aria-valuemin="1" aria-valuemax="500">
-        <div class="pset" id="sz-presets"></div>
-        <span class="help-tip" id="calc-br">Calculated bitrate: --</span>
-      </div>
-      <div class="gr">
-        <div class="info-row"><span class="grt" style="margin:0">Resolution</span><label class="chk" id="res-source-wrap" style="font-size:11px"><input type="checkbox" id="use-source-res" checked onchange="onUseSourceResolution()"><span class="chk-box"></span><span>Source</span></label></div>
-        <input type="hidden" id="res-mode" value="source">
-        <div class="row" id="res-cust" style="margin-top:8px"><input type="number" id="res-w" value="1920" style="flex:1;text-align:center" aria-label="Custom width" onchange="onResolutionGeometryChanged()"><span style="color:#6b6b7b;font-weight:700">×</span><input type="number" id="res-h" value="1080" style="flex:1;text-align:center" aria-label="Custom height" onchange="onResolutionGeometryChanged()"></div>
-        <div class="row hid" id="scaler-row" style="margin-top:4px"><span>Scaler</span><select id="scaler-sel" style="flex:1" aria-label="Scaler algorithm"><option>Bilinear</option><option>Bicubic</option><option>Lanczos</option><option>Point</option><option selected>Neighbor</option></select></div>
-      </div>
-      <div class="gr">
-        <div class="info-row"><span class="grt" style="margin:0">Frame Rate</span><label class="chk" style="font-size:11px"><input type="checkbox" id="use-source-fps" checked onchange="onUseSourceFps()"><span class="chk-box"></span><span>Source</span></label></div>
-        <div class="row"><span>Frame rate</span><span class="badge" id="fps-badge">30 fps</span></div><input type="range" id="fps-slider" min="1" max="240" value="30" oninput="onFpsSlider(this.value)" aria-label="Target frame rate" aria-valuenow="30" aria-valuemin="1" aria-valuemax="240">
-        <input type="hidden" id="fps-val" value="30">
-      </div>
-      <div class="gr">
-        <div class="info-row"><span class="grt" style="margin:0">Audio</span><label class="chk" style="font-size:11px"><input type="checkbox" id="keep-audio" onchange="onKeepAudio()"><span class="chk-box"></span><span>Source</span></label></div>
-        <div class="enc-field"><label for="audio-br">Bitrate (kbps)</label><input type="number" id="audio-br" value="128" min="0" max="320" aria-label="Audio bitrate"></div>
-      </div>
-      <div class="gr">
-        <div class="grt">Encoding</div>
-        <div class="enc-field"><label for="enc-sel">Encoder</label><select id="enc-sel" onchange="onEncChange()" aria-label="Video encoder"></select></div>
-        <div class="setting-note" id="encoder-note">Hardware is faster; software can produce smaller files.</div>
-        <div class="enc-field"><label for="speed-sel">Encoding speed</label><select id="speed-sel" onchange="onSpeedChange()" aria-label="Encoding speed"><option value="fast">Fast</option><option value="balanced" selected>Balanced</option><option value="best">Best compression</option></select></div>
-        <div class="enc-field" id="two-pass-wrap"><label for="two-pass">Two-pass encoding</label><select id="two-pass" onchange="onTwoPassChange()" aria-label="Two-pass encoding"><option value="on" selected>On</option><option value="off">Off</option></select></div>
-        <span class="setting-note hid" id="two-pass-note">Two-pass is available only for software compression.</span>
-        <button class="advanced-toggle" id="adv-toggle" type="button" aria-expanded="false" onclick="toggleAdv()"><span>Advanced encoding</span><span class="advanced-arrow" aria-hidden="true">⌄</span></button>
-        <div class="hid" id="adv-sec">
-          <div class="enc-field"><label for="preset-sel">Native FFmpeg preset</label><select id="preset-sel" onchange="onNativePresetChange()" aria-label="Native FFmpeg preset"></select></div>
-          <div class="enc-field" id="rate-control-row"><label id="rate-label" for="rc-sel">Quality method</label><select id="rc-sel" onchange="onRcChange()" aria-label="Rate control method"></select></div>
-          <div class="enc-field hid" id="quality-row"><label id="quality-label" for="quality-val">CQ value</label><input type="number" id="quality-val" value="23" min="0" max="51" onchange="reqPreview();updateDirty()" aria-label="Quality value"><div class="quality-help">Lower value = higher quality.</div></div>
-          <div class="enc-field hid" id="br-row"><label for="br-val">Bitrate (kbps)</label><input type="number" id="br-val" value="2000" min="50" max="50000" onchange="reqPreview();updateDirty()" aria-label="Explicit bitrate"></div>
-          <div class="enc-field hid" id="tune-row"><label for="tune-sel">Tune</label><select id="tune-sel" onchange="reqPreview();updateDirty()" aria-label="Encoder tune"></select></div>
-        </div>
-      </div>
-    </div>
-    <div id="right-foot">
-      <button class="btn1" id="btn-one" onclick="compressOne()">Compress selected</button>
-      <button class="btn2" style="width:100%" id="btn-all" onclick="compressAll()">Compress all</button>
-    </div>
-  </div>
-</div>
-<div class="settings-workspace" id="settings-workspace" onclick="if(event.target===this)closeSettings()">
-  <div class="settings-dialog" role="dialog" aria-modal="true" aria-label="Settings">
-  <header class="settings-topbar"><span class="settings-wordmark">Tuck</span><span class="settings-top-title">Settings</span><button class="mbtn" onclick="closeSettings()" aria-label="Close settings" title="Close">✕</button></header>
-  <nav class="settings-sidebar" aria-label="Settings sections">
-    <div class="settings-tabs">
-      <div class="settings-nav-group">
-        <div class="settings-nav-label">Preferences</div>
-        <button id="settings-nav-general" onclick="navigateSettings('general')">General</button>
-        <button id="settings-nav-output" onclick="navigateSettings('output')">Output &amp; naming</button>
-      </div>
-      <div class="settings-nav-group">
-        <div class="settings-nav-label">Library</div>
-        <button id="settings-nav-profiles" onclick="navigateSettings('profiles')">Profiles</button>
-      </div>
-      <div class="settings-nav-group">
-        <div class="settings-nav-label">Integrations</div>
-        <button id="settings-nav-explorer" onclick="navigateSettings('explorer')">Windows integration</button>
-      </div>
-      <div class="settings-nav-group">
-        <div class="settings-nav-label">Support</div>
-        <button id="settings-nav-system" onclick="navigateSettings('system')">System &amp; support</button>
+    <div
+      class="settings-workspace"
+      id="settings-workspace"
+      onclick="if(event.target===this)closeSettings()"
+    >
+      <div
+        class="settings-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Settings"
+      >
+        <header class="settings-topbar">
+          <span class="settings-wordmark">Tuck</span
+          ><span class="settings-top-title">Settings</span
+          ><button
+            class="mbtn"
+            onclick="closeSettings()"
+            aria-label="Close settings"
+            title="Close"
+          >
+            ✕
+          </button>
+        </header>
+        <nav class="settings-sidebar" aria-label="Settings sections">
+          <div class="settings-tabs">
+            <div class="settings-nav-group">
+              <div class="settings-nav-label">Preferences</div>
+              <button
+                id="settings-nav-general"
+                onclick="navigateSettings('general')"
+              >
+                General
+              </button>
+              <button
+                id="settings-nav-output"
+                onclick="navigateSettings('output')"
+              >
+                Output &amp; naming
+              </button>
+            </div>
+            <div class="settings-nav-group">
+              <div class="settings-nav-label">Library</div>
+              <button
+                id="settings-nav-profiles"
+                onclick="navigateSettings('profiles')"
+              >
+                Profiles
+              </button>
+            </div>
+            <div class="settings-nav-group">
+              <div class="settings-nav-label">Integrations</div>
+              <button
+                id="settings-nav-explorer"
+                onclick="navigateSettings('explorer')"
+              >
+                Windows integration
+              </button>
+            </div>
+            <div class="settings-nav-group">
+              <div class="settings-nav-label">Support</div>
+              <button
+                id="settings-nav-system"
+                onclick="navigateSettings('system')"
+              >
+                System &amp; support
+              </button>
+            </div>
+          </div>
+        </nav>
+        <section class="settings-main">
+          <main class="settings-page" id="settings-page">
+            <div class="settings-page-inner"></div>
+          </main>
+          <footer class="settings-actions" id="settings-actions"></footer>
+        </section>
       </div>
     </div>
-  </nav>
-  <section class="settings-main">
-    <main class="settings-page" id="settings-page"><div class="settings-page-inner"></div></main>
-    <footer class="settings-actions" id="settings-actions"></footer>
-  </section>
-  </div>
-</div>
-<div id="qbar">
-  <span id="qcnt">0/0</span><progress id="qprog" value="0" max="100" aria-label="Queue progress"></progress>
-  <span id="qeta">ETA --</span><span id="qfname"></span>
-  <button class="qbtn" id="btn-stop-after" onclick="stopAfterCurrent()" aria-label="Stop after current job">Stop after current</button>
-  <button class="qbtn danger" id="btn-cancel" onclick="cancelAll()" aria-label="Cancel processing">Cancel</button>
-  <button class="qbtn" id="btn-clear" onclick="clearDone()" aria-label="Clear completed">Clear completed</button>
-</div>
-<div class="mod-overlay" id="mod-overlay" onclick="if(event.target===this)closeActiveModal()"><div class="mod-box" id="mod-box"></div></div>
-<div id="toast-ct"></div>
-<div id="drag-overlay"><h2>Drop videos anywhere</h2></div>
-<script>
-var api = null;
-var clips = {};
-var selPath = null;
-var allProfiles = [];
-var availEncoders = [];
-var appSettings = {};
-var wf = 0;
-var lastComp = '';
-var lastUpscale = '';
-var lastQueueHadActive = false;
-var muted = false;
-var volBefore = 80;
-var profSnapshot = '';
-var settingsDirty = false;
-var _trackDirty = true;
-
-function byId(id) { return document.getElementById(id); }
-function esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
-function escJS(s) { return s.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'\\"'); }
-function fmtt(s) { var m=Math.floor(s/60),sec=Math.floor(s%60),h=Math.floor(m/60); if(h)return h+':'+('0'+m%60).slice(-2)+':'+('0'+sec).slice(-2); return m+':'+('0'+sec).slice(-2); }
-var toastId = 0;
-var pendingConfirm = null;
-function toast(msg, kind) {
-  kind = kind || '';
-  var id = 't'+(++toastId), ct = byId('toast-ct');
-  var div = document.createElement('div'); div.className = 'toast '+kind; div.id = id;
-  div.innerHTML = '<span class="tmsg">'+msg+'</span><button class="tcls" onclick="dismissToast(\''+id+'\')" aria-label="Dismiss notification">✕</button>';
-  ct.appendChild(div);
-  setTimeout(function(){ dismissToast(id); }, kind==='err'?6000:3500);
-}
-function dismissToast(id) { var el = byId(id); if (el) { el.style.opacity='0'; el.style.transition='opacity .2s'; setTimeout(function(){ if (el.parentNode) el.parentNode.removeChild(el); }, 200); } }
-function confirmToast(msg, cb) {
-  var lower=msg.toLowerCase(),discard=lower.indexOf('discard')>=0,remove=lower.indexOf('remove')>=0||lower.indexOf('delete')>=0||lower.indexOf('cancel')>=0,install=lower.indexOf('install')>=0,title=discard?'Unsaved changes':install?'Install update':remove?'Confirm removal':'Confirm action',confirmLabel=discard?'Discard changes':install?'Install update':lower.indexOf('delete')>=0?'Delete':lower.indexOf('remove')>=0?'Remove':lower.indexOf('cancel')>=0?'Cancel processing':'Continue',cancelLabel=discard?'Keep editing':'Go back';
-  pendingConfirm=cb;
-  var box=byId('mod-box');box.className='mod-box confirm-dialog';box.innerHTML='<h2 id="confirm-title"></h2><p class="confirm-copy" id="confirm-copy"></p><div class="confirm-actions"><button class="btn2" onclick="closeMod()">'+cancelLabel+'</button><button class="btn1 '+((discard||remove)?'danger':'')+'" onclick="acceptConfirm()">'+confirmLabel+'</button></div>';
-  byId('confirm-title').textContent=title;byId('confirm-copy').textContent=msg;byId('mod-overlay').classList.add('open');
-}
-function acceptConfirm(){var cb=pendingConfirm;closeMod();if(cb)cb();}
-
-function profileControlState() {
-  return {pid:byId('prof-sel').value,size:byId('sz-slider').value,rm:byId('res-mode').value,rw:byId('res-w').value,rh:byId('res-h').value,fps:byId('fps-val').value,ka:byId('keep-audio').checked,abr:byId('audio-br').value,tp:byId('two-pass').value,pre:byId('preset-sel').value,sc:byId('scaler-sel').value,enc:byId('enc-sel').value,rc:byId('rc-sel').value,q:byId('quality-val').value,br:byId('br-val').value,tu:byId('tune-sel').value};
-}
-function snapProf() {
-  if (!_trackDirty) return;
-  profSnapshot = JSON.stringify(profileControlState());
-  updateDirty();
-}
-function updateDirty() {
-  if (!_trackDirty || !profSnapshot) { byId('mod-badge').classList.remove('show'); byId('prof-reset-row').classList.add('hid'); return; }
-  var cur = JSON.stringify(profileControlState());
-  var dirty = profSnapshot !== cur;
-  byId('mod-badge').classList.toggle('show', dirty);
-  byId('prof-reset-row').classList.toggle('hid', !dirty);
-}
-function resetToProfile() {
-  _trackDirty = false;
-  applyProfile();
-  snapProf();
-  _trackDirty = true;
-  toast('Settings reset to profile.', 'ok');
-}
-
-function showMod(html) { var box=byId('mod-box'); box.className='mod-box'; box.innerHTML=html; byId('mod-overlay').classList.add('open'); }
-function closeMod() { byId('mod-overlay').classList.remove('open'); pendingConfirm=null; }
-function showUpdateModal(update) { showMod('<h2>Update available</h2><div>Version <strong id="update-version"></strong> · <span id="update-size"></span></div><h3>What\'s new</h3><pre class="update-notes" id="update-notes"></pre><div class="brow"><button class="btn2" onclick="closeMod()">Later</button><button class="btn1" onclick="downloadUpdate()">Download update</button></div>'); byId('update-version').textContent='v'+update.version; byId('update-size').textContent=(update.size_mb||0).toFixed(1)+' MB'; byId('update-notes').textContent=update.notes||'No release notes provided.'; }
-function downloadUpdate() { api.downloadUpdate().then(function(started){ if (!started.ok) { toast('Download failed: '+started.error, 'err'); return; } var button=byId('mod-box').querySelector('.btn1'); button.disabled=true; var timer=setInterval(async function(){ var progress=await api.getDownloadProgress(); if (progress.downloading) { button.textContent='Downloading '+(progress.progress||0)+'%'; return; } clearInterval(timer); if (progress.error) { button.disabled=false; button.textContent='Download update'; toast('Download failed: '+progress.error, 'err'); return; } if (progress.done) confirmToast('Update downloaded. Install now?', function(){ api.installUpdate().then(async function(installed){ if (installed.ok) await api.closeWindow(); else toast('Install failed: '+installed.error, 'err'); }); }); },500); }); }
-function closeActiveModal() { closeMod(); }
-
-var startupData = null;
-var queueTimer = null;
-var queueItemsById = {};
-var retryInFlight = {};
-var clipOrder = [];
-async function startApp() {
-  if (!api || !startupData) return;
-  var data = startupData;
-  startupData = null;
-  updateSizePresets(10);
-  try { await loadSettings(); } catch(e) { console.error('Could not load settings', e); }
-  if (appSettings.check_updates !== false) checkUpdates(true);
-  if (queueTimer === null) queueTimer = setInterval(function(){ pollQueue(); pollIpc(); }, 500);
-  if (data.files && data.files.length) addFiles(data.files);
-  if (data.sendto) handleSendto(data.sendto);
-}
-window.initApp = function(data) {
-  startupData = data || {files:[], sendto:null};
-  if (window.pywebview && window.pywebview.api) {
-    api = window.pywebview.api;
-    startApp();
-  }
-};
-window.addEventListener('pywebviewready', function() {
-  api = window.pywebview.api;
-  startApp();
-});
-
-var dragDepth = 0;
-function isFileDrag(e) {
-  var types = e.dataTransfer && e.dataTransfer.types ? Array.prototype.slice.call(e.dataTransfer.types) : [];
-  return types.indexOf('Files') >= 0;
-}
-document.body.addEventListener('dragenter', function(e){
-  if (!isFileDrag(e)) return;
-  e.preventDefault(); e.stopPropagation(); dragDepth++; byId('drag-overlay').classList.add('show');
-});
-document.body.addEventListener('dragover', function(e){
-  if (!isFileDrag(e)) return;
-  e.preventDefault(); e.stopPropagation(); byId('drag-overlay').classList.add('show');
-});
-document.body.addEventListener('dragleave', function(e){
-  if (!isFileDrag(e) && dragDepth===0) return;
-  e.preventDefault(); e.stopPropagation(); dragDepth=Math.max(0,dragDepth-1); if(dragDepth===0)byId('drag-overlay').classList.remove('show');
-});
-document.body.addEventListener('drop', function(e){
-  dragDepth=0; byId('drag-overlay').classList.remove('show'); byId('drop-z').classList.remove('over');
-  if (isFileDrag(e)) e.preventDefault();
-});
-var dz = byId('drop-z');
-dz.addEventListener('dragover', function(e){
-  if (!isFileDrag(e)) return;
-  e.preventDefault(); e.stopPropagation(); dz.classList.add('over');
-});
-dz.addEventListener('dragleave', function(e){ e.stopPropagation(); dz.classList.remove('over'); });
-dz.addEventListener('drop', function(e){
-  e.preventDefault(); e.stopPropagation(); dz.classList.remove('over');
-});
-
-async function browse() {
-  if (!api) return;
-  try {
-    var r = await api.pickFiles();
-    if (r.ok && Array.isArray(r.files) && r.files.length) addFiles(r.files);
-    else if (!r.ok) toast('Could not add files: '+(r.error||'Unknown error'), 'err');
-  } catch(e) { toast('Could not add files.', 'err'); }
-}
-
-window.addFiles = function(paths, rejected) {
-  if (!Array.isArray(paths)) return;
-  var added = 0, skipped = 0, firstAdded = null;
-  for (var i = 0; i < paths.length; i++) {
-    if (typeof paths[i] !== 'string') continue;
-    var p = paths[i];
-    if (clips[p]) { skipped++; continue; }
-    clips[p] = {path:p, name:p.split(/[\\/]/).pop(), probed:false, probing:false, probeData:null, planData:null, mediaToken:null, error:'', trimStart:null, trimEnd:null, crop:null, cropAspect:'free', rotation:0, flipHorizontal:false, flipVertical:false, sizingMode:'fit'};
-    if (clipOrder.indexOf(p) < 0) clipOrder.push(p);
-    if (!firstAdded) firstAdded = p;
-    added++;
-  }
-  renderClips();
-  for (var k in clips) { if (clips.hasOwnProperty(k) && !clips[k].probed && !clips[k].probing) probeClip(k); }
-  if (added && !selPath) selectClip(firstAdded || clipOrder[0] || Object.keys(clips)[0]);
-  var rej = Array.isArray(rejected) ? rejected.length : 0;
-  if (rej && added) toast('Added '+added+' file'+(added===1?'':'s')+'; skipped '+rej+' unsupported.', 'err');
-  else if (rej && !added) toast('No supported video files in drop ('+rej+' skipped).', 'err');
-  else if (added > 1) toast('Added '+added+' files.', 'ok');
-};
-
-function orderedClipKeys() {
-  clipOrder = clipOrder.filter(function(p){ return !!clips[p]; });
-  var keys = Object.keys(clips);
-  for (var j = 0; j < keys.length; j++) {
-    if (clipOrder.indexOf(keys[j]) < 0) clipOrder.push(keys[j]);
-  }
-  return clipOrder.slice();
-}
-
-function renderClips() {
-  if (clipReorder && clipReorder.active) return;
-  var keys = orderedClipKeys(), cdiv = byId('clips'), el = byId('drop-z');
-  cdiv.replaceChildren(el);
-  byId('btn-rmall').style.display = keys.length ? 'block' : 'none';
-  if (!keys.length) { el.classList.add('show'); updateActionButtons(); return; }
-  el.classList.remove('show');
-  for (var i = 0; i < keys.length; i++) {
-    (function(p, c){
-      var div = document.createElement('div');
-      div.className = 'clip clip-drag' + (selPath === p ? ' sel' : '');
-      div.setAttribute('tabindex', '0');
-      div.setAttribute('role', 'option');
-      div.setAttribute('aria-selected', selPath === p ? 'true' : 'false');
-      div.setAttribute('title', c.name + ' - drag handle to reorder');
-      div.dataset.clipPath = p;
-      if (c._queueItemId) div.dataset.queueItemId = c._queueItemId;
-      div.onclick = function(){
-        if (clipReorder && clipReorder.moved) { clipReorder.moved = false; return; }
-        selectClip(p);
-      };
-      div.ondblclick = function(){ selectClip(p); togglePlay(); };
-      div.onkeydown = function(e){ if (e.key==='Enter'||e.key===' ') { e.preventDefault(); selectClip(p); } if (e.key==='Delete') { e.preventDefault(); removeClip(p); } };
-
-      var statusLabel = c._statusText || '';
-      if (!statusLabel && c._queueState==='completed') statusLabel = 'Completed';
-      if (!statusLabel && c._queueState==='pending') statusLabel = 'Pending';
-      if (!statusLabel && c._queueState==='running') statusLabel = 'Encoding';
-      if (!statusLabel && c._queueState==='failed') statusLabel = 'Failed';
-      if (!statusLabel && c._queueState==='cancelled') statusLabel = 'Cancelled';
-
-      var trailingActs = '';
-      if (c._queueState==='completed' && c._resultPath) {
-        trailingActs += '<button type="button" class="c-act link" data-no-reorder="1" onclick="event.stopPropagation();openResult(\''+escJS(c._resultPath)+'\')" title="Open folder" aria-label="Open folder">Open folder</button>';
-      }
-      if ((c._queueState==='pending'||c._queueState==='running'||c._queueState==='processing') && c._queueItemId) {
-        trailingActs += '<button type="button" class="c-act danger" data-no-reorder="1" onclick="event.stopPropagation();cancelQueueItem(\''+escJS(c._queueItemId)+'\')" title="Cancel" aria-label="Cancel">Cancel</button>';
-      }
-      if ((c._queueState==='failed'||c._queueState==='cancelled') && c._queueItemId) {
-        trailingActs += '<button type="button" class="c-act" data-no-reorder="1" onclick="event.stopPropagation();retryQueueItem(\''+escJS(c._queueItemId)+'\')" title="Retry" aria-label="Retry">Retry</button>';
-      }
-
-      var statusRow = '';
-      if (statusLabel || trailingActs) {
-        statusRow = '<div class="c-status-row">'
-          + (statusLabel ? '<span class="c-status">'+esc(statusLabel)+'</span>' : '<span class="c-status"></span>')
-          + trailingActs
-          + '</div>';
-      }
-
-      div.innerHTML = '<span class="c-drag" data-drag-handle="1" title="Drag to reorder" aria-label="Drag to reorder">⋮⋮</span>'
-        + '<div class="c1"><div class="c2">' + esc(c.name) + '</div>'
-        + '<div class="c3"><span class="c-meta">' + metaStr(c) + '</span><span class="c-time">' + clipDuration(c) + '</span></div>'
-        + statusRow
-        + '</div>'
-        + clipStateBadge(p)
-        + '<button class="c4" data-no-reorder="1" onclick="event.stopPropagation();removeClip(\'' + escJS(p) + '\')" aria-label="Remove ' + esc(c.name) + '" tabindex="0">✕</button>';
-
-      var handle = div.querySelector('[data-drag-handle]');
-      if (handle) {
-        handle.addEventListener('pointerdown', function(ev){ beginClipReorder(ev, p, div); });
-      }
-      cdiv.appendChild(div);
-    })(keys[i], clips[keys[i]]);
-  }
-  updateActionButtons();
-}
-
-var clipReorder = { active:false, moved:false, fromPath:null, overPath:null, startX:0, startY:0, el:null, pointerId:null };
-
-function clearDropTargets() {
-  var nodes = byId('clips').querySelectorAll('.drop-target');
-  for (var i = 0; i < nodes.length; i++) nodes[i].classList.remove('drop-target');
-}
-
-function beginClipReorder(e, path, el) {
-  if (!path || e.button !== 0) return;
-  if (orderedClipKeys().length < 2) return;
-  e.stopPropagation();
-  clipReorder.active = true;
-  clipReorder.moved = false;
-  clipReorder.fromPath = path;
-  clipReorder.overPath = null;
-  clipReorder.startX = e.clientX;
-  clipReorder.startY = e.clientY;
-  clipReorder.el = el;
-  clipReorder.pointerId = e.pointerId;
-  try { el.setPointerCapture(e.pointerId); } catch (err) {}
-  window.addEventListener('pointermove', onClipReorderMove, true);
-  window.addEventListener('pointerup', onClipReorderEnd, true);
-  window.addEventListener('pointercancel', onClipReorderEnd, true);
-}
-
-function onClipReorderMove(e) {
-  if (!clipReorder.active) return;
-  var dx = e.clientX - clipReorder.startX, dy = e.clientY - clipReorder.startY;
-  if (!clipReorder.moved && (dx*dx + dy*dy) < 16) return;
-  if (!clipReorder.moved) {
-    clipReorder.moved = true;
-    if (clipReorder.el) clipReorder.el.classList.add('dragging');
-  }
-  e.preventDefault();
-  var under = document.elementFromPoint(e.clientX, e.clientY);
-  var card = under && under.closest ? under.closest('.clip[data-clip-path]') : null;
-  clearDropTargets();
-  if (card && card.dataset.clipPath && card.dataset.clipPath !== clipReorder.fromPath) {
-    card.classList.add('drop-target');
-    clipReorder.overPath = card.dataset.clipPath;
-  } else {
-    clipReorder.overPath = null;
-  }
-}
-
-async function onClipReorderEnd() {
-  if (!clipReorder.active) return;
-  window.removeEventListener('pointermove', onClipReorderMove, true);
-  window.removeEventListener('pointerup', onClipReorderEnd, true);
-  window.removeEventListener('pointercancel', onClipReorderEnd, true);
-  var fromPath = clipReorder.fromPath;
-  var overPath = clipReorder.overPath;
-  var el = clipReorder.el;
-  var moved = clipReorder.moved;
-  if (el) {
-    try { if (clipReorder.pointerId != null) el.releasePointerCapture(clipReorder.pointerId); } catch (err) {}
-    el.classList.remove('dragging');
-  }
-  clearDropTargets();
-  clipReorder.active = false;
-  clipReorder.fromPath = null;
-  clipReorder.overPath = null;
-  clipReorder.el = null;
-  clipReorder.pointerId = null;
-  if (!moved || !fromPath || !overPath || fromPath === overPath) {
-    clipReorder.moved = false;
-    renderClips();
-    return;
-  }
-  var order = orderedClipKeys();
-  var fromIdx = order.indexOf(fromPath);
-  var toIdx = order.indexOf(overPath);
-  if (fromIdx < 0 || toIdx < 0) { clipReorder.moved = false; renderClips(); return; }
-  order.splice(fromIdx, 1);
-  order.splice(toIdx, 0, fromPath);
-  clipOrder = order;
-  clipReorder.moved = false;
-  renderClips();
-  await syncPendingQueueToClipOrder();
-}
-
-async function syncPendingQueueToClipOrder() {
-  if (!api || typeof api.moveItem !== 'function') return;
-  var desired = [];
-  for (var i = 0; i < clipOrder.length; i++) {
-    var c = clips[clipOrder[i]];
-    if (c && c._queueState === 'pending' && c._queueItemId) desired.push(c._queueItemId);
-  }
-  if (desired.length < 2) return;
-  try {
-    for (var j = 0; j < desired.length; j++) {
-      await api.moveItem(desired[j], j);
-    }
-  } catch (err) {}
-  await pollQueue();
-}
-
-function errorSummary(error, limit) { var text=String(error||'Unknown error').replace(/\s+/g,' ').trim(); return text.length>(limit||140)?text.substring(0,limit||140)+'…':text; }
-function clipStateBadge(p) {
-  var c = clips[p], st = c._queueState||'';
-  var states = {pending:['Pending','●','cst-queued'],running:['Encoding','↻','cst-processing'],processing:['Encoding','↻','cst-processing'],completed:['Completed','✓','cst-completed'],failed:['Failed','!','cst-failed'],cancelled:['Cancelled','!','cst-cancelled']};
-  var label = c._statusText || (states[st] ? states[st][0] : '') || (c.error ? 'Error' : 'Ready');
-  if (st==='failed'&&c._queueError) label = 'Failed: '+c._queueError;
-  var state = states[st] || (c.error ? ['Error','!','cst-failed'] : ['Ready','·','cst-ready']);
-  return '<span class="c-st '+state[2]+'" role="img" title="'+esc(label)+'" aria-label="'+esc(label)+'">'+state[1]+'</span>';
-}
-
-function clipDuration(c) {
-  if (!c.probed || !c.probeData || !c.probeData.duration) return '';
-  var full = c.probeData.duration;
-  var ts = c.trimStart != null ? c.trimStart : 0;
-  var te = c.trimEnd != null ? c.trimEnd : full;
-  if (ts > 0.001 || te < full - 0.001) return fmtt(ts)+'–'+fmtt(te);
-  return fmtt(full);
-}
-function metaStr(c) {
-  if (c._queueState==='failed'&&c._queueError) return '<span class="c-error">'+esc(errorSummary(c._queueError,100))+'</span>';
-  if (c.error) return esc(errorSummary(c.error,100));
-  if (!c.probed) return '…';
-  var d = c.probeData, first = [];
-  if (d.width && d.height) first.push(d.width+'×'+d.height);
-  if (c.crop) first.push('crop '+c.crop.width+'×'+c.crop.height);
-  if (c.rotation) first.push(c.rotation+'°');
-  if (c.flipHorizontal || c.flipVertical) first.push(c.flipHorizontal && c.flipVertical ? 'flip H+V' : (c.flipHorizontal ? 'flip H' : 'flip V'));
-  if (d.fps) first.push(Math.round(d.fps)+' fps');
-  var second = c._fileSize ? formatBytes(c._fileSize) : '';
-  if (c._resultSize && c._queueState==='completed') second += ' → '+formatBytes(c._resultSize);
-  return first.join(' · ')+(second ? '<br><span style="color:var(--dim)">'+second+'</span>' : '');
-}
-
-function formatBytes(b) {
-  if (!b) return '';
-  if (b < 1024) return b+' B';
-  if (b < 1024*1024) return (b/1024).toFixed(1)+' KB';
-  if (b < 1024*1024*1024) return (b/(1024*1024)).toFixed(1)+' MB';
-  return (b/(1024*1024*1024)).toFixed(1)+' GB';
-}
-
-function selectClip(p) {
-  if (selPath && selPath !== p && clips[selPath] && clips[selPath].mediaToken) {
-    api.releaseMediaToken(clips[selPath].mediaToken);
-    clips[selPath].mediaToken = null;
-  }
-  selPath = p; renderClips();
-  byId('empty').style.display = 'none'; byId('stage').style.display = 'block'; byId('player-bar').classList.add('on');
-  byId('thumb').style.display = 'none'; byId('vid').style.display = 'block'; byId('btn-play').textContent = '▶';
-  loadMedia(p);
-  var c = clips[p];
-  syncTimelineUI();
-  if (typeof syncTransformControls === 'function') syncTransformControls();
-  if (typeof paintCropOverlay === 'function') paintCropOverlay();
-  if (!c.probed && !c.error) probeClip(p); else if (c.probed) { syncFpsToClip(); syncResolutionToClip(); reqPreview(); }
-}
-
-function removeClip(p) {
-  if (clips[p] && clips[p].mediaToken) api.releaseMediaToken(clips[p].mediaToken);
-  delete clips[p];
-  clipOrder = clipOrder.filter(function(x){ return x !== p; });
-  if (selPath === p) {
-    selPath = null; byId('empty').style.display = 'flex'; byId('stage').style.display = 'none'; byId('player-bar').classList.remove('on');
-    var v = byId('vid'); v.pause(); v.src = '';
-    if (clipOrder.length) selectClip(clipOrder[0]);
-  }
-  renderClips();
-}
-
-function removeAllClips() {
-  var keys = Object.keys(clips);
-  if (!keys.length) return;
-  var hasActive = false;
-  for (var i = 0; i < keys.length; i++) {
-    var st = clips[keys[i]]._queueState||'';
-    if (st==='running'||st==='processing'||st==='pending') { hasActive = true; break; }
-  }
-  if (hasActive) {
-    confirmToast('Some files are still processing. Remove all anyway?', doRemoveAllClips);
-  } else {
-    doRemoveAllClips();
-  }
-}
-function doRemoveAllClips() {
-  var keys = Object.keys(clips);
-  for (var i = 0; i < keys.length; i++) {
-    if (clips[keys[i]] && clips[keys[i]].mediaToken) api.releaseMediaToken(clips[keys[i]].mediaToken);
-  }
-  clips = {}; clipOrder = []; selPath = null;
-  byId('empty').style.display = 'flex'; byId('stage').style.display = 'none'; byId('player-bar').classList.remove('on');
-  var v = byId('vid'); v.pause(); v.src = '';
-  renderClips();
-}
-
-async function probeClip(p) {
-  if (!api) return;
-  var c = clips[p]; if (!c || c.probed || c.probing) return;
-  c.probing = true;
-  try {
-    var r = await api.probeFile(p);
-    if (r.ok && r.data) { c.probed = true; c.probeData = r.data; c.error = ''; c._fileSize = r.data.file_size; }
-    else { c.error = (r.data && r.data.error) || 'Probe failed'; }
-  } catch(e) { c.error = 'Probe error'; }
-  c.probing = false;
-  renderClips();
-  if (selPath === p) { syncFpsToClip(); syncResolutionToClip(); syncTimelineUI(); if(typeof syncTransformControls==='function')syncTransformControls(); if(typeof paintCropOverlay==='function')paintCropOverlay(); reqPreview(); }
-}
-
-async function loadMedia(p) {
-  if (!api) return;
-  try {
-    var r = await api.getMediaUrl(p);
-    if (r.ok && r.url) {
-      var v = byId('vid'); v.src = r.url; v.load();
-      if (clips[p]) clips[p].mediaToken = r.token;
-      v.onerror = function(){ loadThumb(p); };
-    } else if (r.thumbnail) {
-      byId('thumb').src = r.thumbnail; byId('thumb').style.display = 'block'; byId('vid').style.display = 'none';
-    }
-  } catch(e) {}
-}
-
-async function loadThumb(p) {
-  if (!api) return;
-  try {
-    var r = await api.getThumbnail(p);
-    if (r.ok && r.thumbnail) { byId('thumb').src = r.thumbnail; byId('thumb').style.display = 'block'; byId('vid').style.display = 'none'; }
-  } catch(e) {}
-}
-
-function togglePlay() {
-  var v = byId('vid');
-  if (!v) return;
-  if (v.paused) {
-    var full = videoDuration();
-    if (full > 0) {
-      var b = clipTrimBounds(selPath ? clips[selPath] : null, full);
-      var end = clipHasTrim(selPath ? clips[selPath] : null, full) ? b.end : full;
-      var start = clipHasTrim(selPath ? clips[selPath] : null, full) ? b.start : 0;
-      if (v.currentTime >= end - 0.05) v.currentTime = start;
-    }
-    v.play();
-  } else {
-    v.pause();
-  }
-}
-function seekBy(seconds) { var v=byId('vid'); if(v.duration) v.currentTime=Math.max(0,Math.min(v.duration,v.currentTime+seconds)); }
-byId('vid').addEventListener('play',function(){byId('btn-play').textContent='⏸';});
-byId('vid').addEventListener('pause',function(){byId('btn-play').textContent='▶';});
-byId('vid').addEventListener('timeupdate',updateTime);
-byId('vid').addEventListener('durationchange',function(){ updateTime(); syncTimelineUI(); });
-byId('vid').addEventListener('loadedmetadata',function(){ updateTime(); syncTimelineUI(); });
-byId('vid').addEventListener('ended', function(){ loopPlayback(); });
-
-var _tlDrag = null;
-var _MIN_TRIM = 0.05;
-var _looping = false;
-
-function videoDuration() {
-  var v = byId('vid');
-  if (v && v.duration && isFinite(v.duration)) return v.duration;
-  if (selPath && clips[selPath] && clips[selPath].probeData) return clips[selPath].probeData.duration || 0;
-  return 0;
-}
-
-function clipTrimBounds(c, fullDur) {
-  var start = c && c.trimStart != null ? c.trimStart : 0;
-  var end = c && c.trimEnd != null ? c.trimEnd : fullDur;
-  if (!Number.isFinite(start) || start < 0) start = 0;
-  if (!Number.isFinite(end) || end <= 0) end = fullDur;
-  if (end > fullDur) end = fullDur;
-  if (end - start < _MIN_TRIM) {
-    if (start + _MIN_TRIM <= fullDur) end = start + _MIN_TRIM;
-    else start = Math.max(0, fullDur - _MIN_TRIM);
-  }
-  return { start: start, end: end };
-}
-
-function clipHasTrim(c, fullDur) {
-  if (!c || !fullDur) return false;
-  return (c.trimStart != null && c.trimStart > 0.001) || (c.trimEnd != null && c.trimEnd < fullDur - 0.001);
-}
-
-function loopPlayback() {
-  if (_looping) return;
-  var v = byId('vid');
-  if (!v) return;
-  var full = videoDuration();
-  if (full <= 0) return;
-  var c = selPath ? clips[selPath] : null;
-  var b = clipTrimBounds(c, full);
-  var start = clipHasTrim(c, full) ? b.start : 0;
-  _looping = true;
-  try {
-    v.currentTime = start;
-    var p = v.play();
-    if (p && typeof p.catch === 'function') p.catch(function(){});
-  } finally {
-    setTimeout(function(){ _looping = false; }, 80);
-  }
-}
-
-function paintTrimChrome() {
-  var full = videoDuration();
-  var c = selPath ? clips[selPath] : null;
-  var bounds = clipTrimBounds(c, full || 1);
-  var startPct = full > 0 ? (bounds.start / full) * 100 : 0;
-  var endPct = full > 0 ? (bounds.end / full) * 100 : 100;
-  byId('tl-range').style.left = startPct + '%';
-  byId('tl-range').style.width = Math.max(0, endPct - startPct) + '%';
-  byId('tl-dim-l').style.width = startPct + '%';
-  byId('tl-dim-r').style.width = Math.max(0, 100 - endPct) + '%';
-  byId('tl-in').style.left = startPct + '%';
-  byId('tl-out').style.left = endPct + '%';
-  var has = clipHasTrim(c, full);
-  byId('btn-trim-reset').classList.toggle('show', has);
-  var label = byId('trim-label');
-  if (has) {
-    label.textContent = fmtt(bounds.start)+'–'+fmtt(bounds.end)+' · '+fmtt(bounds.end - bounds.start);
-  } else {
-    label.textContent = '';
-  }
-  return { full: full, bounds: bounds, has: has };
-}
-
-function syncTimelineUI() {
-  paintTrimChrome();
-  updateTime();
-}
-
-function setPlayheadUI(sec, full) {
-  full = full || videoDuration();
-  sec = Number.isFinite(sec) ? sec : 0;
-  if (full > 0) {
-    byId('tl-playhead').style.left = Math.max(0, Math.min(100, (sec / full) * 100)) + '%';
-    byId('timeline').setAttribute('aria-valuemax', String(Math.round(full)));
-    byId('timeline').setAttribute('aria-valuenow', String(Math.round(sec)));
-  }
-  byId('ptime').textContent = fmtt(sec)+' / '+fmtt(full || 0);
-  _previewSec = sec;
-}
-
-function updateTime(){
-  if (_tlDrag && _previewSec != null) {
-    setPlayheadUI(_previewSec, videoDuration());
-    return;
-  }
-  var v = byId('vid');
-  var full = videoDuration();
-  var t = v && isFinite(v.currentTime) ? v.currentTime : 0;
-  setPlayheadUI(t, full);
-  if (v && !v.paused && !_looping && selPath && clips[selPath] && full > 0) {
-    var b = clipTrimBounds(clips[selPath], full);
-    if (clipHasTrim(clips[selPath], full) && t >= b.end - 0.04) {
-      loopPlayback();
-    }
-  }
-}
-
-var _previewSec = null;
-var _seekWanted = null;
-var _seekBusy = false;
-var _seekRaf = 0;
-var _seekSafety = 0;
-var _tlMoveRaf = 0;
-var _tlMoveEvent = null;
-
-function seekToRatio(ratio) {
-  var full = videoDuration();
-  if (!full || !isFinite(full)) return;
-  ratio = Math.max(0, Math.min(1, ratio));
-  seekPreview(ratio * full);
-}
-
-function seekPreview(sec) {
-  var v = byId('vid');
-  var full = videoDuration();
-  if (!v || !full || !isFinite(full) || !Number.isFinite(sec)) return;
-  sec = Math.max(0, Math.min(full, sec));
-  setPlayheadUI(sec, full);
-  if (!v.paused) {
-    try { v.pause(); } catch (err) {}
-  }
-  _seekWanted = sec;
-  if (!_seekRaf) {
-    _seekRaf = requestAnimationFrame(function() {
-      _seekRaf = 0;
-      flushVideoSeek();
-    });
-  }
-}
-
-function flushVideoSeek() {
-  var v = byId('vid');
-  if (!v || _seekWanted == null) return;
-  if (_seekBusy) return;
-  var sec = _seekWanted;
-  _seekWanted = null;
-  if (Math.abs((v.currentTime || 0) - sec) < 0.002) return;
-  _seekBusy = true;
-  var finished = false;
-  var done = function() {
-    if (finished) return;
-    finished = true;
-    v.removeEventListener('seeked', done);
-    v.removeEventListener('error', done);
-    if (_seekSafety) { clearTimeout(_seekSafety); _seekSafety = 0; }
-    _seekBusy = false;
-    if (_seekWanted != null) flushVideoSeek();
-  };
-  v.addEventListener('seeked', done);
-  v.addEventListener('error', done);
-  _seekSafety = setTimeout(done, 180);
-  try {
-    v.currentTime = sec;
-  } catch (err) {
-    done();
-  }
-}
-
-function timelineRatioFromEvent(e) {
-  var track = byId('tl-track');
-  var rect = track.getBoundingClientRect();
-  if (rect.width <= 0) return 0;
-  var x = (e.clientX != null ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0)) - rect.left;
-  return Math.max(0, Math.min(1, x / rect.width));
-}
-
-function applyTrimStart(sec) {
-  if (!selPath || !clips[selPath]) return null;
-  var c = clips[selPath];
-  var full = videoDuration() || (c.probeData && c.probeData.duration) || 0;
-  if (full <= 0) return null;
-  var end = c.trimEnd != null ? c.trimEnd : full;
-  sec = Math.max(0, Math.min(sec, end - _MIN_TRIM));
-  c.trimStart = sec <= 0.001 ? null : sec;
-  if (c.trimStart == null && c.trimEnd != null && c.trimEnd >= full - 0.001) c.trimEnd = null;
-  return c.trimStart != null ? c.trimStart : 0;
-}
-
-function applyTrimEnd(sec) {
-  if (!selPath || !clips[selPath]) return null;
-  var c = clips[selPath];
-  var full = videoDuration() || (c.probeData && c.probeData.duration) || 0;
-  if (full <= 0) return null;
-  var start = c.trimStart != null ? c.trimStart : 0;
-  sec = Math.min(full, Math.max(sec, start + _MIN_TRIM));
-  c.trimEnd = sec >= full - 0.001 ? null : sec;
-  if (c.trimEnd == null && c.trimStart != null && c.trimStart <= 0.001) c.trimStart = null;
-  return c.trimEnd != null ? c.trimEnd : full;
-}
-
-function clearTrim() {
-  if (!selPath || !clips[selPath]) return;
-  clips[selPath].trimStart = null;
-  clips[selPath].trimEnd = null;
-  paintTrimChrome();
-  seekPreview(0);
-  renderClips();
-  reqPreview();
-}
-
-function setTrimDragCursor(active) {
-  var tl = byId('timeline');
-  if (tl) tl.classList.toggle('trim-dragging', !!active);
-  document.body.classList.toggle('tl-trim-dragging', !!active);
-}
-
-function onTimelinePointerDown(e) {
-  if (e.button != null && e.button !== 0) return;
-  var target = e.target;
-  if (target && target.id === 'tl-in') _tlDrag = 'in';
-  else if (target && target.id === 'tl-out') _tlDrag = 'out';
-  else _tlDrag = 'seek';
-  if (target && target.classList && target.classList.contains('tl-handle')) {
-    target.classList.add('dragging');
-    setTrimDragCursor(true);
-  }
-  if (e.pointerId != null && e.currentTarget.setPointerCapture) {
-    try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) {}
-  }
-  processTimelineMove(e);
-  e.preventDefault();
-}
-
-function processTimelineMove(e) {
-  if (!_tlDrag) return;
-  var ratio = timelineRatioFromEvent(e);
-  var full = videoDuration();
-  if (full <= 0) return;
-  var t = ratio * full;
-  if (_tlDrag === 'in') {
-    var start = applyTrimStart(t);
-    if (start == null) return;
-    paintTrimChrome();
-    seekPreview(start);
-  } else if (_tlDrag === 'out') {
-    var end = applyTrimEnd(t);
-    if (end == null) return;
-    paintTrimChrome();
-    seekPreview(end);
-  } else {
-    seekToRatio(ratio);
-  }
-}
-
-function onTimelinePointerMove(e) {
-  if (!_tlDrag) return;
-  _tlMoveEvent = e;
-  if (_tlMoveRaf) return;
-  _tlMoveRaf = requestAnimationFrame(function() {
-    _tlMoveRaf = 0;
-    var ev = _tlMoveEvent;
-    _tlMoveEvent = null;
-    if (ev) processTimelineMove(ev);
-  });
-  e.preventDefault();
-}
-
-function onTimelinePointerUp(e) {
-  if (!_tlDrag) return;
-  var wasTrim = _tlDrag === 'in' || _tlDrag === 'out';
-  if (_tlMoveRaf) {
-    cancelAnimationFrame(_tlMoveRaf);
-    _tlMoveRaf = 0;
-  }
-  if (_tlMoveEvent) {
-    processTimelineMove(_tlMoveEvent);
-    _tlMoveEvent = null;
-  }
-  byId('tl-in').classList.remove('dragging');
-  byId('tl-out').classList.remove('dragging');
-  setTrimDragCursor(false);
-  _tlDrag = null;
-  if (_previewSec != null) {
-    _seekWanted = _previewSec;
-    if (!_seekBusy) flushVideoSeek();
-  }
-  if (wasTrim) { renderClips(); reqPreview(); }
-}
-(function bindTimeline() {
-  var tl = byId('timeline');
-  if (!tl) return;
-  tl.addEventListener('pointerdown', onTimelinePointerDown);
-  tl.addEventListener('pointermove', onTimelinePointerMove);
-  tl.addEventListener('pointerup', onTimelinePointerUp);
-  tl.addEventListener('pointercancel', onTimelinePointerUp);
-  tl.addEventListener('keydown', function(e) {
-    var v = byId('vid'); if (!v || !v.duration) return;
-    var step = e.shiftKey ? 1 : 0.5;
-    if (e.key === 'ArrowLeft') { e.preventDefault(); seekToRatio(Math.max(0, (v.currentTime - step) / v.duration)); }
-    if (e.key === 'ArrowRight') { e.preventDefault(); seekToRatio(Math.min(1, (v.currentTime + step) / v.duration)); }
-  });
-})();
-
-var ICON_VOL = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9v6h3.5L14 19V5l-5.5 4H5zm11 1.2v3.6c.9-.5 1.5-1.4 1.5-2.5S16.9 10.7 16 10.2z"/></svg>';
-var ICON_MUTE = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9v6h3.5L14 19V5l-5.5 4H5zm11.1 1.1l-1.1 1.1 1.9 1.9-1.9 1.9 1.1 1.1 1.9-1.9 1.9 1.9 1.1-1.1-1.9-1.9 1.9-1.9-1.1-1.1-1.9 1.9-1.9-1.9z"/></svg>';
-function updateMuteIcon() {
-  var btn = byId('btn-mute');
-  if (!btn) return;
-  var isMuted = muted || (byId('vid') && byId('vid').volume === 0);
-  btn.innerHTML = isMuted ? ICON_MUTE : ICON_VOL;
-  btn.title = isMuted ? 'Unmute' : 'Mute';
-  btn.setAttribute('aria-label', isMuted ? 'Unmute' : 'Mute');
-}
-updateMuteIcon();
-function toggleMute(){
-  var v = byId('vid');
-  if (muted || v.volume === 0) {
-    v.volume = volBefore / 100;
-    byId('vbar').value = volBefore;
-    muted = false;
-  } else {
-    volBefore = Math.round(v.volume * 100) || 80;
-    v.volume = 0;
-    byId('vbar').value = 0;
-    muted = true;
-  }
-  updateMuteIcon();
-}
-function setVol(vv){
-  var v = byId('vid');
-  v.volume = vv / 100;
-  muted = vv == 0;
-  if (!muted) volBefore = parseInt(vv, 10) || volBefore;
-  updateMuteIcon();
-}
-
-function setWf(idx) {
-  if (wf===idx) return;
-  var curPid = byId('prof-sel').value;
-  if (curPid) { if (wf===0) lastComp=curPid; else lastUpscale=curPid; }
-  wf=idx;
-  var c = byId('wf-c'), u = byId('wf-u'), up = idx===1;
-  c.classList.toggle('on', !up); c.setAttribute('aria-pressed', String(!up));
-  u.classList.toggle('on', up); u.setAttribute('aria-pressed', String(up));
-  byId('sz-grp').classList.toggle('hid', up);
-  byId('two-pass').disabled = up;
-  byId('two-pass-wrap').classList.toggle('hid', up);
-  byId('res-source-wrap').classList.toggle('hid', up);
-  if (up) { byId('two-pass').value='off'; byId('use-source-res').checked=false; byId('res-mode').value='custom'; }
-  else { byId('res-mode').value=byId('use-source-res').checked?'source':'custom'; }
-  onResMode();
-  updateRcOpts(); updateRcVis(); refilter(); updateActionButtons();
-  persistSession();
-}
-
-function persistSession() {
-  if (!api || !appSettings || !Object.keys(appSettings).length) return;
-  var data = {default_profile_id:appSettings.default_profile_id, default_scaler:appSettings.default_scaler, output_dir:appSettings.output_dir, check_updates:appSettings.check_updates, clear_completed_automatically:!!appSettings.clear_completed_automatically, compression_suffix:appSettings.compression_suffix, upscale_suffix:appSettings.upscale_suffix, last_task:wf===1?'upscale':'compression', last_compress_profile_id:lastComp, last_upscale_profile_id:lastUpscale, left_sidebar_width:parseInt(byId('left').style.width)||240};
-  api.saveSettings(JSON.stringify(data)).then(function(r){ if (r.ok) appSettings = Object.assign(appSettings, data); });
-}
-
-function updateActionButtons() {
-  var up = wf===1, nObj = Object.keys(clips).length, sel = !!selPath;
-  byId('btn-one').textContent = up ? 'Upscale selected' : 'Compress selected';
-  byId('btn-one').disabled = !sel;
-  byId('btn-all').textContent = (up ? 'Upscale all' : 'Compress all') + (nObj ? ' ('+nObj+')' : '');
-  byId('btn-all').disabled = !nObj;
-  byId('btn-all').style.background = up ? '#2a2a3e' : '';
-}
-
-async function loadSettings() {
-  if (!api) return;
-  var s = await api.getSettings();
-  appSettings = s;
-  availEncoders = s.available_encoders || [];
-  allProfiles = s.profiles || [];
-  var def = s.default_profile_id || '';
-  if (!lastComp) lastComp = s.last_compress_profile_id || def;
-  if (!lastUpscale) lastUpscale = s.last_upscale_profile_id || '';
-  if (s.last_task === 'upscale' && !lastUpscale) lastUpscale = def;
-  if (s.left_sidebar_width) byId('left').style.width = s.left_sidebar_width+'px';
-  updateEncOpts();
-  var task = s.last_task === 'upscale' ? 1 : 0;
-  if (task !== wf) setWf(task); else refilter();
-}
-
-function refilter() {
-  var up = wf===1, targetWf = up?'upscale':'compression';
-  var matching = allProfiles.filter(function(p){ return (p.workflow||'compression') === targetWf; });
-  var lastId = up?lastUpscale:lastComp, sel = byId('prof-sel');
-  sel.innerHTML = ''; var sIdx = 0;
-  if (!matching.length) { updateActionButtons(); return; }
-  for (var i = 0; i < matching.length; i++) {
-    var o = document.createElement('option'); o.value = matching[i].profile_id; o.textContent = matching[i].name;
-    sel.appendChild(o);
-    if (lastId && matching[i].profile_id === lastId) sIdx = i;
-  }
-  sel.selectedIndex = Math.max(sIdx, 0);
-  applyProfile();
-  reqPreview();
-}
-
-function onProfileChange() {
-  var pid = byId('prof-sel').value;
-  if (pid) { if (wf===0) lastComp=pid; else lastUpscale=pid; }
-  applyProfile(); reqPreview(); persistSession();
-}
-
-function applyProfile() {
-  var pid = byId('prof-sel').value; if (!pid) return;
-  var p = null;
-  for (var i = 0; i < allProfiles.length; i++) { if (allProfiles[i].profile_id === pid) { p = allProfiles[i]; break; } }
-  if (!p) return;
-  var sizeMb = Math.round((p.target_size_bytes||0)/(1024*1024));
-  byId('sz-slider').value = sizeMb; byId('sz-badge').value = sizeMb; updateSizePresets(sizeMb);
-  byId('res-mode').value = p.resolution_mode==='custom'?'custom':'source';
-  byId('use-source-res').checked = wf===0 && p.resolution_mode!=='custom';
-  byId('res-w').value = p.custom_width||p.max_width||1920; byId('res-h').value = p.custom_height||p.max_height||1080; onResMode();
-  var useSourceFps = p.fps_mode!=='custom'; byId('use-source-fps').checked = useSourceFps; var fpsVal = Math.round(p.custom_fps||p.max_fps||30); var clipMax = clips[selPath] && clips[selPath].probed ? Math.round(clips[selPath].probeData.fps||fpsVal) : fpsVal; byId('fps-slider').max = clipMax; if (fpsVal > clipMax) fpsVal = clipMax; byId('fps-slider').value = fpsVal; byId('fps-val').value = fpsVal; byId('fps-badge').textContent = fpsVal+' fps'; onUseSourceFps();
-  byId('keep-audio').checked = !!p.keep_audio; byId('audio-br').value = Math.round((p.audio_bitrate||128000)/1000); byId('audio-br').disabled = !!p.keep_audio;
-  byId('two-pass').value = p.two_pass ? 'on' : 'off'; byId('preset-sel').value = p.preset||'medium';
-  var sc = p.scaler||'neighbor'; byId('scaler-sel').value = sc==='neighbor'?'Neighbor':sc.charAt(0).toUpperCase()+sc.slice(1);
-  byId('enc-sel').value = p.video_encoder||'libx264'; updateTuneOpts();
-  var tune = p.tune||'none', ts = byId('tune-sel');
-  for (var i = 0; i < ts.options.length; i++) { if (ts.options[i].value === tune) { ts.selectedIndex = i; break; } }
-  byId('quality-val').value = p.rate_control_method==='crf' ? (p.crf||23) : (p.cq||p.qp||23);
-  byId('br-val').value = p.explicit_bitrate_kbps||Math.round((p.explicit_bitrate||0)/1000)||2000;
-  updatePresetOptions();
-  byId('preset-sel').value = p.preset||nativePresetForSpeed('balanced'); syncSpeedFromPreset();
-  updateRcOpts();
-  var rcMap = {crf:'CRF',cq:'CQ',cqp:'CQ',cbr:'CBR',vbr:'VBR'}, rcDisp = rcMap[p.rate_control_method]||'CRF', rs = byId('rc-sel');
-  for (var i = 0; i < rs.options.length; i++) { if (rs.options[i].value === rcDisp) { rs.selectedIndex = i; break; } }
-  updateRcVis();
-  snapProf();
-}
-
-function onSize(v) { var size=parseInt(v); if (!size || size < 2) return; byId('sz-badge').value=size; byId('sz-slider').max=Math.max(500,size); byId('sz-slider').setAttribute('aria-valuenow', size); updateSizePresets(size); reqPreview(); updateDirty(); }
-function onBadgeSize(v) { var size=parseInt(v); if (!size || size < 2) { byId('sz-badge').value=byId('sz-slider').value; return; } byId('sz-slider').value=size; onSize(size); }
-function updateSizePresets(v) { var c=byId('sz-presets'); c.innerHTML=''; [10,50,100,500].forEach(function(mb){ var b=document.createElement('button'); b.textContent=mb+' MB'; if(mb===v)b.classList.add('on'); b.onclick=function(){byId('sz-slider').value=mb;onSize(mb);}; c.appendChild(b); }); }
-function onUseSourceResolution() { byId('res-mode').value=byId('use-source-res').checked?'source':'custom'; if(byId('use-source-res').checked)syncResolutionToClip(true); onResMode(); }
-function onResMode() { var source=byId('res-mode').value==='source'; byId('res-w').disabled=source; byId('res-h').disabled=source; byId('scaler-row').classList.toggle('hid',source); if(typeof paintCropOverlay==='function')paintCropOverlay(); reqPreview(); updateDirty(); }
-function onResolutionGeometryChanged() { if(typeof paintCropOverlay==='function')paintCropOverlay(); reqPreview(); updateDirty(); }
-function syncResolutionToClip(forceSourceValue) {
-  if(!selPath||!clips[selPath]||!clips[selPath].probed)return;
-  if(forceSourceValue||byId('use-source-res').checked){var d=clips[selPath].probeData;byId('res-w').value=d.width||1920;byId('res-h').value=d.height||1080;}
-}
-function onUseSourceFps() { if (byId('use-source-fps').checked) syncFpsToClip(true); reqPreview(); updateDirty(); }
-function onFpsSlider(v) { byId('fps-val').value = v; byId('fps-badge').textContent = v+' fps'; byId('fps-slider').setAttribute('aria-valuenow', v); reqPreview(); updateDirty(); }
-function syncFpsToClip(forceSourceValue) {
-  if (!selPath || !clips[selPath] || !clips[selPath].probed) return;
-  var native = Math.round(clips[selPath].probeData.fps) || 30;
-  byId('fps-slider').max = native;
-  var cur = forceSourceValue || byId('use-source-fps').checked ? native : parseInt(byId('fps-val').value)||native;
-  if (cur > native) cur = native;
-  byId('fps-slider').value = cur;
-  byId('fps-val').value = cur;
-  byId('fps-badge').textContent = cur+' fps';
-}
-function onKeepAudio() { byId('audio-br').disabled = byId('keep-audio').checked; reqPreview(); updateDirty(); }
-function onTwoPassChange() { reqPreview(); updateDirty(); }
-function toggleAdv() { var sec=byId('adv-sec'), open=sec.classList.contains('hid'); sec.classList.toggle('hid', !open); byId('adv-toggle').setAttribute('aria-expanded', String(open)); byId('adv-toggle').querySelector('.advanced-arrow').textContent=open?'⌃':'⌄'; }
-function onEncChange() { updatePresetOptions(); if(byId('enc-sel').value==='auto_compression'){byId('two-pass').value='on';byId('preset-sel').value='veryslow';} updateTuneOpts(); updateRcOpts(); gateTwoPass(); reqPreview(); updateDirty(); }
-function onRcChange() { updateRcVis(); reqPreview(); updateDirty(); }
-
-function encoderLabel(id) { return {auto_compression:'Auto (best compression)',auto_fast:'Auto (fastest available)',auto:'Auto (fastest available)',libx264:'H.264 · Software',libx265:'H.265 · Software',h264_nvenc:'NVIDIA H.264 · Hardware',hevc_nvenc:'NVIDIA H.265 · Hardware',h264_amf:'AMD H.264 · Hardware',hevc_amf:'AMD H.265 · Hardware'}[id] || id; }
-function encoderIds(current) { var all=['auto_compression','auto_fast','libx264','libx265','h264_nvenc','hevc_nvenc','h264_amf','hevc_amf'], avail=availEncoders.length?availEncoders:all.slice(2); return all.filter(function(id){return id==='auto_compression'||id==='auto_fast'||avail.indexOf(id)>=0||id===current;}); }
-function isAutoEncoder(enc) { return enc==='auto'||enc==='auto_compression'||enc==='auto_fast'; }
-function isCpuEncoder(enc) { return enc==='libx264'||enc==='libx265'||isAutoEncoder(enc); }
-function encoderOption(id) { var o=document.createElement('option'); o.value=id; o.textContent=encoderLabel(id); if(!isAutoEncoder(id)&&availEncoders.length&&availEncoders.indexOf(id)<0){o.disabled=true;o.textContent+=' (unavailable)';} return o; }
-function populateEncoders(id) { var sel=byId(id), cur=sel.value||'auto_compression', ids=encoderIds(cur); sel.innerHTML=''; ids.forEach(function(enc){sel.appendChild(encoderOption(enc));}); if(!sel.options.length)sel.appendChild(encoderOption('libx264')); if(ids.indexOf(cur)<0)cur=ids[0]||'libx264'; sel.value=cur; }
-function updateEncOpts() { populateEncoders('enc-sel'); }
-function tunesForEncoder(enc) { return enc==='libx265'?['none','psnr','ssim','grain','zerolatency','fastdecode','animation']:['none','film','animation','grain','stillimage','fastdecode','zerolatency']; }
-function populateTunes(id, enc) { var sel=byId(id), cur=sel.value, tunes=tunesForEncoder(enc); sel.innerHTML=''; tunes.forEach(function(t){var o=document.createElement('option');o.value=t;o.textContent=t;sel.appendChild(o);}); sel.value=tunes.indexOf(cur)>=0?cur:'none'; }
-function updateTuneOpts() { populateTunes('tune-sel',byId('enc-sel').value); }
-function nativePresets(enc) { if(isCpuEncoder(enc))return ['ultrafast','superfast','veryfast','faster','fast','medium','slow','slower','veryslow']; if(enc.indexOf('nvenc')>=0)return ['p1','p2','p3','p4','p5','p6','p7']; return ['speed','balanced','quality']; }
-function nativePresetForSpeed(speed, enc) { enc=enc||byId('enc-sel').value; if(isCpuEncoder(enc))return {fast:'veryfast',balanced:'medium',best:'slow'}[speed]; if(enc.indexOf('nvenc')>=0)return {fast:'p2',balanced:'p5',best:'p7'}[speed]; return {fast:'speed',balanced:'balanced',best:'quality'}[speed]; }
-function speedForNativePreset(preset) { if(['ultrafast','superfast','veryfast','faster','p1','p2','p3','speed'].indexOf(preset)>=0)return 'fast'; if(['slow','slower','veryslow','p6','p7','quality'].indexOf(preset)>=0)return 'best'; return 'balanced'; }
-function populatePresets(id, enc, speedId) { var sel=byId(id), cur=sel.value, presets=nativePresets(enc); sel.innerHTML=''; presets.forEach(function(p){var o=document.createElement('option');o.value=p;o.textContent=p;sel.appendChild(o);}); sel.value=presets.indexOf(cur)>=0?cur:nativePresetForSpeed(byId(speedId).value||'balanced',enc); }
-function updatePresetOptions() { populatePresets('preset-sel',byId('enc-sel').value,'speed-sel'); }
-function rateControlOptions(workflow, enc) { return workflow==='upscale'?(isCpuEncoder(enc)?['CRF','CBR']:['CQ','CBR','VBR']):(isCpuEncoder(enc)?['CBR']:['CBR','VBR']); }
-function defaultRateControl(workflow, enc) { return workflow==='upscale'?(isCpuEncoder(enc)?'CRF':'CQ'):(isCpuEncoder(enc)?'CBR':'VBR'); }
-function twoPassEligible(workflow, enc) { return workflow==='compression'&&(enc==='libx264'||enc==='libx265'||enc==='auto_compression'); }
-function populateRateControls(id, workflow, enc) { var sel=byId(id), cur=sel.value, opts=rateControlOptions(workflow,enc); sel.innerHTML='';opts.forEach(function(v){var o=document.createElement('option');o.value=v;o.textContent=v;sel.appendChild(o);});sel.value=opts.indexOf(cur)>=0?cur:defaultRateControl(workflow,enc); }
-function onSpeedChange() { byId('preset-sel').value=nativePresetForSpeed(byId('speed-sel').value); reqPreview(); updateDirty(); }
-function onNativePresetChange() { syncSpeedFromPreset(); reqPreview(); updateDirty(); }
-function syncSpeedFromPreset() { byId('speed-sel').value=speedForNativePreset(byId('preset-sel').value); }
-function updateRcOpts() { populateRateControls('rc-sel',wf===1?'upscale':'compression',byId('enc-sel').value); updateRcVis(); }
-function updateRcVis() { var rc=byId('rc-sel').value, up=wf===1, quality=up&&(rc==='CRF'||rc==='CQ'); byId('rate-control-row').classList.toggle('hid',!up); byId('quality-row').classList.toggle('hid',!quality); byId('quality-label').textContent=rc==='CRF'?'CRF value':'CQ value'; byId('br-row').classList.toggle('hid',!(up&&(rc==='CBR'||rc==='VBR'))); byId('tune-row').classList.toggle('hid',!(up&&isCpuEncoder(byId('enc-sel').value))); }
-function gateTwoPass() { var can=twoPassEligible(wf===1?'upscale':'compression',byId('enc-sel').value); byId('two-pass').disabled=!can; byId('two-pass-note').classList.toggle('hid',can||wf===1); if(!can)byId('two-pass').value='off'; }
-
-async function reqPreview() {
-  if (!api || !selPath || !clips[selPath] || !clips[selPath].probed) return;
-  var req = buildReq(clips[selPath].path);
-  try {
-    var r = await api.createPlan(JSON.stringify(req));
-    if (r.ok && r.data) {
-      clips[selPath].planData = r.data;
-      byId('calc-br').textContent = wf===0 ? 'Calculated bitrate: '+r.data.video_bitrate_kbps+' kbps' : '';
-    }
-  } catch(e) {}
-}
-
-function buildReq(src) {
-  var up=wf===1, rc=byId('rc-sel').value, rcMap={CRF:'crf',CQ:'cq',CBR:'cbr',VBR:'vbr'};
-  var req={source:src,profile_id:byId('prof-sel').value,workflow:up?'upscale':'compression',rate_control:'target_size',video_encoder:byId('enc-sel').value,preset:byId('preset-sel').value,rate_control_method:rcMap[rc]||'cbr'};
-  if (!up) req.target_size_bytes=parseInt(byId('sz-slider').value)*1024*1024;
-  if (byId('res-mode').value==='custom') { req.resolution_mode='custom'; req.custom_width=parseInt(byId('res-w').value); req.custom_height=parseInt(byId('res-h').value); req.scaler=byId('scaler-sel').value.toLowerCase(); }
-  else req.resolution_mode='source';
-  if (byId('use-source-fps').checked) req.fps_mode='source'; else { req.fps_mode='custom'; req.custom_fps=parseInt(byId('fps-val').value); }
-  var keep=byId('keep-audio').checked; req.keep_audio=keep; if(!keep) req.audio_bitrate=parseInt(byId('audio-br').value)*1000;
-  req.two_pass=!up&&byId('two-pass').value==='on';
-  if (rc==='CRF') req.crf=parseInt(byId('quality-val').value);
-  if (rc==='CQ') req.cq=parseInt(byId('quality-val').value);
-  if (up&&(rc==='CBR'||rc==='VBR')) { req.rate_control='explicit_bitrate'; req.explicit_bitrate=parseInt(byId('br-val').value)*1000; }
-  if (up&&(byId('enc-sel').value==='libx264'||byId('enc-sel').value==='libx265')) { var tune=byId('tune-sel').value; if(tune!=='none') req.tune=tune; }
-  var c = clips[src];
-  if (c) {
-    var full = (c.probeData && c.probeData.duration) || 0;
-    if (c.trimStart != null && c.trimStart > 0.001) req.trim_start = Math.round(c.trimStart * 1000) / 1000;
-    if (c.trimEnd != null && (full <= 0 || c.trimEnd < full - 0.001)) req.trim_end = Math.round(c.trimEnd * 1000) / 1000;
-    if (typeof cropTransformForRequest === 'function') { var transform=cropTransformForRequest(c); if(transform)req.transform=transform; }
-  }
-  return req;
-}
-
-async function compressOne() {
-  if (!api || !selPath) { toast('Select a clip first.', 'err'); return; }
-  var r = await api.enqueueWithOptions(JSON.stringify(buildReq(clips[selPath].path)));
-  if (!r.ok) toast('Error: '+r.error, 'err');
-  pollQueue();
-}
-
-async function compressAll() {
-  if (!api) return;
-  var keys = orderedClipKeys(); if (!keys.length) { toast('Add clips first.', 'err'); return; }
-  var reqs = []; for (var i = 0; i < keys.length; i++) reqs.push(buildReq(clips[keys[i]].path));
-  var r = await api.enqueueBatch(JSON.stringify(reqs));
-  if (!r.ok) toast('Error: '+(r.error||'Failed'), 'err');
-  if (r.errors && r.errors.length) toast('Some errors occurred.', 'err');
-  pollQueue();
-}
-
-function mapQueueItems(items) {
-  if (!items) return;
-  var completed = false, map = {};
-  queueItemsById = {};
-  for (var i = 0; i < items.length; i++) {
-    map[items[i].source_path] = items[i];
-    queueItemsById[items[i].id] = items[i];
-  }
-  for (var pk in clips) {
-    if (clips.hasOwnProperty(pk) && map[pk]) {
-      var clip=clips[pk], previousState=clip._queueState, item=map[pk];
-      clip._queueState = item.state;
-      clip._queueItemId = item.id;
-      clip._statusText = formatQueueStatus(item);
-      clip._progress = item.progress||0;
-      if (item.error) clip._queueError = item.error;
-      if (item.state==='completed'&&previousState!=='completed') { toast('Finished: '+esc(clip.name), 'ok'); completed = true; }
-      if (item.state==='failed'&&previousState!=='failed') toast('Failed to process "'+esc(clip.name)+'": '+esc(errorSummary(item.error)), 'err');
-      if (item.result_size) clip._resultSize = item.result_size;
-      if (item.result_path) clip._resultPath = item.result_path;
-    } else if (clips.hasOwnProperty(pk) && clips[pk]._queueState && ['completed','failed','cancelled'].indexOf(clips[pk]._queueState)<0) {
-      clips[pk]._queueState = null;
-      clips[pk]._statusText = '';
-    }
-  }
-  if (completed && appSettings.clear_completed_automatically) setTimeout(clearDone, 0);
-}
-
-function formatQueueStatus(item) {
-  if (!item) return '';
-  if (item.status_text) {
-    var parts = [item.status_text];
-    if (item.state==='running') {
-      if (item.progress > 0) parts.push(Math.round(item.progress)+'%');
-      var pi = item.progress_info||{};
-      if (pi.speed) parts.push(pi.speed.toFixed(1)+'x');
-      if (pi.eta_seconds != null) parts.push('ETA '+formatEta(pi.eta_seconds));
-    }
-    return parts.join(' · ');
-  }
-  if (item.state==='pending') return 'Pending';
-  if (item.state==='running') return 'Encoding · '+Math.round(item.progress||0)+'%';
-  if (item.state==='completed') return 'Completed';
-  if (item.state==='failed') return 'Failed';
-  if (item.state==='cancelled') return 'Cancelled';
-  return item.state||'';
-}
-
-function formatEta(seconds) {
-  if (seconds == null || !(seconds >= 0)) return '--';
-  var total = Math.round(seconds), h = Math.floor(total/3600), m = Math.floor((total%3600)/60), s = total%60;
-  if (h > 0) return (h<10?'0':'')+h+':'+(m<10?'0':'')+m+':'+(s<10?'0':'')+s;
-  return (m<10?'0':'')+m+':'+(s<10?'0':'')+s;
-}
-
-async function pollQueue() {
-  if (!api) return;
-  try {
-    var state = await api.getQueueState(), items = state.items||[], running=[], pending=[];
-    mapQueueItems(items);
-    if (!(clipReorder && clipReorder.active)) renderClips();
-    for (var i=0;i<items.length;i++) { if(items[i].state==='running')running.push(items[i]); else if(items[i].state==='pending')pending.push(items[i]); }
-    var done=0, failed=0; for(var j=0;j<items.length;j++){if(['completed','failed','cancelled'].indexOf(items[j].state)>=0)done++;if(items[j].state==='failed')failed++;}
-    var active=running.length+pending.length, total=done+active;
-    if(lastQueueHadActive&&!active)toast(failed?'Processing finished with '+failed+' failure'+(failed===1?'':'s')+'.':'Processing completed.',failed?'err':'ok');
-    lastQueueHadActive=active>0; byId('qbar').classList.toggle('on', items.length>0);
-    if(!items.length)return;
-    if(running.length){
-      var item=running[0], prog=item.progress||0, pi=item.progress_info||{}, status=formatQueueStatus(item);
-      byId('qcnt').textContent=(done+1)+'/'+total;
-      byId('qprog').value=Math.round(prog);
-      byId('qeta').textContent=pi.eta_seconds!=null?'ETA '+formatEta(pi.eta_seconds):(prog>0?'ETA --':'ETA --');
-      byId('qfname').textContent=(item.source||'?')+(status?' · '+status:'');
-    }else if(pending.length){
-      byId('qcnt').textContent=done+'/'+total; byId('qprog').value=0; byId('qeta').textContent='ETA --'; byId('qfname').textContent=pending.length+' pending';
-    }else{
-      byId('qcnt').textContent=done+'/'+total; byId('qprog').value=100; byId('qeta').textContent=''; byId('qfname').textContent='Queue idle';
-    }
-  } catch(e) {}
-}
-
-async function cancelQueueItem(itemId) {
-  if (!api || !itemId || typeof api.cancelItem !== 'function') return;
-  try {
-    var r = await api.cancelItem(itemId);
-    if (!r || !r.ok) toast((r && r.error) || 'Could not cancel item.', 'err');
-    await pollQueue();
-  } catch (err) { toast('Could not cancel item.', 'err'); }
-}
-
-async function retryQueueItem(itemId) {
-  if (!api || !itemId || retryInFlight[itemId]) return;
-  retryInFlight[itemId] = true;
-  try {
-    var r = await api.retryItem(itemId);
-    if (!r.ok) toast(r.error||'Could not retry.', 'err');
-    pollQueue();
-  } finally { delete retryInFlight[itemId]; }
-}
-
-async function openResult(path) {
-  if (!api || !path) return;
-  try {
-    var r = await api.openOutputFolder(path);
-    if (!r || !r.ok) toast((r && r.error) || 'Could not open folder.', 'err');
-  } catch (e) { toast('Could not open folder.', 'err'); }
-}
-
-function buildDiagnosticsContext(itemId) {
-  var ctx = {
-    workflow: wf===1?'upscale':'compression',
-    selected_encoder: byId('enc-sel') ? byId('enc-sel').value : '',
-    profile_name: byId('prof-sel') && byId('prof-sel').selectedOptions[0] ? byId('prof-sel').selectedOptions[0].textContent : '',
-    target_size_mb: byId('sz-slider') ? parseInt(byId('sz-slider').value, 10) : undefined,
-    resolution: (byId('res-mode') && byId('res-mode').value==='custom')
-      ? ((byId('res-w')?byId('res-w').value:'')+'x'+(byId('res-h')?byId('res-h').value:''))
-      : 'source',
-    fps: byId('use-source-fps') && byId('use-source-fps').checked ? 'source' : (byId('fps-val') ? byId('fps-val').value : undefined),
-    two_pass: byId('two-pass') ? byId('two-pass').value==='on' : undefined,
-    preset: byId('preset-sel') ? byId('preset-sel').value : undefined,
-    scaler: byId('scaler-sel') ? byId('scaler-sel').value : undefined,
-    keep_audio: byId('keep-audio') ? !!byId('keep-audio').checked : undefined,
-    audio_bitrate_kbps: byId('audio-br') ? parseInt(byId('audio-br').value, 10) : undefined,
-    rate_control_method: byId('rc-sel') ? byId('rc-sel').value : undefined
-  };
-  if (selPath && clips[selPath]) {
-    var c = clips[selPath];
-    ctx.source_name = c.name || selPath.split(/[\\/]/).pop();
-    if (c.trimStart != null) ctx.trim_start = c.trimStart;
-    if (c.trimEnd != null) ctx.trim_end = c.trimEnd;
-    if (c.planData) {
-      if (c.planData.video_encoder) ctx.resolved_encoder = c.planData.video_encoder;
-      if (c.planData.has_trim) {
-        ctx.trim_start = c.planData.trim_start;
-        ctx.trim_end = c.planData.trim_end;
-      }
-    }
-  }
-  if (itemId) {
-    ctx.item_id = itemId;
-    var item = queueItemsById[itemId];
-    if (item) {
-      if (item.error) ctx.error = item.error;
-      if (item.error_detail) ctx.stderr = item.error_detail;
-    }
-  } else {
-    var failedId = null;
-    for (var id in queueItemsById) {
-      if (queueItemsById.hasOwnProperty(id) && queueItemsById[id].state==='failed') failedId = id;
-    }
-    if (failedId) {
-      ctx.item_id = failedId;
-      var fi = queueItemsById[failedId];
-      if (fi.error) ctx.error = fi.error;
-      if (fi.error_detail) ctx.stderr = fi.error_detail;
-    }
-  }
-  return ctx;
-}
-
-async function copyDiagnostics(itemId) {
-  if (!api) { toast('App API not ready.', 'err'); return; }
-  var ctx = buildDiagnosticsContext(itemId);
-  try {
-    if (typeof api.getDiagnostics !== 'function') {
-      toast('Diagnostics is unavailable in this build.', 'err');
-      return;
-    }
-    var r = await api.getDiagnostics(JSON.stringify(ctx));
-    if (!r || !r.ok || !r.text) {
-      toast((r && r.error) || 'Could not build diagnostics.', 'err');
-      return;
-    }
-    var copied = false;
-    if (typeof api.copyText === 'function') {
-      var cr = await api.copyText(r.text);
-      copied = !!(cr && cr.ok);
-    }
-    if (!copied) {
-      try {
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          await navigator.clipboard.writeText(r.text);
-          copied = true;
-        }
-      } catch (clipErr) {}
-    }
-    if (!copied) {
-      var ta = document.createElement('textarea');
-      ta.value = r.text;
-      ta.setAttribute('readonly', '');
-      ta.style.position = 'fixed';
-      ta.style.left = '-9999px';
-      document.body.appendChild(ta);
-      ta.select();
-      try { copied = document.execCommand('copy'); } catch (cmdErr) { copied = false; }
-      document.body.removeChild(ta);
-    }
-    if (copied) toast('Diagnostics copied to clipboard.', 'ok');
-    else toast('Could not copy diagnostics.', 'err');
-  } catch (e) {
-    toast('Could not copy diagnostics.', 'err');
-  }
-}
-
-async function stopAfterCurrent() {
-  if (!api || typeof api.stopAfterCurrent !== 'function') return;
-  confirmToast('Finish the current job and cancel the rest?', async function(){
-    var r = await api.stopAfterCurrent();
-    if (!r || !r.ok) toast((r && r.error) || 'Could not stop queue.', 'err');
-    else { toast('Queue will stop after the current job.', 'ok'); pollQueue(); }
-  });
-}
-
-async function cancelAll() {
-  if (!api) return;
-  confirmToast('Cancel all processing?', async function(){
-    await api.cancelAllItems();
-    byId('qbar').classList.remove('on');
-    toast('Processing cancelled.', 'ok');
-  });
-}
-async function clearDone() { if (!api) return; var r=await api.clearCompleted(); if(r&&r.ok){for(var p in clips){if(clips.hasOwnProperty(p)&&clips[p]._queueState==='completed')removeClip(p);}toast(r.count===1?'Cleared 1 completed video.':'Cleared '+(r.count||0)+' completed videos.','ok');await pollQueue();}else toast((r&&r.error)||'Could not clear completed videos.','err'); }
-async function pollIpc() {
-  if (!api) return;
-  try {
-    var files = await api.getIpcFiles();
-    var metadata = await api.getIpcMetadata();
-    if (Array.isArray(files) && files.length) addFiles(files);
-    if (metadata && Object.keys(metadata).length) {
-      metadata.files = files;
-      handleIpcMeta(metadata);
-    }
-  } catch(e) {}
-}
-
-async function saveProfileChanges() {
-  if (!api) return;
-  var pid = byId('prof-sel').value; if (!pid) { toast('Select a profile.', 'err'); return; }
-  var name = byId('prof-sel').selectedOptions[0].textContent.split(' (')[0].trim();
-  var data = savePayload(name);
-  var r = await api.updateProfile(pid, JSON.stringify(data));
-  if (r.ok) { await loadSettings(); snapProf(); toast('Changes saved to "'+name+'".', 'ok'); } else toast(r.error, 'err');
-}
-
-async function saveProfileAs() {
-  if (!api) return;
-  showMod('<h2>Save Profile As</h2><div><span>Profile name</span><input type="text" id="sp-name" placeholder="My profile"></div><div class="mod-btns"><button class="btn2" onclick="closeMod()">Cancel</button><button class="btn1" style="width:auto" onclick="doSaveAs()">Save</button></div>');
-  setTimeout(function(){ var inp = byId('sp-name'); if (inp) { inp.focus(); inp.addEventListener('keydown', function(e){ if (e.key==='Enter') doSaveAs(); }); } }, 100);
-}
-async function doSaveAs() {
-  var name = (byId('sp-name').value||'').trim(); if (!name) { toast('Enter a name.', 'err'); return; }
-  closeMod();
-  var data = savePayload(name);
-  var r = await api.createProfile(JSON.stringify(data));
-  if (r.ok) { await loadSettings(); snapProf(); toast('Profile saved as "'+name+'".', 'ok'); } else toast(r.error, 'err');
-}
-
-function savePayload(name) {
-  var sizeMb=parseInt(byId('sz-slider').value), up=wf===1, rcMap={CRF:'crf',CQ:'cq',CBR:'cbr',VBR:'vbr'}, rc=up?(rcMap[byId('rc-sel').value]||'crf'):(isCpuEncoder(byId('enc-sel').value)?'cbr':'vbr'), isBr=rc==='cbr'||rc==='vbr', current=allProfiles.find(function(p){return p.profile_id===byId('prof-sel').value;})||{};
-  if (current.rate_control_method==='cqp' && rc==='cq') rc='cqp';
-  var data={name:name,target_size_mb:sizeMb,resolution_mode:byId('res-mode').value,custom_width:parseInt(byId('res-w').value),custom_height:parseInt(byId('res-h').value),max_width:parseInt(byId('res-w').value),max_height:parseInt(byId('res-h').value),fps_mode:byId('use-source-fps').checked?'source':'custom',custom_fps:parseInt(byId('fps-val').value),max_fps:parseInt(byId('fps-val').value),rate_control:up&&isBr?'explicit_bitrate':'target_size',audio_bitrate_kbps:parseInt(byId('audio-br').value),keep_audio:byId('keep-audio').checked,two_pass:!up&&byId('two-pass').value==='on',preset:byId('preset-sel').value,scaler:byId('scaler-sel').value.toLowerCase(),video_encoder:byId('enc-sel').value,workflow:up?'upscale':'compression',rate_control_method:rc,cq:rc==='cq'?parseInt(byId('quality-val').value):(current.cq||23),qp:rc==='cqp'?parseInt(byId('quality-val').value):(current.qp||23),crf:rc==='crf'?parseInt(byId('quality-val').value):(current.crf||23)};
-  if (up&&isBr) data.explicit_bitrate_kbps=parseInt(byId('br-val').value);
-  if (up&&isCpuEncoder(byId('enc-sel').value)) data.tune=byId('tune-sel').value==='none'?'':byId('tune-sel').value;
-  return data;
-}
-
-var settingsPage = 'general', settingsView = 'page', settingsProfileId = '', settingsFilter = 'all', editorOriginal = null, editorSnapshot = '';
-function valueOr(value, fallback) { return value===undefined||value===null?fallback:value; }
-function settingsShell(page, content, actions) {
-  var actionBar=byId('settings-actions');
-  document.body.classList.add('settings-open');
-  byId('settings-page').innerHTML='<div class="settings-page-inner">'+content+'</div>';
-  actionBar.className='settings-actions '+(actions.split?'split':'');
-  actionBar.innerHTML=actions.html?(actions.plain?actions.html:'<span class="settings-unsaved" id="settings-unsaved">Unsaved changes</span><span class="settings-action-spacer"></span>'+actions.html):'';
-  ['general','output','profiles','explorer','system'].forEach(function(name){var button=byId('settings-nav-'+name),active=name===page;button.classList.toggle('on',active);button.setAttribute('aria-current',active?'page':'false');});
-}
-function toggleSettings(){if(document.body.classList.contains('settings-open'))closeSettings();else openSettings();}
-function settingButton(label, action, primary) { return '<button class="'+(primary?'btn1':'btn2')+'" onclick="'+action+'">'+label+'</button>'; }
-function profileSummary(p) { var up=(p.workflow||'compression')==='upscale', res=p.resolution_mode==='custom'?(p.custom_width||p.max_width)+' × '+(p.custom_height||p.max_height):'Source resolution', fps=p.fps_mode==='custom'?Math.round(p.custom_fps||p.max_fps||30)+' FPS':'Source FPS', audio=p.keep_audio?'Keep audio':(p.audio_bitrate_kbps||128)+' kbps audio'; return (up?'Upscale':'Compress')+' · '+(up?'':Math.round((p.target_size_bytes||0)/(1024*1024))+' MB · ')+res+' · '+fps+' · '+audio; }
-async function refreshPMList(filter) {
-  settingsFilter=filter||settingsFilter; var list=byId('pm-list');if(!list)return;var profiles=await api.getProfilesJson();list.innerHTML='';
-  ['all','compression','upscale'].forEach(function(k){var b=byId('pm-'+k);if(b)b.classList.toggle('on',k===settingsFilter);});
-  profiles.forEach(function(p){if(settingsFilter!=='all'&&(p.workflow||'compression')!==settingsFilter)return;var row=document.createElement('div'),badge=p.profile_id===appSettings.default_profile_id?'<span class="settings-badge">Default</span>':'';row.className='settings-list-row';row.innerHTML='<div class="settings-list-main"><strong>'+esc(p.name)+'</strong><span>'+esc(profileSummary(p))+'</span>'+badge+'</div><button class="btn2" onclick="editProf(\''+escJS(p.profile_id)+'\')">Edit</button><details class="profile-actions-menu"><summary class="mbtn" aria-label="More actions for '+esc(p.name)+'">•••</summary><div class="profile-actions-popover"><button onclick="dupProf(\''+escJS(p.profile_id)+'\')">Duplicate</button><button class="danger" onclick="delProf(\''+escJS(p.profile_id)+'\',\''+escJS(p.name)+'\')">Delete</button></div></details>';list.appendChild(row);});
-  if(!list.children.length)list.innerHTML='<div class="settings-empty">No matching profiles.</div>';
-}
-async function editProf(pid) { openSettings('profiles','editor',pid); }
-async function newProf() { openSettings('profiles','editor',''); }
-async function dupProf(pid) { var r=await api.duplicateProfile(pid);if(r.ok){await loadSettings();refreshPMList();toast('Profile duplicated.','ok');}else toast(r.error,'err'); }
-async function delProf(pid,name) { confirmToast('Delete "'+name+'"?',function(){api.deleteProfile(pid).then(async function(r){if(r.ok){await loadSettings();refreshPMList();toast('Profile deleted.','ok');}else toast(r.error,'err');});}); }
-async function importProfs() { var r=await api.pickImportFile();if(!r.ok||!r.path)return;var result=await api.importProfilesFromFile(r.path);if(result.ok){await loadSettings();refreshPMList();toast('Profiles imported.','ok');}else toast(result.error,'err'); }
-async function exportProfs() { var r=await api.pickSaveFile('profiles.json');if(!r.ok||!r.path)return;var result=await api.exportProfilesToFile(r.path);if(result.ok)toast('Profiles exported.','ok');else toast(result.error,'err'); }
-function settingsTitle(title, action) { return '<div class="settings-title-row">'+(action?'<button class="settings-title-back" aria-label="Back" onclick="'+action+'">←</button>':'')+'<h3 class="settings-title">'+title+'</h3></div>'; }
-function profileEditorHTML() { return settingsTitle(settingsProfileId?'Edit profile':'New profile','backToProfiles()')+'<div class="settings-grid"><div class="settings-field full"><label for="pe-name">Profile name</label><input id="pe-name" type="text"></div><div class="settings-field full"><label>Task</label><div class="profile-editor-task"><button id="pe-c" onclick="peSetTask(\'compression\')">Compress</button><button id="pe-u" onclick="peSetTask(\'upscale\')">Upscale</button></div></div><div class="settings-sec full" id="pe-size-sec"><h3>Target Size</h3><div class="sl-row"><input id="pe-size-range" type="range" min="2" max="500" value="50" oninput="peSetSize(this.value)"><input id="pe-size" type="number" min="2" value="50" aria-label="Target size in MB" oninput="peSetSize(this.value)"><span>MB</span></div><div class="pset"><button onclick="peSetSize(10)">10 MB</button><button onclick="peSetSize(50)">50 MB</button><button onclick="peSetSize(100)">100 MB</button><button onclick="peSetSize(500)">500 MB</button></div></div><div class="settings-sec full"><h3>Resolution</h3><div class="info-row" id="pe-source-res-row"><span>Use source resolution</span><label class="chk"><input id="pe-source-res" type="checkbox" onchange="peVisibility()"><span class="chk-box"></span><span>Source</span></label></div><div class="row" id="pe-dim"><input id="pe-w" type="number" min="1" aria-label="Custom width"><span>×</span><input id="pe-h" type="number" min="1" aria-label="Custom height"></div><div id="pe-scaler-row" class="settings-field"><label for="pe-scaler">Scaler</label><select id="pe-scaler"><option>Bilinear</option><option>Bicubic</option><option>Lanczos</option><option>Point</option><option>Neighbor</option></select></div></div><div class="settings-sec full"><h3>Frame Rate</h3><div class="info-row"><span>Use source frame rate</span><label class="chk"><input id="pe-source-fps" type="checkbox" onchange="peVisibility()"><span class="chk-box"></span><span>Source</span></label></div><div id="pe-fps-row" class="sl-row"><input id="pe-fps-range" type="range" min="1" max="240" value="30" oninput="peSetFps(this.value)"><input id="pe-fps" type="number" min="1" max="240" value="30" aria-label="Custom frame rate" oninput="peSetFps(this.value)"><span>fps</span></div></div><div class="settings-sec full"><h3>Audio</h3><div class="info-row"><span>Keep source audio</span><label class="chk"><input id="pe-audio-source" type="checkbox" onchange="peVisibility()"><span class="chk-box"></span><span>Source</span></label></div><div class="settings-field"><label for="pe-audio">Audio bitrate (kbps)</label><input id="pe-audio" type="number" min="0" max="320"></div></div><div class="settings-sec full"><h3>Encoding</h3><div class="settings-field"><label for="pe-enc">Encoder</label><select id="pe-enc" onchange="peEncoderChanged()"></select></div><span class="setting-note">Hardware is faster; software can produce smaller files.</span><div class="settings-field"><label for="pe-speed">Encoding speed</label><select id="pe-speed" onchange="peSpeedChanged()"><option value="fast">Fast</option><option value="balanced">Balanced</option><option value="best">Best compression</option></select></div><div id="pe-two-pass-row" class="settings-field"><label for="pe-two-pass">Two-pass encoding</label><select id="pe-two-pass"><option value="on">On</option><option value="off">Off</option></select><span id="pe-two-pass-note" class="help-tip">Two-pass is available only for software compression.</span></div><button class="advanced-toggle" id="pe-advanced-button" onclick="peToggleAdvanced()" aria-expanded="false"><span>Advanced encoding</span><span class="advanced-arrow">⌄</span></button><div id="pe-advanced" class="hid"><div class="settings-field"><label for="pe-preset">Native FFmpeg preset</label><select id="pe-preset" onchange="pePresetChanged()"></select></div><div class="settings-field" id="pe-rc-row"><label for="pe-rc">Quality method</label><select id="pe-rc" onchange="peVisibility()"></select></div><div class="settings-field" id="pe-quality-row"><label id="pe-quality-label" for="pe-quality">CQ</label><input id="pe-quality" type="number" min="0" max="51"><span class="help-tip">Lower value = higher quality.</span></div><div class="settings-field" id="pe-bitrate-row"><label for="pe-bitrate">Bitrate (kbps)</label><input id="pe-bitrate" type="number" min="50" max="50000"></div><div class="settings-field" id="pe-tune-row"><label for="pe-tune">Tune</label><select id="pe-tune"></select></div></div></div></div>'; }
-function peTask(){return byId('pe-u').classList.contains('on')?'upscale':'compression';}
-function peSetTask(task){byId('pe-c').classList.toggle('on',task==='compression');byId('pe-u').classList.toggle('on',task==='upscale');byId('pe-size-sec').classList.toggle('hid',task==='upscale');byId('pe-source-res-row').classList.toggle('hid',task==='upscale');if(task==='upscale')byId('pe-source-res').checked=false;peRateControls();peVisibility();}
-function peSetSize(value){var n=Math.max(2,parseInt(value)||2);byId('pe-size').value=n;byId('pe-size-range').max=Math.max(500,n);byId('pe-size-range').value=n;}
-function peSetFps(value){var n=Math.max(1,Math.min(240,parseFloat(value)||30));byId('pe-fps').value=n;byId('pe-fps-range').value=n;}
-function populateEditorEncoders(){populateEncoders('pe-enc');}
-function pePresets(){populatePresets('pe-preset',byId('pe-enc').value,'pe-speed');}
-function peTunes(){populateTunes('pe-tune',byId('pe-enc').value);}
-function peRateControls(){populateRateControls('pe-rc',peTask(),byId('pe-enc').value);}
-function peEncoderChanged(){pePresets();if(byId('pe-enc').value==='auto_compression'){byId('pe-two-pass').value='on';byId('pe-preset').value='veryslow';}peTunes();peRateControls();peVisibility();}
-function peSpeedChanged(){byId('pe-preset').value=nativePresetForSpeed(byId('pe-speed').value,byId('pe-enc').value);}
-function pePresetChanged(){byId('pe-speed').value=speedForNativePreset(byId('pe-preset').value);}
-function peVisibility(){var up=peTask()==='upscale',source=byId('pe-source-res').checked,sourceFps=byId('pe-source-fps').checked,keep=byId('pe-audio-source').checked,rc=byId('pe-rc').value,cpu=!isAutoEncoder(byId('pe-enc').value)&&isCpuEncoder(byId('pe-enc').value),twoPass=twoPassEligible(peTask(),byId('pe-enc').value),quality=up&&(rc==='CRF'||rc==='CQ');byId('pe-dim').classList.toggle('hid',source);byId('pe-scaler-row').classList.toggle('hid',source);byId('pe-fps-row').classList.toggle('hid',sourceFps);byId('pe-audio').disabled=keep;byId('pe-two-pass-row').classList.toggle('hid',up);byId('pe-two-pass-note').classList.toggle('hid',!(!up&&!twoPass));byId('pe-two-pass').disabled=!twoPass;if(!twoPass)byId('pe-two-pass').value='off';byId('pe-rc-row').classList.toggle('hid',!up);byId('pe-quality-row').classList.toggle('hid',!quality);byId('pe-bitrate-row').classList.toggle('hid',!(up&&(rc==='CBR'||rc==='VBR')));byId('pe-tune-row').classList.toggle('hid',!(up&&cpu));byId('pe-quality-label').textContent=rc==='CRF'?'CRF':'CQ';}
-function peToggleAdvanced(){var el=byId('pe-advanced'),open=el.classList.contains('hid');el.classList.toggle('hid',!open);byId('pe-advanced-button').setAttribute('aria-expanded',String(open));byId('pe-advanced-button').querySelector('.advanced-arrow').textContent=open?'⌃':'⌄';}
-function pePayload(){var original=editorOriginal||{},task=peTask(),rcDisplay=byId('pe-rc').value,rcMap={CRF:'crf',CQ:'cq',CBR:'cbr',VBR:'vbr'},rc=rcMap[rcDisplay],quality=parseInt(byId('pe-quality').value);if(!Number.isFinite(quality))quality=23;if(original.rate_control_method==='cqp'&&rcDisplay==='CQ')rc='cqp';var data={name:byId('pe-name').value.trim()||'Profile',target_size_mb:parseInt(byId('pe-size').value)||50,resolution_mode:byId('pe-source-res').checked?'source':'custom',custom_width:parseInt(byId('pe-w').value)||1920,custom_height:parseInt(byId('pe-h').value)||1080,max_width:parseInt(byId('pe-w').value)||1920,max_height:parseInt(byId('pe-h').value)||1080,fps_mode:byId('pe-source-fps').checked?'source':'custom',custom_fps:parseFloat(byId('pe-fps').value)||30,max_fps:parseFloat(byId('pe-fps').value)||30,audio_bitrate_kbps:parseInt(byId('pe-audio').value)||0,keep_audio:byId('pe-audio-source').checked,two_pass:twoPassEligible(task,byId('pe-enc').value)&&byId('pe-two-pass').value==='on',preset:byId('pe-preset').value,scaler:byId('pe-scaler').value.toLowerCase(),video_encoder:byId('pe-enc').value,workflow:task,rate_control_method:rc,rate_control:task==='upscale'&&(rc==='cbr'||rc==='vbr')?'explicit_bitrate':'target_size',crf:rc==='crf'?quality:valueOr(original.crf,23),cq:rc==='cq'?quality:valueOr(original.cq,23),qp:rc==='cqp'?quality:valueOr(original.qp,23),tune:task==='upscale'&&isCpuEncoder(byId('pe-enc').value)&&(byId('pe-tune').value!=='none')?byId('pe-tune').value:''};if(task==='upscale'&&(rc==='cbr'||rc==='vbr'))data.explicit_bitrate_kbps=parseInt(byId('pe-bitrate').value)||2000;return data;}
-async function hydrateEditor(){populateEditorEncoders();var p=null;if(settingsProfileId){var profiles=await api.getProfilesJson();p=profiles.find(function(x){return x.profile_id===settingsProfileId;});}editorOriginal=p||{};var scaler=p?p.scaler:(appSettings.default_scaler||'neighbor'),fps=p?Math.round(valueOr(p.custom_fps,valueOr(p.max_fps,30))):30;byId('pe-name').value=p?p.name:'';peSetSize(p?Math.round(valueOr(p.target_size_bytes,50*1024*1024)/(1024*1024)):50);byId('pe-w').value=p?valueOr(p.custom_width,valueOr(p.max_width,1920)):1920;byId('pe-h').value=p?valueOr(p.custom_height,valueOr(p.max_height,1080)):1080;byId('pe-scaler').value=scaler==='neighbor'?'Neighbor':scaler[0].toUpperCase()+scaler.slice(1);byId('pe-source-res').checked=p?p.resolution_mode!=='custom':true;byId('pe-source-fps').checked=p?p.fps_mode!=='custom':true;peSetFps(fps);byId('pe-audio-source').checked=!!(p&&p.keep_audio);byId('pe-audio').value=p?valueOr(p.audio_bitrate_kbps,128):128;byId('pe-enc').value=p?valueOr(p.video_encoder,'libx264'):'libx264';peEncoderChanged();byId('pe-preset').value=p?valueOr(p.preset,nativePresetForSpeed('balanced',byId('pe-enc').value)):nativePresetForSpeed('balanced',byId('pe-enc').value);pePresetChanged();byId('pe-two-pass').value=p&&p.two_pass?'on':'off';byId('pe-quality').value=p?(p.rate_control_method==='crf'?valueOr(p.crf,23):(p.rate_control_method==='cqp'?valueOr(p.qp,23):valueOr(p.cq,23))):23;byId('pe-bitrate').value=p?valueOr(p.explicit_bitrate_kbps,2000):2000;peSetTask(p&&p.workflow==='upscale'?'upscale':'compression');byId('pe-rc').value={crf:'CRF',cq:'CQ',cqp:'CQ',cbr:'CBR',vbr:'VBR'}[p?p.rate_control_method:'cbr']||'CRF';peVisibility();editorSnapshot=JSON.stringify(pePayload());}
-function editorDirty(){return editorSnapshot&&JSON.stringify(pePayload())!==editorSnapshot;}
-function backToProfiles(){if(editorDirty())confirmToast('Discard unsaved profile changes?',function(){settingsView='page';settingsProfileId='';openSettings('profiles');});else{settingsView='page';settingsProfileId='';openSettings('profiles');}}
-async function saveProfEdit(){var r=settingsProfileId?await api.updateProfile(settingsProfileId,JSON.stringify(pePayload())):await api.createProfile(JSON.stringify(pePayload()));if(r.ok){await loadSettings();settingsView='page';settingsProfileId='';openSettings('profiles');toast('Profile saved.','ok');}else toast(r.error,'err');}
-
-function markSettingsDirty(){settingsDirty=true;var indicator=byId('settings-unsaved');if(indicator){indicator.textContent='Unsaved changes';indicator.classList.add('on');}}
-function generalSettingsHTML(s,profiles){
-  var options=profiles.map(function(p){return '<option value="'+esc(p.profile_id)+'">'+esc(p.name)+'</option>';}).join('');
-  var scalers=['Bilinear','Bicubic','Lanczos','Point','Neighbor'].map(function(x){return '<option '+(x.toLowerCase()===(s.default_scaler||'neighbor')?'selected':'')+'>'+x+'</option>';}).join('');
-  return '<div class="settings-card"><div class="settings-card-title">Task defaults</div><div class="settings-card-copy">Applied when a profile does not provide its own value.</div><div class="settings-grid"><div class="settings-field"><label for="set-dp">Default profile</label><select id="set-dp" onchange="markSettingsDirty()">'+options+'</select></div><div class="settings-field"><label for="set-ds">Default scaler</label><select id="set-ds" onchange="markSettingsDirty()">'+scalers+'</select></div></div></div><div class="settings-card"><div class="settings-card-title">Queue cleanup</div><div class="settings-card-copy">Choose what happens to successful jobs after processing.</div><label class="chk"><input id="set-auto-clear" type="checkbox" '+(s.clear_completed_automatically?'checked':'')+' onchange="markSettingsDirty()"><span class="chk-box"></span><span>Clear completed jobs automatically</span></label><span class="help-tip">Failed and cancelled jobs remain available for inspection or retry.</span></div>';
-}
-function outputSettingsHTML(s){
-  return '<div class="settings-card"><div class="settings-card-title">Output location</div><div class="settings-card-copy">Save beside each source file, or choose one folder for every completed export.</div><div class="row"><div id="set-od" class="settings-readonly" style="flex:1" data-path="'+esc(s.output_dir||'')+'">'+esc(s.output_dir||'Next to each source file')+'</div><button class="btn2" onclick="browseOut()">Browse…</button><button class="btn2" onclick="clearOut()">Use source folder</button></div></div><section class="file-naming"><h3>File names</h3><div class="settings-grid"><div class="settings-field"><label for="set-cs">Compress suffix</label><input id="set-cs" value="'+esc(s.compression_suffix||'_tucked_{size}')+'" oninput="markSettingsDirty();updateExampleOutput()"><div class="settings-token-row"><button class="settings-token" onclick="insertNamingToken(\'set-cs\',\'{size}\')">{size}</button></div></div><div class="settings-field"><label for="set-us">Upscale suffix</label><input id="set-us" value="'+esc(s.upscale_suffix||'_upscaled_{width}x{height}')+'" oninput="markSettingsDirty();updateExampleOutput()"><div class="settings-token-row"><button class="settings-token" onclick="insertNamingToken(\'set-us\',\'{width}\')">{width}</button><button class="settings-token" onclick="insertNamingToken(\'set-us\',\'{height}\')">{height}</button></div></div><div class="file-naming-example full"><span>Compress preview</span><div class="example-out" id="ex-out"></div></div><div class="file-naming-example full"><span>Upscale preview</span><div class="example-out" id="ex-up-out"></div></div></div></section>';
-}
-function profilesSettingsHTML(){
-  return '<div class="settings-profile-filterbar"><div class="ft profile-filters" role="group" aria-label="Filter profiles"><button id="pm-all" class="on" onclick="refreshPMList(\'all\')">All</button><button id="pm-compression" onclick="refreshPMList(\'compression\')">Compress</button><button id="pm-upscale" onclick="refreshPMList(\'upscale\')">Upscale</button></div></div><div id="pm-list" class="settings-list"></div>';
-}
-function explorerSettingsHTML(){
-  return '<div class="settings-card"><div class="settings-card-title">Windows Send to shortcuts</div><div class="settings-card-copy">Send videos into Tuck directly from File Explorer. Broken shortcuts can be repaired in place.</div><div id="st-list" class="settings-list"></div></div>';
-}
-function encoderDisplaySummary(encoders){
-  var labels=[];if(encoders.some(function(x){return x.indexOf('nvenc')>=0;}))labels.push('NVIDIA');if(encoders.some(function(x){return x.indexOf('amf')>=0;}))labels.push('AMD');if(encoders.some(function(x){return x.indexOf('qsv')>=0;}))labels.push('Intel');if(encoders.some(function(x){return x.indexOf('libx')===0;}))labels.push('CPU');return labels.join(' · ')||'None detected';
-}
-function systemSettingsHTML(s){
-  var ffmpegReady=!!s.ffmpeg_available,ffprobeReady=!!s.ffprobe_available,encoders=s.available_encoders||[];
-  return '<div class="settings-card"><div class="settings-card-title">System status</div><div class="settings-status-table" aria-label="System readiness"><div class="settings-status-row"><div>FFmpeg</div><div class="settings-status-value"><span class="'+(ffmpegReady?'status-good':'status-warn')+'">'+(ffmpegReady?'Ready':'Missing')+'</span> · '+esc(s.ffmpeg_path||s.detected_ffmpeg_path||'Automatic detection')+'</div><div class="settings-status-actions"><button class="btn2" onclick="browseFfmpeg()">Change</button></div></div><div class="settings-status-row"><div>FFprobe</div><div class="settings-status-value"><span class="'+(ffprobeReady?'status-good':'status-warn')+'">'+(ffprobeReady?'Ready':'Missing')+'</span> · '+esc(s.ffprobe_path||s.detected_ffprobe_path||'Automatic detection')+'</div><div class="settings-status-actions"><button class="btn2" onclick="browseFfprobe()">Change</button></div></div><div class="settings-status-row"><div>Encoders</div><div class="settings-status-value">'+esc(encoderDisplaySummary(encoders))+'</div><div class="settings-status-actions"><button class="btn2" onclick="refreshEncoders()">Rescan</button></div></div><div class="settings-status-row"><div>WebView2</div><div class="settings-status-value"><span class="status-good">Ready</span> · Edge runtime</div><div class="settings-status-actions"></div></div></div></div><div class="settings-card"><div class="settings-card-title">Updates</div><div class="settings-list-row"><div class="settings-list-main"><strong>Tuck '+esc(s.version||'')+'</strong><span>'+(s.last_update_check?'Last checked: '+esc(s.last_update_check):'Current update status: ready to check.')+'</span></div><button class="btn2" onclick="checkUpdatesFromSettings()">Check now</button></div><label class="chk" style="margin-top:12px"><input id="set-check-updates" type="checkbox" '+(s.check_updates?'checked':'')+' onchange="markSettingsDirty()"><span class="chk-box"></span><span>Check automatically at startup</span></label></div><div class="settings-card"><div class="settings-card-title">Support</div><div class="settings-card-copy">Copy a sanitized report containing versions, encoder status, and recent errors.</div><div class="settings-support-actions"><button class="btn1" onclick="copyDiagnostics()">Copy diagnostics</button><button class="btn2" onclick="openSupportFolder(\'logs\')">Open logs folder</button><button class="btn2" onclick="openSupportFolder(\'config\')">Open configuration folder</button></div></div><details class="settings-advanced"><summary>Advanced system settings</summary><div class="settings-advanced-body settings-grid"><div class="settings-field full"><label for="set-ffmpeg">Custom FFmpeg path</label><div class="row"><div id="set-ffmpeg" class="settings-readonly" style="flex:1" data-path="'+esc(s.ffmpeg_path||'')+'">'+esc(s.ffmpeg_path||'Use PATH or automatic detection')+'</div><button class="btn2" onclick="clearFfmpeg()">Use automatic</button></div></div><div class="settings-field full"><label for="set-ffprobe">Custom FFprobe path</label><div class="row"><div id="set-ffprobe" class="settings-readonly" style="flex:1" data-path="'+esc(s.ffprobe_path||'')+'">'+esc(s.ffprobe_path||'Use PATH or automatic detection')+'</div><button class="btn2" onclick="clearFfprobe()">Use automatic</button></div></div><div class="settings-field full"><label for="set-encoder-cache-days">Encoder detection cache</label><select id="set-encoder-cache-days" onchange="markSettingsDirty()"><option value="0">Disabled</option><option value="1">1 day</option><option value="7">7 days</option><option value="30">30 days</option><option value="90">90 days</option></select><span class="help-tip">Caching hardware probes makes startup faster.</span></div></div></details>';
-}
-async function openSettings(page,view,profileId){
-  if(!api)return;
-  settingsPage=page||settingsPage;settingsView=view||'page';if(profileId!==undefined)settingsProfileId=profileId;
-  var s=await api.getSettings(),profiles=s.profiles||[],content='',actions={html:''};
-  if(settingsPage==='profiles'&&settingsView==='editor'){
-    settingsShell('profiles',profileEditorHTML(),{html:settingButton('Cancel','backToProfiles()')+settingButton('Save profile','saveProfEdit()',true)});
-    await hydrateEditor();return;
-  }
-  if(settingsPage==='general'){
-    content=generalSettingsHTML(s,profiles);actions={html:settingButton('Save changes','saveSettings()',true)};
-  }else if(settingsPage==='output'){
-    content=outputSettingsHTML(s);actions={html:settingButton('Save changes','saveOutputSettings()',true)};
-  }else if(settingsPage==='profiles'){
-    content=profilesSettingsHTML();actions={plain:true,html:settingButton('Import','importProfs()')+settingButton('Export','exportProfs()')+'<span class="settings-action-spacer"></span>'+settingButton('+ New profile','newProf()',true)};
-  }else if(settingsPage==='explorer'){
-    content=explorerSettingsHTML();actions={html:settingButton('+ Add shortcut','instProfSt()',true)};
-  }else{
-    content=systemSettingsHTML(s);actions={html:settingButton('Save changes','saveSystemSettings()',true)};
-  }
-  settingsShell(settingsPage,content,actions);
-  settingsDirty=false;
-  if(settingsPage==='general')byId('set-dp').value=s.default_profile_id||'';
-  if(settingsPage==='output')updateExampleOutput();
-  if(settingsPage==='profiles')await refreshPMList(settingsFilter);
-  if(settingsPage==='explorer')await refreshSTList();
-  if(settingsPage==='system')byId('set-encoder-cache-days').value=String(s.encoder_cache_days||0);
-}
-function navigateSettings(page){
-  if(settingsView==='editor')return backToProfiles();
-  if(settingsDirty)confirmToast('Discard unsaved settings?',function(){settingsDirty=false;openSettings(page);});else openSettings(page);
-}
-function closeSettings(){
-  if(settingsView==='editor')return confirmToast('Discard unsaved profile changes?',function(){settingsView='page';settingsProfileId='';closeSettingsWorkspace();});
-  if(settingsDirty)return confirmToast('Discard unsaved settings?',function(){settingsDirty=false;closeSettingsWorkspace();});
-  closeSettingsWorkspace();
-}
-function closeSettingsWorkspace(){document.body.classList.remove('settings-open');}
-function clearPath(id,placeholder){byId(id).dataset.path='';byId(id).textContent=placeholder;}
-async function browseOut(){var r=await api.pickFolder();if(r.ok&&r.path){byId('set-od').dataset.path=r.path;byId('set-od').textContent=r.path;markSettingsDirty();}}
-function clearOut(){clearPath('set-od','Next to each source file');markSettingsDirty();}
-async function browseFfmpeg(){var r=await api.pickFfmpegFile();if(r.ok&&r.path){byId('set-ffmpeg').dataset.path=r.path;byId('set-ffmpeg').textContent=r.path;markSettingsDirty();}}
-async function browseFfprobe(){var r=await api.pickFfprobeFile();if(r.ok&&r.path){byId('set-ffprobe').dataset.path=r.path;byId('set-ffprobe').textContent=r.path;markSettingsDirty();}}
-function clearFfmpeg(){clearPath('set-ffmpeg','Use PATH or automatic detection');markSettingsDirty();}
-function clearFfprobe(){clearPath('set-ffprobe','Use PATH or automatic detection');markSettingsDirty();}
-async function persistSettings(data){var r=await api.saveSettings(JSON.stringify(data));if(r.ok){appSettings=Object.assign(appSettings,data);settingsDirty=false;var indicator=byId('settings-unsaved');if(indicator){indicator.textContent='Saved';indicator.classList.add('on');setTimeout(function(){if(indicator)indicator.classList.remove('on');},1200);}await loadSettings();toast('Settings saved.','ok');return true;}toast(r.error,'err');return false;}
-async function saveSettings(){await persistSettings({default_profile_id:byId('set-dp').value,default_scaler:byId('set-ds').value.toLowerCase(),clear_completed_automatically:byId('set-auto-clear').checked});}
-async function saveOutputSettings(){await persistSettings({output_dir:byId('set-od').dataset.path||'',compression_suffix:byId('set-cs').value.trim()||'_tucked_{size}',upscale_suffix:byId('set-us').value.trim()||'_upscaled_{width}x{height}'});}
-async function saveSystemSettings(){await persistSettings({ffmpeg_path:byId('set-ffmpeg').dataset.path||'',ffprobe_path:byId('set-ffprobe').dataset.path||'',encoder_cache_days:parseInt(byId('set-encoder-cache-days').value),check_updates:byId('set-check-updates').checked});}
-async function refreshEncoders(){if(settingsDirty){confirmToast('Refresh encoders and discard unsaved settings?',function(){settingsDirty=false;refreshEncoders();});return;}var r=await api.refreshEncoders();if(r.ok){availEncoders=r.available_encoders||[];updateEncOpts();toast('Encoder detection refreshed.','ok');openSettings('system');}else toast(r.error||'Could not refresh encoders.','err');}
-function insertNamingToken(id,token){var input=byId(id);if(!input.value.includes(token))input.value+=token;markSettingsDirty();updateExampleOutput();input.focus();}
-async function openSupportFolder(kind){var r=kind==='logs'?await api.openLogsFolder():await api.openConfigFolder();if(!r.ok)toast(r.error||'Could not open folder.','err');}
-function updateExampleOutput(){var compress=byId('set-cs'),upscale=byId('set-us');if(compress&&byId('ex-out'))byId('ex-out').textContent='video'+(compress.value.trim()||'_tucked_{size}').replace('{size}','10MB')+'.mp4';if(upscale&&byId('ex-up-out'))byId('ex-up-out').textContent='video'+(upscale.value.trim()||'_upscaled_{width}x{height}').replace('{width}','1920').replace('{height}','1080')+'.mp4';}
-function profileShortcutName(id){var p=allProfiles.find(function(x){return x.profile_id===id;});return p?p.name:'Profile shortcut';}
-async function refreshSTList(){var list=byId('st-list');if(!list)return;var r=await api.listSendtoShortcuts();list.innerHTML='';(r.shortcuts||[]).forEach(function(s){var row=document.createElement('div'),profile=s.type==='profile'?profileShortcutName(s.profile_id||s.name||''):'Default shortcut',status=s.status==='ok'?'Installed':s.status==='broken'?'Needs repair':s.status==='missing'?'Missing':s.status||'Unknown';row.className='settings-list-row';row.innerHTML='<div class="settings-list-main"><strong>'+esc(s.name||profile)+'</strong><span>'+esc(profile)+'</span><span class="'+(s.status==='ok'?'settings-badge':'status-warn')+'">'+esc(status)+'</span></div>';var repair=document.createElement('button');repair.className='btn2';repair.textContent='Repair';repair.onclick=function(){repairSt(s);};var remove=document.createElement('button');remove.className='btn2';remove.style.color='var(--danger)';remove.textContent='Remove';remove.onclick=function(){removeSt(s);};row.appendChild(repair);row.appendChild(remove);list.appendChild(row);});if(!list.children.length)list.innerHTML='<div class="settings-empty">No Explorer shortcuts installed.</div>';}
-async function instProfSt(){var profiles=await api.getProfilesJson(),content=settingsTitle('Add shortcut',"openSettings('explorer')")+'<div style="display:flex;flex-direction:column;gap:6px"><button class="mrow" onclick="instGenSt()"><div class="mi"><div class="mti">Tuck</div><div class="mme">Default shortcut</div></div></button>';profiles.forEach(function(p){content+='<button class="mrow" onclick="installProfileSt(\''+escJS(p.profile_id)+'\',\''+escJS(p.name)+'\')"><div class="mi"><div class="mti">'+esc(p.name)+'</div><div class="mme">'+esc(profileSummary(p))+'</div></div></button>';});content+='</div>';settingsShell('explorer',content,{html:''});}
-async function instGenSt(){var r=await api.installGenericSendto();if(r.ok)toast('Default Explorer shortcut installed.','ok');else toast(r.error||'Failed','err');openSettings('explorer');}
-async function installProfileSt(pid,name){var r=await api.installProfileSendto(pid,'start');if(r.ok)toast('Added "'+name+'" to Explorer.','ok');else toast(r.error||'Failed','err');openSettings('explorer');}
-async function removeSt(data){confirmToast('Remove shortcut?',function(){(data.type==='generic'?api.removeGenericSendto():api.removeProfileSendto(data.profile_id||data.name||'')).then(function(r){if(r.ok)toast('Shortcut removed.','ok');else toast(r.error||'Failed','err');refreshSTList();});});}
-async function repairSt(data){var r=data.type==='generic'?await api.installGenericSendto():await api.repairProfileSendto(data.profile_id||data.name||'');if(r.ok)toast('Shortcut repaired.','ok');else toast(r.error||'Failed','err');refreshSTList();}
-
-async function checkUpdates(silent) {
-  if (!api) return;
-  var r = await api.checkForUpdates();
-  if (r.error) { if (!silent) toast('Update check failed: '+r.error, 'err'); return; }
-  if (!r.available) { if (!silent) toast('Running latest version.', 'ok'); return; }
-  showUpdateModal(r);
-}
-async function checkUpdatesFromSettings() { await checkUpdates(false); }
-
-window.handleIpcMeta = function(meta) {
-  if (meta.profile_id) { var sel=byId('prof-sel'); for (var i=0;i<sel.options.length;i++){if(sel.options[i].value===meta.profile_id){sel.selectedIndex=i;onProfileChange();break;}} }
-  if (meta.action==='start'&&meta.files&&meta.files.length&&meta.profile_id) { setTimeout(function(){var reqs=meta.files.map(function(f){var r=buildReq(f);r.profile_id=meta.profile_id;return r;});api.enqueueBatch(JSON.stringify(reqs));pollQueue();},500); }
-};
-window.handleSendto = function(data) {
-  if (data.profile_id) { var sel=byId('prof-sel'); for (var i=0;i<sel.options.length;i++){if(sel.options[i].value===data.profile_id){sel.selectedIndex=i;onProfileChange();break;}} }
-  if (data.action==='start'&&data.files&&data.files.length&&data.profile_id) { setTimeout(function(){var reqs=data.files.map(function(f){var r=buildReq(f);r.profile_id=data.profile_id;return r;});api.enqueueBatch(JSON.stringify(reqs));pollQueue();},500); }
-};
-
-function formFieldFocused() {
-  var el = document.activeElement;
-  return el && (el.matches('input, select, textarea, button') || el.isContentEditable);
-}
-function moveSelection(delta) {
-  var keys = orderedClipKeys(); if (!keys.length) return;
-  var index = selPath ? keys.indexOf(selPath) : 0;
-  index = Math.max(0, Math.min(keys.length-1, index+delta));
-  selectClip(keys[index]);
-}
-new ResizeObserver(function(entries){
-  var width = Math.round(entries[0].contentRect.width);
-  if (width>=180 && width<=360) { byId('left').style.width=width+'px'; persistSession(); }
-}).observe(byId('left'));
-window.addEventListener('keydown', function(e) {
-  if (e.ctrlKey && e.key.toLowerCase()==='o') { e.preventDefault(); browse(); return; }
-  if (e.ctrlKey && e.key===',') { e.preventDefault(); toggleSettings(); return; }
-  if (e.ctrlKey && e.key.toLowerCase()==='q') { e.preventDefault(); if (api) api.closeWindow(); return; }
-  if (e.key==='Escape' && byId('mod-overlay').classList.contains('open')) { closeActiveModal(); return; }
-  if (e.key==='Escape' && document.body.classList.contains('settings-open')) { closeSettings(); return; }
-  if (formFieldFocused()) return;
-  if (e.key===' ') { e.preventDefault(); if (selPath) togglePlay(); }
-  if (e.key==='ArrowDown') { e.preventDefault(); moveSelection(1); }
-  if (e.key==='ArrowUp') { e.preventDefault(); moveSelection(-1); }
-  if (e.key==='ArrowRight') { e.preventDefault(); seekBy(3); }
-  if (e.key==='ArrowLeft') { e.preventDefault(); seekBy(-3); }
-});
-</script>
-<script src="crop.js"></script>
-</body>
+    <div id="qbar">
+      <span id="qcnt">0/0</span
+      ><progress
+        id="qprog"
+        value="0"
+        max="100"
+        aria-label="Queue progress"
+      ></progress>
+      <span id="qeta">ETA --</span><span id="qfname"></span>
+      <button
+        class="qbtn"
+        id="btn-stop-after"
+        onclick="stopAfterCurrent()"
+        aria-label="Stop after current job"
+      >
+        Stop after current
+      </button>
+      <button
+        class="qbtn danger"
+        id="btn-cancel"
+        onclick="cancelAll()"
+        aria-label="Cancel processing"
+      >
+        Cancel
+      </button>
+      <button
+        class="qbtn"
+        id="btn-clear"
+        onclick="clearDone()"
+        aria-label="Clear completed"
+      >
+        Clear completed
+      </button>
+    </div>
+    <div
+      class="mod-overlay"
+      id="mod-overlay"
+      onclick="if(event.target===this)closeActiveModal()"
+    >
+      <div class="mod-box" id="mod-box"></div>
+    </div>
+    <div id="toast-ct"></div>
+    <div id="drag-overlay"><h2>Drop videos anywhere</h2></div>
+    <script src="crop.js"></script>
+    <script src="encoding-ui.js"></script>
+    <script src="app.js"></script>
+    <script src="player.js"></script>
+    <script src="queue.js"></script>
+    <script src="settings.js"></script>
+    <script src="transform.js"></script>
+  </body>
 </html>

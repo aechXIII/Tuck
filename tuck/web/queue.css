@@ -1,0 +1,88 @@
+#qbar {
+  height: 42px;
+  min-height: 42px;
+  background: #0f0f18;
+  border-top: 1px solid var(--border);
+  display: none;
+  align-items: center;
+  padding: 0 16px;
+  gap: 12px;
+}
+#qbar.on {
+  display: flex;
+}
+#qcnt {
+  color: var(--accent-light);
+  font-weight: 700;
+  font-size: 12px;
+  font-family: var(--mono);
+  min-width: 42px;
+  flex-shrink: 0;
+}
+#qprog {
+  flex: 1;
+  height: 6px;
+  border: none;
+  border-radius: 3px;
+  overflow: hidden;
+}
+#qprog::-webkit-progress-bar {
+  background: #1a1a30;
+  border-radius: 3px;
+}
+#qprog::-webkit-progress-value {
+  background: var(--accent);
+  border-radius: 3px;
+}
+#qeta {
+  color: #7a7a8c;
+  font-size: 11px;
+  font-family: var(--mono);
+  min-width: 70px;
+  text-align: right;
+  flex-shrink: 0;
+}
+#qfname {
+  color: #7a7a8c;
+  font-size: 11px;
+  font-family: var(--mono);
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+#btn-stop-after,
+#btn-clear,
+#btn-cancel {
+  color: #7a7a8c;
+  font-size: 11px;
+  font-family: var(--mono);
+}
+.qbtn {
+  background: transparent;
+  border: none;
+  color: #777;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 6px;
+  flex-shrink: 0;
+  transition:
+    color 0.15s,
+    background 0.15s;
+  font-family: var(--font);
+}
+.qbtn:hover {
+  background: #1a1a2a;
+  color: #fff;
+}
+.qbtn:focus-visible {
+  outline: 2px solid var(--accent-light);
+  outline-offset: -1px;
+}
+.qbtn.danger:hover {
+  color: var(--danger);
+  background: #2a1520;
+}

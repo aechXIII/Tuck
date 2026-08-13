@@ -55,11 +55,29 @@ if (-not (Test-Path ".\dist\Tuck\TuckCli.exe")) {
 }
 Write-Host "OK: dist\Tuck\TuckCli.exe" -ForegroundColor Green
 
-if (-not (Test-Path ".\dist\Tuck\_internal\tuck\web\index.html")) {
-  Write-Error "Expected packaged web UI at dist\Tuck\_internal\tuck\web\index.html missing."
-  exit 1
+$webAssets = @(
+  "index.html",
+  "styles.css",
+  "settings.css",
+  "player.css",
+  "queue.css",
+  "transform.css",
+  "app.js",
+  "encoding-ui.js",
+  "player.js",
+  "queue.js",
+  "settings.js",
+  "crop.js",
+  "transform.js"
+)
+foreach ($asset in $webAssets) {
+  $assetPath = ".\dist\Tuck\_internal\tuck\web\$asset"
+  if (-not (Test-Path $assetPath)) {
+    Write-Error "Expected packaged web UI asset missing: $assetPath"
+    exit 1
+  }
 }
-Write-Host "OK: packaged web UI" -ForegroundColor Green
+Write-Host "OK: packaged web UI ($($webAssets.Count) assets)" -ForegroundColor Green
 
 # Check pywin32 runtime files
 Write-Host "Checking for pywin32 runtime files in dist..." -ForegroundColor Cyan
