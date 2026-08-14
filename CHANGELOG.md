@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.1] - 2026-08-14
+
+### Changed
+- Improved the update notes and installation flow
+
+### Fixed
+- Fixed crop controls and aspect-ratio handling
+- Fixed transform tooltips
+
 ## [0.3.0] - 2026-08-14
 
 ### Added
