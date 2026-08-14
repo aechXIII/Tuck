@@ -79,6 +79,33 @@ test("free aspect keeps the current crop", () => {
   assert.deepEqual(crop.cropForAspect(current, "free", 1920, 1080), current);
 });
 
+test("switching aspect presets does not progressively shrink the crop", () => {
+  const square = crop.cropForAspect(null, "1:1", 1920, 1080);
+  const fourThree = crop.cropForAspect(square, "4:3", 1920, 1080);
+  const squareAgain = crop.cropForAspect(fourThree, "1:1", 1920, 1080);
+  const fourThreeAgain = crop.cropForAspect(
+    squareAgain,
+    "4:3",
+    1920,
+    1080
+  );
+
+  assert.deepEqual(squareAgain, square);
+  assert.deepEqual(fourThreeAgain, fourThree);
+});
+
+test("aspect presets describe the visible ratio after rotation", () => {
+  const selected = crop.cropForAspect(null, "16:9", 1920, 1080, 90);
+  assert.equal(selected.width * 16, selected.height * 9);
+
+  const preview = crop.previewTransformGeometry(
+    { crop: selected, rotation: 90, sizing_mode: "fit" },
+    1920,
+    1080
+  );
+  assert.equal(preview.orientedWidth * 9, preview.orientedHeight * 16);
+});
+
 test("locked corner resize preserves ratio and bounds", () => {
   const original = { x: 240, y: 180, width: 640, height: 360 };
   const result = crop.resizeCrop(original, "se", 1000, 1000, 1280, 720, "16:9");

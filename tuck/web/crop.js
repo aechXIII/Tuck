@@ -77,29 +77,43 @@
     return clamp(Math.round(value / 2) * 2, 2, maxEven);
   }
 
-  function aspectParts(aspect) {
+  function aspectParts(aspect, rotation) {
     if (!aspect || aspect === "free") return null;
     var parts = String(aspect).split(":");
     var width = parseInt(parts[0], 10);
     var height = parseInt(parts[1], 10);
-    return width > 0 && height > 0 ? { width: width, height: height } : null;
+    if (!(width > 0 && height > 0)) return null;
+    return rotation === 90 || rotation === 270
+      ? { width: height, height: width }
+      : { width: width, height: height };
   }
 
-  function cropForAspect(current, aspect, sourceWidth, sourceHeight) {
-    var ratio = aspectParts(aspect);
+  function cropForAspect(
+    current,
+    aspect,
+    sourceWidth,
+    sourceHeight,
+    rotation,
+  ) {
+    var ratio = aspectParts(aspect, rotation);
     var base = current || fullCrop(sourceWidth, sourceHeight);
     if (!ratio)
       return { x: base.x, y: base.y, width: base.width, height: base.height };
-    var unit = Math.floor(
-      Math.min(base.width / ratio.width, base.height / ratio.height),
-    );
-    unit = Math.floor(unit / 2) * 2;
+    var centerX = base.x + base.width / 2;
+    var centerY = base.y + base.height / 2;
+    var centeredWidth = 2 * Math.min(centerX, sourceWidth - centerX);
+    var centeredHeight = 2 * Math.min(centerY, sourceHeight - centerY);
+    var maximumUnit = Math.floor(
+      Math.min(centeredWidth / ratio.width, centeredHeight / ratio.height) / 2,
+    ) * 2;
+    var containingUnit = Math.ceil(
+      Math.max(base.width / ratio.width, base.height / ratio.height) / 2,
+    ) * 2;
+    var unit = Math.min(containingUnit, maximumUnit);
     if (unit < 2)
       return { x: base.x, y: base.y, width: base.width, height: base.height };
     var width = ratio.width * unit;
     var height = ratio.height * unit;
-    var centerX = base.x + base.width / 2;
-    var centerY = base.y + base.height / 2;
     return {
       x: clamp(Math.round(centerX - width / 2), 0, sourceWidth - width),
       y: clamp(Math.round(centerY - height / 2), 0, sourceHeight - height),
@@ -205,6 +219,7 @@
     sourceWidth,
     sourceHeight,
     aspect,
+    rotation,
   ) {
     var result = {
       x: origin.x,
@@ -227,7 +242,7 @@
       return result;
     }
 
-    var ratio = aspectParts(aspect);
+    var ratio = aspectParts(aspect, rotation);
     if (ratio) {
       return resizeLockedCrop(
         origin,

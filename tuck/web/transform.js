@@ -6,6 +6,8 @@
   var drag = null;
   var moveEvent = null;
   var moveRaf = 0;
+  var tooltipTimer = 0;
+  var tooltipTarget = null;
 
   function selectedClip() {
     return root.selPath && root.clips ? root.clips[root.selPath] : null;
@@ -25,35 +27,8 @@
     element.style.height = Math.max(0, height) + "px";
   }
 
-  function currentContent(size) {
-    var stage = document.getElementById("stage");
-    return root.TuckCropGeometry.containedRect(
-      stage.clientWidth,
-      stage.clientHeight,
-      size.width,
-      size.height,
-    );
-  }
-
   function mediaElements() {
     return [document.getElementById("vid"), document.getElementById("thumb")];
-  }
-
-  function resetMediaPreview() {
-    var viewport = document.getElementById("media-viewport");
-    if (!viewport) return;
-    viewport.style.left = "0";
-    viewport.style.top = "0";
-    viewport.style.width = "100%";
-    viewport.style.height = "100%";
-    var media = mediaElements();
-    for (var i = 0; i < media.length; i++) {
-      if (!media[i]) continue;
-      media[i].style.width = "100%";
-      media[i].style.height = "100%";
-      media[i].style.objectFit = "contain";
-      media[i].style.transform = "none";
-    }
   }
 
   function orientedPoint(x, y, crop, rotation) {
@@ -80,6 +55,49 @@
       x: ((point.x - input.x) * frame.width) / input.width,
       y: ((point.y - input.y) * frame.height) / input.height,
     };
+  }
+
+  function previewMatrix(transform, preview, frame) {
+    var p0 = previewPoint(0, 0, transform, preview, frame);
+    var px = previewPoint(1, 0, transform, preview, frame);
+    var py = previewPoint(0, 1, transform, preview, frame);
+    return {
+      a: px.x - p0.x,
+      b: px.y - p0.y,
+      c: py.x - p0.x,
+      d: py.y - p0.y,
+      e: p0.x,
+      f: p0.y,
+    };
+  }
+
+  function matrixCss(matrix) {
+    return (
+      "matrix(" +
+      [
+        matrix.a,
+        matrix.b,
+        matrix.c,
+        matrix.d,
+        matrix.e,
+        matrix.f,
+      ].join(",") +
+      ")"
+    );
+  }
+
+  function paintMediaFrame(size, frame, matrix) {
+    var viewport = document.getElementById("media-viewport");
+    if (!viewport) return;
+    setBox(viewport, frame.left, frame.top, frame.width, frame.height);
+    var media = mediaElements();
+    for (var i = 0; i < media.length; i++) {
+      if (!media[i]) continue;
+      media[i].style.width = size.width + "px";
+      media[i].style.height = size.height + "px";
+      media[i].style.objectFit = "fill";
+      media[i].style.transform = matrixCss(matrix);
+    }
   }
 
   function paintTransformPreview(clip, size) {
@@ -116,24 +134,130 @@
       preview.output.width,
       preview.output.height,
     );
-    setBox(viewport, frame.left, frame.top, frame.width, frame.height);
-    var p0 = previewPoint(0, 0, transform, preview, frame);
-    var px = previewPoint(1, 0, transform, preview, frame);
-    var py = previewPoint(0, 1, transform, preview, frame);
-    var matrix =
-      "matrix(" +
-      [px.x - p0.x, px.y - p0.y, py.x - p0.x, py.y - p0.y, p0.x, p0.y].join(
-        ",",
-      ) +
-      ")";
-    var media = mediaElements();
-    for (var i = 0; i < media.length; i++) {
-      if (!media[i]) continue;
-      media[i].style.width = size.width + "px";
-      media[i].style.height = size.height + "px";
-      media[i].style.objectFit = "fill";
-      media[i].style.transform = matrix;
-    }
+    paintMediaFrame(size, frame, previewMatrix(transform, preview, frame));
+  }
+
+  function cropEditorGeometry(clip, size) {
+    var stage = document.getElementById("stage");
+    var transform = cropTransformForRequest(clip);
+    transform.crop = null;
+    var quarterTurn = transform.rotation === 90 || transform.rotation === 270;
+    var preview = {
+      selected: root.TuckCropGeometry.fullCrop(size.width, size.height),
+      orientedWidth: quarterTurn ? size.height : size.width,
+      orientedHeight: quarterTurn ? size.width : size.height,
+      fillCrop: null,
+    };
+    var frame = root.TuckCropGeometry.containedRect(
+      stage.clientWidth,
+      stage.clientHeight,
+      preview.orientedWidth,
+      preview.orientedHeight,
+    );
+    return {
+      transform: transform,
+      preview: preview,
+      frame: frame,
+      matrix: previewMatrix(transform, preview, frame),
+    };
+  }
+
+  function editorPointToDisplay(x, y, editor) {
+    var point = previewPoint(
+      x,
+      y,
+      editor.transform,
+      editor.preview,
+      editor.frame,
+    );
+    return {
+      x: editor.frame.left + point.x,
+      y: editor.frame.top + point.y,
+    };
+  }
+
+  function editorCropToDisplay(crop, editor) {
+    var points = [
+      editorPointToDisplay(crop.x, crop.y, editor),
+      editorPointToDisplay(crop.x + crop.width, crop.y, editor),
+      editorPointToDisplay(crop.x, crop.y + crop.height, editor),
+      editorPointToDisplay(
+        crop.x + crop.width,
+        crop.y + crop.height,
+        editor,
+      ),
+    ];
+    var xs = points.map(function (point) {
+      return point.x;
+    });
+    var ys = points.map(function (point) {
+      return point.y;
+    });
+    var left = Math.min.apply(null, xs);
+    var top = Math.min.apply(null, ys);
+    return {
+      left: left,
+      top: top,
+      width: Math.max.apply(null, xs) - left,
+      height: Math.max.apply(null, ys) - top,
+    };
+  }
+
+  function editorDisplayToSource(x, y, editor, size) {
+    var matrix = editor.matrix;
+    var localX = x - editor.frame.left - matrix.e;
+    var localY = y - editor.frame.top - matrix.f;
+    var determinant = matrix.a * matrix.d - matrix.b * matrix.c;
+    return {
+      x: Math.max(
+        0,
+        Math.min(
+          size.width,
+          (matrix.d * localX - matrix.c * localY) / determinant,
+        ),
+      ),
+      y: Math.max(
+        0,
+        Math.min(
+          size.height,
+          (-matrix.b * localX + matrix.a * localY) / determinant,
+        ),
+      ),
+    };
+  }
+
+  function sourceHandleForDisplay(displayHandle, crop, editor) {
+    var positions = {
+      nw: [0, 0],
+      n: [0.5, 0],
+      ne: [1, 0],
+      e: [1, 0.5],
+      se: [1, 1],
+      s: [0.5, 1],
+      sw: [0, 1],
+      w: [0, 0.5],
+    };
+    var shown = editorCropToDisplay(crop, editor);
+    var wanted = positions[displayHandle];
+    var targetX = shown.left + wanted[0] * shown.width;
+    var targetY = shown.top + wanted[1] * shown.height;
+    var closest = displayHandle;
+    var closestDistance = Infinity;
+    Object.keys(positions).forEach(function (sourceHandle) {
+      var position = positions[sourceHandle];
+      var point = editorPointToDisplay(
+        crop.x + position[0] * crop.width,
+        crop.y + position[1] * crop.height,
+        editor,
+      );
+      var distance =
+        Math.pow(point.x - targetX, 2) + Math.pow(point.y - targetY, 2);
+      if (distance < closestDistance) {
+        closest = sourceHandle;
+        closestDistance = distance;
+      }
+    });
+    return closest;
   }
 
   function paintCropOverlay() {
@@ -153,25 +277,20 @@
       return;
     }
 
-    resetMediaPreview();
-
-    var content = currentContent(size);
+    var editor = cropEditorGeometry(clip, size);
+    var content = editor.frame;
     if (content.width <= 0 || content.height <= 0) {
       ui.classList.remove("on");
       return;
     }
+    paintMediaFrame(size, content, editor.matrix);
     ui.classList.add("on");
     var crop = root.TuckCropGeometry.selectionCrop(
       clip.crop,
       size.width,
       size.height,
     );
-    var shown = root.TuckCropGeometry.sourceRectToDisplay(
-      crop,
-      content,
-      size.width,
-      size.height,
-    );
+    var shown = editorCropToDisplay(crop, editor);
     setBox(selection, shown.left, shown.top, shown.width, shown.height);
 
     setBox(
@@ -237,14 +356,13 @@
       );
   }
 
-  function eventSourcePoint(event, size, content) {
+  function eventSourcePoint(event, size, editor) {
     var stageRect = document.getElementById("stage").getBoundingClientRect();
-    return root.TuckCropGeometry.displayPointToSource(
+    return editorDisplayToSource(
       event.clientX - stageRect.left,
       event.clientY - stageRect.top,
-      content,
-      size.width,
-      size.height,
+      editor,
+      size,
     );
   }
 
@@ -253,7 +371,7 @@
     var clip = selectedClip();
     var size = sourceSize(clip);
     if (!clip || clip !== drag.clip || !size) return;
-    var point = eventSourcePoint(event, size, drag.content);
+    var point = eventSourcePoint(event, size, drag.editor);
     var next = root.TuckCropGeometry.resizeCrop(
       drag.origin,
       drag.handle,
@@ -262,6 +380,7 @@
       size.width,
       size.height,
       clip.cropAspect || "free",
+      clip.rotation || 0,
     );
     clip.crop = root.TuckCropGeometry.isFullCrop(next, size.width, size.height)
       ? null
@@ -276,19 +395,22 @@
     var clip = selectedClip();
     var size = sourceSize(clip);
     if (!clip || !size) return;
-    var content = currentContent(size);
-    var handle =
+    var editor = cropEditorGeometry(clip, size);
+    var displayHandle =
       event.target && event.target.dataset ? event.target.dataset.handle : "";
+    var origin = root.TuckCropGeometry.selectionCrop(
+      clip.crop,
+      size.width,
+      size.height,
+    );
     drag = {
       clip: clip,
-      handle: handle || "move",
-      content: content,
-      origin: root.TuckCropGeometry.selectionCrop(
-        clip.crop,
-        size.width,
-        size.height,
-      ),
-      start: eventSourcePoint(event, size, content),
+      handle: displayHandle
+        ? sourceHandleForDisplay(displayHandle, origin, editor)
+        : "move",
+      editor: editor,
+      origin: origin,
+      start: eventSourcePoint(event, size, editor),
       pointerId: event.pointerId,
     };
     var stage = document.getElementById("stage");
@@ -387,6 +509,7 @@
         aspect,
         size.width,
         size.height,
+        clip.rotation || 0,
       );
       clip.crop = root.TuckCropGeometry.isFullCrop(
         next,
@@ -407,6 +530,28 @@
     var clip = selectedClip();
     if (!clip) return;
     clip.rotation = rotation;
+    var size = sourceSize(clip);
+    if (size && (clip.cropAspect || "free") !== "free") {
+      var current = root.TuckCropGeometry.selectionCrop(
+        clip.crop,
+        size.width,
+        size.height,
+      );
+      var next = root.TuckCropGeometry.cropForAspect(
+        current,
+        clip.cropAspect,
+        size.width,
+        size.height,
+        rotation,
+      );
+      clip.crop = root.TuckCropGeometry.isFullCrop(
+        next,
+        size.width,
+        size.height,
+      )
+        ? null
+        : next;
+    }
     clip.transformOverride = true;
     clip.transformIntentTouched = true;
     clip.planData = null;
@@ -474,6 +619,76 @@
     }
   }
 
+  function hideTransformTooltip() {
+    if (tooltipTimer) {
+      clearTimeout(tooltipTimer);
+      tooltipTimer = 0;
+    }
+    tooltipTarget = null;
+    var tooltip = document.getElementById("transform-tooltip");
+    if (tooltip) tooltip.classList.remove("show");
+  }
+
+  function positionTransformTooltip(target, tooltip) {
+    var targetRect = target.getBoundingClientRect();
+    var toolbar = target.closest ? target.closest("#transform-toolbar") : null;
+    var toolbarRect = toolbar ? toolbar.getBoundingClientRect() : targetRect;
+    tooltip.style.left = "0";
+    tooltip.style.top = "0";
+    var tooltipRect = tooltip.getBoundingClientRect();
+    var edge = 8;
+    var gap = 7;
+    var left = targetRect.left + (targetRect.width - tooltipRect.width) / 2;
+    left = Math.max(
+      edge,
+      Math.min(
+        left,
+        document.documentElement.clientWidth - tooltipRect.width - edge,
+      ),
+    );
+    var top = toolbarRect.top - tooltipRect.height - gap;
+    if (top < edge) top = toolbarRect.bottom + gap;
+    tooltip.style.left = Math.round(left) + "px";
+    tooltip.style.top = Math.round(top) + "px";
+  }
+
+  function showTransformTooltip(target) {
+    hideTransformTooltip();
+    tooltipTarget = target;
+    tooltipTimer = setTimeout(function () {
+      if (tooltipTarget !== target) return;
+      var tooltip = document.getElementById("transform-tooltip");
+      if (!tooltip) return;
+      tooltip.textContent = target.dataset.tip;
+      tooltip.classList.add("show");
+      positionTransformTooltip(target, tooltip);
+      tooltipTimer = 0;
+    }, 350);
+  }
+
+  function initTransformTooltips() {
+    if (!document.createElement || !document.body) return;
+    var tooltip = document.createElement("div");
+    tooltip.id = "transform-tooltip";
+    tooltip.setAttribute("role", "tooltip");
+    document.body.appendChild(tooltip);
+    var targets = document.querySelectorAll("[data-tip]");
+    for (var i = 0; i < targets.length; i++) {
+      targets[i].addEventListener("mouseenter", function () {
+        showTransformTooltip(this);
+      });
+      targets[i].addEventListener("mouseleave", hideTransformTooltip);
+      targets[i].addEventListener("focus", function () {
+        showTransformTooltip(this);
+      });
+      targets[i].addEventListener("blur", hideTransformTooltip);
+    }
+    if (root.addEventListener) {
+      root.addEventListener("resize", hideTransformTooltip);
+      root.addEventListener("scroll", hideTransformTooltip, true);
+    }
+  }
+
   root.paintCropOverlay = paintCropOverlay;
   root.clearCrop = clearCrop;
   root.cropTransformForRequest = cropTransformForRequest;
@@ -482,6 +697,8 @@
   root.setVideoRotation = setVideoRotation;
   root.syncTransformControls = syncTransformControls;
   root.toggleVideoFlip = toggleVideoFlip;
+
+  initTransformTooltips();
 
   var selection = document.getElementById("crop-selection");
   var stage = document.getElementById("stage");

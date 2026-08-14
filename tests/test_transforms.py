@@ -71,6 +71,26 @@ def test_ratio_change_preserves_crop_center_where_bounds_allow():
     assert crop.y + crop.height / 2 == current.y + current.height / 2
 
 
+def test_switching_aspects_does_not_progressively_shrink_crop():
+    square = crop_for_aspect(1920, 1080, CROP_ASPECT_1_1)
+    four_three = crop_for_aspect(1920, 1080, CROP_ASPECT_4_3, square)
+    square_again = crop_for_aspect(1920, 1080, CROP_ASPECT_1_1, four_three)
+    four_three_again = crop_for_aspect(1920, 1080, CROP_ASPECT_4_3, square_again)
+
+    assert square_again == square
+    assert four_three_again == four_three
+
+
+@pytest.mark.parametrize("rotation", [90, 270])
+def test_crop_aspect_describes_visible_ratio_after_quarter_turn(rotation):
+    crop = crop_for_aspect(1920, 1080, CROP_ASPECT_16_9, rotation=rotation)
+    transform = VideoTransform(crop=crop, crop_aspect=CROP_ASPECT_16_9, rotation=rotation)
+    geometry = calculate_transform_geometry(transform, 1920, 1080)
+
+    assert crop.width * 16 == crop.height * 9
+    assert geometry.oriented_width * 9 == geometry.oriented_height * 16
+
+
 @pytest.mark.parametrize("rotation", [0, 90, 180, 270])
 def test_rotation_values_are_deterministic(rotation):
     assert VideoTransform(rotation=rotation).rotation == rotation

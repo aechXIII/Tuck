@@ -115,10 +115,15 @@ def test_web_ui_contains_complete_transform_controls() -> None:
     assert 'data-rotation="270"' in html
     assert 'id="flip-horizontal"' in html
     assert 'id="flip-vertical"' in html
+    assert html.count('data-tip="') >= 8
+    assert 'data-sizing="fit"' in html and 'title="Keep the entire' not in html
     assert 'sizing_mode: clip.sizingMode || "fit"' in transform_js
     assert "flip_horizontal: !!clip.flipHorizontal" in transform_js
     assert "plannedGeometry.oriented_width" in transform_js
     assert "paintTransformPreview(clip, size)" in transform_js
+    assert "cropEditorGeometry(clip, size)" in transform_js
+    assert "sourceHandleForDisplay(displayHandle, origin, editor)" in transform_js
+    assert 'tooltip.id = "transform-tooltip"' in transform_js
     assert 'button.setAttribute("aria-pressed", String(active))' in transform_js
 
 
@@ -160,9 +165,21 @@ def test_web_ui_shows_release_notes_in_an_update_modal() -> None:
 
     assert "function showUpdateModal(update)" in html
     assert 'id="update-notes"' in html
-    assert 'byId("update-notes").textContent =' in html
-    assert 'update.notes || "No release notes provided."' in html
+    assert "function renderUpdateNotes(notes)" in html
+    assert 'document.createElement(block.type === "heading" ? "h4" : "p")' in html
+    assert "item.textContent = block.text" in html
+    assert "renderUpdateNotes(update.notes);" in html
     assert "showUpdateModal(r);" in html
+
+
+def test_update_download_starts_the_installer_without_a_second_prompt() -> None:
+    html = _web_source()
+
+    assert "Download &amp; install" in html
+    assert "async function downloadAndInstallUpdate()" in html
+    assert "var installed = await api.installUpdate();" in html
+    assert "await api.closeWindow();" in html
+    assert "Update downloaded. Install now?" not in html
 
 
 def test_installer_exposes_tuck_command_on_path() -> None:

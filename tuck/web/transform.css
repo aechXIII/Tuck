@@ -290,27 +290,26 @@ body.crop-dragging * {
   stroke-linejoin: round;
   fill: none;
 }
-[data-tip]::after {
-  content: attr(data-tip);
-  position: absolute;
-  bottom: calc(100% + 7px);
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 30;
+#transform-tooltip {
+  position: fixed;
+  z-index: 1000;
+  max-width: calc(100vw - 16px);
   background: #1c1c26;
   border: 1px solid var(--border2);
   color: var(--text);
   font: 500 11px var(--font);
-  white-space: nowrap;
   padding: 4px 7px;
   border-radius: 5px;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
   opacity: 0;
+  visibility: hidden;
   pointer-events: none;
-  transition: opacity 0.12s ease;
+  transition:
+    opacity 0.12s ease,
+    visibility 0s linear 0.12s;
 }
-[data-tip]:hover::after,
-[data-tip]:focus-visible::after {
+#transform-tooltip.show {
   opacity: 1;
-  transition-delay: 0.35s;
+  visibility: visible;
+  transition-delay: 0s;
 }

@@ -150,6 +150,7 @@ function applyProfileTransformToClip(profile, clip, force) {
       clip.cropAspect,
       clip.probeData.width,
       clip.probeData.height,
+      clip.rotation,
     );
     if (
       TuckCropGeometry.isFullCrop(

@@ -285,6 +285,7 @@ def crop_for_aspect(
     source_height: int,
     crop_aspect: str,
     current: CropRect | None = None,
+    rotation: int = 0,
 ) -> CropRect:
     _positive_int(source_width, "source width")
     _positive_int(source_height, "source height")
@@ -296,14 +297,29 @@ def crop_for_aspect(
     if ratio is None:
         return base
     ratio_width, ratio_height = ratio
-    unit = math.floor(min(base.width / ratio_width, base.height / ratio_height))
-    unit = math.floor(unit / CROP_ALIGNMENT) * CROP_ALIGNMENT
+    if rotation not in ROTATIONS:
+        raise ValueError("rotation must be one of 0, 90, 180, or 270")
+    if rotation in (90, 270):
+        ratio_width, ratio_height = ratio_height, ratio_width
+    center_x = base.x + base.width / 2
+    center_y = base.y + base.height / 2
+    centered_width = 2 * min(center_x, source_width - center_x)
+    centered_height = 2 * min(center_y, source_height - center_y)
+    maximum_unit = (
+        math.floor(
+            min(centered_width / ratio_width, centered_height / ratio_height) / CROP_ALIGNMENT
+        )
+        * CROP_ALIGNMENT
+    )
+    containing_unit = (
+        math.ceil(max(base.width / ratio_width, base.height / ratio_height) / CROP_ALIGNMENT)
+        * CROP_ALIGNMENT
+    )
+    unit = min(containing_unit, maximum_unit)
     if unit < CROP_ALIGNMENT:
         raise ValueError("source is too small for the selected crop aspect")
     width = ratio_width * unit
     height = ratio_height * unit
-    center_x = base.x + base.width / 2
-    center_y = base.y + base.height / 2
     x = round(center_x - width / 2)
     y = round(center_y - height / 2)
     x = max(0, min(x, source_width - width))

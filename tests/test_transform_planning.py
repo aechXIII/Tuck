@@ -140,6 +140,27 @@ def test_profile_transform_intent_is_materialized_for_source(tmp_path):
     assert (result.target_width, result.target_height) == (1080, 1920)
 
 
+def test_rotated_profile_crop_aspect_is_final_orientation(tmp_path):
+    source = tmp_path / "source.mp4"
+    source.write_bytes(b"source")
+    profile = Profile(
+        name="Rotated widescreen",
+        two_pass=False,
+        transform_intent=ProfileTransformIntent(crop_aspect="16:9", rotation=90),
+    )
+
+    result = plan(
+        source,
+        profile,
+        output=tmp_path / "output.mp4",
+        source_info=_source_info(source),
+    )
+
+    assert result.transform.crop is not None
+    assert result.transform.crop.width * 16 == result.transform.crop.height * 9
+    assert result.target_width * 9 == result.target_height * 16
+
+
 def test_manual_job_transform_overrides_profile_intent(tmp_path):
     source = tmp_path / "source.mp4"
     source.write_bytes(b"source")

@@ -164,7 +164,12 @@ def plan(
     elif profile.transform_intent is not None:
         intent = profile.transform_intent
         profile_crop = (
-            crop_for_aspect(info.width, info.height, intent.crop_aspect)
+            crop_for_aspect(
+                info.width,
+                info.height,
+                intent.crop_aspect,
+                rotation=intent.rotation,
+            )
             if intent.crop_aspect != "free"
             else None
         )

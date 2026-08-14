@@ -176,6 +176,61 @@ function closeMod() {
   byId("mod-overlay").classList.remove("open");
   pendingConfirm = null;
 }
+function cleanUpdateNoteText(text) {
+  return text
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/__([^_]+)__/g, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .trim();
+}
+function updateNoteBlocks(notes) {
+  var blocks = [];
+  var lines = String(notes || "").split(/\r?\n/);
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].trim();
+    if (!line) continue;
+    var heading = line.match(/^#{1,6}\s+(.+)$/);
+    if (heading) {
+      var headingText = cleanUpdateNoteText(heading[1]);
+      if (/^\[?v?\d+\.\d+\.\d+\]?\s+-\s+\d{4}-\d{2}-\d{2}$/i.test(headingText))
+        continue;
+      blocks.push({ type: "heading", text: headingText });
+      continue;
+    }
+    var bullet = line.match(/^[-*+]\s+(.+)$/);
+    if (bullet) {
+      blocks.push({ type: "bullet", text: cleanUpdateNoteText(bullet[1]) });
+      continue;
+    }
+    blocks.push({ type: "text", text: cleanUpdateNoteText(line) });
+  }
+  return blocks;
+}
+function renderUpdateNotes(notes) {
+  var root = byId("update-notes");
+  root.replaceChildren();
+  var blocks = updateNoteBlocks(notes);
+  if (!blocks.length)
+    blocks.push({ type: "text", text: "No release notes provided." });
+  var list = null;
+  blocks.forEach(function (block) {
+    if (block.type === "bullet") {
+      if (!list) {
+        list = document.createElement("ul");
+        root.appendChild(list);
+      }
+      var item = document.createElement("li");
+      item.textContent = block.text;
+      list.appendChild(item);
+      return;
+    }
+    list = null;
+    var element = document.createElement(block.type === "heading" ? "h4" : "p");
+    element.textContent = block.text;
+    root.appendChild(element);
+  });
+}
 function showUpdateModal(update) {
   showMod(
     `<h2>Update available</h2>
@@ -184,47 +239,50 @@ function showUpdateModal(update) {
       <span id="update-size"></span>
     </div>
     <h3>What's new</h3>
-    <pre class="update-notes" id="update-notes"></pre>
+    <div class="update-notes" id="update-notes"></div>
     <div class="brow">
-      <button class="btn2" onclick="closeMod()">Later</button>
-      <button class="btn1" onclick="downloadUpdate()">Download update</button>
+      <button class="btn2" id="update-later" onclick="closeMod()">Later</button>
+      <button class="btn1" id="update-install" onclick="downloadAndInstallUpdate()">Download &amp; install</button>
     </div>`,
   );
   byId("update-version").textContent = "v" + update.version;
   byId("update-size").textContent = (update.size_mb || 0).toFixed(1) + " MB";
-  byId("update-notes").textContent =
-    update.notes || "No release notes provided.";
+  renderUpdateNotes(update.notes);
 }
-function downloadUpdate() {
-  api.downloadUpdate().then(function (started) {
+async function downloadAndInstallUpdate() {
+  var button = byId("update-install");
+  var later = byId("update-later");
+  button.disabled = true;
+  later.disabled = true;
+  try {
+    var started = await api.downloadUpdate();
     if (!started.ok) {
-      toast("Download failed: " + started.error, "err");
-      return;
+      throw new Error(started.error || "Could not start the download");
     }
-    var button = byId("mod-box").querySelector(".btn1");
-    button.disabled = true;
-    var timer = setInterval(async function () {
+    while (true) {
+      await new Promise(function (resolve) {
+        setTimeout(resolve, 500);
+      });
       var progress = await api.getDownloadProgress();
       if (progress.downloading) {
         button.textContent = "Downloading " + (progress.progress || 0) + "%";
-        return;
+        continue;
       }
-      clearInterval(timer);
-      if (progress.error) {
-        button.disabled = false;
-        button.textContent = "Download update";
-        toast("Download failed: " + progress.error, "err");
-        return;
-      }
-      if (progress.done)
-        confirmToast("Update downloaded. Install now?", function () {
-          api.installUpdate().then(async function (installed) {
-            if (installed.ok) await api.closeWindow();
-            else toast("Install failed: " + installed.error, "err");
-          });
-        });
-    }, 500);
-  });
+      if (progress.error) throw new Error(progress.error);
+      if (progress.done) break;
+      throw new Error("Download stopped unexpectedly");
+    }
+    button.textContent = "Starting installer...";
+    var installed = await api.installUpdate();
+    if (!installed.ok)
+      throw new Error(installed.error || "Could not start the installer");
+    await api.closeWindow();
+  } catch (error) {
+    button.disabled = false;
+    later.disabled = false;
+    button.textContent = "Download & install";
+    toast("Update failed: " + error.message, "err");
+  }
 }
 function closeActiveModal() {
   closeMod();
