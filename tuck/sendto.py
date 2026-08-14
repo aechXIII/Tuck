@@ -13,6 +13,9 @@ PROFILE_SHORTCUT_PREFIX = "Tuck - "
 
 # embedded in .lnk Description and .bat REM lines so Tuck can tell which shortcuts it owns
 _TUCK_MARKER = "TUCK_OWNER_V1"
+_SHELL_LINK_HEADER = (
+    b"\x4c\x00\x00\x00\x01\x14\x02\x00\x00\x00\x00\x00\xc0\x00\x00\x00\x00\x00\x00\x46"
+)
 
 ACTION_START = "start"
 ACTION_REVIEW = "review"
@@ -221,6 +224,8 @@ def repair_sendto() -> bool:
             logger.info("Repaired Send To shortcut: %s", shortcut_path)
             return True
         finally:
+            sc = None
+            shell = None
             pythoncom.CoUninitialize()
     except Exception:
         return False
@@ -277,6 +282,8 @@ def repair_profile_shortcut(
             logger.info("Repaired profile shortcut: %s", shortcut_path)
             return True
         finally:
+            sc = None
+            shell = None
             pythoncom.CoUninitialize()
     except Exception:
         return False
@@ -291,7 +298,14 @@ def list_sendto_shortcuts() -> list[dict[str, str]]:
         if (entry.name == SENDTO_SHORTCUT_NAME and entry.suffix == ".lnk") or (
             entry.name == SENDTO_BATCH_NAME and entry.suffix == ".bat"
         ):
-            result.append({"name": "Tuck (default)", "path": str(entry), "type": "generic"})
+            result.append(
+                {
+                    "name": "Tuck (default)",
+                    "path": str(entry),
+                    "type": "generic",
+                    "status": "ok" if _is_tuck_shortcut(entry) else "broken",
+                }
+            )
         elif (
             entry.name.startswith(PROFILE_SHORTCUT_PREFIX)
             and entry.suffix in (".lnk", ".bat")
@@ -304,6 +318,7 @@ def list_sendto_shortcuts() -> list[dict[str, str]]:
                     "profile_id": profile_id,
                     "path": str(entry),
                     "type": "profile",
+                    "status": "ok",
                 }
             )
     return result
@@ -322,7 +337,15 @@ def _is_tuck_shortcut(path: Path) -> bool:
 
 
 def _verify_lnk_ownership(path: Path) -> bool:
-    if not path.is_file() or not _can_create_shortcuts():
+    if not path.is_file():
+        return False
+    try:
+        with path.open("rb") as shortcut_file:
+            if shortcut_file.read(len(_SHELL_LINK_HEADER)) != _SHELL_LINK_HEADER:
+                return False
+    except OSError:
+        return False
+    if not _can_create_shortcuts():
         return False
     try:
         import pythoncom
@@ -342,6 +365,8 @@ def _verify_lnk_ownership(path: Path) -> bool:
             target_base = Path(target).name if target else ""
             return "tuck" in target_base or "python" in target_base
         finally:
+            sc = None
+            shell = None
             pythoncom.CoUninitialize()
     except Exception:
         return False
@@ -385,6 +410,8 @@ def _create_windows_shortcut(
         shortcut.Description = marked_desc
         shortcut.Save()
     finally:
+        shortcut = None
+        shell = None
         pythoncom.CoUninitialize()
 
 

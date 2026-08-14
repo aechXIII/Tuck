@@ -97,6 +97,21 @@ class TestVerifyLnkOwnership:
         f.write_text("dummy")
         assert not _verify_lnk_ownership(f)
 
+    def test_invalid_header_is_rejected_before_com(self, tmp_path, monkeypatch):
+        f = tmp_path / "invalid.lnk"
+        f.write_text("not a Shell Link")
+        dispatched = False
+
+        def dispatch(*args):
+            nonlocal dispatched
+            dispatched = True
+
+        monkeypatch.setattr("tuck.sendto._can_create_shortcuts", lambda: True)
+        monkeypatch.setattr("win32com.client.Dispatch", dispatch)
+
+        assert not _verify_lnk_ownership(f)
+        assert not dispatched
+
 
 class TestIsTuckShortcut:
     def test_nonexistent_returns_false(self, tmp_path):
@@ -377,12 +392,22 @@ class TestListShortcuts:
         (tmp_path / SENDTO_SHORTCUT_NAME).write_text("dummy")
         result = list_sendto_shortcuts()
         assert any(r["type"] == "generic" for r in result)
+        assert result[0]["status"] == "broken"
 
     def test_finds_generic_bat(self, tmp_path, monkeypatch):
         monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
         (tmp_path / SENDTO_BATCH_NAME).write_text("dummy")
         result = list_sendto_shortcuts()
         assert any(r["type"] == "generic" for r in result)
+        assert result[0]["status"] == "broken"
+
+    def test_reports_owned_generic_batch_as_installed(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
+        _make_marker_bat(tmp_path / SENDTO_BATCH_NAME)
+
+        result = list_sendto_shortcuts()
+
+        assert result[0]["status"] == "ok"
 
     def test_finds_owned_profile_bat(self, tmp_path, monkeypatch):
         monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
@@ -393,6 +418,7 @@ class TestListShortcuts:
             r["type"] == "profile"
             and r["name"] == "Test Profile"
             and r["profile_id"] == "Test Profile"
+            and r["status"] == "ok"
             for r in result
         )
 
@@ -414,6 +440,7 @@ class TestListShortcuts:
             r["type"] == "profile"
             and r["name"] == "Test Profile"
             and r["profile_id"] == "Test Profile"
+            and r["status"] == "ok"
             for r in result
         )
 
