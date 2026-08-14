@@ -25,6 +25,7 @@ from tuck.models import (
     WORKFLOW_UPSCALE,
     CropRect,
     EncodePlan,
+    OutputGeometry,
     VideoTransform,
 )
 
@@ -401,6 +402,123 @@ def test_cpu_encode_outputs_selected_crop_dimensions(engine, real_video_path, tm
     result_info = probe(result)
 
     assert (result_info.width, result_info.height) == (crop.width, crop.height)
+
+
+def test_cpu_encode_crops_display_rotated_source_coordinates(engine, tmp_path) -> None:
+    from tuck.engine import _find_ffmpeg
+    from tuck.probe import probe
+
+    ffmpeg = _find_ffmpeg()
+    if not ffmpeg:
+        pytest.skip("ffmpeg unavailable")
+
+    base = tmp_path / "base.mp4"
+    source = tmp_path / "rotated.mp4"
+    create = subprocess.run(
+        [
+            ffmpeg,
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=320x240:rate=1:duration=1",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            str(base),
+        ],
+        capture_output=True,
+        timeout=30,
+        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+    )
+    if create.returncode != 0:
+        pytest.skip("cannot create orientation fixture")
+    rotate = subprocess.run(
+        [ffmpeg, "-y", "-display_rotation", "90", "-i", str(base), "-c", "copy", str(source)],
+        capture_output=True,
+        timeout=30,
+        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+    )
+    if rotate.returncode != 0:
+        pytest.skip("ffmpeg does not support display_rotation")
+
+    info = probe(source)
+    crop = CropRect(20, 10, 200, 300)
+    output = tmp_path / "rotated-crop.mp4"
+    plan = EncodePlan(
+        source=str(source),
+        output=str(output),
+        target_width=crop.width,
+        target_height=crop.height,
+        target_fps=info.fps,
+        video_bitrate=500_000,
+        original_video_bitrate=500_000,
+        audio_bitrate=0,
+        two_pass=False,
+        preset="ultrafast",
+        target_size=10 * 1024 * 1024,
+        rate_control=RC_EXPLICIT_BITRATE,
+        rate_control_method=RCM_CBR,
+        source_info=info,
+        transform=VideoTransform(crop=crop),
+    )
+
+    result = engine.encode(plan)
+    result_info = probe(result)
+
+    assert (info.width, info.height) == (240, 320)
+    assert (result_info.width, result_info.height) == (200, 300)
+
+
+@pytest.mark.parametrize(
+    ("transform", "expected"),
+    [
+        (VideoTransform(rotation=90, sizing_mode="fit"), (240, 320)),
+        (VideoTransform(flip_horizontal=True, flip_vertical=True), (320, 240)),
+        (
+            VideoTransform(sizing_mode="fit", output=OutputGeometry(200, 200)),
+            (200, 150),
+        ),
+        (
+            VideoTransform(sizing_mode="fill", output=OutputGeometry(200, 200)),
+            (200, 200),
+        ),
+        (
+            VideoTransform(sizing_mode="stretch", output=OutputGeometry(200, 200)),
+            (200, 200),
+        ),
+    ],
+)
+def test_cpu_encode_applies_complete_transform_geometry(
+    transform, expected, engine, real_video_path, tmp_path
+) -> None:
+    from tuck.probe import probe
+
+    info = probe(real_video_path)
+    output = tmp_path / f"transform-{expected[0]}x{expected[1]}-{transform.sizing_mode}.mp4"
+    plan = EncodePlan(
+        source=str(real_video_path),
+        output=str(output),
+        target_width=expected[0],
+        target_height=expected[1],
+        target_fps=info.fps,
+        video_bitrate=500_000,
+        original_video_bitrate=500_000,
+        audio_bitrate=0,
+        two_pass=False,
+        preset="ultrafast",
+        target_size=10 * 1024 * 1024,
+        rate_control=RC_EXPLICIT_BITRATE,
+        rate_control_method=RCM_CBR,
+        source_info=info,
+        transform=transform,
+    )
+
+    result = engine.encode(plan)
+    result_info = probe(result)
+
+    assert (result_info.width, result_info.height) == expected
 
 
 def test_cpu_encode_outputs_selected_crop_content(engine, tmp_path) -> None:

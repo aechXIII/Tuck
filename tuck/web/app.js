@@ -119,6 +119,7 @@ function acceptConfirm() {
 }
 
 function profileControlState() {
+  var clip = selPath && clips[selPath];
   return {
     pid: byId("prof-sel").value,
     size: byId("sz-slider").value,
@@ -136,6 +137,9 @@ function profileControlState() {
     q: byId("quality-val").value,
     br: byId("br-val").value,
     tu: byId("tune-sel").value,
+    aspect: clip ? clip.cropAspect || "free" : "free",
+    rotation: clip ? clip.rotation || 0 : 0,
+    sizing: clip ? clip.sizingMode || "fit" : "fit",
   };
 }
 function snapProf() {
@@ -156,7 +160,7 @@ function updateDirty() {
 }
 function resetToProfile() {
   _trackDirty = false;
-  applyProfile();
+  applyProfile(true);
   snapProf();
   _trackDirty = true;
   toast("Settings reset to profile.", "ok");
@@ -351,7 +355,11 @@ window.addFiles = function (paths, rejected) {
       flipHorizontal: false,
       flipVertical: false,
       sizingMode: "fit",
+      transformOverride: false,
+      transformIntentTouched: false,
     };
+    if (typeof applySelectedProfileTransform === "function")
+      applySelectedProfileTransform(clips[p], true);
     if (clipOrder.indexOf(p) < 0) clipOrder.push(p);
     if (!firstAdded) firstAdded = p;
     added++;
@@ -830,6 +838,8 @@ async function probeClip(p) {
       c.probeData = r.data;
       c.error = "";
       c._fileSize = r.data.file_size;
+      if (typeof applySelectedProfileTransform === "function")
+        applySelectedProfileTransform(c, false);
     } else {
       c.error = (r.data && r.data.error) || "Probe failed";
     }

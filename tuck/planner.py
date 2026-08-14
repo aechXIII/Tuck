@@ -9,6 +9,7 @@ from .models import (
     _AMF_ENCODERS,
     _NVENC_ENCODERS,
     ENCODER_AUTO,
+    ENCODER_AUTO_FAST,
     FPS_MODE_CUSTOM,
     FPS_MODE_LIMIT,
     FPS_MODE_SOURCE,
@@ -25,6 +26,7 @@ from .models import (
     VideoInfo,
     VideoTransform,
     calculate_transform_geometry,
+    crop_for_aspect,
     estimate_size_from_bitrate,
     oriented_dimensions,
     validate_rate_control_matrix,
@@ -157,11 +159,23 @@ def plan(
         )
     trim_end = min(trim_end, float(info.duration))
 
-    transform = (
-        request.transform
-        if request is not None and request.transform is not None
-        else VideoTransform()
-    )
+    if request is not None and request.transform is not None:
+        transform = request.transform
+    elif profile.transform_intent is not None:
+        intent = profile.transform_intent
+        profile_crop = (
+            crop_for_aspect(info.width, info.height, intent.crop_aspect)
+            if intent.crop_aspect != "free"
+            else None
+        )
+        transform = VideoTransform(
+            crop=profile_crop,
+            crop_aspect=intent.crop_aspect,
+            rotation=intent.rotation,
+            sizing_mode=intent.sizing_mode,
+        )
+    else:
+        transform = VideoTransform()
     transform.validate_for_source(info.width, info.height)
 
     effective_duration = trim_end - trim_start
@@ -315,7 +329,7 @@ def plan(
         from .encoding.target_size import calculate_target_size_bitrates
 
         hardware = video_encoder in _NVENC_ENCODERS | _AMF_ENCODERS
-        if video_encoder == ENCODER_AUTO:
+        if video_encoder in (ENCODER_AUTO, ENCODER_AUTO_FAST):
             hardware = True
         ts_plan = calculate_target_size_bitrates(
             target_size,

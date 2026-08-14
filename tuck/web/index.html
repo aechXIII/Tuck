@@ -79,30 +79,35 @@
                     type="button"
                     class="on"
                     data-aspect="free"
+                    aria-pressed="true"
                     onclick="setCropAspect('free')"
                   >
                     Free</button
                   ><button
                     type="button"
                     data-aspect="16:9"
+                    aria-pressed="false"
                     onclick="setCropAspect('16:9')"
                   >
                     16:9</button
                   ><button
                     type="button"
                     data-aspect="9:16"
+                    aria-pressed="false"
                     onclick="setCropAspect('9:16')"
                   >
                     9:16</button
                   ><button
                     type="button"
                     data-aspect="1:1"
+                    aria-pressed="false"
                     onclick="setCropAspect('1:1')"
                   >
                     1:1</button
                   ><button
                     type="button"
                     data-aspect="4:3"
+                    aria-pressed="false"
                     onclick="setCropAspect('4:3')"
                   >
                     4:3
@@ -121,6 +126,7 @@
                     type="button"
                     class="icon on"
                     data-rotation="0"
+                    aria-pressed="true"
                     onclick="setVideoRotation(0)"
                     data-tip="No rotation"
                     aria-label="No rotation"
@@ -133,6 +139,7 @@
                     type="button"
                     class="icon"
                     data-rotation="270"
+                    aria-pressed="false"
                     onclick="setVideoRotation(270)"
                     data-tip="Rotate 90° counterclockwise"
                     aria-label="Rotate 90° counterclockwise"
@@ -146,6 +153,7 @@
                     type="button"
                     class="icon"
                     data-rotation="90"
+                    aria-pressed="false"
                     onclick="setVideoRotation(90)"
                     data-tip="Rotate 90° clockwise"
                     aria-label="Rotate 90° clockwise"
@@ -159,6 +167,7 @@
                     type="button"
                     class="icon"
                     data-rotation="180"
+                    aria-pressed="false"
                     onclick="setVideoRotation(180)"
                     data-tip="Rotate 180°"
                     aria-label="Rotate 180°"
@@ -185,6 +194,7 @@
                     type="button"
                     class="icon"
                     id="flip-horizontal"
+                    aria-pressed="false"
                     onclick="toggleVideoFlip('horizontal')"
                     data-tip="Flip horizontal"
                     aria-label="Flip horizontal"
@@ -205,6 +215,7 @@
                     type="button"
                     class="icon"
                     id="flip-vertical"
+                    aria-pressed="false"
                     onclick="toggleVideoFlip('vertical')"
                     data-tip="Flip vertical"
                     aria-label="Flip vertical"
@@ -235,6 +246,7 @@
                     type="button"
                     data-sizing="fit"
                     class="on"
+                    aria-pressed="true"
                     onclick="setSizingMode('fit')"
                     title="Keep the entire selected image without distortion"
                   >
@@ -242,6 +254,7 @@
                   ><button
                     type="button"
                     data-sizing="fill"
+                    aria-pressed="false"
                     onclick="setSizingMode('fill')"
                     title="Fill the output dimensions and crop excess edges"
                   >
@@ -249,6 +262,7 @@
                   ><button
                     type="button"
                     data-sizing="stretch"
+                    aria-pressed="false"
                     onclick="setSizingMode('stretch')"
                     title="Force the selected image to the output dimensions and allow distortion"
                   >
@@ -479,6 +493,7 @@
               <span>Scaler</span
               ><select
                 id="scaler-sel"
+                onchange="reqPreview();updateDirty()"
                 style="flex: 1"
                 aria-label="Scaler algorithm"
               >
@@ -540,6 +555,7 @@
                 min="0"
                 max="320"
                 aria-label="Audio bitrate"
+                onchange="reqPreview();updateDirty()"
               />
             </div>
           </div>

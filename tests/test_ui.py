@@ -100,7 +100,7 @@ def test_web_ui_contains_complete_transform_controls() -> None:
     html = Path("tuck/web/index.html").read_text(encoding="utf-8")
     transform_js = _asset("transform.js")
     for value in ("free", "16:9", "9:16", "1:1", "4:3"):
-        assert f'<option value="{value}">' in html
+        assert f'data-aspect="{value}"' in html
     assert 'data-sizing="fit"' in html
     assert 'data-sizing="fill"' in html
     assert 'data-sizing="stretch"' in html
@@ -119,6 +119,7 @@ def test_web_ui_contains_complete_transform_controls() -> None:
     assert "flip_horizontal: !!clip.flipHorizontal" in transform_js
     assert "plannedGeometry.oriented_width" in transform_js
     assert "paintTransformPreview(clip, size)" in transform_js
+    assert 'button.setAttribute("aria-pressed", String(active))' in transform_js
 
 
 def test_preview_responses_are_bound_to_the_source_and_request_snapshot() -> None:

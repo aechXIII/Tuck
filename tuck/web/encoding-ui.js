@@ -121,7 +121,55 @@ function onProfileChange() {
   persistSession();
 }
 
-function applyProfile() {
+function selectedProfile() {
+  var pid = byId("prof-sel").value;
+  return (
+    allProfiles.find(function (profile) {
+      return profile.profile_id === pid;
+    }) || null
+  );
+}
+
+function applyProfileTransformToClip(profile, clip, force) {
+  if (!clip || (!force && clip.transformOverride)) return;
+  var intent = profile && profile.transform_intent;
+  clip.cropAspect = intent ? intent.crop_aspect || "free" : "free";
+  clip.rotation = intent ? intent.rotation || 0 : 0;
+  clip.sizingMode = intent ? intent.sizing_mode || "fit" : "fit";
+  clip.flipHorizontal = false;
+  clip.flipVertical = false;
+  clip.crop = null;
+  if (
+    clip.cropAspect !== "free" &&
+    clip.probed &&
+    clip.probeData &&
+    typeof TuckCropGeometry !== "undefined"
+  ) {
+    clip.crop = TuckCropGeometry.cropForAspect(
+      null,
+      clip.cropAspect,
+      clip.probeData.width,
+      clip.probeData.height,
+    );
+    if (
+      TuckCropGeometry.isFullCrop(
+        clip.crop,
+        clip.probeData.width,
+        clip.probeData.height,
+      )
+    )
+      clip.crop = null;
+  }
+  clip.transformOverride = false;
+  clip.transformIntentTouched = false;
+  clip.planData = null;
+}
+
+function applySelectedProfileTransform(clip, force) {
+  applyProfileTransformToClip(selectedProfile(), clip, !!force);
+}
+
+function applyProfile(forceTransform) {
   var pid = byId("prof-sel").value;
   if (!pid) return;
   var p = null;
@@ -132,6 +180,9 @@ function applyProfile() {
     }
   }
   if (!p) return;
+  Object.keys(clips).forEach(function (path) {
+    applyProfileTransformToClip(p, clips[path], !!forceTransform);
+  });
   var sizeMb = Math.round((p.target_size_bytes || 0) / (1024 * 1024));
   byId("sz-slider").value = sizeMb;
   byId("sz-badge").value = sizeMb;
@@ -192,6 +243,8 @@ function applyProfile() {
     }
   }
   updateRcVis();
+  if (typeof syncTransformControls === "function") syncTransformControls();
+  if (typeof paintCropOverlay === "function") paintCropOverlay();
   snapProf();
 }
 
@@ -652,7 +705,11 @@ function buildReq(src) {
       req.trim_start = Math.round(c.trimStart * 1000) / 1000;
     if (c.trimEnd != null && (full <= 0 || c.trimEnd < full - 0.001))
       req.trim_end = Math.round(c.trimEnd * 1000) / 1000;
-    if (typeof cropTransformForRequest === "function") {
+    var profile = selectedProfile();
+    if (
+      typeof cropTransformForRequest === "function" &&
+      (c.transformOverride || !profile || !profile.transform_intent)
+    ) {
       var transform = cropTransformForRequest(c);
       if (transform) req.transform = transform;
     }
@@ -701,6 +758,10 @@ async function saveProfileChanges() {
   var data = savePayload(name);
   var r = await api.updateProfile(pid, JSON.stringify(data));
   if (r.ok) {
+    if (selPath && clips[selPath]) {
+      clips[selPath].transformOverride = false;
+      clips[selPath].transformIntentTouched = false;
+    }
     await loadSettings();
     snapProf();
     toast('Changes saved to "' + name + '".', "ok");
@@ -785,6 +846,14 @@ function savePayload(name) {
     qp: rc === "cqp" ? parseInt(byId("quality-val").value) : current.qp || 23,
     crf: rc === "crf" ? parseInt(byId("quality-val").value) : current.crf || 23,
   };
+  var clip = selPath && clips[selPath];
+  if (current.transform_intent || (clip && clip.transformIntentTouched)) {
+    data.transform_intent = {
+      crop_aspect: clip ? clip.cropAspect || "free" : "free",
+      rotation: clip ? clip.rotation || 0 : 0,
+      sizing_mode: clip ? clip.sizingMode || "fit" : "fit",
+    };
+  }
   if (up && isBr) data.explicit_bitrate_kbps = parseInt(byId("br-val").value);
   if (up && isCpuEncoder(byId("enc-sel").value))
     data.tune = byId("tune-sel").value === "none" ? "" : byId("tune-sel").value;

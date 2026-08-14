@@ -61,6 +61,16 @@ function profileSummary(p) {
     audio = p.keep_audio
       ? "Keep audio"
       : (p.audio_bitrate_kbps || 128) + " kbps audio";
+  var transform = p.transform_intent,
+    transformSummary = transform
+      ? " · " +
+        (transform.crop_aspect === "free" ? "Free aspect" : transform.crop_aspect) +
+        " · " +
+        (transform.sizing_mode || "fit").replace(/^./, function (value) {
+          return value.toUpperCase();
+        }) +
+        (transform.rotation ? " · " + transform.rotation + "°" : "")
+      : "";
   return (
     (up ? "Upscale" : "Compress") +
     " · " +
@@ -71,7 +81,8 @@ function profileSummary(p) {
     " · " +
     fps +
     " · " +
-    audio
+    audio +
+    transformSummary
   );
 }
 async function refreshPMList(filter) {
@@ -258,6 +269,49 @@ function profileEditorVideoHTML() {
     </div>
   </div>`;
 }
+function profileEditorTransformHTML() {
+  return `<div class="settings-sec full">
+    <h3>Transform defaults</h3>
+    <div class="info-row">
+      <span>Apply reusable transform intent</span>
+      <label class="chk">
+        <input id="pe-transform-enabled" type="checkbox" onchange="peVisibility()">
+        <span class="chk-box"></span>
+        <span>Enabled</span>
+      </label>
+    </div>
+    <div id="pe-transform-fields">
+      <div class="settings-field">
+        <label for="pe-aspect">Target aspect</label>
+        <select id="pe-aspect">
+          <option value="free">Free</option>
+          <option value="16:9">16:9</option>
+          <option value="9:16">9:16</option>
+          <option value="1:1">1:1</option>
+          <option value="4:3">4:3</option>
+        </select>
+      </div>
+      <div class="settings-field">
+        <label for="pe-sizing">Sizing</label>
+        <select id="pe-sizing">
+          <option value="fit">Fit</option>
+          <option value="fill">Fill</option>
+          <option value="stretch">Stretch</option>
+        </select>
+      </div>
+      <div class="settings-field">
+        <label for="pe-rotation">Rotation</label>
+        <select id="pe-rotation">
+          <option value="0">None</option>
+          <option value="90">90° clockwise</option>
+          <option value="180">180°</option>
+          <option value="270">90° counterclockwise</option>
+        </select>
+      </div>
+      <span class="setting-note">Manual crop position and dimensions are never saved.</span>
+    </div>
+  </div>`;
+}
 function profileEditorAudioHTML() {
   return `<div class="settings-sec full">
     <h3>Audio</h3>
@@ -334,6 +388,7 @@ function profileEditorHTML() {
     <div class="settings-grid">
       ${profileEditorTaskHTML()}
       ${profileEditorVideoHTML()}
+      ${profileEditorTransformHTML()}
       ${profileEditorAudioHTML()}
       ${profileEditorEncodingHTML()}
     </div>`;
@@ -418,6 +473,10 @@ function peVisibility() {
     !(up && (rc === "CBR" || rc === "VBR")),
   );
   byId("pe-tune-row").classList.toggle("hid", !(up && cpu));
+  byId("pe-transform-fields").classList.toggle(
+    "hid",
+    !byId("pe-transform-enabled").checked,
+  );
   byId("pe-quality-label").textContent = rc === "CRF" ? "CRF" : "CQ";
 }
 function peToggleAdvanced() {
@@ -472,6 +531,13 @@ function pePayload() {
       byId("pe-tune").value !== "none"
         ? byId("pe-tune").value
         : "",
+    transform_intent: byId("pe-transform-enabled").checked
+      ? {
+          crop_aspect: byId("pe-aspect").value,
+          sizing_mode: byId("pe-sizing").value,
+          rotation: parseInt(byId("pe-rotation").value) || 0,
+        }
+      : null,
   };
   if (task === "upscale" && (rc === "cbr" || rc === "vbr"))
     data.explicit_bitrate_kbps = parseInt(byId("pe-bitrate").value) || 2000;
@@ -512,6 +578,11 @@ async function hydrateEditor() {
   peSetFps(fps);
   byId("pe-audio-source").checked = !!(p && p.keep_audio);
   byId("pe-audio").value = p ? valueOr(p.audio_bitrate_kbps, 128) : 128;
+  var intent = p && p.transform_intent;
+  byId("pe-transform-enabled").checked = !!intent;
+  byId("pe-aspect").value = intent ? intent.crop_aspect || "free" : "free";
+  byId("pe-sizing").value = intent ? intent.sizing_mode || "fit" : "fit";
+  byId("pe-rotation").value = String(intent ? intent.rotation || 0 : 0);
   byId("pe-enc").value = p ? valueOr(p.video_encoder, "libx264") : "libx264";
   peEncoderChanged();
   byId("pe-preset").value = p

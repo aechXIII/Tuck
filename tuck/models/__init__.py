@@ -46,6 +46,9 @@ from .transforms import (
     OutputGeometry as OutputGeometry,
 )
 from .transforms import (
+    ProfileTransformIntent as ProfileTransformIntent,
+)
+from .transforms import (
     TransformGeometry as TransformGeometry,
 )
 from .transforms import (
@@ -88,7 +91,7 @@ DISCORD_NITRO_BASIC_LIMIT = 50 * 1024 * 1024
 DISCORD_NITRO_LIMIT = 500 * 1024 * 1024
 MIN_TARGET_SIZE_BYTES = 2 * 1024 * 1024
 
-PROFILE_SCHEMA_VERSION = 4
+PROFILE_SCHEMA_VERSION = 5
 
 
 class QueueState(Enum):
@@ -301,6 +304,9 @@ class VideoInfo:
     file_size: int = 0
     bitrate: int = 0
     has_audio: bool = False
+    coded_width: int = 0
+    coded_height: int = 0
+    display_rotation: int = 0
 
     @property
     def resolution_str(self) -> str:
@@ -586,6 +592,8 @@ class Profile:
     cq: int = 23
     qp: int = 23
 
+    transform_intent: ProfileTransformIntent | None = None
+
     profile_id: str | None = None
     schema_version: int = PROFILE_SCHEMA_VERSION
 
@@ -601,9 +609,13 @@ class Profile:
             raise ValueError(msg)
         if self.schema_version < 1:
             self.schema_version = PROFILE_SCHEMA_VERSION
+        if self.transform_intent is not None and not isinstance(
+            self.transform_intent, ProfileTransformIntent
+        ):
+            raise ValueError("transform_intent must be a ProfileTransformIntent or None")
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        data = {
             "profile_id": self.profile_id,
             "name": self.name,
             "target_size_bytes": self.target_size_bytes,
@@ -633,6 +645,9 @@ class Profile:
             "qp": self.qp,
             "schema_version": self.schema_version,
         }
+        if self.transform_intent is not None:
+            data["transform_intent"] = self.transform_intent.to_dict()
+        return data
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Profile:
@@ -659,12 +674,16 @@ class Profile:
             merged["rate_control_method"] = RCM_CRF
             merged["crf"] = 18
             merged["two_pass"] = False
-        if merged.get("schema_version", 1) < PROFILE_SCHEMA_VERSION or (
+        schema_version = merged.get("schema_version", 1)
+        if schema_version < 4 or (
             merged.get("workflow", WORKFLOW_COMPRESSION) == WORKFLOW_COMPRESSION
             and merged.get("rate_control") == RC_EXPLICIT_BITRATE
         ):
             merged = _migrate_profile_data(merged)
+        elif schema_version < PROFILE_SCHEMA_VERSION:
+            merged["schema_version"] = PROFILE_SCHEMA_VERSION
         _validate_profile_dict(merged)
+        transform_data = merged.get("transform_intent")
         return cls(
             name=merged["name"],
             target_size_bytes=merged.get("target_size_bytes", DISCORD_NITRO_BASIC_LIMIT),
@@ -692,6 +711,11 @@ class Profile:
             rate_control_method=merged.get("rate_control_method", RCM_CBR),
             cq=merged.get("cq", merged.get("qp", 23)),
             qp=merged.get("qp", 23),
+            transform_intent=(
+                ProfileTransformIntent.from_dict(transform_data)
+                if transform_data is not None
+                else None
+            ),
             profile_id=merged.get("profile_id") or None,
             schema_version=merged.get("schema_version", PROFILE_SCHEMA_VERSION),
         )
@@ -931,6 +955,7 @@ _PROFILE_KNOWN = frozenset(
         "rate_control_method",
         "cq",
         "qp",
+        "transform_intent",
     }
 )
 
@@ -1010,6 +1035,12 @@ def _validate_profile_dict(data: dict[str, Any]) -> None:
     unknown = set(data.keys()) - _PROFILE_KNOWN
     if unknown:
         raise ValueError(f"Profile has unknown fields: {', '.join(sorted(unknown))}")
+
+    transform_intent = data.get("transform_intent")
+    if transform_intent is not None:
+        if not isinstance(transform_intent, dict):
+            raise ValueError("transform_intent must be an object or null")
+        ProfileTransformIntent.from_dict(transform_intent)
 
     name = data.get("name")
     if not isinstance(name, str) or not name.strip():

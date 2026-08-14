@@ -24,6 +24,7 @@ from tuck.models import (
     OutputGeometry,
     PlanRequest,
     Profile,
+    ProfileTransformIntent,
     QueueItem,
     QueueState,
     VideoInfo,
@@ -169,6 +170,71 @@ class TestProfile:
             assert restored.profile_id == p.profile_id
             assert restored.name == p.name
             assert restored.target_size_bytes == p.target_size_bytes
+
+    def test_legacy_profile_without_transform_intent_preserves_absence(self):
+        legacy = DEFAULT_PROFILES[0].to_dict()
+        legacy.pop("transform_intent", None)
+
+        restored = Profile.from_dict(legacy)
+
+        assert restored.transform_intent is None
+        assert "transform_intent" not in restored.to_dict()
+
+    def test_version_four_profile_adds_no_transform_or_encoding_migration(self):
+        existing = Profile(
+            name="Existing profile",
+            profile_id="existing-auto",
+            resolution_mode=RES_MODE_CUSTOM,
+            custom_width=1440,
+            custom_height=810,
+            scaler="lanczos",
+            video_encoder="libx264",
+            rate_control_method="cbr",
+            two_pass=False,
+        ).to_dict()
+        existing["schema_version"] = 4
+
+        restored = Profile.from_dict(existing)
+
+        assert restored.schema_version == 5
+        assert restored.transform_intent is None
+        assert restored.custom_width == 1440
+        assert restored.custom_height == 810
+        assert restored.scaler == "lanczos"
+        assert restored.video_encoder == "libx264"
+        assert restored.rate_control_method == "cbr"
+        assert restored.two_pass is False
+
+    def test_transform_intent_serialization(self):
+        profile = Profile(
+            name="Vertical upload",
+            profile_id="vertical-upload",
+            resolution_mode=RES_MODE_CUSTOM,
+            custom_width=1080,
+            custom_height=1920,
+            transform_intent=ProfileTransformIntent(
+                crop_aspect="9:16",
+                sizing_mode="fill",
+                rotation=90,
+            ),
+        )
+
+        restored = Profile.from_dict(profile.to_dict())
+
+        assert restored.transform_intent == profile.transform_intent
+        assert "crop" not in restored.to_dict()["transform_intent"]
+
+    def test_transform_intent_rejects_source_specific_crop(self):
+        data = DEFAULT_PROFILES[0].to_dict()
+        data["transform_intent"] = {
+            "crop_aspect": "9:16",
+            "sizing_mode": "fill",
+            "rotation": 0,
+            "crop": {"x": 0, "y": 0, "width": 1080, "height": 1920},
+        }
+
+        with pytest.raises(ValueError, match="unsupported fields"):
+            Profile.from_dict(data)
 
     def test_legacy_cqp_roundtrip_preserves_quality_value(self):
         profile = Profile(
@@ -475,6 +541,19 @@ class TestProfileSerialization:
         assert path.exists()
         imported = import_profiles_json(path)
         assert len(imported) == len(DEFAULT_PROFILES)
+
+    def test_transform_profile_export_import_round_trip(self, tmp_path):
+        path = tmp_path / "transform-profiles.json"
+        profile = Profile(
+            name="Square",
+            profile_id="square",
+            transform_intent=ProfileTransformIntent(crop_aspect="1:1", sizing_mode="fill"),
+        )
+
+        export_profiles_json([profile], path)
+        imported = import_profiles_json(path)
+
+        assert imported == [profile]
 
     def test_import_empty_file(self, tmp_path):
         path = tmp_path / "empty.json"

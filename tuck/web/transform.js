@@ -266,6 +266,7 @@
     clip.crop = root.TuckCropGeometry.isFullCrop(next, size.width, size.height)
       ? null
       : next;
+    clip.transformOverride = true;
     clip.planData = null;
     paintCropOverlay();
   }
@@ -339,6 +340,8 @@
     if (!clip) return;
     clip.crop = root.TuckCropGeometry.resetCrop();
     clip.cropAspect = "free";
+    clip.transformOverride = true;
+    clip.transformIntentTouched = true;
     clip.planData = null;
     syncTransformControls();
     paintCropOverlay();
@@ -371,6 +374,8 @@
     var size = sourceSize(clip);
     if (!clip || !size) return;
     clip.cropAspect = aspect;
+    clip.transformOverride = true;
+    clip.transformIntentTouched = true;
     if (aspect !== "free") {
       var current = root.TuckCropGeometry.selectionCrop(
         clip.crop,
@@ -402,6 +407,8 @@
     var clip = selectedClip();
     if (!clip) return;
     clip.rotation = rotation;
+    clip.transformOverride = true;
+    clip.transformIntentTouched = true;
     clip.planData = null;
     syncTransformControls();
     paintCropOverlay();
@@ -414,6 +421,7 @@
     if (!clip) return;
     if (axis === "horizontal") clip.flipHorizontal = !clip.flipHorizontal;
     if (axis === "vertical") clip.flipVertical = !clip.flipVertical;
+    clip.transformOverride = true;
     clip.planData = null;
     syncTransformControls();
     paintCropOverlay();
@@ -425,6 +433,8 @@
     var clip = selectedClip();
     if (!clip) return;
     clip.sizingMode = mode;
+    clip.transformOverride = true;
+    clip.transformIntentTouched = true;
     clip.planData = null;
     syncTransformControls();
     paintCropOverlay();
@@ -434,33 +444,33 @@
   function syncTransformControls() {
     var clip = selectedClip();
     if (!clip) return;
+
+    function setToggleState(button, active) {
+      button.classList.toggle("on", active);
+      button.setAttribute("aria-pressed", String(active));
+    }
+
     var aspect = clip.cropAspect || "free";
     var aspectButtons = document.querySelectorAll("[data-aspect]");
     for (var a = 0; a < aspectButtons.length; a++) {
-      aspectButtons[a].classList.toggle(
-        "on",
-        aspectButtons[a].dataset.aspect === aspect,
-      );
+      setToggleState(aspectButtons[a], aspectButtons[a].dataset.aspect === aspect);
     }
     var rotation = clip.rotation || 0;
     var rotationButtons = document.querySelectorAll("[data-rotation]");
     for (var i = 0; i < rotationButtons.length; i++) {
-      rotationButtons[i].classList.toggle(
-        "on",
+      setToggleState(
+        rotationButtons[i],
         parseInt(rotationButtons[i].dataset.rotation, 10) === rotation,
       );
     }
     var flipH = document.getElementById("flip-horizontal");
     var flipV = document.getElementById("flip-vertical");
-    if (flipH) flipH.classList.toggle("on", !!clip.flipHorizontal);
-    if (flipV) flipV.classList.toggle("on", !!clip.flipVertical);
+    if (flipH) setToggleState(flipH, !!clip.flipHorizontal);
+    if (flipV) setToggleState(flipV, !!clip.flipVertical);
     var sizing = clip.sizingMode || "fit";
     var sizingButtons = document.querySelectorAll("[data-sizing]");
     for (var j = 0; j < sizingButtons.length; j++) {
-      sizingButtons[j].classList.toggle(
-        "on",
-        sizingButtons[j].dataset.sizing === sizing,
-      );
+      setToggleState(sizingButtons[j], sizingButtons[j].dataset.sizing === sizing);
     }
   }
 

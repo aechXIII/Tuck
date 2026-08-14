@@ -450,7 +450,7 @@ class TestMigration:
         assert found.workflow == WORKFLOW_COMPRESSION
         assert found.rate_control_method == "cbr"
         assert found.qp == 23
-        assert found.schema_version == 4
+        assert found.schema_version == 5
 
     def test_migrate_v2_to_v3_gives_compression_cbr(self, tmp_path, monkeypatch):
         """v2 compression profiles get rate_control_method=cbr and schema_version=3."""
@@ -496,7 +496,7 @@ class TestMigration:
         assert found is not None
         assert found.workflow == WORKFLOW_COMPRESSION
         assert found.rate_control_method == "cbr"
-        assert found.schema_version == 4
+        assert found.schema_version == 5
 
     def test_migrate_v2_upscale_profiles_get_correct_defaults(self, tmp_path, monkeypatch):
         """v2 upscale profiles get workflow=upscale, crf=18, two_pass=False on migration."""
@@ -541,7 +541,7 @@ class TestMigration:
         assert found.rate_control_method == RCM_CRF
         assert found.crf == 18
         assert found.two_pass is False
-        assert found.schema_version == 4
+        assert found.schema_version == 5
 
     def test_default_profiles_have_correct_workflows(self):
         """Default profiles have correct workflow values."""
@@ -992,7 +992,7 @@ class TestV2UserProfileMigration:
         assert found is not None
         assert found.rate_control_method == "cbr", f"Expected cbr, got {found.rate_control_method}"
         assert found.workflow == "compression"
-        assert found.schema_version == 4
+        assert found.schema_version == 5
 
     def test_v2_user_compression_cqp_gpu_normalized(self, tmp_path, monkeypatch):
         """A v2 user profile with compression+CQP+GPU is migrated to CBR with two_pass=False."""
@@ -1040,4 +1040,4 @@ class TestV2UserProfileMigration:
         assert found is not None
         assert found.rate_control_method == "cbr"
         assert found.two_pass is False
-        assert found.schema_version == 4
+        assert found.schema_version == 5

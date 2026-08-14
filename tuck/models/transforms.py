@@ -117,6 +117,44 @@ class OutputGeometry:
 
 
 @dataclass(frozen=True)
+class ProfileTransformIntent:
+    crop_aspect: str = CROP_ASPECT_FREE
+    rotation: int = 0
+    sizing_mode: str = SIZING_MODE_FIT
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.crop_aspect, str) or self.crop_aspect not in CROP_ASPECT_RATIOS:
+            raise ValueError(f"crop_aspect must be one of {sorted(CROP_ASPECT_RATIOS)}")
+        if (
+            isinstance(self.rotation, bool)
+            or not isinstance(self.rotation, int)
+            or self.rotation not in ROTATIONS
+        ):
+            raise ValueError("rotation must be one of 0, 90, 180, or 270")
+        if not isinstance(self.sizing_mode, str) or self.sizing_mode not in SIZING_MODES:
+            raise ValueError(f"sizing_mode must be one of {sorted(SIZING_MODES)}")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "crop_aspect": self.crop_aspect,
+            "rotation": self.rotation,
+            "sizing_mode": self.sizing_mode,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ProfileTransformIntent:
+        expected = {"crop_aspect", "rotation", "sizing_mode"}
+        unexpected = set(data) - expected
+        if unexpected:
+            raise ValueError(f"transform_intent contains unsupported fields: {sorted(unexpected)}")
+        return cls(
+            crop_aspect=data.get("crop_aspect", CROP_ASPECT_FREE),
+            rotation=data.get("rotation", 0),
+            sizing_mode=data.get("sizing_mode", SIZING_MODE_FIT),
+        )
+
+
+@dataclass(frozen=True)
 class VideoTransform:
     crop: CropRect | None = None
     crop_aspect: str = CROP_ASPECT_FREE

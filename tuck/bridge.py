@@ -149,6 +149,9 @@ class BridgeAPI:
                 "duration_str": info.duration_str,
                 "width": info.width,
                 "height": info.height,
+                "coded_width": info.coded_width or info.width,
+                "coded_height": info.coded_height or info.height,
+                "display_rotation": info.display_rotation,
                 "resolution": info.resolution_str,
                 "fps": round(info.fps, 2),
                 "video_codec": info.video_codec,
@@ -570,6 +573,9 @@ class BridgeAPI:
                         "rate_control_method": getattr(p, "rate_control_method", "crf"),
                         "cq": getattr(p, "cq", getattr(p, "qp", 23)),
                         "qp": getattr(p, "qp", 23),
+                        "transform_intent": (
+                            p.transform_intent.to_dict() if p.transform_intent is not None else None
+                        ),
                     }
                     for p in profiles
                 ],
@@ -716,6 +722,9 @@ class BridgeAPI:
                     "rate_control_method": getattr(p, "rate_control_method", "crf"),
                     "cq": getattr(p, "cq", getattr(p, "qp", 23)),
                     "qp": getattr(p, "qp", 23),
+                    "transform_intent": (
+                        p.transform_intent.to_dict() if p.transform_intent is not None else None
+                    ),
                 }
                 for p in profiles
             ]

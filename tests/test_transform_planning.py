@@ -6,6 +6,7 @@ from tuck.models import (
     OutputGeometry,
     PlanRequest,
     Profile,
+    ProfileTransformIntent,
     VideoInfo,
     VideoTransform,
 )
@@ -110,3 +111,58 @@ def test_explicit_stretch_scales_crop_to_source_geometry(tmp_path):
     )
     assert (result.target_width, result.target_height) == (1920, 1080)
     assert result.apply_scale
+
+
+def test_profile_transform_intent_is_materialized_for_source(tmp_path):
+    source = tmp_path / "source.mp4"
+    source.write_bytes(b"source")
+    profile = Profile(
+        name="Vertical upload",
+        resolution_mode=RES_MODE_CUSTOM,
+        custom_width=1080,
+        custom_height=1920,
+        two_pass=False,
+        transform_intent=ProfileTransformIntent(crop_aspect="9:16", sizing_mode="fill"),
+    )
+
+    result = plan(
+        source,
+        profile,
+        output=tmp_path / "output.mp4",
+        source_info=_source_info(source),
+    )
+
+    assert result.transform.crop is not None
+    assert result.transform.crop.width * 16 == result.transform.crop.height * 9
+    assert result.transform.crop.x + result.transform.crop.width <= 1920
+    assert result.transform.crop.y + result.transform.crop.height <= 1080
+    assert result.transform.crop_aspect == "9:16"
+    assert (result.target_width, result.target_height) == (1080, 1920)
+
+
+def test_manual_job_transform_overrides_profile_intent(tmp_path):
+    source = tmp_path / "source.mp4"
+    source.write_bytes(b"source")
+    profile = Profile(
+        name="Vertical upload",
+        two_pass=False,
+        transform_intent=ProfileTransformIntent(crop_aspect="9:16", sizing_mode="fill"),
+    )
+    manual = VideoTransform(
+        crop=CropRect(100, 100, 800, 800),
+        crop_aspect="free",
+        sizing_mode=SIZING_MODE_FIT,
+        output=OutputGeometry(1000, 1000),
+    )
+
+    result = plan(
+        source,
+        profile,
+        output=tmp_path / "output.mp4",
+        request=PlanRequest(transform=manual),
+        source_info=_source_info(source),
+    )
+
+    assert result.transform.crop == manual.crop
+    assert result.transform.crop_aspect == "free"
+    assert result.transform.sizing_mode == SIZING_MODE_FIT

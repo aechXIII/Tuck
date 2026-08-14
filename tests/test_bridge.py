@@ -141,6 +141,46 @@ class TestBridgeProfileLifecycle:
         assert len(found) == 1
         assert found[0].name == "My Test Profile"
 
+    def test_create_profile_persists_reusable_transform_intent(self, tmp_path, monkeypatch):
+        import tuck.settings as settings_mod
+
+        monkeypatch.setattr(settings_mod, "_config_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
+
+        api = BridgeAPI()
+        api._settings.load()
+        result = json.loads(
+            api.create_profile(
+                json.dumps(
+                    {
+                        "name": "Vertical upload",
+                        "target_size_mb": 10,
+                        "resolution_mode": "custom",
+                        "custom_width": 1080,
+                        "custom_height": 1920,
+                        "transform_intent": {
+                            "crop_aspect": "9:16",
+                            "sizing_mode": "fill",
+                            "rotation": 0,
+                        },
+                    }
+                )
+            )
+        )
+
+        assert result["ok"]
+        profile = find_profile_by_id(api._settings.get_profiles(), result["profile_id"])
+        assert profile is not None
+        assert profile.transform_intent is not None
+        assert profile.transform_intent.crop_aspect == "9:16"
+        exposed = next(
+            item
+            for item in json.loads(api.get_profiles_json())
+            if item["profile_id"] == result["profile_id"]
+        )
+        assert exposed["transform_intent"] == profile.transform_intent.to_dict()
+
     def test_create_compression_profile_without_explicit_bitrate(self, tmp_path, monkeypatch):
         import tuck.settings as settings_mod
 
