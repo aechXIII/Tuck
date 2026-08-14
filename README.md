@@ -1,6 +1,6 @@
 # Tuck
 
-Windows video compressor and upscaler. Built for Discord limits, but useful for any FFmpeg job that needs a smaller file or to upscale a video for YouTube.
+Tuck is a Windows app for compressing and upscaling videos with FFmpeg. It lets you trim, crop, rotate, and resize clips before encoding, and includes ready-made profiles for Discord upload limits.
 
 [![Release](https://img.shields.io/github/v/release/aechXIII/Tuck?style=flat-square&color=3B6AD8)](https://github.com/aechXIII/Tuck/releases) [![License: MIT](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE) [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-lightgrey?style=flat-square)]() [![Buy Me a Coffee](https://img.shields.io/badge/support-Buy%20Me%20a%20Coffee-F5A623?style=flat-square&logo=buy-me-a-coffee)](https://buymeacoffee.com/aechxiii)
 
@@ -20,12 +20,17 @@ https://github.com/user-attachments/assets/532317a7-e628-455e-b041-4aeceef810b5
 
 ## Features
 
-**Compress**
-- Default Discord presets for 10 MB, 50 MB, and 500 MB files
-- Two-pass encoding with target-size retries; outputs over the configured limit are never published
-- Auto (best compression) prefers software quality per byte; Auto (fastest available) prefers usable NVIDIA or AMD hardware
-- CPU, NVIDIA, and AMD H.264/H.265 encoders; explicitly selected encoders fail clearly rather than switching automatically
+**Trim and transform**
 - Trim clips with the two-handle timeline before encoding
+- Crop directly in the preview using a freeform selection or fixed aspect ratio
+- Rotate in 90-degree steps or flip the picture horizontally or vertically
+- Choose Fit to keep the whole picture, Fill to crop it to the output frame, or Stretch to match the exact output dimensions
+
+**Compress**
+- Default Discord presets for 20 MB, 50 MB, and 500 MB files
+- Two-pass encoding with target-size retries; outputs over the configured limit are never published
+- Auto (best compression) favors quality per byte. Auto (fastest available) uses NVIDIA or AMD hardware when possible
+- Choose CPU, NVIDIA, or AMD H.264/H.265 encoders. If your selected encoder is unavailable, Tuck tells you instead of silently switching
 
 **Upscale**
 - Default 1440p and 4K presets
@@ -33,12 +38,13 @@ https://github.com/user-attachments/assets/532317a7-e628-455e-b041-4aeceef810b5
 - Choose the scaler you prefer
 
 **Profiles and queue**
-- Edit, copy, import, and export profiles
-- Process several files in order, drag to reorder pending jobs, and see stage, pass, speed, ETA, and retry progress
-- Cancel an individual pending or running job; retry failed or cancelled jobs with their original requested trim and encode settings
-- Stop after the current job or automatically clear completed jobs; failed and cancelled jobs remain available for inspection or retry
+- Create, edit, copy, and import profiles, or export one profile at a time
+- Profiles can remember aspect ratio, sizing mode, and rotation. Each clip keeps its own crop region
+- Queue several files, drag pending jobs into order, and follow each encode's stage, pass, speed, ETA, and retry progress
+- Cancel a pending or running job. Failed and cancelled jobs can be retried with their original trim and encode settings
+- Stop after the current job or clear completed jobs automatically. Failed and cancelled jobs stay available for inspection or retry
 - Keep source resolution and FPS, or set limits per profile
-- Copy sanitized diagnostics for support without exposing local paths
+- Copy a support report that hides local paths, or open the logs and configuration folders directly
 
 **Windows**
 - Drag files into the app
@@ -63,12 +69,12 @@ If `winget` is unavailable, download a Windows build from [FFmpeg](https://ffmpe
 
 ## Use
 
-1. Add one or more video files and optionally trim the selected clip on the timeline.
-2. Select a compression or upscale profile and encoder. Use **Auto** to try compatible usable hardware candidates before CPU.
-3. Start the queue. Pending jobs can be reordered; pending or running jobs can be cancelled; failed or cancelled jobs can be retried without changing the original request. Stop after the current job or clear completed jobs automatically as needed.
+1. Add one or more video files and optionally trim, crop, rotate, or flip the selected clip.
+2. Select a compression or upscale profile and encoder.
+3. Start the queue. You can reorder pending jobs, cancel a pending or running job, and retry failed or cancelled jobs without changing the original request.
 4. Use **Settings > System > Copy diagnostics** after a failure to copy a path-sanitized support report.
 
-For File Explorer, select video files, right-click them, then use **Send To > Tuck**. You can also add profile-specific shortcuts from Tuck settings.
+For File Explorer, select video files, right-click them, then use **Send To > Tuck**. You can also add profile-specific shortcuts from Settings.
 
 ## Command line
 
@@ -106,6 +112,7 @@ pytest
 ruff format --check tuck/ tests/
 ruff check tuck/ tests/
 pyright tuck/
+node --test
 ```
 
 The app build is in `dist\Tuck\`. The installer is in `scripts\Output\`.

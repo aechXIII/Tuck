@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.3.0] - 2026-08-14
+
+### Added
+- Crop videos directly in the preview using a freeform selection or fixed aspect ratio
+- Rotate videos in 90-degree steps, flip them horizontally or vertically, and preview Fit, Fill, or Stretch output sizing from the new transform toolbar
+- Save aspect ratio, sizing mode, and rotation in profiles without carrying crop regions from one video to another
+- Open the logs and configuration folders from Settings
+
+### Changed
+- Reorganized Settings, moved output options into their own section, and grouped system and support tools
+- Changed profile export in Settings to save one profile at a time
+- Updated the Discord Free profile from 10 MB to 20 MB to match Discord's current upload limit
+- Reused file details while preparing previews and queued jobs instead of running FFprobe again
+
+### Fixed
+- Fixed width and height detection for phone videos that store rotation as metadata
+- Fixed target-size bitrate calculations when using Auto (fastest available)
+- Fixed Windows Send To shortcuts showing an unknown status in Settings
+
 ## [0.2.1] - 2026-08-09
 
 ### Fixed
