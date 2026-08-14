@@ -90,19 +90,29 @@ jobs:
       - name: Run tests
         run: pytest
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Frontend tests
+        run: node --test
+
       - name: Build with PyInstaller
         run: pyinstaller scripts/tuck.spec
 
       - name: Smoke test packaged executable (CLI)
         run: |
+          $tag = "${{ github.ref_name }}".TrimStart('v')
           $version = & "dist\Tuck\TuckCli.exe" --version
           Write-Host "Packaged version: $version"
           if ($LASTEXITCODE -ne 0) {
             Write-Error "Packaged executable --version failed with exit code $LASTEXITCODE"
             exit 1
           }
-          if ($version -notmatch 'Tuck \d+\.\d+\.\d+') {
-            Write-Error "Unexpected version output: $version"
+          $expected = "Tuck $tag"
+          if ($version.Trim() -ne $expected) {
+            Write-Error "Unexpected version output: $version (expected $expected)"
             exit 1
           }
 
@@ -121,7 +131,8 @@ jobs:
 
       - name: Compute installer SHA-256
         run: |
-          $installer = Get-ChildItem scripts/Output/Tuck-Setup-*.exe | Select-Object -First 1
+          $version = "${{ github.ref_name }}".TrimStart('v')
+          $installer = Get-Item "scripts/Output/Tuck-Setup-$version-x64.exe"
           $hash = (Get-FileHash -Path $installer.FullName -Algorithm SHA256).Hash.ToLower()
           "$hash  $($installer.Name)" | Out-File -Encoding ASCII -FilePath "$($installer.FullName).sha256"
           Write-Host "Installer SHA-256: $hash"

@@ -2,20 +2,22 @@ param(
   [Parameter(Mandatory = $false)]
   [switch]$Clean,
   [Parameter(Mandatory = $false)]
-  [switch]$Installer
+  [switch]$Installer,
+  [Parameter(Mandatory = $false)]
+  [string]$PythonExecutable = ".\.venv\Scripts\python.exe"
 )
 
 $ErrorActionPreference = "Stop"
 Set-Location (Split-Path -Parent $PSScriptRoot)
 
-if (-not (Test-Path ".\.venv\Scripts\python.exe")) {
-  Write-Error "Virtual environment not found. Run scripts\setup.ps1 first."
+if (-not (Test-Path -LiteralPath $PythonExecutable)) {
+  Write-Error "Python executable not found: $PythonExecutable. Run scripts\setup.ps1 first."
   exit 1
 }
 
 # Check pywin32
 Write-Host "Checking pywin32 installation..." -ForegroundColor Cyan
-$pywin32Check = & .\.venv\Scripts\python.exe -c "import win32com.client; import pythoncom; import pywintypes; print('OK')" 2>&1
+$pywin32Check = & $PythonExecutable -c "import win32com.client; import pythoncom; import pywintypes; print('OK')" 2>&1
 if ($LASTEXITCODE -ne 0) {
   Write-Error "pywin32 is not installed correctly in the venv. Run: .\.venv\Scripts\python.exe -m pip install pywin32"
   exit 1
@@ -23,7 +25,7 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "  pywin32: OK" -ForegroundColor Green
 
 Write-Host "Checking pywebview installation..." -ForegroundColor Cyan
-$webviewCheck = & .\.venv\Scripts\python.exe -c "import webview; print('OK')" 2>&1
+$webviewCheck = & $PythonExecutable -c "import webview; print('OK')" 2>&1
 if ($LASTEXITCODE -ne 0) {
   Write-Error "pywebview is not installed correctly in the venv. Run scripts\setup.ps1."
   exit 1
@@ -36,7 +38,7 @@ if ($Clean) {
 }
 
 Write-Host "Building Tuck with PyInstaller..." -ForegroundColor Cyan
-& .\.venv\Scripts\python.exe -m PyInstaller --noconfirm scripts/tuck.spec
+& $PythonExecutable -m PyInstaller --noconfirm scripts/tuck.spec
 
 if ($LASTEXITCODE -ne 0) {
   Write-Error "PyInstaller build failed."
@@ -124,5 +126,5 @@ if ($Installer) {
 
   $verLine = Select-String -Path "scripts\installer.iss" -Pattern '#define MyAppVersion' | Select-Object -First 1
   $ver = if ($verLine) { ($verLine.Line -replace '.*"(.+)".*','$1') } else { "unknown" }
-  Write-Host "OK: scripts\Output\Tuck-Setup-$ver.exe" -ForegroundColor Green
+  Write-Host "OK: scripts\Output\Tuck-Setup-$ver-x64.exe" -ForegroundColor Green
 }

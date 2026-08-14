@@ -19,6 +19,17 @@ def test_release_workflow_uses_the_version_changelog_entry() -> None:
     assert "No changelog entry found" in workflow
     assert "body_path: release-notes.md" in workflow
     assert "generate_release_notes" not in workflow
+    assert "$tag = \"${{ github.ref_name }}\".TrimStart('v')" in workflow
+    assert '$expected = "Tuck $tag"' in workflow
+    assert 'Get-Item "scripts/Output/Tuck-Setup-$version-x64.exe"' in workflow
+
+
+def test_workflows_run_frontend_tests() -> None:
+    workflows = Path(".github/workflows")
+
+    for name in ("tests.yml", "release.yml"):
+        workflow = (workflows / name).read_text(encoding="utf-8")
+        assert "node --test" in workflow
 
 
 def test_pyinstaller_spec_builds_a_real_one_folder_app() -> None:
