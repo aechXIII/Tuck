@@ -143,6 +143,16 @@ class TestJsApi:
         assert api.openConfigFolder() == {"ok": True}
         assert called == ["first", "second", "third:1", "copy:5", "logs", "config"]
 
+    def test_exports_one_profile_through_the_bridge(self) -> None:
+        api = _JsApi(_Bridge())
+        called: list[tuple[str, str]] = []
+        api._api.export_profile_to_file = lambda path, profile_id: (
+            called.append((path, profile_id)) or '{"ok": true}'
+        )
+
+        assert api.exportProfileToFile("gaming.json", "gaming") == {"ok": True}
+        assert called == [("gaming.json", "gaming")]
+
     def test_ffmpeg_picker_returns_selected_executable(self, tmp_path: Path) -> None:
         executable = tmp_path / "ffmpeg.exe"
         executable.write_text("x")
@@ -190,6 +200,13 @@ def test_resource_path_locates_web_ui() -> None:
         "transform.js",
     ):
         assert _get_resource_path(f"tuck/web/{name}").is_file()
+
+
+def test_profile_settings_export_individual_profiles() -> None:
+    source = Path("tuck/web/settings.js").read_text(encoding="utf-8")
+
+    assert "api.exportProfileToFile(r.path, pid)" in source
+    assert 'settingButton("Export", "exportProfs()")' not in source
 
 
 def test_native_hwnd_requires_real_handle() -> None:

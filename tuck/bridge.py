@@ -618,6 +618,20 @@ class BridgeAPI:
         except Exception as e:
             return json.dumps({"ok": False, "error": str(e)})
 
+    def export_profile_to_file(self, file_path: str, profile_id: str) -> str:
+
+        from .models import export_profiles_json, find_profile_by_id
+
+        profile = find_profile_by_id(self._settings.get_profiles(), profile_id)
+        if profile is None:
+            return json.dumps({"ok": False, "error": f"Profile not found: {profile_id}"})
+
+        try:
+            export_profiles_json([profile], Path(file_path))
+            return json.dumps({"ok": True})
+        except Exception as e:
+            return json.dumps({"ok": False, "error": str(e)})
+
     def create_profile(self, profile_json: str) -> str:
 
         try:

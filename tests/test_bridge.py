@@ -1791,6 +1791,45 @@ class TestBridgeImportExportFromFile:
         resp2 = json.loads(api.import_profiles_from_file(str(export_path)))
         assert resp2["ok"]
 
+    def test_export_single_profile_to_file(self, tmp_path, monkeypatch):
+        import tuck.settings as settings_mod
+
+        monkeypatch.setattr(settings_mod, "_config_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_settings_manager", None)
+
+        from tuck.models import import_profiles_json
+
+        api = BridgeAPI()
+        api._settings.load()
+        first = Profile(name="First", profile_id="first")
+        second = Profile(name="Second", profile_id="second")
+        api._settings.set_profiles([first, second])
+
+        export_path = tmp_path / "second.json"
+        resp = json.loads(api.export_profile_to_file(str(export_path), "second"))
+
+        assert resp["ok"]
+        assert import_profiles_json(export_path) == [second]
+
+    def test_export_single_profile_rejects_missing_id(self, tmp_path, monkeypatch):
+        import tuck.settings as settings_mod
+
+        monkeypatch.setattr(settings_mod, "_config_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_settings_manager", None)
+
+        api = BridgeAPI()
+        api._settings.load()
+        export_path = tmp_path / "missing.json"
+
+        resp = json.loads(api.export_profile_to_file(str(export_path), "missing"))
+
+        assert resp == {"ok": False, "error": "Profile not found: missing"}
+        assert not export_path.exists()
+
 
 class TestBridgeGetProfilesJson:
     def test_returns_list(self, tmp_path, monkeypatch):

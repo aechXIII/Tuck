@@ -118,7 +118,9 @@ async function refreshPMList(filter) {
       escJS(p.profile_id) +
       '\')">Edit</button><details class="profile-actions-menu"><summary class="mbtn" aria-label="More actions for ' +
       esc(p.name) +
-      '">•••</summary><div class="profile-actions-popover"><button onclick="dupProf(\'' +
+      '">•••</summary><div class="profile-actions-popover"><button onclick="exportProf(\'' +
+      escJS(p.profile_id) +
+      '\')">Export</button><button onclick="dupProf(\'' +
       escJS(p.profile_id) +
       '\')">Duplicate</button><button class="danger" onclick="delProf(\'' +
       escJS(p.profile_id) +
@@ -165,11 +167,11 @@ async function importProfs() {
     toast("Profiles imported.", "ok");
   } else toast(result.error, "err");
 }
-async function exportProfs() {
-  var r = await api.pickSaveFile("profiles.json");
+async function exportProf(pid) {
+  var r = await api.pickSaveFile(pid + ".json");
   if (!r.ok || !r.path) return;
-  var result = await api.exportProfilesToFile(r.path);
-  if (result.ok) toast("Profiles exported.", "ok");
+  var result = await api.exportProfileToFile(r.path, pid);
+  if (result.ok) toast("Profile exported.", "ok");
   else toast(result.error, "err");
 }
 function settingsTitle(title, action) {
@@ -941,7 +943,6 @@ async function openSettings(page, view, profileId) {
       plain: true,
       html:
         settingButton("Import", "importProfs()") +
-        settingButton("Export", "exportProfs()") +
         '<span class="settings-action-spacer"></span>' +
         settingButton("+ New profile", "newProf()", true),
     };

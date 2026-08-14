@@ -135,6 +135,9 @@ class _JsApi:
     def exportProfilesToFile(self, file_path: str) -> dict[str, Any] | list[Any]:
         return self._call(self._api.export_profiles_to_file, file_path)
 
+    def exportProfileToFile(self, file_path: str, profile_id: str) -> dict[str, Any] | list[Any]:
+        return self._call(self._api.export_profile_to_file, file_path, profile_id)
+
     def checkForUpdates(self) -> dict[str, Any] | list[Any]:
         return self._call(self._api.check_for_updates)
 
