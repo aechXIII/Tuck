@@ -214,7 +214,7 @@ function profileEditorVideoHTML() {
       <span>MB</span>
     </div>
     <div class="pset">
-      <button onclick="peSetSize(10)">10 MB</button>
+      <button onclick="peSetSize(20)">20 MB</button>
       <button onclick="peSetSize(50)">50 MB</button>
       <button onclick="peSetSize(100)">100 MB</button>
       <button onclick="peSetSize(500)">500 MB</button>
@@ -1107,7 +1107,7 @@ function updateExampleOutput() {
   if (compress && byId("ex-out"))
     byId("ex-out").textContent =
       "video" +
-      (compress.value.trim() || "_tucked_{size}").replace("{size}", "10MB") +
+      (compress.value.trim() || "_tucked_{size}").replace("{size}", "20MB") +
       ".mp4";
   if (upscale && byId("ex-up-out"))
     byId("ex-up-out").textContent =

@@ -497,6 +497,8 @@ _OLD_NAME_MAP = {
     "Discord Free (8 MB)": "discord-10mb",
     "Discord Free (10 MB)": "discord-10mb",
     "Discord Free - 10MB": "discord-10mb",
+    "Discord Free (20 MB)": "discord-10mb",
+    "Discord Free - 20MB": "discord-10mb",
     "Discord Nitro Basic (50 MB)": "discord-50mb",
     "Discord Nitro Basic - 50MB": "discord-50mb",
     "Discord Nitro (500 MB)": "discord-500mb",

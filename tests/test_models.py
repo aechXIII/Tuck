@@ -11,6 +11,7 @@ from tuck.models import (
     PROFILE_ID_DISCORD_FREE,
     PROFILE_ID_DISCORD_NITRO,
     PROFILE_ID_DISCORD_NITRO_BASIC,
+    PROFILE_SCHEMA_VERSION,
     RC_EXPLICIT_BITRATE,
     RC_TARGET_SIZE,
     RES_MODE_CUSTOM,
@@ -196,7 +197,7 @@ class TestProfile:
 
         restored = Profile.from_dict(existing)
 
-        assert restored.schema_version == 5
+        assert restored.schema_version == PROFILE_SCHEMA_VERSION
         assert restored.transform_intent is None
         assert restored.custom_width == 1440
         assert restored.custom_height == 810
@@ -403,7 +404,7 @@ class TestProfile:
 
     def test_default_profiles_have_correct_sizes(self):
         free = find_profile_by_id(DEFAULT_PROFILES, PROFILE_ID_DISCORD_FREE)
-        assert free.target_size_bytes == 10 * 1024 * 1024
+        assert free.target_size_bytes == 20 * 1024 * 1024
         basic = find_profile_by_id(DEFAULT_PROFILES, PROFILE_ID_DISCORD_NITRO_BASIC)
         assert basic.target_size_bytes == 50 * 1024 * 1024
         nitro = find_profile_by_id(DEFAULT_PROFILES, PROFILE_ID_DISCORD_NITRO)

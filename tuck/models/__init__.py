@@ -70,6 +70,7 @@ from .transforms import (
     oriented_dimensions as oriented_dimensions,
 )
 
+# Keep the old ID so saved settings, CLI commands, and Send To shortcuts still work
 PROFILE_ID_DISCORD_FREE = "discord-10mb"
 PROFILE_ID_DISCORD_NITRO_BASIC = "discord-50mb"
 PROFILE_ID_DISCORD_NITRO = "discord-500mb"
@@ -86,12 +87,12 @@ BUILTIN_PROFILE_IDS: frozenset[str] = frozenset(
     }
 )
 
-DISCORD_FREE_LIMIT = 10 * 1024 * 1024
+DISCORD_FREE_LIMIT = 20 * 1024 * 1024
 DISCORD_NITRO_BASIC_LIMIT = 50 * 1024 * 1024
 DISCORD_NITRO_LIMIT = 500 * 1024 * 1024
 MIN_TARGET_SIZE_BYTES = 2 * 1024 * 1024
 
-PROFILE_SCHEMA_VERSION = 5
+PROFILE_SCHEMA_VERSION = 6
 
 
 class QueueState(Enum):
@@ -674,13 +675,14 @@ class Profile:
             merged["rate_control_method"] = RCM_CRF
             merged["crf"] = 18
             merged["two_pass"] = False
-        schema_version = merged.get("schema_version", 1)
-        if schema_version < 4 or (
+        source_schema_version = merged.get("schema_version", 1)
+        if source_schema_version < 4 or (
             merged.get("workflow", WORKFLOW_COMPRESSION) == WORKFLOW_COMPRESSION
             and merged.get("rate_control") == RC_EXPLICIT_BITRATE
         ):
             merged = _migrate_profile_data(merged)
-        elif schema_version < PROFILE_SCHEMA_VERSION:
+        if source_schema_version < PROFILE_SCHEMA_VERSION:
+            merged = _migrate_builtin_profile_defaults(merged)
             merged["schema_version"] = PROFILE_SCHEMA_VERSION
         _validate_profile_dict(merged)
         transform_data = merged.get("transform_intent")
@@ -775,7 +777,7 @@ class AppSettings:
 DEFAULT_PROFILES: list[Profile] = [
     Profile(
         profile_id=PROFILE_ID_DISCORD_FREE,
-        name="Discord Free - 10MB",
+        name="Discord Free - 20MB",
         target_size_bytes=DISCORD_FREE_LIMIT,
         resolution_mode=RES_MODE_SOURCE,
         max_width=3840,
@@ -1024,6 +1026,51 @@ def _migrate_profile_data(data: dict[str, Any]) -> dict[str, Any]:
     if version < PROFILE_SCHEMA_VERSION:
         data["schema_version"] = PROFILE_SCHEMA_VERSION
     return data
+
+
+_LEGACY_DISCORD_FREE_DEFAULTS: dict[str, Any] = {
+    "profile_id": PROFILE_ID_DISCORD_FREE,
+    "name": "Discord Free - 10MB",
+    "target_size_bytes": 10 * 1024 * 1024,
+    "resolution_mode": RES_MODE_SOURCE,
+    "max_width": 3840,
+    "max_height": 2160,
+    "custom_width": 1920,
+    "custom_height": 1080,
+    "fps_mode": FPS_MODE_SOURCE,
+    "max_fps": 30.0,
+    "custom_fps": 30.0,
+    "rate_control": RC_TARGET_SIZE,
+    "explicit_bitrate": 0,
+    "scaler": SCALER_NEIGHBOR,
+    "audio_bitrate": 128_000,
+    "audio_channels": 2,
+    "audio_sample_rate": 44100,
+    "keep_audio": True,
+    "preset": "medium",
+    "two_pass": True,
+    "video_encoder": "libx264",
+    "crf": 23,
+    "tune": "",
+    "workflow": WORKFLOW_COMPRESSION,
+    "rate_control_method": RCM_CBR,
+    "cq": 23,
+    "qp": 23,
+    "transform_intent": None,
+}
+
+
+def _migrate_builtin_profile_defaults(data: dict[str, Any]) -> dict[str, Any]:
+    is_untouched_discord_free = all(
+        data.get(key) == expected for key, expected in _LEGACY_DISCORD_FREE_DEFAULTS.items()
+    )
+    if not is_untouched_discord_free:
+        return data
+
+    migrated = dict(data)
+    migrated["name"] = "Discord Free - 20MB"
+    migrated["target_size_bytes"] = DISCORD_FREE_LIMIT
+    return migrated
 
 
 def _validate_profile_dict(data: dict[str, Any]) -> None:

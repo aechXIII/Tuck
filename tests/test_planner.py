@@ -283,7 +283,12 @@ class TestPlan:
         out_dir.mkdir()
         colliding = out_dir / f"{Path(sample_video_path).stem}_tucked.mp4"
         colliding.write_text("placeholder")
-        p = plan(str(sample_video_path), profile, output_dir=str(out_dir))
+        p = plan(
+            str(sample_video_path),
+            profile,
+            output_dir=str(out_dir),
+            compression_suffix="_tucked",
+        )
         assert Path(p.output) != colliding
         assert "_1" in Path(p.output).stem
 

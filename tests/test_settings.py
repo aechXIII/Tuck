@@ -13,6 +13,7 @@ from tuck.models import (
     PROFILE_ID_1440P_UPSCALE,
     PROFILE_ID_DISCORD_FREE,
     PROFILE_ID_DISCORD_NITRO,
+    PROFILE_SCHEMA_VERSION,
     RC_TARGET_SIZE,
     RCM_CRF,
     RES_MODE_LIMIT,
@@ -125,7 +126,8 @@ class TestSettingsManager:
         mgr = SettingsManager()
         profile = mgr.get_default_profile()
         assert profile.profile_id == PROFILE_ID_DISCORD_FREE
-        assert profile.name == "Discord Free - 10MB"
+        assert profile.name == "Discord Free - 20MB"
+        assert profile.target_size_bytes == 20 * 1024 * 1024
 
     def test_get_default_profile_with_changed_default(self, tmp_path, monkeypatch):
         import tuck.settings as settings_mod
@@ -195,6 +197,56 @@ class TestSettingsManager:
 
 
 class TestMigration:
+    def test_untouched_discord_free_profile_updates_to_20mb(self, tmp_path, monkeypatch):
+        import tuck.settings as settings_mod
+
+        monkeypatch.setattr(settings_mod, "_config_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
+
+        old_default = DEFAULT_PROFILES[0].to_dict()
+        old_default.update(
+            name="Discord Free - 10MB",
+            target_size_bytes=10 * 1024 * 1024,
+            schema_version=4,
+        )
+        _atomic_write(
+            profiles_path(),
+            json.dumps({"version": 4, "profiles": [old_default]}),
+        )
+
+        profile = SettingsManager().get_default_profile()
+
+        assert profile.name == "Discord Free - 20MB"
+        assert profile.target_size_bytes == 20 * 1024 * 1024
+        assert profile.schema_version == PROFILE_SCHEMA_VERSION
+
+    def test_customized_discord_free_profile_stays_at_10mb(self, tmp_path, monkeypatch):
+        import tuck.settings as settings_mod
+
+        monkeypatch.setattr(settings_mod, "_config_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
+
+        customized = DEFAULT_PROFILES[0].to_dict()
+        customized.update(
+            name="Discord Free - 10MB",
+            target_size_bytes=10 * 1024 * 1024,
+            audio_bitrate=96_000,
+            schema_version=4,
+        )
+        _atomic_write(
+            profiles_path(),
+            json.dumps({"version": 4, "profiles": [customized]}),
+        )
+
+        profile = SettingsManager().get_default_profile()
+
+        assert profile.name == "Discord Free - 10MB"
+        assert profile.target_size_bytes == 10 * 1024 * 1024
+        assert profile.audio_bitrate == 96_000
+        assert profile.schema_version == PROFILE_SCHEMA_VERSION
+
     def test_map_old_default_name_discord_free_8mb(self):
         result = _map_old_default_name("Discord Free (8 MB)")
         assert result == "discord-10mb"
@@ -450,7 +502,7 @@ class TestMigration:
         assert found.workflow == WORKFLOW_COMPRESSION
         assert found.rate_control_method == "cbr"
         assert found.qp == 23
-        assert found.schema_version == 5
+        assert found.schema_version == PROFILE_SCHEMA_VERSION
 
     def test_migrate_v2_to_v3_gives_compression_cbr(self, tmp_path, monkeypatch):
         """v2 compression profiles get rate_control_method=cbr and schema_version=3."""
@@ -496,7 +548,7 @@ class TestMigration:
         assert found is not None
         assert found.workflow == WORKFLOW_COMPRESSION
         assert found.rate_control_method == "cbr"
-        assert found.schema_version == 5
+        assert found.schema_version == PROFILE_SCHEMA_VERSION
 
     def test_migrate_v2_upscale_profiles_get_correct_defaults(self, tmp_path, monkeypatch):
         """v2 upscale profiles get workflow=upscale, crf=18, two_pass=False on migration."""
@@ -541,7 +593,7 @@ class TestMigration:
         assert found.rate_control_method == RCM_CRF
         assert found.crf == 18
         assert found.two_pass is False
-        assert found.schema_version == 5
+        assert found.schema_version == PROFILE_SCHEMA_VERSION
 
     def test_default_profiles_have_correct_workflows(self):
         """Default profiles have correct workflow values."""
@@ -992,7 +1044,7 @@ class TestV2UserProfileMigration:
         assert found is not None
         assert found.rate_control_method == "cbr", f"Expected cbr, got {found.rate_control_method}"
         assert found.workflow == "compression"
-        assert found.schema_version == 5
+        assert found.schema_version == PROFILE_SCHEMA_VERSION
 
     def test_v2_user_compression_cqp_gpu_normalized(self, tmp_path, monkeypatch):
         """A v2 user profile with compression+CQP+GPU is migrated to CBR with two_pass=False."""
@@ -1040,4 +1092,4 @@ class TestV2UserProfileMigration:
         assert found is not None
         assert found.rate_control_method == "cbr"
         assert found.two_pass is False
-        assert found.schema_version == 5
+        assert found.schema_version == PROFILE_SCHEMA_VERSION
