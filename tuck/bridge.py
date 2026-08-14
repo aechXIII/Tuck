@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from . import __version__
-from .bridge_serialization import plan_preview_dict
+from .bridge_serialization import plan_preview_dict, profile_ui_dict, video_info_dict
 from .bridge_serialization import queue_item_dict as _item_to_dict
 from .bridge_validation import (
     normalize_profile_ui_payload,
@@ -28,6 +28,7 @@ from .engine import get_available_encoders as _engine_available_encoders
 from .media_server import get_media_server
 from .models import (
     PROFILE_ID_DISCORD_FREE,
+    EncodePlan,
     PlanRequest,
     Profile,
     VideoInfo,
@@ -143,27 +144,7 @@ class BridgeAPI:
         try:
             info = self._probe_once(path)
 
-            data = {
-                "path": info.path,
-                "duration": info.duration,
-                "duration_str": info.duration_str,
-                "width": info.width,
-                "height": info.height,
-                "coded_width": info.coded_width or info.width,
-                "coded_height": info.coded_height or info.height,
-                "display_rotation": info.display_rotation,
-                "resolution": info.resolution_str,
-                "fps": round(info.fps, 2),
-                "video_codec": info.video_codec,
-                "audio_codec": info.audio_codec,
-                "audio_channels": info.audio_channels,
-                "audio_sample_rate": info.audio_sample_rate,
-                "file_size": info.file_size,
-                "file_size_mb": round(info.file_size / (1024 * 1024), 2),
-                "bitrate_kbps": round(info.bitrate / 1000) if info.bitrate else 0,
-                "has_audio": info.has_audio,
-            }
-            return json.dumps({"ok": True, "data": data})
+            return json.dumps({"ok": True, "data": video_info_dict(info)})
         except Exception as e:
             return json.dumps({"ok": False, "error": str(e)})
 
@@ -195,24 +176,7 @@ class BridgeAPI:
             )
 
         try:
-            output_dir = str(self._settings.get_setting("output_dir", "") or "")
-            cs = str(
-                self._settings.get_setting("compression_suffix", "_tucked_{size}")
-                or "_tucked_{size}"
-            )
-            us = str(
-                self._settings.get_setting("upscale_suffix", "_upscaled_{width}x{height}")
-                or "_upscaled_{width}x{height}"
-            )
-            p = plan(
-                str(req.source),
-                profile,
-                output_dir=output_dir,
-                request=req,
-                compression_suffix=cs,
-                upscale_suffix=us,
-                source_info=self._probe_once(req.source),
-            )
+            p = self._build_plan(req, profile)
             return json.dumps(
                 {
                     "ok": True,
@@ -243,24 +207,7 @@ class BridgeAPI:
             return json.dumps({"ok": False, "error": f"Profile not found: {req.profile_id}"})
 
         try:
-            output_dir = str(self._settings.get_setting("output_dir", "") or "")
-            cs = str(
-                self._settings.get_setting("compression_suffix", "_tucked_{size}")
-                or "_tucked_{size}"
-            )
-            us = str(
-                self._settings.get_setting("upscale_suffix", "_upscaled_{width}x{height}")
-                or "_upscaled_{width}x{height}"
-            )
-            enc_plan = plan(
-                str(req.source),
-                profile,
-                output_dir=output_dir,
-                request=req,
-                compression_suffix=cs,
-                upscale_suffix=us,
-                source_info=self._probe_once(req.source),
-            )
+            enc_plan = self._build_plan(req, profile)
             item = self._queue.enqueue(enc_plan)
             return json.dumps({"ok": True, "item_id": item.id})
         except Exception as e:
@@ -276,14 +223,7 @@ class BridgeAPI:
         if not isinstance(raw, list) or not raw:
             return json.dumps({"ok": False, "error": "No requests provided"})
 
-        output_dir = str(self._settings.get_setting("output_dir", "") or "")
-        cs = str(
-            self._settings.get_setting("compression_suffix", "_tucked_{size}") or "_tucked_{size}"
-        )
-        us = str(
-            self._settings.get_setting("upscale_suffix", "_upscaled_{width}x{height}")
-            or "_upscaled_{width}x{height}"
-        )
+        planning_options = self._planning_options()
         enqueued: list[str] = []
         errors: list[str] = []
 
@@ -304,15 +244,7 @@ class BridgeAPI:
                 continue
 
             try:
-                enc_plan = plan(
-                    str(req.source),
-                    profile,
-                    output_dir=output_dir,
-                    request=req,
-                    compression_suffix=cs,
-                    upscale_suffix=us,
-                    source_info=self._probe_once(req.source),
-                )
+                enc_plan = self._build_plan(req, profile, planning_options)
                 item = self._queue.enqueue(enc_plan)
                 enqueued.append(item.id)
             except Exception as e:
@@ -542,43 +474,7 @@ class BridgeAPI:
                 "ffprobe_available": is_ffprobe_available(),
                 "available_encoders": sorted(_engine_available_encoders()),
                 "encoder_capabilities": get_encoder_capabilities().to_dict(),
-                "profiles": [
-                    {
-                        "profile_id": p.profile_id,
-                        "name": p.name,
-                        "target_size_bytes": p.target_size_bytes,
-                        "target_size_mb": round(p.target_size_bytes / (1024 * 1024), 2),
-                        "resolution_mode": p.resolution_mode,
-                        "max_width": p.max_width,
-                        "max_height": p.max_height,
-                        "custom_width": p.custom_width,
-                        "custom_height": p.custom_height,
-                        "fps_mode": p.fps_mode,
-                        "max_fps": p.max_fps,
-                        "custom_fps": p.custom_fps,
-                        "rate_control": p.rate_control,
-                        "explicit_bitrate_kbps": round(p.explicit_bitrate / 1000)
-                        if p.explicit_bitrate
-                        else 0,
-                        "scaler": getattr(p, "scaler", "neighbor"),
-                        "audio_bitrate": p.audio_bitrate,
-                        "audio_bitrate_kbps": round(p.audio_bitrate / 1000),
-                        "keep_audio": bool(getattr(p, "keep_audio", False)),
-                        "two_pass": p.two_pass,
-                        "preset": p.preset,
-                        "video_encoder": getattr(p, "video_encoder", "libx264"),
-                        "crf": getattr(p, "crf", 23),
-                        "tune": getattr(p, "tune", ""),
-                        "workflow": getattr(p, "workflow", "compression"),
-                        "rate_control_method": getattr(p, "rate_control_method", "crf"),
-                        "cq": getattr(p, "cq", getattr(p, "qp", 23)),
-                        "qp": getattr(p, "qp", 23),
-                        "transform_intent": (
-                            p.transform_intent.to_dict() if p.transform_intent is not None else None
-                        ),
-                    }
-                    for p in profiles
-                ],
+                "profiles": [profile_ui_dict(profile) for profile in profiles],
             }
         )
 
@@ -690,44 +586,7 @@ class BridgeAPI:
 
         profiles = self._settings.get_profiles()
         return json.dumps(
-            [
-                {
-                    "profile_id": p.profile_id,
-                    "name": p.name,
-                    "target_size_bytes": p.target_size_bytes,
-                    "target_size_mb": round(p.target_size_bytes / (1024 * 1024), 2),
-                    "resolution_mode": p.resolution_mode,
-                    "max_width": p.max_width,
-                    "max_height": p.max_height,
-                    "custom_width": p.custom_width,
-                    "custom_height": p.custom_height,
-                    "fps_mode": p.fps_mode,
-                    "max_fps": p.max_fps,
-                    "custom_fps": p.custom_fps,
-                    "rate_control": p.rate_control,
-                    "explicit_bitrate": p.explicit_bitrate,
-                    "explicit_bitrate_kbps": round(p.explicit_bitrate / 1000)
-                    if p.explicit_bitrate
-                    else 0,
-                    "scaler": getattr(p, "scaler", "neighbor"),
-                    "audio_bitrate": p.audio_bitrate,
-                    "audio_bitrate_kbps": round(p.audio_bitrate / 1000),
-                    "keep_audio": bool(getattr(p, "keep_audio", False)),
-                    "two_pass": p.two_pass,
-                    "preset": p.preset,
-                    "video_encoder": getattr(p, "video_encoder", "libx264"),
-                    "crf": getattr(p, "crf", 23),
-                    "tune": getattr(p, "tune", ""),
-                    "workflow": getattr(p, "workflow", "compression"),
-                    "rate_control_method": getattr(p, "rate_control_method", "crf"),
-                    "cq": getattr(p, "cq", getattr(p, "qp", 23)),
-                    "qp": getattr(p, "qp", 23),
-                    "transform_intent": (
-                        p.transform_intent.to_dict() if p.transform_intent is not None else None
-                    ),
-                }
-                for p in profiles
-            ]
+            [profile_ui_dict(profile, include_explicit_bitrate=True) for profile in profiles]
         )
 
     def import_profiles_from_file(self, file_path: str) -> str:
@@ -1022,6 +881,33 @@ class BridgeAPI:
     def _parse_plan_request(self, raw: dict[str, Any]) -> PlanRequest:
 
         return parse_plan_request(raw, self._validate_path)
+
+    def _planning_options(self) -> dict[str, str]:
+        return {
+            "output_dir": str(self._settings.get_setting("output_dir", "") or ""),
+            "compression_suffix": str(
+                self._settings.get_setting("compression_suffix", "_tucked_{size}")
+                or "_tucked_{size}"
+            ),
+            "upscale_suffix": str(
+                self._settings.get_setting("upscale_suffix", "_upscaled_{width}x{height}")
+                or "_upscaled_{width}x{height}"
+            ),
+        }
+
+    def _build_plan(
+        self,
+        request: PlanRequest,
+        profile: Profile,
+        options: dict[str, str] | None = None,
+    ) -> EncodePlan:
+        return plan(
+            request.source,
+            profile,
+            request=request,
+            source_info=self._probe_once(request.source),
+            **(options or self._planning_options()),
+        )
 
     def _probe_once(self, path: str) -> VideoInfo:
         return self._probe_cache.get(path)

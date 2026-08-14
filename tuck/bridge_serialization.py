@@ -3,7 +3,74 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from .models import EncodePlan, QueueItem, calculate_transform_geometry
+from .models import EncodePlan, Profile, QueueItem, VideoInfo, calculate_transform_geometry
+
+
+def video_info_dict(info: VideoInfo) -> dict[str, Any]:
+    return {
+        "path": info.path,
+        "duration": info.duration,
+        "duration_str": info.duration_str,
+        "width": info.width,
+        "height": info.height,
+        "coded_width": info.coded_width or info.width,
+        "coded_height": info.coded_height or info.height,
+        "display_rotation": info.display_rotation,
+        "resolution": info.resolution_str,
+        "fps": round(info.fps, 2),
+        "video_codec": info.video_codec,
+        "audio_codec": info.audio_codec,
+        "audio_channels": info.audio_channels,
+        "audio_sample_rate": info.audio_sample_rate,
+        "file_size": info.file_size,
+        "file_size_mb": round(info.file_size / (1024 * 1024), 2),
+        "bitrate_kbps": round(info.bitrate / 1000) if info.bitrate else 0,
+        "has_audio": info.has_audio,
+    }
+
+
+def profile_ui_dict(
+    profile: Profile,
+    *,
+    include_explicit_bitrate: bool = False,
+) -> dict[str, Any]:
+    data = {
+        "profile_id": profile.profile_id,
+        "name": profile.name,
+        "target_size_bytes": profile.target_size_bytes,
+        "target_size_mb": round(profile.target_size_bytes / (1024 * 1024), 2),
+        "resolution_mode": profile.resolution_mode,
+        "max_width": profile.max_width,
+        "max_height": profile.max_height,
+        "custom_width": profile.custom_width,
+        "custom_height": profile.custom_height,
+        "fps_mode": profile.fps_mode,
+        "max_fps": profile.max_fps,
+        "custom_fps": profile.custom_fps,
+        "rate_control": profile.rate_control,
+        "explicit_bitrate_kbps": (
+            round(profile.explicit_bitrate / 1000) if profile.explicit_bitrate else 0
+        ),
+        "scaler": profile.scaler,
+        "audio_bitrate": profile.audio_bitrate,
+        "audio_bitrate_kbps": round(profile.audio_bitrate / 1000),
+        "keep_audio": profile.keep_audio,
+        "two_pass": profile.two_pass,
+        "preset": profile.preset,
+        "video_encoder": profile.video_encoder,
+        "crf": profile.crf,
+        "tune": profile.tune,
+        "workflow": profile.workflow,
+        "rate_control_method": profile.rate_control_method,
+        "cq": profile.cq,
+        "qp": profile.qp,
+        "transform_intent": (
+            profile.transform_intent.to_dict() if profile.transform_intent is not None else None
+        ),
+    }
+    if include_explicit_bitrate:
+        data["explicit_bitrate"] = profile.explicit_bitrate
+    return data
 
 
 def plan_preview_dict(plan: EncodePlan) -> dict[str, Any]:
