@@ -754,6 +754,7 @@ class AppSettings:
     compression_suffix: str = "_tucked_{size}"
     upscale_suffix: str = "_upscaled_{width}x{height}"
     clear_completed_automatically: bool = False
+    open_output_folder_after_queue: bool = False
     last_task: str = WORKFLOW_COMPRESSION
     last_compress_profile_id: str = ""
     last_upscale_profile_id: str = ""

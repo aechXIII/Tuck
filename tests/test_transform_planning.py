@@ -1,7 +1,10 @@
+from tuck.encoding.filters import build_plan_video_filters
 from tuck.models import (
     RES_MODE_CUSTOM,
+    RES_MODE_SOURCE,
     SIZING_MODE_FILL,
     SIZING_MODE_FIT,
+    SIZING_MODE_STRETCH,
     CropRect,
     OutputGeometry,
     PlanRequest,
@@ -111,6 +114,32 @@ def test_explicit_stretch_scales_crop_to_source_geometry(tmp_path):
     )
     assert (result.target_width, result.target_height) == (1920, 1080)
     assert result.apply_scale
+
+
+def test_source_resolution_stretch_uses_uncropped_source_canvas(tmp_path):
+    source = tmp_path / "source.mp4"
+    source.write_bytes(b"source")
+    transform = VideoTransform(
+        crop=CropRect(581, 0, 758, 1080),
+        sizing_mode=SIZING_MODE_STRETCH,
+    )
+
+    result = plan(
+        source,
+        Profile(name="Stretch", resolution_mode=RES_MODE_SOURCE, two_pass=False),
+        output=tmp_path / "output.mp4",
+        request=PlanRequest(transform=transform),
+        source_info=_source_info(source),
+    )
+
+    assert (result.target_width, result.target_height) == (1920, 1080)
+    assert result.transform.output == OutputGeometry(1920, 1080)
+    assert result.apply_scale
+    assert build_plan_video_filters(result) == [
+        "crop=758:1080:581:0:exact=1",
+        "scale=1920:1080:flags=neighbor",
+        "setsar=1",
+    ]
 
 
 def test_profile_transform_intent_is_materialized_for_source(tmp_path):

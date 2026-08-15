@@ -20,6 +20,7 @@ from tuck.models import (
     SCALER_BICUBIC,
     SCALER_LANCZOS,
     SCALER_NEIGHBOR,
+    SIZING_MODE_FIT,
     WORKFLOW_COMPRESSION,
     WORKFLOW_UPSCALE,
     CropRect,
@@ -86,7 +87,7 @@ class TestCropPlanning:
     ) -> None:
         profile = Profile(name="Crop", resolution_mode=RES_MODE_SOURCE, two_pass=False)
         crop = CropRect(10, 12, 40, 30)
-        request = PlanRequest(transform=VideoTransform(crop=crop))
+        request = PlanRequest(transform=VideoTransform(crop=crop, sizing_mode=SIZING_MODE_FIT))
 
         result = plan(str(sample_video_path), profile, request=request)
 

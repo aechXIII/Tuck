@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.2] - 2026-08-15
+
+### Added
+- Option to open the output folder when the queue finishes
+
+### Fixed
+- Stretch now works correctly on cropped videos
+
 ## [0.3.1] - 2026-08-14
 
 ### Changed

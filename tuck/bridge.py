@@ -461,6 +461,9 @@ class BridgeAPI:
                 "check_updates": s.check_updates,
                 "last_update_check": s.last_update_check,
                 "clear_completed_automatically": getattr(s, "clear_completed_automatically", False),
+                "open_output_folder_after_queue": getattr(
+                    s, "open_output_folder_after_queue", False
+                ),
                 "last_task": getattr(s, "last_task", "compression"),
                 "last_compress_profile_id": getattr(s, "last_compress_profile_id", ""),
                 "last_upscale_profile_id": getattr(s, "last_upscale_profile_id", ""),
@@ -499,6 +502,7 @@ class BridgeAPI:
             "encoder_cache_days",
             "check_updates",
             "clear_completed_automatically",
+            "open_output_folder_after_queue",
             "last_task",
             "last_compress_profile_id",
             "last_upscale_profile_id",
@@ -508,9 +512,11 @@ class BridgeAPI:
         }
         for key in allowed_keys:
             if key in data:
-                if key in ("check_updates", "clear_completed_automatically") and not isinstance(
-                    data[key], bool
-                ):
+                if key in (
+                    "check_updates",
+                    "clear_completed_automatically",
+                    "open_output_folder_after_queue",
+                ) and not isinstance(data[key], bool):
                     return json.dumps({"ok": False, "error": f"{key} must be boolean"})
                 if key == "encoder_cache_days" and (
                     not isinstance(data[key], int) or not 0 <= data[key] <= 365

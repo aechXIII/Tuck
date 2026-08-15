@@ -74,12 +74,14 @@ class TestSettingsManager:
         mgr.load()
         mgr.set_setting("default_profile_id", PROFILE_ID_DISCORD_NITRO)
         mgr.set_setting("output_dir", str(tmp_path / "out"))
+        mgr.set_setting("open_output_folder_after_queue", True)
         mgr.save()
 
         mgr2 = SettingsManager()
         s = mgr2.load()
         assert s.default_profile_id == PROFILE_ID_DISCORD_NITRO
         assert s.output_dir == str(tmp_path / "out")
+        assert s.open_output_folder_after_queue is True
 
     def test_save_and_load_preserves_encoder_cache_days(self, tmp_path, monkeypatch):
         import tuck.settings as settings_mod

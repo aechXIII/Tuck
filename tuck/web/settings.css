@@ -327,6 +327,32 @@ body.settings-open .settings-workspace {
   font-size: 10px;
   margin-bottom: 14px;
 }
+.settings-option-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.settings-option {
+  align-items: flex-start !important;
+}
+.settings-option .chk-box {
+  margin-top: 2px;
+}
+.settings-option-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.settings-option-copy strong {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 500;
+}
+.settings-option-copy small {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
 .settings-support-actions .btn1 {
   width: auto;
   white-space: nowrap;

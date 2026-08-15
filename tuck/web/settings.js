@@ -659,6 +659,7 @@ function generalSettingsHTML(s, profiles) {
     })
     .join("");
   var autoClear = s.clear_completed_automatically ? "checked" : "";
+  var openOutput = s.open_output_folder_after_queue ? "checked" : "";
   return `<div class="settings-card">
     <div class="settings-card-title">Task defaults</div>
     <div class="settings-card-copy">Applied when a profile does not provide its own value.</div>
@@ -674,14 +675,26 @@ function generalSettingsHTML(s, profiles) {
     </div>
   </div>
   <div class="settings-card">
-    <div class="settings-card-title">Queue cleanup</div>
-    <div class="settings-card-copy">Choose what happens to successful jobs after processing.</div>
-    <label class="chk">
-      <input id="set-auto-clear" type="checkbox" ${autoClear} onchange="markSettingsDirty()">
-      <span class="chk-box"></span>
-      <span>Clear completed jobs automatically</span>
-    </label>
-    <span class="help-tip">Failed and cancelled jobs remain available for inspection or retry.</span>
+    <div class="settings-card-title">Queue completion</div>
+    <div class="settings-card-copy">Choose what happens after the last queued job finishes.</div>
+    <div class="settings-option-list">
+      <label class="chk settings-option">
+        <input id="set-open-output-folder" type="checkbox" ${openOutput} onchange="markSettingsDirty()">
+        <span class="chk-box"></span>
+        <span class="settings-option-copy">
+          <strong>Open output folder when queue finishes</strong>
+          <small>Opens the folder containing the last successful export.</small>
+        </span>
+      </label>
+      <label class="chk settings-option">
+        <input id="set-auto-clear" type="checkbox" ${autoClear} onchange="markSettingsDirty()">
+        <span class="chk-box"></span>
+        <span class="settings-option-copy">
+          <strong>Clear completed jobs automatically</strong>
+          <small>Failed and cancelled jobs remain available for inspection or retry.</small>
+        </span>
+      </label>
+    </div>
   </div>`;
 }
 function outputSettingsHTML(s) {
@@ -1056,6 +1069,7 @@ async function saveSettings() {
     default_profile_id: byId("set-dp").value,
     default_scaler: byId("set-ds").value.toLowerCase(),
     clear_completed_automatically: byId("set-auto-clear").checked,
+    open_output_folder_after_queue: byId("set-open-output-folder").checked,
   });
 }
 async function saveOutputSettings() {

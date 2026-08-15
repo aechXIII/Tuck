@@ -18,6 +18,7 @@ from .models import (
     RES_MODE_CUSTOM,
     RES_MODE_LIMIT,
     RES_MODE_SOURCE,
+    SIZING_MODE_STRETCH,
     WORKFLOW_UPSCALE,
     EncodePlan,
     OutputGeometry,
@@ -235,11 +236,18 @@ def plan(
     output = _resolve_output_collision(output, respect_reservation=False)
 
     oriented_width, oriented_height = oriented_dimensions(transform, info.width, info.height)
+    resolution_width, resolution_height = oriented_width, oriented_height
+    if transform.sizing_mode == SIZING_MODE_STRETCH:
+        resolution_width, resolution_height = oriented_dimensions(
+            replace(transform, crop=None),
+            info.width,
+            info.height,
+        )
 
     if transform.output is not None:
         requested_output = transform.output
     elif res_mode == RES_MODE_SOURCE:
-        source_width, source_height = _make_even(oriented_width, oriented_height)
+        source_width, source_height = _make_even(resolution_width, resolution_height)
         requested_output = OutputGeometry(source_width, source_height)
     elif res_mode == RES_MODE_CUSTOM:
         cw = (
@@ -255,7 +263,7 @@ def plan(
         requested_output = OutputGeometry(max(2, int(cw)), max(2, int(ch)))
     elif res_mode == RES_MODE_LIMIT:
         limit_width, limit_height = _scale_resolution(
-            oriented_width, oriented_height, profile.max_width, profile.max_height
+            resolution_width, resolution_height, profile.max_width, profile.max_height
         )
         requested_output = OutputGeometry(limit_width, limit_height)
     else:

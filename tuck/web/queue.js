@@ -1,6 +1,27 @@
 var queueTimer = null;
 var queueItemsById = {};
+var queueActiveItemIds = {};
 var retryInFlight = {};
+
+function queueCompletionOutput(items, hadActive, active, activeItemIds) {
+  if (!hadActive || active) return "";
+  var latest = null,
+    latestTime = "";
+  for (var i = 0; i < items.length; i++) {
+    var item = items[i],
+      finishedAt = item.finished_at || "";
+    if (
+      item.state === "completed" &&
+      item.result_path &&
+      (!activeItemIds || activeItemIds[item.id]) &&
+      (!latest || finishedAt >= latestTime)
+    ) {
+      latest = item;
+      latestTime = finishedAt;
+    }
+  }
+  return latest ? latest.result_path : "";
+}
 
 function mapQueueItems(items) {
   if (!items) return;
@@ -110,8 +131,19 @@ async function pollQueue() {
         done++;
       if (items[j].state === "failed") failed++;
     }
-    var active = running.length + pending.length,
-      total = done + active;
+    var active = running.length + pending.length;
+    for (var k = 0; k < running.length; k++)
+      queueActiveItemIds[running[k].id] = true;
+    for (var m = 0; m < pending.length; m++)
+      queueActiveItemIds[pending[m].id] = true;
+    var outputToOpen = queueCompletionOutput(
+        items,
+        lastQueueHadActive,
+        active,
+        queueActiveItemIds,
+      ),
+      total = done + active,
+      queueFinished = lastQueueHadActive && !active;
     if (lastQueueHadActive && !active)
       toast(
         failed
@@ -124,6 +156,9 @@ async function pollQueue() {
         failed ? "err" : "ok",
       );
     lastQueueHadActive = active > 0;
+    if (queueFinished) queueActiveItemIds = {};
+    if (outputToOpen && appSettings.open_output_folder_after_queue)
+      await openResult(outputToOpen);
     byId("qbar").classList.toggle("on", items.length > 0);
     if (!items.length) return;
     if (running.length) {
@@ -363,3 +398,6 @@ async function pollIpc() {
     }
   } catch (e) {}
 }
+
+if (typeof module !== "undefined" && module.exports)
+  module.exports = { queueCompletionOutput: queueCompletionOutput };

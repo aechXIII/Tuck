@@ -423,6 +423,11 @@ def test_settings_separates_output_and_stages_all_persisted_changes() -> None:
     assert 'id="ex-up-out"' in html
     assert "function markSettingsDirty()" in html
     assert 'clear_completed_automatically: byId("set-auto-clear").checked' in html
+    assert 'id="set-open-output-folder"' in html
+    assert 'open_output_folder_after_queue: byId("set-open-output-folder").checked' in html
+    assert "queueCompletionOutput(" in html
+    assert "queueActiveItemIds" in html
+    assert "appSettings.open_output_folder_after_queue" in html
     assert 'confirmToast("Discard unsaved settings?"' in html
     assert 'box.className = "mod-box confirm-dialog"' in html
     assert "Discard changes" in html
