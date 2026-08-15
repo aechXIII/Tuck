@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from tuck.bridge_validation import validate_video_paths
+from tuck.bridge_validation import validate_audio_paths, validate_video_paths
 from tuck.web_ui import (
     _bind_drag_drop,
     _get_resource_path,
@@ -67,6 +67,17 @@ class TestVideoPathValidation:
         assert accepted == [str(video.resolve())]
         assert len(rejected) == 4
 
+    def test_audio_validation_accepts_supported_audio_only(self, tmp_path: Path) -> None:
+        audio = tmp_path / "music.FLAC"
+        video = tmp_path / "clip.mp4"
+        audio.write_text("x")
+        video.write_text("x")
+
+        accepted, rejected = validate_audio_paths([str(audio), str(video)])
+
+        assert accepted == [str(audio.resolve())]
+        assert rejected == [str(video)]
+
 
 class TestJsApi:
     def test_decodes_backend_json(self) -> None:
@@ -94,6 +105,16 @@ class TestJsApi:
         api._window = _DialogWindow(None)
 
         assert api.pickFiles() == {"ok": True, "files": []}
+
+    def test_audio_picker_filters_to_existing_audio_files(self, tmp_path: Path) -> None:
+        audio = tmp_path / "music.mp3"
+        text = tmp_path / "notes.txt"
+        audio.write_text("x")
+        text.write_text("x")
+        api = _JsApi(_Bridge())
+        api._window = _DialogWindow((str(audio), str(text)))
+
+        assert api.pickAudioFiles() == {"ok": True, "files": [str(audio.resolve())]}
 
     def test_settings_preserves_profile_values_used_by_the_web_ui(
         self, tmp_path, monkeypatch
@@ -276,6 +297,39 @@ def test_drop_binding_targets_the_html_element() -> None:
     _bind_drag_drop(window)
 
     assert window.dom.element.events == ["dragenter", "dragstart", "dragover", "drop"]
+
+
+def test_drop_reports_unresolvable_paths_as_rejected() -> None:
+    evaluated: list[str] = []
+
+    class Element:
+        def __init__(self) -> None:
+            self.handlers: dict[str, object] = {}
+
+        def on(self, event: str, handler) -> None:
+            self.handlers[event] = handler
+
+    class Dom:
+        def __init__(self) -> None:
+            self.element = Element()
+
+        def get_element(self, selector: str):
+            return self.element
+
+    class Window:
+        def __init__(self) -> None:
+            self.dom = Dom()
+
+        def evaluate_js(self, script: str) -> None:
+            evaluated.append(script)
+
+    window = Window()
+    _bind_drag_drop(window)
+
+    on_drop = window.dom.element.handlers["drop"].callback
+    on_drop({"dataTransfer": {"files": [{"pywebviewFullPath": None}]}})
+
+    assert evaluated == ['window.addFiles([], ["None"])']
 
 
 def test_clip_cards_use_icon_statuses_and_compact_metadata() -> None:
@@ -461,6 +515,11 @@ def test_settings_separates_output_and_stages_all_persisted_changes() -> None:
     assert 'id="ex-up-out"' in html
     assert "function markSettingsDirty()" in html
     assert 'clear_completed_automatically: byId("set-auto-clear").checked' in html
+    assert 'id="set-open-output-folder"' in html
+    assert 'open_output_folder_after_queue: byId("set-open-output-folder").checked' in html
+    assert "queueCompletionOutput(" in html
+    assert "queueActiveItemIds" in html
+    assert "appSettings.open_output_folder_after_queue" in html
     assert 'confirmToast("Discard unsaved settings?"' in html
     assert 'box.className = "mod-box confirm-dialog"' in html
     assert "Discard changes" in html

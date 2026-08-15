@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Sequence
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,7 @@ from .models import (
     MIN_TARGET_SIZE_BYTES,
     RC_TARGET_SIZE,
     WORKFLOW_COMPRESSION,
+    AudioTrack,
     PlanRequest,
     Segment,
     VideoTransform,
@@ -23,6 +25,9 @@ from .models import (
 )
 
 VIDEO_EXTENSIONS = frozenset({".mp4", ".mkv", ".webm", ".mov", ".avi", ".wmv", ".flv", ".m4v"})
+AUDIO_EXTENSIONS = frozenset(
+    {".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg", ".opus", ".wma", ".aif", ".aiff"}
+)
 
 
 def validate_path(path: str) -> str:
@@ -34,7 +39,10 @@ def validate_path(path: str) -> str:
     return str(p.resolve())
 
 
-def validate_video_paths(paths: Sequence[object]) -> tuple[list[str], list[str]]:
+def _validate_media_paths(
+    paths: Sequence[object],
+    extensions: frozenset[str],
+) -> tuple[list[str], list[str]]:
     accepted: list[str] = []
     rejected: list[str] = []
     seen: set[str] = set()
@@ -47,13 +55,21 @@ def validate_video_paths(paths: Sequence[object]) -> tuple[list[str], list[str]]
         except (ValueError, FileNotFoundError):
             rejected.append(raw_path)
             continue
-        if Path(path).suffix.lower() not in VIDEO_EXTENSIONS:
+        if Path(path).suffix.lower() not in extensions:
             rejected.append(raw_path)
             continue
         if path not in seen:
             seen.add(path)
             accepted.append(path)
     return accepted, rejected
+
+
+def validate_video_paths(paths: Sequence[object]) -> tuple[list[str], list[str]]:
+    return _validate_media_paths(paths, VIDEO_EXTENSIONS)
+
+
+def validate_audio_paths(paths: Sequence[object]) -> tuple[list[str], list[str]]:
+    return _validate_media_paths(paths, AUDIO_EXTENSIONS)
 
 
 def _opt_str(raw: dict[str, Any], key: str) -> str | None:
@@ -116,14 +132,45 @@ def _parse_transform(raw: dict[str, Any]) -> VideoTransform | None:
 
 
 def _parse_segments(raw: dict[str, Any]) -> list[Segment] | None:
-    if "segments" not in raw:
-        return None
-    if "trim_start" in raw or "trim_end" in raw:
+    if "segments" in raw and ("trim_start" in raw or "trim_end" in raw):
         raise ValueError("segments cannot be combined with trim_start or trim_end")
-    value = raw["segments"]
+    return _parse_optional_segments(raw, "segments")
+
+
+def _parse_optional_segments(raw: dict[str, Any], field: str) -> list[Segment] | None:
+    if field not in raw:
+        return None
+    value = raw[field]
     if not isinstance(value, list):
-        raise ValueError("segments must be an array")
+        raise ValueError(f"{field} must be an array")
     return [Segment.from_dict(item) for item in value]
+
+
+def _validate_audio_source(path: str, validate_path_fn: Callable[[str], str]) -> str:
+    resolved = validate_path_fn(path)
+    if Path(resolved).suffix.lower() not in AUDIO_EXTENSIONS:
+        raise ValueError(f"Unsupported audio file type: {Path(resolved).name}")
+    return resolved
+
+
+def _parse_audio_tracks(
+    raw: dict[str, Any],
+    validate_path_fn: Callable[[str], str],
+) -> list[AudioTrack] | None:
+    if "audio_tracks" not in raw:
+        return None
+    value = raw["audio_tracks"]
+    if not isinstance(value, list):
+        raise ValueError("audio_tracks must be an array")
+    tracks: list[AudioTrack] = []
+    for item in value:
+        track = AudioTrack.from_dict(item)
+        clips = [
+            replace(clip, source=_validate_audio_source(clip.source, validate_path_fn))
+            for clip in track.clips
+        ]
+        tracks.append(replace(track, clips=clips))
+    return tracks
 
 
 def parse_plan_request(
@@ -148,6 +195,11 @@ def parse_plan_request(
         explicit_bitrate=_opt_int(raw, "explicit_bitrate"),
         audio_bitrate=_opt_int(raw, "audio_bitrate"),
         keep_audio=_opt_bool(raw, "keep_audio"),
+        audio_enabled=_opt_bool(raw, "audio_enabled"),
+        source_audio_muted=_opt_bool(raw, "source_audio_muted"),
+        source_audio_gain_db=_opt_float(raw, "source_audio_gain_db"),
+        source_audio_segments=_parse_optional_segments(raw, "source_audio_segments"),
+        audio_tracks=_parse_audio_tracks(raw, validate_path_fn),
         scaler=_opt_str(raw, "scaler"),
         video_encoder=_opt_str(raw, "video_encoder"),
         crf=_opt_int(raw, "crf"),

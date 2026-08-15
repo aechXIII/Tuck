@@ -10,7 +10,12 @@ from pathlib import Path
 from typing import Any, cast
 
 from . import __version__
-from .bridge_serialization import plan_preview_dict, profile_ui_dict, video_info_dict
+from .bridge_serialization import (
+    audio_info_dict,
+    plan_preview_dict,
+    profile_ui_dict,
+    video_info_dict,
+)
 from .bridge_serialization import queue_item_dict as _item_to_dict
 from .bridge_validation import (
     normalize_profile_ui_payload,
@@ -28,6 +33,7 @@ from .engine import get_available_encoders as _engine_available_encoders
 from .media_server import get_media_server
 from .models import (
     PROFILE_ID_DISCORD_FREE,
+    AudioInfo,
     EncodePlan,
     PlanRequest,
     Profile,
@@ -35,7 +41,7 @@ from .models import (
     find_profile_by_id,
 )
 from .planner import plan
-from .probe import _find_ffprobe, is_ffprobe_available
+from .probe import _find_ffprobe, is_ffprobe_available, probe_audio
 from .probe import probe as probe_video
 from .probe_cache import ProbeCache
 from .queue import get_queue
@@ -60,6 +66,7 @@ class BridgeAPI:
         self._checking_updates: bool = False
 
         self._probe_cache = ProbeCache(lambda path: probe_video(path))
+        self._audio_probe_cache = ProbeCache(lambda path: probe_audio(path))
 
         self._media_server = get_media_server()
         self._media_server.set_thumbnail_cache_dir(self._settings.cache_dir / "thumbs")
@@ -145,6 +152,28 @@ class BridgeAPI:
             info = self._probe_once(path)
 
             return json.dumps({"ok": True, "data": video_info_dict(info)})
+        except Exception as e:
+            return json.dumps({"ok": False, "error": str(e)})
+
+    def probe_audio_file(self, path: str) -> str:
+        try:
+            path = self._validate_path(path)
+            info = self._probe_audio_once(path)
+            return json.dumps({"ok": True, "data": audio_info_dict(info)})
+        except Exception as e:
+            return json.dumps({"ok": False, "error": str(e)})
+
+    def get_waveform(self, path: str) -> str:
+        try:
+            path = self._validate_path(path)
+            self._probe_audio_once(path)
+            waveform = self._media_server.generate_waveform(path)
+            if not waveform:
+                return json.dumps({"ok": False, "error": "Could not generate audio waveform"})
+            token = self._media_server.register_file(waveform)
+            return json.dumps(
+                {"ok": True, "url": self._media_server.get_url(token), "token": token}
+            )
         except Exception as e:
             return json.dumps({"ok": False, "error": str(e)})
 
@@ -464,6 +493,9 @@ class BridgeAPI:
                 "check_updates": s.check_updates,
                 "last_update_check": s.last_update_check,
                 "clear_completed_automatically": getattr(s, "clear_completed_automatically", False),
+                "open_output_folder_after_queue": getattr(
+                    s, "open_output_folder_after_queue", False
+                ),
                 "last_task": getattr(s, "last_task", "compression"),
                 "last_compress_profile_id": getattr(s, "last_compress_profile_id", ""),
                 "last_upscale_profile_id": getattr(s, "last_upscale_profile_id", ""),
@@ -502,6 +534,7 @@ class BridgeAPI:
             "encoder_cache_days",
             "check_updates",
             "clear_completed_automatically",
+            "open_output_folder_after_queue",
             "last_task",
             "last_compress_profile_id",
             "last_upscale_profile_id",
@@ -511,9 +544,11 @@ class BridgeAPI:
         }
         for key in allowed_keys:
             if key in data:
-                if key in ("check_updates", "clear_completed_automatically") and not isinstance(
-                    data[key], bool
-                ):
+                if key in (
+                    "check_updates",
+                    "clear_completed_automatically",
+                    "open_output_folder_after_queue",
+                ) and not isinstance(data[key], bool):
                     return json.dumps({"ok": False, "error": f"{key} must be boolean"})
                 if key == "encoder_cache_days" and (
                     not isinstance(data[key], int) or not 0 <= data[key] <= 365
@@ -918,16 +953,26 @@ class BridgeAPI:
         profile: Profile,
         options: dict[str, str] | None = None,
     ) -> EncodePlan:
+        audio_sources = {
+            clip.source for track in request.audio_tracks or [] for clip in track.clips
+        }
+        audio_source_durations = {
+            source: self._probe_audio_once(source).duration for source in audio_sources
+        }
         return plan(
             request.source,
             profile,
             request=request,
             source_info=self._probe_once(request.source),
+            audio_source_durations=audio_source_durations,
             **(options or self._planning_options()),
         )
 
     def _probe_once(self, path: str) -> VideoInfo:
         return self._probe_cache.get(path)
+
+    def _probe_audio_once(self, path: str) -> AudioInfo:
+        return self._audio_probe_cache.get(path)
 
 
 _normalize_profile_ui_payload = normalize_profile_ui_payload

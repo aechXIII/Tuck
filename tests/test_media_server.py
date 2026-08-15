@@ -1,4 +1,6 @@
 import json
+from pathlib import Path
+from types import SimpleNamespace
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -425,6 +427,31 @@ class TestMediaServer:
         server.set_thumbnail_cache_dir(cache)
         result = server.generate_thumbnail(str(tmp_path / "no_file.mp4"))
         assert result is None
+
+    def test_generate_waveform_uses_cache(self, tmp_path, monkeypatch):
+        source = tmp_path / "music.mp3"
+        source.write_bytes(b"audio")
+        cache = tmp_path / "thumbs"
+        server = MediaServer()
+        server.set_thumbnail_cache_dir(cache)
+        calls = []
+
+        monkeypatch.setattr("tuck.engine._find_ffmpeg", lambda: "ffmpeg")
+
+        def fake_run(command, **_kwargs):
+            calls.append(command)
+            Path(command[-1]).write_bytes(b"png")
+            return SimpleNamespace(returncode=0, stderr=b"")
+
+        monkeypatch.setattr("tuck.media_server.subprocess.run", fake_run)
+
+        first = server.generate_waveform(source)
+        second = server.generate_waveform(source)
+
+        assert first == second
+        assert first is not None and Path(first).read_bytes() == b"png"
+        assert len(calls) == 1
+        assert "showwavespic" in calls[0][calls[0].index("-filter_complex") + 1]
 
     def test_media_server_singleton(self):
         s1 = get_media_server()

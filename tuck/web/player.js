@@ -90,7 +90,11 @@ function clipHasTrim(c, fullDur) {
 
 function setClipSegments(c, segments, active) {
   c.segments = segments.map(function (segment) {
-    return { start: segment.start, end: segment.end };
+    var item = { start: segment.start, end: segment.end };
+    if (segment.grouped === false || segment.audio === false) item.grouped = false;
+    if (segment.muted) item.muted = true;
+    if (segment.audioLink) item.audioLink = segment.audioLink;
+    return item;
   });
   c.activeSegment = Math.max(0, Math.min(c.segments.length - 1, active || 0));
   c.trimStart = null;
@@ -134,6 +138,11 @@ function formatSegmentTime(seconds) {
 function paintTrimChrome() {
   var full = videoDuration();
   var c = selPath ? clips[selPath] : null;
+  var ruler = byId("sequence-ruler");
+  if (ruler) {
+    ruler.classList.toggle("hid", !(c && full > 0));
+    if (c && full > 0) paintSequenceRuler(full);
+  }
   var segments = clipSegments(c, full || 1);
   var active = activeSegmentIndex(c, segments);
   var bounds = segments[active] || { start: 0, end: full || 1 };
@@ -166,6 +175,15 @@ function paintTrimChrome() {
       " · " +
       formatSelectedDuration(segments[i].end - segments[i].start);
     range.appendChild(timeLabel);
+    if (i === active) {
+      var edgeIn = document.createElement("span");
+      edgeIn.className = "clip-edge start";
+      edgeIn.dataset.edge = "start";
+      var edgeOut = document.createElement("span");
+      edgeOut.className = "clip-edge end";
+      edgeOut.dataset.edge = "end";
+      range.append(edgeIn, edgeOut);
+    }
     range.title =
       "Segment " +
       (i + 1) +
@@ -176,13 +194,7 @@ function paintTrimChrome() {
       " · Click to seek · drag to move";
     segmentsLayer.appendChild(range);
   }
-  byId("tl-range").style.left = startPct + "%";
-  byId("tl-range").style.width = Math.max(0, endPct - startPct) + "%";
-  byId("tl-range").style.setProperty("--segment-color", segmentColor(active));
-  byId("tl-in").style.left = startPct + "%";
-  byId("tl-out").style.left = endPct + "%";
-  byId("tl-in").style.setProperty("--segment-color", segmentColor(active));
-  byId("tl-out").style.setProperty("--segment-color", segmentColor(active));
+  paintSelectionFrame(startPct, endPct, segmentColor(active));
   byId("tl-in").setAttribute(
     "aria-valuemin",
     String(active > 0 ? segments[active - 1].end : 0),
@@ -205,25 +217,114 @@ function paintTrimChrome() {
   addButton.title = canAdd
     ? "Add a kept range in a gap near the playhead"
     : "Shorten a segment to create a gap first";
+  var groupButton = byId("btn-seq-link");
+  if (groupButton) {
+    var grouped = SegmentEditing.hasAudio(segments[active]);
+    groupButton.classList.toggle("on", grouped);
+    groupButton.setAttribute("aria-pressed", grouped ? "true" : "false");
+    groupButton.title = grouped
+      ? "Ungroup audio from this segment"
+      : "Group audio with this segment";
+    groupButton.setAttribute(
+      "aria-label",
+      grouped ? "Ungroup this segment" : "Group this segment",
+    );
+  }
+  if (window.AudioTimeline && AudioTimeline.paintSource)
+    AudioTimeline.paintSource();
   return { full: full, bounds: bounds, has: has, segments: segments, active: active };
+}
+
+function paintSelectionFrame(startPct, endPct, color) {
+  var frame = byId("seq-selection");
+  if (frame) frame.hidden = true;
+  var tlIn = byId("tl-in");
+  if (tlIn) {
+    tlIn.classList.add("sr-handle");
+    tlIn.style.left = startPct + "%";
+    tlIn.style.setProperty("--segment-color", color);
+  }
+  var tlOut = byId("tl-out");
+  if (tlOut) {
+    tlOut.classList.add("sr-handle");
+    tlOut.style.left = endPct + "%";
+    tlOut.style.setProperty("--segment-color", color);
+  }
+}
+
+function rulerStep(full) {
+  if (full <= 10) return 1;
+  if (full <= 30) return 2;
+  if (full <= 90) return 5;
+  if (full <= 180) return 10;
+  if (full <= 600) return 30;
+  return 60;
+}
+
+function paintSequenceRuler(full) {
+  var ruler = byId("sequence-ruler");
+  if (!ruler) return;
+  ruler.replaceChildren();
+  if (full <= 0) return;
+  var step = rulerStep(full);
+  var major = step * (full <= 30 ? 2 : full <= 180 ? 3 : 2);
+  for (var t = 0; t <= full + 0.0001; t += step) {
+    var tick = document.createElement("span");
+    tick.className = "seq-tick" + (t % major < 0.001 || t < 0.001 ? " major" : "");
+    tick.style.left = (t / full) * 100 + "%";
+    if (t % major < 0.001 || t < 0.001) {
+      var label = document.createElement("span");
+      label.textContent = fmtt(t);
+      tick.appendChild(label);
+    }
+    ruler.appendChild(tick);
+  }
 }
 
 function syncTimelineUI() {
   paintTrimChrome();
   updateTime();
+  if (window.AudioTimeline) AudioTimeline.render();
 }
 
 function setPlayheadUI(sec, full) {
   full = full || videoDuration();
   sec = Number.isFinite(sec) ? sec : 0;
+  var pct = full > 0 ? Math.max(0, Math.min(100, (sec / full) * 100)) : 0;
+  var layer = byId("seq-playhead-layer");
+  if (layer) layer.style.setProperty("--playhead", pct + "%");
   if (full > 0) {
-    byId("tl-playhead").style.left =
-      Math.max(0, Math.min(100, (sec / full) * 100)) + "%";
     byId("timeline").setAttribute("aria-valuemax", String(Math.round(full)));
     byId("timeline").setAttribute("aria-valuenow", String(Math.round(sec)));
   }
   byId("ptime").textContent = fmtt(sec) + " / " + fmtt(full || 0);
+  var clock = byId("audio-output-time");
+  if (clock) clock.textContent = fmtt(sec) + " / " + fmtt(full || 0);
   _previewSec = sec;
+}
+
+function splitAtPlayhead() {
+  if (window.AudioTimeline && AudioTimeline.splitSelected && AudioTimeline.hasSelection()) {
+    AudioTimeline.splitSelected();
+    return;
+  }
+  if (!selPath || !clips[selPath]) return;
+  var c = clips[selPath];
+  var full = videoDuration() || (c.probeData && c.probeData.duration) || 0;
+  var video = byId("vid");
+  var time = video && Number.isFinite(video.currentTime) ? video.currentTime : 0;
+  var result = SegmentEditing.splitAt(clipSegments(c, full), time, full);
+  if (!result) {
+    toast("Move the playhead inside a video clip to split it.", "err");
+    return;
+  }
+  setClipSegments(c, result.segments, result.index);
+  if (window.AudioTimeline) AudioTimeline.onVideoSplit(time);
+  paintTrimChrome();
+  seekPreview(time);
+  renderClips();
+  reqPreview();
+  if (window.AudioTimeline) AudioTimeline.render();
 }
 
 function updateTime() {
@@ -365,10 +466,12 @@ function resetSegments() {
   var full = videoDuration() || (c.probeData && c.probeData.duration) || 0;
   if (full <= 0) return;
   setClipSegments(c, SegmentEditing.fullSegment(full), 0);
+  if (window.AudioTimeline) AudioTimeline.resetAudio(c);
   paintTrimChrome();
   seekPreview(0);
   renderClips();
   reqPreview();
+  if (window.AudioTimeline) AudioTimeline.render();
 }
 
 function clearTrim() {
@@ -402,6 +505,7 @@ function addSegment() {
     seekPreview(result.segments[result.index].start);
     renderClips();
     reqPreview();
+    if (window.AudioTimeline) AudioTimeline.render();
   } catch (err) {
     toast(err.message || "No room for another segment.", "err");
   }
@@ -421,6 +525,7 @@ function removeActiveSegment() {
   seekPreview(segments[active].start);
   renderClips();
   reqPreview();
+  if (window.AudioTimeline) AudioTimeline.render();
 }
 
 function setTrimDragCursor(active) {
@@ -438,9 +543,13 @@ function setSegmentDragCursor(active) {
 function onTimelinePointerDown(e) {
   if (e.button != null && e.button !== 0) return;
   var target = e.target;
+  var edge = target && target.closest ? target.closest(".clip-edge") : null;
   var isSegment =
     target && target.classList && target.classList.contains("tl-segment");
-  if (isSegment) {
+  if (edge && edge.dataset.edge) {
+    _tlDrag = edge.dataset.edge === "start" ? "in" : "out";
+    setTrimDragCursor(true);
+  } else if (isSegment) {
     var index = parseInt(target.dataset.segmentIndex, 10);
     var full = videoDuration();
     var segments = playbackSegments();
@@ -535,6 +644,7 @@ function onTimelinePointerUp(e) {
     if (!_seekBusy) flushVideoSeek();
   }
   if (wasEdit) {
+    if (window.AudioTimeline) AudioTimeline.render();
     renderClips();
     reqPreview();
   }
@@ -543,10 +653,38 @@ function onTimelinePointerUp(e) {
 (function bindTimeline() {
   var timeline = byId("timeline");
   if (!timeline) return;
+  var ruler = byId("sequence-ruler");
+  if (ruler) {
+    ruler.addEventListener("pointerdown", function (e) {
+      if (e.button != null && e.button !== 0) return;
+      seekToRatio(timelineRatioFromEvent(e));
+      e.preventDefault();
+    });
+  }
   timeline.addEventListener("pointerdown", onTimelinePointerDown);
   timeline.addEventListener("pointermove", onTimelinePointerMove);
   timeline.addEventListener("pointerup", onTimelinePointerUp);
   timeline.addEventListener("pointercancel", onTimelinePointerUp);
+  var selectionLayer = byId("seq-selection-layer");
+  if (selectionLayer) {
+    selectionLayer.addEventListener("pointerdown", function (e) {
+      if (e.button != null && e.button !== 0) return;
+      if (!e.target || (e.target.id !== "tl-in" && e.target.id !== "tl-out")) return;
+      _tlDrag = e.target.id === "tl-in" ? "in" : "out";
+      e.target.classList.add("dragging");
+      setTrimDragCursor(true);
+      if (e.pointerId != null && selectionLayer.setPointerCapture) {
+        try {
+          selectionLayer.setPointerCapture(e.pointerId);
+        } catch (err) {}
+      }
+      processTimelineMove(e);
+      e.preventDefault();
+    });
+    selectionLayer.addEventListener("pointermove", onTimelinePointerMove);
+    selectionLayer.addEventListener("pointerup", onTimelinePointerUp);
+    selectionLayer.addEventListener("pointercancel", onTimelinePointerUp);
+  }
   timeline.addEventListener("click", function (e) {
     if (
       e.target &&
@@ -624,33 +762,32 @@ var ICON_MUTE = `<svg viewBox="0 0 24 24" aria-hidden="true">
 function updateMuteIcon() {
   var btn = byId("btn-mute");
   if (!btn) return;
-  var isMuted = muted || (byId("vid") && byId("vid").volume === 0);
+  var isMuted = muted || (byId("vbar") && Number(byId("vbar").value) === 0);
   btn.innerHTML = isMuted ? ICON_MUTE : ICON_VOL;
-  btn.title = isMuted ? "Unmute" : "Mute";
-  btn.setAttribute("aria-label", isMuted ? "Unmute" : "Mute");
+  btn.title = isMuted ? "Unmute preview" : "Mute preview";
+  btn.setAttribute("aria-label", isMuted ? "Unmute preview" : "Mute preview");
 }
 
 updateMuteIcon();
 
 function toggleMute() {
-  var v = byId("vid");
-  if (muted || v.volume === 0) {
-    v.volume = volBefore / 100;
+  if (muted || Number(byId("vbar").value) === 0) {
     byId("vbar").value = volBefore;
     muted = false;
   } else {
-    volBefore = Math.round(v.volume * 100) || 80;
-    v.volume = 0;
+    volBefore = parseInt(byId("vbar").value, 10) || 80;
     byId("vbar").value = 0;
     muted = true;
   }
+  if (window.AudioTimeline) AudioTimeline.applyPreviewVolume();
+  else byId("vid").volume = muted ? 0 : volBefore / 100;
   updateMuteIcon();
 }
 
 function setVol(value) {
-  var v = byId("vid");
-  v.volume = value / 100;
   muted = value == 0;
   if (!muted) volBefore = parseInt(value, 10) || volBefore;
+  if (window.AudioTimeline) AudioTimeline.applyPreviewVolume();
+  else byId("vid").volume = value / 100;
   updateMuteIcon();
 }

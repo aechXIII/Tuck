@@ -28,7 +28,10 @@ https://github.com/user-attachments/assets/532317a7-e628-455e-b041-4aeceef810b5
 ## Features
 
 **Trim and transform**
-- Trim clips with the two-handle timeline before encoding
+- Trim clips on a stacked video-and-audio timeline before encoding
+- Cut source audio independently while leaving the picture in that range
+- Add music, narration, or sound effects on independent waveform tracks
+- Move, trim, split, loop, fade, mute, and mix imported audio with the source audio
 - Crop directly in the preview using a freeform selection or fixed aspect ratio
 - Rotate in 90-degree steps or flip the picture horizontally or vertically
 - Choose Fit to keep the whole picture, Fill to crop it to the output frame, or Stretch to match the exact output dimensions
@@ -76,7 +79,7 @@ If `winget` is unavailable, download a Windows build from [FFmpeg](https://ffmpe
 
 ## Use
 
-1. Add one or more video files and optionally trim, crop, rotate, or flip the selected clip.
+1. Add one or more video files and optionally trim, crop, rotate, flip, or mix audio into the selected clip.
 2. Select a compression or upscale profile and encoder.
 3. Start the queue. You can reorder pending jobs, cancel a pending or running job, and retry failed or cancelled jobs without changing the original request.
 4. Use **Settings > System > Copy diagnostics** after a failure to copy a path-sanitized support report.

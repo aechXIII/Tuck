@@ -42,6 +42,7 @@ function persistSession() {
     output_dir: appSettings.output_dir,
     check_updates: appSettings.check_updates,
     clear_completed_automatically: !!appSettings.clear_completed_automatically,
+    open_output_folder_after_queue: !!appSettings.open_output_folder_after_queue,
     compression_suffix: appSettings.compression_suffix,
     upscale_suffix: appSettings.upscale_suffix,
     last_task: wf === 1 ? "upscale" : "compression",
@@ -725,6 +726,7 @@ function buildReq(src) {
       var transform = cropTransformForRequest(c);
       if (transform) req.transform = transform;
     }
+    if (window.AudioTimeline) Object.assign(req, AudioTimeline.requestPayload(c));
   }
   return req;
 }

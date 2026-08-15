@@ -9,7 +9,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from .models import VideoInfo
+from .models import AudioInfo, VideoInfo
 
 logger = logging.getLogger(__name__)
 
@@ -185,6 +185,91 @@ def probe(source: str | Path) -> VideoInfo:
         coded_width=coded_width,
         coded_height=coded_height,
         display_rotation=display_rotation,
+    )
+
+
+def probe_audio(source: str | Path) -> AudioInfo:
+    ffprobe_path = _find_ffprobe()
+    if not ffprobe_path:
+        raise FileNotFoundError(
+            "ffprobe not found. Install FFmpeg and ensure ffprobe is on PATH "
+            "or set the path in settings."
+        )
+
+    source = Path(source)
+    if not source.is_file():
+        raise FileNotFoundError(f"Audio source file not found: {source}")
+
+    cmd = [
+        ffprobe_path,
+        "-v",
+        "quiet",
+        "-print_format",
+        "json",
+        "-show_format",
+        "-show_streams",
+        str(source),
+    ]
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+        )
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"ffprobe timed out probing audio: {source}") from None
+    if result.returncode != 0:
+        raise subprocess.CalledProcessError(
+            result.returncode,
+            cmd,
+            output=result.stdout,
+            stderr=result.stderr,
+        )
+
+    try:
+        data = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Failed to parse ffprobe output: {exc}") from exc
+
+    audio_stream = next(
+        (stream for stream in data.get("streams", []) if stream.get("codec_type") == "audio"),
+        None,
+    )
+    if audio_stream is None:
+        raise ValueError(f"No audio stream found in: {source}")
+
+    fmt = data.get("format", {})
+    duration = 0.0
+    duration_value = fmt.get("duration") or audio_stream.get("duration")
+    if duration_value:
+        try:
+            duration = float(duration_value)
+        except (TypeError, ValueError):
+            logger.warning("Could not parse audio duration from ffprobe: %r", duration_value)
+    if duration <= 0:
+        tags = audio_stream.get("tags", {})
+        if isinstance(tags, dict) and tags.get("DURATION"):
+            duration = _parse_duration_str(str(tags["DURATION"]))
+    if not math.isfinite(duration) or duration <= 0:
+        raise ValueError(f"Cannot determine audio duration for: {source}")
+
+    def _stream_int(name: str) -> int:
+        try:
+            return int(audio_stream.get(name, 0) or 0)
+        except (TypeError, ValueError):
+            logger.warning("Could not parse audio %s from ffprobe", name)
+            return 0
+
+    return AudioInfo(
+        path=str(source),
+        duration=duration,
+        codec=str(audio_stream.get("codec_name", "") or ""),
+        channels=_stream_int("channels"),
+        sample_rate=_stream_int("sample_rate"),
+        bitrate=_stream_int("bit_rate"),
+        file_size=source.stat().st_size,
     )
 
 

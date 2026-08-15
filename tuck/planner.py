@@ -19,6 +19,7 @@ from .models import (
     RES_MODE_CUSTOM,
     RES_MODE_LIMIT,
     RES_MODE_SOURCE,
+    SIZING_MODE_STRETCH,
     WORKFLOW_UPSCALE,
     EncodePlan,
     OutputGeometry,
@@ -27,10 +28,13 @@ from .models import (
     Segment,
     VideoInfo,
     VideoTransform,
+    audio_independent_from_pieces,
     calculate_transform_geometry,
     crop_for_aspect,
     estimate_size_from_bitrate,
     oriented_dimensions,
+    source_audio_output_pieces,
+    validate_audio_tracks,
     validate_rate_control_matrix,
     validate_segments,
 )
@@ -50,6 +54,7 @@ def plan(
     compression_suffix: str = "_tucked_{size}",
     upscale_suffix: str = "_upscaled_{width}x{height}",
     source_info: VideoInfo | None = None,
+    audio_source_durations: dict[str, float] | None = None,
 ) -> EncodePlan:
     from .probe import probe
 
@@ -65,6 +70,11 @@ def plan(
     rc_method = getattr(profile, "rate_control_method", RCM_CBR)
     qp_val = getattr(profile, "qp", 23)
     cq_val = getattr(profile, "cq", qp_val)
+    audio_enabled = True
+    source_audio_muted = False
+    source_audio_gain_db = 0.0
+    source_audio_segments = None
+    audio_tracks = []
 
     if request is not None:
         request.validate()
@@ -80,6 +90,16 @@ def plan(
             explicit_br = request.explicit_bitrate
         if request.audio_bitrate is not None:
             audio_br = request.audio_bitrate
+        if request.audio_enabled is not None:
+            audio_enabled = request.audio_enabled
+        if request.source_audio_muted is not None:
+            source_audio_muted = request.source_audio_muted
+        if request.source_audio_gain_db is not None:
+            source_audio_gain_db = float(request.source_audio_gain_db)
+        if request.source_audio_segments is not None:
+            source_audio_segments = list(request.source_audio_segments)
+        if request.audio_tracks is not None:
+            audio_tracks = list(request.audio_tracks)
         if request.workflow is not None:
             workflow = request.workflow
         if request.rate_control_method is not None:
@@ -203,6 +223,9 @@ def plan(
             f"Selected duration is too short ({effective_duration:.3f}s). "
             "Select at least 0.05 seconds."
         )
+    if source_audio_segments:
+        validate_segments(source_audio_segments, float(info.duration))
+    validate_audio_tracks(audio_tracks, float(info.duration), audio_source_durations)
 
     target_size = profile.target_size_bytes
     if request is not None and request.target_size_bytes is not None:
@@ -245,11 +268,18 @@ def plan(
     output = _resolve_output_collision(output, respect_reservation=False)
 
     oriented_width, oriented_height = oriented_dimensions(transform, info.width, info.height)
+    resolution_width, resolution_height = oriented_width, oriented_height
+    if transform.sizing_mode == SIZING_MODE_STRETCH:
+        resolution_width, resolution_height = oriented_dimensions(
+            replace(transform, crop=None),
+            info.width,
+            info.height,
+        )
 
     if transform.output is not None:
         requested_output = transform.output
     elif res_mode == RES_MODE_SOURCE:
-        source_width, source_height = _make_even(oriented_width, oriented_height)
+        source_width, source_height = _make_even(resolution_width, resolution_height)
         requested_output = OutputGeometry(source_width, source_height)
     elif res_mode == RES_MODE_CUSTOM:
         cw = (
@@ -265,7 +295,7 @@ def plan(
         requested_output = OutputGeometry(max(2, int(cw)), max(2, int(ch)))
     elif res_mode == RES_MODE_LIMIT:
         limit_width, limit_height = _scale_resolution(
-            oriented_width, oriented_height, profile.max_width, profile.max_height
+            resolution_width, resolution_height, profile.max_width, profile.max_height
         )
         requested_output = OutputGeometry(limit_width, limit_height)
     else:
@@ -300,10 +330,34 @@ def plan(
     if target_fps <= 0:
         raise ValueError("Target FPS is zero")
 
+    imported_audio = any(
+        not track.muted and any(not clip.muted for clip in track.clips) for track in audio_tracks
+    )
+    source_audio_pieces = source_audio_output_pieces(segments, source_audio_segments)
+    source_audio = (
+        audio_enabled
+        and info.has_audio
+        and not source_audio_muted
+        and (source_audio_segments is None or bool(source_audio_pieces))
+    )
+    imported_audio = audio_enabled and imported_audio
+    audio_independent = source_audio_segments is not None and audio_independent_from_pieces(
+        source_audio_pieces, segments
+    )
+    audio_filters_required = imported_audio or (
+        source_audio
+        and (len(segments) > 1 or abs(source_audio_gain_db) > 1e-9 or audio_independent)
+    )
+
     copy_audio = False
-    if not info.has_audio:
+    if not audio_enabled or (not source_audio and not imported_audio):
         audio_br = 0
         keep_audio = False
+    elif audio_filters_required:
+        if keep_audio and source_audio and not imported_audio and info.audio_bitrate > 0:
+            audio_br = info.audio_bitrate
+        else:
+            audio_br = min(max(audio_br or info.audio_bitrate or 128_000, 8_000), MAX_AUDIO_BITRATE)
     elif keep_audio and info.audio_bitrate > 0:
         copy_audio = True
         audio_br = info.audio_bitrate
@@ -312,7 +366,7 @@ def plan(
     else:
         audio_br = min(audio_br, MAX_AUDIO_BITRATE)
 
-    if len(segments) > 1 and info.has_audio and copy_audio:
+    if audio_filters_required and copy_audio:
         # Filtered audio cannot be copied directly
         copy_audio = False
         audio_br = min(info.audio_bitrate or audio_br, MAX_AUDIO_BITRATE)
@@ -384,6 +438,11 @@ def plan(
         if not copy_audio
         else (info.audio_sample_rate or 44100),
         copy_audio=copy_audio,
+        audio_enabled=audio_enabled,
+        source_audio_muted=source_audio_muted,
+        source_audio_gain_db=source_audio_gain_db,
+        source_audio_segments=source_audio_segments,
+        audio_tracks=audio_tracks,
         two_pass=two_pass,
         preset=preset,
         crf=crf,

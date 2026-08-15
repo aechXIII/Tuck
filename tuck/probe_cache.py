@@ -3,17 +3,18 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 from threading import Lock
+from typing import Generic, TypeVar
 
-from .models import VideoInfo
+T = TypeVar("T")
 
 
-class ProbeCache:
-    def __init__(self, probe: Callable[[str], VideoInfo]) -> None:
+class ProbeCache(Generic[T]):
+    def __init__(self, probe: Callable[[str], T]) -> None:
         self._probe = probe
-        self._entries: dict[str, tuple[int, int, VideoInfo]] = {}
+        self._entries: dict[str, tuple[int, int, T]] = {}
         self._lock = Lock()
 
-    def get(self, path: str) -> VideoInfo:
+    def get(self, path: str) -> T:
         with self._lock:
             stat = Path(path).stat()
             signature = (stat.st_size, stat.st_mtime_ns)

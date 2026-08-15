@@ -107,6 +107,71 @@ test("moving a segment preserves its duration and stops at neighboring ranges", 
   ]);
 });
 
+test("splitAt divides a kept range without changing neighboring clips", () => {
+  const split = segments.splitAt([{ start: 0, end: 10 }], 4, 10);
+  assert.deepEqual(split.segments, [
+    { start: 0, end: 4 },
+    { start: 4, end: 10 },
+  ]);
+  assert.equal(split.index, 1);
+  assert.equal(segments.splitAt([{ start: 0, end: 10 }], 0.02, 10), null);
+});
+
+test("segment audio can be ungrouped and relinked independently of the video", () => {
+  assert.deepEqual(
+    segments.audioSegmentsForClip(
+      {
+        segments: [
+          { start: 0, end: 3 },
+          { start: 5, end: 9, grouped: false },
+        ],
+        sourceAudioSegments: [{ start: 5, end: 9 }],
+      },
+      10,
+    ),
+    [
+      { start: 0, end: 3 },
+      { start: 5, end: 9 },
+    ],
+  );
+  assert.deepEqual(
+    segments.audioSegmentsForClip(
+      { segments: [{ start: 0, end: 10, grouped: false }], sourceAudioSegments: [] },
+      10,
+    ),
+    [],
+  );
+  assert.deepEqual(
+    segments.setSegmentAudio([{ start: 0, end: 10 }], 0, false, 10),
+    [{ start: 0, end: 10, grouped: false }],
+  );
+  assert.deepEqual(
+    segments.audioSegmentsForClip({ segments: [{ start: 1, end: 9 }] }, 10),
+    [{ start: 1, end: 9 }],
+  );
+  assert.deepEqual(
+    segments.audioSegmentsForClip({ segments: [{ start: 0, end: 10, muted: true }] }, 10),
+    [],
+  );
+
+  const unlinked = segments.unlinkSegmentAudio([{ start: 1, end: 8 }], [], 0, 10);
+  assert.equal(unlinked.segments[0].grouped, false);
+  assert.ok(unlinked.segments[0].audioLink);
+  assert.equal(unlinked.detached[0].audioLink, unlinked.segments[0].audioLink);
+  unlinked.detached[0].start = 4;
+  unlinked.detached[0].end = 9;
+  const relinked = segments.relinkSegmentAudio(
+    unlinked.segments,
+    unlinked.detached,
+    0,
+    10,
+  );
+  assert.equal(relinked.detached.length, 0);
+  assert.equal(relinked.segments[0].grouped, undefined);
+  assert.equal(relinked.segments[0].start, 1);
+  assert.equal(relinked.segments[0].end, 8);
+});
+
 test("playback traverses gaps and loops after the final segment", () => {
   const kept = [
     { start: 0, end: 1 },

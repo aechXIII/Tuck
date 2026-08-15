@@ -324,6 +324,17 @@ class VideoInfo:
 
 
 @dataclass(frozen=True)
+class AudioInfo:
+    path: str
+    duration: float
+    codec: str
+    channels: int = 0
+    sample_rate: int = 0
+    bitrate: int = 0
+    file_size: int = 0
+
+
+@dataclass(frozen=True)
 class Segment:
     start: float
     end: float
@@ -380,6 +391,261 @@ class Segment:
         return segment
 
 
+@dataclass(frozen=True)
+class AudioClip:
+    source: str
+    timeline_start: float
+    source_in: float
+    source_out: float
+    timeline_duration: float
+    gain_db: float = 0.0
+    fade_in: float = 0.0
+    fade_out: float = 0.0
+    loop: bool = False
+    muted: bool = False
+
+    @property
+    def timeline_end(self) -> float:
+        return float(self.timeline_start + self.timeline_duration)
+
+    @property
+    def source_duration(self) -> float:
+        return float(self.source_out - self.source_in)
+
+    def validate(
+        self,
+        timeline_duration: float | None = None,
+        source_duration: float | None = None,
+    ) -> None:
+        if not isinstance(self.source, str) or not self.source:
+            raise ValueError("audio clip source must be a non-empty string")
+        for name in (
+            "timeline_start",
+            "source_in",
+            "source_out",
+            "timeline_duration",
+            "gain_db",
+            "fade_in",
+            "fade_out",
+        ):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ValueError(f"audio clip {name} must be a number")
+            if not math.isfinite(float(value)):
+                raise ValueError(f"audio clip {name} must be finite")
+        if not isinstance(self.loop, bool):
+            raise ValueError("audio clip loop must be a boolean")
+        if not isinstance(self.muted, bool):
+            raise ValueError("audio clip muted must be a boolean")
+        if self.timeline_start < 0:
+            raise ValueError("audio clip timeline_start must be >= 0")
+        if self.source_in < 0:
+            raise ValueError("audio clip source_in must be >= 0")
+        if self.source_out <= self.source_in:
+            raise ValueError("audio clip source_out must be greater than source_in")
+        if self.timeline_duration < MIN_SEGMENT_DURATION - 1e-9:
+            raise ValueError(f"audio clip must be at least {MIN_SEGMENT_DURATION:.2f} seconds")
+        if not self.loop and self.timeline_duration > self.source_duration + 1e-6:
+            raise ValueError("audio clip duration exceeds its selected source range")
+        if self.gain_db < -60 or self.gain_db > 12:
+            raise ValueError("audio clip gain_db must be between -60 and 12")
+        if self.fade_in < 0 or self.fade_out < 0:
+            raise ValueError("audio clip fades must be >= 0")
+        if self.fade_in + self.fade_out > self.timeline_duration + 1e-6:
+            raise ValueError("audio clip fades cannot exceed the clip duration")
+        if timeline_duration is not None and self.timeline_end > timeline_duration + 1e-6:
+            raise ValueError("audio clip exceeds the output timeline duration")
+        if source_duration is not None and self.source_out > source_duration + 1e-6:
+            raise ValueError("audio clip source_out exceeds the audio source duration")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "source": self.source,
+            "timeline_start": float(self.timeline_start),
+            "source_in": float(self.source_in),
+            "source_out": float(self.source_out),
+            "timeline_duration": float(self.timeline_duration),
+            "gain_db": float(self.gain_db),
+            "fade_in": float(self.fade_in),
+            "fade_out": float(self.fade_out),
+            "loop": self.loop,
+            "muted": self.muted,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> AudioClip:
+        if not isinstance(data, dict):
+            raise ValueError("audio clip must be an object")
+        required = {"source", "timeline_start", "source_in", "source_out"}
+        missing = required - set(data)
+        if missing:
+            raise ValueError(f"audio clip is missing {sorted(missing)[0]}")
+        allowed = required | {
+            "timeline_duration",
+            "gain_db",
+            "fade_in",
+            "fade_out",
+            "loop",
+            "muted",
+        }
+        unknown = set(data) - allowed
+        if unknown:
+            raise ValueError(f"unknown audio clip field: {sorted(unknown)[0]}")
+        selected_duration = float(data["source_out"] - data["source_in"])
+        clip = cls(
+            source=data["source"],
+            timeline_start=data["timeline_start"],
+            source_in=data["source_in"],
+            source_out=data["source_out"],
+            timeline_duration=data.get("timeline_duration", selected_duration),
+            gain_db=data.get("gain_db", 0.0),
+            fade_in=data.get("fade_in", 0.0),
+            fade_out=data.get("fade_out", 0.0),
+            loop=data.get("loop", False),
+            muted=data.get("muted", False),
+        )
+        clip.validate()
+        return clip
+
+
+@dataclass(frozen=True)
+class AudioTrack:
+    track_id: str
+    name: str
+    clips: list[AudioClip] = field(default_factory=list)
+    gain_db: float = 0.0
+    muted: bool = False
+
+    def validate(
+        self,
+        timeline_duration: float | None = None,
+        source_durations: dict[str, float] | None = None,
+    ) -> None:
+        if not isinstance(self.track_id, str) or not self.track_id:
+            raise ValueError("audio track track_id must be a non-empty string")
+        if not isinstance(self.name, str) or not self.name.strip():
+            raise ValueError("audio track name must be a non-empty string")
+        if isinstance(self.gain_db, bool) or not isinstance(self.gain_db, (int, float)):
+            raise ValueError("audio track gain_db must be a number")
+        if not math.isfinite(float(self.gain_db)) or self.gain_db < -60 or self.gain_db > 12:
+            raise ValueError("audio track gain_db must be between -60 and 12")
+        if not isinstance(self.muted, bool):
+            raise ValueError("audio track muted must be a boolean")
+        previous_end = 0.0
+        for index, clip in enumerate(self.clips):
+            if not isinstance(clip, AudioClip):
+                raise ValueError(f"audio track clips[{index}] must be an AudioClip")
+            source_duration = (
+                source_durations.get(clip.source) if source_durations is not None else None
+            )
+            clip.validate(timeline_duration, source_duration)
+            if clip.timeline_start < previous_end - 1e-6:
+                raise ValueError("audio clips on the same track must not overlap")
+            previous_end = clip.timeline_end
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "track_id": self.track_id,
+            "name": self.name,
+            "gain_db": float(self.gain_db),
+            "muted": self.muted,
+            "clips": [clip.to_dict() for clip in self.clips],
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> AudioTrack:
+        if not isinstance(data, dict):
+            raise ValueError("audio track must be an object")
+        allowed = {"track_id", "name", "gain_db", "muted", "clips"}
+        unknown = set(data) - allowed
+        if unknown:
+            raise ValueError(f"unknown audio track field: {sorted(unknown)[0]}")
+        raw_clips = data.get("clips", [])
+        if not isinstance(raw_clips, list):
+            raise ValueError("audio track clips must be an array")
+        track = cls(
+            track_id=data.get("track_id", ""),
+            name=data.get("name", ""),
+            gain_db=data.get("gain_db", 0.0),
+            muted=data.get("muted", False),
+            clips=[AudioClip.from_dict(item) for item in raw_clips],
+        )
+        track.validate()
+        return track
+
+
+def validate_audio_tracks(
+    tracks: list[AudioTrack],
+    timeline_duration: float | None = None,
+    source_durations: dict[str, float] | None = None,
+) -> None:
+    seen: set[str] = set()
+    for index, track in enumerate(tracks):
+        if not isinstance(track, AudioTrack):
+            raise ValueError(f"audio_tracks[{index}] must be an AudioTrack")
+        if track.track_id in seen:
+            raise ValueError(f"duplicate audio track id: {track.track_id}")
+        seen.add(track.track_id)
+        track.validate(timeline_duration, source_durations)
+
+
+@dataclass(frozen=True)
+class TimelineAudioPiece:
+    source_start: float
+    source_end: float
+    output_start: float
+
+    @property
+    def duration(self) -> float:
+        return float(self.source_end - self.source_start)
+
+
+def audio_independent_from_pieces(
+    pieces: list[TimelineAudioPiece],
+    segments: list[Segment],
+) -> bool:
+    if not pieces or len(pieces) != len(segments):
+        return True
+    return any(
+        abs(piece.source_start - segment.start) > 1e-6 or abs(piece.source_end - segment.end) > 1e-6
+        for piece, segment in zip(pieces, segments, strict=True)
+    )
+
+
+def map_source_range_to_output(
+    video_segments: list[Segment],
+    source_start: float,
+    source_end: float,
+) -> list[TimelineAudioPiece]:
+    pieces: list[TimelineAudioPiece] = []
+    output_cursor = 0.0
+    for video in video_segments:
+        start = max(float(video.start), float(source_start))
+        end = min(float(video.end), float(source_end))
+        if end - start >= MIN_SEGMENT_DURATION - 1e-9:
+            pieces.append(
+                TimelineAudioPiece(
+                    source_start=start,
+                    source_end=end,
+                    output_start=output_cursor + (start - float(video.start)),
+                )
+            )
+        output_cursor += float(video.duration)
+    return pieces
+
+
+def source_audio_output_pieces(
+    video_segments: list[Segment],
+    audio_segments: list[Segment] | None,
+) -> list[TimelineAudioPiece]:
+    kept = video_segments if audio_segments is None else audio_segments
+    pieces: list[TimelineAudioPiece] = []
+    for audio in kept:
+        pieces.extend(map_source_range_to_output(video_segments, audio.start, audio.end))
+    pieces.sort(key=lambda piece: (piece.output_start, piece.source_start))
+    return pieces
+
+
 def validate_segments(
     segments: list[Segment],
     source_duration: float | None = None,
@@ -422,6 +688,11 @@ class PlanRequest:
 
     audio_bitrate: int | None = None
     keep_audio: bool | None = None
+    audio_enabled: bool | None = None
+    source_audio_muted: bool | None = None
+    source_audio_gain_db: float | None = None
+    source_audio_segments: list[Segment] | None = None
+    audio_tracks: list[AudioTrack] | None = None
 
     scaler: str | None = None
 
@@ -518,6 +789,31 @@ class PlanRequest:
             raise ValueError("segments cannot be combined with trim_start or trim_end")
         if self.segments is not None:
             validate_segments(self.segments)
+        if self.source_audio_segments is not None:
+            if not isinstance(self.source_audio_segments, list):
+                raise ValueError("source_audio_segments must be an array")
+            if self.source_audio_segments:
+                validate_segments(self.source_audio_segments)
+
+        for name in ("audio_enabled", "source_audio_muted"):
+            value = getattr(self, name)
+            if value is not None and not isinstance(value, bool):
+                raise ValueError(f"{name} must be a boolean")
+        if self.source_audio_gain_db is not None:
+            if isinstance(self.source_audio_gain_db, bool) or not isinstance(
+                self.source_audio_gain_db, (int, float)
+            ):
+                raise ValueError("source_audio_gain_db must be a number")
+            if (
+                not math.isfinite(float(self.source_audio_gain_db))
+                or self.source_audio_gain_db < -60
+                or self.source_audio_gain_db > 12
+            ):
+                raise ValueError("source_audio_gain_db must be between -60 and 12")
+        if self.audio_tracks is not None:
+            if not isinstance(self.audio_tracks, list):
+                raise ValueError("audio_tracks must be an array")
+            validate_audio_tracks(self.audio_tracks)
 
         if self.trim_start is not None:
             if isinstance(self.trim_start, bool) or not isinstance(self.trim_start, (int, float)):
@@ -575,6 +871,11 @@ class EncodePlan:
     audio_channels: int = 2
     audio_sample_rate: int = 44100
     copy_audio: bool = False
+    audio_enabled: bool = True
+    source_audio_muted: bool = False
+    source_audio_gain_db: float = 0.0
+    source_audio_segments: list[Segment] | None = None
+    audio_tracks: list[AudioTrack] = field(default_factory=list)
     two_pass: bool = True
     preset: str = "medium"
     crf: int = 23
@@ -645,6 +946,8 @@ class EncodePlan:
         info = data.pop("source_info", None)
         transform_data = data.pop("transform", None)
         segments_data = data.pop("segments", None)
+        source_audio_segments_data = data.pop("source_audio_segments", None)
+        audio_tracks_data = data.pop("audio_tracks", None)
         for field_name, default in [
             ("resolution_mode", RES_MODE_SOURCE),
             ("fps_mode", FPS_MODE_SOURCE),
@@ -653,6 +956,9 @@ class EncodePlan:
             ("apply_fps_filter", False),
             ("explicit_bitrate", 0),
             ("copy_audio", False),
+            ("audio_enabled", True),
+            ("source_audio_muted", False),
+            ("source_audio_gain_db", 0.0),
             ("scaler", SCALER_NEIGHBOR),
             ("workflow", WORKFLOW_COMPRESSION),
             ("rate_control_method", RCM_CBR),
@@ -687,17 +993,33 @@ class EncodePlan:
             elif len(plan.segments) > 1:
                 plan.trim_start = 0.0
                 plan.trim_end = 0.0
-            elif plan.source_info is not None:
-                legacy_start = float(plan.trim_start or 0.0)
-                legacy_end = float(plan.trim_end or plan.source_info.duration)
-                plan.segments = [Segment(legacy_start, legacy_end)]
-                validate_segments(plan.segments, float(plan.source_info.duration))
-        elif plan.source_info is not None:
+        if not plan.segments and plan.source_info is not None:
             # Load legacy trim fields as one segment
             legacy_start = float(plan.trim_start or 0.0)
             legacy_end = float(plan.trim_end or plan.source_info.duration)
             plan.segments = [Segment(legacy_start, legacy_end)]
             validate_segments(plan.segments, float(plan.source_info.duration))
+        if source_audio_segments_data is not None:
+            if not isinstance(source_audio_segments_data, list):
+                raise ValueError("source_audio_segments must be an array")
+            plan.source_audio_segments = [
+                Segment.from_dict(item) for item in source_audio_segments_data
+            ]
+            if plan.source_audio_segments:
+                validate_segments(
+                    plan.source_audio_segments,
+                    float(plan.source_info.duration) if plan.source_info is not None else None,
+                )
+        if audio_tracks_data is not None:
+            if not isinstance(audio_tracks_data, list):
+                raise ValueError("audio_tracks must be an array")
+            plan.audio_tracks = [AudioTrack.from_dict(item) for item in audio_tracks_data]
+            source_limit = (
+                float(plan.source_info.duration)
+                if plan.source_info is not None and plan.source_info.duration > 0
+                else plan.effective_duration or None
+            )
+            validate_audio_tracks(plan.audio_tracks, source_limit)
         return plan
 
 
@@ -899,6 +1221,7 @@ class AppSettings:
     compression_suffix: str = "_tucked_{size}"
     upscale_suffix: str = "_upscaled_{width}x{height}"
     clear_completed_automatically: bool = False
+    open_output_folder_after_queue: bool = False
     last_task: str = WORKFLOW_COMPRESSION
     last_compress_profile_id: str = ""
     last_upscale_profile_id: str = ""

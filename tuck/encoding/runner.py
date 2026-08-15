@@ -149,6 +149,11 @@ class FFmpegEngine:
 
         if not source.is_file():
             raise FileNotFoundError(f"Source file not found: {source}")
+        for track in plan.audio_tracks:
+            for clip in track.clips:
+                audio_source = Path(clip.source)
+                if not audio_source.is_file():
+                    raise FileNotFoundError(f"Audio source file not found: {audio_source}")
 
         output.parent.mkdir(parents=True, exist_ok=True)
 

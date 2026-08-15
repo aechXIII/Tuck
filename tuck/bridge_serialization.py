@@ -3,7 +3,15 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from .models import EncodePlan, Profile, QueueItem, VideoInfo, calculate_transform_geometry
+from .models import (
+    AudioInfo,
+    EncodePlan,
+    Profile,
+    QueueItem,
+    Segment,
+    VideoInfo,
+    calculate_transform_geometry,
+)
 
 
 def video_info_dict(info: VideoInfo) -> dict[str, Any]:
@@ -26,6 +34,19 @@ def video_info_dict(info: VideoInfo) -> dict[str, Any]:
         "file_size_mb": round(info.file_size / (1024 * 1024), 2),
         "bitrate_kbps": round(info.bitrate / 1000) if info.bitrate else 0,
         "has_audio": info.has_audio,
+    }
+
+
+def audio_info_dict(info: AudioInfo) -> dict[str, Any]:
+    return {
+        "path": info.path,
+        "duration": round(float(info.duration), 3),
+        "codec": info.codec,
+        "channels": info.channels,
+        "sample_rate": info.sample_rate,
+        "bitrate_kbps": round(info.bitrate / 1000) if info.bitrate else 0,
+        "file_size": info.file_size,
+        "file_size_mb": round(info.file_size / (1024 * 1024), 2),
     }
 
 
@@ -73,6 +94,15 @@ def profile_ui_dict(
     return data
 
 
+def _legacy_trim_value(
+    segments: list[Segment], attr: str, ndigits: int | None = None
+) -> float | None:
+    if len(segments) == 1:
+        value = float(getattr(segments[0], attr))
+        return round(value, ndigits) if ndigits is not None else value
+    return None if segments else 0.0
+
+
 def plan_preview_dict(plan: EncodePlan) -> dict[str, Any]:
     source_info = plan.source_info
     geometry = (
@@ -81,7 +111,6 @@ def plan_preview_dict(plan: EncodePlan) -> dict[str, Any]:
         else None
     )
     segments = plan.effective_segments
-    single_segment = len(segments) == 1
     return {
         "source": plan.source,
         "output": plan.output,
@@ -92,6 +121,11 @@ def plan_preview_dict(plan: EncodePlan) -> dict[str, Any]:
         "video_bitrate_kbps": round(plan.video_bitrate / 1000),
         "audio_bitrate_kbps": round(plan.audio_bitrate / 1000),
         "copy_audio": plan.copy_audio,
+        "audio_enabled": plan.audio_enabled,
+        "source_audio_muted": plan.source_audio_muted,
+        "source_audio_gain_db": plan.source_audio_gain_db,
+        "audio_track_count": len(plan.audio_tracks),
+        "audio_clip_count": sum(len(track.clips) for track in plan.audio_tracks),
         "estimated_size": plan.estimated_size,
         "estimated_size_mb": round(plan.estimated_size / (1024 * 1024), 2),
         "target_size_mb": round(plan.target_size / (1024 * 1024), 2),
@@ -119,12 +153,8 @@ def plan_preview_dict(plan: EncodePlan) -> dict[str, Any]:
         "segment_count": len(segments),
         "selected_duration": round(float(plan.effective_duration), 3),
         "effective_duration": round(float(plan.effective_duration), 3),
-        "trim_start": (
-            round(float(segments[0].start), 3) if single_segment else (None if segments else 0.0)
-        ),
-        "trim_end": (
-            round(float(segments[0].end), 3) if single_segment else (None if segments else 0.0)
-        ),
+        "trim_start": _legacy_trim_value(segments, "start", 3),
+        "trim_end": _legacy_trim_value(segments, "end", 3),
         "trim_duration": round(float(plan.effective_duration), 3),
         "has_trim": plan.has_trim,
         "crop": plan.transform.crop.to_dict() if plan.transform.crop else None,
@@ -143,7 +173,6 @@ def queue_item_dict(item: QueueItem) -> dict[str, Any]:
     status = item.status_text or (progress_info["status_text"] if progress_info else "")
     transform = plan.transform if plan is not None else None
     segments = plan.effective_segments if plan is not None else []
-    single_segment = len(segments) == 1
     return {
         "id": item.id,
         "source": Path(plan.source).name if plan else "",
@@ -157,6 +186,8 @@ def queue_item_dict(item: QueueItem) -> dict[str, Any]:
         "selected_duration": duration,
         "segments": [segment.to_dict() for segment in segments],
         "segment_count": len(segments),
+        "audio_track_count": len(plan.audio_tracks) if plan else 0,
+        "audio_clip_count": (sum(len(track.clips) for track in plan.audio_tracks) if plan else 0),
         "two_pass": bool(plan.two_pass) if plan else False,
         "error": item.error,
         "error_detail": item.error_detail or "",
@@ -166,8 +197,8 @@ def queue_item_dict(item: QueueItem) -> dict[str, Any]:
         "added_at": item.added_at,
         "started_at": item.started_at,
         "finished_at": item.finished_at,
-        "trim_start": (float(segments[0].start) if single_segment else (None if segments else 0.0)),
-        "trim_end": float(segments[0].end) if single_segment else (None if segments else 0.0),
+        "trim_start": _legacy_trim_value(segments, "start"),
+        "trim_end": _legacy_trim_value(segments, "end"),
         "has_trim": bool(plan.has_trim) if plan else False,
         "crop": transform.crop.to_dict() if transform is not None and transform.crop else None,
         "transform": transform.to_dict() if transform is not None else None,

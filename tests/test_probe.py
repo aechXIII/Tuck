@@ -2,11 +2,38 @@ from __future__ import annotations
 
 import os
 import subprocess
+from types import SimpleNamespace
 
 import pytest
 
 from tuck.engine import _find_ffmpeg
-from tuck.probe import _parse_display_rotation, probe
+from tuck.probe import _parse_display_rotation, probe, probe_audio
+
+
+def test_probe_audio_accepts_audio_only_files(tmp_path, monkeypatch) -> None:
+    source = tmp_path / "music.flac"
+    source.write_bytes(b"audio")
+    monkeypatch.setattr("tuck.probe._find_ffprobe", lambda: "ffprobe")
+    monkeypatch.setattr(
+        "tuck.probe.subprocess.run",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            returncode=0,
+            stdout=(
+                '{"format":{"duration":"12.5"},"streams":['
+                '{"codec_type":"audio","codec_name":"flac","channels":2,'
+                '"sample_rate":"48000","bit_rate":"900000"}]}'
+            ),
+            stderr="",
+        ),
+    )
+
+    info = probe_audio(source)
+
+    assert info.duration == 12.5
+    assert info.codec == "flac"
+    assert info.channels == 2
+    assert info.sample_rate == 48_000
+    assert info.bitrate == 900_000
 
 
 @pytest.mark.parametrize(

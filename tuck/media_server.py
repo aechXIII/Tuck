@@ -30,6 +30,16 @@ for ext, mime in [
     (".flv", "video/x-flv"),
     (".m4v", "video/x-m4v"),
     (".wmv", "video/x-ms-wmv"),
+    (".mp3", "audio/mpeg"),
+    (".wav", "audio/wav"),
+    (".flac", "audio/flac"),
+    (".m4a", "audio/mp4"),
+    (".aac", "audio/aac"),
+    (".ogg", "audio/ogg"),
+    (".opus", "audio/opus"),
+    (".wma", "audio/x-ms-wma"),
+    (".aif", "audio/aiff"),
+    (".aiff", "audio/aiff"),
     (".jpg", "image/jpeg"),
     (".png", "image/png"),
 ]:
@@ -38,6 +48,9 @@ for ext, mime in [
 _MAX_THUMBNAIL_DIM = 480  # Maximum width/height for thumbnails
 _THUMBNAIL_TIMEOUT = 15  # seconds
 _THUMBNAIL_SEEK = 0.5  # seek to this fraction of duration (50%)
+_WAVEFORM_WIDTH = 1600
+_WAVEFORM_HEIGHT = 96
+_WAVEFORM_TIMEOUT = 60
 _TOKEN_BYTES = 32  # bytes for each token
 
 
@@ -406,6 +419,66 @@ class MediaServer:
         except Exception as e:
             logger.warning("Thumbnail generation failed for %s: %s", file_path.name, e)
             return None
+
+    def generate_waveform(
+        self, file_path: str | Path, timeout: float = _WAVEFORM_TIMEOUT
+    ) -> str | None:
+        file_path = Path(file_path).resolve()
+        if not file_path.is_file() or self._thumb_dir is None:
+            return None
+
+        stat = file_path.stat()
+        cache_key = hashlib.sha256(
+            f"waveform:{file_path}:{stat.st_size}:{stat.st_mtime_ns}".encode()
+        ).hexdigest()[:32]
+        waveform_path = self._thumb_dir / f"waveform_{cache_key}.png"
+        if waveform_path.exists() and waveform_path.stat().st_size > 0:
+            return str(waveform_path)
+
+        from .engine import _find_ffmpeg
+
+        ffmpeg = _find_ffmpeg()
+        if not ffmpeg:
+            logger.warning("Cannot generate waveform: ffmpeg not found")
+            return None
+
+        command = [
+            ffmpeg,
+            "-y",
+            "-v",
+            "error",
+            "-i",
+            str(file_path),
+            "-filter_complex",
+            (
+                "aformat=channel_layouts=mono,"
+                f"showwavespic=s={_WAVEFORM_WIDTH}x{_WAVEFORM_HEIGHT}:colors=0xa78bfa"
+            ),
+            "-frames:v",
+            "1",
+            str(waveform_path),
+        ]
+        try:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                timeout=timeout,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+            )
+            if result.returncode != 0:
+                stderr_tail = result.stderr.decode(errors="replace")[-500:]
+                logger.warning(
+                    "Waveform ffmpeg failed for %s (rc=%d): %s",
+                    file_path.name,
+                    result.returncode,
+                    stderr_tail,
+                )
+                return None
+            if waveform_path.exists() and waveform_path.stat().st_size > 0:
+                return str(waveform_path)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            logger.warning("Waveform generation failed for %s: %s", file_path.name, exc)
+        return None
 
 
 _media_server: MediaServer | None = None

@@ -12,11 +12,12 @@ from typing import Any
 import webview
 from webview.dom import DOMEventHandler
 
-from .bridge_validation import validate_video_paths
+from .bridge_validation import validate_audio_paths, validate_video_paths
 
 logger = logging.getLogger(__name__)
 
 _VIDEO_FILE_FILTER = "Video files (*.mp4;*.mkv;*.webm;*.mov;*.avi;*.wmv;*.flv;*.m4v)"
+_AUDIO_FILE_FILTER = "Audio files (*.mp3;*.wav;*.flac;*.m4a;*.aac;*.ogg;*.opus;*.wma;*.aif;*.aiff)"
 _JSON_FILE_FILTER = "JSON files (*.json)"
 _EXECUTABLE_FILE_FILTER = "Executable files (*.exe)"
 
@@ -53,6 +54,12 @@ class _JsApi:
 
     def probeFile(self, path: str) -> dict[str, Any] | list[Any]:
         return self._call(self._api.probe_file, path)
+
+    def probeAudioFile(self, path: str) -> dict[str, Any] | list[Any]:
+        return self._call(self._api.probe_audio_file, path)
+
+    def getWaveform(self, path: str) -> dict[str, Any] | list[Any]:
+        return self._call(self._api.get_waveform, path)
 
     def getThumbnail(self, path: str) -> dict[str, Any] | list[Any]:
         return self._call(self._api.get_thumbnail, path)
@@ -202,6 +209,21 @@ class _JsApi:
             logger.exception("Video file picker failed")
             return {"ok": False, "error": str(e)}
 
+    def pickAudioFiles(self) -> dict[str, Any]:
+        if self._window is None:
+            return {"ok": False, "error": "Window not ready"}
+        try:
+            result = self._window.create_file_dialog(
+                webview.FileDialog.OPEN,
+                allow_multiple=True,
+                file_types=(_AUDIO_FILE_FILTER,),
+            )
+            files, _ = validate_audio_paths(list(result or ()))
+            return {"ok": True, "files": files}
+        except Exception as e:
+            logger.exception("Audio file picker failed")
+            return {"ok": False, "error": str(e)}
+
     def pickFolder(self) -> dict[str, Any]:
         if self._window is None:
             return {"ok": False, "error": "Window not ready"}
@@ -337,15 +359,21 @@ def _bind_drag_drop(window: webview.Window) -> None:
     def on_drop(event: dict[str, Any]) -> None:
         files = event.get("dataTransfer", {}).get("files", [])
         paths = [file.get("pywebviewFullPath") for file in files if isinstance(file, dict)]
-        accepted, rejected = validate_video_paths(paths)
+        accepted, _ = validate_video_paths(paths)
+        audio, _ = validate_audio_paths(paths)
+        supported = set(accepted) | set(audio)
+        rejected = [str(path) for path in paths if str(path) not in supported]
         logger.info(
-            "Drag/drop received=%d accepted=%d rejected=%d",
+            "Drag/drop received=%d video=%d audio=%d rejected=%d",
             len(files),
             len(accepted),
+            len(audio),
             len(rejected),
         )
         if accepted or rejected:
             _evaluate(window, "addFiles", accepted, rejected)
+        if audio:
+            _evaluate(window, "addAudioFiles", audio, [])
 
     document = window.dom.get_element("html")
     if document is None:

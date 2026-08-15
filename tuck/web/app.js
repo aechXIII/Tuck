@@ -818,6 +818,7 @@ function selectClip(p) {
   byId("btn-play").textContent = "▶";
   loadMedia(p);
   var c = clips[p];
+  if (window.AudioTimeline) AudioTimeline.selectVideo(c);
   syncTimelineUI();
   if (typeof syncTransformControls === "function") syncTransformControls();
   if (typeof paintCropOverlay === "function") paintCropOverlay();
@@ -830,6 +831,7 @@ function selectClip(p) {
 }
 
 function removeClip(p) {
+  if (clips[p] && window.AudioTimeline) AudioTimeline.disposeClip(clips[p]);
   if (clips[p] && clips[p].mediaToken)
     api.releaseMediaToken(clips[p].mediaToken);
   delete clips[p];
@@ -872,6 +874,7 @@ function removeAllClips() {
 function doRemoveAllClips() {
   var keys = Object.keys(clips);
   for (var i = 0; i < keys.length; i++) {
+    if (clips[keys[i]] && window.AudioTimeline) AudioTimeline.disposeClip(clips[keys[i]]);
     if (clips[keys[i]] && clips[keys[i]].mediaToken)
       api.releaseMediaToken(clips[keys[i]].mediaToken);
   }
@@ -905,6 +908,7 @@ async function probeClip(p) {
       );
       c.error = "";
       c._fileSize = r.data.file_size;
+      if (window.AudioTimeline) AudioTimeline.onProbe(c);
       if (typeof applySelectedProfileTransform === "function")
         applySelectedProfileTransform(c, false);
     } else {
