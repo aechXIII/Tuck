@@ -28,6 +28,7 @@ from tuck.models import (
     ProfileTransformIntent,
     QueueItem,
     QueueState,
+    Segment,
     VideoInfo,
     VideoTransform,
     dicts_to_profiles,
@@ -36,7 +37,90 @@ from tuck.models import (
     find_profile_by_id,
     import_profiles_json,
     profiles_to_dicts,
+    validate_segments,
 )
+
+
+class TestSegments:
+    def test_serialization_and_duration(self):
+        segment = Segment(1.25, 4.5)
+        assert segment.duration == pytest.approx(3.25)
+        assert segment.to_dict() == {"start": 1.25, "end": 4.5}
+        assert Segment.from_dict(segment.to_dict()) == segment
+        Segment(0.1, 0.15).validate(1)
+
+    @pytest.mark.parametrize(
+        ("segment", "message"),
+        [
+            (Segment(float("nan"), 1), "finite"),
+            (Segment(0, float("inf")), "finite"),
+            (Segment(-1, 1), ">= 0"),
+            (Segment(1, 1), "greater"),
+            (Segment(1, 1.04), "too short"),
+            (Segment(9, 11), "source duration"),
+        ],
+    )
+    def test_validation_rejects_invalid_ranges(self, segment, message):
+        with pytest.raises(ValueError, match=message):
+            segment.validate(10)
+
+    def test_validation_rejects_unordered_and_overlapping_ranges(self):
+        with pytest.raises(ValueError, match="chronologically"):
+            validate_segments([Segment(3, 4), Segment(1, 2)], 10)
+        with pytest.raises(ValueError, match="overlap"):
+            validate_segments([Segment(1, 3), Segment(2, 4)], 10)
+
+    def test_validation_tolerates_sub_microsecond_float_overlap(self):
+        validate_segments([Segment(0, 5), Segment(5 - 1e-7, 10)], 10)
+
+    def test_request_rejects_legacy_trim_with_segments(self):
+        request = PlanRequest(trim_start=1, segments=[Segment(2, 3)])
+        with pytest.raises(ValueError, match="cannot be combined"):
+            request.validate()
+
+    def test_encode_plan_sums_segments_and_hides_continuous_trim(self):
+        plan = EncodePlan(
+            source="source.mp4",
+            output="output.mp4",
+            source_info=VideoInfo(
+                path="source.mp4",
+                duration=10,
+                width=1280,
+                height=720,
+                fps=30,
+                video_codec="h264",
+            ),
+            trim_start=0,
+            trim_end=0,
+            segments=[Segment(0, 1.5), Segment(4, 6)],
+        )
+        assert plan.effective_duration == pytest.approx(3.5)
+        assert plan.trim_duration == pytest.approx(3.5)
+        assert plan.segment_count == 2
+        assert plan.has_trim
+        restored = EncodePlan.from_dict(plan.to_dict())
+        assert restored.segments == plan.segments
+        assert restored.trim_start == 0
+        assert restored.trim_end == 0
+
+    def test_stored_legacy_trim_plan_becomes_canonical(self):
+        data = EncodePlan(
+            source="source.mp4",
+            output="output.mp4",
+            source_info=VideoInfo(
+                path="source.mp4",
+                duration=10,
+                width=1280,
+                height=720,
+                fps=30,
+                video_codec="h264",
+            ),
+            trim_start=2,
+            trim_end=5,
+        ).to_dict()
+        data.pop("segments")
+        restored = EncodePlan.from_dict(data)
+        assert restored.segments == [Segment(2, 5)]
 
 
 class TestVideoTransform:

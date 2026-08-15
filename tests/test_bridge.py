@@ -11,10 +11,50 @@ from tuck.models import (
     Profile,
     QueueItem,
     QueueState,
+    Segment,
     VideoInfo,
     VideoTransform,
     find_profile_by_id,
 )
+
+
+def test_parse_plan_request_accepts_segments_and_rejects_legacy_mix(tmp_path):
+    source = tmp_path / "source.mp4"
+    source.write_bytes(b"source")
+    api = BridgeAPI()
+
+    request = api._parse_plan_request(
+        {
+            "source": str(source),
+            "segments": [{"start": 0.25, "end": 1.5}, {"start": 3, "end": 4}],
+        }
+    )
+    assert request.segments == [Segment(0.25, 1.5), Segment(3, 4)]
+
+    with pytest.raises(ValueError, match="cannot be combined"):
+        api._parse_plan_request(
+            {
+                "source": str(source),
+                "segments": [{"start": 0.25, "end": 1.5}],
+                "trim_start": 0.25,
+            }
+        )
+
+
+@pytest.mark.parametrize(
+    ("segments", "message"),
+    [
+        ([], "at least one"),
+        ([{"start": 0, "end": 0.01}], "too short"),
+        ([{"start": 0, "end": float("inf")}], "finite"),
+        ([{"start": 0, "end": 2}, {"start": 1, "end": 3}], "overlap"),
+    ],
+)
+def test_parse_plan_request_rejects_invalid_segments(tmp_path, segments, message):
+    source = tmp_path / "source.mp4"
+    source.write_bytes(b"source")
+    with pytest.raises(ValueError, match=message):
+        BridgeAPI()._parse_plan_request({"source": str(source), "segments": segments})
 
 
 class TestBridgeQueueState:

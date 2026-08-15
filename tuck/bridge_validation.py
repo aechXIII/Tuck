@@ -14,6 +14,7 @@ from .models import (
     RC_TARGET_SIZE,
     WORKFLOW_COMPRESSION,
     PlanRequest,
+    Segment,
     VideoTransform,
     _validate_preset_for_encoder,
     _validate_rc_method_for_encoder,
@@ -114,6 +115,17 @@ def _parse_transform(raw: dict[str, Any]) -> VideoTransform | None:
     return VideoTransform.from_dict(transform)
 
 
+def _parse_segments(raw: dict[str, Any]) -> list[Segment] | None:
+    if "segments" not in raw:
+        return None
+    if "trim_start" in raw or "trim_end" in raw:
+        raise ValueError("segments cannot be combined with trim_start or trim_end")
+    value = raw["segments"]
+    if not isinstance(value, list):
+        raise ValueError("segments must be an array")
+    return [Segment.from_dict(item) for item in value]
+
+
 def parse_plan_request(
     raw: dict[str, Any],
     validate_path_fn: Callable[[str], str],
@@ -148,6 +160,7 @@ def parse_plan_request(
         qp=_opt_int(raw, "qp"),
         trim_start=_opt_float(raw, "trim_start"),
         trim_end=_opt_float(raw, "trim_end"),
+        segments=_parse_segments(raw),
         transform=_parse_transform(raw),
     )
     req.validate()

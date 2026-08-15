@@ -113,10 +113,17 @@ def build_diagnostics(
             lines.append(f"preset: {plan.preset}")
             lines.append(f"scaler: {plan.scaler}")
             lines.append(f"rate control: {plan.rate_control} / {plan.rate_control_method}")
-            if plan.has_trim:
+            segments = plan.effective_segments
+            if len(segments) > 1:
+                rendered = ", ".join(
+                    f"{segment.start:.3f}s -> {segment.end:.3f}s" for segment in segments
+                )
+                lines.append(f"segments: {len(segments)} ({rendered})")
+                lines.append(f"selected duration: {plan.effective_duration:.3f}s")
+            elif plan.has_trim and segments:
                 lines.append(
-                    f"trim: {plan.trim_start:.3f}s -> {plan.trim_end:.3f}s "
-                    f"({plan.trim_duration:.3f}s)"
+                    f"trim: {segments[0].start:.3f}s -> {segments[0].end:.3f}s "
+                    f"({plan.effective_duration:.3f}s)"
                 )
             else:
                 lines.append("trim: full source")
@@ -151,7 +158,17 @@ def build_diagnostics(
                 lines.append(f"audio bitrate: {extra['audio_bitrate_kbps']} kbps")
             ts = extra.get("trim_start")
             te = extra.get("trim_end")
-            if ts is not None or te is not None:
+            segments = extra.get("segments")
+            if isinstance(segments, list) and segments:
+                rendered = ", ".join(
+                    f"{segment.get('start')}s -> {segment.get('end')}s"
+                    for segment in segments
+                    if isinstance(segment, dict)
+                )
+                lines.append(f"segments: {len(segments)} ({rendered})")
+                if extra.get("selected_duration") is not None:
+                    lines.append(f"selected duration: {extra['selected_duration']}s")
+            elif ts is not None or te is not None:
                 lines.append(f"trim: {ts}s -> {te}s")
         if extra:
             if extra.get("queue_state"):

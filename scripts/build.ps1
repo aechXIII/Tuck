@@ -66,6 +66,7 @@ $webAssets = @(
   "transform.css",
   "app.js",
   "encoding-ui.js",
+  "segments.js",
   "player.js",
   "queue.js",
   "settings.js",

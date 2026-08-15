@@ -50,29 +50,74 @@ def build_base_cmd(
     ffmpeg: str,
     plan: EncodePlan,
     source: Path,
+    *,
+    include_audio: bool = True,
 ) -> list[str]:
     cmd = [ffmpeg, "-hide_banner", "-loglevel", "info", "-stats"]
 
-    trim_start = float(getattr(plan, "trim_start", 0.0) or 0.0)
-    trim_end = float(getattr(plan, "trim_end", 0.0) or 0.0)
-    trim_duration = plan.trim_duration if trim_end > trim_start else 0.0
+    segments = plan.effective_segments
+    single_segment = len(segments) == 1
+    trim_start = float(segments[0].start) if single_segment else 0.0
+    trim_end = float(segments[0].end) if single_segment else 0.0
+    trim_duration = float(segments[0].duration) if single_segment else 0.0
 
-    if trim_start > 0.001:
+    if single_segment and trim_start > 0.001:
         cmd += ["-ss", fmt_ffmpeg_time(trim_start)]
     cmd += ["-i", str(source)]
-    if trim_duration > 0.001 and (
-        trim_start > 0.001
-        or (
-            plan.source_info is not None
-            and trim_end > 0
-            and trim_end < float(plan.source_info.duration) - 0.001
+    if (
+        single_segment
+        and trim_duration > 0.001
+        and (
+            trim_start > 0.001
+            or (
+                plan.source_info is not None
+                and trim_end > 0
+                and trim_end < float(plan.source_info.duration) - 0.001
+            )
         )
     ):
         cmd += ["-t", fmt_ffmpeg_time(trim_duration)]
 
-    video_filters = build_plan_video_filters(plan)
-    if video_filters:
-        cmd += ["-vf", join_video_filters(video_filters)]
+    multi_segment = len(segments) > 1
+    filtered_audio = False
+    if multi_segment:
+        video_filters = build_plan_video_filters(plan)
+        source_has_audio = plan.source_info is None or plan.source_info.has_audio
+        filtered_audio = bool(
+            include_audio
+            and source_has_audio
+            and (plan.audio_bitrate > 0 or getattr(plan, "copy_audio", False))
+        )
+        graph_parts: list[str] = []
+        concat_inputs: list[str] = []
+        for index, segment in enumerate(segments):
+            start = fmt_ffmpeg_time(segment.start)
+            end = fmt_ffmpeg_time(segment.end)
+            graph_parts.append(f"[0:v]trim=start={start}:end={end},setpts=PTS-STARTPTS[v{index}]")
+            concat_inputs.append(f"[v{index}]")
+            if filtered_audio:
+                graph_parts.append(
+                    f"[0:a]atrim=start={start}:end={end},asetpts=PTS-STARTPTS[a{index}]"
+                )
+                concat_inputs.append(f"[a{index}]")
+
+        video_concat_output = "vcat" if video_filters else "vout"
+        audio_output = "[aout]" if filtered_audio else ""
+        graph_parts.append(
+            "".join(concat_inputs)
+            + f"concat=n={len(segments)}:v=1:a={1 if filtered_audio else 0}"
+            + f"[{video_concat_output}]"
+            + audio_output
+        )
+        if video_filters:
+            graph_parts.append(f"[{video_concat_output}]{join_video_filters(video_filters)}[vout]")
+        cmd += ["-filter_complex", ";".join(graph_parts), "-map", "[vout]"]
+        if filtered_audio:
+            cmd += ["-map", "[aout]"]
+    else:
+        video_filters = build_plan_video_filters(plan)
+        if video_filters:
+            cmd += ["-vf", join_video_filters(video_filters)]
 
     encoder = getattr(plan, "video_encoder", "libx264")
     rc_method = getattr(plan, "rate_control_method", RCM_CRF)
@@ -142,7 +187,14 @@ def build_base_cmd(
 
     cmd += ["-pix_fmt", "yuv420p"]
 
-    if getattr(plan, "copy_audio", False):
+    if not include_audio:
+        cmd += ["-an"]
+    elif filtered_audio:
+        audio_bitrate = plan.audio_bitrate if plan.audio_bitrate > 0 else 128_000
+        cmd += ["-c:a", "aac", "-b:a", str(audio_bitrate)]
+        cmd += ["-ac", str(plan.audio_channels)]
+        cmd += ["-ar", str(plan.audio_sample_rate)]
+    elif getattr(plan, "copy_audio", False):
         cmd += ["-c:a", "copy"]
     elif plan.audio_bitrate > 0:
         cmd += ["-c:a", "aac", "-b:a", str(plan.audio_bitrate)]

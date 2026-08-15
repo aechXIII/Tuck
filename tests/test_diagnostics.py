@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from tuck.diagnostics import _run_version, build_diagnostics, sanitize_path
-from tuck.models import EncodePlan, VideoInfo
+from tuck.models import EncodePlan, Segment, VideoInfo
 
 
 class TestSanitizePath:
@@ -129,3 +129,24 @@ class TestBuildDiagnostics:
         assert "effective encoder: libx264" in text
         assert "Discord Free" in text
         assert "Recent FFmpeg output" in text
+
+    def test_multi_segment_plan_reports_ranges_and_summed_duration(self):
+        plan = EncodePlan(
+            source=r"C:\Users\Bob\clip.mp4",
+            output=r"C:\Users\Bob\out.mp4",
+            segments=[Segment(0.5, 1.5), Segment(4, 6.25)],
+            source_info=VideoInfo(
+                path=r"C:\Users\Bob\clip.mp4",
+                duration=10,
+                width=1280,
+                height=720,
+                fps=30,
+                video_codec="h264",
+            ),
+        )
+        text = build_diagnostics(plan=plan)
+        assert "segments: 2" in text
+        assert "0.500s -> 1.500s" in text
+        assert "4.000s -> 6.250s" in text
+        assert "selected duration: 3.250s" in text
+        assert "trim: 0.500s -> 6.250s" not in text

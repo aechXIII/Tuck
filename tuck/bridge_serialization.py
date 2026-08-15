@@ -80,6 +80,8 @@ def plan_preview_dict(plan: EncodePlan) -> dict[str, Any]:
         if source_info is not None
         else None
     )
+    segments = plan.effective_segments
+    single_segment = len(segments) == 1
     return {
         "source": plan.source,
         "output": plan.output,
@@ -113,9 +115,17 @@ def plan_preview_dict(plan: EncodePlan) -> dict[str, Any]:
         "rate_control_method": plan.rate_control_method,
         "cq": plan.cq,
         "qp": plan.qp,
-        "trim_start": round(float(plan.trim_start or 0.0), 3),
-        "trim_end": round(float(plan.trim_end or 0.0), 3),
-        "trim_duration": round(float(plan.trim_duration), 3),
+        "segments": [segment.to_dict() for segment in segments],
+        "segment_count": len(segments),
+        "selected_duration": round(float(plan.effective_duration), 3),
+        "effective_duration": round(float(plan.effective_duration), 3),
+        "trim_start": (
+            round(float(segments[0].start), 3) if single_segment else (None if segments else 0.0)
+        ),
+        "trim_end": (
+            round(float(segments[0].end), 3) if single_segment else (None if segments else 0.0)
+        ),
+        "trim_duration": round(float(plan.effective_duration), 3),
         "has_trim": plan.has_trim,
         "crop": plan.transform.crop.to_dict() if plan.transform.crop else None,
         "transform": plan.transform.to_dict(),
@@ -125,13 +135,15 @@ def plan_preview_dict(plan: EncodePlan) -> dict[str, Any]:
 
 def queue_item_dict(item: QueueItem) -> dict[str, Any]:
     plan = item.plan
-    duration = float(plan.trim_duration or 0.0) if plan is not None else 0.0
+    duration = float(plan.effective_duration or 0.0) if plan is not None else 0.0
     if duration <= 0 and plan is not None and plan.source_info is not None:
         duration = float(plan.source_info.duration or 0.0)
 
     progress_info = item.progress_info.to_dict() if item.progress_info is not None else None
     status = item.status_text or (progress_info["status_text"] if progress_info else "")
     transform = plan.transform if plan is not None else None
+    segments = plan.effective_segments if plan is not None else []
+    single_segment = len(segments) == 1
     return {
         "id": item.id,
         "source": Path(plan.source).name if plan else "",
@@ -142,6 +154,9 @@ def queue_item_dict(item: QueueItem) -> dict[str, Any]:
         "progress_info": progress_info,
         "status_text": status,
         "duration": duration,
+        "selected_duration": duration,
+        "segments": [segment.to_dict() for segment in segments],
+        "segment_count": len(segments),
         "two_pass": bool(plan.two_pass) if plan else False,
         "error": item.error,
         "error_detail": item.error_detail or "",
@@ -151,8 +166,8 @@ def queue_item_dict(item: QueueItem) -> dict[str, Any]:
         "added_at": item.added_at,
         "started_at": item.started_at,
         "finished_at": item.finished_at,
-        "trim_start": float(plan.trim_start) if plan else 0.0,
-        "trim_end": float(plan.trim_end) if plan else 0.0,
+        "trim_start": (float(segments[0].start) if single_segment else (None if segments else 0.0)),
+        "trim_end": float(segments[0].end) if single_segment else (None if segments else 0.0),
         "has_trim": bool(plan.has_trim) if plan else False,
         "crop": transform.crop.to_dict() if transform is not None and transform.crop else None,
         "transform": transform.to_dict() if transform is not None else None,

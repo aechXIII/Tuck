@@ -193,6 +193,7 @@ def test_resource_path_locates_web_ui() -> None:
         "transform.css",
         "app.js",
         "encoding-ui.js",
+        "segments.js",
         "player.js",
         "queue.js",
         "settings.js",
@@ -334,6 +335,43 @@ def test_trim_handles_keep_the_resize_cursor_while_dragging() -> None:
     assert "setTrimDragCursor(false);" in html
 
 
+def test_segment_editor_controls_payloads_and_accessibility_are_wired() -> None:
+    html = _web_source()
+
+    assert 'id="tl-segments"' in html
+    assert 'id="timeline-row"' in html
+    assert 'class="segment-quick-actions"' in html
+    assert html.count('class="segment-tool-button"') == 3
+    assert 'id="segment-menu-toggle"' not in html
+    assert 'id="segment-popover"' not in html
+    assert 'aria-label="Active segment start"' in html
+    assert 'aria-label="Active segment end"' in html
+    assert 'aria-label="Add segment"' in html
+    assert 'aria-label="Remove active segment"' in html
+    assert 'aria-label="Reset segments to full source"' in html
+    assert "function addSegment()" in html
+    assert "function removeActiveSegment()" in html
+    assert "SegmentEditing.canAddSegment" in html
+    assert "SegmentEditing.moveSegment" in html
+    assert 'range.style.setProperty("--segment-color", segmentColor(i))' in html
+    assert "body.tl-segment-dragging *" in html
+    assert "cursor: grabbing !important;" in html
+    assert '_tlDrag = "segment-pending"' in html
+    assert "_SEGMENT_DRAG_THRESHOLD = 5" in html
+    assert 'range.setAttribute("aria-keyshortcuts", "ArrowLeft ArrowRight")' in html
+    assert '" · Click to seek · drag to move"' in html
+    assert 'timeLabel.className = "tl-segment-time"' in html
+    assert "formatSegmentTime(segments[i].start)" in html
+    assert ".tl-segment:hover .tl-segment-time" in html
+    assert "#timeline.segment-dragging .tl-segment.active .tl-segment-time" in html
+    assert "#timeline.trim-dragging .tl-segment.active .tl-segment-time" in html
+    assert 'byId("btn-segments-reset").disabled = !has' in html
+    assert "SegmentEditing.playbackTarget" in html
+    assert "req.segments = SegmentEditing.segmentsForClip" in html
+    assert "r.data.segment_count" in html
+    assert "ctx.selected_duration" in html
+
+
 def test_profile_editor_uses_shared_encoder_rules() -> None:
     html = _web_source()
 
@@ -423,11 +461,6 @@ def test_settings_separates_output_and_stages_all_persisted_changes() -> None:
     assert 'id="ex-up-out"' in html
     assert "function markSettingsDirty()" in html
     assert 'clear_completed_automatically: byId("set-auto-clear").checked' in html
-    assert 'id="set-open-output-folder"' in html
-    assert 'open_output_folder_after_queue: byId("set-open-output-folder").checked' in html
-    assert "queueCompletionOutput(" in html
-    assert "queueActiveItemIds" in html
-    assert "appSettings.open_output_folder_after_queue" in html
     assert 'confirmToast("Discard unsaved settings?"' in html
     assert 'box.className = "mod-box confirm-dialog"' in html
     assert "Discard changes" in html

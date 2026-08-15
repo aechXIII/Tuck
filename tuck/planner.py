@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import replace
 from pathlib import Path
 
@@ -18,12 +19,12 @@ from .models import (
     RES_MODE_CUSTOM,
     RES_MODE_LIMIT,
     RES_MODE_SOURCE,
-    SIZING_MODE_STRETCH,
     WORKFLOW_UPSCALE,
     EncodePlan,
     OutputGeometry,
     PlanRequest,
     Profile,
+    Segment,
     VideoInfo,
     VideoTransform,
     calculate_transform_geometry,
@@ -31,6 +32,7 @@ from .models import (
     estimate_size_from_bitrate,
     oriented_dimensions,
     validate_rate_control_matrix,
+    validate_segments,
 )
 
 logger = logging.getLogger(__name__)
@@ -132,33 +134,42 @@ def plan(
         )
     validate_rate_control_matrix(workflow, rate_ctrl, rc_method, video_encoder, two_pass)
 
-    if info.duration <= 0:
+    if not math.isfinite(info.duration) or info.duration <= 0:
         raise ValueError(f"Duration is zero or negative: {info.duration:.2f}s")
 
-    trim_start = 0.0
-    trim_end = float(info.duration)
-    if request is not None:
-        if request.trim_start is not None:
-            trim_start = float(request.trim_start)
-        if request.trim_end is not None:
-            trim_end = float(request.trim_end)
+    if request is not None and request.segments is not None:
+        segments = list(request.segments)
+        validate_segments(segments, float(info.duration))
+        user_selection = True
+    else:
+        trim_start = 0.0
+        trim_end = float(info.duration)
+        if request is not None:
+            if request.trim_start is not None:
+                trim_start = float(request.trim_start)
+            if request.trim_end is not None:
+                trim_end = float(request.trim_end)
 
-    if trim_start < 0:
-        raise ValueError(f"trim_start must be >= 0 (got {trim_start:.3f}s)")
-    if trim_start >= info.duration:
-        raise ValueError(
-            f"trim_start ({trim_start:.3f}s) must be less than source duration "
-            f"({info.duration:.3f}s)"
+        if trim_start < 0:
+            raise ValueError(f"trim_start must be >= 0 (got {trim_start:.3f}s)")
+        if trim_start >= info.duration:
+            raise ValueError(
+                f"trim_start ({trim_start:.3f}s) must be less than source duration "
+                f"({info.duration:.3f}s)"
+            )
+        if trim_end <= trim_start:
+            raise ValueError(
+                f"trim_end ({trim_end:.3f}s) must be greater than trim_start ({trim_start:.3f}s)"
+            )
+        if trim_end > info.duration + 0.05:
+            raise ValueError(
+                f"trim_end ({trim_end:.3f}s) exceeds source duration ({info.duration:.3f}s)"
+            )
+        trim_end = min(trim_end, float(info.duration))
+        segments = [Segment(trim_start, trim_end)]
+        user_selection = request is not None and (
+            request.trim_start is not None or request.trim_end is not None
         )
-    if trim_end <= trim_start:
-        raise ValueError(
-            f"trim_end ({trim_end:.3f}s) must be greater than trim_start ({trim_start:.3f}s)"
-        )
-    if trim_end > info.duration + 0.05:
-        raise ValueError(
-            f"trim_end ({trim_end:.3f}s) exceeds source duration ({info.duration:.3f}s)"
-        )
-    trim_end = min(trim_end, float(info.duration))
 
     if request is not None and request.transform is not None:
         transform = request.transform
@@ -184,15 +195,13 @@ def plan(
         transform = VideoTransform()
     transform.validate_for_source(info.width, info.height)
 
-    effective_duration = trim_end - trim_start
+    effective_duration = sum(segment.duration for segment in segments)
     if effective_duration <= 0:
-        raise ValueError(f"Trim window is zero or negative: {effective_duration:.3f}s")
-    user_trim = request is not None and (
-        request.trim_start is not None or request.trim_end is not None
-    )
-    if user_trim and effective_duration < 0.05:
+        raise ValueError(f"Selected duration is zero or negative: {effective_duration:.3f}s")
+    if user_selection and effective_duration < 0.05 - 1e-9:
         raise ValueError(
-            f"Trim window is too short ({effective_duration:.3f}s). Select at least 0.05 seconds."
+            f"Selected duration is too short ({effective_duration:.3f}s). "
+            "Select at least 0.05 seconds."
         )
 
     target_size = profile.target_size_bytes
@@ -236,18 +245,11 @@ def plan(
     output = _resolve_output_collision(output, respect_reservation=False)
 
     oriented_width, oriented_height = oriented_dimensions(transform, info.width, info.height)
-    resolution_width, resolution_height = oriented_width, oriented_height
-    if transform.sizing_mode == SIZING_MODE_STRETCH:
-        resolution_width, resolution_height = oriented_dimensions(
-            replace(transform, crop=None),
-            info.width,
-            info.height,
-        )
 
     if transform.output is not None:
         requested_output = transform.output
     elif res_mode == RES_MODE_SOURCE:
-        source_width, source_height = _make_even(resolution_width, resolution_height)
+        source_width, source_height = _make_even(oriented_width, oriented_height)
         requested_output = OutputGeometry(source_width, source_height)
     elif res_mode == RES_MODE_CUSTOM:
         cw = (
@@ -263,7 +265,7 @@ def plan(
         requested_output = OutputGeometry(max(2, int(cw)), max(2, int(ch)))
     elif res_mode == RES_MODE_LIMIT:
         limit_width, limit_height = _scale_resolution(
-            resolution_width, resolution_height, profile.max_width, profile.max_height
+            oriented_width, oriented_height, profile.max_width, profile.max_height
         )
         requested_output = OutputGeometry(limit_width, limit_height)
     else:
@@ -309,6 +311,11 @@ def plan(
         audio_br = min(max(audio_br, 0), MAX_AUDIO_BITRATE)
     else:
         audio_br = min(audio_br, MAX_AUDIO_BITRATE)
+
+    if len(segments) > 1 and info.has_audio and copy_audio:
+        # Filtered audio cannot be copied directly
+        copy_audio = False
+        audio_br = min(info.audio_bitrate or audio_br, MAX_AUDIO_BITRATE)
 
     is_upscale = workflow == WORKFLOW_UPSCALE
 
@@ -391,21 +398,21 @@ def plan(
         rate_control_method=rc_method,
         cq=cq_val,
         qp=qp_val,
-        trim_start=trim_start,
-        trim_end=trim_end,
+        trim_start=float(segments[0].start) if len(segments) == 1 else 0.0,
+        trim_end=float(segments[0].end) if len(segments) == 1 else 0.0,
+        segments=segments,
         transform=transform,
     )
 
     logger.info(
-        "Plan: %s -> %s | %dx%d@%.1ffps | trim=%.2f-%.2f (%.2fs) | mode=%s/%s/%s | "
+        "Plan: %s -> %s | %dx%d@%.1ffps | segments=%s (%.2fs selected) | mode=%s/%s/%s | "
         "video=%dkbps audio=%dkbps | est=%s | workflow=%s rc=%s",
         source.name,
         Path(enc_plan.output).name,
         target_w,
         target_h,
         target_fps,
-        trim_start,
-        trim_end,
+        [segment.to_dict() for segment in segments],
         effective_duration,
         res_mode,
         fps_mode,

@@ -171,7 +171,7 @@ class FFmpegEngine:
                     f"Cannot reserve output path: {output} is locked by another process"
                 ) from None
 
-        total_duration = plan.trim_duration
+        total_duration = plan.effective_duration
         if total_duration <= 0 and plan.source_info is not None:
             total_duration = float(plan.source_info.duration or 0)
 
@@ -394,7 +394,7 @@ class FFmpegEngine:
         raise EncodeError("Encoding failed after all retries")
 
     def _recalc_plan(self, plan: EncodePlan) -> None:
-        effective_duration = plan.trim_duration
+        effective_duration = plan.effective_duration
         if effective_duration <= 0 and plan.source_info is not None:
             effective_duration = float(plan.source_info.duration or 0)
 
@@ -460,12 +460,11 @@ class FFmpegEngine:
 
         try:
             pass1_cmd = [
-                *build_base_cmd(ffmpeg, plan, source),
+                *build_base_cmd(ffmpeg, plan, source, include_audio=False),
                 "-pass",
                 "1",
                 "-passlogfile",
                 str(log_file),
-                "-an",
                 "-f",
                 "null",
                 null_output,

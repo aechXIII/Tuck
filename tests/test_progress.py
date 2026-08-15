@@ -64,6 +64,13 @@ class TestProgressTracker:
         assert p.duration == 10.0
         assert p.eta_seconds is not None
 
+    def test_summed_segment_duration_controls_progress(self):
+        selected_duration = (1.5 - 0.5) + (6.0 - 4.0)
+        tracker = ProgressTracker(selected_duration, total_passes=1)
+        progress = tracker.update(1.5, speed=1.0)
+        assert progress.percent == 50.0
+        assert progress.duration == 3.0
+
     def test_monotonic_percent(self):
         t = ProgressTracker(100.0)
         t.update(80.0)

@@ -272,41 +272,80 @@
               </div>
             </div>
           </details>
-          <div
-            id="timeline"
-            role="slider"
-            aria-label="Seek and trim timeline"
-            aria-valuemin="0"
-            aria-valuemax="0"
-            aria-valuenow="0"
-            tabindex="0"
-            title="Drag handles to trim · click track to seek"
-          >
-            <div class="tl-track" id="tl-track">
-              <div class="tl-dim" id="tl-dim-l" style="left: 0; width: 0"></div>
-              <div class="tl-range" id="tl-range"></div>
-              <div
-                class="tl-dim"
-                id="tl-dim-r"
-                style="right: 0; width: 0"
-              ></div>
-              <div class="tl-playhead" id="tl-playhead" style="left: 0%"></div>
-              <div
-                class="tl-handle"
-                id="tl-in"
-                role="slider"
-                aria-label="Trim start"
-                tabindex="0"
-                title="Trim start"
-              ></div>
-              <div
-                class="tl-handle"
-                id="tl-out"
-                role="slider"
-                aria-label="Trim end"
-                tabindex="0"
-                title="Trim end"
-              ></div>
+          <div id="timeline-row">
+            <div
+              id="timeline"
+              role="slider"
+              aria-label="Seek and segment timeline"
+              aria-valuemin="0"
+              aria-valuemax="0"
+              aria-valuenow="0"
+              tabindex="0"
+              title="Click to seek · drag any segment to move · drag endpoint handles to resize"
+            >
+              <div class="tl-track" id="tl-track">
+                <div id="tl-segments"></div>
+                <div class="tl-range" id="tl-range"></div>
+                <div class="tl-playhead" id="tl-playhead" style="left: 0%"></div>
+                <div
+                  class="tl-handle"
+                  id="tl-in"
+                  role="slider"
+                  aria-label="Active segment start"
+                  tabindex="0"
+                  title="Active segment start"
+                ></div>
+                <div
+                  class="tl-handle"
+                  id="tl-out"
+                  role="slider"
+                  aria-label="Active segment end"
+                  tabindex="0"
+                  title="Active segment end"
+                ></div>
+              </div>
+            </div>
+            <div
+              class="segment-quick-actions"
+              role="group"
+              aria-label="Segment actions"
+            >
+              <button
+                type="button"
+                id="btn-segment-add"
+                class="segment-tool-button"
+                onclick="addSegment()"
+                title="Add a segment in a gap near the playhead"
+                aria-label="Add segment"
+              >
+                <svg viewBox="0 0 16 16" aria-hidden="true">
+                  <path d="M7.25 3h1.5v4.25H13v1.5H8.75V13h-1.5V8.75H3v-1.5h4.25z" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                id="btn-segment-remove"
+                class="segment-tool-button"
+                onclick="removeActiveSegment()"
+                title="Remove the active segment"
+                aria-label="Remove active segment"
+              >
+                <svg viewBox="0 0 16 16" aria-hidden="true">
+                  <path d="M5.5 2.5h5l.5 1.25h2v1.5H3v-1.5h2zm-.75 4h1.5v6h-1.5zm2.5 0h1.5v6h-1.5zm2.5 0h1.5v6h-1.5zM4 5.75h8l-.55 8H4.55z" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                id="btn-segments-reset"
+                class="segment-tool-button"
+                onclick="resetSegments()"
+                title="Reset segments to full source"
+                aria-label="Reset segments to full source"
+              >
+                <svg viewBox="0 0 16 16" aria-hidden="true">
+                  <path d="M3.45 5.15A5.5 5.5 0 1 1 2.5 8h1.5a4 4 0 1 0 .7-2.25L6.5 7.5H2V3l1.45 2.15z" />
+                </svg>
+              </button>
             </div>
           </div>
           <div id="player-row">
@@ -322,24 +361,6 @@
             </button>
             <span id="ptime">0:00 / 0:00</span>
             <div id="player-mid">
-              <div
-                class="player-edit-group"
-                id="trim-edit-group"
-                role="group"
-                aria-label="Trim controls"
-              >
-                <span id="trim-label"></span>
-                <button
-                  type="button"
-                  id="btn-trim-reset"
-                  onclick="clearTrim()"
-                  title="Use full video"
-                  aria-label="Reset trim"
-                >
-                  Reset trim
-                </button>
-              </div>
-              <span class="player-edit-divider" aria-hidden="true"></span>
               <div
                 class="player-edit-group"
                 id="crop-edit-group"
@@ -797,6 +818,7 @@
     <div id="toast-ct"></div>
     <div id="drag-overlay"><h2>Drop videos anywhere</h2></div>
     <script src="crop.js"></script>
+    <script src="segments.js"></script>
     <script src="encoding-ui.js"></script>
     <script src="app.js"></script>
     <script src="player.js"></script>

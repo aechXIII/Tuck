@@ -21,6 +21,7 @@ def _web_source() -> str:
             "transform.css",
             "app.js",
             "encoding-ui.js",
+            "segments.js",
             "player.js",
             "queue.js",
             "settings.js",
@@ -41,6 +42,7 @@ def test_web_ui_is_packaged_source_asset() -> None:
         "transform.css",
         "app.js",
         "encoding-ui.js",
+        "segments.js",
         "player.js",
         "queue.js",
         "settings.js",
@@ -87,8 +89,9 @@ def test_web_ui_contains_visual_crop_overlay_and_request_state() -> None:
     assert html.count('class="crop-handle" data-handle=') == 8
     assert '.crop-handle[data-handle="nw"] {' in styles
     assert '.crop-handle[data-handle="se"] {' in styles
-    assert 'class="player-edit-divider"' in html
-    assert 'id="trim-edit-group"' in html
+    assert 'class="segment-quick-actions"' in html
+    assert 'id="btn-segments-reset"' in html
+    assert 'id="segment-menu"' not in html
     assert 'id="crop-edit-group"' in html
     assert "cropTransformForRequest(c)" in encoding_js
     assert "new ResizeObserver(paintCropOverlay)" in transform_js

@@ -26,6 +26,7 @@ from tuck.models import (
     CropRect,
     PlanRequest,
     Profile,
+    Segment,
     VideoInfo,
     VideoTransform,
     find_profile_by_id,
@@ -932,3 +933,73 @@ class TestPlanTrim:
         )
         with pytest.raises(ValueError, match="trim_start"):
             plan(str(sample_video_path), profile, request=req)
+
+
+class TestPlanSegments:
+    @staticmethod
+    def _info(path: Path, *, has_audio: bool = True) -> VideoInfo:
+        return VideoInfo(
+            path=str(path),
+            duration=10,
+            width=1280,
+            height=720,
+            fps=30,
+            video_codec="h264",
+            audio_codec="aac" if has_audio else "",
+            audio_bitrate=192_000 if has_audio else 0,
+            audio_channels=2 if has_audio else 0,
+            audio_sample_rate=48_000 if has_audio else 0,
+            has_audio=has_audio,
+        )
+
+    def test_multi_segment_duration_drives_bitrate_and_audio_reencode(self, tmp_path):
+        source = tmp_path / "source.mp4"
+        source.write_bytes(b"source")
+        profile = Profile(name="Segments", keep_audio=True, two_pass=False)
+        full = plan(source, profile, source_info=self._info(source))
+        selected = plan(
+            source,
+            profile,
+            request=PlanRequest(segments=[Segment(0, 1), Segment(4, 5)]),
+            source_info=self._info(source),
+        )
+
+        assert selected.segments == [Segment(0, 1), Segment(4, 5)]
+        assert selected.effective_duration == pytest.approx(2)
+        assert selected.video_bitrate > full.video_bitrate
+        assert not selected.copy_audio
+        assert selected.audio_bitrate == 192_000
+        assert selected.trim_start == 0
+        assert selected.trim_end == 0
+
+    def test_single_segment_keeps_legacy_trim_shape(self, tmp_path):
+        source = tmp_path / "source.mp4"
+        source.write_bytes(b"source")
+        result = plan(
+            source,
+            Profile(name="Single", two_pass=False),
+            request=PlanRequest(segments=[Segment(2, 4)]),
+            source_info=self._info(source, has_audio=False),
+        )
+        assert result.trim_start == 2
+        assert result.trim_end == 4
+        assert result.trim_duration == 2
+
+    @pytest.mark.parametrize(
+        ("segments", "message"),
+        [
+            ([Segment(0, 2), Segment(1, 3)], "overlap"),
+            ([Segment(4, 5), Segment(1, 2)], "chronologically"),
+            ([Segment(9, 11)], "source duration"),
+        ],
+    )
+    def test_invalid_segments_are_rejected(self, tmp_path, segments, message):
+        source = tmp_path / "source.mp4"
+        source.write_bytes(b"source")
+        with pytest.raises(ValueError, match=message):
+            plan(
+                source,
+                Profile(name="Invalid", two_pass=False),
+                request=PlanRequest(segments=segments),
+                source_info=self._info(source),
+            )

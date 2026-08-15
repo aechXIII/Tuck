@@ -42,7 +42,6 @@ function persistSession() {
     output_dir: appSettings.output_dir,
     check_updates: appSettings.check_updates,
     clear_completed_automatically: !!appSettings.clear_completed_automatically,
-    open_output_folder_after_queue: !!appSettings.open_output_folder_after_queue,
     compression_suffix: appSettings.compression_suffix,
     upscale_suffix: appSettings.upscale_suffix,
     last_task: wf === 1 ? "upscale" : "compression",
@@ -650,7 +649,13 @@ async function reqPreview() {
       if (selPath !== path) return;
       byId("calc-br").textContent =
         wf === 0
-          ? "Calculated bitrate: " + r.data.video_bitrate_kbps + " kbps"
+          ? "Calculated bitrate: " +
+            r.data.video_bitrate_kbps +
+            " kbps · " +
+            r.data.segment_count +
+            (r.data.segment_count === 1 ? " segment · " : " segments · ") +
+            fmtt(r.data.selected_duration) +
+            " selected"
           : "";
       if (typeof paintCropOverlay === "function") paintCropOverlay();
     }
@@ -703,10 +708,15 @@ function buildReq(src) {
   var c = clips[src];
   if (c) {
     var full = (c.probeData && c.probeData.duration) || 0;
-    if (c.trimStart != null && c.trimStart > 0.001)
-      req.trim_start = Math.round(c.trimStart * 1000) / 1000;
-    if (c.trimEnd != null && (full <= 0 || c.trimEnd < full - 0.001))
-      req.trim_end = Math.round(c.trimEnd * 1000) / 1000;
+    var edited = (c.segments && c.segments.length) || c.trimStart != null || c.trimEnd != null;
+    if (full > 0 && edited) {
+      req.segments = SegmentEditing.segmentsForClip(c, full).map(function (segment) {
+        return {
+          start: segment.start,
+          end: segment.end,
+        };
+      });
+    }
     var profile = selectedProfile();
     if (
       typeof cropTransformForRequest === "function" &&

@@ -55,6 +55,7 @@ def test_wheel_and_build_smoke_checks_include_split_web_assets() -> None:
         "transform.css",
         "app.js",
         "encoding-ui.js",
+        "segments.js",
         "player.js",
         "queue.js",
         "settings.js",

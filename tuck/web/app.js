@@ -405,8 +405,8 @@ window.addFiles = function (paths, rejected) {
       planData: null,
       mediaToken: null,
       error: "",
-      trimStart: null,
-      trimEnd: null,
+      segments: null,
+      activeSegment: 0,
       crop: null,
       cropAspect: "free",
       rotation: 0,
@@ -755,10 +755,13 @@ function clipStateBadge(p) {
 function clipDuration(c) {
   if (!c.probed || !c.probeData || !c.probeData.duration) return "";
   var full = c.probeData.duration;
-  var ts = c.trimStart != null ? c.trimStart : 0;
-  var te = c.trimEnd != null ? c.trimEnd : full;
-  if (ts > 0.001 || te < full - 0.001) return fmtt(ts) + "–" + fmtt(te);
-  return fmtt(full);
+  var segments = SegmentEditing.segmentsForClip(c, full);
+  var selected = SegmentEditing.selectedDuration(segments);
+  if (segments.length > 1)
+    return fmtt(selected) + " · " + segments.length + " segments";
+  if (!SegmentEditing.isFullSource(segments, full))
+    return fmtt(segments[0].start) + "–" + fmtt(segments[0].end);
+  return fmtt(selected);
 }
 function metaStr(c) {
   if (c._queueState === "failed" && c._queueError)
@@ -894,6 +897,12 @@ async function probeClip(p) {
     if (r.ok && r.data) {
       c.probed = true;
       c.probeData = r.data;
+      if (!Array.isArray(c.segments) || !c.segments.length)
+        c.segments = SegmentEditing.fullSegment(r.data.duration);
+      c.activeSegment = Math.max(
+        0,
+        Math.min(c.segments.length - 1, c.activeSegment || 0),
+      );
       c.error = "";
       c._fileSize = r.data.file_size;
       if (typeof applySelectedProfileTransform === "function")

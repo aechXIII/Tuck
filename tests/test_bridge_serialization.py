@@ -1,10 +1,19 @@
-from tuck.bridge_serialization import plan_preview_dict, profile_ui_dict, video_info_dict
+import pytest
+
+from tuck.bridge_serialization import (
+    plan_preview_dict,
+    profile_ui_dict,
+    queue_item_dict,
+    video_info_dict,
+)
 from tuck.models import (
     CropRect,
     EncodePlan,
     OutputGeometry,
     Profile,
     ProfileTransformIntent,
+    QueueItem,
+    Segment,
     VideoInfo,
     VideoTransform,
 )
@@ -96,3 +105,32 @@ def test_preview_serialization_keeps_legacy_crop_field() -> None:
 
     assert data["crop"] == crop.to_dict()
     assert data["transform_geometry"] is None
+
+
+def test_multi_segment_preview_and_queue_serialization_is_not_a_continuous_trim() -> None:
+    plan = EncodePlan(
+        source="source.mp4",
+        output="output.mp4",
+        source_info=VideoInfo(
+            path="source.mp4",
+            duration=10,
+            width=1280,
+            height=720,
+            fps=30,
+            video_codec="h264",
+        ),
+        segments=[Segment(0, 1.5), Segment(4, 6)],
+    )
+
+    preview = plan_preview_dict(plan)
+    queued = queue_item_dict(QueueItem(plan=plan))
+
+    for data in (preview, queued):
+        assert data["segments"] == [
+            {"start": 0.0, "end": 1.5},
+            {"start": 4.0, "end": 6.0},
+        ]
+        assert data["segment_count"] == 2
+        assert data["selected_duration"] == pytest.approx(3.5)
+        assert data["trim_start"] is None
+        assert data["trim_end"] is None

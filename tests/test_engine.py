@@ -26,6 +26,7 @@ from tuck.models import (
     CropRect,
     EncodePlan,
     OutputGeometry,
+    Segment,
     VideoTransform,
 )
 
@@ -1670,3 +1671,126 @@ class TestTrimFlags:
         assert result.stat().st_size > 0
         out_info = probe(result)
         assert out_info.duration == pytest.approx(0.7, abs=0.35)
+
+    def test_build_cmd_multi_segment_uses_concat_graph_and_filtered_audio(
+        self, engine, real_video_path
+    ):
+        from tuck.probe import probe
+
+        info = probe(real_video_path)
+        plan = EncodePlan(
+            source=str(real_video_path),
+            output="out.mp4",
+            target_width=info.height,
+            target_height=info.width,
+            target_fps=15,
+            video_bitrate=500_000,
+            audio_bitrate=96_000,
+            copy_audio=True,
+            two_pass=False,
+            source_info=info,
+            segments=[Segment(0.2, 0.8), Segment(1.4, 2.1)],
+            transform=VideoTransform(rotation=90),
+            apply_fps_filter=True,
+        )
+
+        cmd = engine._build_base_cmd("ffmpeg", plan, Path(plan.source))
+        graph = cmd[cmd.index("-filter_complex") + 1]
+
+        assert "trim=start=0.200:end=0.800,setpts=PTS-STARTPTS[v0]" in graph
+        assert "atrim=start=1.400:end=2.100,asetpts=PTS-STARTPTS[a1]" in graph
+        assert "concat=n=2:v=1:a=1[vcat][aout]" in graph
+        assert graph.index("concat=n=2") < graph.index("transpose=clock")
+        assert graph.index("transpose=clock") < graph.index("fps=15")
+        assert cmd.count("-map") == 2
+        assert "[vout]" in cmd and "[aout]" in cmd
+        assert "-ss" not in cmd and "-t" not in cmd
+        assert cmd[cmd.index("-c:a") + 1] == "aac"
+
+    def test_multi_segment_pass_one_graph_has_no_audio_output(self, real_video_path):
+        from tuck.encoding.command import build_base_cmd
+        from tuck.probe import probe
+
+        info = probe(real_video_path)
+        plan = EncodePlan(
+            source=str(real_video_path),
+            output="out.mp4",
+            target_width=info.width,
+            target_height=info.height,
+            target_fps=info.fps,
+            video_bitrate=500_000,
+            audio_bitrate=96_000,
+            source_info=info,
+            segments=[Segment(0.2, 0.8), Segment(1.4, 2.1)],
+        )
+
+        cmd = build_base_cmd("ffmpeg", plan, Path(plan.source), include_audio=False)
+        graph = cmd[cmd.index("-filter_complex") + 1]
+        assert "[0:a]" not in graph
+        assert "[aout]" not in graph
+        assert "concat=n=2:v=1:a=0[vout]" in graph
+        assert "-an" in cmd
+
+    def test_multi_segment_source_without_audio_builds_video_only_concat(
+        self, engine, real_video_path
+    ):
+        from tuck.probe import probe
+
+        info = probe(real_video_path)
+        info.has_audio = False
+        info.audio_bitrate = 0
+        plan = EncodePlan(
+            source=str(real_video_path),
+            output="out.mp4",
+            target_width=info.width,
+            target_height=info.height,
+            target_fps=info.fps,
+            video_bitrate=500_000,
+            audio_bitrate=0,
+            source_info=info,
+            segments=[Segment(0.2, 0.8), Segment(1.4, 2.1)],
+        )
+
+        cmd = engine._build_base_cmd("ffmpeg", plan, Path(plan.source))
+        graph = cmd[cmd.index("-filter_complex") + 1]
+        assert "[0:a]" not in graph
+        assert "concat=n=2:v=1:a=0[vout]" in graph
+        assert "-an" in cmd
+
+    @pytest.mark.ffmpeg
+    def test_encode_multi_segment_two_pass_with_audio_and_summed_progress(
+        self, engine, real_video_path, tmp_path
+    ):
+        from tuck.probe import probe
+
+        info = probe(real_video_path)
+        output = tmp_path / "segments.mp4"
+        selected = [Segment(0.2, 0.8), Segment(1.4, 2.1)]
+        progress = []
+        plan = EncodePlan(
+            source=str(real_video_path),
+            output=str(output),
+            target_width=info.width,
+            target_height=info.height,
+            target_fps=info.fps,
+            video_bitrate=500_000,
+            original_video_bitrate=500_000,
+            audio_bitrate=96_000,
+            audio_channels=2,
+            audio_sample_rate=44_100,
+            two_pass=True,
+            preset="ultrafast",
+            estimated_size=200_000,
+            target_size=5 * 1024 * 1024,
+            rate_control=RC_EXPLICIT_BITRATE,
+            source_info=info,
+            segments=selected,
+        )
+
+        result = engine.encode(plan, on_progress=progress.append)
+        output_info = probe(result)
+
+        assert result.exists() and result.stat().st_size > 0
+        assert output_info.duration == pytest.approx(1.3, abs=0.2)
+        assert output_info.has_audio
+        assert any(getattr(item, "duration", 0) == pytest.approx(1.3) for item in progress)

@@ -3,7 +3,7 @@ import time
 from collections import deque
 from pathlib import Path
 
-from tuck.models import CropRect, EncodePlan, OutputGeometry, QueueState, VideoTransform
+from tuck.models import CropRect, EncodePlan, OutputGeometry, QueueState, Segment, VideoTransform
 from tuck.queue import ProcessingQueue
 
 
@@ -139,6 +139,21 @@ class TestQueueOrdering:
         assert retry.plan.transform.crop == crop
         assert retry.progress == 0.0
         assert retry.id in q.pending_ids
+
+    def test_retry_preserves_canonical_segments_and_selected_duration(self):
+        q = ProcessingQueue()
+        plan = _plan("segments")
+        plan.segments = [Segment(0, 1.5), Segment(4, 6)]
+        item = q.enqueue(plan)
+        item.state = QueueState.FAILED
+        q._pending.clear()
+
+        retry = q.retry(item.id)
+
+        assert retry is not None and retry.plan is not None
+        assert retry.plan.segments == plan.segments
+        assert retry.plan.segments is not plan.segments
+        assert retry.plan.effective_duration == 3.5
 
     def test_retry_retains_complete_transform_state(self):
         q = ProcessingQueue()

@@ -91,6 +91,7 @@ DISCORD_FREE_LIMIT = 20 * 1024 * 1024
 DISCORD_NITRO_BASIC_LIMIT = 50 * 1024 * 1024
 DISCORD_NITRO_LIMIT = 500 * 1024 * 1024
 MIN_TARGET_SIZE_BYTES = 2 * 1024 * 1024
+MIN_SEGMENT_DURATION = 0.05
 
 PROFILE_SCHEMA_VERSION = 6
 
@@ -322,6 +323,86 @@ class VideoInfo:
         return f"{m}:{s:02d}"
 
 
+@dataclass(frozen=True)
+class Segment:
+    start: float
+    end: float
+
+    @property
+    def duration(self) -> float:
+        return float(self.end - self.start)
+
+    def validate(self, source_duration: float | None = None) -> None:
+        if isinstance(self.start, bool) or not isinstance(self.start, (int, float)):
+            raise ValueError("segment start must be a number")
+        if isinstance(self.end, bool) or not isinstance(self.end, (int, float)):
+            raise ValueError("segment end must be a number")
+        if not math.isfinite(float(self.start)):
+            raise ValueError("segment start must be finite")
+        if not math.isfinite(float(self.end)):
+            raise ValueError("segment end must be finite")
+        if self.start < 0:
+            raise ValueError("segment start must be >= 0")
+        if self.end <= self.start:
+            raise ValueError("segment end must be greater than segment start")
+        if self.duration < MIN_SEGMENT_DURATION - 1e-9:
+            raise ValueError(
+                f"segment is too short ({self.duration:.3f}s). "
+                f"Select at least {MIN_SEGMENT_DURATION:.2f} seconds."
+            )
+        if source_duration is not None:
+            if not math.isfinite(source_duration) or source_duration <= 0:
+                raise ValueError(f"source duration must be positive and finite ({source_duration})")
+            if self.start >= source_duration:
+                raise ValueError(
+                    f"segment start ({self.start:.3f}s) must be less than source duration "
+                    f"({source_duration:.3f}s)"
+                )
+            if self.end > source_duration + 1e-6:
+                raise ValueError(
+                    f"segment end ({self.end:.3f}s) exceeds source duration "
+                    f"({source_duration:.3f}s)"
+                )
+
+    def to_dict(self) -> dict[str, float]:
+        return {"start": float(self.start), "end": float(self.end)}
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Segment:
+        if not isinstance(data, dict):
+            raise ValueError("segment must be an object")
+        if set(data) != {"start", "end"}:
+            raise ValueError("segment must contain exactly start and end")
+        start = data["start"]
+        end = data["end"]
+        segment = cls(start=start, end=end)
+        segment.validate()
+        return segment
+
+
+def validate_segments(
+    segments: list[Segment],
+    source_duration: float | None = None,
+) -> None:
+    if not segments:
+        raise ValueError("segments must contain at least one segment")
+    previous: Segment | None = None
+    for index, segment in enumerate(segments):
+        if not isinstance(segment, Segment):
+            raise ValueError(f"segments[{index}] must be a Segment")
+        segment.validate(source_duration)
+        if previous is not None:
+            if segment.start < previous.start:
+                raise ValueError("segments must be ordered chronologically")
+            if segment.start < previous.end - 1e-6:
+                raise ValueError(
+                    f"segments must not overlap (segment {index} starts at "
+                    f"{segment.start:.3f}s before the previous segment ends at "
+                    f"{previous.end:.3f}s)"
+                )
+        previous = segment
+
+
 @dataclass
 class PlanRequest:
     source: str = ""
@@ -358,6 +439,7 @@ class PlanRequest:
 
     trim_start: float | None = None
     trim_end: float | None = None
+    segments: list[Segment] | None = None
     transform: VideoTransform | None = None
 
     def validate(self) -> None:
@@ -432,10 +514,25 @@ class PlanRequest:
         if self.transform is not None and not isinstance(self.transform, VideoTransform):
             raise ValueError("transform must be a VideoTransform or None")
 
-        if self.trim_start is not None and self.trim_start < 0:
-            raise ValueError("trim_start must be >= 0")
-        if self.trim_end is not None and self.trim_end <= 0:
-            raise ValueError("trim_end must be > 0")
+        if self.segments is not None and (self.trim_start is not None or self.trim_end is not None):
+            raise ValueError("segments cannot be combined with trim_start or trim_end")
+        if self.segments is not None:
+            validate_segments(self.segments)
+
+        if self.trim_start is not None:
+            if isinstance(self.trim_start, bool) or not isinstance(self.trim_start, (int, float)):
+                raise ValueError("trim_start must be a number")
+            if not math.isfinite(float(self.trim_start)):
+                raise ValueError("trim_start must be finite")
+            if self.trim_start < 0:
+                raise ValueError("trim_start must be >= 0")
+        if self.trim_end is not None:
+            if isinstance(self.trim_end, bool) or not isinstance(self.trim_end, (int, float)):
+                raise ValueError("trim_end must be a number")
+            if not math.isfinite(float(self.trim_end)):
+                raise ValueError("trim_end must be finite")
+            if self.trim_end <= 0:
+                raise ValueError("trim_end must be > 0")
         if (
             self.trim_start is not None
             and self.trim_end is not None
@@ -494,22 +591,43 @@ class EncodePlan:
     qp: int = 23
     trim_start: float = 0.0
     trim_end: float = 0.0
+    segments: list[Segment] = field(default_factory=list)
     transform: VideoTransform = field(default_factory=VideoTransform)
 
     @property
-    def trim_duration(self) -> float:
+    def effective_segments(self) -> list[Segment]:
+        if self.segments:
+            return list(self.segments)
         if self.trim_end > self.trim_start:
-            return float(self.trim_end - self.trim_start)
+            return [Segment(float(self.trim_start), float(self.trim_end))]
         if self.source_info is not None and self.source_info.duration > 0:
-            return float(self.source_info.duration)
-        return 0.0
+            return [Segment(0.0, float(self.source_info.duration))]
+        return []
+
+    @property
+    def effective_duration(self) -> float:
+        return float(sum(segment.duration for segment in self.effective_segments))
+
+    @property
+    def trim_duration(self) -> float:
+        """Legacy name for the selected duration"""
+
+        return self.effective_duration
+
+    @property
+    def segment_count(self) -> int:
+        return len(self.effective_segments)
 
     @property
     def has_trim(self) -> bool:
-        if self.trim_start > 0.001:
+        segments = self.effective_segments
+        if len(segments) != 1:
+            return bool(segments)
+        segment = segments[0]
+        if segment.start > 0.001:
             return True
         full = float(self.source_info.duration) if self.source_info is not None else 0.0
-        return bool(full > 0 and self.trim_end > 0 and self.trim_end < full - 0.001)
+        return bool(full > 0 and segment.end < full - 0.001)
 
     def to_dict(self) -> dict[str, Any]:
         import dataclasses
@@ -526,6 +644,7 @@ class EncodePlan:
         data = dict(data)
         info = data.pop("source_info", None)
         transform_data = data.pop("transform", None)
+        segments_data = data.pop("segments", None)
         for field_name, default in [
             ("resolution_mode", RES_MODE_SOURCE),
             ("fps_mode", FPS_MODE_SOURCE),
@@ -553,6 +672,32 @@ class EncodePlan:
             plan.source_info = VideoInfo(
                 **{k: v for k, v in info.items() if k in _fields_for(VideoInfo)}
             )
+        if segments_data is not None:
+            if not isinstance(segments_data, list):
+                raise ValueError("segments must be an array")
+            plan.segments = [Segment.from_dict(item) for item in segments_data]
+            if plan.segments:
+                validate_segments(
+                    plan.segments,
+                    float(plan.source_info.duration) if plan.source_info is not None else None,
+                )
+            if len(plan.segments) == 1:
+                plan.trim_start = float(plan.segments[0].start)
+                plan.trim_end = float(plan.segments[0].end)
+            elif len(plan.segments) > 1:
+                plan.trim_start = 0.0
+                plan.trim_end = 0.0
+            elif plan.source_info is not None:
+                legacy_start = float(plan.trim_start or 0.0)
+                legacy_end = float(plan.trim_end or plan.source_info.duration)
+                plan.segments = [Segment(legacy_start, legacy_end)]
+                validate_segments(plan.segments, float(plan.source_info.duration))
+        elif plan.source_info is not None:
+            # Load legacy trim fields as one segment
+            legacy_start = float(plan.trim_start or 0.0)
+            legacy_end = float(plan.trim_end or plan.source_info.duration)
+            plan.segments = [Segment(legacy_start, legacy_end)]
+            validate_segments(plan.segments, float(plan.source_info.duration))
         return plan
 
 
@@ -754,7 +899,6 @@ class AppSettings:
     compression_suffix: str = "_tucked_{size}"
     upscale_suffix: str = "_upscaled_{width}x{height}"
     clear_completed_automatically: bool = False
-    open_output_folder_after_queue: bool = False
     last_task: str = WORKFLOW_COMPRESSION
     last_compress_profile_id: str = ""
     last_upscale_profile_id: str = ""

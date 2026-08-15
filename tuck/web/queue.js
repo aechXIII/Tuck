@@ -174,8 +174,15 @@ async function pollQueue() {
           : prog > 0
             ? "ETA --"
             : "ETA --";
+      var selection =
+        (item.segment_count || 1) +
+        ((item.segment_count || 1) === 1 ? " segment" : " segments") +
+        (item.duration ? " · " + fmtt(item.duration) : "");
       byId("qfname").textContent =
-        (item.source || "?") + (status ? " · " + status : "");
+        (item.source || "?") +
+        " · " +
+        selection +
+        (status ? " · " + status : "");
     } else if (pending.length) {
       byId("qcnt").textContent = done + "/" + total;
       byId("qprog").value = 0;
@@ -258,14 +265,19 @@ function buildDiagnosticsContext(itemId) {
   if (selPath && clips[selPath]) {
     var c = clips[selPath];
     ctx.source_name = c.name || selPath.split(/[\\/]/).pop();
-    if (c.trimStart != null) ctx.trim_start = c.trimStart;
-    if (c.trimEnd != null) ctx.trim_end = c.trimEnd;
+    var full = (c.probeData && c.probeData.duration) || 0;
+    if (full > 0) {
+      ctx.segments = SegmentEditing.segmentsForClip(c, full);
+      ctx.segment_count = ctx.segments.length;
+      ctx.selected_duration = SegmentEditing.selectedDuration(ctx.segments);
+    }
     if (c.planData) {
       if (c.planData.video_encoder)
         ctx.resolved_encoder = c.planData.video_encoder;
-      if (c.planData.has_trim) {
-        ctx.trim_start = c.planData.trim_start;
-        ctx.trim_end = c.planData.trim_end;
+      if (c.planData.segments) {
+        ctx.segments = c.planData.segments;
+        ctx.segment_count = c.planData.segment_count;
+        ctx.selected_duration = c.planData.selected_duration;
       }
     }
   }
