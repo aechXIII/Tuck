@@ -134,7 +134,7 @@ function selectedProfile() {
 function applyProfileTransformToClip(profile, clip, force) {
   if (!clip || (!force && clip.transformOverride)) return;
   var intent = profile && profile.transform_intent;
-  clip.cropAspect = intent ? intent.crop_aspect || "free" : "free";
+  clip.cropAspect = intent ? intent.crop_aspect || "off" : "off";
   clip.rotation = intent ? intent.rotation || 0 : 0;
   clip.sizingMode = intent ? intent.sizing_mode || "fit" : "fit";
   clip.flipHorizontal = false;
@@ -142,6 +142,7 @@ function applyProfileTransformToClip(profile, clip, force) {
   clip.crop = null;
   if (
     clip.cropAspect !== "free" &&
+    clip.cropAspect !== "off" &&
     clip.probed &&
     clip.probeData &&
     typeof TuckCropGeometry !== "undefined"
@@ -863,7 +864,7 @@ function savePayload(name) {
   var clip = selPath && clips[selPath];
   if (current.transform_intent || (clip && clip.transformIntentTouched)) {
     data.transform_intent = {
-      crop_aspect: clip ? clip.cropAspect || "free" : "free",
+      crop_aspect: clip && clip.cropAspect !== "off" ? clip.cropAspect || "free" : "free",
       rotation: clip ? clip.rotation || 0 : 0,
       sizing_mode: clip ? clip.sizingMode || "fit" : "fit",
     };

@@ -62,15 +62,203 @@
           </div>
         </div>
         <div id="player-bar">
-          <details id="transform-toolbar" ontoggle="paintCropOverlay()">
-            <summary>Transform</summary>
-            <div
-              class="transform-controls"
-              role="toolbar"
-              aria-label="Video transform controls"
+          <div id="stage-controls">
+            <button
+              type="button"
+              class="pbtn"
+              id="btn-play"
+              onclick="togglePlay()"
+              aria-label="Play/Pause"
+              data-tip="Play / pause"
             >
-              <div class="transform-field">
-                <span>Crop ratio</span>
+              ▶
+            </button>
+            <input
+              type="range"
+              id="stage-scrub"
+              min="0"
+              max="1000"
+              step="1"
+              value="0"
+              oninput="onStageScrub(this.value)"
+              aria-label="Seek"
+              data-tip="Seek"
+            />
+            <span id="ptime">0:00 / 0:00</span>
+            <div id="player-vol">
+              <button
+                type="button"
+                class="pbtn"
+                id="btn-mute"
+                onclick="toggleMute()"
+                aria-label="Mute preview"
+                data-tip="Mute preview"
+              ></button>
+              <input
+                type="range"
+                id="vbar"
+                min="0"
+                max="100"
+                value="80"
+                oninput="setVol(this.value)"
+                aria-label="Preview volume"
+                data-tip="Preview volume"
+              />
+            </div>
+            <div
+              class="chip-group"
+              id="crop-edit-group"
+              role="group"
+              aria-label="Crop controls"
+            >
+              <span id="crop-label" class="transform-inline-label">Full frame</span>
+              <button
+                type="button"
+                id="btn-crop-reset"
+                class="tool-btn hid"
+                onclick="clearCrop()"
+                data-tip="Use full frame"
+                aria-label="Reset crop"
+              >
+                Reset crop
+              </button>
+            </div>
+          </div>
+          <section id="audio-editor" class="sequence" aria-label="Video and audio timeline">
+            <div id="timeline-row" class="transform-controls seq-toolbar">
+              <div class="chip-group" role="group" aria-label="Segment actions">
+                <span class="chip-label">Segments</span>
+                <button
+                  type="button"
+                  id="btn-segment-add"
+                  class="tool-btn icon-only"
+                  onclick="addSegment()"
+                  data-tip="New segment"
+                  aria-label="Add segment"
+                >
+                  <svg viewBox="0 0 16 16" aria-hidden="true">
+                    <rect x="1" y="6" width="8" height="6" rx="1.5"></rect>
+                    <path d="M12.5 2v6M9.5 5h6" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  id="btn-segment-remove"
+                  class="tool-btn icon-only"
+                  onclick="removeActiveSegment()"
+                  data-tip="Remove segment"
+                  aria-label="Remove active segment"
+                >
+                  <svg viewBox="0 0 16 16" aria-hidden="true">
+                    <path
+                      d="M3.5 4.5h9M6.5 4.5v-1a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v1M4.5 4.5l.6 8a1 1 0 0 0 1 .9h3.8a1 1 0 0 0 1-.9l.6-8"
+                    />
+                    <path d="M6.7 7v4M9.3 7v4" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  id="btn-segments-reset"
+                  class="tool-btn icon-only"
+                  onclick="resetSegments()"
+                  data-tip="Reset to full clip"
+                  aria-label="Reset segments to full source"
+                >
+                  <svg viewBox="0 0 16 16" aria-hidden="true">
+                    <polyline points="0.7 2.7 0.7 6.7 4.7 6.7"></polyline>
+                    <path d="M2.3 10a6 6 0 1 0 1.4-6.2L0.7 6.7"></path>
+                  </svg>
+                </button>
+              </div>
+              <div class="chip-group" role="group" aria-label="Clip actions">
+                <span class="chip-label">Clip</span>
+                <button
+                  type="button"
+                  id="btn-seq-split"
+                  class="tool-btn icon-only"
+                  onclick="splitAtPlayhead()"
+                  data-tip="Split (S)"
+                  aria-label="Split at playhead"
+                >
+                  <svg viewBox="0 0 16 16" aria-hidden="true">
+                    <rect x="2" y="5" width="5" height="6" rx="1"></rect>
+                    <rect x="9" y="5" width="5" height="6" rx="1"></rect>
+                  </svg>
+                </button>
+              </div>
+              <div id="audio-mixer" class="chip-group" hidden>
+                <span class="chip-label">Track</span>
+                <span id="audio-mixer-name" class="transform-inline-label">A</span>
+                <button
+                  type="button"
+                  id="audio-mixer-mute"
+                  class="tool-btn icon-only"
+                  onclick="AudioTimeline.toggleMixerMute()"
+                  aria-pressed="false"
+                  data-tip="Mute track"
+                >
+                  M
+                </button>
+                <input
+                  type="range"
+                  id="audio-mixer-gain"
+                  min="-24"
+                  max="12"
+                  step="1"
+                  value="0"
+                  oninput="AudioTimeline.setMixerGain(this.value)"
+                  aria-label="Track volume in decibels"
+                />
+                <span id="audio-mixer-db" class="transform-inline-label">0 dB</span>
+                <button
+                  type="button"
+                  id="audio-mixer-remove"
+                  class="tool-btn danger hid"
+                  onclick="AudioTimeline.removeSelectedTrack()"
+                  data-tip="Remove track"
+                >
+                  Remove
+                </button>
+                <button
+                  type="button"
+                  id="audio-fragment-mute"
+                  class="tool-btn hid"
+                  onclick="AudioTimeline.toggleFragmentMute()"
+                  aria-pressed="false"
+                >
+                  Mute
+                </button>
+              </div>
+              <div class="chip-group">
+                <span class="chip-label">Audio</span>
+                <button
+                  type="button"
+                  id="audio-master-toggle"
+                  class="tool-btn on"
+                  onclick="AudioTimeline.toggleMaster()"
+                  aria-pressed="true"
+                  data-tip="Include or exclude audio from the export"
+                >
+                  <span class="audio-speaker" aria-hidden="true">♪</span>
+                  <span id="audio-master-label">Audio</span>
+                </button>
+                <button
+                  type="button"
+                  id="audio-add"
+                  class="tool-btn"
+                  onclick="AudioTimeline.browse()"
+                  data-tip="Add music or narration"
+                >
+                  <svg viewBox="0 0 16 16" aria-hidden="true">
+                    <path d="M2 9.5v-3M4.5 11v-6M7 9.5v-3" />
+                    <path d="M12.5 2v6M9.5 5h6" />
+                  </svg>
+                  <span class="lbltxt">Add audio</span>
+                </button>
+              </div>
+              <div id="transform-fields" role="toolbar" aria-label="Video transform controls">
+              <div class="chip-group">
+                <span class="chip-label">Crop</span>
                 <div
                   class="transform-segment"
                   role="group"
@@ -79,8 +267,15 @@
                   <button
                     type="button"
                     class="on"
-                    data-aspect="free"
+                    data-aspect="off"
                     aria-pressed="true"
+                    onclick="setCropAspect('off')"
+                  >
+                    Off</button
+                  ><button
+                    type="button"
+                    data-aspect="free"
+                    aria-pressed="false"
                     onclick="setCropAspect('free')"
                   >
                     Free</button
@@ -115,9 +310,8 @@
                   </button>
                 </div>
               </div>
-              <div class="transform-divider" aria-hidden="true"></div>
-              <div class="transform-field">
-                <span>Rotation</span>
+              <div class="chip-group">
+                <span class="chip-label">Rotation</span>
                 <div
                   class="transform-segment"
                   role="group"
@@ -183,9 +377,8 @@
                   </button>
                 </div>
               </div>
-              <div class="transform-divider" aria-hidden="true"></div>
-              <div class="transform-field">
-                <span>Flip</span>
+              <div class="chip-group">
+                <span class="chip-label">Flip</span>
                 <div
                   class="transform-segment"
                   role="group"
@@ -235,9 +428,8 @@
                   </button>
                 </div>
               </div>
-              <div class="transform-divider" aria-hidden="true"></div>
-              <div class="transform-field">
-                <span>Output sizing</span>
+              <div class="chip-group">
+                <span class="chip-label">Output sizing</span>
                 <div
                   class="transform-segment"
                   role="group"
@@ -271,217 +463,7 @@
                   </button>
                 </div>
               </div>
-            </div>
-          </details>
-          <section id="audio-editor" class="sequence" aria-label="Video and audio timeline">
-            <div id="timeline-row">
-              <div
-                class="segment-quick-actions"
-                role="group"
-                aria-label="Segment actions"
-              >
-                <button
-                  type="button"
-                  id="btn-segment-add"
-                  class="segment-tool-button"
-                  onclick="addSegment()"
-                  title="Add a kept video range in a gap near the playhead"
-                  aria-label="Add segment"
-                >
-                  <svg viewBox="0 0 16 16" aria-hidden="true">
-                    <path d="M7.25 3h1.5v4.25H13v1.5H8.75V13h-1.5V8.75H3v-1.5h4.25z" />
-                  </svg>
-                </button>
-                <button
-                  type="button"
-                  id="btn-segment-remove"
-                  class="segment-tool-button"
-                  onclick="removeActiveSegment()"
-                  title="Remove the active video segment"
-                  aria-label="Remove active segment"
-                >
-                  <svg viewBox="0 0 16 16" aria-hidden="true">
-                    <path d="M5.5 2.5h5l.5 1.25h2v1.5H3v-1.5h2zm-.75 4h1.5v6h-1.5zm2.5 0h1.5v6h-1.5zm2.5 0h1.5v6h-1.5zM4 5.75h8l-.55 8H4.55z" />
-                  </svg>
-                </button>
-                <button
-                  type="button"
-                  id="btn-segments-reset"
-                  class="segment-tool-button"
-                  onclick="resetSegments()"
-                  title="Reset video to the full source"
-                  aria-label="Reset segments to full source"
-                >
-                  <svg viewBox="0 0 16 16" aria-hidden="true">
-                    <path d="M3.45 5.15A5.5 5.5 0 1 1 2.5 8h1.5a4 4 0 1 0 .7-2.25L6.5 7.5H2V3l1.45 2.15z" />
-                  </svg>
-                </button>
-                <button
-                  type="button"
-                  id="btn-seq-split"
-                  class="seq-icon-btn"
-                  onclick="splitAtPlayhead()"
-                  title="Split at the playhead (S)"
-                  aria-label="Split at playhead"
-                >
-                  <svg viewBox="0 0 16 16" aria-hidden="true">
-                    <path d="M7.25 2h1.5v12h-1.5zM3 7.25h10v1.5H3z" />
-                  </svg>
-                </button>
-                <button
-                  type="button"
-                  id="btn-seq-link"
-                  class="seq-icon-btn on"
-                  onclick="AudioTimeline.toggleLink()"
-                  aria-pressed="true"
-                  title="Ungroup audio from this segment"
-                  aria-label="Ungroup this segment"
-                >
-                  <svg viewBox="0 0 16 16" aria-hidden="true">
-                    <rect x="3" y="3" width="10" height="4" rx="1"></rect>
-                    <rect x="3" y="9" width="10" height="4" rx="1"></rect>
-                  </svg>
-                </button>
               </div>
-              <span id="audio-output-time" class="hid">0:00 / 0:00</span>
-              <div id="audio-selection-actions" class="hid">
-                <button
-                  type="button"
-                  class="seq-icon-btn"
-                  onclick="AudioTimeline.toggleSelectedMute()"
-                  id="audio-clip-mute"
-                  aria-pressed="false"
-                  title="Mute clip"
-                >
-                  Mute
-                </button>
-                <button
-                  type="button"
-                  class="seq-icon-btn"
-                  onclick="AudioTimeline.toggleSelectedLoop()"
-                  id="audio-clip-loop"
-                  aria-pressed="false"
-                  title="Loop this clip to fill its length"
-                >
-                  Loop
-                </button>
-                <label class="audio-fade-field" title="Fade in (seconds)">
-                  <span aria-hidden="true">In</span>
-                  <input
-                    type="number"
-                    id="audio-clip-fade-in"
-                    min="0"
-                    max="60"
-                    step="0.1"
-                    value="0"
-                    onchange="AudioTimeline.setSelectedFadeIn(this.value)"
-                    aria-label="Fade in, seconds"
-                  />
-                </label>
-                <label class="audio-fade-field" title="Fade out (seconds)">
-                  <span aria-hidden="true">Out</span>
-                  <input
-                    type="number"
-                    id="audio-clip-fade-out"
-                    min="0"
-                    max="60"
-                    step="0.1"
-                    value="0"
-                    onchange="AudioTimeline.setSelectedFadeOut(this.value)"
-                    aria-label="Fade out, seconds"
-                  />
-                </label>
-                <button
-                  type="button"
-                  class="seq-icon-btn"
-                  onclick="AudioTimeline.splitSelected()"
-                  id="audio-clip-split"
-                  title="Split clip"
-                >
-                  Split
-                </button>
-                <button
-                  type="button"
-                  class="seq-icon-btn danger"
-                  onclick="AudioTimeline.deleteSelected()"
-                  id="audio-clip-delete"
-                  title="Delete audio range"
-                >
-                  Delete
-                </button>
-              </div>
-              <div id="audio-mixer" hidden>
-                <span id="audio-mixer-name">A</span>
-                <button
-                  type="button"
-                  id="audio-mixer-mute"
-                  class="seq-icon-btn"
-                  onclick="AudioTimeline.toggleMixerMute()"
-                  aria-pressed="false"
-                  title="Mute this track in the export"
-                >
-                  M
-                </button>
-                <input
-                  type="range"
-                  id="audio-mixer-gain"
-                  min="-24"
-                  max="12"
-                  step="1"
-                  value="0"
-                  oninput="AudioTimeline.setMixerGain(this.value)"
-                  aria-label="Track volume in decibels"
-                />
-                <span id="audio-mixer-db">0 dB</span>
-                <button
-                  type="button"
-                  id="audio-mixer-remove"
-                  class="seq-icon-btn danger hid"
-                  onclick="AudioTimeline.removeSelectedTrack()"
-                  title="Remove this audio track"
-                >
-                  Remove
-                </button>
-                <button
-                  type="button"
-                  id="audio-fragment-mute"
-                  class="seq-icon-btn hid"
-                  onclick="AudioTimeline.toggleFragmentMute()"
-                  aria-pressed="false"
-                  title="Mute this fragment"
-                >
-                  Mute
-                </button>
-                <button
-                  type="button"
-                  id="audio-fragment-delete"
-                  class="seq-icon-btn danger hid"
-                  onclick="AudioTimeline.deleteSelected()"
-                  title="Remove audio from this fragment"
-                >
-                  Delete
-                </button>
-              </div>
-              <button
-                type="button"
-                id="audio-master-toggle"
-                class="seq-icon-btn on"
-                onclick="AudioTimeline.toggleMaster()"
-                aria-pressed="true"
-                title="Include audio in the exported video"
-              >
-                <span class="audio-speaker" aria-hidden="true">♪</span>
-                <span id="audio-master-label">Audio</span>
-              </button>
-              <button
-                type="button"
-                id="audio-add"
-                class="seq-icon-btn"
-                onclick="AudioTimeline.browse()"
-                title="Add an audio file"
-              >
-                + Audio
-              </button>
             </div>
             <div id="sequence-frame">
               <div id="sequence-stack">
@@ -489,8 +471,12 @@
                 <div class="seq-group" id="source-group">
                   <div class="seq-row video">
                     <div class="seq-head" id="video-track-head">
-                      <span class="seq-track-index">V</span>
-                      <span id="video-track-state" class="hid"></span>
+                      <span class="seq-track-index" data-tip="Video track">
+                        <svg class="ti-icon" viewBox="0 0 16 16" aria-hidden="true">
+                          <rect x="1.5" y="3" width="13" height="10" rx="1.5"></rect>
+                          <path d="M4.5 3v10M11.5 3v10" stroke-dasharray="1.4 1.6"></path>
+                        </svg>
+                      </span>
                     </div>
                     <div
                       id="timeline"
@@ -501,7 +487,6 @@
                       aria-valuemax="0"
                       aria-valuenow="0"
                       tabindex="0"
-                      title="Click to seek · drag a clip to move · drag endpoint handles to resize"
                     >
                       <div class="tl-track" id="tl-track">
                         <div id="tl-segments"></div>
@@ -514,40 +499,17 @@
                         type="button"
                         class="seq-track-index"
                         id="source-audio-label"
-                        onclick="AudioTimeline.selectTrack('source')"
-                        title="Source audio"
-                      >
-                        A
-                      </button>
-                      <span id="source-audio-state" class="hid"></span>
-                      <button
-                        type="button"
-                        class="audio-mute-button hid"
-                        id="source-audio-mute"
                         onclick="AudioTimeline.toggleSourceMute()"
-                        aria-pressed="false"
-                        title="Mute source audio"
+                        data-tip="Mute source audio"
                       >
-                        M
+                        <svg class="ti-icon" viewBox="0 0 16 16" aria-hidden="true">
+                          <path d="M2 10V6M5 12V4M8 9V7M11 13V3M14 10V6"></path>
+                        </svg>
                       </button>
-                      <label class="audio-gain-control hid" title="Source audio gain">
-                        <input
-                          id="source-audio-gain"
-                          type="number"
-                          min="-60"
-                          max="12"
-                          step="1"
-                          value="0"
-                          onchange="AudioTimeline.setSourceGain(this.value)"
-                          aria-label="Source audio gain in decibels"
-                        />
-                        <span>dB</span>
-                      </label>
                     </div>
                     <div
                       class="seq-lane audio-lane source-lane"
                       id="source-audio-lane"
-                      title="Source audio is grouped with video"
                     ></div>
                   </div>
                 </div>
@@ -561,7 +523,7 @@
                   role="slider"
                   aria-label="Active segment start"
                   tabindex="0"
-                  title="Active segment start"
+                  data-tip="Segment start"
                 ></div>
                 <div
                   class="tl-handle"
@@ -569,7 +531,7 @@
                   role="slider"
                   aria-label="Active segment end"
                   tabindex="0"
-                  title="Active segment end"
+                  data-tip="Segment end"
                 ></div>
               </div>
               <div id="seq-playhead-layer" aria-hidden="true">
@@ -577,58 +539,6 @@
               </div>
             </div>
           </section>
-          <div id="player-row">
-            <button
-              type="button"
-              class="pbtn"
-              id="btn-play"
-              onclick="togglePlay()"
-              aria-label="Play/Pause"
-              title="Play/Pause"
-            >
-              ▶
-            </button>
-            <span id="ptime">0:00 / 0:00</span>
-            <div id="player-mid">
-              <div
-                class="player-edit-group"
-                id="crop-edit-group"
-                role="group"
-                aria-label="Crop controls"
-              >
-                <span id="crop-label">Full frame</span>
-                <button
-                  type="button"
-                  id="btn-crop-reset"
-                  onclick="clearCrop()"
-                  title="Use full frame"
-                  aria-label="Reset crop"
-                >
-                  Reset crop
-                </button>
-              </div>
-            </div>
-            <div id="player-vol">
-              <button
-                type="button"
-                class="pbtn"
-                id="btn-mute"
-                onclick="toggleMute()"
-                aria-label="Mute preview"
-                title="Mute preview"
-              ></button>
-              <input
-                type="range"
-                id="vbar"
-                min="0"
-                max="100"
-                value="80"
-                oninput="setVol(this.value)"
-                aria-label="Preview volume"
-                title="Preview volume"
-              />
-            </div>
-          </div>
         </div>
       </div>
       <div id="right">

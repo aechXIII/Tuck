@@ -394,8 +394,7 @@ def test_segment_editor_controls_payloads_and_accessibility_are_wired() -> None:
 
     assert 'id="tl-segments"' in html
     assert 'id="timeline-row"' in html
-    assert 'class="segment-quick-actions"' in html
-    assert html.count('class="segment-tool-button"') == 3
+    assert 'aria-label="Segment actions"' in html
     assert 'id="segment-menu-toggle"' not in html
     assert 'id="segment-popover"' not in html
     assert 'aria-label="Active segment start"' in html

@@ -20,29 +20,6 @@
   font-size: 18px;
   font-weight: 600;
 }
-#empty p {
-  color: #444;
-  font-size: 12px;
-}
-#empty .empt-btn {
-  background: var(--accent);
-  border: none;
-  border-radius: var(--radius);
-  color: #fff;
-  font-weight: 700;
-  font-size: 13px;
-  padding: 10px 24px;
-  cursor: pointer;
-  font-family: var(--font);
-  margin-top: 6px;
-}
-#empty .empt-btn:hover {
-  background: #8b5cf6;
-}
-#empty .empt-btn:focus-visible {
-  outline: 2px solid var(--accent-light);
-  outline-offset: 2px;
-}
 #stage {
   flex: 1 1 0;
   min-height: 0;
@@ -56,19 +33,11 @@
   border-top: 1px solid var(--border);
   flex-shrink: 0;
   padding: 10px 14px 12px;
-  gap: 8px;
+  gap: 14px;
   flex-direction: column;
 }
 #player-bar.on {
   display: flex;
-}
-#timeline-row {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  width: 100%;
-  min-height: 22px;
-  flex-shrink: 0;
 }
 #timeline {
   position: relative;
@@ -130,16 +99,22 @@ body.tl-segment-dragging * {
   left: 0;
   height: 6px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--segment-color) 70%, #2a2a38);
+  background-image:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.14), transparent 60%),
+    repeating-linear-gradient(
+      90deg,
+      rgba(0, 0, 0, 0.22) 0,
+      rgba(0, 0, 0, 0.22) 1px,
+      transparent 1px,
+      transparent 7px
+    );
+  background-color: color-mix(in srgb, var(--segment-color) 70%, #2a2a38);
   opacity: 0.82;
 }
 .tl-segment.active::before {
-  background: var(--segment-color);
+  background-color: var(--segment-color);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--segment-color) 65%, white);
   opacity: 1;
-}
-.tl-segment-label {
-  display: none;
 }
 .tl-segment-time {
   position: absolute;
@@ -176,15 +151,6 @@ body.tl-segment-dragging * {
   outline: 2px solid var(--accent-light);
   outline-offset: 3px;
 }
-.tl-dim {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  pointer-events: none;
-  border-radius: 999px;
-  z-index: 1;
-}
 .tl-handle {
   position: absolute;
   top: 50%;
@@ -214,20 +180,22 @@ body.tl-segment-dragging * {
   transform: scale(1.15);
   cursor: ew-resize !important;
 }
-#player-row {
+#stage-controls {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 10px;
-  min-height: 28px;
-  width: 100%;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
 }
 .pbtn {
-  background: #1a1a26;
-  border: 1px solid #2a2a3a;
-  color: #e4e4ec;
-  border-radius: 6px;
-  width: 32px;
-  height: 28px;
+  background: transparent;
+  border: none;
+  color: #cfcfe0;
+  border-radius: 50%;
+  width: 26px;
+  height: 26px;
   cursor: pointer;
   font-size: 12px;
   line-height: 1;
@@ -238,9 +206,8 @@ body.tl-segment-dragging * {
   padding: 0;
 }
 .pbtn:hover {
-  border-color: var(--accent);
   color: #fff;
-  background: #221f33;
+  background: rgba(255, 255, 255, 0.1);
 }
 .pbtn:focus-visible {
   outline: 2px solid var(--accent-light);
@@ -252,94 +219,93 @@ body.tl-segment-dragging * {
   display: block;
   fill: currentColor;
 }
+#btn-play {
+  width: 30px;
+  height: 30px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+}
+#btn-play:hover {
+  background: #8b5cf6;
+}
 #ptime {
-  color: #a1a1b5;
+  color: #cfcfe0;
   font-size: 11px;
   font-family: var(--mono);
   white-space: nowrap;
   flex-shrink: 0;
-  min-width: 7.5em;
   letter-spacing: 0.02em;
-  line-height: 28px;
-}
-#player-mid {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0;
-  overflow: hidden;
-}
-.player-edit-group {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-.segment-quick-actions {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  flex-shrink: 0;
-}
-.segment-tool-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  background: transparent;
-  color: #8e8a9d;
-  cursor: pointer;
-}
-.segment-tool-button svg {
-  width: 12px;
-  height: 12px;
-  fill: currentColor;
-}
-.segment-tool-button:hover {
-  border-color: var(--border2);
-  background: #171620;
-  color: var(--accent-light);
-}
-.segment-tool-button:focus-visible {
-  outline: 2px solid var(--accent-light);
-  outline-offset: 1px;
-}
-#btn-segment-add[aria-disabled="true"],
-#btn-segment-remove:disabled,
-#btn-segments-reset:disabled {
-  color: var(--dim);
-  cursor: default;
-  opacity: 0.55;
 }
 #player-vol {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   flex-shrink: 0;
-  margin-left: auto;
+}
+#stage-scrub {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 0 0 auto;
+  width: min(360px, 32vw);
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.22);
+  outline: none;
+  cursor: pointer;
+}
+#stage-scrub::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: transparent;
+}
+#stage-scrub::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: -4px;
+  border-radius: 50%;
+  background: #fff;
+  border: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+}
+#stage-scrub::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.22);
+  border: none;
+}
+#stage-scrub::-moz-range-progress {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--accent-light);
+}
+#stage-scrub::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  border: none;
+  cursor: pointer;
 }
 #vbar {
   -webkit-appearance: none;
   appearance: none;
-  width: 84px;
+  width: 64px;
   height: 4px;
   border-radius: 999px;
-  background: #2a2a38;
+  background: rgba(255, 255, 255, 0.22);
   outline: none;
   flex-shrink: 0;
   cursor: pointer;
-  accent-color: var(--accent);
+  accent-color: var(--accent-light);
 }
 #vbar::-webkit-slider-runnable-track {
   height: 4px;
   border-radius: 999px;
-  background: #2a2a38;
+  background: rgba(255, 255, 255, 0.22);
 }
 #vbar::-webkit-slider-thumb {
   -webkit-appearance: none;
@@ -356,7 +322,7 @@ body.tl-segment-dragging * {
 #vbar::-moz-range-track {
   height: 4px;
   border-radius: 999px;
-  background: #2a2a38;
+  background: rgba(255, 255, 255, 0.22);
   border: none;
 }
 #vbar::-moz-range-thumb {

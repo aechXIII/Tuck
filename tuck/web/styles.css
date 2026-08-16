@@ -536,20 +536,6 @@ select {
   outline: 2px solid var(--accent-light);
   outline-offset: -1px;
 }
-.disclosure {
-  width: 100%;
-  background: transparent;
-  border: 0;
-  color: var(--accent-light);
-  cursor: pointer;
-  font: 600 12px var(--font);
-  padding: 6px 0 0;
-  text-align: left;
-}
-.disclosure:focus-visible {
-  outline: 2px solid var(--accent-light);
-  outline-offset: 2px;
-}
 .setting-note {
   color: var(--muted);
   font-size: 10px;

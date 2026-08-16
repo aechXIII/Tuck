@@ -137,7 +137,7 @@ function profileControlState() {
     q: byId("quality-val").value,
     br: byId("br-val").value,
     tu: byId("tune-sel").value,
-    aspect: clip ? clip.cropAspect || "free" : "free",
+    aspect: clip ? clip.cropAspect || "off" : "off",
     rotation: clip ? clip.rotation || 0 : 0,
     sizing: clip ? clip.sizingMode || "fit" : "fit",
   };
@@ -408,7 +408,7 @@ window.addFiles = function (paths, rejected) {
       segments: null,
       activeSegment: 0,
       crop: null,
-      cropAspect: "free",
+      cropAspect: "off",
       rotation: 0,
       flipHorizontal: false,
       flipVertical: false,

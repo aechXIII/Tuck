@@ -4,15 +4,17 @@
   if (!root || !root.document) return;
 
   var selectedClipId = null;
-  var selectedSourceIndex = null;
   var selectedTrackId = "source";
   var idCounter = 0;
   var dragState = null;
   var previewElements = {};
+  var _DRAG_THRESHOLD = 5;
+  var _groupDragRaf = 0;
+  var _groupDragEvent = null;
   var _MIN_TRIM = root.SegmentEditing.MIN_DURATION;
 
   // Imported tracks use colors outside the video purple
-  var TRACK_COLORS = ["#2dd4bf", "#fbbf24", "#38bdf8", "#a3e635", "#f472b6", "#fb923c"];
+  var TRACK_COLORS = ["#0d9488", "#b45309", "#0369a1", "#4d7c0f", "#a21caf", "#c2410c"];
 
   function trackColor(index) {
     return TRACK_COLORS[index % TRACK_COLORS.length];
@@ -32,7 +34,6 @@
     if (!clip.audioTimeline) {
       clip.audioTimeline = {
         enabled: true,
-        linked: true,
         sourceMuted: false,
         sourceGainDb: 0,
         sourceWaveformUrl: "",
@@ -41,7 +42,6 @@
         tracks: [],
       };
     }
-    if (clip.audioTimeline.linked == null) clip.audioTimeline.linked = true;
     return clip.audioTimeline;
   }
 
@@ -54,39 +54,10 @@
     return video ? Number(video.currentTime) || 0 : 0;
   }
 
-  function outputDuration(clip) {
-    var full = sourceDuration(clip);
-    if (!full || !root.SegmentEditing) return 0;
-    return root.SegmentEditing.selectedDuration(
-      root.SegmentEditing.segmentsForClip(clip, full),
-    );
-  }
-
   function audioSegments(clip) {
     var full = sourceDuration(clip);
     if (!full || !root.SegmentEditing) return [];
     return root.SegmentEditing.audioSegmentsForClip(clip, full);
-  }
-
-  function isLinked(clip) {
-    return !!(clip && ensureState(clip).linked !== false && !Array.isArray(clip.sourceAudioSegments));
-  }
-
-  function materializeAudio(clip) {
-    if (!clip || !root.SegmentEditing) return [];
-    if (!Array.isArray(clip.sourceAudioSegments))
-      clip.sourceAudioSegments = root.SegmentEditing.cloneSegments(
-        root.SegmentEditing.segmentsForClip(clip, sourceDuration(clip)),
-      );
-    ensureState(clip).linked = false;
-    return clip.sourceAudioSegments;
-  }
-
-  function setAudioSegments(clip, segments) {
-    clip.sourceAudioSegments = (segments || []).map(function (segment) {
-      return { start: segment.start, end: segment.end };
-    });
-    ensureState(clip).linked = false;
   }
 
   function dbToGain(db) {
@@ -103,11 +74,6 @@
     var state = ensureState(clip);
     var total = sourceDuration(clip);
     if (!state || total <= 0) return;
-    if (Array.isArray(clip.sourceAudioSegments) && clip.sourceAudioSegments.length)
-      clip.sourceAudioSegments = root.SegmentEditing.normalizeSegments(
-        clip.sourceAudioSegments,
-        total,
-      );
     state.tracks.forEach(function (track) {
       track.clips.sort(function (a, b) {
         return a.timelineStart - b.timelineStart;
@@ -131,11 +97,6 @@
       });
     });
     if (selectedClipId && !findSelected(clip)) selectedClipId = null;
-    if (
-      selectedSourceIndex != null &&
-      selectedSourceIndex >= audioSegments(clip).length
-    )
-      selectedSourceIndex = null;
   }
 
   function findTrack(trackId, clip) {
@@ -188,14 +149,11 @@
     if (!lane || !sourceTrack) return;
     var hasAudio = !!(clip.probeData && clip.probeData.has_audio);
     sourceTrack.classList.toggle("disabled", !hasAudio || !state.enabled);
-    var muteButton = root.byId("source-audio-mute");
-    if (muteButton) {
-      muteButton.disabled = !hasAudio;
-      muteButton.classList.toggle("on", state.sourceMuted);
-      muteButton.setAttribute("aria-pressed", state.sourceMuted ? "true" : "false");
+    var sourceLabel = root.byId("source-audio-label");
+    if (sourceLabel) {
+      sourceLabel.classList.toggle("muted", state.sourceMuted);
+      sourceLabel.dataset.tip = state.sourceMuted ? "Unmute source audio" : "Mute source audio";
     }
-    var gain = root.byId("source-audio-gain");
-    if (gain) gain.value = String(state.sourceGainDb);
     paintSourceLane(clip, state, total);
   }
 
@@ -209,41 +167,16 @@
     var videoActive =
       clip && Number.isInteger(clip.activeSegment) ? clip.activeSegment : 0;
     videoSegs.forEach(function (segment, index) {
-      if (root.SegmentEditing.isGrouped && !root.SegmentEditing.isGrouped(segment))
-        return;
-      if (segment.audio === false || segment.grouped === false) return;
-      lane.appendChild(
-        sourceAudioBlock(segment, index, index === videoActive, state, total, "grouped"),
-      );
-    });
-    (clip.sourceAudioSegments || []).forEach(function (segment, index) {
-      lane.appendChild(
-        sourceAudioBlock(
-          segment,
-          index,
-          selectedSourceIndex === index && selectedTrackId === "source",
-          state,
-          total,
-          "detached",
-        ),
-      );
+      lane.appendChild(sourceAudioBlock(segment, index, index === videoActive, state, total));
     });
   }
 
-  function sourceAudioBlock(segment, index, selected, state, total, kind) {
+  function sourceAudioBlock(segment, index, selected, state, total) {
     var block = root.document.createElement("div");
     block.className =
-      "seq-audio-clip" +
-      (selected ? " selected" : "") +
-      (kind === "detached" ? " detached" : "") +
-      (segment.muted ? " muted" : "");
-    block.title = segment.muted
-      ? "Muted"
-      : kind === "detached"
-        ? "Click to mute"
-        : "Grouped with video";
+      "seq-audio-clip" + (selected ? " selected" : "") + (segment.muted ? " muted" : "");
+    if (segment.muted) block.dataset.tip = "Muted";
     block.dataset.audioKind = "source";
-    block.dataset.audioRole = kind;
     block.dataset.segmentIndex = String(index);
     block.style.setProperty("--segment-color", root.segmentColor(index));
     block.style.left = pct(segment.start, total);
@@ -263,9 +196,11 @@
       var edgeIn = root.document.createElement("span");
       edgeIn.className = "clip-edge start";
       edgeIn.dataset.edge = "start";
+      edgeIn.dataset.tip = "Drag to trim segment start";
       var edgeOut = root.document.createElement("span");
       edgeOut.className = "clip-edge end";
       edgeOut.dataset.edge = "end";
+      edgeOut.dataset.tip = "Drag to trim segment end";
       block.append(edgeIn, edgeOut);
     }
     return block;
@@ -281,56 +216,19 @@
     head.className = "seq-head";
     var indexEl = root.document.createElement("button");
     indexEl.type = "button";
-    indexEl.className = "seq-track-index" + (track.id === selectedTrackId ? " on" : "");
+    indexEl.className =
+      "seq-track-index" +
+      (track.id === selectedTrackId ? " on" : "") +
+      (track.muted ? " muted" : "");
     indexEl.textContent = "A" + (index + 2);
-    indexEl.title = track.name;
+    indexEl.dataset.tip = track.muted ? "Unmute " + track.name : "Mute " + track.name;
     indexEl.setAttribute("aria-label", track.name);
     indexEl.onclick = function (event) {
       event.stopPropagation();
-      apiObject.selectTrack(track.id);
-    };
-    head.appendChild(indexEl);
-    head.title = track.name;
-
-    var mute = root.document.createElement("button");
-    mute.type = "button";
-    mute.className = "audio-mute-button" + (track.muted ? " on" : "");
-    mute.textContent = "M";
-    mute.title = track.muted ? "Unmute track" : "Mute track";
-    mute.setAttribute("aria-pressed", track.muted ? "true" : "false");
-    mute.onclick = function () {
       apiObject.toggleTrackMute(track.id);
     };
-    head.appendChild(mute);
-
-    var gain = root.document.createElement("label");
-    gain.className = "audio-gain-control";
-    gain.title = "Track gain";
-    var gainInput = root.document.createElement("input");
-    gainInput.type = "number";
-    gainInput.min = "-60";
-    gainInput.max = "12";
-    gainInput.step = "1";
-    gainInput.value = String(track.gainDb);
-    gainInput.setAttribute("aria-label", track.name + " gain in decibels");
-    gainInput.onchange = function () {
-      apiObject.setTrackGain(track.id, this.value);
-    };
-    var db = root.document.createElement("span");
-    db.textContent = "dB";
-    gain.append(gainInput, db);
-    head.appendChild(gain);
-
-    var remove = root.document.createElement("button");
-    remove.type = "button";
-    remove.className = "audio-remove-track";
-    remove.textContent = "×";
-    remove.title = "Remove track";
-    remove.setAttribute("aria-label", "Remove " + track.name);
-    remove.onclick = function () {
-      apiObject.removeTrack(track.id);
-    };
-    head.appendChild(remove);
+    head.appendChild(indexEl);
+    head.dataset.tip = track.name;
     row.appendChild(head);
 
     var lane = root.document.createElement("div");
@@ -381,40 +279,17 @@
         var edgeIn = root.document.createElement("span");
         edgeIn.className = "clip-edge start";
         edgeIn.dataset.edge = "start";
+        edgeIn.dataset.tip = "Drag to choose where this starts in the track";
         var edgeOut = root.document.createElement("span");
         edgeOut.className = "clip-edge end";
         edgeOut.dataset.edge = "end";
+        edgeOut.dataset.tip = "Drag to choose where this ends in the track";
         el.append(edgeIn, edgeOut);
       }
       lane.appendChild(el);
     });
     row.appendChild(lane);
     return row;
-  }
-
-  function renderInspector(videoClip) {
-    var actions = root.byId("audio-selection-actions");
-    if (!actions) return;
-    var selected = findSelected(videoClip);
-    actions.classList.toggle("hid", !selected);
-    if (!selected) return;
-    var muteBtn = root.byId("audio-clip-mute");
-    if (muteBtn) {
-      muteBtn.classList.toggle("on", !!selected.clip.muted);
-      muteBtn.setAttribute("aria-pressed", selected.clip.muted ? "true" : "false");
-      muteBtn.textContent = selected.clip.muted ? "Unmute" : "Mute";
-    }
-    var loopBtn = root.byId("audio-clip-loop");
-    if (loopBtn) {
-      loopBtn.classList.toggle("on", !!selected.clip.loop);
-      loopBtn.setAttribute("aria-pressed", selected.clip.loop ? "true" : "false");
-    }
-    var fadeInInput = root.byId("audio-clip-fade-in");
-    if (fadeInInput && root.document.activeElement !== fadeInInput)
-      fadeInInput.value = (Math.round(selected.clip.fadeIn * 10) / 10).toString();
-    var fadeOutInput = root.byId("audio-clip-fade-out");
-    if (fadeOutInput && root.document.activeElement !== fadeOutInput)
-      fadeOutInput.value = (Math.round(selected.clip.fadeOut * 10) / 10).toString();
   }
 
   function render() {
@@ -426,9 +301,7 @@
       var emptyLane = root.byId("source-audio-lane");
       if (emptyLane) emptyLane.replaceChildren();
       root.byId("imported-audio-tracks").replaceChildren();
-      root.byId("audio-selection-actions").classList.add("hid");
-      var out = root.byId("seq-output-duration");
-      if (out) out.textContent = "Out 0:00";
+      paintMixer(clip);
       return;
     }
     editor.classList.remove("disabled");
@@ -440,17 +313,12 @@
     master.setAttribute("aria-pressed", state.enabled ? "true" : "false");
     var masterLabel = root.byId("audio-master-label");
     if (masterLabel) masterLabel.textContent = state.enabled ? "Audio" : "Muted";
-    var clock = root.byId("audio-output-time");
-    if (clock) clock.textContent = root.fmtt(sourceTime()) + " / " + root.fmtt(total);
-    var outDur = root.byId("seq-output-duration");
-    if (outDur) outDur.textContent = "Out " + root.fmtt(outputDuration(clip));
     renderSourceTrack(clip, state, total);
     var tracks = root.byId("imported-audio-tracks");
     tracks.replaceChildren();
     state.tracks.forEach(function (track, index) {
       tracks.appendChild(renderImportedTrack(track, total, index));
     });
-    renderInspector(clip);
     paintMixer(clip);
     updatePlayheads(sourceTime(), total);
     applyPreviewVolume();
@@ -504,15 +372,8 @@
     var sourceLabel = root.byId("source-audio-label");
     if (sourceLabel) sourceLabel.classList.toggle("on", selectedTrackId === "source");
     var fragMute = root.byId("audio-fragment-mute");
-    var fragDel = root.byId("audio-fragment-delete");
-    var detached =
-      selectedTrackId === "source" &&
-      selectedSourceIndex != null &&
-      clip.sourceAudioSegments &&
-      clip.sourceAudioSegments[selectedSourceIndex];
     var fragmentMuted = false;
-    if (detached) fragmentMuted = !!detached.muted;
-    else if (selectedTrackId === "source" && root.SegmentEditing) {
+    if (selectedTrackId === "source" && root.SegmentEditing) {
       var segs = root.SegmentEditing.segmentsForClip(clip, sourceDuration(clip));
       var active = Number.isInteger(clip.activeSegment) ? clip.activeSegment : 0;
       fragmentMuted = !!(segs[active] && segs[active].muted);
@@ -523,23 +384,12 @@
       fragMute.setAttribute("aria-pressed", fragmentMuted ? "true" : "false");
       fragMute.textContent = fragmentMuted ? "Unmute" : "Mute";
     }
-    if (fragDel) fragDel.classList.toggle("hid", !detached);
   }
 
   function updatePlayheads(time, total) {
     var pctValue = total > 0 ? Math.max(0, Math.min(100, (time / total) * 100)) : 0;
     var layer = root.byId("seq-playhead-layer");
     if (layer) layer.style.setProperty("--playhead", pctValue + "%");
-    var clip = selectedVideo();
-    if (clip && root.byId("audio-output-time"))
-      root.byId("audio-output-time").textContent =
-        root.fmtt(time) + " / " + root.fmtt(total);
-  }
-
-  function selectAudioClip(id) {
-    selectedClipId = id;
-    selectedSourceIndex = null;
-    render();
   }
 
   function neighborBounds(track, index, total, duration) {
@@ -571,19 +421,13 @@
       var edge = event.target.closest ? event.target.closest(".clip-edge") : null;
       var ratio = (event.clientX - lane.getBoundingClientRect().left) / lane.clientWidth;
       var time = Math.max(0, Math.min(total, ratio * total));
-      if (edge && clipEl.dataset.audioRole === "detached") {
-        selectedSourceIndex = parseInt(clipEl.dataset.segmentIndex, 10);
-        var extra = (videoClip.sourceAudioSegments || [])[selectedSourceIndex];
-        if (!extra) return;
+      if (edge && typeof root.applyTrimStart === "function") {
         dragState = {
-          kind: "detached-trim",
+          kind: "group-trim",
           edge: edge.dataset.edge,
-          index: selectedSourceIndex,
-          original: { start: extra.start, end: extra.end, muted: !!extra.muted },
           startX: event.clientX,
           rect: lane.getBoundingClientRect(),
           total: total,
-          element: clipEl,
         };
         if (lane.setPointerCapture && event.pointerId != null) {
           try {
@@ -593,78 +437,26 @@
         event.preventDefault();
         return;
       }
-      if (edge && clipEl.dataset.audioRole !== "detached") {
-        if (typeof root.applyTrimStart === "function") {
-          dragState = {
-            kind: "group-trim",
-            edge: edge.dataset.edge,
-            startX: event.clientX,
-            rect: lane.getBoundingClientRect(),
-            total: total,
-          };
-          if (lane.setPointerCapture && event.pointerId != null) {
-            try {
-              lane.setPointerCapture(event.pointerId);
-            } catch (err) {}
-          }
-          event.preventDefault();
-          return;
-        }
-      }
-      if (clipEl.dataset.audioRole !== "detached") {
-        selectedSourceIndex = null;
-        var videoSegs = root.SegmentEditing.segmentsForClip(videoClip, total);
-        var videoIndex = root.SegmentEditing.segmentIndexAtTime(videoSegs, time, 0);
-        if (videoIndex >= 0 && typeof root.selectSegment === "function")
-          root.selectSegment(videoIndex, false);
-        apiObject.seekSource(time);
-        dragState = {
-          kind: "group-move",
-          index: videoIndex,
-          offset: videoIndex >= 0 ? time - videoSegs[videoIndex].start : 0,
-          startX: event.clientX,
-          rect: lane.getBoundingClientRect(),
-          total: total,
-          clickMute: false,
-        };
-        if (lane.setPointerCapture && event.pointerId != null) {
-          try {
-            lane.setPointerCapture(event.pointerId);
-          } catch (err) {}
-        }
-        event.preventDefault();
-        paintMixer(videoClip);
-        return;
-      }
-      var detachedIndex = parseInt(clipEl.dataset.segmentIndex, 10);
-      var wasSelected = selectedSourceIndex === detachedIndex;
-      selectedSourceIndex = detachedIndex;
-      var detached = (videoClip.sourceAudioSegments || [])[selectedSourceIndex];
-      if (!detached) return;
+      var videoSegs = root.SegmentEditing.segmentsForClip(videoClip, total);
+      var videoIndex = root.SegmentEditing.segmentIndexAtTime(videoSegs, time, 0);
+      if (videoIndex >= 0 && typeof root.selectSegment === "function")
+        root.selectSegment(videoIndex, false);
+      apiObject.seekSource(time);
       dragState = {
-        action: "source-move",
-        kind: "detached",
-        index: selectedSourceIndex,
-        original: {
-          start: detached.start,
-          end: detached.end,
-          muted: !!detached.muted,
-          audioLink: detached.audioLink,
-        },
+        kind: "group-move",
+        index: videoIndex,
+        offset: videoIndex >= 0 ? time - videoSegs[videoIndex].start : 0,
         startX: event.clientX,
-        clickMute: wasSelected,
         rect: lane.getBoundingClientRect(),
         total: total,
-        element: clipEl,
       };
-      paintMixer(videoClip);
       if (lane.setPointerCapture && event.pointerId != null) {
         try {
           lane.setPointerCapture(event.pointerId);
         } catch (err) {}
       }
       event.preventDefault();
-      renderInspector(videoClip);
+      paintMixer(videoClip);
       return;
     }
     var track = findTrack(clipEl.dataset.trackId, videoClip);
@@ -674,7 +466,6 @@
     });
     if (index < 0) return;
     selectedClipId = track.clips[index].id;
-    selectedSourceIndex = null;
     selectedTrackId = track.id;
     var importedEdge = event.target.closest ? event.target.closest(".clip-edge") : null;
     var importedAction = importedEdge
@@ -700,33 +491,18 @@
       } catch (err) {}
     }
     event.preventDefault();
-    renderInspector(videoClip);
   }
 
   function paintDragged() {
     if (!dragState || !dragState.element) return;
-    if (
-      dragState.kind === "source" ||
-      dragState.kind === "detached" ||
-      dragState.kind === "detached-trim"
-    ) {
-      dragState.element.style.left = pct(dragState.current.start, dragState.total);
-      dragState.element.style.width = pct(
-        dragState.current.end - dragState.current.start,
-        dragState.total,
-      );
-      return;
-    }
     dragState.element.style.left = pct(dragState.clip.timelineStart, dragState.total);
     dragState.element.style.width = pct(dragState.clip.timelineDuration, dragState.total);
   }
 
-  function onPointerMove(event) {
+  function processGroupDragMove(event) {
     if (!dragState) return;
-    var delta = ((event.clientX - dragState.startX) / dragState.rect.width) * dragState.total;
-    var videoClip = selectedVideo();
     if (dragState.kind === "group-move") {
-      if (Math.abs(event.clientX - dragState.startX) > 4) dragState.clickMute = false;
+      if (Math.abs(event.clientX - dragState.startX) < _DRAG_THRESHOLD) return;
       var time =
         ((event.clientX - dragState.rect.left) / dragState.rect.width) * dragState.total;
       if (typeof root.moveActiveSegment === "function") {
@@ -737,98 +513,31 @@
         Math.max(0, Math.min(dragState.total, time)),
         dragState.total,
       );
-      event.preventDefault();
       return;
     }
-    if (dragState.kind === "group-trim") {
-      var trimTime =
-        ((event.clientX - dragState.rect.left) / dragState.rect.width) * dragState.total;
-      if (dragState.edge === "start" && typeof root.applyTrimStart === "function")
-        root.applyTrimStart(trimTime);
-      else if (typeof root.applyTrimEnd === "function") root.applyTrimEnd(trimTime);
-      if (typeof root.paintTrimChrome === "function") root.paintTrimChrome();
+    var trimTime =
+      ((event.clientX - dragState.rect.left) / dragState.rect.width) * dragState.total;
+    if (dragState.edge === "start" && typeof root.applyTrimStart === "function")
+      root.applyTrimStart(trimTime);
+    else if (typeof root.applyTrimEnd === "function") root.applyTrimEnd(trimTime);
+    if (typeof root.paintTrimChrome === "function") root.paintTrimChrome();
+  }
+
+  function onPointerMove(event) {
+    if (!dragState) return;
+    if (dragState.kind === "group-move" || dragState.kind === "group-trim") {
       event.preventDefault();
+      _groupDragEvent = event;
+      if (_groupDragRaf) return;
+      _groupDragRaf = requestAnimationFrame(function () {
+        _groupDragRaf = 0;
+        var evt = _groupDragEvent;
+        _groupDragEvent = null;
+        if (evt) processGroupDragMove(evt);
+      });
       return;
     }
-    if (dragState.kind === "detached-trim") {
-      var next = {
-        start: dragState.original.start,
-        end: dragState.original.end,
-        muted: !!dragState.original.muted,
-        audioLink: dragState.original.audioLink,
-      };
-      var at =
-        dragState.original[dragState.edge === "start" ? "start" : "end"] + delta;
-      if (dragState.edge === "start")
-        next.start = Math.max(0, Math.min(at, dragState.original.end - 0.05));
-      else
-        next.end = Math.max(
-          dragState.original.start + 0.05,
-          Math.min(dragState.total, at),
-        );
-      var extras = (videoClip.sourceAudioSegments || []).slice();
-      extras[dragState.index] = next;
-      videoClip.sourceAudioSegments = extras;
-      dragState.current = next;
-      paintDragged();
-      event.preventDefault();
-      return;
-    }
-    if (dragState.kind === "detached") {
-      if (Math.abs(event.clientX - dragState.startX) > 4) dragState.clickMute = false;
-      var span = dragState.original.end - dragState.original.start;
-      var nextStart = Math.max(
-        0,
-        Math.min(dragState.total - span, dragState.original.start + delta),
-      );
-      var extras = (videoClip.sourceAudioSegments || []).slice();
-      extras[dragState.index] = {
-        start: nextStart,
-        end: nextStart + span,
-        muted: !!dragState.original.muted,
-        audioLink: dragState.original.audioLink,
-      };
-      videoClip.sourceAudioSegments = extras;
-      dragState.current = extras[dragState.index];
-      paintDragged();
-      updatePlayheads(sourceTime(), dragState.total);
-      event.preventDefault();
-      return;
-    }
-    if (dragState.kind === "source") {
-      var segs = materializeAudio(videoClip);
-      var edited;
-      if (dragState.action === "source-trim-start") {
-        edited = root.SegmentEditing.editEndpoint(
-          segs,
-          dragState.index,
-          "start",
-          dragState.original.start + delta,
-          dragState.total,
-        );
-      } else if (dragState.action === "source-trim-end") {
-        edited = root.SegmentEditing.editEndpoint(
-          segs,
-          dragState.index,
-          "end",
-          dragState.original.end + delta,
-          dragState.total,
-        );
-      } else {
-        edited = root.SegmentEditing.moveSegment(
-          segs,
-          dragState.index,
-          dragState.original.start + delta,
-          dragState.total,
-        );
-      }
-      setAudioSegments(videoClip, edited);
-      dragState.current = edited[dragState.index];
-      paintDragged();
-      updatePlayheads(sourceTime(), dragState.total);
-      event.preventDefault();
-      return;
-    }
+    var delta = ((event.clientX - dragState.startX) / dragState.rect.width) * dragState.total;
     var original = dragState.original;
     var audioClip = dragState.clip;
     var bounds = neighborBounds(
@@ -838,14 +547,23 @@
       original.timelineDuration,
     );
     if (dragState.action === "move") {
+      if (Math.abs(event.clientX - dragState.startX) < _DRAG_THRESHOLD) {
+        event.preventDefault();
+        return;
+      }
       audioClip.timelineStart = Math.max(
         bounds.min,
         Math.min(bounds.max, original.timelineStart + delta),
       );
     } else if (dragState.action === "trim-start") {
       var maximumDelta = original.timelineDuration - _MIN_TRIM;
-      if (!original.loop) maximumDelta = Math.min(maximumDelta, original.sourceOut - original.sourceIn - 0.05);
-      var actual = Math.max(bounds.min - original.timelineStart, Math.min(maximumDelta, delta));
+      var minimumDelta = bounds.min - original.timelineStart;
+      if (!original.loop) {
+        maximumDelta = Math.min(maximumDelta, original.sourceOut - original.sourceIn - _MIN_TRIM);
+        // Keep the trim inside the source
+        minimumDelta = Math.max(minimumDelta, -original.sourceIn);
+      }
+      var actual = Math.max(minimumDelta, Math.min(maximumDelta, delta));
       audioClip.timelineStart = original.timelineStart + actual;
       audioClip.timelineDuration = original.timelineDuration - actual;
       if (!original.loop) audioClip.sourceIn = original.sourceIn + actual;
@@ -855,8 +573,13 @@
           ? dragState.track.clips[dragState.index + 1].timelineStart
           : dragState.total;
       var maxDuration = nextStart - original.timelineStart;
-      if (!original.loop) maxDuration = Math.min(maxDuration, original.sourceOut - original.sourceIn);
-      audioClip.timelineDuration = Math.max(_MIN_TRIM, Math.min(maxDuration, original.timelineDuration + delta));
+      // Use all audio left in the source
+      if (!original.loop)
+        maxDuration = Math.min(maxDuration, dragState.track.sourceDuration - original.sourceIn);
+      audioClip.timelineDuration = Math.max(
+        _MIN_TRIM,
+        Math.min(maxDuration, original.timelineDuration + delta),
+      );
       if (!original.loop) audioClip.sourceOut = original.sourceIn + audioClip.timelineDuration;
     }
     audioClip.fadeIn = Math.min(audioClip.fadeIn, audioClip.timelineDuration);
@@ -871,13 +594,17 @@
 
   function onPointerUp() {
     if (!dragState) return;
-    var shouldMute = !!dragState.clickMute;
-    dragState = null;
-    if (shouldMute) apiObject.toggleFragmentMute();
-    else {
-      render();
-      setPlanDirty(selectedVideo());
+    if (_groupDragRaf) {
+      cancelAnimationFrame(_groupDragRaf);
+      _groupDragRaf = 0;
     }
+    if (_groupDragEvent) {
+      processGroupDragMove(_groupDragEvent);
+      _groupDragEvent = null;
+    }
+    dragState = null;
+    render();
+    setPlanDirty(selectedVideo());
   }
 
   function clipFadeFactor(audioClip, localTime) {
@@ -1062,7 +789,8 @@
         if (!media.ok || !media.url) throw new Error(media.error || "Could not load audio");
         var duration = Number(probed.data.duration) || 0;
         if (duration < _MIN_TRIM) throw new Error("Audio file is too short");
-        var timelineStart = Math.min(start, Math.max(0, total - 0.05));
+        var fitDuration = Math.min(duration, Math.max(_MIN_TRIM, total - _MIN_TRIM));
+        var timelineStart = Math.max(0, Math.min(start, total - fitDuration));
         var clipDuration = Math.min(duration, total - timelineStart);
         var track = {
           id: nextId("track"),
@@ -1093,7 +821,6 @@
         };
         state.tracks.push(track);
         selectedClipId = track.clips[0].id;
-        selectedSourceIndex = null;
         added += 1;
         loadWaveform(videoClip, track, paths[i]);
       } catch (err) {
@@ -1165,11 +892,10 @@
     var videoSegs = root.SegmentEditing
       ? root.SegmentEditing.segmentsForClip(videoClip, sourceDuration(videoClip))
       : [];
-    var keptAudio = root.SegmentEditing
-      ? root.SegmentEditing.audioSegmentsForClip(videoClip, sourceDuration(videoClip))
-      : videoSegs.filter(function (segment) {
-          return segment.grouped !== false && segment.audio !== false;
-        });
+    var keptAudio = root.SegmentEditing.audioSegmentsForClip(
+      videoClip,
+      sourceDuration(videoClip),
+    );
     var followsVideo =
       keptAudio.length === videoSegs.length &&
       videoSegs.every(function (segment, index) {
@@ -1191,7 +917,7 @@
     selectVideo: function (clip) {
       stopPreviewElements();
       selectedClipId = null;
-      selectedSourceIndex = null;
+      selectedTrackId = "source";
       if (clip) {
         ensureState(clip);
         loadSourceWaveform(clip);
@@ -1212,12 +938,14 @@
       if (!clip) return;
       paintSourceLane(clip, ensureState(clip), sourceDuration(clip));
     },
+    paintMixer: function () {
+      paintMixer(selectedVideo());
+    },
     syncPreview: syncPreview,
     applyPreviewVolume: applyPreviewVolume,
     hasSelection: function () {
-      return !!(selectedClipId || selectedSourceIndex != null);
+      return !!selectedClipId;
     },
-    onVideoSplit: function () {},
     browse: async function () {
       if (!root.api || typeof root.api.pickAudioFiles !== "function") return;
       try {
@@ -1237,71 +965,22 @@
       render();
       setPlanDirty(clip);
     },
-    toggleLink: function () {
+    toggleFragmentMute: function () {
       var clip = selectedVideo();
       if (!clip || !root.SegmentEditing) return;
       var full = sourceDuration(clip);
       var segs = root.SegmentEditing.segmentsForClip(clip, full);
       var active = Number.isInteger(clip.activeSegment) ? clip.activeSegment : 0;
-      active = Math.max(0, Math.min(segs.length - 1, active));
       if (!segs[active]) return;
-      var grouped = root.SegmentEditing.isGrouped
-        ? root.SegmentEditing.isGrouped(segs[active])
-        : root.SegmentEditing.hasAudio(segs[active]);
-      if (grouped) {
-        var unlinked = root.SegmentEditing.unlinkSegmentAudio(
-          segs,
-          clip.sourceAudioSegments,
-          active,
-          full,
-        );
-        segs = unlinked.segments;
-        clip.sourceAudioSegments = unlinked.detached;
-        selectedSourceIndex = clip.sourceAudioSegments.length - 1;
-      } else {
-        var relinked = root.SegmentEditing.relinkSegmentAudio(
-          segs,
-          clip.sourceAudioSegments,
-          active,
-          full,
-        );
-        segs = relinked.segments;
-        clip.sourceAudioSegments = relinked.detached;
-        selectedSourceIndex = null;
-      }
+      segs[active].muted = !segs[active].muted;
       if (typeof root.setClipSegments === "function")
         root.setClipSegments(clip, segs, active);
-      selectedTrackId = "source";
-      if (typeof root.paintTrimChrome === "function") root.paintTrimChrome();
-      render();
-      setPlanDirty(clip);
-    },
-    toggleFragmentMute: function () {
-      var clip = selectedVideo();
-      if (!clip || !root.SegmentEditing) return;
-      var full = sourceDuration(clip);
-      if (selectedSourceIndex != null && clip.sourceAudioSegments) {
-        var extras = clip.sourceAudioSegments.slice();
-        if (!extras[selectedSourceIndex]) return;
-        extras[selectedSourceIndex] = Object.assign({}, extras[selectedSourceIndex], {
-          muted: !extras[selectedSourceIndex].muted,
-        });
-        clip.sourceAudioSegments = extras;
-      } else {
-        var segs = root.SegmentEditing.segmentsForClip(clip, full);
-        var active = Number.isInteger(clip.activeSegment) ? clip.activeSegment : 0;
-        if (!segs[active]) return;
-        segs[active].muted = !segs[active].muted;
-        if (typeof root.setClipSegments === "function")
-          root.setClipSegments(clip, segs, active);
-      }
       if (typeof root.paintTrimChrome === "function") root.paintTrimChrome();
       render();
       setPlanDirty(clip);
     },
     selectTrack: function (trackId) {
       selectedTrackId = trackId || "source";
-      if (trackId !== "source") selectedSourceIndex = null;
       selectedClipId = null;
       paintMixer(selectedVideo());
     },
@@ -1369,39 +1048,10 @@
         setPlanDirty(clip);
       });
     },
-    toggleSelectedMute: function () {
-      var selected = findSelected();
-      if (!selected) return;
-      selected.clip.muted = !selected.clip.muted;
-      render();
-      setPlanDirty(selectedVideo());
-    },
     splitSelected: function () {
       var videoClip = selectedVideo();
       if (!videoClip) return;
       var at = sourceTime();
-      var full = sourceDuration(videoClip);
-      if (selectedSourceIndex != null || (!selectedClipId && audioSegments(videoClip).length)) {
-        var index =
-          selectedSourceIndex != null
-            ? selectedSourceIndex
-            : root.SegmentEditing.segmentIndexAtTime(audioSegments(videoClip), at, 0);
-        if (index < 0) {
-          root.toast("Move the playhead inside the source audio clip to split it.", "err");
-          return;
-        }
-        var splitAudio = root.SegmentEditing.splitAt(audioSegments(videoClip), at, full);
-        if (!splitAudio) {
-          root.toast("Move the playhead inside the source audio clip to split it.", "err");
-          return;
-        }
-        setAudioSegments(videoClip, splitAudio.segments);
-        selectedSourceIndex = splitAudio.index;
-        selectedClipId = null;
-        render();
-        setPlanDirty(videoClip);
-        return;
-      }
       var selected = findSelected(videoClip);
       if (!selected) return;
       var split = core.splitClip(selected.clip, at, nextId("audio"));
@@ -1417,42 +1067,10 @@
     deleteSelected: function () {
       var videoClip = selectedVideo();
       if (!videoClip) return;
-      if (selectedSourceIndex != null && Array.isArray(videoClip.sourceAudioSegments)) {
-        videoClip.sourceAudioSegments.splice(selectedSourceIndex, 1);
-        selectedSourceIndex = null;
-        render();
-        setPlanDirty(videoClip);
-        return;
-      }
       var selected = findSelected(videoClip);
       if (!selected) return;
       selected.track.clips.splice(selected.index, 1);
       selectedClipId = null;
-      render();
-      setPlanDirty(videoClip);
-    },
-    toggleSelectedLoop: function () {
-      var selected = findSelected();
-      if (!selected) return;
-      selected.clip.loop = !selected.clip.loop;
-      render();
-      setPlanDirty(selectedVideo());
-    },
-    setSelectedFadeIn: function (value) {
-      var videoClip = selectedVideo();
-      var selected = findSelected(videoClip);
-      if (!selected) return;
-      var fade = Math.max(0, Number(value) || 0);
-      selected.clip.fadeIn = Math.min(fade, selected.clip.timelineDuration - selected.clip.fadeOut);
-      render();
-      setPlanDirty(videoClip);
-    },
-    setSelectedFadeOut: function (value) {
-      var videoClip = selectedVideo();
-      var selected = findSelected(videoClip);
-      if (!selected) return;
-      var fade = Math.max(0, Number(value) || 0);
-      selected.clip.fadeOut = Math.min(fade, selected.clip.timelineDuration - selected.clip.fadeIn);
       render();
       setPlanDirty(videoClip);
     },
@@ -1478,12 +1096,6 @@
       video.currentTime = core.outputToSourceTime(segments, seconds);
       syncPreview();
     },
-    resetAudio: function (clip) {
-      if (!clip) return;
-      clip.sourceAudioSegments = null;
-      if (clip.audioTimeline) clip.audioTimeline.linked = true;
-      selectedSourceIndex = null;
-    },
   };
 
   root.AudioEditing = core;
@@ -1505,7 +1117,7 @@
   }
   root.document.addEventListener("keydown", function (event) {
     if (/^(INPUT|TEXTAREA|SELECT)$/.test(event.target && event.target.tagName)) return;
-    if (event.key === "Delete" && (selectedClipId || selectedSourceIndex != null)) {
+    if (event.key === "Delete" && selectedClipId) {
       event.preventDefault();
       apiObject.deleteSelected();
     }

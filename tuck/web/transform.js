@@ -270,8 +270,7 @@
       return;
     }
 
-    var toolbar = document.getElementById("transform-toolbar");
-    if (toolbar && !toolbar.open) {
+    if ((clip.cropAspect || "off") === "off") {
       ui.classList.remove("on");
       paintTransformPreview(clip, size);
       return;
@@ -326,7 +325,7 @@
     var reset = document.getElementById("btn-crop-reset");
     if (label) {
       var aspect =
-        clip.cropAspect && clip.cropAspect !== "free"
+        clip.cropAspect && clip.cropAspect !== "free" && clip.cropAspect !== "off"
           ? " · " + clip.cropAspect
           : "";
       var rotation = clip.rotation ? " · " + clip.rotation + "°" : "";
@@ -351,8 +350,8 @@
     }
     if (reset)
       reset.classList.toggle(
-        "show",
-        !!clip.crop || (clip.cropAspect || "free") !== "free",
+        "hid",
+        !(!!clip.crop || (clip.cropAspect || "off") !== "off"),
       );
   }
 
@@ -379,7 +378,7 @@
       point.y - drag.start.y,
       size.width,
       size.height,
-      clip.cropAspect || "free",
+      clip.cropAspect === "off" ? "free" : clip.cropAspect || "free",
       clip.rotation || 0,
     );
     clip.crop = root.TuckCropGeometry.isFullCrop(next, size.width, size.height)
@@ -461,7 +460,7 @@
     var clip = selectedClip();
     if (!clip) return;
     clip.crop = root.TuckCropGeometry.resetCrop();
-    clip.cropAspect = "free";
+    clip.cropAspect = "off";
     clip.transformOverride = true;
     clip.transformIntentTouched = true;
     clip.planData = null;
@@ -482,7 +481,7 @@
             height: clip.crop.height,
           }
         : null,
-      crop_aspect: clip.cropAspect || "free",
+      crop_aspect: clip.cropAspect === "off" ? "free" : clip.cropAspect || "free",
       rotation: clip.rotation || 0,
       flip_horizontal: !!clip.flipHorizontal,
       flip_vertical: !!clip.flipVertical,
@@ -498,7 +497,7 @@
     clip.cropAspect = aspect;
     clip.transformOverride = true;
     clip.transformIntentTouched = true;
-    if (aspect !== "free") {
+    if (aspect !== "free" && aspect !== "off") {
       var current = root.TuckCropGeometry.selectionCrop(
         clip.crop,
         size.width,
@@ -531,7 +530,8 @@
     if (!clip) return;
     clip.rotation = rotation;
     var size = sourceSize(clip);
-    if (size && (clip.cropAspect || "free") !== "free") {
+    var rotationAspect = clip.cropAspect || "off";
+    if (size && rotationAspect !== "free" && rotationAspect !== "off") {
       var current = root.TuckCropGeometry.selectionCrop(
         clip.crop,
         size.width,
@@ -595,7 +595,7 @@
       button.setAttribute("aria-pressed", String(active));
     }
 
-    var aspect = clip.cropAspect || "free";
+    var aspect = clip.cropAspect || "off";
     var aspectButtons = document.querySelectorAll("[data-aspect]");
     for (var a = 0; a < aspectButtons.length; a++) {
       setToggleState(aspectButtons[a], aspectButtons[a].dataset.aspect === aspect);
@@ -631,7 +631,7 @@
 
   function positionTransformTooltip(target, tooltip) {
     var targetRect = target.getBoundingClientRect();
-    var toolbar = target.closest ? target.closest("#transform-toolbar") : null;
+    var toolbar = target.closest ? target.closest(".transform-controls") : null;
     var toolbarRect = toolbar ? toolbar.getBoundingClientRect() : targetRect;
     tooltip.style.left = "0";
     tooltip.style.top = "0";
@@ -666,23 +666,38 @@
     }, 350);
   }
 
+  function tipTarget(event) {
+    return event.target && event.target.closest
+      ? event.target.closest("[data-tip]")
+      : null;
+  }
+
+  // Include clips added after page load
   function initTransformTooltips() {
     if (!document.createElement || !document.body) return;
     var tooltip = document.createElement("div");
     tooltip.id = "transform-tooltip";
     tooltip.setAttribute("role", "tooltip");
     document.body.appendChild(tooltip);
-    var targets = document.querySelectorAll("[data-tip]");
-    for (var i = 0; i < targets.length; i++) {
-      targets[i].addEventListener("mouseenter", function () {
-        showTransformTooltip(this);
-      });
-      targets[i].addEventListener("mouseleave", hideTransformTooltip);
-      targets[i].addEventListener("focus", function () {
-        showTransformTooltip(this);
-      });
-      targets[i].addEventListener("blur", hideTransformTooltip);
-    }
+    document.addEventListener("mouseover", function (event) {
+      var target = tipTarget(event);
+      if (!target || target === tooltipTarget) return;
+      showTransformTooltip(target);
+    });
+    document.addEventListener("mouseout", function (event) {
+      var target = tipTarget(event);
+      if (!target) return;
+      var related = event.relatedTarget;
+      if (related && target.contains(related)) return;
+      hideTransformTooltip();
+    });
+    document.addEventListener("focusin", function (event) {
+      var target = tipTarget(event);
+      if (target) showTransformTooltip(target);
+    });
+    document.addEventListener("focusout", function (event) {
+      if (tipTarget(event)) hideTransformTooltip();
+    });
     if (root.addEventListener) {
       root.addEventListener("resize", hideTransformTooltip);
       root.addEventListener("scroll", hideTransformTooltip, true);

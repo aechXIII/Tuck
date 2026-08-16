@@ -156,9 +156,6 @@ body.settings-open .settings-workspace {
   min-width: 110px;
   min-height: 34px;
 }
-.settings-actions .footer-primary {
-  width: 100%;
-}
 .settings-title {
   color: var(--accent-light);
   font-size: 13px;
@@ -188,11 +185,6 @@ body.settings-open .settings-workspace {
   border: 1px solid var(--border2);
   border-radius: var(--radius);
   color: var(--text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.profile-summary {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -244,13 +236,6 @@ body.settings-open .settings-workspace {
   background: var(--accent);
   color: #fff;
 }
-.status-card {
-  background: var(--card-bg);
-  border: 1px solid var(--border2);
-  border-radius: 8px;
-  padding: 12px;
-  margin-bottom: 10px;
-}
 .file-naming {
   background: transparent;
   border: 0;
@@ -288,7 +273,6 @@ body.settings-open .settings-workspace {
   padding: 6px 8px;
   width: 100%;
 }
-.file-naming-help,
 .file-naming-example {
   background: var(--input-bg);
   border: 1px solid var(--border2);
@@ -573,11 +557,6 @@ body.settings-open .settings-workspace {
     grid-column: 2;
     justify-content: flex-start;
   }
-}
-.status-card strong {
-  display: block;
-  color: #e8e8f0;
-  margin-bottom: 4px;
 }
 .status-good {
   color: #86efac;

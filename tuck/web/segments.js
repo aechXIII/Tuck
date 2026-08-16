@@ -18,18 +18,8 @@
       start: start != null ? start : item.start,
       end: end != null ? end : item.end,
     };
-    if (item && (item.grouped === false || item.audio === false)) out.grouped = false;
     if (item && item.muted) out.muted = true;
-    if (item && item.audioLink) out.audioLink = item.audioLink;
     return out;
-  }
-
-  function isGrouped(segment) {
-    return !segment || (segment.grouped !== false && segment.audio !== false);
-  }
-
-  function hasAudio(segment) {
-    return isGrouped(segment);
   }
 
   function fullSegment(duration) {
@@ -202,78 +192,9 @@
     var pieces = [];
     var segs = segmentsForClip(clip, duration);
     for (var i = 0; i < segs.length; i++) {
-      if (isGrouped(segs[i]) && !segs[i].muted)
-        pieces.push({ start: segs[i].start, end: segs[i].end });
+      if (!segs[i].muted) pieces.push({ start: segs[i].start, end: segs[i].end });
     }
-    if (clip && Array.isArray(clip.sourceAudioSegments)) {
-      for (var d = 0; d < clip.sourceAudioSegments.length; d++) {
-        var extra = clip.sourceAudioSegments[d];
-        if (!extra || extra.muted) continue;
-        var start = Number(extra.start);
-        var end = Number(extra.end);
-        if (Number.isFinite(start) && Number.isFinite(end) && end - start >= MIN_DURATION)
-          pieces.push({ start: start, end: end });
-      }
-    }
-    pieces.sort(function (a, b) {
-      return a.start - b.start;
-    });
     return pieces;
-  }
-
-  function unlinkSegmentAudio(segments, detached, index, duration) {
-    var segs = setSegmentAudio(segments, index, false, duration);
-    var link = segs[index].audioLink || "al-" + Math.random().toString(36).slice(2, 9);
-    segs[index].audioLink = link;
-    var extras = (detached || []).map(function (item) {
-      return copySegment(item);
-    });
-    extras.push({
-      start: segs[index].start,
-      end: segs[index].end,
-      muted: !!segs[index].muted,
-      audioLink: link,
-    });
-    return { segments: segs, detached: extras };
-  }
-
-  function relinkSegmentAudio(segments, detached, index, duration) {
-    var segs = normalizeSegments(segments, duration);
-    if (index < 0 || index >= segs.length) throw new Error("invalid active segment");
-    var extras = (detached || []).map(function (item) {
-      return copySegment(item);
-    });
-    var match = -1;
-    var link = segs[index].audioLink;
-    if (link) {
-      for (var i = 0; i < extras.length; i++) {
-        if (extras[i] && extras[i].audioLink === link) {
-          match = i;
-          break;
-        }
-      }
-    }
-    var muted = !!segs[index].muted;
-    if (match >= 0) {
-      muted = muted || !!extras[match].muted;
-      extras.splice(match, 1);
-    }
-    segs = setSegmentAudio(segs, index, true, duration);
-    if (link) segs[index].audioLink = link;
-    if (muted) segs[index].muted = true;
-    return { segments: segs, detached: extras };
-  }
-
-  function setSegmentAudio(segments, index, enabled, duration) {
-    var result = normalizeSegments(segments, duration);
-    if (index < 0 || index >= result.length) throw new Error("invalid active segment");
-    if (enabled) {
-      delete result[index].audio;
-      delete result[index].grouped;
-    } else {
-      result[index].grouped = false;
-    }
-    return result;
   }
 
   function segmentIndexAtTime(segments, time, tolerance) {
@@ -310,11 +231,6 @@
     removeSegment: removeSegment,
     splitAt: splitAt,
     audioSegmentsForClip: audioSegmentsForClip,
-    hasAudio: hasAudio,
-    isGrouped: isGrouped,
-    setSegmentAudio: setSegmentAudio,
-    unlinkSegmentAudio: unlinkSegmentAudio,
-    relinkSegmentAudio: relinkSegmentAudio,
     cloneSegments: cloneSegments,
     segmentIndexAtTime: segmentIndexAtTime,
     playbackTarget: playbackTarget,

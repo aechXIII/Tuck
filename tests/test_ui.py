@@ -89,7 +89,7 @@ def test_web_ui_contains_visual_crop_overlay_and_request_state() -> None:
     assert html.count('class="crop-handle" data-handle=') == 8
     assert '.crop-handle[data-handle="nw"] {' in styles
     assert '.crop-handle[data-handle="se"] {' in styles
-    assert 'class="segment-quick-actions"' in html
+    assert 'aria-label="Segment actions"' in html
     assert 'id="btn-segments-reset"' in html
     assert 'id="segment-menu"' not in html
     assert 'id="crop-edit-group"' in html
@@ -107,13 +107,12 @@ def test_web_ui_contains_complete_transform_controls() -> None:
     assert 'data-sizing="fit"' in html
     assert 'data-sizing="fill"' in html
     assert 'data-sizing="stretch"' in html
-    assert '<details id="transform-toolbar"' in html
-    assert "<summary>Transform</summary>" in html
-    assert 'class="transform-controls"' in html
+    assert 'id="transform-fields"' in html
+    assert 'aria-label="Video transform controls"' in html
+    assert 'class="transform-controls seq-toolbar"' in html
     assert 'role="toolbar"' in html
-    assert '<details id="transform-toolbar" open' not in html
     assert 'id="media-viewport"' in html
-    assert html.index('id="transform-toolbar"') < html.index('id="timeline"')
+    assert html.index('id="transform-fields"') < html.index('id="timeline"')
     assert 'data-rotation="90"' in html
     assert 'data-rotation="270"' in html
     assert 'id="flip-horizontal"' in html

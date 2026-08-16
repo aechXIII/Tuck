@@ -78,11 +78,6 @@ function activeSegmentIndex(c, segments) {
   return Math.max(0, Math.min(segments.length - 1, index));
 }
 
-function clipTrimBounds(c, fullDur) {
-  var segments = clipSegments(c, fullDur);
-  return segments[activeSegmentIndex(c, segments)] || { start: 0, end: fullDur };
-}
-
 function clipHasTrim(c, fullDur) {
   var segments = clipSegments(c, fullDur);
   return !SegmentEditing.isFullSource(segments, fullDur);
@@ -91,9 +86,7 @@ function clipHasTrim(c, fullDur) {
 function setClipSegments(c, segments, active) {
   c.segments = segments.map(function (segment) {
     var item = { start: segment.start, end: segment.end };
-    if (segment.grouped === false || segment.audio === false) item.grouped = false;
     if (segment.muted) item.muted = true;
-    if (segment.audioLink) item.audioLink = segment.audioLink;
     return item;
   });
   c.activeSegment = Math.max(0, Math.min(c.segments.length - 1, active || 0));
@@ -179,9 +172,11 @@ function paintTrimChrome() {
       var edgeIn = document.createElement("span");
       edgeIn.className = "clip-edge start";
       edgeIn.dataset.edge = "start";
+      edgeIn.dataset.tip = "Drag to trim segment start";
       var edgeOut = document.createElement("span");
       edgeOut.className = "clip-edge end";
       edgeOut.dataset.edge = "end";
+      edgeOut.dataset.tip = "Drag to trim segment end";
       range.append(edgeIn, edgeOut);
     }
     range.title =
@@ -214,24 +209,11 @@ function paintTrimChrome() {
   var canAdd = SegmentEditing.canAddSegment(segments, full || 1);
   var addButton = byId("btn-segment-add");
   addButton.setAttribute("aria-disabled", canAdd ? "false" : "true");
-  addButton.title = canAdd
-    ? "Add a kept range in a gap near the playhead"
-    : "Shorten a segment to create a gap first";
-  var groupButton = byId("btn-seq-link");
-  if (groupButton) {
-    var grouped = SegmentEditing.hasAudio(segments[active]);
-    groupButton.classList.toggle("on", grouped);
-    groupButton.setAttribute("aria-pressed", grouped ? "true" : "false");
-    groupButton.title = grouped
-      ? "Ungroup audio from this segment"
-      : "Group audio with this segment";
-    groupButton.setAttribute(
-      "aria-label",
-      grouped ? "Ungroup this segment" : "Group this segment",
-    );
-  }
+  addButton.dataset.tip = canAdd ? "New segment" : "Shorten a segment first";
   if (window.AudioTimeline && AudioTimeline.paintSource)
     AudioTimeline.paintSource();
+  if (window.AudioTimeline && AudioTimeline.paintMixer)
+    AudioTimeline.paintMixer();
   return { full: full, bounds: bounds, has: has, segments: segments, active: active };
 }
 
@@ -298,9 +280,24 @@ function setPlayheadUI(sec, full) {
     byId("timeline").setAttribute("aria-valuenow", String(Math.round(sec)));
   }
   byId("ptime").textContent = fmtt(sec) + " / " + fmtt(full || 0);
-  var clock = byId("audio-output-time");
-  if (clock) clock.textContent = fmtt(sec) + " / " + fmtt(full || 0);
+  paintStageScrub(pct);
   _previewSec = sec;
+}
+
+function paintStageScrub(pct) {
+  var scrub = byId("stage-scrub");
+  if (!scrub) return;
+  if (document.activeElement !== scrub) scrub.value = String(Math.round(pct * 10));
+  scrub.style.background =
+    "linear-gradient(to right, var(--accent-light) " +
+    pct +
+    "%, rgba(255,255,255,0.22) " +
+    pct +
+    "%)";
+}
+
+function onStageScrub(value) {
+  seekToRatio(Number(value) / 1000);
 }
 
 function splitAtPlayhead() {
@@ -319,7 +316,6 @@ function splitAtPlayhead() {
     return;
   }
   setClipSegments(c, result.segments, result.index);
-  if (window.AudioTimeline) AudioTimeline.onVideoSplit(time);
   paintTrimChrome();
   seekPreview(time);
   renderClips();
@@ -466,16 +462,11 @@ function resetSegments() {
   var full = videoDuration() || (c.probeData && c.probeData.duration) || 0;
   if (full <= 0) return;
   setClipSegments(c, SegmentEditing.fullSegment(full), 0);
-  if (window.AudioTimeline) AudioTimeline.resetAudio(c);
   paintTrimChrome();
   seekPreview(0);
   renderClips();
   reqPreview();
   if (window.AudioTimeline) AudioTimeline.render();
-}
-
-function clearTrim() {
-  resetSegments();
 }
 
 function selectSegment(index, shouldSeek) {

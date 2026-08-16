@@ -11,31 +11,18 @@
   opacity: 0.4;
   pointer-events: none;
 }
-#timeline-row {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  width: 100%;
-  min-height: 22px;
-}
-#audio-output-time.hid,
-#audio-selection-actions.hid {
-  display: none;
-}
-#audio-selection-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-#audio-mixer {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-left: auto;
-  min-width: 0;
+#timeline-row.seq-toolbar {
+  justify-content: flex-start;
+  border-bottom: 1px solid var(--border);
+  padding: 2px 0 8px;
 }
 #audio-mixer[hidden] {
   display: none;
+}
+.transform-inline-label {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
 }
 #audio-mixer-name {
   color: var(--segment-color, var(--muted));
@@ -49,7 +36,7 @@
 #audio-mixer-gain {
   -webkit-appearance: none;
   appearance: none;
-  width: 88px;
+  width: 78px;
   height: 4px;
   border-radius: 999px;
   background: #2a2a38;
@@ -72,16 +59,17 @@
   font: 10px var(--mono);
   min-width: 3.4em;
 }
+#audio-fragment-mute {
+  min-width: 58px;
+  justify-content: center;
+}
 @media (max-width: 900px) {
   #audio-mixer-db {
     display: none;
   }
   #audio-mixer-gain {
-    width: 64px;
+    width: 56px;
   }
-}
-#audio-master-toggle {
-  margin-left: 4px;
 }
 #audio-master-toggle:not(.on) {
   color: #fca5a5;
@@ -89,46 +77,17 @@
 .audio-speaker {
   margin-right: 3px;
 }
-.seq-icon-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  min-height: 22px;
-  padding: 0 6px;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  background: transparent;
-  color: #8e8a9d;
-  font: 600 10px var(--font);
-  white-space: nowrap;
-  cursor: pointer;
-}
-.seq-icon-btn svg {
-  width: 12px;
-  height: 12px;
-  fill: currentColor;
-}
-.seq-icon-btn:hover {
-  border-color: var(--border2);
-  background: #171620;
-  color: var(--accent-light);
-}
-.seq-icon-btn:focus-visible,
-.audio-mute-button:focus-visible,
 .seq-audio-clip:focus-visible {
   outline: 2px solid var(--accent-light);
   outline-offset: 1px;
-}
-.seq-icon-btn.on {
-  color: var(--accent-light);
 }
 #sequence-frame {
   position: relative;
 }
 .seq-row {
   display: grid;
-  grid-template-columns: 24px minmax(0, 1fr);
+  grid-template-columns: 28px minmax(0, 1fr);
+  column-gap: 8px;
   align-items: center;
 }
 .seq-head {
@@ -139,32 +98,51 @@
   color: var(--muted);
 }
 .seq-track-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
   border: 0;
-  background: transparent;
-  color: var(--muted);
-  font: 600 10px var(--font);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--segment-color, var(--accent)) 30%, #1a1a24);
+  color: color-mix(in srgb, var(--segment-color, var(--accent-light)) 70%, white 30%);
+  font: 700 9px var(--font);
   cursor: default;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    opacity 0.15s ease;
+}
+.seq-track-index .ti-icon {
+  width: 11px;
+  height: 11px;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
 }
 button.seq-track-index {
   cursor: pointer;
 }
 button.seq-track-index:hover,
 button.seq-track-index.on {
-  color: var(--segment-color, var(--accent-light));
-  transition: color 0.15s ease;
+  background: var(--segment-color, var(--accent-light));
+  color: #fff;
 }
-.seq-audio-clip.detached {
-  opacity: 0.7;
+.seq-track-index.muted {
+  opacity: 0.4;
 }
-.seq-track-name,
-.audio-gain-control,
-.seq-corner,
-#seq-output-duration {
-  display: none;
+button.seq-track-index.muted:hover {
+  opacity: 0.75;
 }
-.audio-mute-button,
-.audio-remove-track {
-  display: none;
+.seq-row.video .seq-track-index {
+  --segment-color: var(--accent);
+}
+#source-audio-track .seq-track-index {
+  --segment-color: var(--accent-light);
 }
 #imported-audio-tracks:has(.seq-row) {
   margin-top: 5px;
@@ -186,10 +164,10 @@ button.seq-track-index.on {
 }
 .seq-row.audio .seq-lane,
 .seq-row.audio .seq-head {
-  height: 18px;
+  height: 22px;
 }
-.seq-row.audio + .seq-row.audio {
-  margin-top: 2px;
+.seq-row + .seq-row {
+  margin-top: 3px;
 }
 .audio-lane {
   background: transparent;
@@ -207,7 +185,7 @@ button.seq-track-index.on {
 }
 #seq-selection-layer {
   position: absolute;
-  inset: 0 0 0 24px;
+  inset: 0 0 0 36px;
   pointer-events: none;
   z-index: 5;
 }
@@ -278,7 +256,7 @@ button.seq-track-index.on {
 }
 #seq-playhead-layer {
   position: absolute;
-  inset: 0 0 0 24px;
+  inset: 0 0 0 36px;
   pointer-events: none;
   z-index: 8;
 }
@@ -296,14 +274,16 @@ button.seq-track-index.on {
 .seq-audio-clip,
 .audio-clip {
   position: absolute;
-  top: 5px;
-  bottom: 5px;
+  top: 50%;
+  height: 6px;
+  margin-top: -3px;
   z-index: 1;
   overflow: hidden;
   min-width: 2px;
   border: 0;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--segment-color, var(--accent)) 70%, #2a2a38);
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.12), transparent 60%);
+  background-color: color-mix(in srgb, var(--segment-color, var(--accent)) 70%, #2a2a38);
   opacity: 0.82;
   color: #c8c5d4;
   cursor: grab;
@@ -337,7 +317,10 @@ button.seq-track-index.on {
     color-mix(in srgb, var(--segment-color, var(--accent)) 35%, #2a2a38);
   box-shadow: none;
 }
-.seq-icon-btn.danger:hover {
+.transform-segment button.danger {
+  color: #d18a8a;
+}
+.transform-segment button.danger:hover {
   color: #fca5a5;
 }
 .audio-waveform {
@@ -348,10 +331,6 @@ button.seq-track-index.on {
   background-size: auto 100%;
   opacity: 0.45;
   pointer-events: none;
-}
-.audio-clip-label,
-.seq-clip-label {
-  display: none;
 }
 .seq-audio-clip .clip-edge,
 .audio-clip .clip-edge {
@@ -372,30 +351,10 @@ button.seq-track-index.on {
   right: 0;
   background: linear-gradient(to left, rgba(10, 10, 16, 0.75), transparent);
 }
-.audio-fade-field {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  color: var(--muted);
-  font: 600 10px var(--font);
-}
-.audio-fade-field input {
-  width: 40px;
-  padding: 2px 4px;
-  border: 1px solid var(--border2);
-  border-radius: 4px;
-  background: var(--input-bg);
-  color: var(--text);
-  font: 11px var(--mono);
-}
-.audio-fade-field input:focus-visible {
-  outline: 2px solid var(--accent-light);
-  outline-offset: 1px;
-}
 #sequence-ruler {
   position: relative;
   height: 14px;
-  margin: 0 0 2px 24px;
+  margin: 0 0 2px 36px;
   border-bottom: 1px solid var(--border2);
   cursor: pointer;
 }
@@ -418,14 +377,4 @@ button.seq-track-index.on {
   color: var(--muted);
   white-space: nowrap;
   user-select: none;
-}
-.audio-tool {
-  min-height: 22px;
-  padding: 0 7px;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  background: transparent;
-  color: #8e8a9d;
-  font: 600 10px var(--font);
-  cursor: pointer;
 }
