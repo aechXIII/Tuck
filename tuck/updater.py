@@ -107,6 +107,38 @@ class UpdateChecker:
             raise OSError(f"Failed to launch installer: {e}") from e
         return self._downloaded_path
 
+    def _write_download_chunks(self, resp, f, hasher) -> None:
+        while True:
+            if self._cancelled:
+                return
+            chunk = resp.read(8192)
+            if not chunk:
+                return
+            f.write(chunk)
+            hasher.update(chunk)
+            self._downloaded_size += len(chunk)
+
+    def _finalize_download(self, tmp_path: Path, hasher) -> None:
+        actual_hash = hasher.hexdigest().lower()
+        if actual_hash != self._expected_sha256:
+            self._error = (
+                f"Checksum mismatch.\n"
+                f"Expected: {self._expected_sha256[:16]}...\n"
+                f"Got:      {actual_hash[:16]}..."
+            )
+            tmp_path.unlink(missing_ok=True)
+            logger.error("Checksum mismatch for %s", self._url)
+            return
+
+        cache_dir = Path(tempfile.gettempdir()) / "Tuck" / "updates"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        final_name = f"Tuck-Setup-{self._expected_sha256[:8]}.exe"
+        final_path = cache_dir / final_name
+        shutil.move(str(tmp_path), str(final_path))
+        self._downloaded_path = final_path
+        self._done = True
+        logger.info("Update downloaded and verified: %s", final_path)
+
     def _download(self) -> None:
 
         tmp_path: Path | None = None
@@ -118,43 +150,14 @@ class UpdateChecker:
             with urlopen(req, timeout=DOWNLOAD_TIMEOUT) as resp:
                 self._total_size = int(resp.headers.get("Content-Length", 0))
                 hasher = hashlib.sha256()
-
                 with open(tmp_path, "wb") as f:
-                    while True:
-                        if self._cancelled:
-                            break
-                        chunk = resp.read(8192)
-                        if not chunk:
-                            break
-                        f.write(chunk)
-                        hasher.update(chunk)
-                        self._downloaded_size += len(chunk)
+                    self._write_download_chunks(resp, f, hasher)
 
             if self._cancelled:
-                if tmp_path:
-                    tmp_path.unlink(missing_ok=True)
+                tmp_path.unlink(missing_ok=True)
                 return
 
-            actual_hash = hasher.hexdigest().lower()
-            if actual_hash != self._expected_sha256:
-                self._error = (
-                    f"Checksum mismatch.\n"
-                    f"Expected: {self._expected_sha256[:16]}...\n"
-                    f"Got:      {actual_hash[:16]}..."
-                )
-                if tmp_path:
-                    tmp_path.unlink(missing_ok=True)
-                logger.error("Checksum mismatch for %s", self._url)
-                return
-
-            cache_dir = Path(tempfile.gettempdir()) / "Tuck" / "updates"
-            cache_dir.mkdir(parents=True, exist_ok=True)
-            final_name = f"Tuck-Setup-{self._expected_sha256[:8]}.exe"
-            final_path = cache_dir / final_name
-            shutil.move(str(tmp_path), str(final_path))
-            self._downloaded_path = final_path
-            self._done = True
-            logger.info("Update downloaded and verified: %s", final_path)
+            self._finalize_download(tmp_path, hasher)
 
         except Exception as e:
             self._error = str(e)
@@ -162,6 +165,82 @@ class UpdateChecker:
             if tmp_path and tmp_path.exists():
                 with contextlib.suppress(Exception):
                     tmp_path.unlink(missing_ok=True)
+
+
+def _parse_release_version(release: dict, current: Version) -> Version | None:
+    if release.get("draft") or release.get("prerelease"):
+        return None
+    tag = release.get("tag_name", "").lstrip("v")
+    try:
+        release_ver = Version(tag)
+    except Exception:
+        return None
+    if release_ver <= current:
+        return None
+    return release_ver
+
+
+def _find_release_assets(assets: list) -> tuple[dict | None, dict | None]:
+    installer_asset = None
+    checksum_asset = None
+    for asset in assets:
+        name = asset.get("name", "")
+        if name.endswith(".exe") and "x64" in name:
+            installer_asset = asset
+        elif name.endswith(".sha256"):
+            checksum_asset = asset
+    return installer_asset, checksum_asset
+
+
+def _extract_checksum(cs_data: str) -> str:
+    parts = cs_data.split()
+    if not parts:
+        return ""
+    candidate = parts[0].strip().lower()
+    if _SHA256_RE.match(candidate):
+        return candidate
+    for part in parts:
+        clean = part.strip().lower()
+        if _SHA256_RE.match(clean):
+            return clean
+    return ""
+
+
+def _fetch_release_checksum(checksum_asset: dict | None) -> str:
+    if not checksum_asset:
+        return ""
+    checksum_url = checksum_asset.get("browser_download_url", "")
+    try:
+        cs_req = Request(checksum_url, headers={"User-Agent": "Tuck-Updater/1.0"})
+        with urlopen(cs_req, timeout=REQUEST_TIMEOUT) as cs_resp:
+            cs_data = cs_resp.read().decode().strip()
+        return _extract_checksum(cs_data)
+    except Exception:
+        logger.debug("Could not fetch checksum from %s", checksum_url, exc_info=True)
+        return ""
+
+
+def _build_update_info(release: dict, release_ver: Version) -> UpdateInfo | None:
+    installer_asset, checksum_asset = _find_release_assets(release.get("assets", []))
+    if not installer_asset:
+        return None
+
+    download_url = installer_asset.get("browser_download_url", "")
+    file_size = installer_asset.get("size", 0)
+    notes = _sanitize_notes(release.get("body", "") or "")
+
+    checksum = _fetch_release_checksum(checksum_asset)
+    if not checksum or not _SHA256_RE.match(checksum):
+        logger.warning("No valid SHA-256 checksum for release %s", release.get("tag_name", ""))
+        return None
+
+    return UpdateInfo(
+        version=release_ver,
+        notes=notes,
+        download_url=download_url,
+        file_size=file_size,
+        checksum=checksum,
+    )
 
 
 def check_for_updates(
@@ -187,71 +266,13 @@ def check_for_updates(
             return None
 
         for release in releases:
-            if release.get("draft") or release.get("prerelease"):
+            release_ver = _parse_release_version(release, current)
+            if release_ver is None:
                 continue
 
-            tag = release.get("tag_name", "").lstrip("v")
-            try:
-                release_ver = Version(tag)
-            except Exception:
-                continue
-
-            if release_ver <= current:
-                continue
-
-            assets = release.get("assets", [])
-            installer_asset = None
-            checksum_asset = None
-
-            for asset in assets:
-                name = asset.get("name", "")
-                if name.endswith(".exe") and "x64" in name:
-                    installer_asset = asset
-                elif name.endswith(".sha256"):
-                    checksum_asset = asset
-
-            if not installer_asset:
-                continue
-
-            download_url = installer_asset.get("browser_download_url", "")
-            file_size = installer_asset.get("size", 0)
-            notes = release.get("body", "") or ""
-
-            notes = _sanitize_notes(notes)
-
-            checksum = ""
-            if checksum_asset:
-                checksum_url = checksum_asset.get("browser_download_url", "")
-                try:
-                    cs_req = Request(checksum_url, headers={"User-Agent": "Tuck-Updater/1.0"})
-                    with urlopen(cs_req, timeout=REQUEST_TIMEOUT) as cs_resp:
-                        cs_data = cs_resp.read().decode().strip()
-
-                        parts = cs_data.split()
-                        if parts:
-                            candidate = parts[0].strip().lower()
-                            if _SHA256_RE.match(candidate):
-                                checksum = candidate
-                            else:
-                                for part in parts:
-                                    clean = part.strip().lower()
-                                    if _SHA256_RE.match(clean):
-                                        checksum = clean
-                                        break
-                except Exception:
-                    pass
-
-            if not checksum or not _SHA256_RE.match(checksum):
-                logger.warning("No valid SHA-256 checksum for release %s", tag)
-                continue
-
-            return UpdateInfo(
-                version=release_ver,
-                notes=notes,
-                download_url=download_url,
-                file_size=file_size,
-                checksum=checksum,
-            )
+            info = _build_update_info(release, release_ver)
+            if info is not None:
+                return info
 
         return None
 

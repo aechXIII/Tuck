@@ -9,6 +9,7 @@ import re
 import secrets
 import subprocess
 import threading
+from functools import lru_cache
 from pathlib import Path
 from socketserver import ThreadingTCPServer
 
@@ -52,6 +53,39 @@ _WAVEFORM_WIDTH = 1600
 _WAVEFORM_HEIGHT = 96
 _WAVEFORM_TIMEOUT = 60
 _TOKEN_BYTES = 32  # bytes for each token
+
+
+def _compute_byte_range(range_header: str, file_size: int, multiple: bool) -> tuple[int, int] | str:
+    if multiple:
+        return "Multiple Range headers not supported"
+
+    m = re.fullmatch(r"bytes=(\d*)-(\d*)", range_header.strip())
+    if not m:
+        return "Invalid Range header"
+
+    start_str, end_str = m.group(1), m.group(2)
+    if start_str == "" and end_str == "":
+        return "Invalid Range header"
+
+    if file_size == 0:
+        return "Empty file"
+
+    if start_str == "":
+        suffix = int(end_str)
+        if suffix <= 0:
+            return "Invalid suffix range"
+        start = max(0, file_size - suffix)
+        end = file_size - 1
+    else:
+        start = int(start_str)
+        end = int(end_str) if end_str else file_size - 1
+
+    if end < start:
+        return "Range end must be >= start"
+    if start >= file_size:
+        return "Range not satisfiable"
+
+    return start, min(end, file_size - 1)
 
 
 class _TokenRequestHandler(http.server.BaseHTTPRequestHandler):
@@ -147,45 +181,12 @@ class _TokenRequestHandler(http.server.BaseHTTPRequestHandler):
     ) -> None:
 
         all_range_values = self.headers.get_all("Range")
-        if all_range_values is not None and len(all_range_values) > 1:
-            self._send_error(416, "Multiple Range headers not supported", file_size)
+        multiple = all_range_values is not None and len(all_range_values) > 1
+        parsed = _compute_byte_range(range_header, file_size, multiple)
+        if isinstance(parsed, str):
+            self._send_error(416, parsed, file_size)
             return
-
-        m = re.fullmatch(r"bytes=(\d*)-(\d*)", range_header.strip())
-        if not m:
-            self._send_error(416, "Invalid Range header", file_size)
-            return
-
-        start_str, end_str = m.group(1), m.group(2)
-
-        if start_str == "" and end_str == "":
-            self._send_error(416, "Invalid Range header", file_size)
-            return
-
-        if file_size == 0:
-            self._send_error(416, "Empty file", file_size)
-            return
-
-        if start_str == "":
-            suffix = int(end_str)
-            if suffix <= 0:
-                self._send_error(416, "Invalid suffix range", file_size)
-                return
-            start = max(0, file_size - suffix)
-            end = file_size - 1
-        else:
-            start = int(start_str)
-            end = int(end_str) if end_str else file_size - 1
-
-        if end < start:
-            self._send_error(416, "Range end must be >= start", file_size)
-            return
-
-        if start >= file_size:
-            self._send_error(416, "Range not satisfiable", file_size)
-            return
-
-        end = min(end, file_size - 1)
+        start, end = parsed
 
         content_length = end - start + 1
         try:
@@ -237,6 +238,87 @@ class _TokenRequestHandler(http.server.BaseHTTPRequestHandler):
             logger.debug("MediaServer client disconnected: %s", msg)
             return
         logger.warning("MediaServer: %s", msg)
+
+
+def _cached_file_or_none(path: Path) -> str | None:
+    if path.exists() and path.stat().st_size > 0:
+        return str(path)
+    return None
+
+
+def _thumbnail_seek_time(file_path: Path) -> str:
+    candidate = _find_ffprobe()
+    if not candidate:
+        return "1"
+    try:
+        cmd_probe = [
+            candidate,
+            "-v",
+            "quiet",
+            "-print_format",
+            "json",
+            "-show_format",
+            str(file_path),
+        ]
+        result = subprocess.run(
+            cmd_probe,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+        )
+        if result.returncode != 0:
+            return "1"
+        import json
+
+        data = json.loads(result.stdout)
+        dur = float(data.get("format", {}).get("duration", 0))
+        if dur > 0:
+            return str(dur * _THUMBNAIL_SEEK)
+    except Exception:
+        logger.debug(
+            "Could not determine thumbnail seek time for %s", file_path.name, exc_info=True
+        )
+    return "1"
+
+
+def _run_thumbnail_ffmpeg(
+    ffmpeg: str, file_path: Path, duration_str: str, thumb_path: Path, timeout: float
+) -> None:
+    vf_filter = (
+        f"scale='min({_MAX_THUMBNAIL_DIM},iw)':"
+        f"'min({_MAX_THUMBNAIL_DIM},ih)':"
+        f"force_original_aspect_ratio=decrease"
+    )
+    cmd = [
+        ffmpeg,
+        "-y",
+        "-ss",
+        duration_str,
+        "-i",
+        str(file_path),
+        "-vframes",
+        "1",
+        "-vf",
+        vf_filter,
+        "-f",
+        "image2",
+        str(thumb_path),
+    ]
+    result = subprocess.run(
+        cmd,
+        capture_output=True,
+        timeout=timeout,
+        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+    )
+    if result.returncode != 0:
+        stderr_tail = result.stderr.strip()[-500:] if result.stderr else ""
+        logger.warning(
+            "Thumbnail ffmpeg failed for %s (rc=%d): %s",
+            file_path.name,
+            result.returncode,
+            stderr_tail,
+        )
 
 
 class MediaServer:
@@ -308,7 +390,7 @@ class MediaServer:
                 self._server.shutdown()
                 self._server.server_close()
             except Exception:
-                pass
+                logger.debug("Error shutting down media server", exc_info=True)
             self._server = None
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=2)
@@ -337,8 +419,9 @@ class MediaServer:
         ).hexdigest()[:32]
         thumb_path = self._thumb_dir / f"thumb_{cache_key}.jpg"
 
-        if thumb_path.exists() and thumb_path.stat().st_size > 0:
-            return str(thumb_path)
+        cached = _cached_file_or_none(thumb_path)
+        if cached:
+            return cached
 
         from .engine import _find_ffmpeg
 
@@ -348,74 +431,9 @@ class MediaServer:
             return None
 
         try:
-            candidate = _find_ffprobe()
-            duration_str = "1"
-            if candidate:
-                try:
-                    cmd_probe = [
-                        candidate,
-                        "-v",
-                        "quiet",
-                        "-print_format",
-                        "json",
-                        "-show_format",
-                        str(file_path),
-                    ]
-                    result = subprocess.run(
-                        cmd_probe,
-                        capture_output=True,
-                        text=True,
-                        timeout=10,
-                        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
-                    )
-                    if result.returncode == 0:
-                        import json
-
-                        data = json.loads(result.stdout)
-                        dur = float(data.get("format", {}).get("duration", 0))
-                        if dur > 0:
-                            duration_str = str(dur * _THUMBNAIL_SEEK)
-                except Exception:
-                    pass
-
-            vf_filter = (
-                f"scale='min({_MAX_THUMBNAIL_DIM},iw)':"
-                f"'min({_MAX_THUMBNAIL_DIM},ih)':"
-                f"force_original_aspect_ratio=decrease"
-            )
-            cmd = [
-                ffmpeg,
-                "-y",
-                "-ss",
-                duration_str,
-                "-i",
-                str(file_path),
-                "-vframes",
-                "1",
-                "-vf",
-                vf_filter,
-                "-f",
-                "image2",
-                str(thumb_path),
-            ]
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                timeout=timeout,
-                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
-            )
-            if result.returncode != 0:
-                stderr_tail = result.stderr.strip()[-500:] if result.stderr else ""
-                logger.warning(
-                    "Thumbnail ffmpeg failed for %s (rc=%d): %s",
-                    file_path.name,
-                    result.returncode,
-                    stderr_tail,
-                )
-
-            if thumb_path.exists() and thumb_path.stat().st_size > 0:
-                return str(thumb_path)
-            return None
+            duration_str = _thumbnail_seek_time(file_path)
+            _run_thumbnail_ffmpeg(ffmpeg, file_path, duration_str, thumb_path, timeout)
+            return _cached_file_or_none(thumb_path)
         except Exception as e:
             logger.warning("Thumbnail generation failed for %s: %s", file_path.name, e)
             return None
@@ -432,8 +450,9 @@ class MediaServer:
             f"waveform:{file_path}:{stat.st_size}:{stat.st_mtime_ns}".encode()
         ).hexdigest()[:32]
         waveform_path = self._thumb_dir / f"waveform_{cache_key}.png"
-        if waveform_path.exists() and waveform_path.stat().st_size > 0:
-            return str(waveform_path)
+        cached = _cached_file_or_none(waveform_path)
+        if cached:
+            return cached
 
         from .engine import _find_ffmpeg
 
@@ -442,53 +461,53 @@ class MediaServer:
             logger.warning("Cannot generate waveform: ffmpeg not found")
             return None
 
-        command = [
-            ffmpeg,
-            "-y",
-            "-v",
-            "error",
-            "-i",
-            str(file_path),
-            "-filter_complex",
-            (
-                "aformat=channel_layouts=mono,"
-                f"showwavespic=s={_WAVEFORM_WIDTH}x{_WAVEFORM_HEIGHT}:colors=0xa78bfa"
-            ),
-            "-frames:v",
-            "1",
-            str(waveform_path),
-        ]
         try:
-            result = subprocess.run(
-                command,
-                capture_output=True,
-                timeout=timeout,
-                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
-            )
-            if result.returncode != 0:
-                stderr_tail = result.stderr.decode(errors="replace")[-500:]
-                logger.warning(
-                    "Waveform ffmpeg failed for %s (rc=%d): %s",
-                    file_path.name,
-                    result.returncode,
-                    stderr_tail,
-                )
+            if not _run_waveform_ffmpeg(ffmpeg, file_path, waveform_path, timeout):
                 return None
-            if waveform_path.exists() and waveform_path.stat().st_size > 0:
-                return str(waveform_path)
+            return _cached_file_or_none(waveform_path)
         except (OSError, subprocess.TimeoutExpired) as exc:
             logger.warning("Waveform generation failed for %s: %s", file_path.name, exc)
         return None
 
 
-_media_server: MediaServer | None = None
+def _run_waveform_ffmpeg(ffmpeg: str, file_path: Path, waveform_path: Path, timeout: float) -> bool:
+    command = [
+        ffmpeg,
+        "-y",
+        "-v",
+        "error",
+        "-i",
+        str(file_path),
+        "-filter_complex",
+        (
+            "aformat=channel_layouts=mono,"
+            f"showwavespic=s={_WAVEFORM_WIDTH}x{_WAVEFORM_HEIGHT}:colors=0xa78bfa"
+        ),
+        "-frames:v",
+        "1",
+        str(waveform_path),
+    ]
+    result = subprocess.run(
+        command,
+        capture_output=True,
+        timeout=timeout,
+        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+    )
+    if result.returncode != 0:
+        stderr_tail = result.stderr.decode(errors="replace")[-500:]
+        logger.warning(
+            "Waveform ffmpeg failed for %s (rc=%d): %s",
+            file_path.name,
+            result.returncode,
+            stderr_tail,
+        )
+        return False
+    return True
 
 
+@lru_cache(maxsize=1)
 def get_media_server() -> MediaServer:
-    global _media_server
-    if _media_server is None:
-        _media_server = MediaServer()
-    return _media_server
+    return MediaServer()
 
 
 def _find_ffprobe() -> str | None:

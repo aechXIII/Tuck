@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 from rich import box
@@ -72,21 +73,21 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Tuck {__version__}")
         return 0
 
-    if args.command == "probe":
-        return _cmd_probe(args)
-    elif args.command in ("compress", "upscale"):
-        return _cmd_process(args)
-    elif args.command == "profiles":
-        return _cmd_profiles(args)
-    elif args.command == "settings":
-        return _cmd_settings(args)
-    elif args.command == "gui":
-        return _cmd_gui(args)
-    elif args.command == "sendto":
-        return _cmd_sendto(args)
-    else:
+    # Handlers are defined below
+    handlers: dict[str, Callable[[argparse.Namespace], int]] = {
+        "probe": _cmd_probe,
+        "compress": _cmd_process,
+        "upscale": _cmd_process,
+        "profiles": _cmd_profiles,
+        "settings": _cmd_settings,
+        "gui": _cmd_gui,
+        "sendto": _cmd_sendto,
+    }
+    handler = handlers.get(args.command)
+    if handler is None:
         parser.print_help()
         return 0
+    return handler(args)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -174,6 +175,49 @@ def _setup_logging(verbosity: int) -> None:
     )
 
 
+def _probe_info_json(info) -> dict:
+    from .bridge_serialization import video_info_dict
+
+    full = video_info_dict(info)
+    return {
+        key: full[key]
+        for key in (
+            "path",
+            "duration",
+            "width",
+            "height",
+            "fps",
+            "video_codec",
+            "audio_codec",
+            "audio_channels",
+            "file_size",
+            "file_size_mb",
+            "bitrate_kbps",
+        )
+    }
+
+
+def _print_probe_table(info) -> None:
+    table = _table("VIDEO DETAILS", show_header=False)
+    table.add_column(style="cyan")
+    table.add_column()
+    table.add_row("File", str(info.path))
+    table.add_row("Duration", info.duration_str)
+    table.add_row("Resolution", info.resolution_str)
+    table.add_row("FPS", f"{info.fps:.2f}")
+    table.add_row("Video", info.video_codec)
+    audio = (
+        f"{info.audio_codec} ({info.audio_channels}ch, {info.audio_sample_rate}Hz)"
+        if info.has_audio
+        else "none"
+    )
+    table.add_row("Audio", audio)
+    table.add_row("Size", f"{info.file_size / (1024 * 1024):.1f} MB")
+    if info.bitrate:
+        table.add_row("Bitrate", f"{info.bitrate / 1000:.0f} kbps")
+    console.print(table)
+
+
 def _cmd_probe(args) -> int:
     from .probe import is_ffprobe_available
     from .probe import probe as probe_video
@@ -187,81 +231,40 @@ def _cmd_probe(args) -> int:
         if args.json:
             import json as _json
 
-            print(
-                _json.dumps(
-                    {
-                        "path": info.path,
-                        "duration": info.duration,
-                        "width": info.width,
-                        "height": info.height,
-                        "fps": round(info.fps, 2),
-                        "video_codec": info.video_codec,
-                        "audio_codec": info.audio_codec,
-                        "audio_channels": info.audio_channels,
-                        "file_size": info.file_size,
-                        "file_size_mb": round(info.file_size / (1024 * 1024), 2),
-                        "bitrate_kbps": round(info.bitrate / 1000) if info.bitrate else 0,
-                    },
-                    indent=2,
-                )
-            )
+            print(_json.dumps(_probe_info_json(info), indent=2))
         else:
-            table = _table("VIDEO DETAILS", show_header=False)
-            table.add_column(style="cyan")
-            table.add_column()
-            table.add_row("File", str(info.path))
-            table.add_row("Duration", info.duration_str)
-            table.add_row("Resolution", info.resolution_str)
-            table.add_row("FPS", f"{info.fps:.2f}")
-            table.add_row("Video", info.video_codec)
-            audio = (
-                f"{info.audio_codec} ({info.audio_channels}ch, {info.audio_sample_rate}Hz)"
-                if info.has_audio
-                else "none"
-            )
-            table.add_row("Audio", audio)
-            table.add_row("Size", f"{info.file_size / (1024 * 1024):.1f} MB")
-            if info.bitrate:
-                table.add_row("Bitrate", f"{info.bitrate / 1000:.0f} kbps")
-            console.print(table)
+            _print_probe_table(info)
         return 0
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
 
 
-def _cmd_process(args) -> int:
-    from .models import (
-        PROFILE_ID_4K_UPSCALE,
-        PROFILE_ID_1440P_UPSCALE,
-        WORKFLOW_COMPRESSION,
-        WORKFLOW_UPSCALE,
-        find_profile_by_id,
-    )
-    from .planner import plan as create_plan
-    from .settings import get_settings_manager
+def _compute_profile_id(args) -> str:
+    from .models import PROFILE_ID_4K_UPSCALE, PROFILE_ID_1440P_UPSCALE
 
-    mgr = get_settings_manager()
-    mgr.load()
-    profiles = mgr.get_profiles()
-    profile_id = (
-        {"1440p": PROFILE_ID_1440P_UPSCALE, "4k": PROFILE_ID_4K_UPSCALE}[args.to]
-        if args.command == "upscale" and args.to
-        else PROFILE_ID_1440P_UPSCALE
-        if args.command == "upscale" and args.resolution
-        else args.profile
-    )
+    if args.command == "upscale" and args.to:
+        return {"1440p": PROFILE_ID_1440P_UPSCALE, "4k": PROFILE_ID_4K_UPSCALE}[args.to]
+    if args.command == "upscale" and args.resolution:
+        return PROFILE_ID_1440P_UPSCALE
+    return args.profile
+
+
+def _resolve_profile(args, profiles):
+    from .models import WORKFLOW_COMPRESSION, WORKFLOW_UPSCALE, find_profile_by_id
+
+    profile_id = _compute_profile_id(args)
     profile = find_profile_by_id(profiles, profile_id)
     if args.command == "upscale" and args.resolution and profile:
         try:
             profile = _profile_with_resolution(profile, args.resolution)
         except ValueError as e:
             print(f"Error: {e}", file=sys.stderr)
-            return 1
+            return None
     if profile is None:
         print(f"Error: Profile not found: {profile_id}", file=sys.stderr)
         print("Use `tuck profiles list` to see available profiles.", file=sys.stderr)
-        return 1
+        return None
 
     expected_workflow = WORKFLOW_COMPRESSION if args.command == "compress" else WORKFLOW_UPSCALE
     if profile.workflow != expected_workflow:
@@ -269,42 +272,42 @@ def _cmd_process(args) -> int:
             f"Error: Profile '{profile_id}' is for {profile.workflow}, not {args.command}.",
             file=sys.stderr,
         )
-        return 1
+        return None
 
     if args.command == "compress" and args.size:
         if args.size <= 0:
             print("Error: --size must be greater than zero.", file=sys.stderr)
-            return 1
+            return None
         profile = _profile_with_target_size(profile, args.size)
 
-    from .engine import is_ffmpeg_available
-    from .probe import is_ffprobe_available
+    return profile
 
-    if not is_ffprobe_available() or not is_ffmpeg_available():
-        print("Error: FFmpeg/ffprobe not found. Install FFmpeg.", file=sys.stderr)
-        return 2
 
-    output_dir = str(mgr.get_setting("output_dir", "") or "")
+def _process_single_file(args, profile, output_dir: str) -> int:
+    from .planner import plan as create_plan
 
-    if len(args.files) == 1 and args.output:
-        try:
-            p = create_plan(
-                args.files[0],
-                profile,
-                output=args.output,
-                output_dir=output_dir,
-            )
-            if args.review:
-                _print_plan(p)
-                resp = input("Proceed with encoding? [y/N] ").strip().lower()
-                if resp not in ("y", "yes"):
-                    print("Aborted.")
-                    return 0
+    try:
+        p = create_plan(
+            args.files[0],
+            profile,
+            output=args.output,
+            output_dir=output_dir,
+        )
+        if args.review:
+            _print_plan(p)
+            resp = input("Proceed with encoding? [y/N] ").strip().lower()
+            if resp not in ("y", "yes"):
+                print("Aborted.")
+                return 0
 
-            return _do_encode(p, args)
-        except Exception as e:
-            print(f"Error: {e}", file=sys.stderr)
-            return 1
+        return _do_encode(p, args)
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+
+def _process_file_batch(args, profile, output_dir: str) -> int:
+    from .planner import plan as create_plan
 
     errors = 0
     for f in args.files:
@@ -334,6 +337,30 @@ def _cmd_process(args) -> int:
             errors += 1
 
     return 0 if errors == 0 else 3
+
+
+def _cmd_process(args) -> int:
+    from .settings import get_settings_manager
+
+    mgr = get_settings_manager()
+    mgr.load()
+    profile = _resolve_profile(args, mgr.get_profiles())
+    if profile is None:
+        return 1
+
+    from .engine import is_ffmpeg_available
+    from .probe import is_ffprobe_available
+
+    if not is_ffprobe_available() or not is_ffmpeg_available():
+        print("Error: FFmpeg/ffprobe not found. Install FFmpeg.", file=sys.stderr)
+        return 2
+
+    output_dir = str(mgr.get_setting("output_dir", "") or "")
+
+    if len(args.files) == 1 and args.output:
+        return _process_single_file(args, profile, output_dir)
+
+    return _process_file_batch(args, profile, output_dir)
 
 
 def _do_encode(plan, args) -> int:
@@ -382,39 +409,23 @@ def _do_encode(plan, args) -> int:
         return 3
 
 
-def run_console_encode(files: list[str], profile_id: str | None = None) -> int:
-
-    from .engine import is_ffmpeg_available
+def _resolve_console_profile(mgr, profile_id: str | None):
     from .models import find_profile_by_id
-    from .planner import plan as create_plan
-    from .probe import is_ffprobe_available
-    from .settings import get_settings_manager
-
-    if not is_ffprobe_available() or not is_ffmpeg_available():
-        print("Error: FFmpeg/ffprobe not found. Install FFmpeg and ensure it is on PATH.")
-        return 2
-
-    mgr = get_settings_manager()
-    mgr.load()
-    profiles = mgr.get_profiles()
 
     resolved_id = profile_id or str(mgr.get_setting("default_profile_id", "") or "discord-10mb")
-    profile = find_profile_by_id(profiles, resolved_id)
+    profile = find_profile_by_id(mgr.get_profiles(), resolved_id)
     if profile is None:
         print(f"Error: Profile not found: {resolved_id}")
         print("Use `tuck profiles list` to see available profiles.")
-        return 1
+    return profile
 
-    valid = [f for f in files if Path(f).is_file()]
-    if not valid:
-        print("Error: no valid input files.")
-        return 1
+
+def _encode_queue(
+    valid: list[str], profile, output_dir: str
+) -> tuple[list[tuple[str, str, float]], int]:
+    from .planner import plan as create_plan
 
     total = len(valid)
-    _print_queue_header(profile, total)
-    console.print()
-
-    output_dir = str(mgr.get_setting("output_dir", "") or "")
     errors = 0
     results: list[tuple[str, str, float]] = []  # name, output, size_mb
 
@@ -438,6 +449,10 @@ def run_console_encode(files: list[str], profile_id: str | None = None) -> int:
             errors += 1
         console.print()
 
+    return results, errors
+
+
+def _print_queue_summary(results: list[tuple[str, str, float]], errors: int, total: int) -> None:
     summary = _table("QUEUE COMPLETE")
     summary.add_column("Status")
     summary.add_column("Source")
@@ -452,6 +467,36 @@ def run_console_encode(files: list[str], profile_id: str | None = None) -> int:
         f"[success]✓ {total - errors} complete[/success] [muted]·[/muted] "
         f"[error]{errors} failed[/error]"
     )
+
+
+def run_console_encode(files: list[str], profile_id: str | None = None) -> int:
+
+    from .engine import is_ffmpeg_available
+    from .probe import is_ffprobe_available
+    from .settings import get_settings_manager
+
+    if not is_ffprobe_available() or not is_ffmpeg_available():
+        print("Error: FFmpeg/ffprobe not found. Install FFmpeg and ensure it is on PATH.")
+        return 2
+
+    mgr = get_settings_manager()
+    mgr.load()
+    profile = _resolve_console_profile(mgr, profile_id)
+    if profile is None:
+        return 1
+
+    valid = [f for f in files if Path(f).is_file()]
+    if not valid:
+        print("Error: no valid input files.")
+        return 1
+
+    total = len(valid)
+    _print_queue_header(profile, total)
+    console.print()
+
+    output_dir = str(mgr.get_setting("output_dir", "") or "")
+    results, errors = _encode_queue(valid, profile, output_dir)
+    _print_queue_summary(results, errors, total)
 
     return 0 if errors == 0 else 3
 
@@ -589,48 +634,48 @@ def _cmd_gui(args) -> int:
 
 
 def _cmd_sendto(args) -> int:
-    from .sendto import install_sendto, repair_sendto, uninstall_sendto
+    from .sendto import (
+        install_sendto,
+        remove_all_profile_shortcuts,
+        repair_sendto,
+        uninstall_sendto,
+    )
 
-    if args.sendto_cmd == "install":
-        try:
-            path = install_sendto()
-            print(f"Send To shortcut installed: {path}")
-            return 0
-        except Exception as e:
-            print(f"Error: {e}", file=sys.stderr)
-            return 1
-    elif args.sendto_cmd == "uninstall":
-        try:
-            uninstall_sendto()
-            print("Send To shortcut removed.")
-            return 0
-        except Exception as e:
-            print(f"Error: {e}", file=sys.stderr)
-            return 1
-    elif args.sendto_cmd == "uninstall-all":
-        try:
-            from .sendto import remove_all_profile_shortcuts
+    def _install() -> str:
+        path = install_sendto()
+        return f"Send To shortcut installed: {path}"
 
-            uninstall_sendto()
-            count = remove_all_profile_shortcuts()
-            print(f"All Send To shortcuts removed ({count} profile shortcuts).")
-            return 0
-        except Exception as e:
-            print(f"Error: {e}", file=sys.stderr)
-            return 1
-    elif args.sendto_cmd == "repair":
-        try:
-            if repair_sendto():
-                print("Send To shortcut repaired.")
-            else:
-                print("Send To shortcut does not need repair.")
-            return 0
-        except Exception as e:
-            print(f"Error: {e}", file=sys.stderr)
-            return 1
-    else:
+    def _uninstall() -> str:
+        uninstall_sendto()
+        return "Send To shortcut removed."
+
+    def _uninstall_all() -> str:
+        uninstall_sendto()
+        count = remove_all_profile_shortcuts()
+        return f"All Send To shortcuts removed ({count} profile shortcuts)."
+
+    def _repair() -> str:
+        if repair_sendto():
+            return "Send To shortcut repaired."
+        return "Send To shortcut does not need repair."
+
+    actions: dict[str, Callable[[], str]] = {
+        "install": _install,
+        "uninstall": _uninstall,
+        "uninstall-all": _uninstall_all,
+        "repair": _repair,
+    }
+    action = actions.get(args.sendto_cmd)
+    if action is None:
         print("Usage: tuck sendto {install|uninstall|uninstall-all|repair}")
         return 0
+
+    try:
+        print(action())
+        return 0
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

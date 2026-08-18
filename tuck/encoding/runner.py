@@ -110,19 +110,7 @@ class FFmpegEngine:
     def resolved_encoder(self) -> str:
         return self._resolved_encoder
 
-    def encode(
-        self,
-        plan: EncodePlan,
-        on_progress: ProgressCallback | None = None,
-    ) -> Path:
-        plan = copy.deepcopy(plan)
-        ffmpeg_path = _find_ffmpeg()
-        if not ffmpeg_path:
-            raise FileNotFoundError(
-                "FFmpeg not found. Install FFmpeg and ensure ffmpeg is on PATH "
-                "or set the path in settings."
-            )
-
+    def _select_encoder_candidates(self, plan: EncodePlan) -> tuple[bool, tuple[str, ...]]:
         requested = getattr(plan, "video_encoder", "libx264") or "libx264"
         available = get_available_encoders()
         was_auto = requested in (ENCODER_AUTO, ENCODER_AUTO_COMPRESSION, ENCODER_AUTO_FAST)
@@ -138,15 +126,9 @@ class FFmpegEngine:
                 f"Available encoders: {sorted(available)}. "
                 f"Install an FFmpeg build that includes '{requested}' or choose another encoder."
             )
+        return was_auto, candidates
 
-        _emit(
-            on_progress,
-            EncodeProgress(percent=0.0, stage=EncodeStage.PREPARING, message="Preparing"),
-        )
-
-        source = Path(plan.source)
-        output = Path(plan.output)
-
+    def _validate_sources(self, plan: EncodePlan, source: Path) -> None:
         if not source.is_file():
             raise FileNotFoundError(f"Source file not found: {source}")
         for track in plan.audio_tracks:
@@ -155,8 +137,7 @@ class FFmpegEngine:
                 if not audio_source.is_file():
                     raise FileNotFoundError(f"Audio source file not found: {audio_source}")
 
-        output.parent.mkdir(parents=True, exist_ok=True)
-
+    def _reserve_output(self, plan: EncodePlan, output: Path) -> tuple[Path, Path]:
         reservation = output.with_suffix(output.suffix + ".reserved")
         try:
             fd = os.open(str(reservation), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
@@ -175,6 +156,105 @@ class FFmpegEngine:
                 raise FileExistsError(
                     f"Cannot reserve output path: {output} is locked by another process"
                 ) from None
+        return output, reservation
+
+    def _run_candidates(
+        self,
+        candidates: tuple[str, ...],
+        was_auto: bool,
+        plan: EncodePlan,
+        ffmpeg_path: str,
+        source: Path,
+        tmp_output: Path,
+        total_duration: float,
+        on_progress: ProgressCallback | None,
+    ) -> Path:
+        result: Path | None = None
+        last_hardware_error: EncodeError | None = None
+        for encoder in candidates:
+            attempt_plan = _execution_plan(plan, encoder, was_auto)
+            self._resolved_encoder = encoder
+            if was_auto:
+                logger.info("Auto encoder attempt: %s", encoder)
+            try:
+                result = self._encode_with_retry(
+                    ffmpeg_path,
+                    attempt_plan,
+                    source,
+                    tmp_output,
+                    total_duration,
+                    on_progress,
+                )
+                break
+            except EncodeError as exc:
+                if (
+                    was_auto
+                    and is_hardware_encoder(encoder)
+                    and is_hardware_init_failure(exc.stderr, exc.returncode)
+                ):
+                    last_hardware_error = exc
+                    self._cleanup_output(tmp_output)
+                    logger.warning(
+                        "Auto encoder %s could not initialize; trying next candidate", encoder
+                    )
+                    continue
+                raise
+        if result is None:
+            if last_hardware_error is not None:
+                raise last_hardware_error
+            raise EncodeError("No usable video encoders were detected in this FFmpeg installation.")
+        return result
+
+    def _publish_result(
+        self, result: Path, plan: EncodePlan, output: Path, reservation: Path
+    ) -> tuple[Path, Path]:
+        if output.exists():
+            from ..planner import _resolve_output_collision
+
+            with contextlib.suppress(OSError):
+                reservation.unlink()
+            output = _resolve_output_collision(output)
+            reservation = output.with_suffix(output.suffix + ".reserved")
+            try:
+                fd = os.open(str(reservation), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                os.close(fd)
+            except FileExistsError:
+                raise FileExistsError(
+                    f"Publication slot stolen: {output} is locked by another process"
+                ) from None
+            plan.output = str(output)
+
+        result.replace(output)
+        with contextlib.suppress(OSError):
+            reservation.unlink()
+        return output, reservation
+
+    def encode(
+        self,
+        plan: EncodePlan,
+        on_progress: ProgressCallback | None = None,
+    ) -> Path:
+        plan = copy.deepcopy(plan)
+        ffmpeg_path = _find_ffmpeg()
+        if not ffmpeg_path:
+            raise FileNotFoundError(
+                "FFmpeg not found. Install FFmpeg and ensure ffmpeg is on PATH "
+                "or set the path in settings."
+            )
+
+        was_auto, candidates = self._select_encoder_candidates(plan)
+
+        _emit(
+            on_progress,
+            EncodeProgress(percent=0.0, stage=EncodeStage.PREPARING, message="Preparing"),
+        )
+
+        source = Path(plan.source)
+        output = Path(plan.output)
+        self._validate_sources(plan, source)
+
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output, reservation = self._reserve_output(plan, output)
 
         total_duration = plan.effective_duration
         if total_duration <= 0 and plan.source_info is not None:
@@ -189,63 +269,19 @@ class FFmpegEngine:
         tmp_output = output.parent / f".tmp_{output.stem}_{os.getpid()}.mp4"
 
         try:
-            result: Path | None = None
-            last_hardware_error: EncodeError | None = None
-            for encoder in candidates:
-                attempt_plan = _execution_plan(plan, encoder, was_auto)
-                self._resolved_encoder = encoder
-                if was_auto:
-                    logger.info("Auto encoder attempt: %s", encoder)
-                try:
-                    result = self._encode_with_retry(
-                        ffmpeg_path,
-                        attempt_plan,
-                        source,
-                        tmp_output,
-                        total_duration,
-                        on_progress,
-                    )
-                    break
-                except EncodeError as exc:
-                    if (
-                        was_auto
-                        and is_hardware_encoder(encoder)
-                        and is_hardware_init_failure(exc.stderr, exc.returncode)
-                    ):
-                        last_hardware_error = exc
-                        self._cleanup_output(tmp_output)
-                        logger.warning(
-                            "Auto encoder %s could not initialize; trying next candidate", encoder
-                        )
-                        continue
-                    raise
-            if result is None:
-                if last_hardware_error is not None:
-                    raise last_hardware_error
-                raise EncodeError(
-                    "No usable video encoders were detected in this FFmpeg installation."
-                )
+            result = self._run_candidates(
+                candidates,
+                was_auto,
+                plan,
+                ffmpeg_path,
+                source,
+                tmp_output,
+                total_duration,
+                on_progress,
+            )
 
-            if output.exists():
-                from ..planner import _resolve_output_collision
+            output, reservation = self._publish_result(result, plan, output, reservation)
 
-                with contextlib.suppress(OSError):
-                    reservation.unlink()
-                output = _resolve_output_collision(output)
-                reservation = output.with_suffix(output.suffix + ".reserved")
-                try:
-                    fd = os.open(str(reservation), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-                    os.close(fd)
-                except FileExistsError:
-                    raise FileExistsError(
-                        f"Publication slot stolen: {output} is locked by another process"
-                    ) from None
-                plan.output = str(output)
-
-            result.replace(output)
-
-            with contextlib.suppress(OSError):
-                reservation.unlink()
             _emit(
                 on_progress,
                 EncodeProgress(
@@ -258,25 +294,142 @@ class FFmpegEngine:
             return output
 
         except EncodeCancelled:
-            self._cleanup_output(tmp_output)
-            self._cleanup_output(reservation)
-            _emit(
-                on_progress,
-                EncodeProgress(percent=0.0, stage=EncodeStage.CANCELLED, message="Cancelled"),
+            self._abort_encode(
+                tmp_output, reservation, on_progress, EncodeStage.CANCELLED, "Cancelled"
             )
             raise
         except Exception as exc:
-            self._cleanup_output(tmp_output)
-            self._cleanup_output(reservation)
-            _emit(
-                on_progress,
-                EncodeProgress(
-                    percent=0.0,
-                    stage=EncodeStage.FAILED,
-                    message=str(exc),
-                ),
-            )
+            self._abort_encode(tmp_output, reservation, on_progress, EncodeStage.FAILED, str(exc))
             raise
+
+    def _abort_encode(
+        self,
+        tmp_output: Path,
+        reservation: Path,
+        on_progress: ProgressCallback | None,
+        stage: EncodeStage,
+        message: str,
+    ) -> None:
+        self._cleanup_output(tmp_output)
+        self._cleanup_output(reservation)
+        _emit(on_progress, EncodeProgress(percent=0.0, stage=stage, message=message))
+
+    def _run_one_attempt(
+        self,
+        ffmpeg: str,
+        plan: EncodePlan,
+        source: Path,
+        output: Path,
+        total_duration: float,
+        on_progress: ProgressCallback | None,
+        attempt: int,
+        max_attempts: int,
+    ) -> Path:
+        retry_number = attempt + 1 if attempt > 0 else None
+        max_retries = max_attempts if attempt > 0 else None
+        if plan.two_pass:
+            return self._encode_two_pass(
+                ffmpeg,
+                plan,
+                source,
+                output,
+                total_duration,
+                on_progress,
+                retry_number=retry_number,
+                max_retries=max_retries,
+            )
+        return self._encode_single_pass(
+            ffmpeg,
+            plan,
+            source,
+            output,
+            total_duration,
+            on_progress,
+            retry_number=retry_number,
+            max_retries=max_retries,
+        )
+
+    def _apply_retry_decision(
+        self, plan: EncodePlan, output: Path, actual_size: int, attempt: int, max_attempts: int
+    ) -> bool:
+        decision = decide_retry(
+            actual_size=actual_size,
+            target_size=plan.target_size,
+            current_video_bitrate=plan.video_bitrate,
+            attempt=attempt,
+            max_attempts=max_attempts,
+            hardware_encoder=is_hardware_encoder(plan.video_encoder),
+        )
+        if not decision.should_retry:
+            return False
+        logger.warning(
+            "Output size %s against target %s; retrying (%s)",
+            format_size(actual_size),
+            format_size(plan.target_size),
+            decision.reason,
+        )
+        plan.video_bitrate = decision.new_video_bitrate
+        self._recalc_plan(plan)
+        self._cleanup_output(output)
+        return True
+
+    @staticmethod
+    def _emit_retry_progress(
+        on_progress: ProgressCallback | None, total_duration: float, attempt: int, max_attempts: int
+    ) -> None:
+        _emit(
+            on_progress,
+            EncodeProgress(
+                percent=0.0,
+                stage=EncodeStage.RETRYING,
+                duration=total_duration,
+                retry_number=attempt + 1,
+                max_retries=max_attempts,
+                message="Adjusting bitrate",
+            ),
+        )
+
+    @staticmethod
+    def _emit_verifying_progress(
+        on_progress: ProgressCallback | None, total_duration: float, attempt: int, max_attempts: int
+    ) -> None:
+        _emit(
+            on_progress,
+            EncodeProgress(
+                percent=99.0,
+                stage=EncodeStage.VERIFYING,
+                duration=total_duration,
+                retry_number=attempt + 1 if attempt > 0 else None,
+                max_retries=max_attempts if attempt > 0 else None,
+                message="Verifying target size",
+            ),
+        )
+
+    @staticmethod
+    def _finalize_explicit(result: Path, plan: EncodePlan, actual_size: int) -> Path:
+        if actual_size <= plan.target_size:
+            return result
+        raise EncodeError(
+            f"Output size {format_size(actual_size)} exceeds hard profile "
+            f"limit {format_size(plan.target_size)}. "
+            f"The explicit bitrate produced a larger file than the profile allows."
+        )
+
+    @staticmethod
+    def _finalize_within_target(
+        result: Path, plan: EncodePlan, actual_size: int, max_attempts: int
+    ) -> Path:
+        if actual_size <= plan.target_size:
+            logger.info(
+                "Output size %s within target %s",
+                format_size(actual_size),
+                format_size(plan.target_size),
+            )
+            return result
+        raise EncodeError(
+            f"Output size {format_size(actual_size)} exceeds "
+            f"target {format_size(plan.target_size)} after {max_attempts} attempts"
+        )
 
     def _encode_with_retry(
         self,
@@ -295,40 +448,11 @@ class FFmpegEngine:
 
         while attempt < max_attempts:
             if attempt > 0:
-                _emit(
-                    on_progress,
-                    EncodeProgress(
-                        percent=0.0,
-                        stage=EncodeStage.RETRYING,
-                        duration=total_duration,
-                        retry_number=attempt + 1,
-                        max_retries=max_attempts,
-                        message="Adjusting bitrate",
-                    ),
-                )
+                self._emit_retry_progress(on_progress, total_duration, attempt, max_attempts)
 
-            if plan.two_pass:
-                result = self._encode_two_pass(
-                    ffmpeg,
-                    plan,
-                    source,
-                    output,
-                    total_duration,
-                    on_progress,
-                    retry_number=attempt + 1 if attempt > 0 else None,
-                    max_retries=max_attempts if attempt > 0 else None,
-                )
-            else:
-                result = self._encode_single_pass(
-                    ffmpeg,
-                    plan,
-                    source,
-                    output,
-                    total_duration,
-                    on_progress,
-                    retry_number=attempt + 1 if attempt > 0 else None,
-                    max_retries=max_attempts if attempt > 0 else None,
-                )
+            result = self._run_one_attempt(
+                ffmpeg, plan, source, output, total_duration, on_progress, attempt, max_attempts
+            )
 
             if not result.is_file() or result.stat().st_size == 0:
                 if attempt < max_attempts - 1:
@@ -341,60 +465,17 @@ class FFmpegEngine:
                 logger.info("Upscale encode complete: %s", format_size(result.stat().st_size))
                 return result
 
-            _emit(
-                on_progress,
-                EncodeProgress(
-                    percent=99.0,
-                    stage=EncodeStage.VERIFYING,
-                    duration=total_duration,
-                    retry_number=attempt + 1 if attempt > 0 else None,
-                    max_retries=max_attempts if attempt > 0 else None,
-                    message="Verifying target size",
-                ),
-            )
-
+            self._emit_verifying_progress(on_progress, total_duration, attempt, max_attempts)
             actual_size = result.stat().st_size
-            if is_explicit:
-                if actual_size <= plan.target_size:
-                    return result
-                raise EncodeError(
-                    f"Output size {format_size(actual_size)} exceeds hard profile "
-                    f"limit {format_size(plan.target_size)}. "
-                    f"The explicit bitrate produced a larger file than the profile allows."
-                )
 
-            decision = decide_retry(
-                actual_size=actual_size,
-                target_size=plan.target_size,
-                current_video_bitrate=plan.video_bitrate,
-                attempt=attempt,
-                max_attempts=max_attempts,
-                hardware_encoder=is_hardware_encoder(plan.video_encoder),
-            )
-            if decision.should_retry:
-                logger.warning(
-                    "Output size %s against target %s; retrying (%s)",
-                    format_size(actual_size),
-                    format_size(plan.target_size),
-                    decision.reason,
-                )
-                plan.video_bitrate = decision.new_video_bitrate
-                self._recalc_plan(plan)
-                self._cleanup_output(output)
+            if is_explicit:
+                return self._finalize_explicit(result, plan, actual_size)
+
+            if self._apply_retry_decision(plan, output, actual_size, attempt, max_attempts):
                 attempt += 1
                 continue
 
-            if actual_size <= plan.target_size:
-                logger.info(
-                    "Output size %s within target %s",
-                    format_size(actual_size),
-                    format_size(plan.target_size),
-                )
-                return result
-            raise EncodeError(
-                f"Output size {format_size(actual_size)} exceeds "
-                f"target {format_size(plan.target_size)} after {max_attempts} attempts"
-            )
+            return self._finalize_within_target(result, plan, actual_size, max_attempts)
 
         raise EncodeError("Encoding failed after all retries")
 
@@ -419,13 +500,17 @@ class FFmpegEngine:
                 if os.name == "nt":
                     self._kill_process_tree_windows(proc)
                 else:
-                    with contextlib.suppress(Exception):
-                        proc.terminate()
-                    try:
-                        proc.wait(timeout=3)
-                    except subprocess.TimeoutExpired:
-                        with contextlib.suppress(Exception):
-                            proc.kill()
+                    self._terminate_posix(proc)
+
+    @staticmethod
+    def _terminate_posix(proc: subprocess.Popen, timeout: float = 3) -> None:
+        with contextlib.suppress(Exception):
+            proc.terminate()
+        try:
+            proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            with contextlib.suppress(Exception):
+                proc.kill()
 
     @staticmethod
     def _kill_process_tree_windows(proc: subprocess.Popen) -> None:
@@ -439,15 +524,9 @@ class FFmpegEngine:
                     timeout=10,
                 )
         except Exception:
-            pass
+            logger.debug("taskkill failed while killing process tree", exc_info=True)
 
-        with contextlib.suppress(Exception):
-            proc.terminate()
-        try:
-            proc.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            with contextlib.suppress(Exception):
-                proc.kill()
+        FFmpegEngine._terminate_posix(proc, timeout=5)
 
     def _encode_two_pass(
         self,
@@ -557,6 +636,37 @@ class FFmpegEngine:
     ) -> list[str]:
         return build_base_cmd(ffmpeg, plan, source)
 
+    def _consume_stderr(
+        self,
+        proc: subprocess.Popen,
+        tracker: ProgressTracker,
+        on_progress: ProgressCallback | None,
+        stderr_lines: list[str],
+    ) -> None:
+        assert proc.stderr is not None
+        for line in proc.stderr:
+            if self._cancel_event.is_set():
+                break
+            stderr_lines.append(line)
+            if len(stderr_lines) > 200:
+                del stderr_lines[:-200]
+
+            progress = tracker.update_from_line(line)
+            if progress is not None:
+                _emit(on_progress, progress)
+
+    def _spawn_ffmpeg(self, cmd: list[str], creationflags: int) -> subprocess.Popen:
+        with self._lock:
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                creationflags=creationflags,
+            )
+            self._process = proc
+        return proc
+
     def _run_pass(
         self,
         cmd: list[str],
@@ -577,32 +687,13 @@ class FFmpegEngine:
         tracker.set_pass(pass_num)
         _emit(on_progress, tracker.snapshot())
 
-        with self._lock:
-            proc = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                creationflags=creationflags,
-            )
-            self._process = proc
+        proc = self._spawn_ffmpeg(cmd, creationflags)
 
         stderr_lines: list[str] = []
         returncode: int | None = None
 
         try:
-            assert proc.stderr is not None
-            for line in proc.stderr:
-                if self._cancel_event.is_set():
-                    break
-                stderr_lines.append(line)
-                if len(stderr_lines) > 200:
-                    stderr_lines = stderr_lines[-200:]
-
-                progress = tracker.update_from_line(line)
-                if progress is not None:
-                    _emit(on_progress, progress)
-
+            self._consume_stderr(proc, tracker, on_progress, stderr_lines)
             proc.wait(timeout=3600 * 24)
             returncode = proc.returncode
 
@@ -643,7 +734,7 @@ class FFmpegEngine:
             if output.exists():
                 output.unlink()
         except OSError:
-            pass
+            logger.debug("Could not remove output file: %s", output, exc_info=True)
 
     def _cleanup_pass_logs(self, log_base: Path) -> None:
         log_dir = log_base.parent
@@ -669,5 +760,5 @@ def cleanup_cache(cache_dir: Path, max_age_hours: int = 24) -> int:
                     f.unlink()
                     removed += 1
             except OSError:
-                pass
+                logger.debug("Could not remove cache file: %s", f, exc_info=True)
     return removed

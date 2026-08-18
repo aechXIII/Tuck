@@ -4,8 +4,10 @@ import ctypes
 import json
 import logging
 import os
-from collections.abc import Callable
+import re
+from collections.abc import Callable, Sequence
 from ctypes import wintypes
+from functools import lru_cache
 from pathlib import Path
 from typing import cast
 
@@ -16,6 +18,14 @@ MAP_NAME = "Local\\Tuck_SharedMemory_v1"
 WM_COPYDATA = 0x004A
 
 MAX_PAYLOAD_SIZE = 4096
+
+_PROFILE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
+_SENDTO_ACTIONS = frozenset({"start", "review"})
+_SENDTO_PASSTHROUGH_ARGS = frozenset({"--sendto-files", "gui", "--files", "sendto", "tuck"})
+_SENDTO_FLAG_FIELDS: dict[str, tuple[str, Callable[[str], object]]] = {
+    "--profile-id": ("profile_id", _PROFILE_ID_RE.match),
+    "--sendto-action": ("action", lambda v: v in _SENDTO_ACTIONS),
+}
 
 LRESULT = ctypes.c_ssize_t
 WNDPROC = ctypes.WINFUNCTYPE(
@@ -49,57 +59,40 @@ class COPYDATASTRUCT(ctypes.Structure):
     ]
 
 
-def handle_ipc_payload(
-    payload_bytes: bytes,
-    on_files: Callable[[list[str]], None] | None = None,
-    on_metadata: Callable[[dict[str, str]], None] | None = None,
-) -> bool:
+def _extract_ipc_metadata(data: dict[str, object]) -> dict[str, str] | None:
+    metadata: dict[str, str] = {}
+    for key in ("profile_id", "action"):
+        val = data.get(key)
+        if val is None:
+            continue
+        if not isinstance(val, str) or not val.strip():
+            logger.warning("IPC payload '%s' must be a non-empty string", key)
+            return None
+        if key == "profile_id" and not _PROFILE_ID_RE.match(val):
+            logger.warning("IPC payload 'profile_id' is not a valid profile ID")
+            return None
+        if key == "action" and val not in _SENDTO_ACTIONS:
+            logger.warning("IPC payload 'action' must be 'start' or 'review'")
+            return None
+        metadata[key] = val
+    return metadata
+
+
+def _decode_ipc_json(payload_bytes: bytes) -> object | None:
     try:
         payload_str = payload_bytes.decode("utf-8")
     except UnicodeDecodeError:
         logger.warning("IPC payload is not valid UTF-8")
-        return False
+        return None
 
     try:
-        data = json.loads(payload_str)
+        return json.loads(payload_str)
     except json.JSONDecodeError:
         logger.warning("IPC payload is not valid JSON")
-        return False
+        return None
 
-    metadata: dict[str, str] = {}
 
-    if isinstance(data, list):
-        items: list[str] = data
-
-    elif isinstance(data, dict):
-        raw_files = data.get("files", [])
-        if not isinstance(raw_files, list):
-            logger.warning("IPC payload 'files' is not a JSON array")
-            return False
-        items = raw_files
-
-        for key in ("profile_id", "action"):
-            val = data.get(key)
-            if val is not None:
-                if not isinstance(val, str) or not val.strip():
-                    logger.warning("IPC payload '%s' must be a non-empty string", key)
-                    return False
-
-                if key == "profile_id":
-                    import re
-
-                    if not re.match(r"^[a-z0-9][a-z0-9-]{0,63}$", val):
-                        logger.warning("IPC payload 'profile_id' is not a valid profile ID")
-                        return False
-
-                if key == "action" and val not in ("start", "review"):
-                    logger.warning("IPC payload 'action' must be 'start' or 'review'")
-                    return False
-                metadata[key] = val
-    else:
-        logger.warning("IPC payload is not a JSON array or object")
-        return False
-
+def _extract_valid_paths(items: Sequence[object]) -> list[str]:
     valid_paths: list[str] = []
     for item in items:
         if not isinstance(item, str):
@@ -109,7 +102,38 @@ def handle_ipc_payload(
             valid_paths.append(str(p.resolve()))
         else:
             logger.debug("IPC payload path not found or not a file: %s", item)
+    return valid_paths
 
+
+def handle_ipc_payload(
+    payload_bytes: bytes,
+    on_files: Callable[[list[str]], None] | None = None,
+    on_metadata: Callable[[dict[str, str]], None] | None = None,
+) -> bool:
+    data = _decode_ipc_json(payload_bytes)
+    if data is None:
+        return False
+
+    if isinstance(data, list):
+        items: list[str] = data
+        metadata: dict[str, str] = {}
+
+    elif isinstance(data, dict):
+        raw_files = data.get("files", [])
+        if not isinstance(raw_files, list):
+            logger.warning("IPC payload 'files' is not a JSON array")
+            return False
+        items = raw_files
+
+        extracted = _extract_ipc_metadata(data)
+        if extracted is None:
+            return False
+        metadata = extracted
+    else:
+        logger.warning("IPC payload is not a JSON array or object")
+        return False
+
+    valid_paths = _extract_valid_paths(items)
     if not valid_paths:
         logger.debug("IPC payload contained no valid file paths")
         return False
@@ -126,6 +150,20 @@ def handle_ipc_payload(
         f" with metadata {metadata!r}" if metadata else "",
     )
     return True
+
+
+def _next_arg_if(args: list[str], i: int, predicate: Callable[[str], object]) -> str | None:
+    if i + 1 >= len(args):
+        return None
+    candidate = args[i + 1]
+    return candidate if predicate(candidate) else None
+
+
+def _bring_to_foreground(hwnd: int) -> None:
+    user32 = ctypes.windll.user32
+    if user32.IsIconic(hwnd):
+        user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+    user32.SetForegroundWindow(hwnd)
 
 
 class SingleInstance:
@@ -209,9 +247,27 @@ class SingleInstance:
                     )
                     kernel32.UnmapViewOfFile(ptr)
             except Exception:
-                pass
+                logger.debug("Failed to publish hwnd to shared memory", exc_info=True)
 
         self._subclass_window(hwnd)
+
+    def _handle_copydata(self, hwnd: int, wparam: int, lparam: int) -> int:
+        try:
+            cds = ctypes.cast(lparam, ctypes.POINTER(COPYDATASTRUCT)).contents
+            if cds.cbData <= 0 or cds.cbData > MAX_PAYLOAD_SIZE or not cds.lpData:
+                return 0
+            if not _is_local_process(hwnd, wparam):
+                return 0
+            data_bytes = ctypes.string_at(cds.lpData, cds.cbData)
+            success = handle_ipc_payload(
+                data_bytes,
+                on_files=self._ipc_callback,
+                on_metadata=self._ipc_metadata_callback,
+            )
+            return 1 if success else 0  # ACK when handled, NAK otherwise
+        except Exception:
+            logger.debug("Error handling WM_COPYDATA", exc_info=True)
+            return 0
 
     def _subclass_window(self, hwnd: int) -> None:
         if os.name != "nt" or _user32 is None:
@@ -220,22 +276,7 @@ class SingleInstance:
         @WNDPROC
         def new_wndproc(hWnd, msg, wParam, lParam):  # noqa: N803 (Win32 API conventions)
             if msg == WM_COPYDATA:
-                try:
-                    cds = ctypes.cast(lParam, ctypes.POINTER(COPYDATASTRUCT)).contents
-                    if cds.cbData > 0 and cds.cbData <= MAX_PAYLOAD_SIZE and cds.lpData:
-                        data_bytes = ctypes.string_at(cds.lpData, cds.cbData)
-
-                        if _is_local_process(hWnd, wParam):
-                            success = handle_ipc_payload(
-                                data_bytes,
-                                on_files=self._ipc_callback,
-                                on_metadata=self._ipc_metadata_callback,
-                            )
-                            if success:
-                                return 1  # ACK: processed successfully
-                except Exception:
-                    logger.debug("Error handling WM_COPYDATA", exc_info=True)
-                return 0  # NAK: not processed
+                return self._handle_copydata(hWnd, wParam, lParam)
 
             return _user32.CallWindowProcW(self._original_wndproc, hWnd, msg, wParam, lParam)
 
@@ -272,10 +313,7 @@ class SingleInstance:
             logger.warning("Cannot find primary window for forwarding")
             return False
 
-        user32 = ctypes.windll.user32
-        if user32.IsIconic(hwnd):
-            user32.ShowWindow(hwnd, 9)  # SW_RESTORE
-        user32.SetForegroundWindow(hwnd)
+        _bring_to_foreground(hwnd)
 
         data_bytes = payload.encode("utf-8")
         cds = COPYDATASTRUCT()
@@ -286,7 +324,7 @@ class SingleInstance:
             ctypes.c_void_p,
         )
 
-        result = user32.SendMessageW(hwnd, WM_COPYDATA, 0, ctypes.byref(cds))
+        result = ctypes.windll.user32.SendMessageW(hwnd, WM_COPYDATA, 0, ctypes.byref(cds))
         acked = result == 1
         logger.info(
             "Forwarded %d file(s) to primary window (result=%d, acked=%s)",
@@ -297,34 +335,22 @@ class SingleInstance:
         return acked
 
     def _sanitize_forward_args(self, args: list[str]) -> dict[str, object] | bool:
-        result: dict[str, object] = {"files": []}
         files: list[str] = []
-        profile_id: str | None = None
-        action: str | None = None
+        fields: dict[str, str] = {}
         skip_next = False
-
-        _valid_actions = frozenset({"start", "review"})
 
         for i, arg in enumerate(args):
             if skip_next:
                 skip_next = False
                 continue
-            if arg == "--profile-id":
-                if i + 1 < len(args):
-                    candidate = args[i + 1]
-
-                    import re
-
-                    if re.match(r"^[a-z0-9][a-z0-9-]{0,63}$", candidate):
-                        profile_id = candidate
-                        skip_next = True
-            elif arg == "--sendto-action":
-                if i + 1 < len(args):
-                    candidate = args[i + 1]
-                    if candidate in _valid_actions:
-                        action = candidate
-                        skip_next = True
-            elif arg in ("--sendto-files", "gui", "--files", "sendto", "tuck"):
+            handler = _SENDTO_FLAG_FIELDS.get(arg)
+            if handler is not None:
+                field, predicate = handler
+                candidate = _next_arg_if(args, i, predicate)
+                if candidate is not None:
+                    fields[field] = candidate
+                    skip_next = True
+            elif arg in _SENDTO_PASSTHROUGH_ARGS:
                 continue
             else:
                 p = Path(arg)
@@ -334,13 +360,7 @@ class SingleInstance:
         if not files:
             return False
 
-        result["files"] = files
-        if profile_id:
-            result["profile_id"] = profile_id
-        if action:
-            result["action"] = action
-
-        return result
+        return {"files": files, **fields}
 
     def _get_primary_hwnd(self) -> int | None:
 
@@ -353,7 +373,7 @@ class SingleInstance:
                     MAP_NAME,
                 )
             except Exception:
-                pass
+                logger.debug("Failed to open shared memory mapping", exc_info=True)
 
         if not self._map_handle:
             return None
@@ -373,7 +393,7 @@ class SingleInstance:
                 kernel32.UnmapViewOfFile(ptr)
                 return hwnd.value if hwnd.value else None
         except Exception:
-            pass
+            logger.debug("Failed to read primary hwnd from shared memory", exc_info=True)
         return None
 
     def release(self) -> None:
@@ -387,7 +407,7 @@ class SingleInstance:
                     self._original_wndproc,
                 )
             except Exception:
-                pass
+                logger.debug("Failed to restore original window procedure", exc_info=True)
             self._original_wndproc = None
             self._wndproc_callback = None
 
@@ -425,11 +445,6 @@ def _is_local_process(hwnd: int, wparam: int) -> bool:
         return False
 
 
-_single_instance: SingleInstance | None = None
-
-
+@lru_cache(maxsize=1)
 def get_single_instance() -> SingleInstance:
-    global _single_instance
-    if _single_instance is None:
-        _single_instance = SingleInstance()
-    return _single_instance
+    return SingleInstance()

@@ -359,6 +359,29 @@ def test_video_filter_builder_preserves_existing_filter_order() -> None:
     assert build_video_filters() == []
 
 
+def test_consume_stderr_preserves_partial_output_on_exception() -> None:
+    class _RaisingLines:
+        def __iter__(self):
+            yield "line one\n"
+            yield "line two\n"
+            raise ValueError("boom")
+
+    class _FakeProc:
+        stderr = _RaisingLines()
+
+    class _NoopTracker:
+        def update_from_line(self, line: str) -> None:
+            return None
+
+    engine = FFmpegEngine()
+    stderr_lines: list[str] = []
+
+    with pytest.raises(ValueError):
+        engine._consume_stderr(_FakeProc(), _NoopTracker(), None, stderr_lines)
+
+    assert stderr_lines == ["line one\n", "line two\n"]
+
+
 def test_build_base_cmd_applies_crop_without_scaling(engine, real_video_path, tmp_path) -> None:
     from tuck.probe import probe
 
