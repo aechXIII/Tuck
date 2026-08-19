@@ -109,7 +109,7 @@ def run_sendto_console(
     valid = [f for f in files if Path(f).is_file()]
     if not valid:
         print("Tuck Send To: no valid video files were provided.")
-        print("Select one or more video files, then use Send To → Tuck.")
+        print("Select one or more video files, then use Send To -> Tuck.")
         with contextlib.suppress(EOFError):
             input("\nPress Enter to close...")
         return 1

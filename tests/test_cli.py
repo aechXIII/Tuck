@@ -338,6 +338,68 @@ class TestConsoleProgress:
 
         assert _do_encode(plan, object()) == 0
 
+    def test_encode_output_is_safe_for_legacy_windows_console(self, tmp_path, monkeypatch):
+        import io
+
+        from rich.console import Console
+
+        import tuck.cli as cli_module
+
+        output = tmp_path / "output.mp4"
+
+        def fake_encode(_self, _plan, on_progress=None):
+            assert on_progress is not None
+            on_progress(EncodeProgress(percent=100.0))
+            output.write_bytes(b"ok")
+            return output
+
+        raw = io.BytesIO()
+        stream = io.TextIOWrapper(raw, encoding="cp1252", errors="strict")
+        legacy_console = Console(
+            file=stream,
+            theme=cli_module._THEME,
+            color_system=None,
+            force_terminal=False,
+            legacy_windows=True,
+        )
+        monkeypatch.setattr(cli_module, "console", legacy_console)
+        monkeypatch.setattr(cli_module, "error_console", legacy_console)
+        monkeypatch.setattr("tuck.engine.FFmpegEngine.encode", fake_encode)
+        plan = EncodePlan(
+            source=str(tmp_path / "input.mp4"),
+            output=str(output),
+            target_size=1024 * 1024,
+        )
+
+        assert _do_encode(plan, object()) == 0
+        stream.flush()
+        assert "Complete" in raw.getvalue().decode("cp1252")
+
+    def test_sendto_empty_message_is_safe_for_legacy_windows_console(self, tmp_path, monkeypatch):
+        import builtins
+        import io
+        import sys
+
+        import tuck.settings as settings_mod
+        from tuck.app import run_sendto_console
+
+        monkeypatch.setattr(settings_mod, "_config_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_settings_manager", None)
+        monkeypatch.setattr(
+            builtins,
+            "input",
+            lambda _prompt: (_ for _ in ()).throw(EOFError),
+        )
+        raw = io.BytesIO()
+        stream = io.TextIOWrapper(raw, encoding="cp1252", errors="strict")
+        monkeypatch.setattr(sys, "stdout", stream)
+
+        assert run_sendto_console([]) == 1
+        stream.flush()
+        assert "Send To -> Tuck" in raw.getvalue().decode("cp1252")
+
 
 class TestParseSendtoArgs:
     def test_parse_sendto_files_only(self):

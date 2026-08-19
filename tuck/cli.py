@@ -52,7 +52,7 @@ def _print_queue_header(profile, total: int) -> None:
     console.print(
         Panel.fit(
             f"[brand]TUCK[/brand] [muted]//[/muted] [accent]{workflow}[/accent]\n"
-            f"[muted]{total} file{'s' if total != 1 else ''} · {profile.name}[/muted]",
+            f"[muted]{total} file{'s' if total != 1 else ''} | {profile.name}[/muted]",
             border_style="brand",
             padding=(0, 2),
         )
@@ -376,7 +376,7 @@ def _do_encode(plan, args) -> int:
     console.print(
         Panel(
             f"[bold]{Path(plan.source).name}[/bold]\n"
-            f"[muted]{plan.workflow.title()} · {target} · {plan.target_fps:.1f} fps[/muted]\n"
+            f"[muted]{plan.workflow.title()} | {target} | {plan.target_fps:.1f} fps[/muted]\n"
             f"[muted]Output[/muted] {Path(plan.output).name}",
             border_style="brand",
             padding=(0, 1),
@@ -402,7 +402,7 @@ def _do_encode(plan, args) -> int:
                 ),
             )
         size_mb = result.stat().st_size / (1024 * 1024)
-        console.print(f"[success]✓ Complete[/success] [muted]{result} · {size_mb:.1f} MB[/muted]")
+        console.print(f"[success]Complete[/success] [muted]{result} | {size_mb:.1f} MB[/muted]")
         return 0
     except Exception as e:
         error_console.print(f"[red]Error:[/red] {e}")
@@ -459,12 +459,12 @@ def _print_queue_summary(results: list[tuple[str, str, float]], errors: int, tot
     summary.add_column("Output")
     summary.add_column("Size", justify="right")
     for name, out, size_mb in results:
-        summary.add_row("[success]✓ Done[/success]", name, Path(out).name, f"{size_mb:.1f} MB")
+        summary.add_row("[success]Done[/success]", name, Path(out).name, f"{size_mb:.1f} MB")
     if errors:
         summary.add_row("[error]Failed[/error]", f"{errors} file(s)", "See errors above", "")
     console.print(summary)
     console.print(
-        f"[success]✓ {total - errors} complete[/success] [muted]·[/muted] "
+        f"[success]{total - errors} complete[/success] [muted]|[/muted] "
         f"[error]{errors} failed[/error]"
     )
 
