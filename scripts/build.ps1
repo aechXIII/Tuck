@@ -57,24 +57,9 @@ if (-not (Test-Path ".\dist\Tuck\TuckCli.exe")) {
 }
 Write-Host "OK: dist\Tuck\TuckCli.exe" -ForegroundColor Green
 
-$webAssets = @(
-  "index.html",
-  "styles.css",
-  "settings.css",
-  "player.css",
-  "queue.css",
-  "transform.css",
-  "audio.css",
-  "app.js",
-  "encoding-ui.js",
-  "segments.js",
-  "audio.js",
-  "player.js",
-  "queue.js",
-  "settings.js",
-  "crop.js",
-  "transform.js"
-)
+$webAssets = Get-ChildItem -LiteralPath ".\tuck\web" -File |
+  Sort-Object Name |
+  Select-Object -ExpandProperty Name
 foreach ($asset in $webAssets) {
   $assetPath = ".\dist\Tuck\_internal\tuck\web\$asset"
   if (-not (Test-Path $assetPath)) {
