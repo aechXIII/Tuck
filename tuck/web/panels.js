@@ -454,6 +454,13 @@ function renderAudioClipRange() {
     info = next || info;
     rangeWindow.style.left = info.startPct + "%";
     rangeWindow.style.width = info.widthPct + "%";
+    rangeWindow.style.setProperty(
+      "--audio-source-hit-width",
+      AudioEditing.sourceRangeHitWidth(
+        (strip.clientWidth * info.widthPct) / 100,
+        28,
+      ) + "px",
+    );
     rangeWindow.setAttribute("aria-valuenow", String(info.sourceIn));
     rangeWindow.setAttribute(
       "aria-valuetext",
@@ -535,12 +542,12 @@ function renderAudioClipRange() {
   strip.onpointercancel = finishPointer;
 
   rangeWindow.onkeydown = function (event) {
-    var next = null;
-    var step = event.shiftKey ? 1 : 0.1;
-    if (event.key === "ArrowLeft") next = info.sourceIn - step;
-    else if (event.key === "ArrowRight") next = info.sourceIn + step;
-    else if (event.key === "Home") next = 0;
-    else if (event.key === "End") next = info.maxSourceIn;
+    var next = AudioEditing.sourceRangeKeyboardValue(
+      info.sourceIn,
+      info.maxSourceIn,
+      event.key,
+      event.shiftKey,
+    );
     if (next == null) return;
     event.preventDefault();
     if (window.History) History.begin(selPath);

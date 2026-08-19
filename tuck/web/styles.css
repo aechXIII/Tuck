@@ -853,12 +853,22 @@ body {
   position: absolute;
   top: 3px;
   bottom: 3px;
-  min-width: 10px;
+  min-width: 1px;
   border: 1px solid color-mix(in srgb, var(--track-color, var(--accent-light)) 62%, white);
   border-radius: 4px;
   background: color-mix(in srgb, var(--track-color, var(--accent)) 22%, transparent);
   box-shadow: 0 0 0 999px rgba(7, 7, 11, 0.48);
   cursor: grab;
+}
+.audio-source-window::after {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  top: -4px;
+  bottom: -4px;
+  left: 50%;
+  width: var(--audio-source-hit-width, 28px);
+  transform: translateX(-50%);
 }
 .audio-source-window:active,
 .audio-source-strip.dragging .audio-source-window {
@@ -872,8 +882,8 @@ body {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 3px;
-  height: 14px;
+  width: 4px;
+  height: 18px;
   transform: translate(-50%, -50%);
   border-left: 1px solid rgba(255, 255, 255, 0.75);
   border-right: 1px solid rgba(255, 255, 255, 0.75);
@@ -1107,6 +1117,7 @@ select {
   display: none !important;
 }
 label.chk {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;

@@ -1347,6 +1347,23 @@
     return Math.max(0, Math.min(Math.max(0, Number(maxSourceIn) || 0), value));
   }
 
+  function sourceRangeHitWidth(visualWidth, minimumWidth) {
+    var visual = Math.max(0, Number(visualWidth) || 0);
+    var minimum = Math.max(0, Number(minimumWidth) || 0);
+    return Math.max(visual, minimum);
+  }
+
+  function sourceRangeKeyboardValue(current, maximum, key, largeStep) {
+    var value = Math.max(0, Number(current) || 0);
+    var max = Math.max(0, Number(maximum) || 0);
+    if (key === "Home") return 0;
+    if (key === "End") return max;
+    var direction = key === "ArrowLeft" ? -1 : key === "ArrowRight" ? 1 : 0;
+    if (!direction) return null;
+    var step = largeStep ? 1 : 0.1;
+    return Math.max(0, Math.min(max, value + direction * step));
+  }
+
   function sourceSelectionSpan(clip) {
     var selected = Math.max(0, (Number(clip.sourceOut) || 0) - (Number(clip.sourceIn) || 0));
     var timeline = Math.max(0, Number(clip.timelineDuration) || 0);
@@ -1419,6 +1436,8 @@
     outputToSourceTime: outputToSourceTime,
     fitClipToTimeline: fitClipToTimeline,
     sourceRangePointerValue: sourceRangePointerValue,
+    sourceRangeHitWidth: sourceRangeHitWidth,
+    sourceRangeKeyboardValue: sourceRangeKeyboardValue,
     splitClip: splitClip,
     slipClip: slipClip,
     resetSlip: resetSlip,

@@ -205,3 +205,19 @@ test("source-range dragging measures from the waveform content box", () => {
   assert.equal(audio.sourceRangePointerValue(212, 101, 200, 11, 180, 172), 90);
   assert.equal(audio.sourceRangePointerValue(500, 101, 200, 11, 180, 172), 172);
 });
+
+test("short source selections keep truthful width with a usable pointer target", () => {
+  assert.equal(audio.sourceRangeHitWidth(12, 28), 28);
+  assert.equal(audio.sourceRangeHitWidth(42, 28), 42);
+  assert.equal(audio.sourceRangeHitWidth(0, 28), 28);
+});
+
+test("source-range keyboard movement uses precise and accelerated steps", () => {
+  assert.equal(audio.sourceRangeKeyboardValue(40, 172, "ArrowLeft", false), 39.9);
+  assert.equal(audio.sourceRangeKeyboardValue(40, 172, "ArrowRight", true), 41);
+  assert.equal(audio.sourceRangeKeyboardValue(0, 172, "ArrowLeft", false), 0);
+  assert.equal(audio.sourceRangeKeyboardValue(172, 172, "ArrowRight", true), 172);
+  assert.equal(audio.sourceRangeKeyboardValue(40, 172, "Home", false), 0);
+  assert.equal(audio.sourceRangeKeyboardValue(40, 172, "End", false), 172);
+  assert.equal(audio.sourceRangeKeyboardValue(40, 172, "Enter", false), null);
+});
