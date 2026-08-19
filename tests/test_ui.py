@@ -17,10 +17,15 @@ def _web_source() -> str:
             "styles.css",
             "settings.css",
             "player.css",
+            "audio.css",
             "queue.css",
             "transform.css",
             "app.js",
+            "audio.js",
             "encoding-ui.js",
+            "history.js",
+            "layout.js",
+            "panels.js",
             "segments.js",
             "player.js",
             "queue.js",
@@ -38,10 +43,15 @@ def test_web_ui_is_packaged_source_asset() -> None:
         "styles.css",
         "settings.css",
         "player.css",
+        "audio.css",
         "queue.css",
         "transform.css",
         "app.js",
+        "audio.js",
         "encoding-ui.js",
+        "history.js",
+        "layout.js",
+        "panels.js",
         "segments.js",
         "player.js",
         "queue.js",
@@ -89,10 +99,9 @@ def test_web_ui_contains_visual_crop_overlay_and_request_state() -> None:
     assert html.count('class="crop-handle" data-handle=') == 8
     assert '.crop-handle[data-handle="nw"] {' in styles
     assert '.crop-handle[data-handle="se"] {' in styles
-    assert 'aria-label="Segment actions"' in html
+    assert 'aria-label="Clip actions"' in html
     assert 'id="btn-segments-reset"' in html
     assert 'id="segment-menu"' not in html
-    assert 'id="crop-edit-group"' in html
     assert "cropTransformForRequest(c)" in encoding_js
     assert "new ResizeObserver(paintCropOverlay)" in transform_js
     assert "api.createPlan" not in crop_js
@@ -126,7 +135,78 @@ def test_web_ui_contains_complete_transform_controls() -> None:
     assert "cropEditorGeometry(clip, size)" in transform_js
     assert "sourceHandleForDisplay(displayHandle, origin, editor)" in transform_js
     assert 'tooltip.id = "transform-tooltip"' in transform_js
+    assert "tooltipTarget !== target || !target.isConnected" in transform_js
+    assert "if (tooltipPointerActive) return;" in transform_js
+    assert "tooltipPointerActive = true;" in transform_js
+    assert "targetRect.width <= 0 || targetRect.height <= 0" in transform_js
     assert 'button.setAttribute("aria-pressed", String(active))' in transform_js
+
+
+def test_editor_shell_uses_fixed_panes_and_zoom_gated_timeline_scrolling() -> None:
+    styles = _asset("styles.css")
+    audio_styles = _asset("audio.css")
+    app_js = _asset("app.js")
+    encoding_js = _asset("encoding-ui.js")
+    panels_js = _asset("panels.js")
+    queue_js = _asset("queue.js")
+    html = _asset("index.html")
+
+    assert "--library-width: 220px;" in styles
+    assert "--inspector-width: 300px;" in styles
+    assert "resize: horizontal" not in styles
+    assert "new ResizeObserver(function (entries)" not in app_js
+    assert 'byId("left").style.width' not in encoding_js
+    assert "overflow-x: hidden;" in audio_styles
+    assert "#sequence-frame.is-zoomed" in audio_styles
+    assert 'id="timeline-resizer"' in html
+    assert 'role="separator"' in html
+    assert "function handleTimelineResizeKey(event)" in panels_js
+    assert "saveSettings(JSON.stringify({ timeline_height: timelineHeightSetting }))" in panels_js
+    assert 'frame.classList.toggle("is-zoomed", zoomed);' in panels_js
+    assert 'frame.style.removeProperty("--tl-width");' in panels_js
+    assert '<div id="qbar" class="hid">' in html
+    assert 'byId("qbar").classList.toggle("hid", items.length === 0)' in queue_js
+
+
+def test_audio_controls_use_consistent_nle_track_vocabulary() -> None:
+    html = _asset("index.html")
+    panels_js = _asset("panels.js")
+
+    assert '<span class="seq-track-code" aria-hidden="true">V1</span>' in html
+    assert '<span class="seq-track-code" aria-hidden="true">A1</span>' in html
+    assert 'class="seq-track-mute"' in html
+    assert 'id="audio-master-toggle"' in html
+    assert 'role="switch"' in html
+    assert '<svg class="ti-icon"' not in html
+    assert "mixer-track-code" in panels_js
+    assert 'class="mixer-mute"' in panels_js
+    assert 'type="checkbox" class="mixer-mute"' not in panels_js
+
+
+def test_removing_the_last_video_clears_timeline_state() -> None:
+    app_js = _asset("app.js")
+    remove_clip = app_js.split("function removeClip(p) {", 1)[1].split(
+        "function removeAllClips() {", 1
+    )[0]
+    remove_all = app_js.split("function doRemoveAllClips() {", 1)[1].split(
+        "async function probeClip(p) {", 1
+    )[0]
+
+    for removal_path in (remove_clip, remove_all):
+        assert "AudioTimeline.selectVideo(null)" in removal_path
+        assert "syncTimelineUI();" in removal_path
+        assert "syncTransformControls();" in removal_path
+
+
+def test_settings_dialog_manages_keyboard_focus() -> None:
+    html = _asset("index.html")
+    settings_js = _asset("settings.js")
+
+    assert 'id="settings-close"' in html
+    assert "var settingsReturnFocus" in settings_js
+    assert "function trapSettingsFocus(event)" in settings_js
+    assert 'document.addEventListener("keydown", trapSettingsFocus)' in settings_js
+    assert "settingsReturnFocus.focus();" in settings_js
 
 
 def test_preview_responses_are_bound_to_the_source_and_request_snapshot() -> None:

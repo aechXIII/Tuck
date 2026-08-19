@@ -1487,6 +1487,7 @@ class TestBridgeWorkflowPropagation:
         assert resp["encoder_cache_days"] == 7
         assert resp["last_update_check"] == ""
         assert resp["open_output_folder_after_queue"] is False
+        assert resp["timeline_height"] == 0
 
     def test_save_settings_validates_open_output_folder_after_queue(self, tmp_path, monkeypatch):
         import tuck.settings as settings_mod
@@ -1505,6 +1506,24 @@ class TestBridgeWorkflowPropagation:
         assert api._settings.load().open_output_folder_after_queue is True
         assert not invalid["ok"]
         assert invalid["error"] == "open_output_folder_after_queue must be boolean"
+
+    def test_save_settings_validates_timeline_height(self, tmp_path, monkeypatch):
+        import tuck.settings as settings_mod
+
+        monkeypatch.setattr(settings_mod, "_config_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
+
+        api = BridgeAPI()
+        saved = json.loads(api.save_settings(json.dumps({"timeline_height": 260})))
+        reset = json.loads(api.save_settings(json.dumps({"timeline_height": 0})))
+        invalid = json.loads(api.save_settings(json.dumps({"timeline_height": 120})))
+
+        assert saved["ok"]
+        assert reset["ok"]
+        assert api._settings.load().timeline_height == 0
+        assert not invalid["ok"]
+        assert invalid["error"] == "timeline_height must be 0 or 170 to 2400"
 
     def test_save_settings_validates_encoder_cache_days(self, tmp_path, monkeypatch):
         import tuck.settings as settings_mod

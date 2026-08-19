@@ -500,6 +500,7 @@ class BridgeAPI:
                 "last_compress_profile_id": getattr(s, "last_compress_profile_id", ""),
                 "last_upscale_profile_id": getattr(s, "last_upscale_profile_id", ""),
                 "left_sidebar_width": getattr(s, "left_sidebar_width", 240),
+                "timeline_height": getattr(s, "timeline_height", 0),
                 "compression_suffix": getattr(s, "compression_suffix", "_tucked_{size}")
                 or "_tucked_{size}",
                 "upscale_suffix": getattr(s, "upscale_suffix", "_upscaled_{width}x{height}")
@@ -539,6 +540,7 @@ class BridgeAPI:
             "last_compress_profile_id",
             "last_upscale_profile_id",
             "left_sidebar_width",
+            "timeline_height",
             "compression_suffix",
             "upscale_suffix",
         }
@@ -568,6 +570,16 @@ class BridgeAPI:
                 ):
                     return json.dumps(
                         {"ok": False, "error": "left_sidebar_width must be 180 to 360"}
+                    )
+                if key == "timeline_height" and (
+                    not isinstance(data[key], int)
+                    or (data[key] != 0 and not 170 <= data[key] <= 2400)
+                ):
+                    return json.dumps(
+                        {
+                            "ok": False,
+                            "error": "timeline_height must be 0 or 170 to 2400",
+                        }
                     )
                 if key == "default_profile_id" and not isinstance(data[key], str):
                     return json.dumps({"ok": False, "error": "default_profile_id must be string"})

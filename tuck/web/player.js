@@ -16,6 +16,23 @@ function seekBy(seconds) {
     v.currentTime = Math.max(0, Math.min(v.duration, v.currentTime + seconds));
 }
 
+function stepFrame(direction) {
+  var v = byId("vid");
+  if (!v || !isFinite(v.duration)) return;
+  var fps =
+    (selPath && clips[selPath] && clips[selPath].probeData && clips[selPath].probeData.fps) ||
+    30;
+  if (!v.paused) v.pause();
+  seekPreview(v.currentTime + direction * (1 / fps));
+}
+
+function toggleFullscreen() {
+  var center = byId("center");
+  if (!center) return;
+  if (document.fullscreenElement) document.exitFullscreen();
+  else if (center.requestFullscreen) center.requestFullscreen();
+}
+
 byId("vid").addEventListener("play", function () {
   byId("btn-play").textContent = "\u23f8";
 });
@@ -131,18 +148,71 @@ function formatSegmentTime(seconds) {
 function paintTrimChrome() {
   var full = videoDuration();
   var c = selPath ? clips[selPath] : null;
+  var view = SegmentEditing.timelineViewState(c, full);
+  var ready = view.status === "ready";
+  var editor = byId("audio-editor");
+  var emptyState = byId("timeline-empty");
+  if (editor) {
+    editor.classList.toggle("is-empty", view.status === "empty");
+    editor.classList.toggle("is-loading", view.status === "loading");
+  }
+  if (emptyState) {
+    emptyState.hidden = ready;
+    var emptyTitle = emptyState.querySelector(".timeline-empty-title");
+    var emptyCopy = emptyState.querySelector(".timeline-empty-copy");
+    if (emptyTitle)
+      emptyTitle.textContent = view.status === "loading" ? "Preparing timeline" : "Timeline is empty";
+    if (emptyCopy)
+      emptyCopy.textContent =
+        view.status === "loading"
+          ? "Reading clip duration and audio tracks"
+          : "Drop a video here or use Add files";
+  }
   var ruler = byId("sequence-ruler");
   if (ruler) {
-    ruler.classList.toggle("hid", !(c && full > 0));
-    if (c && full > 0) paintSequenceRuler(full);
+    ruler.classList.toggle("hid", !ready);
+    if (ready) paintSequenceRuler(full);
   }
-  var segments = clipSegments(c, full || 1);
-  var active = activeSegmentIndex(c, segments);
-  var bounds = segments[active] || { start: 0, end: full || 1 };
-  var startPct = full > 0 ? (bounds.start / full) * 100 : 0;
-  var endPct = full > 0 ? (bounds.end / full) * 100 : 100;
   var segmentsLayer = byId("tl-segments");
   segmentsLayer.replaceChildren();
+  var timeline = byId("timeline");
+  timeline.setAttribute("aria-disabled", ready ? "false" : "true");
+  timeline.setAttribute("tabindex", ready ? "0" : "-1");
+  byId("tl-in").classList.toggle("hid", !ready);
+  byId("tl-out").classList.toggle("hid", !ready);
+  byId("seq-playhead-layer").classList.toggle("hid", !ready);
+  byId("btn-seq-split").disabled = !ready;
+  byId("btn-snap-toggle").disabled = !ready;
+  byId("audio-add").disabled = !ready;
+  byId("tl-zoom-slider").disabled = !ready;
+  var zoomButtons = document.querySelectorAll(".dock-zoom-btn");
+  for (var z = 0; z < zoomButtons.length; z++) zoomButtons[z].disabled = !ready;
+
+  var resetButton = byId("btn-segments-reset");
+  var removeButton = byId("btn-segment-remove");
+  var addButton = byId("btn-segment-add");
+  if (!ready) {
+    resetButton.disabled = true;
+    resetButton.classList.add("hid");
+    removeButton.disabled = true;
+    addButton.disabled = true;
+    addButton.setAttribute("aria-disabled", "true");
+    addButton.dataset.tip = view.status === "loading" ? "Preparing timeline" : "Add a video first";
+    return {
+      full: 0,
+      bounds: { start: 0, end: 0 },
+      has: false,
+      segments: [],
+      active: 0,
+      status: view.status,
+    };
+  }
+
+  var segments = view.items;
+  var active = activeSegmentIndex(c, segments);
+  var bounds = segments[active];
+  var startPct = full > 0 ? (bounds.start / full) * 100 : 0;
+  var endPct = full > 0 ? (bounds.end / full) * 100 : 100;
   for (var i = 0; i < segments.length; i++) {
     var range = document.createElement("button");
     range.type = "button";
@@ -154,19 +224,41 @@ function paintTrimChrome() {
       ((segments[i].end - segments[i].start) / (full || 1)) * 100 + "%";
     range.setAttribute(
       "aria-label",
-      "Segment " + (i + 1) + ". Click to seek; drag to move",
+      "Segment " +
+        (i + 1) +
+        ", " +
+        formatSegmentTime(segments[i].start) +
+        " to " +
+        formatSegmentTime(segments[i].end) +
+        ". Click to seek; drag to move",
     );
     range.setAttribute("aria-pressed", i === active ? "true" : "false");
     range.setAttribute("aria-keyshortcuts", "ArrowLeft ArrowRight");
-    var timeLabel = document.createElement("span");
-    timeLabel.className = "tl-segment-time";
-    timeLabel.setAttribute("aria-hidden", "true");
-    timeLabel.textContent =
+    var badgeLabel = document.createElement("span");
+    badgeLabel.className = "tl-segment-badge";
+    badgeLabel.setAttribute("aria-hidden", "true");
+    badgeLabel.textContent = segments[i].badge;
+    var copy = document.createElement("span");
+    copy.className = "tl-segment-copy";
+    var nameLabel = document.createElement("span");
+    nameLabel.className = "tl-segment-label";
+    nameLabel.textContent = c ? c.name : "";
+    var rangeLabel = document.createElement("span");
+    rangeLabel.className = "tl-segment-range";
+    rangeLabel.setAttribute("aria-hidden", "true");
+    var timeText =
       formatSegmentTime(segments[i].start) +
       "–" +
       formatSegmentTime(segments[i].end) +
       " · " +
       formatSelectedDuration(segments[i].end - segments[i].start);
+    rangeLabel.textContent = timeText;
+    copy.append(nameLabel, rangeLabel);
+    range.append(badgeLabel, copy);
+    var timeLabel = document.createElement("span");
+    timeLabel.className = "tl-segment-time";
+    timeLabel.setAttribute("aria-hidden", "true");
+    timeLabel.textContent = timeText;
     range.appendChild(timeLabel);
     if (i === active) {
       var edgeIn = document.createElement("span");
@@ -204,17 +296,25 @@ function paintTrimChrome() {
   byId("tl-out").setAttribute("aria-valuenow", String(bounds.end));
 
   var has = clipHasTrim(c, full);
-  byId("btn-segments-reset").disabled = !has;
-  byId("btn-segment-remove").disabled = segments.length <= 1;
+  resetButton.disabled = !has;
+  resetButton.classList.toggle("hid", !has);
+  removeButton.disabled = segments.length <= 1;
   var canAdd = SegmentEditing.canAddSegment(segments, full || 1);
-  var addButton = byId("btn-segment-add");
+  addButton.disabled = !canAdd;
   addButton.setAttribute("aria-disabled", canAdd ? "false" : "true");
   addButton.dataset.tip = canAdd ? "New segment" : "Shorten a segment first";
   if (window.AudioTimeline && AudioTimeline.paintSource)
     AudioTimeline.paintSource();
   if (window.AudioTimeline && AudioTimeline.paintMixer)
     AudioTimeline.paintMixer();
-  return { full: full, bounds: bounds, has: has, segments: segments, active: active };
+  return {
+    full: full,
+    bounds: bounds,
+    has: has,
+    segments: segments,
+    active: active,
+    status: view.status,
+  };
 }
 
 function paintSelectionFrame(startPct, endPct, color) {
@@ -222,12 +322,14 @@ function paintSelectionFrame(startPct, endPct, color) {
   if (frame) frame.hidden = true;
   var tlIn = byId("tl-in");
   if (tlIn) {
+    tlIn.classList.remove("hid");
     tlIn.classList.add("sr-handle");
     tlIn.style.left = startPct + "%";
     tlIn.style.setProperty("--segment-color", color);
   }
   var tlOut = byId("tl-out");
   if (tlOut) {
+    tlOut.classList.remove("hid");
     tlOut.classList.add("sr-handle");
     tlOut.style.left = endPct + "%";
     tlOut.style.setProperty("--segment-color", color);
@@ -267,6 +369,7 @@ function syncTimelineUI() {
   paintTrimChrome();
   updateTime();
   if (window.AudioTimeline) AudioTimeline.render();
+  if (typeof applyTimelineZoom === "function") applyTimelineZoom();
 }
 
 function setPlayheadUI(sec, full) {
@@ -280,8 +383,17 @@ function setPlayheadUI(sec, full) {
     byId("timeline").setAttribute("aria-valuenow", String(Math.round(sec)));
   }
   byId("ptime").textContent = fmtt(sec) + " / " + fmtt(full || 0);
+  var tlTime = byId("tl-time");
+  if (tlTime) tlTime.textContent = fmttPrecise(sec) + " / " + fmttPrecise(full || 0);
   paintStageScrub(pct);
   _previewSec = sec;
+}
+
+function fmttPrecise(seconds) {
+  var ms = Math.round(Math.max(0, seconds) * 1000);
+  var whole = Math.floor(ms / 1000);
+  var millis = ms % 1000;
+  return fmtt(whole) + "." + String(millis).padStart(3, "0");
 }
 
 function paintStageScrub(pct) {
@@ -420,6 +532,17 @@ function timelineRatioFromEvent(e) {
   return Math.max(0, Math.min(1, x / rect.width));
 }
 
+function segmentSnapCandidates(segments, active, full) {
+  var points = [0, full];
+  var v = byId("vid");
+  if (v) points.push(v.currentTime);
+  for (var i = 0; i < segments.length; i++) {
+    if (i === active) continue;
+    points.push(segments[i].start, segments[i].end);
+  }
+  return points;
+}
+
 function applyTrimStart(sec) {
   if (!selPath || !clips[selPath]) return null;
   var c = clips[selPath];
@@ -427,6 +550,12 @@ function applyTrimStart(sec) {
   if (full <= 0) return null;
   var segments = clipSegments(c, full);
   var active = activeSegmentIndex(c, segments);
+  if (typeof snapCandidateTime === "function")
+    sec = snapCandidateTime(
+      sec,
+      segmentSnapCandidates(segments, active, full),
+      timelinePxPerSecond(),
+    );
   segments = SegmentEditing.editEndpoint(segments, active, "start", sec, full);
   setClipSegments(c, segments, active);
   return segments[active].start;
@@ -439,6 +568,12 @@ function applyTrimEnd(sec) {
   if (full <= 0) return null;
   var segments = clipSegments(c, full);
   var active = activeSegmentIndex(c, segments);
+  if (typeof snapCandidateTime === "function")
+    sec = snapCandidateTime(
+      sec,
+      segmentSnapCandidates(segments, active, full),
+      timelinePxPerSecond(),
+    );
   segments = SegmentEditing.editEndpoint(segments, active, "end", sec, full);
   setClipSegments(c, segments, active);
   return segments[active].end;
@@ -451,6 +586,14 @@ function moveActiveSegment(start) {
   if (full <= 0) return null;
   var segments = clipSegments(c, full);
   var active = activeSegmentIndex(c, segments);
+  if (typeof snapCandidateTime === "function") {
+    var duration = segments[active].end - segments[active].start;
+    var candidates = segmentSnapCandidates(segments, active, full).reduce(function (acc, p) {
+      acc.push(p, p - duration);
+      return acc;
+    }, []);
+    start = snapCandidateTime(start, candidates, timelinePxPerSecond());
+  }
   segments = SegmentEditing.moveSegment(segments, active, start, full);
   setClipSegments(c, segments, active);
   return segments[active];
@@ -539,6 +682,7 @@ function onTimelinePointerDown(e) {
     target && target.classList && target.classList.contains("tl-segment");
   if (edge && edge.dataset.edge) {
     _tlDrag = edge.dataset.edge === "start" ? "in" : "out";
+    edge.classList.add("dragging");
     setTrimDragCursor(true);
   } else if (isSegment) {
     var index = parseInt(target.dataset.segmentIndex, 10);
@@ -554,6 +698,8 @@ function onTimelinePointerDown(e) {
   } else if (target && target.id === "tl-in") _tlDrag = "in";
   else if (target && target.id === "tl-out") _tlDrag = "out";
   else _tlDrag = "seek";
+  if (window.History && (_tlDrag === "in" || _tlDrag === "out" || _tlDrag === "segment-pending"))
+    History.begin(selPath);
   if (target && target.classList && target.classList.contains("tl-handle")) {
     target.classList.add("dragging");
     setTrimDragCursor(true);
@@ -624,9 +770,15 @@ function onTimelinePointerUp(e) {
   var wasSegmentClick =
     _tlDrag === "segment-pending" && (!e || e.type !== "pointercancel");
   var wasEdit = _tlDrag === "in" || _tlDrag === "out" || _tlDrag === "segment";
+  if (window.History) {
+    if (wasEdit) History.commit();
+    else History.cancel();
+  }
   if (wasSegmentClick) seekPreview(_segmentClickTime);
   byId("tl-in").classList.remove("dragging");
   byId("tl-out").classList.remove("dragging");
+  var edgeHandles = document.querySelectorAll(".clip-edge.dragging");
+  for (var i = 0; i < edgeHandles.length; i++) edgeHandles[i].classList.remove("dragging");
   setTrimDragCursor(false);
   setSegmentDragCursor(false);
   _tlDrag = null;

@@ -48,7 +48,7 @@ function persistSession() {
     last_task: wf === 1 ? "upscale" : "compression",
     last_compress_profile_id: lastComp,
     last_upscale_profile_id: lastUpscale,
-    left_sidebar_width: parseInt(byId("left").style.width) || 240,
+    left_sidebar_width: 220,
   };
   api.saveSettings(JSON.stringify(data)).then(function (r) {
     if (r.ok) appSettings = Object.assign(appSettings, data);
@@ -71,14 +71,15 @@ async function loadSettings() {
   if (!api) return;
   var s = await api.getSettings();
   appSettings = s;
+  if (typeof restoreTimelineHeight === "function") {
+    restoreTimelineHeight(s.timeline_height);
+  }
   availEncoders = s.available_encoders || [];
   allProfiles = s.profiles || [];
   var def = s.default_profile_id || "";
   if (!lastComp) lastComp = s.last_compress_profile_id || def;
   if (!lastUpscale) lastUpscale = s.last_upscale_profile_id || "";
   if (s.last_task === "upscale" && !lastUpscale) lastUpscale = def;
-  if (s.left_sidebar_width)
-    byId("left").style.width = s.left_sidebar_width + "px";
   updateEncOpts();
   var task = s.last_task === "upscale" ? 1 : 0;
   if (task !== wf) setWf(task);

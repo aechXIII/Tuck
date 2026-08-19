@@ -565,8 +565,6 @@ function renderClips() {
         "</div>" +
         '<div class="c3"><span class="c-meta">' +
         metaStr(c) +
-        '</span><span class="c-time">' +
-        clipDuration(c) +
         "</span></div>" +
         statusRow +
         "</div>" +
@@ -723,6 +721,7 @@ function errorSummary(error, limit) {
 function clipStateBadge(p) {
   var c = clips[p],
     st = c._queueState || "";
+  if (!st && !c.error && !c._statusText) return "";
   var states = {
     pending: ["Pending", "●", "cst-queued"],
     running: ["Encoding", "↻", "cst-processing"],
@@ -774,6 +773,8 @@ function metaStr(c) {
   if (!c.probed) return "…";
   var d = c.probeData,
     first = [];
+  var duration = clipDuration(c);
+  if (duration) first.push(duration);
   if (d.width && d.height) first.push(d.width + "×" + d.height);
   if (c.crop) first.push("crop " + c.crop.width + "×" + c.crop.height);
   if (c.rotation) first.push(c.rotation + "°");
@@ -785,13 +786,12 @@ function metaStr(c) {
           ? "flip H"
           : "flip V",
     );
-  if (d.fps) first.push(Math.round(d.fps) + " fps");
   var second = c._fileSize ? formatBytes(c._fileSize) : "";
   if (c._resultSize && c._queueState === "completed")
     second += " → " + formatBytes(c._resultSize);
+  if (second) first.push(second);
   return (
-    first.join(" · ") +
-    (second ? '<br><span style="color:var(--dim)">' + second + "</span>" : "")
+    first.join(" · ")
   );
 }
 
@@ -822,6 +822,9 @@ function selectClip(p) {
   syncTimelineUI();
   if (typeof syncTransformControls === "function") syncTransformControls();
   if (typeof paintCropOverlay === "function") paintCropOverlay();
+  if (typeof renderClipDetails === "function") renderClipDetails();
+  if (typeof renderAudioLibraryPanel === "function" && libraryTab === "audio")
+    renderAudioLibraryPanel();
   if (!c.probed && !c.error) probeClip(p);
   else if (c.probed) {
     syncFpsToClip();
@@ -834,6 +837,7 @@ function removeClip(p) {
   if (clips[p] && window.AudioTimeline) AudioTimeline.disposeClip(clips[p]);
   if (clips[p] && clips[p].mediaToken)
     api.releaseMediaToken(clips[p].mediaToken);
+  if (window.History) History.forgetClip(p);
   delete clips[p];
   clipOrder = clipOrder.filter(function (x) {
     return x !== p;
@@ -847,6 +851,12 @@ function removeClip(p) {
     v.pause();
     v.src = "";
     if (clipOrder.length) selectClip(clipOrder[0]);
+    else {
+      if (window.AudioTimeline) AudioTimeline.selectVideo(null);
+      syncTimelineUI();
+      if (typeof syncTransformControls === "function") syncTransformControls();
+      if (typeof renderClipDetails === "function") renderClipDetails();
+    }
   }
   renderClips();
 }
@@ -877,6 +887,7 @@ function doRemoveAllClips() {
     if (clips[keys[i]] && window.AudioTimeline) AudioTimeline.disposeClip(clips[keys[i]]);
     if (clips[keys[i]] && clips[keys[i]].mediaToken)
       api.releaseMediaToken(clips[keys[i]].mediaToken);
+    if (window.History) History.forgetClip(keys[i]);
   }
   clips = {};
   clipOrder = [];
@@ -887,6 +898,10 @@ function doRemoveAllClips() {
   var v = byId("vid");
   v.pause();
   v.src = "";
+  if (window.AudioTimeline) AudioTimeline.selectVideo(null);
+  syncTimelineUI();
+  if (typeof syncTransformControls === "function") syncTransformControls();
+  if (typeof renderClipDetails === "function") renderClipDetails();
   renderClips();
 }
 
@@ -925,6 +940,7 @@ async function probeClip(p) {
     syncTimelineUI();
     if (typeof syncTransformControls === "function") syncTransformControls();
     if (typeof paintCropOverlay === "function") paintCropOverlay();
+    if (typeof renderClipDetails === "function") renderClipDetails();
     reqPreview();
   }
 }
@@ -1023,13 +1039,6 @@ function moveSelection(delta) {
   index = Math.max(0, Math.min(keys.length - 1, index + delta));
   selectClip(keys[index]);
 }
-new ResizeObserver(function (entries) {
-  var width = Math.round(entries[0].contentRect.width);
-  if (width >= 180 && width <= 360) {
-    byId("left").style.width = width + "px";
-    persistSession();
-  }
-}).observe(byId("left"));
 window.addEventListener("keydown", function (e) {
   if (e.ctrlKey && e.key.toLowerCase() === "o") {
     e.preventDefault();

@@ -6,6 +6,7 @@
   display: flex;
   flex-direction: column;
   min-width: 320px;
+  padding: 14px;
 }
 #empty {
   flex: 1;
@@ -24,16 +25,21 @@
   flex: 1 1 0;
   min-height: 0;
   background: #000;
+  border: 1px solid var(--border);
+  border-bottom: 0;
+  border-radius: 8px 8px 0 0;
+  overflow: hidden;
   position: relative;
   display: none;
 }
 #player-bar {
   display: none;
-  background: linear-gradient(180deg, #101018 0%, #0c0c12 100%);
-  border-top: 1px solid var(--border);
+  background: #0f0f17;
+  border: 1px solid var(--border);
+  border-radius: 0 0 8px 8px;
   flex-shrink: 0;
-  padding: 10px 14px 12px;
-  gap: 14px;
+  padding: 8px 12px;
+  gap: 0;
   flex-direction: column;
 }
 #player-bar.on {
@@ -44,9 +50,7 @@
   flex: 1;
   min-width: 0;
   width: auto;
-  height: 22px;
-  display: flex;
-  align-items: center;
+  height: 100%;
   cursor: pointer;
   user-select: none;
   touch-action: none;
@@ -69,10 +73,7 @@ body.tl-segment-dragging * {
 .tl-track {
   position: relative;
   width: 100%;
-  height: 6px;
-  background: #2a2a38;
-  border-radius: 999px;
-  overflow: visible;
+  height: 100%;
 }
 #tl-segments {
   position: absolute;
@@ -81,40 +82,97 @@ body.tl-segment-dragging * {
 .tl-segment {
   --segment-color: var(--accent);
   position: absolute;
-  top: -8px;
-  bottom: -8px;
-  min-width: 2px;
-  padding: 0;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
+  top: 0;
+  bottom: 0;
+  min-width: 4px;
+  container-type: inline-size;
+  gap: 8px;
+  padding: 4px 24px;
+  overflow: visible;
+  border: 1px solid color-mix(in srgb, var(--segment-color) 58%, #d8d4e4);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  background: color-mix(in srgb, var(--segment-color) 38%, #17151f);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 1px 2px rgba(0, 0, 0, 0.25);
+  color: #fff;
+  opacity: 0.9;
   cursor: grab;
   z-index: 1;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease,
+    opacity 0.12s ease;
 }
-.tl-segment::before {
-  content: "";
-  position: absolute;
-  top: 8px;
-  right: 0;
-  left: 0;
-  height: 6px;
-  border-radius: 999px;
-  background-image:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.14), transparent 60%),
-    repeating-linear-gradient(
-      90deg,
-      rgba(0, 0, 0, 0.22) 0,
-      rgba(0, 0, 0, 0.22) 1px,
-      transparent 1px,
-      transparent 7px
-    );
-  background-color: color-mix(in srgb, var(--segment-color) 70%, #2a2a38);
-  opacity: 0.82;
-}
-.tl-segment.active::before {
-  background-color: var(--segment-color);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--segment-color) 65%, white);
+.tl-segment:hover {
+  background: color-mix(in srgb, var(--segment-color) 46%, #17151f);
   opacity: 1;
+}
+.tl-segment.active {
+  border-color: color-mix(in srgb, var(--segment-color) 56%, white);
+  background: color-mix(in srgb, var(--segment-color) 52%, #17151f);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 0 0 1px color-mix(in srgb, var(--segment-color) 22%, transparent),
+    0 2px 5px rgba(0, 0, 0, 0.32);
+  opacity: 1;
+}
+.tl-segment-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  min-width: 24px;
+  height: 18px;
+  padding: 0 5px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 4px;
+  background: rgba(10, 9, 15, 0.46);
+  color: #f5f3ff;
+  font: 700 9px var(--mono);
+  letter-spacing: 0.02em;
+  pointer-events: none;
+}
+.tl-segment-copy {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  pointer-events: none;
+}
+.tl-segment-label {
+  display: block;
+  max-width: 100%;
+  font: 700 11px/14px var(--font);
+  color: #fbfaff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+.tl-segment-range {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  color: #d8d4e4;
+  font: 600 9px/12px var(--mono);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+@container (max-width: 150px) {
+  .tl-segment-range {
+    display: none;
+  }
+}
+@container (max-width: 84px) {
+  .tl-segment-badge {
+    display: none;
+  }
 }
 .tl-segment-time {
   position: absolute;
@@ -184,10 +242,9 @@ body.tl-segment-dragging * {
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 10px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--border);
+  gap: 6px;
+  padding: 0;
+  border: 0;
 }
 .pbtn {
   background: transparent;
@@ -246,8 +303,8 @@ body.tl-segment-dragging * {
 #stage-scrub {
   -webkit-appearance: none;
   appearance: none;
-  flex: 0 0 auto;
-  width: min(360px, 32vw);
+  flex: 1 1 auto;
+  min-width: 24px;
   height: 4px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.22);

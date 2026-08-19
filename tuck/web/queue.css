@@ -1,15 +1,34 @@
 #qbar {
-  height: 42px;
-  min-height: 42px;
+  height: 30px;
+  min-height: 30px;
   background: #0f0f18;
   border-top: 1px solid var(--border);
-  display: none;
+  display: flex;
   align-items: center;
   padding: 0 16px;
   gap: 12px;
 }
-#qbar.on {
+
+.qlabel {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  flex-shrink: 0;
+}
+#qidle {
+  flex: 1;
+  text-align: right;
+  color: var(--dim);
+  font-size: 11px;
+}
+#q-active {
   display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
 }
 #qcnt {
   color: var(--accent-light);
@@ -62,7 +81,7 @@
 .qbtn {
   background: transparent;
   border: none;
-  color: #777;
+  color: var(--muted);
   cursor: pointer;
   font-size: 13px;
   font-weight: 600;

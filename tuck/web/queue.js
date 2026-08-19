@@ -159,7 +159,9 @@ async function pollQueue() {
     if (queueFinished) queueActiveItemIds = {};
     if (outputToOpen && appSettings.open_output_folder_after_queue)
       await openResult(outputToOpen);
-    byId("qbar").classList.toggle("on", items.length > 0);
+    byId("qbar").classList.toggle("hid", items.length === 0);
+    byId("q-active").classList.toggle("hid", items.length === 0);
+    byId("qidle").classList.toggle("hid", items.length > 0);
     if (!items.length) return;
     if (running.length) {
       var item = running[0],
@@ -377,7 +379,8 @@ async function cancelAll() {
   if (!api) return;
   confirmToast("Cancel all processing?", async function () {
     await api.cancelAllItems();
-    byId("qbar").classList.remove("on");
+    byId("q-active").classList.add("hid");
+    byId("qidle").classList.remove("hid");
     toast("Processing cancelled.", "ok");
   });
 }

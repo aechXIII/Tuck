@@ -9,6 +9,41 @@ test("omitted segments select the full source", () => {
   assert.equal(segments.selectedDuration([{ start: 1, end: 2.5 }]), 1.5);
 });
 
+test("timeline view state is empty when no video is selected", () => {
+  assert.deepEqual(segments.timelineViewState(null, 47.5), {
+    status: "empty",
+    items: [],
+  });
+});
+
+test("timeline view state reports loading until probe duration is available", () => {
+  assert.deepEqual(segments.timelineViewState({ segments: [] }, 0), {
+    status: "loading",
+    items: [],
+  });
+});
+
+test("timeline view state assigns readable segment identities", () => {
+  assert.deepEqual(
+    segments.timelineViewState(
+      {
+        segments: [
+          { start: 0, end: 2.5 },
+          { start: 4, end: 10 },
+        ],
+      },
+      10,
+    ),
+    {
+      status: "ready",
+      items: [
+        { index: 0, badge: "S1", start: 0, end: 2.5 },
+        { index: 1, badge: "S2", start: 4, end: 10 },
+      ],
+    },
+  );
+});
+
 test("normalization rejects invalid, short, unordered, and overlapping ranges", () => {
   assert.throws(
     () => segments.normalizeSegments([{ start: 0, end: Number.POSITIVE_INFINITY }], 10),

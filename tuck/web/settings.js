@@ -4,11 +4,14 @@ var settingsPage = "general",
   settingsFilter = "all",
   editorOriginal = null,
   editorSnapshot = "";
+var settingsReturnFocus = null;
 function valueOr(value, fallback) {
   return value === undefined || value === null ? fallback : value;
 }
 function settingsShell(page, content, actions) {
   var actionBar = byId("settings-actions");
+  var opening = !document.body.classList.contains("settings-open");
+  if (opening) settingsReturnFocus = document.activeElement;
   document.body.classList.add("settings-open");
   byId("settings-page").innerHTML =
     '<div class="settings-page-inner">' + content + "</div>";
@@ -30,7 +33,49 @@ function settingsShell(page, content, actions) {
       button.setAttribute("aria-current", active ? "page" : "false");
     },
   );
+  if (opening) {
+    var closeButton = byId("settings-close");
+    if (closeButton)
+      requestAnimationFrame(function () {
+        closeButton.focus();
+      });
+  }
 }
+
+function trapSettingsFocus(event) {
+  if (
+    event.key !== "Tab" ||
+    !document.body.classList.contains("settings-open")
+  )
+    return;
+  var dialog = document.querySelector(".settings-dialog");
+  if (!dialog) return;
+  var focusable = Array.prototype.filter.call(
+    dialog.querySelectorAll(
+      'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
+    ),
+    function (element) {
+      return element.getClientRects().length > 0;
+    },
+  );
+  if (!focusable.length) return;
+  var first = focusable[0];
+  var last = focusable[focusable.length - 1];
+  if (
+    event.shiftKey &&
+    (document.activeElement === first || !dialog.contains(document.activeElement))
+  ) {
+    event.preventDefault();
+    last.focus();
+  } else if (
+    !event.shiftKey &&
+    (document.activeElement === last || !dialog.contains(document.activeElement))
+  ) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+document.addEventListener("keydown", trapSettingsFocus);
 function toggleSettings() {
   if (document.body.classList.contains("settings-open")) closeSettings();
   else openSettings();
@@ -1003,6 +1048,13 @@ function closeSettings() {
 }
 function closeSettingsWorkspace() {
   document.body.classList.remove("settings-open");
+  if (
+    settingsReturnFocus &&
+    settingsReturnFocus.isConnected &&
+    typeof settingsReturnFocus.focus === "function"
+  )
+    settingsReturnFocus.focus();
+  settingsReturnFocus = null;
 }
 function clearPath(id, placeholder) {
   byId(id).dataset.path = "";

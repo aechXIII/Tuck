@@ -8,6 +8,7 @@
   var moveRaf = 0;
   var tooltipTimer = 0;
   var tooltipTarget = null;
+  var tooltipPointerActive = false;
 
   function selectedClip() {
     return root.selPath && root.clips ? root.clips[root.selPath] : null;
@@ -273,6 +274,13 @@
     if ((clip.cropAspect || "off") === "off") {
       ui.classList.remove("on");
       paintTransformPreview(clip, size);
+      var offLabel = document.getElementById("crop-label");
+      var offReset = document.getElementById("btn-crop-reset");
+      if (offLabel) {
+        offLabel.textContent = "Full frame";
+        offLabel.classList.remove("active");
+      }
+      if (offReset) offReset.classList.add("hid");
       return;
     }
 
@@ -417,6 +425,7 @@
       stage.setPointerCapture(event.pointerId);
     } catch (error) {}
     document.body.classList.add("crop-dragging");
+    if (root.History) root.History.begin(root.selPath);
     event.preventDefault();
     event.stopPropagation();
   }
@@ -451,6 +460,7 @@
     } catch (error) {}
     drag = null;
     document.body.classList.remove("crop-dragging");
+    if (root.History) root.History.commit();
     if (typeof root.renderClips === "function") root.renderClips();
     if (typeof root.reqPreview === "function") root.reqPreview();
     event.preventDefault();
@@ -497,7 +507,9 @@
     clip.cropAspect = aspect;
     clip.transformOverride = true;
     clip.transformIntentTouched = true;
-    if (aspect !== "free" && aspect !== "off") {
+    if (aspect === "off") {
+      clip.crop = null;
+    } else if (aspect !== "free") {
       var current = root.TuckCropGeometry.selectionCrop(
         clip.crop,
         size.width,
@@ -588,7 +600,15 @@
 
   function syncTransformControls() {
     var clip = selectedClip();
-    if (!clip) return;
+    var fields = document.getElementById("transform-fields");
+    var controls = document.querySelectorAll("#transform-fields button");
+    var unavailable = !(clip && clip.probed);
+    if (fields) {
+      fields.classList.toggle("disabled", unavailable);
+      fields.setAttribute("aria-disabled", String(unavailable));
+    }
+    for (var c = 0; c < controls.length; c++) controls[c].disabled = unavailable;
+    if (unavailable) return;
 
     function setToggleState(button, active) {
       button.classList.toggle("on", active);
@@ -631,6 +651,10 @@
 
   function positionTransformTooltip(target, tooltip) {
     var targetRect = target.getBoundingClientRect();
+    if (targetRect.width <= 0 || targetRect.height <= 0) {
+      hideTransformTooltip();
+      return;
+    }
     var toolbar = target.closest ? target.closest(".transform-controls") : null;
     var toolbarRect = toolbar ? toolbar.getBoundingClientRect() : targetRect;
     tooltip.style.left = "0";
@@ -654,9 +678,13 @@
 
   function showTransformTooltip(target) {
     hideTransformTooltip();
+    if (tooltipPointerActive) return;
     tooltipTarget = target;
     tooltipTimer = setTimeout(function () {
-      if (tooltipTarget !== target) return;
+      if (tooltipTarget !== target || !target.isConnected) {
+        hideTransformTooltip();
+        return;
+      }
       var tooltip = document.getElementById("transform-tooltip");
       if (!tooltip) return;
       tooltip.textContent = target.dataset.tip;
@@ -698,6 +726,28 @@
     document.addEventListener("focusout", function (event) {
       if (tipTarget(event)) hideTransformTooltip();
     });
+    document.addEventListener(
+      "pointerdown",
+      function () {
+        tooltipPointerActive = true;
+        hideTransformTooltip();
+      },
+      true,
+    );
+    function endTooltipPointerGesture() {
+      hideTransformTooltip();
+    }
+    document.addEventListener("pointerup", endTooltipPointerGesture, true);
+    document.addEventListener("pointercancel", endTooltipPointerGesture, true);
+    document.addEventListener(
+      "mousemove",
+      function (event) {
+        if (!tooltipPointerActive || event.buttons !== 0) return;
+        tooltipPointerActive = false;
+        hideTransformTooltip();
+      },
+      true,
+    );
     if (root.addEventListener) {
       root.addEventListener("resize", hideTransformTooltip);
       root.addEventListener("scroll", hideTransformTooltip, true);
@@ -713,6 +763,7 @@
   root.syncTransformControls = syncTransformControls;
   root.toggleVideoFlip = toggleVideoFlip;
 
+  syncTransformControls();
   initTransformTooltips();
 
   var selection = document.getElementById("crop-selection");

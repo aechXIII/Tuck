@@ -35,14 +35,29 @@ const flipHorizontal = button({});
 const flipVertical = button({});
 flipHorizontal.classList.owner = flipHorizontal;
 flipVertical.classList.owner = flipVertical;
+const allControls = [...aspects, ...rotations, ...sizing, flipHorizontal, flipVertical];
+const transformFields = {
+  disabled: false,
+  ariaDisabled: "false",
+  classList: {
+    toggle(_name, active) {
+      transformFields.disabled = active;
+    },
+  },
+  setAttribute(name, value) {
+    if (name === "aria-disabled") this.ariaDisabled = value;
+  },
+};
 
 global.document = {
   getElementById(id) {
+    if (id === "transform-fields") return transformFields;
     if (id === "flip-horizontal") return flipHorizontal;
     if (id === "flip-vertical") return flipVertical;
     return null;
   },
   querySelectorAll(selector) {
+    if (selector === "#transform-fields button") return allControls;
     if (selector === "[data-aspect]") return aspects;
     if (selector === "[data-rotation]") return rotations;
     if (selector === "[data-sizing]") return sizing;
@@ -52,6 +67,7 @@ global.document = {
 global.selPath = "clip.mp4";
 global.clips = {
   "clip.mp4": {
+    probed: true,
     cropAspect: "9:16",
     rotation: 270,
     flipHorizontal: true,
@@ -79,4 +95,18 @@ test("transform controls expose selected state to assistive technology", () => {
     sizing.map((item) => item.pressed),
     ["false", "true", "false"],
   );
+});
+
+test("transform controls are unavailable until a probed clip is selected", () => {
+  global.selPath = null;
+  global.syncTransformControls();
+
+  assert.equal(transformFields.disabled, true);
+  assert.equal(transformFields.ariaDisabled, "true");
+  assert.equal(allControls.every((item) => item.disabled), true);
+
+  global.selPath = "clip.mp4";
+  global.syncTransformControls();
+  assert.equal(transformFields.disabled, false);
+  assert.equal(allControls.every((item) => !item.disabled), true);
 });

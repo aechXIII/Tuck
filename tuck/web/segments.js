@@ -73,6 +73,23 @@
     return fullSegment(duration);
   }
 
+  function timelineViewState(clip, duration) {
+    if (!clip) return { status: "empty", items: [] };
+    if (!Number.isFinite(duration) || duration <= 0)
+      return { status: "loading", items: [] };
+    return {
+      status: "ready",
+      items: segmentsForClip(clip, duration).map(function (segment, index) {
+        return {
+          index: index,
+          badge: "S" + (index + 1),
+          start: segment.start,
+          end: segment.end,
+        };
+      }),
+    };
+  }
+
   function selectedDuration(segments) {
     var total = 0;
     for (var i = 0; i < segments.length; i++)
@@ -221,6 +238,7 @@
     fullSegment: fullSegment,
     normalizeSegments: normalizeSegments,
     segmentsForClip: segmentsForClip,
+    timelineViewState: timelineViewState,
     selectedDuration: selectedDuration,
     isFullSource: isFullSource,
     editEndpoint: editEndpoint,

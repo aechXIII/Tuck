@@ -210,10 +210,15 @@ def test_resource_path_locates_web_ui() -> None:
         "styles.css",
         "settings.css",
         "player.css",
+        "audio.css",
         "queue.css",
         "transform.css",
         "app.js",
+        "audio.js",
         "encoding-ui.js",
+        "history.js",
+        "layout.js",
+        "panels.js",
         "segments.js",
         "player.js",
         "queue.js",
@@ -394,7 +399,7 @@ def test_segment_editor_controls_payloads_and_accessibility_are_wired() -> None:
 
     assert 'id="tl-segments"' in html
     assert 'id="timeline-row"' in html
-    assert 'aria-label="Segment actions"' in html
+    assert 'aria-label="Clip actions"' in html
     assert 'id="segment-menu-toggle"' not in html
     assert 'id="segment-popover"' not in html
     assert 'aria-label="Active segment start"' in html
@@ -418,7 +423,8 @@ def test_segment_editor_controls_payloads_and_accessibility_are_wired() -> None:
     assert ".tl-segment:hover .tl-segment-time" in html
     assert "#timeline.segment-dragging .tl-segment.active .tl-segment-time" in html
     assert "#timeline.trim-dragging .tl-segment.active .tl-segment-time" in html
-    assert 'byId("btn-segments-reset").disabled = !has' in html
+    assert "resetButton.disabled = !has" in html
+    assert 'resetButton.classList.toggle("hid", !has)' in html
     assert "SegmentEditing.playbackTarget" in html
     assert "req.segments = SegmentEditing.segmentsForClip" in html
     assert "r.data.segment_count" in html

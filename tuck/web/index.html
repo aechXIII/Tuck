@@ -12,28 +12,96 @@
   <body>
     <div id="tb">
       <span id="tb-logo">Tuck</span>
+      <button
+        type="button"
+        class="tb-icon-btn"
+        id="btn-undo"
+        onclick="History.undo()"
+        disabled
+        data-tip="Undo"
+        aria-label="Undo"
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <polyline points="1 4 1 10 7 10"></polyline>
+          <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+        </svg>
+      </button>
+      <button
+        type="button"
+        class="tb-icon-btn"
+        id="btn-redo"
+        onclick="History.redo()"
+        disabled
+        data-tip="Redo"
+        aria-label="Redo"
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <polyline points="23 4 23 10 17 10"></polyline>
+          <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+        </svg>
+      </button>
+      <div class="tb-divider"></div>
       <button class="tbbtn" id="settings-toggle" onclick="toggleSettings()">
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <circle cx="8" cy="8" r="2"></circle>
+          <path
+            d="M8 1.5v1.6M8 12.9v1.6M14.5 8h-1.6M3.1 8H1.5M12.5 3.5l-1.1 1.1M4.6 11.3l-1.1 1.1M12.5 12.5l-1.1-1.1M4.6 4.7 3.5 3.5"
+          ></path>
+        </svg>
         Settings
       </button>
     </div>
     <div id="main">
       <div id="left">
         <div id="left-hdr">
-          <button id="btn-add" onclick="browse()">+ Add files</button
-          ><button
-            id="btn-rmall"
-            onclick="removeAllClips()"
-            title="Remove all"
-            aria-label="Remove all files"
-          >
-            ✕
-          </button>
-        </div>
-        <div id="clips">
-          <div id="drop-z" class="show">
-            <h3>Drop here</h3>
-            <p>or use Add files above</p>
+          <div class="lib-tabs" role="group" aria-label="Library section">
+            <button
+              type="button"
+              id="lib-tab-media"
+              class="lib-tab on"
+              aria-pressed="true"
+              onclick="setLibraryTab('media')"
+            >
+              Media
+            </button>
+            <button
+              type="button"
+              id="lib-tab-audio"
+              class="lib-tab"
+              aria-pressed="false"
+              onclick="setLibraryTab('audio')"
+            >
+              Audio
+            </button>
           </div>
+          <div id="lib-add-row-media" class="lib-add-row">
+            <button id="btn-add" onclick="browse()">+ Add files</button
+            ><button
+              id="btn-rmall"
+              onclick="removeAllClips()"
+              title="Remove all"
+              aria-label="Remove all files"
+            >
+              ✕
+            </button>
+          </div>
+          <div id="lib-add-row-audio" class="lib-add-row hid">
+            <button id="btn-add-audio" onclick="AudioTimeline.browse()">
+              + Add audio
+            </button>
+          </div>
+        </div>
+        <div id="lib-panel-media">
+          <div id="clips">
+            <div id="drop-z" class="show">
+              <h3>Drop here</h3>
+              <p>or use Add files above</p>
+            </div>
+          </div>
+        </div>
+        <div id="lib-panel-audio" class="hid">
+          <div id="audio-lib-list"></div>
+          <div id="audio-lib-empty" class="lib-empty"></div>
         </div>
       </div>
       <div id="center">
@@ -66,6 +134,19 @@
             <button
               type="button"
               class="pbtn"
+              id="btn-frame-prev"
+              onclick="stepFrame(-1)"
+              aria-label="Previous frame"
+              data-tip="Previous frame"
+            >
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <rect x="2" y="3" width="2" height="10"></rect>
+                <path d="M14 3 6 8l8 5z"></path>
+              </svg>
+            </button>
+            <button
+              type="button"
+              class="pbtn"
               id="btn-play"
               onclick="togglePlay()"
               aria-label="Play/Pause"
@@ -73,6 +154,20 @@
             >
               ▶
             </button>
+            <button
+              type="button"
+              class="pbtn"
+              id="btn-frame-next"
+              onclick="stepFrame(1)"
+              aria-label="Next frame"
+              data-tip="Next frame"
+            >
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <rect x="12" y="3" width="2" height="10"></rect>
+                <path d="M2 3l8 5-8 5z"></path>
+              </svg>
+            </button>
+            <span id="ptime">0:00 / 0:00</span>
             <input
               type="range"
               id="stage-scrub"
@@ -84,7 +179,6 @@
               aria-label="Seek"
               data-tip="Seek"
             />
-            <span id="ptime">0:00 / 0:00</span>
             <div id="player-vol">
               <button
                 type="button"
@@ -105,331 +199,399 @@
                 data-tip="Preview volume"
               />
             </div>
-            <div
-              class="chip-group"
-              id="crop-edit-group"
-              role="group"
-              aria-label="Crop controls"
+            <button
+              type="button"
+              class="pbtn"
+              id="btn-fullscreen"
+              onclick="toggleFullscreen()"
+              aria-label="Fullscreen"
+              data-tip="Fullscreen"
             >
-              <span id="crop-label" class="transform-inline-label">Full frame</span>
-              <button
-                type="button"
-                id="btn-crop-reset"
-                class="tool-btn hid"
-                onclick="clearCrop()"
-                data-tip="Use full frame"
-                aria-label="Reset crop"
-              >
-                Reset crop
-              </button>
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path
+                  d="M1.5 5.5v-3a1 1 0 0 1 1-1h3M14.5 5.5v-3a1 1 0 0 0-1-1h-3M1.5 10.5v3a1 1 0 0 0 1 1h3M14.5 10.5v3a1 1 0 0 1-1 1h-3"
+                ></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+      <div id="right">
+        <div id="insp-tabs" class="insp-tabs" role="group" aria-label="Inspector section">
+          <button
+            type="button"
+            id="insp-tab-edit"
+            class="insp-tab on"
+            aria-pressed="true"
+            onclick="setInspectorTab('edit')"
+          >
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M4.5 1v9.5a1 1 0 0 0 1 1H15"></path>
+              <path d="M11.5 15V5.5a1 1 0 0 0-1-1H1"></path>
+            </svg>
+            Edit
+          </button>
+          <button
+            type="button"
+            id="insp-tab-audio"
+            class="insp-tab"
+            aria-pressed="false"
+            onclick="setInspectorTab('audio')"
+          >
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M1.5 6h2.3l3.4-3v10l-3.4-3H1.5z"></path>
+              <path d="M11 5.3a3 3 0 0 1 0 5.4M13.1 3.3a6 6 0 0 1 0 9.4"></path>
+            </svg>
+            Audio
+          </button>
+          <button
+            type="button"
+            id="insp-tab-export"
+            class="insp-tab"
+            aria-pressed="false"
+            onclick="setInspectorTab('export')"
+          >
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M8 1.5v7.8M5.2 6.7 8 9.5l2.8-2.8"></path>
+              <path d="M2.5 11v1.7a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V11"></path>
+            </svg>
+            Export
+          </button>
+        </div>
+        <div id="right-scroll">
+          <div id="insp-edit">
+            <div class="gr">
+              <div class="grt">Transform</div>
+              <div id="transform-fields" role="toolbar" aria-label="Video transform controls">
+                <div class="enc-field">
+                  <label>Crop</label>
+                  <div
+                    class="transform-segment grid-3"
+                    role="group"
+                    aria-label="Crop aspect ratio"
+                  >
+                    <button
+                      type="button"
+                      class="on"
+                      data-aspect="off"
+                      aria-pressed="true"
+                      onclick="setCropAspect('off')"
+                    >
+                      Off</button
+                    ><button
+                      type="button"
+                      data-aspect="free"
+                      aria-pressed="false"
+                      onclick="setCropAspect('free')"
+                    >
+                      Free</button
+                    ><button
+                      type="button"
+                      data-aspect="16:9"
+                      aria-pressed="false"
+                      onclick="setCropAspect('16:9')"
+                    >
+                      16:9</button
+                    ><button
+                      type="button"
+                      data-aspect="9:16"
+                      aria-pressed="false"
+                      onclick="setCropAspect('9:16')"
+                    >
+                      9:16</button
+                    ><button
+                      type="button"
+                      data-aspect="1:1"
+                      aria-pressed="false"
+                      onclick="setCropAspect('1:1')"
+                    >
+                      1:1</button
+                    ><button
+                      type="button"
+                      data-aspect="4:3"
+                      aria-pressed="false"
+                      onclick="setCropAspect('4:3')"
+                    >
+                      4:3
+                    </button>
+                  </div>
+                </div>
+                <div class="enc-field">
+                  <label>Rotation</label>
+                  <div
+                    class="transform-segment"
+                    role="group"
+                    aria-label="Video rotation"
+                  >
+                    <button
+                      type="button"
+                      class="icon on"
+                      data-rotation="0"
+                      aria-pressed="true"
+                      onclick="setVideoRotation(0)"
+                      data-tip="No rotation"
+                      aria-label="No rotation"
+                    >
+                      <svg viewBox="0 0 24 24">
+                        <rect x="4" y="4" width="16" height="16" rx="2"></rect>
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      class="icon"
+                      data-rotation="270"
+                      aria-pressed="false"
+                      onclick="setVideoRotation(270)"
+                      data-tip="Rotate 90° counterclockwise"
+                      aria-label="Rotate 90° counterclockwise"
+                    >
+                      <svg viewBox="0 0 24 24">
+                        <polyline points="1 4 1 10 7 10"></polyline>
+                        <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      class="icon"
+                      data-rotation="90"
+                      aria-pressed="false"
+                      onclick="setVideoRotation(90)"
+                      data-tip="Rotate 90° clockwise"
+                      aria-label="Rotate 90° clockwise"
+                    >
+                      <svg viewBox="0 0 24 24">
+                        <polyline points="23 4 23 10 17 10"></polyline>
+                        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      class="icon"
+                      data-rotation="180"
+                      aria-pressed="false"
+                      onclick="setVideoRotation(180)"
+                      data-tip="Rotate 180°"
+                      aria-label="Rotate 180°"
+                    >
+                      <svg viewBox="0 0 24 24">
+                        <polyline points="23 4 23 10 17 10"></polyline>
+                        <polyline points="1 20 1 14 7 14"></polyline>
+                        <path
+                          d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"
+                        ></path>
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+                <div class="enc-field">
+                  <label>Flip</label>
+                  <div
+                    class="transform-segment"
+                    role="group"
+                    aria-label="Video flip"
+                  >
+                    <button
+                      type="button"
+                      class="icon"
+                      id="flip-horizontal"
+                      aria-pressed="false"
+                      onclick="toggleVideoFlip('horizontal')"
+                      data-tip="Flip horizontal"
+                      aria-label="Flip horizontal"
+                    >
+                      <svg viewBox="0 0 24 24">
+                        <line
+                          x1="12"
+                          y1="3"
+                          x2="12"
+                          y2="21"
+                          stroke-dasharray="3 3"
+                        ></line>
+                        <polyline points="7 8 3 12 7 16"></polyline>
+                        <polyline points="17 8 21 12 17 16"></polyline>
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      class="icon"
+                      id="flip-vertical"
+                      aria-pressed="false"
+                      onclick="toggleVideoFlip('vertical')"
+                      data-tip="Flip vertical"
+                      aria-label="Flip vertical"
+                    >
+                      <svg viewBox="0 0 24 24">
+                        <line
+                          x1="3"
+                          y1="12"
+                          x2="21"
+                          y2="12"
+                          stroke-dasharray="3 3"
+                        ></line>
+                        <polyline points="8 7 12 3 16 7"></polyline>
+                        <polyline points="8 17 12 21 16 17"></polyline>
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="gr" id="clip-details-card">
+              <div class="grt">Clip details</div>
+              <div id="clip-details-body"></div>
             </div>
           </div>
-          <section id="audio-editor" class="sequence" aria-label="Video and audio timeline">
-            <div id="timeline-row" class="transform-controls seq-toolbar">
-              <div class="chip-group" role="group" aria-label="Segment actions">
-                <span class="chip-label">Segments</span>
-                <button
-                  type="button"
-                  id="btn-segment-add"
-                  class="tool-btn icon-only"
-                  onclick="addSegment()"
-                  data-tip="New segment"
-                  aria-label="Add segment"
+          <div id="insp-audio" class="hid">
+            <div class="audio-master-row" id="audio-master-card">
+              <span class="audio-master-title">Master</span>
+              <button
+                type="button"
+                id="audio-master-toggle"
+                class="audio-master-toggle on"
+                role="switch"
+                aria-checked="true"
+                aria-label="Include audio in export"
+                onclick="AudioTimeline.toggleMaster()"
+              >
+                <span>Include audio</span>
+                <span class="audio-toggle-track" aria-hidden="true"
+                  ><span class="audio-toggle-thumb"></span
+                ></span>
+              </button>
+            </div>
+            <div class="audio-section-heading">
+              <span>Tracks</span><span id="audio-track-count">0</span>
+            </div>
+            <div id="audio-track-mixer"></div>
+            <div id="audio-clip-range" class="hid"></div>
+          </div>
+          <div id="insp-export" class="hid">
+            <div class="stitle">Task</div>
+            <div id="task-wf" role="group" aria-label="Task selector">
+              <button class="on" id="wf-c" onclick="setWf(0)" aria-pressed="true">
+                Compress</button
+              ><button id="wf-u" onclick="setWf(1)" aria-pressed="false">
+                Upscale
+              </button>
+            </div>
+            <div class="gr" id="profile-card">
+              <div class="grt">Profile</div>
+              <select
+                id="prof-sel"
+                onchange="onProfileChange()"
+                aria-label="Select profile"
+              ></select>
+              <div class="prof-meta">
+                <span class="mod-badge" id="mod-badge">Modified</span>
+                <span style="flex: 1"></span>
+                <a
+                  href="#"
+                  style="
+                    color: var(--muted);
+                    font-size: 10px;
+                    text-decoration: none;
+                  "
+                  onclick="openSettings('profiles')"
+                  aria-label="Manage profiles"
+                  >Manage profiles…</a
                 >
-                  <svg viewBox="0 0 16 16" aria-hidden="true">
-                    <rect x="1" y="6" width="8" height="6" rx="1.5"></rect>
-                    <path d="M12.5 2v6M9.5 5h6" />
-                  </svg>
-                </button>
-                <button
-                  type="button"
-                  id="btn-segment-remove"
-                  class="tool-btn icon-only"
-                  onclick="removeActiveSegment()"
-                  data-tip="Remove segment"
-                  aria-label="Remove active segment"
-                >
-                  <svg viewBox="0 0 16 16" aria-hidden="true">
-                    <path
-                      d="M3.5 4.5h9M6.5 4.5v-1a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v1M4.5 4.5l.6 8a1 1 0 0 0 1 .9h3.8a1 1 0 0 0 1-.9l.6-8"
-                    />
-                    <path d="M6.7 7v4M9.3 7v4" />
-                  </svg>
-                </button>
-                <button
-                  type="button"
-                  id="btn-segments-reset"
-                  class="tool-btn icon-only"
-                  onclick="resetSegments()"
-                  data-tip="Reset to full clip"
-                  aria-label="Reset segments to full source"
-                >
-                  <svg viewBox="0 0 16 16" aria-hidden="true">
-                    <polyline points="0.7 2.7 0.7 6.7 4.7 6.7"></polyline>
-                    <path d="M2.3 10a6 6 0 1 0 1.4-6.2L0.7 6.7"></path>
-                  </svg>
+              </div>
+              <div class="prof-row">
+                <button class="btn2" onclick="saveProfileChanges()">
+                  Save changes</button
+                ><button class="btn2" onclick="saveProfileAs()">
+                  Save as new profile…
                 </button>
               </div>
-              <div class="chip-group" role="group" aria-label="Clip actions">
-                <span class="chip-label">Clip</span>
+              <div id="prof-reset-row" class="hid">
                 <button
-                  type="button"
-                  id="btn-seq-split"
-                  class="tool-btn icon-only"
-                  onclick="splitAtPlayhead()"
-                  data-tip="Split (S)"
-                  aria-label="Split at playhead"
+                  class="btn2"
+                  style="width: 100%; text-align: center"
+                  onclick="resetToProfile()"
                 >
-                  <svg viewBox="0 0 16 16" aria-hidden="true">
-                    <rect x="2" y="5" width="5" height="6" rx="1"></rect>
-                    <rect x="9" y="5" width="5" height="6" rx="1"></rect>
-                  </svg>
+                  Reset to profile
                 </button>
               </div>
-              <div id="audio-mixer" class="chip-group" hidden>
-                <span class="chip-label">Track</span>
-                <span id="audio-mixer-name" class="transform-inline-label">A</span>
-                <button
-                  type="button"
-                  id="audio-mixer-mute"
-                  class="tool-btn icon-only"
-                  onclick="AudioTimeline.toggleMixerMute()"
-                  aria-pressed="false"
-                  data-tip="Mute track"
+            </div>
+            <div class="gr" id="sz-grp">
+              <div class="grt">
+                <span>Target Size</span
+                ><span style="float: right"
+                  ><input
+                    class="badge"
+                    id="sz-badge"
+                    type="number"
+                    min="2"
+                    step="1"
+                    value="10"
+                    onchange="onBadgeSize(this.value)"
+                    aria-label="Target size in megabytes"
+                  /><span class="badge" id="sz-unit">MB</span></span
                 >
-                  M
-                </button>
+              </div>
+              <input
+                type="range"
+                id="sz-slider"
+                min="2"
+                max="500"
+                value="10"
+                oninput="onSize(this.value)"
+                aria-label="Target size in megabytes"
+                aria-valuenow="10"
+                aria-valuemin="1"
+                aria-valuemax="500"
+              />
+              <div class="pset" id="sz-presets"></div>
+              <span class="help-tip" id="calc-br">Calculated bitrate: --</span>
+            </div>
+            <div class="gr">
+              <div class="info-row">
+                <span class="grt" style="margin: 0">Resolution</span
+                ><label class="chk" id="res-source-wrap" style="font-size: 11px"
+                  ><input
+                    type="checkbox"
+                    id="use-source-res"
+                    checked
+                    onchange="onUseSourceResolution()"
+                  /><span class="chk-box"></span><span>Source</span></label
+                >
+              </div>
+              <input type="hidden" id="res-mode" value="source" />
+              <div class="row" id="res-cust" style="margin-top: 8px">
                 <input
-                  type="range"
-                  id="audio-mixer-gain"
-                  min="-24"
-                  max="12"
-                  step="1"
-                  value="0"
-                  oninput="AudioTimeline.setMixerGain(this.value)"
-                  aria-label="Track volume in decibels"
+                  type="number"
+                  id="res-w"
+                  value="1920"
+                  style="flex: 1; text-align: center"
+                  aria-label="Custom width"
+                  onchange="onResolutionGeometryChanged()"
+                /><span style="color: #6b6b7b; font-weight: 700">×</span
+                ><input
+                  type="number"
+                  id="res-h"
+                  value="1080"
+                  style="flex: 1; text-align: center"
+                  aria-label="Custom height"
+                  onchange="onResolutionGeometryChanged()"
                 />
-                <span id="audio-mixer-db" class="transform-inline-label">0 dB</span>
-                <button
-                  type="button"
-                  id="audio-mixer-remove"
-                  class="tool-btn danger hid"
-                  onclick="AudioTimeline.removeSelectedTrack()"
-                  data-tip="Remove track"
-                >
-                  Remove
-                </button>
-                <button
-                  type="button"
-                  id="audio-fragment-mute"
-                  class="tool-btn hid"
-                  onclick="AudioTimeline.toggleFragmentMute()"
-                  aria-pressed="false"
-                >
-                  Mute
-                </button>
               </div>
-              <div class="chip-group">
-                <span class="chip-label">Audio</span>
-                <button
-                  type="button"
-                  id="audio-master-toggle"
-                  class="tool-btn on"
-                  onclick="AudioTimeline.toggleMaster()"
-                  aria-pressed="true"
-                  data-tip="Include or exclude audio from the export"
+              <div class="row hid" id="scaler-row" style="margin-top: 4px">
+                <span>Scaler</span
+                ><select
+                  id="scaler-sel"
+                  onchange="reqPreview();updateDirty()"
+                  style="flex: 1"
+                  aria-label="Scaler algorithm"
                 >
-                  <span class="audio-speaker" aria-hidden="true">♪</span>
-                  <span id="audio-master-label">Audio</span>
-                </button>
-                <button
-                  type="button"
-                  id="audio-add"
-                  class="tool-btn"
-                  onclick="AudioTimeline.browse()"
-                  data-tip="Add music or narration"
-                >
-                  <svg viewBox="0 0 16 16" aria-hidden="true">
-                    <path d="M2 9.5v-3M4.5 11v-6M7 9.5v-3" />
-                    <path d="M12.5 2v6M9.5 5h6" />
-                  </svg>
-                  <span class="lbltxt">Add audio</span>
-                </button>
+                  <option>Bilinear</option>
+                  <option>Bicubic</option>
+                  <option>Lanczos</option>
+                  <option>Point</option>
+                  <option selected>Neighbor</option>
+                </select>
               </div>
-              <div id="transform-fields" role="toolbar" aria-label="Video transform controls">
-              <div class="chip-group">
-                <span class="chip-label">Crop</span>
-                <div
-                  class="transform-segment"
-                  role="group"
-                  aria-label="Crop aspect ratio"
-                >
-                  <button
-                    type="button"
-                    class="on"
-                    data-aspect="off"
-                    aria-pressed="true"
-                    onclick="setCropAspect('off')"
-                  >
-                    Off</button
-                  ><button
-                    type="button"
-                    data-aspect="free"
-                    aria-pressed="false"
-                    onclick="setCropAspect('free')"
-                  >
-                    Free</button
-                  ><button
-                    type="button"
-                    data-aspect="16:9"
-                    aria-pressed="false"
-                    onclick="setCropAspect('16:9')"
-                  >
-                    16:9</button
-                  ><button
-                    type="button"
-                    data-aspect="9:16"
-                    aria-pressed="false"
-                    onclick="setCropAspect('9:16')"
-                  >
-                    9:16</button
-                  ><button
-                    type="button"
-                    data-aspect="1:1"
-                    aria-pressed="false"
-                    onclick="setCropAspect('1:1')"
-                  >
-                    1:1</button
-                  ><button
-                    type="button"
-                    data-aspect="4:3"
-                    aria-pressed="false"
-                    onclick="setCropAspect('4:3')"
-                  >
-                    4:3
-                  </button>
-                </div>
-              </div>
-              <div class="chip-group">
-                <span class="chip-label">Rotation</span>
-                <div
-                  class="transform-segment"
-                  role="group"
-                  aria-label="Video rotation"
-                >
-                  <button
-                    type="button"
-                    class="icon on"
-                    data-rotation="0"
-                    aria-pressed="true"
-                    onclick="setVideoRotation(0)"
-                    data-tip="No rotation"
-                    aria-label="No rotation"
-                  >
-                    <svg viewBox="0 0 24 24">
-                      <rect x="4" y="4" width="16" height="16" rx="2"></rect>
-                    </svg>
-                  </button>
-                  <button
-                    type="button"
-                    class="icon"
-                    data-rotation="270"
-                    aria-pressed="false"
-                    onclick="setVideoRotation(270)"
-                    data-tip="Rotate 90° counterclockwise"
-                    aria-label="Rotate 90° counterclockwise"
-                  >
-                    <svg viewBox="0 0 24 24">
-                      <polyline points="1 4 1 10 7 10"></polyline>
-                      <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
-                    </svg>
-                  </button>
-                  <button
-                    type="button"
-                    class="icon"
-                    data-rotation="90"
-                    aria-pressed="false"
-                    onclick="setVideoRotation(90)"
-                    data-tip="Rotate 90° clockwise"
-                    aria-label="Rotate 90° clockwise"
-                  >
-                    <svg viewBox="0 0 24 24">
-                      <polyline points="23 4 23 10 17 10"></polyline>
-                      <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
-                    </svg>
-                  </button>
-                  <button
-                    type="button"
-                    class="icon"
-                    data-rotation="180"
-                    aria-pressed="false"
-                    onclick="setVideoRotation(180)"
-                    data-tip="Rotate 180°"
-                    aria-label="Rotate 180°"
-                  >
-                    <svg viewBox="0 0 24 24">
-                      <polyline points="23 4 23 10 17 10"></polyline>
-                      <polyline points="1 20 1 14 7 14"></polyline>
-                      <path
-                        d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"
-                      ></path>
-                    </svg>
-                  </button>
-                </div>
-              </div>
-              <div class="chip-group">
-                <span class="chip-label">Flip</span>
-                <div
-                  class="transform-segment"
-                  role="group"
-                  aria-label="Video flip"
-                >
-                  <button
-                    type="button"
-                    class="icon"
-                    id="flip-horizontal"
-                    aria-pressed="false"
-                    onclick="toggleVideoFlip('horizontal')"
-                    data-tip="Flip horizontal"
-                    aria-label="Flip horizontal"
-                  >
-                    <svg viewBox="0 0 24 24">
-                      <line
-                        x1="12"
-                        y1="3"
-                        x2="12"
-                        y2="21"
-                        stroke-dasharray="3 3"
-                      ></line>
-                      <polyline points="7 8 3 12 7 16"></polyline>
-                      <polyline points="17 8 21 12 17 16"></polyline>
-                    </svg>
-                  </button>
-                  <button
-                    type="button"
-                    class="icon"
-                    id="flip-vertical"
-                    aria-pressed="false"
-                    onclick="toggleVideoFlip('vertical')"
-                    data-tip="Flip vertical"
-                    aria-label="Flip vertical"
-                  >
-                    <svg viewBox="0 0 24 24">
-                      <line
-                        x1="3"
-                        y1="12"
-                        x2="21"
-                        y2="12"
-                        stroke-dasharray="3 3"
-                      ></line>
-                      <polyline points="8 7 12 3 16 7"></polyline>
-                      <polyline points="8 17 12 21 16 17"></polyline>
-                    </svg>
-                  </button>
-                </div>
-              </div>
-              <div class="chip-group">
-                <span class="chip-label">Output sizing</span>
+              <div class="enc-field">
+                <label>Output sizing</label>
                 <div
                   class="transform-segment"
                   role="group"
@@ -463,366 +625,165 @@
                   </button>
                 </div>
               </div>
-              </div>
             </div>
-            <div id="sequence-frame">
-              <div id="sequence-stack">
-                <div id="sequence-ruler" class="hid" aria-hidden="true"></div>
-                <div class="seq-group" id="source-group">
-                  <div class="seq-row video">
-                    <div class="seq-head" id="video-track-head">
-                      <span class="seq-track-index" data-tip="Video track">
-                        <svg class="ti-icon" viewBox="0 0 16 16" aria-hidden="true">
-                          <rect x="1.5" y="3" width="13" height="10" rx="1.5"></rect>
-                          <path d="M4.5 3v10M11.5 3v10" stroke-dasharray="1.4 1.6"></path>
-                        </svg>
-                      </span>
-                    </div>
-                    <div
-                      id="timeline"
-                      class="seq-lane"
-                      role="slider"
-                      aria-label="Seek and segment timeline"
-                      aria-valuemin="0"
-                      aria-valuemax="0"
-                      aria-valuenow="0"
-                      tabindex="0"
-                    >
-                      <div class="tl-track" id="tl-track">
-                        <div id="tl-segments"></div>
-                      </div>
-                    </div>
-                  </div>
-                  <div class="seq-row audio" id="source-audio-track">
-                    <div class="seq-head" id="source-audio-head">
-                      <button
-                        type="button"
-                        class="seq-track-index"
-                        id="source-audio-label"
-                        onclick="AudioTimeline.toggleSourceMute()"
-                        data-tip="Mute source audio"
-                      >
-                        <svg class="ti-icon" viewBox="0 0 16 16" aria-hidden="true">
-                          <path d="M2 10V6M5 12V4M8 9V7M11 13V3M14 10V6"></path>
-                        </svg>
-                      </button>
-                    </div>
-                    <div
-                      class="seq-lane audio-lane source-lane"
-                      id="source-audio-lane"
-                    ></div>
-                  </div>
-                </div>
-                <div id="imported-audio-tracks"></div>
+            <div class="gr">
+              <div class="info-row">
+                <span class="grt" style="margin: 0">Frame Rate</span
+                ><label class="chk" style="font-size: 11px"
+                  ><input
+                    type="checkbox"
+                    id="use-source-fps"
+                    checked
+                    onchange="onUseSourceFps()"
+                  /><span class="chk-box"></span><span>Source</span></label
+                >
               </div>
-              <div id="seq-selection-layer">
-                <div id="seq-selection" hidden></div>
-                <div
-                  class="tl-handle"
-                  id="tl-in"
-                  role="slider"
-                  aria-label="Active segment start"
-                  tabindex="0"
-                  data-tip="Segment start"
-                ></div>
-                <div
-                  class="tl-handle"
-                  id="tl-out"
-                  role="slider"
-                  aria-label="Active segment end"
-                  tabindex="0"
-                  data-tip="Segment end"
-                ></div>
+              <div class="row">
+                <span>Frame rate</span
+                ><span class="badge" id="fps-badge">30 fps</span>
               </div>
-              <div id="seq-playhead-layer" aria-hidden="true">
-                <div id="seq-playhead"></div>
-              </div>
-            </div>
-          </section>
-        </div>
-      </div>
-      <div id="right">
-        <div id="right-scroll">
-          <div class="stitle">Task</div>
-          <div id="task-wf" role="group" aria-label="Task selector">
-            <button class="on" id="wf-c" onclick="setWf(0)" aria-pressed="true">
-              Compress</button
-            ><button id="wf-u" onclick="setWf(1)" aria-pressed="false">
-              Upscale
-            </button>
-          </div>
-          <div class="stitle">Profile</div>
-          <select
-            id="prof-sel"
-            onchange="onProfileChange()"
-            aria-label="Select profile"
-          ></select>
-          <div class="prof-meta">
-            <span class="mod-badge" id="mod-badge">Modified</span>
-            <span style="flex: 1"></span>
-            <a
-              href="#"
-              style="
-                color: var(--muted);
-                font-size: 10px;
-                text-decoration: none;
-              "
-              onclick="openSettings('profiles')"
-              aria-label="Manage profiles"
-              >Manage profiles…</a
-            >
-          </div>
-          <div class="prof-row">
-            <button class="btn2" onclick="saveProfileChanges()">
-              Save changes</button
-            ><button class="btn2" onclick="saveProfileAs()">
-              Save as new profile…
-            </button>
-          </div>
-          <div id="prof-reset-row" class="hid">
-            <button
-              class="btn2"
-              style="width: 100%; text-align: center"
-              onclick="resetToProfile()"
-            >
-              Reset to profile
-            </button>
-          </div>
-          <div class="gr" id="sz-grp">
-            <div class="grt">
-              <span>Target Size</span
-              ><span style="float: right"
-                ><input
-                  class="badge"
-                  id="sz-badge"
-                  type="number"
-                  min="2"
-                  step="1"
-                  value="10"
-                  onchange="onBadgeSize(this.value)"
-                  aria-label="Target size in megabytes"
-                /><span class="badge" id="sz-unit">MB</span></span
-              >
-            </div>
-            <input
-              type="range"
-              id="sz-slider"
-              min="2"
-              max="500"
-              value="10"
-              oninput="onSize(this.value)"
-              aria-label="Target size in megabytes"
-              aria-valuenow="10"
-              aria-valuemin="1"
-              aria-valuemax="500"
-            />
-            <div class="pset" id="sz-presets"></div>
-            <span class="help-tip" id="calc-br">Calculated bitrate: --</span>
-          </div>
-          <div class="gr">
-            <div class="info-row">
-              <span class="grt" style="margin: 0">Resolution</span
-              ><label class="chk" id="res-source-wrap" style="font-size: 11px"
-                ><input
-                  type="checkbox"
-                  id="use-source-res"
-                  checked
-                  onchange="onUseSourceResolution()"
-                /><span class="chk-box"></span><span>Source</span></label
-              >
-            </div>
-            <input type="hidden" id="res-mode" value="source" />
-            <div class="row" id="res-cust" style="margin-top: 8px">
               <input
-                type="number"
-                id="res-w"
-                value="1920"
-                style="flex: 1; text-align: center"
-                aria-label="Custom width"
-                onchange="onResolutionGeometryChanged()"
-              /><span style="color: #6b6b7b; font-weight: 700">×</span
-              ><input
-                type="number"
-                id="res-h"
-                value="1080"
-                style="flex: 1; text-align: center"
-                aria-label="Custom height"
-                onchange="onResolutionGeometryChanged()"
+                type="range"
+                id="fps-slider"
+                min="1"
+                max="240"
+                value="30"
+                oninput="onFpsSlider(this.value)"
+                aria-label="Target frame rate"
+                aria-valuenow="30"
+                aria-valuemin="1"
+                aria-valuemax="240"
               />
+              <input type="hidden" id="fps-val" value="30" />
             </div>
-            <div class="row hid" id="scaler-row" style="margin-top: 4px">
-              <span>Scaler</span
-              ><select
-                id="scaler-sel"
-                onchange="reqPreview();updateDirty()"
-                style="flex: 1"
-                aria-label="Scaler algorithm"
-              >
-                <option>Bilinear</option>
-                <option>Bicubic</option>
-                <option>Lanczos</option>
-                <option>Point</option>
-                <option selected>Neighbor</option>
-              </select>
-            </div>
-          </div>
-          <div class="gr">
-            <div class="info-row">
-              <span class="grt" style="margin: 0">Frame Rate</span
-              ><label class="chk" style="font-size: 11px"
-                ><input
-                  type="checkbox"
-                  id="use-source-fps"
-                  checked
-                  onchange="onUseSourceFps()"
-                /><span class="chk-box"></span><span>Source</span></label
-              >
-            </div>
-            <div class="row">
-              <span>Frame rate</span
-              ><span class="badge" id="fps-badge">30 fps</span>
-            </div>
-            <input
-              type="range"
-              id="fps-slider"
-              min="1"
-              max="240"
-              value="30"
-              oninput="onFpsSlider(this.value)"
-              aria-label="Target frame rate"
-              aria-valuenow="30"
-              aria-valuemin="1"
-              aria-valuemax="240"
-            />
-            <input type="hidden" id="fps-val" value="30" />
-          </div>
-          <div class="gr">
-            <div class="info-row">
-              <span class="grt" style="margin: 0">Audio</span
-              ><label class="chk" style="font-size: 11px"
-                ><input
-                  type="checkbox"
-                  id="keep-audio"
-                  onchange="onKeepAudio()"
-                /><span class="chk-box"></span><span>Copy when possible</span></label
-              >
-            </div>
-            <div class="enc-field">
-              <label for="audio-br">Bitrate (kbps)</label
-              ><input
-                type="number"
-                id="audio-br"
-                value="128"
-                min="0"
-                max="320"
-                aria-label="Audio bitrate"
-                onchange="reqPreview();updateDirty()"
-              />
-            </div>
-          </div>
-          <div class="gr">
-            <div class="grt">Encoding</div>
-            <div class="enc-field">
-              <label for="enc-sel">Encoder</label
-              ><select
-                id="enc-sel"
-                onchange="onEncChange()"
-                aria-label="Video encoder"
-              ></select>
-            </div>
-            <div class="setting-note" id="encoder-note">
-              Hardware is faster; software can produce smaller files.
-            </div>
-            <div class="enc-field">
-              <label for="speed-sel">Encoding speed</label
-              ><select
-                id="speed-sel"
-                onchange="onSpeedChange()"
-                aria-label="Encoding speed"
-              >
-                <option value="fast">Fast</option>
-                <option value="balanced" selected>Balanced</option>
-                <option value="best">Best compression</option>
-              </select>
-            </div>
-            <div class="enc-field" id="two-pass-wrap">
-              <label for="two-pass">Two-pass encoding</label
-              ><select
-                id="two-pass"
-                onchange="onTwoPassChange()"
-                aria-label="Two-pass encoding"
-              >
-                <option value="on" selected>On</option>
-                <option value="off">Off</option>
-              </select>
-            </div>
-            <span class="setting-note hid" id="two-pass-note"
-              >Two-pass is available only for software compression.</span
-            >
-            <button
-              class="advanced-toggle"
-              id="adv-toggle"
-              type="button"
-              aria-expanded="false"
-              onclick="toggleAdv()"
-            >
-              <span>Advanced encoding</span
-              ><span class="advanced-arrow" aria-hidden="true">⌄</span>
-            </button>
-            <div class="hid" id="adv-sec">
+            <div class="gr">
+              <div class="info-row">
+                <span class="grt" style="margin: 0">Audio encoding</span
+                ><label class="chk" style="font-size: 11px"
+                  ><input
+                    type="checkbox"
+                    id="keep-audio"
+                    onchange="onKeepAudio()"
+                  /><span class="chk-box"></span><span>Copy when possible</span></label
+                >
+              </div>
               <div class="enc-field">
-                <label for="preset-sel">Native FFmpeg preset</label
-                ><select
-                  id="preset-sel"
-                  onchange="onNativePresetChange()"
-                  aria-label="Native FFmpeg preset"
-                ></select>
-              </div>
-              <div class="enc-field" id="rate-control-row">
-                <label id="rate-label" for="rc-sel">Quality method</label
-                ><select
-                  id="rc-sel"
-                  onchange="onRcChange()"
-                  aria-label="Rate control method"
-                ></select>
-              </div>
-              <div class="enc-field hid" id="quality-row">
-                <label id="quality-label" for="quality-val">CQ value</label
+                <label for="audio-br">Bitrate (kbps)</label
                 ><input
                   type="number"
-                  id="quality-val"
-                  value="23"
+                  id="audio-br"
+                  value="128"
                   min="0"
-                  max="51"
+                  max="320"
+                  aria-label="Audio bitrate"
                   onchange="reqPreview();updateDirty()"
-                  aria-label="Quality value"
-                />
-                <div class="quality-help">Lower value = higher quality.</div>
-              </div>
-              <div class="enc-field hid" id="br-row">
-                <label for="br-val">Bitrate (kbps)</label
-                ><input
-                  type="number"
-                  id="br-val"
-                  value="2000"
-                  min="50"
-                  max="50000"
-                  onchange="reqPreview();updateDirty()"
-                  aria-label="Explicit bitrate"
                 />
               </div>
-              <div class="enc-field hid" id="tune-row">
-                <label for="tune-sel">Tune</label
+            </div>
+            <div class="gr">
+              <div class="grt">Encoding</div>
+              <div class="enc-field">
+                <label for="enc-sel">Encoder</label
                 ><select
-                  id="tune-sel"
-                  onchange="reqPreview();updateDirty()"
-                  aria-label="Encoder tune"
+                  id="enc-sel"
+                  onchange="onEncChange()"
+                  aria-label="Video encoder"
                 ></select>
+              </div>
+              <div class="setting-note" id="encoder-note">
+                Hardware is faster; software can produce smaller files.
+              </div>
+              <div class="enc-field">
+                <label for="speed-sel">Encoding speed</label
+                ><select
+                  id="speed-sel"
+                  onchange="onSpeedChange()"
+                  aria-label="Encoding speed"
+                >
+                  <option value="fast">Fast</option>
+                  <option value="balanced" selected>Balanced</option>
+                  <option value="best">Best compression</option>
+                </select>
+              </div>
+              <div class="enc-field" id="two-pass-wrap">
+                <label for="two-pass">Two-pass encoding</label
+                ><select
+                  id="two-pass"
+                  onchange="onTwoPassChange()"
+                  aria-label="Two-pass encoding"
+                >
+                  <option value="on" selected>On</option>
+                  <option value="off">Off</option>
+                </select>
+              </div>
+              <span class="setting-note hid" id="two-pass-note"
+                >Two-pass is available only for software compression.</span
+              >
+              <button
+                class="advanced-toggle"
+                id="adv-toggle"
+                type="button"
+                aria-expanded="false"
+                onclick="toggleAdv()"
+              >
+                <span>Advanced encoding</span
+                ><span class="advanced-arrow" aria-hidden="true">⌄</span>
+              </button>
+              <div class="hid" id="adv-sec">
+                <div class="enc-field">
+                  <label for="preset-sel">Native FFmpeg preset</label
+                  ><select
+                    id="preset-sel"
+                    onchange="onNativePresetChange()"
+                    aria-label="Native FFmpeg preset"
+                  ></select>
+                </div>
+                <div class="enc-field" id="rate-control-row">
+                  <label id="rate-label" for="rc-sel">Quality method</label
+                  ><select
+                    id="rc-sel"
+                    onchange="onRcChange()"
+                    aria-label="Rate control method"
+                  ></select>
+                </div>
+                <div class="enc-field hid" id="quality-row">
+                  <label id="quality-label" for="quality-val">CQ value</label
+                  ><input
+                    type="number"
+                    id="quality-val"
+                    value="23"
+                    min="0"
+                    max="51"
+                    onchange="reqPreview();updateDirty()"
+                    aria-label="Quality value"
+                  />
+                  <div class="quality-help">Lower value = higher quality.</div>
+                </div>
+                <div class="enc-field hid" id="br-row">
+                  <label for="br-val">Bitrate (kbps)</label
+                  ><input
+                    type="number"
+                    id="br-val"
+                    value="2000"
+                    min="50"
+                    max="50000"
+                    onchange="reqPreview();updateDirty()"
+                    aria-label="Explicit bitrate"
+                  />
+                </div>
+                <div class="enc-field hid" id="tune-row">
+                  <label for="tune-sel">Tune</label
+                  ><select
+                    id="tune-sel"
+                    onchange="reqPreview();updateDirty()"
+                    aria-label="Encoder tune"
+                  ></select>
+                </div>
               </div>
             </div>
           </div>
         </div>
-        <div id="right-foot">
+        <div id="right-foot" class="hid">
           <button class="btn1" id="btn-one" onclick="compressOne()">
             Compress selected
           </button>
@@ -835,6 +796,277 @@
             Compress all
           </button>
         </div>
+      </div>
+    </div>
+    <div
+      id="timeline-resizer"
+      role="separator"
+      aria-label="Resize timeline"
+      aria-orientation="horizontal"
+      aria-valuemin="170"
+      aria-valuemax="300"
+      aria-valuenow="270"
+      aria-valuetext="270 pixels"
+      tabindex="0"
+      data-tip="Drag to resize timeline · Double-click to reset"
+    ></div>
+    <section
+      id="audio-editor"
+      class="sequence disabled is-empty"
+      aria-label="Video and audio timeline"
+    >
+      <div id="timeline-row" class="transform-controls seq-toolbar">
+        <div class="dock-zoom" role="group" aria-label="Timeline zoom">
+          <button
+            type="button"
+            class="dock-zoom-btn"
+            onclick="nudgeTimelineZoom(-1)"
+            data-tip="Zoom out"
+            aria-label="Zoom out"
+            disabled
+          >
+            &#8722;
+          </button>
+          <input
+            type="range"
+            id="tl-zoom-slider"
+            min="1"
+            max="8"
+            step="0.5"
+            value="1"
+            oninput="setTimelineZoom(this.value)"
+            aria-label="Timeline zoom level"
+            disabled
+          />
+          <button
+            type="button"
+            class="dock-zoom-btn"
+            onclick="nudgeTimelineZoom(1)"
+            data-tip="Zoom in"
+            aria-label="Zoom in"
+            disabled
+          >
+            +
+          </button>
+        </div>
+        <button
+          type="button"
+          id="btn-snap-toggle"
+          class="dock-toggle on"
+          onclick="toggleSnap()"
+          aria-pressed="true"
+          data-tip="Snap to playhead and clip edges"
+          disabled
+        >
+          Snap
+        </button>
+        <div class="dock-divider"></div>
+        <div class="dock-icon-group" role="group" aria-label="Clip actions">
+          <span class="dock-group-label">Clip</span>
+          <button
+            type="button"
+            id="btn-segment-add"
+            class="dock-icon-btn"
+            onclick="addSegment()"
+            data-tip="New segment"
+            aria-label="Add segment"
+            disabled
+          >
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <rect x="1" y="6" width="8" height="6" rx="1.5"></rect>
+              <path d="M12.5 2v6M9.5 5h6" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            id="btn-seq-split"
+            class="dock-icon-btn"
+            onclick="splitAtPlayhead()"
+            data-tip="Split (S)"
+            aria-label="Split at playhead"
+            disabled
+          >
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <rect x="2" y="5" width="5" height="6" rx="1"></rect>
+              <rect x="9" y="5" width="5" height="6" rx="1"></rect>
+            </svg>
+          </button>
+          <button
+            type="button"
+            id="btn-segment-remove"
+            class="dock-icon-btn"
+            onclick="removeActiveSegment()"
+            data-tip="Remove segment"
+            aria-label="Remove active segment"
+            disabled
+          >
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path
+                d="M3.5 4.5h9M6.5 4.5v-1a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v1M4.5 4.5l.6 8a1 1 0 0 0 1 .9h3.8a1 1 0 0 0 1-.9l.6-8"
+              />
+              <path d="M6.7 7v4M9.3 7v4" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            id="btn-segments-reset"
+            class="dock-icon-btn hid"
+            onclick="resetSegments()"
+            data-tip="Reset to full clip"
+            aria-label="Reset segments to full source"
+            disabled
+          >
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <polyline points="0.7 2.7 0.7 6.7 4.7 6.7"></polyline>
+              <path d="M2.3 10a6 6 0 1 0 1.4-6.2L0.7 6.7"></path>
+            </svg>
+          </button>
+          <button
+            type="button"
+            id="audio-fragment-mute"
+            class="dock-icon-btn hid"
+            onclick="AudioTimeline.toggleFragmentMute()"
+            aria-pressed="false"
+            aria-label="Mute this segment's source audio"
+            data-tip="Mute this segment's source audio"
+          >
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M1.5 6h2.3l3.4-3v10l-3.4-3H1.5z"></path>
+              <path d="M10.5 6.2l3.6 3.6M14.1 6.2l-3.6 3.6"></path>
+            </svg>
+          </button>
+        </div>
+        <div class="dock-divider"></div>
+        <button
+          type="button"
+          id="audio-add"
+          class="dock-text-btn"
+          onclick="AudioTimeline.browse()"
+          data-tip="Add music or narration"
+          disabled
+        >
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M2 9.5v-3M4.5 11v-6M7 9.5v-3" />
+            <path d="M12.5 2v6M9.5 5h6" />
+          </svg>
+          Add audio
+        </button>
+        <span style="flex: 1"></span>
+        <span id="tl-time" class="tl-time-readout">0:00 / 0:00</span>
+      </div>
+      <div id="sequence-frame">
+        <div id="sequence-stack">
+          <div id="sequence-ruler" class="hid" aria-hidden="true"></div>
+          <div class="seq-group" id="source-group">
+            <div class="seq-row video">
+              <div class="seq-head" id="video-track-head">
+                <span class="seq-track-code" aria-hidden="true">V1</span>
+                <span class="seq-track-name">Video</span>
+              </div>
+              <div
+                id="timeline"
+                class="seq-lane"
+                role="slider"
+                aria-label="Seek and segment timeline"
+                aria-valuemin="0"
+                aria-valuemax="0"
+                aria-valuenow="0"
+                tabindex="-1"
+                aria-disabled="true"
+              >
+                <div class="tl-track" id="tl-track">
+                  <div id="tl-segments"></div>
+                </div>
+              </div>
+            </div>
+            <div class="seq-row audio" id="source-audio-track">
+              <div class="seq-head" id="source-audio-head">
+                <span class="seq-track-code" aria-hidden="true">A1</span>
+                <span class="seq-track-name">Source audio</span>
+                <button
+                  type="button"
+                  class="seq-track-mute"
+                  id="source-audio-label"
+                  onclick="AudioTimeline.toggleSourceMute()"
+                  data-tip="Mute source audio"
+                  aria-label="Mute source audio"
+                  aria-pressed="false"
+                >
+                  M
+                </button>
+              </div>
+              <div
+                class="seq-lane audio-lane source-lane"
+                id="source-audio-lane"
+              ></div>
+            </div>
+          </div>
+          <div id="imported-audio-tracks"></div>
+        </div>
+        <div id="timeline-empty" class="timeline-empty" aria-live="polite">
+          <span class="timeline-empty-title">Timeline is empty</span>
+          <span class="timeline-empty-copy">Drop a video here or use Add files</span>
+        </div>
+        <div id="seq-selection-layer">
+          <div id="seq-selection" hidden></div>
+          <div
+            class="tl-handle hid"
+            id="tl-in"
+            role="slider"
+            aria-label="Active segment start"
+            tabindex="0"
+            data-tip="Segment start"
+          ></div>
+          <div
+            class="tl-handle hid"
+            id="tl-out"
+            role="slider"
+            aria-label="Active segment end"
+            tabindex="0"
+            data-tip="Segment end"
+          ></div>
+        </div>
+        <div id="seq-playhead-layer" class="hid" aria-hidden="true">
+          <div id="seq-playhead"></div>
+        </div>
+      </div>
+    </section>
+    <div id="qbar" class="hid">
+      <span class="qlabel">Export queue</span>
+      <span id="qidle">No exports queued</span>
+      <div id="q-active" class="hid">
+        <span id="qcnt">0/0</span
+        ><progress
+          id="qprog"
+          value="0"
+          max="100"
+          aria-label="Queue progress"
+        ></progress>
+        <span id="qeta">ETA --</span><span id="qfname"></span>
+        <button
+          class="qbtn"
+          id="btn-stop-after"
+          onclick="stopAfterCurrent()"
+          aria-label="Stop after current job"
+        >
+          Stop after current
+        </button>
+        <button
+          class="qbtn danger"
+          id="btn-cancel"
+          onclick="cancelAll()"
+          aria-label="Cancel processing"
+        >
+          Cancel
+        </button>
+        <button
+          class="qbtn"
+          id="btn-clear"
+          onclick="clearDone()"
+          aria-label="Clear completed"
+        >
+          Clear completed
+        </button>
       </div>
     </div>
     <div
@@ -852,6 +1084,7 @@
           <span class="settings-wordmark">Tuck</span
           ><span class="settings-top-title">Settings</span
           ><button
+            id="settings-close"
             class="mbtn"
             onclick="closeSettings()"
             aria-label="Close settings"
@@ -914,40 +1147,6 @@
         </section>
       </div>
     </div>
-    <div id="qbar">
-      <span id="qcnt">0/0</span
-      ><progress
-        id="qprog"
-        value="0"
-        max="100"
-        aria-label="Queue progress"
-      ></progress>
-      <span id="qeta">ETA --</span><span id="qfname"></span>
-      <button
-        class="qbtn"
-        id="btn-stop-after"
-        onclick="stopAfterCurrent()"
-        aria-label="Stop after current job"
-      >
-        Stop after current
-      </button>
-      <button
-        class="qbtn danger"
-        id="btn-cancel"
-        onclick="cancelAll()"
-        aria-label="Cancel processing"
-      >
-        Cancel
-      </button>
-      <button
-        class="qbtn"
-        id="btn-clear"
-        onclick="clearDone()"
-        aria-label="Clear completed"
-      >
-        Clear completed
-      </button>
-    </div>
     <div
       class="mod-overlay"
       id="mod-overlay"
@@ -959,12 +1158,15 @@
     <div id="drag-overlay"><h2>Drop video or audio anywhere</h2></div>
     <script src="crop.js"></script>
     <script src="segments.js"></script>
+    <script src="layout.js"></script>
     <script src="encoding-ui.js"></script>
     <script src="app.js"></script>
     <script src="audio.js"></script>
+    <script src="panels.js"></script>
     <script src="player.js"></script>
     <script src="queue.js"></script>
     <script src="settings.js"></script>
     <script src="transform.js"></script>
+    <script src="history.js"></script>
   </body>
 </html>
