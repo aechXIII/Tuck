@@ -551,6 +551,21 @@ body {
   overflow-y: auto;
   overflow-anchor: none;
   padding: 10px;
+  scrollbar-color: #454255 transparent;
+  scrollbar-width: thin;
+}
+#right-scroll::-webkit-scrollbar {
+  width: 10px;
+}
+#right-scroll::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: #454255;
+  background-clip: padding-box;
+}
+#right-scroll::-webkit-scrollbar-thumb:hover {
+  background: #655f78;
+  background-clip: padding-box;
 }
 #insp-edit,
 #insp-audio,
@@ -677,8 +692,8 @@ body {
   padding: 2px 6px;
   border-radius: 999px;
   background: #1c1c27;
-  color: #8f8d9d;
-  font: 700 9px/14px var(--mono);
+  color: #aaa7b7;
+  font: 700 10px/14px var(--mono);
   text-align: center;
 }
 .mixer-row {
@@ -688,7 +703,7 @@ body {
   padding: 10px;
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: 8px;
 }
 .mixer-row-top {
   display: flex;
@@ -725,21 +740,21 @@ body {
   text-overflow: ellipsis;
 }
 .mixer-role {
-  color: #777586;
-  font-size: 9.5px;
+  color: #9b98aa;
+  font-size: 11px;
 }
 .mixer-mute {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 20px;
+  min-width: 46px;
+  height: 28px;
   flex-shrink: 0;
   border: 1px solid #303040;
   border-radius: 4px;
   background: #171720;
   color: #9896a7;
-  font: 700 9px/1 var(--font);
+  font: 650 10.5px/1 var(--font);
   cursor: pointer;
 }
 .mixer-mute:hover {
@@ -760,6 +775,12 @@ body {
   align-items: center;
   gap: 8px;
 }
+.mixer-row-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 6px;
+  border-top: 1px solid #222230;
+}
 .mixer-gain {
   flex: 1;
 }
@@ -773,10 +794,12 @@ body {
 }
 .mixer-remove {
   flex-shrink: 0;
+  min-height: 28px;
+  padding: 3px 6px;
   border: 0;
   background: transparent;
-  color: #777586;
-  font: 550 9.5px var(--font);
+  color: #aaa7b7;
+  font: 550 11px var(--font);
   cursor: pointer;
 }
 .mixer-remove:hover {
@@ -814,8 +837,8 @@ body {
 }
 .audio-range-name {
   overflow: hidden;
-  color: #777586;
-  font-size: 9.5px;
+  color: #9b98aa;
+  font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -824,14 +847,14 @@ body {
   align-items: baseline;
   justify-content: space-between;
   gap: 8px;
-  color: #898798;
-  font-size: 9.5px;
+  color: #a3a0b1;
+  font-size: 11px;
 }
 .audio-range-value {
   min-width: 0;
   overflow: hidden;
   color: #cfc8df;
-  font: 600 9px/13px var(--mono);
+  font: 600 10px/14px var(--mono);
   text-align: right;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -896,18 +919,19 @@ body {
   gap: 8px;
 }
 .audio-range-hint {
-  color: #777586;
-  font-size: 9px;
-  line-height: 13px;
+  color: #9b98aa;
+  font-size: 11px;
+  line-height: 15px;
 }
 .audio-range-reset {
   flex-shrink: 0;
-  padding: 3px 5px;
+  min-height: 28px;
+  padding: 3px 7px;
   border: 0;
   border-radius: 3px;
   background: transparent;
   color: #aaa7b7;
-  font: 550 9.5px var(--font);
+  font: 550 11px var(--font);
   cursor: pointer;
 }
 .audio-range-reset:hover:not(:disabled) {
@@ -1547,10 +1571,10 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
   }
 }
 #drop-z {
-  border: 2px dashed #333355;
-  border-radius: 12px;
-  margin: 8px;
-  padding: 36px 20px;
+  border: 1px dashed #343447;
+  border-radius: 8px;
+  margin: 10px;
+  padding: 18px 14px;
   text-align: center;
   display: none;
   transition:
@@ -1566,14 +1590,14 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
   border-style: solid;
 }
 #drop-z h3 {
-  color: #777;
-  font-size: 14px;
-  font-weight: 600;
+  color: #aaa7b7;
+  font-size: 12px;
+  font-weight: 650;
 }
 #drop-z p {
-  color: var(--dim);
+  color: #777586;
   font-size: 11px;
-  margin-top: 6px;
+  margin-top: 5px;
 }
 #drag-overlay {
   position: fixed;

@@ -94,8 +94,8 @@
         <div id="lib-panel-media">
           <div id="clips">
             <div id="drop-z" class="show">
-              <h3>Drop here</h3>
-              <p>or use Add files above</p>
+              <h3>Media library</h3>
+              <p>Imported video files appear here.</p>
             </div>
           </div>
         </div>
@@ -443,7 +443,7 @@
           </div>
           <div id="insp-audio" class="hid">
             <div class="audio-master-row" id="audio-master-card">
-              <span class="audio-master-title">Master</span>
+              <span class="audio-master-title">Output audio</span>
               <button
                 type="button"
                 id="audio-master-toggle"
@@ -453,7 +453,7 @@
                 aria-label="Include audio in export"
                 onclick="AudioTimeline.toggleMaster()"
               >
-                <span>Include audio</span>
+                <span>Include in export</span>
                 <span class="audio-toggle-track" aria-hidden="true"
                   ><span class="audio-toggle-thumb"></span
                 ></span>
@@ -816,53 +816,55 @@
       aria-label="Video and audio timeline"
     >
       <div id="timeline-row" class="transform-controls seq-toolbar">
-        <div class="dock-zoom" role="group" aria-label="Timeline zoom">
+        <div class="dock-command-group" role="group" aria-label="View controls">
+          <div class="dock-zoom" role="group" aria-label="Timeline zoom">
+            <button
+              type="button"
+              class="dock-zoom-btn"
+              onclick="nudgeTimelineZoom(-1)"
+              data-tip="Zoom out"
+              aria-label="Zoom out"
+              disabled
+            >
+              &#8722;
+            </button>
+            <input
+              type="range"
+              id="tl-zoom-slider"
+              min="1"
+              max="8"
+              step="0.5"
+              value="1"
+              oninput="setTimelineZoom(this.value)"
+              aria-label="Timeline zoom level"
+              disabled
+            />
+            <button
+              type="button"
+              class="dock-zoom-btn"
+              onclick="nudgeTimelineZoom(1)"
+              data-tip="Zoom in"
+              aria-label="Zoom in"
+              disabled
+            >
+              +
+            </button>
+          </div>
           <button
             type="button"
-            class="dock-zoom-btn"
-            onclick="nudgeTimelineZoom(-1)"
-            data-tip="Zoom out"
-            aria-label="Zoom out"
+            id="btn-snap-toggle"
+            class="dock-toggle on"
+            onclick="toggleSnap()"
+            aria-label="Toggle timeline snapping"
+            aria-pressed="true"
+            data-tip="Snap to playhead and clip edges"
             disabled
           >
-            &#8722;
-          </button>
-          <input
-            type="range"
-            id="tl-zoom-slider"
-            min="1"
-            max="8"
-            step="0.5"
-            value="1"
-            oninput="setTimelineZoom(this.value)"
-            aria-label="Timeline zoom level"
-            disabled
-          />
-          <button
-            type="button"
-            class="dock-zoom-btn"
-            onclick="nudgeTimelineZoom(1)"
-            data-tip="Zoom in"
-            aria-label="Zoom in"
-            disabled
-          >
-            +
+            Snap
           </button>
         </div>
-        <button
-          type="button"
-          id="btn-snap-toggle"
-          class="dock-toggle on"
-          onclick="toggleSnap()"
-          aria-pressed="true"
-          data-tip="Snap to playhead and clip edges"
-          disabled
-        >
-          Snap
-        </button>
         <div class="dock-divider"></div>
         <div class="dock-icon-group" role="group" aria-label="Clip actions">
-          <span class="dock-group-label">Clip</span>
           <button
             type="button"
             id="btn-segment-add"
@@ -884,6 +886,7 @@
             onclick="splitAtPlayhead()"
             data-tip="Split (S)"
             aria-label="Split at playhead"
+            aria-keyshortcuts="S"
             disabled
           >
             <svg viewBox="0 0 16 16" aria-hidden="true">
@@ -921,6 +924,9 @@
               <path d="M2.3 10a6 6 0 1 0 1.4-6.2L0.7 6.7"></path>
             </svg>
           </button>
+        </div>
+        <div class="dock-divider"></div>
+        <div class="dock-command-group" role="group" aria-label="Audio actions">
           <button
             type="button"
             id="audio-fragment-mute"
@@ -935,22 +941,21 @@
               <path d="M10.5 6.2l3.6 3.6M14.1 6.2l-3.6 3.6"></path>
             </svg>
           </button>
+          <button
+            type="button"
+            id="audio-add"
+            class="dock-text-btn"
+            onclick="AudioTimeline.browse()"
+            data-tip="Add music or narration"
+            disabled
+          >
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M2 9.5v-3M4.5 11v-6M7 9.5v-3" />
+              <path d="M12.5 2v6M9.5 5h6" />
+            </svg>
+            Add audio
+          </button>
         </div>
-        <div class="dock-divider"></div>
-        <button
-          type="button"
-          id="audio-add"
-          class="dock-text-btn"
-          onclick="AudioTimeline.browse()"
-          data-tip="Add music or narration"
-          disabled
-        >
-          <svg viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M2 9.5v-3M4.5 11v-6M7 9.5v-3" />
-            <path d="M12.5 2v6M9.5 5h6" />
-          </svg>
-          Add audio
-        </button>
         <span style="flex: 1"></span>
         <span id="tl-time" class="tl-time-readout">0:00 / 0:00</span>
       </div>
@@ -961,7 +966,7 @@
             <div class="seq-row video">
               <div class="seq-head" id="video-track-head">
                 <span class="seq-track-code" aria-hidden="true">V1</span>
-                <span class="seq-track-name">Video</span>
+                <span class="seq-track-name" title="Video">Video</span>
               </div>
               <div
                 id="timeline"
@@ -982,7 +987,7 @@
             <div class="seq-row audio" id="source-audio-track">
               <div class="seq-head" id="source-audio-head">
                 <span class="seq-track-code" aria-hidden="true">A1</span>
-                <span class="seq-track-name">Source audio</span>
+                <span class="seq-track-name" title="Source audio">Source audio</span>
                 <button
                   type="button"
                   class="seq-track-mute"
@@ -992,7 +997,10 @@
                   aria-label="Mute source audio"
                   aria-pressed="false"
                 >
-                  M
+                  <svg viewBox="0 0 16 16" aria-hidden="true">
+                    <path d="M1.5 6h2.3l3.4-3v10l-3.4-3H1.5z"></path>
+                    <path d="M10.5 6.2l3.6 3.6M14.1 6.2l-3.6 3.6"></path>
+                  </svg>
                 </button>
               </div>
               <div
@@ -1005,7 +1013,7 @@
         </div>
         <div id="timeline-empty" class="timeline-empty" aria-live="polite">
           <span class="timeline-empty-title">Timeline is empty</span>
-          <span class="timeline-empty-copy">Drop a video here or use Add files</span>
+          <span class="timeline-empty-copy">Video and audio tracks will appear here.</span>
         </div>
         <div id="seq-selection-layer">
           <div id="seq-selection" hidden></div>

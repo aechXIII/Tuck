@@ -183,6 +183,24 @@ def test_audio_controls_use_consistent_nle_track_vocabulary() -> None:
     assert 'type="checkbox" class="mixer-mute"' not in panels_js
 
 
+def test_workspace_commands_have_clear_hierarchy() -> None:
+    html = _asset("index.html")
+    panels_js = _asset("panels.js")
+    player_js = _asset("player.js")
+
+    assert 'aria-label="View controls"' in html
+    assert 'aria-label="Clip actions"' in html
+    assert 'aria-label="Audio actions"' in html
+    assert 'aria-keyshortcuts="S"' in html
+    assert '<span class="dock-group-label">Clip</span>' not in html
+    assert '<span class="audio-master-title">Output audio</span>' in html
+    assert "<span>Include in export</span>" in html
+    assert "Imported video files appear here." in html
+    assert "Video and audio tracks will appear here." in player_js
+    assert "mixer-row-actions" in panels_js
+    assert "Remove track" in panels_js
+
+
 def test_removing_the_last_video_clears_timeline_state() -> None:
     app_js = _asset("app.js")
     remove_clip = app_js.split("function removeClip(p) {", 1)[1].split(

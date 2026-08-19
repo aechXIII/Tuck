@@ -581,7 +581,9 @@ function mixerRowHtml(row) {
     '<div class="mixer-row-top">' +
     '<span class="mixer-track-code" aria-hidden="true">' +
     esc(row.code) +
-    '</span><span class="mixer-identity"><span class="mixer-name">' +
+    '</span><span class="mixer-identity"><span class="mixer-name" title="' +
+    esc(row.name) +
+    '">' +
     esc(row.name) +
     '</span><span class="mixer-role">' +
     esc(row.role) +
@@ -591,12 +593,9 @@ function mixerRowHtml(row) {
     '" aria-label="' +
     (row.muted ? "Unmute " : "Mute ") +
     esc(row.name) +
-    '">M</button>' +
-    (row.removable
-      ? '<button type="button" class="mixer-remove" aria-label="Remove ' +
-        esc(row.name) +
-        '">Remove</button>'
-      : "") +
+    '">' +
+    (row.muted ? "Muted" : "Mute") +
+    "</button>" +
     "</div>" +
     '<div class="mixer-row-bottom">' +
     '<input type="range" class="mixer-gain" min="-24" max="12" step="1" value="' +
@@ -608,6 +607,11 @@ function mixerRowHtml(row) {
     gainDisplay +
     "</span>" +
     "</div>" +
+    (row.removable
+      ? '<div class="mixer-row-actions"><button type="button" class="mixer-remove" aria-label="Remove ' +
+        esc(row.name) +
+        '" data-tip="Remove imported audio track">Remove track</button></div>'
+      : "") +
     "</div>"
   );
 }

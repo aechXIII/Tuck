@@ -1,5 +1,5 @@
 #audio-editor {
-  --timeline-head-width: 132px;
+  --timeline-head-width: 164px;
   flex-shrink: 0;
   height: 30vh;
   min-height: 170px;
@@ -113,8 +113,8 @@ body.timeline-resizing * {
   font: 650 11px/15px var(--font);
 }
 .timeline-empty-copy {
-  color: #777487;
-  font: 500 10px/14px var(--font);
+  color: #9693a6;
+  font: 500 11px/15px var(--font);
 }
 #audio-editor.is-loading .timeline-empty-title {
   color: #ddd6fe;
@@ -180,19 +180,27 @@ body.timeline-resizing * {
 }
 .seq-track-mute {
   flex-shrink: 0;
-  width: 22px;
-  height: 18px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   border: 1px solid #303040;
   border-radius: 4px;
   background: #15151d;
   color: #8f8d9f;
-  font: 700 9px/1 var(--font);
   cursor: pointer;
   transition:
     border-color 0.12s ease,
     background 0.15s ease,
     color 0.15s ease;
+}
+.seq-track-mute svg {
+  width: 13px;
+  height: 13px;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
 }
 .seq-track-mute:hover {
   border-color: #5d596d;
@@ -526,6 +534,12 @@ body.timeline-resizing * {
   margin: 0 0 2px calc(var(--timeline-head-width) + 8px);
   border-bottom: 1px solid color-mix(in srgb, var(--timeline-ruler-tick-major) 38%, var(--border2));
   cursor: pointer;
+}
+@media (max-width: 1100px) {
+  #audio-editor {
+    --timeline-head-width: 148px;
+    padding-inline: 12px;
+  }
 }
 .seq-tick {
   position: absolute;

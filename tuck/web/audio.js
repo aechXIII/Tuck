@@ -252,7 +252,8 @@
     var muteEl = root.document.createElement("button");
     muteEl.type = "button";
     muteEl.className = "seq-track-mute" + (track.muted ? " muted" : "");
-    muteEl.textContent = "M";
+    muteEl.innerHTML =
+      '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 6h2.3l3.4-3v10l-3.4-3H1.5z"></path><path d="M10.5 6.2l3.6 3.6M14.1 6.2l-3.6 3.6"></path></svg>';
     muteEl.dataset.tip = track.muted ? "Unmute " + track.name : "Mute " + track.name;
     muteEl.setAttribute("aria-pressed", track.muted ? "true" : "false");
     muteEl.setAttribute("aria-label", muteEl.dataset.tip);
@@ -363,7 +364,7 @@
       master.setAttribute("aria-checked", state.enabled ? "true" : "false");
       master.setAttribute(
         "aria-label",
-        state.enabled ? "Exclude audio from export" : "Include audio in export",
+        state.enabled ? "Exclude from export" : "Include in export",
       );
     }
     renderSourceTrack(clip, state, total);

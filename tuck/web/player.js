@@ -166,7 +166,7 @@ function paintTrimChrome() {
       emptyCopy.textContent =
         view.status === "loading"
           ? "Reading clip duration and audio tracks"
-          : "Drop a video here or use Add files";
+          : "Video and audio tracks will appear here.";
   }
   var ruler = byId("sequence-ruler");
   if (ruler) {

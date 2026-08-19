@@ -294,6 +294,12 @@ body.crop-dragging * {
   gap: 4px;
   flex-shrink: 0;
 }
+.dock-command-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
 .dock-zoom-btn {
   width: 20px;
   height: 20px;
