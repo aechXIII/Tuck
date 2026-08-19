@@ -3,7 +3,8 @@ var settingsPage = "general",
   settingsProfileId = "",
   settingsFilter = "all",
   editorOriginal = null,
-  editorSnapshot = "";
+  editorSnapshot = "",
+  settingsSnapshot = "";
 var settingsReturnFocus = null;
 function valueOr(value, fallback) {
   return value === undefined || value === null ? fallback : value;
@@ -80,11 +81,12 @@ function toggleSettings() {
   if (document.body.classList.contains("settings-open")) closeSettings();
   else openSettings();
 }
-function settingButton(label, action, primary) {
+function settingButton(label, action, primary, dirtyAware) {
   return (
     '<button class="' +
     (primary ? "btn1" : "btn2") +
-    '" onclick="' +
+    (dirtyAware ? '" data-settings-save="true" disabled' : '"') +
+    ' onclick="' +
     action +
     '">' +
     label +
@@ -683,12 +685,44 @@ async function saveProfEdit() {
 }
 
 function markSettingsDirty() {
-  settingsDirty = true;
+  settingsDirty = TuckSettingsState.isDirty(settingsSnapshot, settingsPageState());
   var indicator = byId("settings-unsaved");
   if (indicator) {
     indicator.textContent = "Unsaved changes";
-    indicator.classList.add("on");
+    indicator.classList.toggle("on", settingsDirty);
   }
+  var saveButton = document.querySelector('[data-settings-save="true"]');
+  if (saveButton) saveButton.disabled = !settingsDirty;
+}
+
+function settingsPageState() {
+  if (settingsPage === "general")
+    return {
+      defaultProfile: byId("set-dp").value,
+      defaultScaler: byId("set-ds").value,
+      openOutput: byId("set-open-output-folder").checked,
+      autoClear: byId("set-auto-clear").checked,
+    };
+  if (settingsPage === "output")
+    return {
+      outputDirectory: byId("set-od").dataset.path || "",
+      compressionSuffix: byId("set-cs").value,
+      upscaleSuffix: byId("set-us").value,
+    };
+  if (settingsPage === "system")
+    return {
+      ffmpegPath: byId("set-ffmpeg").dataset.path || "",
+      ffprobePath: byId("set-ffprobe").dataset.path || "",
+      encoderCacheDays: byId("set-encoder-cache-days").value,
+      checkUpdates: byId("set-check-updates").checked,
+    };
+  return {};
+}
+
+function captureSettingsSnapshot() {
+  settingsSnapshot = TuckSettingsState.snapshot(settingsPageState());
+  settingsDirty = false;
+  markSettingsDirty();
 }
 function generalSettingsHTML(s, profiles) {
   var options = profiles
@@ -989,11 +1023,11 @@ async function openSettings(page, view, profileId) {
   }
   if (settingsPage === "general") {
     content = generalSettingsHTML(s, profiles);
-    actions = { html: settingButton("Save changes", "saveSettings()", true) };
+    actions = { html: settingButton("Save changes", "saveSettings()", true, true) };
   } else if (settingsPage === "output") {
     content = outputSettingsHTML(s);
     actions = {
-      html: settingButton("Save changes", "saveOutputSettings()", true),
+      html: settingButton("Save changes", "saveOutputSettings()", true, true),
     };
   } else if (settingsPage === "profiles") {
     content = profilesSettingsHTML();
@@ -1010,7 +1044,7 @@ async function openSettings(page, view, profileId) {
   } else {
     content = systemSettingsHTML(s);
     actions = {
-      html: settingButton("Save changes", "saveSystemSettings()", true),
+      html: settingButton("Save changes", "saveSystemSettings()", true, true),
     };
   }
   settingsShell(settingsPage, content, actions);
@@ -1022,6 +1056,8 @@ async function openSettings(page, view, profileId) {
   if (settingsPage === "explorer") await refreshSTList();
   if (settingsPage === "system")
     byId("set-encoder-cache-days").value = String(s.encoder_cache_days || 0);
+  if (["general", "output", "system"].indexOf(settingsPage) >= 0)
+    captureSettingsSnapshot();
 }
 function navigateSettings(page) {
   if (settingsView === "editor") return backToProfiles();
@@ -1100,16 +1136,19 @@ async function persistSettings(data) {
   var r = await api.saveSettings(JSON.stringify(data));
   if (r.ok) {
     appSettings = Object.assign(appSettings, data);
+    settingsSnapshot = TuckSettingsState.snapshot(settingsPageState());
     settingsDirty = false;
+    var saveButton = document.querySelector('[data-settings-save="true"]');
+    if (saveButton) saveButton.disabled = true;
+    await loadSettings();
     var indicator = byId("settings-unsaved");
     if (indicator) {
       indicator.textContent = "Saved";
       indicator.classList.add("on");
       setTimeout(function () {
-        if (indicator) indicator.classList.remove("on");
+        if (indicator.isConnected) indicator.classList.remove("on");
       }, 1200);
     }
-    await loadSettings();
     toast("Settings saved.", "ok");
     return true;
   }

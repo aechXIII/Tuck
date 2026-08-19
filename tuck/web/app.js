@@ -18,6 +18,24 @@ var previewRequestId = 0;
 function byId(id) {
   return document.getElementById(id);
 }
+function showThumbnail(source) {
+  if (!source) return removeThumbnail();
+  var thumb = byId("thumb");
+  if (!thumb) {
+    thumb = document.createElement("img");
+    thumb.id = "thumb";
+    thumb.alt = "";
+    byId("media-viewport").appendChild(thumb);
+  }
+  thumb.src = source;
+  thumb.style.display = "block";
+  byId("vid").style.display = "none";
+  return thumb;
+}
+function removeThumbnail() {
+  var thumb = byId("thumb");
+  if (thumb) thumb.remove();
+}
 function esc(s) {
   var d = document.createElement("div");
   d.textContent = s;
@@ -813,7 +831,7 @@ function selectClip(p) {
   byId("empty").style.display = "none";
   byId("stage").style.display = "block";
   byId("player-bar").classList.add("on");
-  byId("thumb").style.display = "none";
+  removeThumbnail();
   byId("vid").style.display = "block";
   byId("btn-play").textContent = "▶";
   loadMedia(p);
@@ -850,6 +868,7 @@ function removeClip(p) {
     var v = byId("vid");
     v.pause();
     v.src = "";
+    removeThumbnail();
     if (clipOrder.length) selectClip(clipOrder[0]);
     else {
       if (window.AudioTimeline) AudioTimeline.selectVideo(null);
@@ -898,6 +917,7 @@ function doRemoveAllClips() {
   var v = byId("vid");
   v.pause();
   v.src = "";
+  removeThumbnail();
   if (window.AudioTimeline) AudioTimeline.selectVideo(null);
   syncTimelineUI();
   if (typeof syncTransformControls === "function") syncTransformControls();
@@ -958,9 +978,7 @@ async function loadMedia(p) {
         loadThumb(p);
       };
     } else if (r.thumbnail) {
-      byId("thumb").src = r.thumbnail;
-      byId("thumb").style.display = "block";
-      byId("vid").style.display = "none";
+      showThumbnail(r.thumbnail);
     }
   } catch (e) {}
 }
@@ -970,9 +988,7 @@ async function loadThumb(p) {
   try {
     var r = await api.getThumbnail(p);
     if (r.ok && r.thumbnail) {
-      byId("thumb").src = r.thumbnail;
-      byId("thumb").style.display = "block";
-      byId("vid").style.display = "none";
+      showThumbnail(r.thumbnail);
     }
   } catch (e) {}
 }

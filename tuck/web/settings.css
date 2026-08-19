@@ -5,22 +5,22 @@
   display: none;
   align-items: center;
   justify-content: center;
-  padding: 24px;
+  padding: 12px;
   background: rgba(0, 0, 0, 0.62);
 }
 body.settings-open .settings-workspace {
   display: flex;
 }
 .settings-dialog {
-  width: min(920px, calc(100vw - 32px));
-  height: min(680px, calc(100vh - 32px));
+  width: min(860px, calc(100vw - 24px));
+  height: min(620px, calc(100vh - 24px));
   display: grid;
-  grid-template-columns: 205px minmax(0, 1fr);
-  grid-template-rows: 52px minmax(0, 1fr);
+  grid-template-columns: 190px minmax(0, 1fr);
+  grid-template-rows: 48px minmax(0, 1fr);
   overflow: hidden;
   background: #191925;
   border: 1px solid var(--border2);
-  border-radius: 14px;
+  border-radius: 12px;
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.58);
 }
 .settings-topbar {
@@ -28,10 +28,14 @@ body.settings-open .settings-workspace {
   display: flex;
   align-items: center;
   gap: 12px;
-  min-height: 52px;
+  min-height: 48px;
   padding: 0 16px 0 18px;
   background: #191925;
   border-bottom: 1px solid var(--border2);
+}
+#settings-close {
+  width: 32px;
+  height: 32px;
 }
 .settings-wordmark {
   color: #a78bfa;
@@ -50,7 +54,7 @@ body.settings-open .settings-workspace {
   grid-row: 2;
   min-height: 0;
   overflow-y: auto;
-  padding: 18px 12px;
+  padding: 14px 10px;
   border-right: 1px solid var(--border2);
   background: #13131d;
 }
@@ -63,11 +67,11 @@ body.settings-open .settings-workspace {
   border: 0;
 }
 .settings-nav-group + .settings-nav-group {
-  margin-top: 20px;
+  margin-top: 16px;
 }
 .settings-nav-label {
-  color: #666678;
-  font: 700 9px var(--font);
+  color: #918ea1;
+  font: 700 10px var(--font);
   letter-spacing: 1px;
   padding: 0 10px 7px;
   text-transform: uppercase;
@@ -114,7 +118,7 @@ body.settings-open .settings-workspace {
 .settings-page {
   min-height: 0;
   overflow-y: auto;
-  padding: 24px 28px 30px;
+  padding: 20px 22px 24px;
 }
 .settings-page-inner {
   max-width: 860px;
@@ -128,8 +132,8 @@ body.settings-open .settings-workspace {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 57px;
-  padding: 10px 28px;
+  min-height: 52px;
+  padding: 8px 22px;
   border-top: 1px solid var(--border2);
   background: #171722;
 }
@@ -155,6 +159,10 @@ body.settings-open .settings-workspace {
 .settings-actions .btn2 {
   min-width: 110px;
   min-height: 34px;
+}
+.settings-actions button:disabled {
+  cursor: default;
+  opacity: 0.42;
 }
 .settings-title {
   color: var(--accent-light);
@@ -308,7 +316,7 @@ body.settings-open .settings-workspace {
 }
 .settings-card-copy {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   margin-bottom: 14px;
 }
 .settings-option-list {
@@ -334,7 +342,7 @@ body.settings-open .settings-workspace {
 }
 .settings-option-copy small {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.4;
 }
 .settings-support-actions .btn1 {
@@ -414,7 +422,7 @@ body.settings-open .settings-workspace {
 .settings-list-main > span {
   display: block;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

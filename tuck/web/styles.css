@@ -1215,6 +1215,34 @@ label.chk input:checked + .chk-box::after {
   font-size: 11px;
   padding: 5px 8px;
 }
+.profile-options {
+  padding-top: 6px;
+  border-top: 1px solid #282735;
+}
+.profile-options summary {
+  color: #aaa7b7;
+  cursor: pointer;
+  font: 600 10.5px var(--font);
+}
+.profile-options summary:hover {
+  color: #e2dfe9;
+}
+.profile-options summary:focus-visible {
+  outline: 2px solid var(--accent-light);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+.profile-options-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 8px;
+}
+.profile-options-body > .btn2,
+.profile-options-body #prof-reset-row .btn2 {
+  width: 100%;
+  text-align: center;
+}
 .mod-overlay {
   position: fixed;
   inset: 0;

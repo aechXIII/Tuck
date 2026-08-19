@@ -223,6 +223,7 @@ def test_resource_path_locates_web_ui() -> None:
         "player.js",
         "queue.js",
         "settings.js",
+        "settings-state.js",
         "crop.js",
         "transform.js",
     ):
@@ -364,7 +365,7 @@ def test_clip_cards_use_icon_statuses_and_compact_metadata() -> None:
     assert ">Rescan</button>" in html
     assert "saveSystemSettings()" in html
     assert 'aria-label="Close settings"' in html
-    assert 'settingButton("Save changes", "saveSystemSettings()", true)' in html
+    assert 'settingButton("Save changes", "saveSystemSettings()", true, true)' in html
     assert '"Last checked: " + esc(s.last_update_check)' in html
     assert 'class="settings-readonly"' in html
     assert "Clear completed jobs automatically" in html
@@ -462,7 +463,7 @@ def test_settings_uses_compact_modal_and_grouped_navigation() -> None:
     assert 'role="dialog"' in html
     assert 'aria-modal="true"' in html
     assert ".settings-workspace {" in html
-    assert "width: min(920px, calc(100vw - 32px));" in html
+    assert "width: min(860px, calc(100vw - 24px));" in html
     assert ".settings-nav-group {" in html
     assert "flex-direction: column;" in html
     assert ".settings-nav-group + .settings-nav-group {" in html

@@ -227,6 +227,34 @@ def test_settings_dialog_manages_keyboard_focus() -> None:
     assert "settingsReturnFocus.focus();" in settings_js
 
 
+def test_settings_save_state_is_wired_into_the_ui() -> None:
+    html = _asset("index.html")
+    settings_js = _asset("settings.js")
+
+    assert '<details class="profile-options">' in html
+    assert 'src="settings-state.js"' in html
+    assert 'data-settings-save="true"' in settings_js
+    assert "function captureSettingsSnapshot()" in settings_js
+    persist_settings = settings_js.split("async function persistSettings", 1)[1].split(
+        "async function saveSettings", 1
+    )[0]
+    assert persist_settings.index("await loadSettings();") < persist_settings.index(
+        'indicator.textContent = "Saved";'
+    )
+
+
+def test_thumbnail_is_created_only_when_a_valid_source_exists() -> None:
+    html = _asset("index.html")
+    app_js = _asset("app.js")
+    transform_js = _asset("transform.js")
+
+    assert '<img id="thumb"' not in html
+    assert 'id="media-viewport"' in html
+    assert "function showThumbnail(source)" in app_js
+    assert "function removeThumbnail()" in app_js
+    assert ".filter(Boolean)" in transform_js
+
+
 def test_preview_responses_are_bound_to_the_source_and_request_snapshot() -> None:
     encoding_js = _asset("encoding-ui.js")
     transform_js = _asset("transform.js")

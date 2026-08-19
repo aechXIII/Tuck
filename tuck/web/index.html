@@ -110,7 +110,7 @@
         </div>
         <div id="stage">
           <div id="media-viewport">
-            <video id="vid"></video><img id="thumb" style="display: none" />
+            <video id="vid"></video>
           </div>
           <div id="crop-ui" aria-label="Video crop overlay">
             <div class="crop-dim" id="crop-dim-top"></div>
@@ -483,35 +483,27 @@
               ></select>
               <div class="prof-meta">
                 <span class="mod-badge" id="mod-badge">Modified</span>
-                <span style="flex: 1"></span>
-                <a
-                  href="#"
-                  style="
-                    color: var(--muted);
-                    font-size: 10px;
-                    text-decoration: none;
-                  "
-                  onclick="openSettings('profiles')"
-                  aria-label="Manage profiles"
-                  >Manage profiles…</a
-                >
               </div>
-              <div class="prof-row">
-                <button class="btn2" onclick="saveProfileChanges()">
-                  Save changes</button
-                ><button class="btn2" onclick="saveProfileAs()">
-                  Save as new profile…
-                </button>
-              </div>
-              <div id="prof-reset-row" class="hid">
-                <button
-                  class="btn2"
-                  style="width: 100%; text-align: center"
-                  onclick="resetToProfile()"
-                >
-                  Reset to profile
-                </button>
-              </div>
+              <details class="profile-options">
+                <summary>Profile options</summary>
+                <div class="profile-options-body">
+                  <div class="prof-row">
+                    <button class="btn2" onclick="saveProfileChanges()">
+                      Save changes</button
+                    ><button class="btn2" onclick="saveProfileAs()">
+                      Save as new…
+                    </button>
+                  </div>
+                  <button class="btn2" onclick="openSettings('profiles')">
+                    Manage profiles
+                  </button>
+                  <div id="prof-reset-row" class="hid">
+                    <button class="btn2" onclick="resetToProfile()">
+                      Reset to profile
+                    </button>
+                  </div>
+                </div>
+              </details>
             </div>
             <div class="gr" id="sz-grp">
               <div class="grt">
@@ -1173,6 +1165,7 @@
     <script src="panels.js"></script>
     <script src="player.js"></script>
     <script src="queue.js"></script>
+    <script src="settings-state.js"></script>
     <script src="settings.js"></script>
     <script src="transform.js"></script>
     <script src="history.js"></script>

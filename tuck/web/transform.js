@@ -29,7 +29,7 @@
   }
 
   function mediaElements() {
-    return [document.getElementById("vid"), document.getElementById("thumb")];
+    return [document.getElementById("vid"), document.getElementById("thumb")].filter(Boolean);
   }
 
   function orientedPoint(x, y, crop, rotation) {
