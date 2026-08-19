@@ -119,6 +119,24 @@
     return null;
   }
 
+  function selectedClipRangeData(clip) {
+    var videoClip = clip || selectedVideo();
+    var selected = findSelected(videoClip);
+    if (!selected) return null;
+    var state = ensureState(videoClip);
+    var index = state.tracks.indexOf(selected.track);
+    return Object.assign(core.sourceRangeState(selected.clip, selected.track.sourceDuration), {
+      clipId: selected.clip.id,
+      trackId: selected.track.id,
+      code: "A" + (index + 2),
+      name: selected.track.name,
+      color: trackColor(index),
+      waveformUrl: selected.track.waveformUrl || "",
+      timelineStart: selected.clip.timelineStart,
+      timelineDuration: selected.clip.timelineDuration,
+    });
+  }
+
   function waveformStyle(track, audioClip) {
     if (!track.waveformUrl) return "";
     var sourceSpan = Math.max(_MIN_TRIM, audioClip.sourceOut - audioClip.sourceIn);
@@ -153,6 +171,11 @@
     if (sourceLabel) {
       sourceLabel.classList.toggle("muted", state.sourceMuted);
       sourceLabel.dataset.tip = state.sourceMuted ? "Unmute source audio" : "Mute source audio";
+      sourceLabel.setAttribute("aria-pressed", state.sourceMuted ? "true" : "false");
+      sourceLabel.setAttribute(
+        "aria-label",
+        state.sourceMuted ? "Unmute source audio" : "Mute source audio",
+      );
     }
     paintSourceLane(clip, state, total);
   }
@@ -214,21 +237,32 @@
 
     var head = root.document.createElement("div");
     head.className = "seq-head";
-    var indexEl = root.document.createElement("button");
-    indexEl.type = "button";
-    indexEl.className =
-      "seq-track-index" +
-      (track.id === selectedTrackId ? " on" : "") +
-      (track.muted ? " muted" : "");
-    indexEl.textContent = "A" + (index + 2);
-    indexEl.dataset.tip = track.muted ? "Unmute " + track.name : "Mute " + track.name;
-    indexEl.setAttribute("aria-label", track.name);
-    indexEl.onclick = function (event) {
+    var codeEl = root.document.createElement("span");
+    codeEl.className = "seq-track-code";
+    codeEl.textContent = "A" + (index + 2);
+    codeEl.setAttribute("aria-hidden", "true");
+    head.appendChild(codeEl);
+
+    var nameEl = root.document.createElement("span");
+    nameEl.className = "seq-track-name";
+    nameEl.textContent = track.name;
+    nameEl.title = track.name;
+    head.appendChild(nameEl);
+
+    var muteEl = root.document.createElement("button");
+    muteEl.type = "button";
+    muteEl.className = "seq-track-mute" + (track.muted ? " muted" : "");
+    muteEl.textContent = "M";
+    muteEl.dataset.tip = track.muted ? "Unmute " + track.name : "Mute " + track.name;
+    muteEl.setAttribute("aria-pressed", track.muted ? "true" : "false");
+    muteEl.setAttribute("aria-label", muteEl.dataset.tip);
+    muteEl.onclick = function (event) {
       event.stopPropagation();
+      selectedTrackId = track.id;
       apiObject.toggleTrackMute(track.id);
     };
-    head.appendChild(indexEl);
-    head.dataset.tip = track.name;
+    head.appendChild(muteEl);
+
     row.appendChild(head);
 
     var lane = root.document.createElement("div");
@@ -254,6 +288,7 @@
           (audioClip.loop ? ", looping" : "") +
           (audioClip.muted ? ", muted" : ""),
       );
+      el.dataset.tip = "Drag to move · Alt-drag to choose another source fragment";
       el.style.left = pct(audioClip.timelineStart, total);
       el.style.width = pct(audioClip.timelineDuration, total);
 
@@ -261,6 +296,20 @@
       wave.className = "audio-waveform";
       wave.setAttribute("style", waveformStyle(track, audioClip));
       el.appendChild(wave);
+      var clipLabel = root.document.createElement("span");
+      clipLabel.className = "audio-clip-label";
+      clipLabel.textContent = track.name;
+      el.appendChild(clipLabel);
+      if (selected) {
+        var sourceReadout = root.document.createElement("span");
+        sourceReadout.className = "audio-source-range-readout";
+        sourceReadout.textContent =
+          "Source " +
+          core.formatSourceTime(audioClip.sourceIn) +
+          "–" +
+          core.formatSourceTime(audioClip.sourceOut);
+        el.appendChild(sourceReadout);
+      }
       if (audioClip.fadeIn > 0) {
         var fadeIn = root.document.createElement("span");
         fadeIn.className = "audio-fade in";
@@ -309,10 +358,14 @@
     reconcile(clip);
     var total = sourceDuration(clip);
     var master = root.byId("audio-master-toggle");
-    master.classList.toggle("on", state.enabled);
-    master.setAttribute("aria-pressed", state.enabled ? "true" : "false");
-    var masterLabel = root.byId("audio-master-label");
-    if (masterLabel) masterLabel.textContent = state.enabled ? "Audio" : "Muted";
+    if (master) {
+      master.classList.toggle("on", state.enabled);
+      master.setAttribute("aria-checked", state.enabled ? "true" : "false");
+      master.setAttribute(
+        "aria-label",
+        state.enabled ? "Exclude audio from export" : "Include audio in export",
+      );
+    }
     renderSourceTrack(clip, state, total);
     var tracks = root.byId("imported-audio-tracks");
     tracks.replaceChildren();
@@ -325,65 +378,41 @@
   }
 
   function paintMixer(clip) {
-    var mixer = root.byId("audio-mixer");
-    if (!mixer) return;
     if (!clip || !clip.probed) {
-      mixer.hidden = true;
+      var fragMuteEmpty = root.byId("audio-fragment-mute");
+      if (fragMuteEmpty) fragMuteEmpty.classList.add("hid");
+      if (typeof root.renderAudioMixerList === "function") root.renderAudioMixerList();
+      if (typeof root.renderAudioLibraryPanel === "function") root.renderAudioLibraryPanel();
       return;
     }
-    mixer.hidden = false;
-    var state = ensureState(clip);
-    var muted = false;
-    var gain = 0;
-    var label = "A";
-    var mixerColor = "";
-    if (selectedTrackId !== "source") {
-      var track = findTrack(selectedTrackId, clip);
-      if (!track) selectedTrackId = "source";
-      else {
-        muted = !!track.muted;
-        gain = Number(track.gainDb) || 0;
-        var trackIndex = state.tracks.indexOf(track);
-        label = "A" + (trackIndex + 2);
-        mixerColor = trackColor(trackIndex);
-      }
+    ensureState(clip);
+    if (selectedTrackId !== "source" && !findTrack(selectedTrackId, clip)) {
+      selectedTrackId = "source";
     }
-    if (selectedTrackId === "source") {
-      muted = !!state.sourceMuted;
-      gain = Number(state.sourceGainDb) || 0;
-      label = "A";
-    }
-    if (mixerColor) mixer.style.setProperty("--segment-color", mixerColor);
-    else mixer.style.removeProperty("--segment-color");
-    var name = root.byId("audio-mixer-name");
-    var mute = root.byId("audio-mixer-mute");
-    var slider = root.byId("audio-mixer-gain");
-    var db = root.byId("audio-mixer-db");
-    if (name) name.textContent = label;
-    if (mute) {
-      mute.classList.toggle("on", muted);
-      mute.setAttribute("aria-pressed", muted ? "true" : "false");
-    }
-    if (slider && document.activeElement !== slider)
-      slider.value = String(Math.max(-24, Math.min(12, gain)));
-    if (db) db.textContent = (gain > 0 ? "+" : "") + String(gain) + " dB";
-    var removeBtn = root.byId("audio-mixer-remove");
-    if (removeBtn) removeBtn.classList.toggle("hid", selectedTrackId === "source");
-    var sourceLabel = root.byId("source-audio-label");
-    if (sourceLabel) sourceLabel.classList.toggle("on", selectedTrackId === "source");
     var fragMute = root.byId("audio-fragment-mute");
     var fragmentMuted = false;
+    var fragmentCount = 0;
     if (selectedTrackId === "source" && root.SegmentEditing) {
       var segs = root.SegmentEditing.segmentsForClip(clip, sourceDuration(clip));
+      fragmentCount = segs.length;
       var active = Number.isInteger(clip.activeSegment) ? clip.activeSegment : 0;
       fragmentMuted = !!(segs[active] && segs[active].muted);
     }
     if (fragMute) {
-      fragMute.classList.toggle("hid", selectedTrackId !== "source");
+      fragMute.classList.toggle(
+        "hid",
+        selectedTrackId !== "source" || (fragmentCount <= 1 && !fragmentMuted),
+      );
       fragMute.classList.toggle("on", fragmentMuted);
       fragMute.setAttribute("aria-pressed", fragmentMuted ? "true" : "false");
-      fragMute.textContent = fragmentMuted ? "Unmute" : "Mute";
+      var fragMuteLabel = fragmentMuted
+        ? "Unmute this segment's source audio"
+        : "Mute this segment's source audio";
+      fragMute.setAttribute("aria-label", fragMuteLabel);
+      fragMute.dataset.tip = fragMuteLabel;
     }
+    if (typeof root.renderAudioMixerList === "function") root.renderAudioMixerList();
+    if (typeof root.renderAudioLibraryPanel === "function") root.renderAudioLibraryPanel();
   }
 
   function updatePlayheads(time, total) {
@@ -468,11 +497,22 @@
     selectedClipId = track.clips[index].id;
     selectedTrackId = track.id;
     var importedEdge = event.target.closest ? event.target.closest(".clip-edge") : null;
-    var importedAction = importedEdge
-      ? importedEdge.dataset.edge === "start"
-        ? "trim-start"
-        : "trim-end"
-      : event.target.dataset.audioAction || "move";
+    var importedAction = core.importedDragAction(
+      importedEdge ? importedEdge.dataset.edge : null,
+      !!event.altKey,
+      event.target.dataset.audioAction || "move",
+    );
+    if (importedAction === "slip" && !clipEl.querySelector(".audio-source-range-readout")) {
+      var slipReadout = root.document.createElement("span");
+      slipReadout.className = "audio-source-range-readout";
+      slipReadout.textContent =
+        "Source " +
+        core.formatSourceTime(track.clips[index].sourceIn) +
+        "–" +
+        core.formatSourceTime(track.clips[index].sourceOut);
+      clipEl.appendChild(slipReadout);
+    }
+    if (root.History) root.History.begin(root.selPath);
     dragState = {
       action: importedAction,
       kind: "imported",
@@ -493,10 +533,38 @@
     event.preventDefault();
   }
 
+  function audioClipSnapCandidates(excludeClipId) {
+    var clip = selectedVideo();
+    var total = sourceDuration(clip);
+    var points = [0, total, sourceTime()];
+    if (clip && root.SegmentEditing) {
+      root.SegmentEditing.segmentsForClip(clip, total).forEach(function (segment) {
+        points.push(segment.start, segment.end);
+      });
+    }
+    var state = ensureState(clip);
+    state.tracks.forEach(function (track) {
+      track.clips.forEach(function (audioClip) {
+        if (audioClip.id === excludeClipId) return;
+        points.push(audioClip.timelineStart, audioClip.timelineStart + audioClip.timelineDuration);
+      });
+    });
+    return points;
+  }
+
   function paintDragged() {
     if (!dragState || !dragState.element) return;
     dragState.element.style.left = pct(dragState.clip.timelineStart, dragState.total);
     dragState.element.style.width = pct(dragState.clip.timelineDuration, dragState.total);
+    var wave = dragState.element.querySelector(".audio-waveform");
+    if (wave) wave.setAttribute("style", waveformStyle(dragState.track, dragState.clip));
+    var readout = dragState.element.querySelector(".audio-source-range-readout");
+    if (readout)
+      readout.textContent =
+        "Source " +
+        core.formatSourceTime(dragState.clip.sourceIn) +
+        "–" +
+        core.formatSourceTime(dragState.clip.sourceOut);
   }
 
   function processGroupDragMove(event) {
@@ -551,10 +619,30 @@
         event.preventDefault();
         return;
       }
-      audioClip.timelineStart = Math.max(
+      var proposedStart = Math.max(
         bounds.min,
         Math.min(bounds.max, original.timelineStart + delta),
       );
+      if (typeof root.snapCandidateTime === "function") {
+        var pxPerSecond = dragState.rect.width / dragState.total;
+        var candidates = audioClipSnapCandidates(audioClip.id);
+        var snappedStart = root.snapCandidateTime(proposedStart, candidates, pxPerSecond);
+        var snappedEnd = root.snapCandidateTime(
+          proposedStart + original.timelineDuration,
+          candidates,
+          pxPerSecond,
+        );
+        if (snappedEnd !== proposedStart + original.timelineDuration)
+          proposedStart = snappedEnd - original.timelineDuration;
+        else proposedStart = snappedStart;
+        proposedStart = Math.max(bounds.min, Math.min(bounds.max, proposedStart));
+      }
+      audioClip.timelineStart = proposedStart;
+    } else if (dragState.action === "slip") {
+      var slipped = core.slipClip(original, dragState.track.sourceDuration, delta);
+      audioClip.sourceIn = slipped.sourceIn;
+      audioClip.sourceOut = slipped.sourceOut;
+      dragState.element.classList.add("slipping");
     } else if (dragState.action === "trim-start") {
       var maximumDelta = original.timelineDuration - _MIN_TRIM;
       var minimumDelta = bounds.min - original.timelineStart;
@@ -602,9 +690,49 @@
       processGroupDragMove(_groupDragEvent);
       _groupDragEvent = null;
     }
+    var completedDrag = dragState;
     dragState = null;
+    if (completedDrag.element) completedDrag.element.classList.remove("slipping");
     render();
     setPlanDirty(selectedVideo());
+    if (root.History) root.History.commit();
+  }
+
+  function updateSelectedSourceRange(value, finalize) {
+    var videoClip = selectedVideo();
+    var selected = findSelected(videoClip);
+    if (!selected) return null;
+    var desired = Number(value);
+    if (!Number.isFinite(desired)) desired = selected.clip.sourceIn;
+    var slipped = core.slipClip(
+      selected.clip,
+      selected.track.sourceDuration,
+      desired - selected.clip.sourceIn,
+    );
+    selected.clip.sourceIn = slipped.sourceIn;
+    selected.clip.sourceOut = slipped.sourceOut;
+    if (finalize) {
+      render();
+      setPlanDirty(videoClip);
+    } else {
+      var element = root.document.querySelector(
+        '[data-clip-id="' + selected.clip.id + '"]',
+      );
+      if (element) {
+        var wave = element.querySelector(".audio-waveform");
+        if (wave) wave.setAttribute("style", waveformStyle(selected.track, selected.clip));
+        var readout = element.querySelector(".audio-source-range-readout");
+        if (readout)
+          readout.textContent =
+            "Source " +
+            core.formatSourceTime(selected.clip.sourceIn) +
+            "–" +
+            core.formatSourceTime(selected.clip.sourceOut);
+        element.classList.add("slipping");
+      }
+      syncPreview();
+    }
+    return selectedClipRangeData(videoClip);
   }
 
   function clipFadeFactor(audioClip, localTime) {
@@ -789,9 +917,7 @@
         if (!media.ok || !media.url) throw new Error(media.error || "Could not load audio");
         var duration = Number(probed.data.duration) || 0;
         if (duration < _MIN_TRIM) throw new Error("Audio file is too short");
-        var fitDuration = Math.min(duration, Math.max(_MIN_TRIM, total - _MIN_TRIM));
-        var timelineStart = Math.max(0, Math.min(start, total - fitDuration));
-        var clipDuration = Math.min(duration, total - timelineStart);
+        var placement = core.fitClipToTimeline(duration, total, start, _MIN_TRIM);
         var track = {
           id: nextId("track"),
           name: paths[i].split(/[\\/]/).pop(),
@@ -807,10 +933,10 @@
           clips: [
             {
               id: nextId("audio"),
-              timelineStart: timelineStart,
-              sourceIn: 0,
-              sourceOut: duration,
-              timelineDuration: clipDuration,
+              timelineStart: placement.timelineStart,
+              sourceIn: placement.sourceIn,
+              sourceOut: placement.sourceOut,
+              timelineDuration: placement.timelineDuration,
               gainDb: 0,
               fadeIn: 0,
               fadeOut: 0,
@@ -914,6 +1040,7 @@
 
   var apiObject = {
     render: render,
+    trackColor: trackColor,
     selectVideo: function (clip) {
       stopPreviewElements();
       selectedClipId = null;
@@ -945,6 +1072,17 @@
     applyPreviewVolume: applyPreviewVolume,
     hasSelection: function () {
       return !!selectedClipId;
+    },
+    getSelectedClipRange: function () {
+      return selectedClipRangeData(selectedVideo());
+    },
+    setSelectedSourceIn: function (value, finalize) {
+      return updateSelectedSourceRange(value, !!finalize);
+    },
+    resetSelectedSource: function () {
+      var selected = findSelected(selectedVideo());
+      if (!selected) return null;
+      return updateSelectedSourceRange(0, true);
     },
     browse: async function () {
       if (!root.api || typeof root.api.pickAudioFiles !== "function") return;
@@ -988,6 +1126,7 @@
       var clip = selectedVideo();
       var state = ensureState(clip);
       if (!state) return;
+      selectedTrackId = "source";
       state.sourceMuted = !state.sourceMuted;
       render();
       setPlanDirty(clip);
@@ -998,13 +1137,13 @@
       if (!state) return;
       state.sourceGainDb = Math.max(-60, Math.min(12, Number(value) || 0));
       applyPreviewVolume();
-      paintMixer(clip);
       setPlanDirty(clip);
     },
     toggleTrackMute: function (trackId) {
       var clip = selectedVideo();
       var track = findTrack(trackId, clip);
       if (!track) return;
+      selectedTrackId = trackId;
       track.muted = !track.muted;
       render();
       setPlanDirty(clip);
@@ -1016,7 +1155,6 @@
     setMixerGain: function (value) {
       if (selectedTrackId === "source") return apiObject.setSourceGain(value);
       apiObject.setTrackGain(selectedTrackId, value);
-      paintMixer(selectedVideo());
     },
     setTrackGain: function (trackId, value) {
       var clip = selectedVideo();
@@ -1024,7 +1162,6 @@
       if (!track) return;
       track.gainDb = Math.max(-60, Math.min(12, Number(value) || 0));
       syncPreview();
-      paintMixer(clip);
       setPlanDirty(clip);
     },
     removeTrack: function (trackId) {
@@ -1033,6 +1170,7 @@
       var track = findTrack(trackId, clip);
       if (!state || !track) return;
       root.confirmToast("Remove audio track “" + track.name + "”?", function () {
+        if (root.History) root.History.begin(root.selPath);
         var selected = findSelected(clip);
         releaseToken(track.mediaToken);
         releaseToken(track.waveformToken);
@@ -1046,6 +1184,7 @@
         if (selected && selected.track.id === trackId) selectedClipId = null;
         render();
         setPlanDirty(clip);
+        if (root.History) root.History.commit();
       });
     },
     splitSelected: function () {
@@ -1178,10 +1317,113 @@
     return [left, right];
   }
 
+  function fitClipToTimeline(sourceDuration, timelineDuration, playhead, minimumDuration) {
+    var source = Math.max(0, Number(sourceDuration) || 0);
+    var timeline = Math.max(0, Number(timelineDuration) || 0);
+    var minimum = Math.max(0, Number(minimumDuration) || 0.05);
+    var maxStart = Math.max(0, timeline - Math.min(minimum, timeline));
+    var timelineStart = Math.max(0, Math.min(maxStart, Number(playhead) || 0));
+    var duration = Math.min(source, Math.max(0, timeline - timelineStart));
+    return {
+      timelineStart: timelineStart,
+      timelineDuration: duration,
+      sourceIn: 0,
+      sourceOut: duration,
+    };
+  }
+
+  function sourceRangePointerValue(
+    clientX,
+    contentLeft,
+    contentWidth,
+    grabOffset,
+    sourceDuration,
+    maxSourceIn,
+  ) {
+    var width = Math.max(1, Number(contentWidth) || 0);
+    var value =
+      ((Number(clientX) - Number(contentLeft) - (Number(grabOffset) || 0)) / width) *
+      Math.max(0, Number(sourceDuration) || 0);
+    return Math.max(0, Math.min(Math.max(0, Number(maxSourceIn) || 0), value));
+  }
+
+  function sourceSelectionSpan(clip) {
+    var selected = Math.max(0, (Number(clip.sourceOut) || 0) - (Number(clip.sourceIn) || 0));
+    var timeline = Math.max(0, Number(clip.timelineDuration) || 0);
+    return clip.loop || !timeline ? selected : timeline;
+  }
+
+  function slipClip(clip, sourceDuration, delta) {
+    var result = Object.assign({}, clip);
+    var sourceIn = Number(clip.sourceIn) || 0;
+    var span = sourceSelectionSpan(clip);
+    var total = Math.max(0, Number(sourceDuration) || 0);
+    if (!span || total < span) return result;
+    var nextIn = sourceIn + (Number(delta) || 0);
+    nextIn = Math.max(0, Math.min(total - span, nextIn));
+    result.sourceIn = nextIn;
+    result.sourceOut = nextIn + span;
+    return result;
+  }
+
+  function resetSlip(clip, sourceDuration) {
+    return slipClip(clip, sourceDuration, -(Number(clip.sourceIn) || 0));
+  }
+
+  function sourceRangeState(clip, sourceDuration) {
+    var total = Math.max(0, Number(sourceDuration) || 0);
+    var rawIn = Math.max(0, Number(clip.sourceIn) || 0);
+    var span = Math.min(total, sourceSelectionSpan(clip));
+    var maxSourceIn = Math.max(0, total - span);
+    var sourceIn = Math.max(0, Math.min(maxSourceIn, rawIn));
+    return {
+      sourceIn: sourceIn,
+      sourceOut: sourceIn + span,
+      sourceSpan: span,
+      sourceDuration: total,
+      maxSourceIn: maxSourceIn,
+      startPct: total ? (sourceIn / total) * 100 : 0,
+      widthPct: total ? (span / total) * 100 : 0,
+      canSlip: maxSourceIn > 0.000001,
+    };
+  }
+
+  function formatSourceTime(seconds) {
+    var totalMs = Math.max(0, Math.round((Number(seconds) || 0) * 1000));
+    var milliseconds = totalMs % 1000;
+    var totalSeconds = Math.floor(totalMs / 1000);
+    var secs = totalSeconds % 60;
+    var totalMinutes = Math.floor(totalSeconds / 60);
+    var minutes = totalMinutes % 60;
+    var hours = Math.floor(totalMinutes / 60);
+    var prefix = hours ? hours + ":" + String(minutes).padStart(2, "0") : String(minutes);
+    return (
+      prefix +
+      ":" +
+      String(secs).padStart(2, "0") +
+      "." +
+      String(milliseconds).padStart(3, "0")
+    );
+  }
+
+  function importedDragAction(edge, altKey, explicitAction) {
+    if (edge === "start") return "trim-start";
+    if (edge === "end") return "trim-end";
+    if (altKey) return "slip";
+    return explicitAction || "move";
+  }
+
   return {
     selectedDuration: selectedDuration,
     sourceToOutputTime: sourceToOutputTime,
     outputToSourceTime: outputToSourceTime,
+    fitClipToTimeline: fitClipToTimeline,
+    sourceRangePointerValue: sourceRangePointerValue,
     splitClip: splitClip,
+    slipClip: slipClip,
+    resetSlip: resetSlip,
+    sourceRangeState: sourceRangeState,
+    formatSourceTime: formatSourceTime,
+    importedDragAction: importedDragAction,
   };
 });

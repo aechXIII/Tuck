@@ -54,3 +54,154 @@ test("split rejects playheads too close to audio clip edges", () => {
   assert.equal(audio.splitClip(clip, 2.01, "new"), null);
   assert.equal(audio.splitClip(clip, 4.99, "new"), null);
 });
+
+test("slipping selects another source fragment without moving or resizing the clip", () => {
+  const clip = {
+    id: "music",
+    timelineStart: 2,
+    timelineDuration: 8,
+    sourceIn: 1,
+    sourceOut: 9,
+    fadeIn: 0,
+    fadeOut: 0,
+    loop: false,
+  };
+
+  const slipped = audio.slipClip(clip, 12, 2);
+  const clampedRight = audio.slipClip(clip, 12, 20);
+  const clampedLeft = audio.slipClip(clip, 12, -20);
+
+  assert.deepEqual(
+    {
+      timelineStart: slipped.timelineStart,
+      timelineDuration: slipped.timelineDuration,
+      sourceIn: slipped.sourceIn,
+      sourceOut: slipped.sourceOut,
+    },
+    { timelineStart: 2, timelineDuration: 8, sourceIn: 3, sourceOut: 11 },
+  );
+  assert.deepEqual(
+    { sourceIn: clampedRight.sourceIn, sourceOut: clampedRight.sourceOut },
+    { sourceIn: 4, sourceOut: 12 },
+  );
+  assert.deepEqual(
+    { sourceIn: clampedLeft.sourceIn, sourceOut: clampedLeft.sourceOut },
+    { sourceIn: 0, sourceOut: 8 },
+  );
+});
+
+test("split pieces can slip independently and reset to the earliest source range", () => {
+  const clip = {
+    id: "music",
+    timelineStart: 0,
+    timelineDuration: 40,
+    sourceIn: 40,
+    sourceOut: 80,
+    fadeIn: 0,
+    fadeOut: 0,
+    loop: false,
+  };
+  const split = audio.splitClip(clip, 15, "second");
+
+  const slippedRight = audio.slipClip(split[1], 180, 30);
+  const resetRight = audio.resetSlip(slippedRight, 180);
+
+  assert.deepEqual(
+    { sourceIn: split[0].sourceIn, sourceOut: split[0].sourceOut },
+    { sourceIn: 40, sourceOut: 55 },
+  );
+  assert.deepEqual(
+    {
+      timelineStart: slippedRight.timelineStart,
+      timelineDuration: slippedRight.timelineDuration,
+      sourceIn: slippedRight.sourceIn,
+      sourceOut: slippedRight.sourceOut,
+    },
+    { timelineStart: 15, timelineDuration: 25, sourceIn: 85, sourceOut: 110 },
+  );
+  assert.deepEqual(
+    { sourceIn: resetRight.sourceIn, sourceOut: resetRight.sourceOut },
+    { sourceIn: 0, sourceOut: 25 },
+  );
+});
+
+test("source range state describes the selected fragment and disables impossible slips", () => {
+  const movable = audio.sourceRangeState(
+    { sourceIn: 40, sourceOut: 80, timelineDuration: 40 },
+    200,
+  );
+  const fixed = audio.sourceRangeState(
+    { sourceIn: 0, sourceOut: 40, timelineDuration: 40 },
+    40,
+  );
+
+  assert.deepEqual(movable, {
+    sourceIn: 40,
+    sourceOut: 80,
+    sourceSpan: 40,
+    sourceDuration: 200,
+    maxSourceIn: 160,
+    startPct: 20,
+    widthPct: 20,
+    canSlip: true,
+  });
+  assert.equal(fixed.maxSourceIn, 0);
+  assert.equal(fixed.widthPct, 100);
+  assert.equal(fixed.canSlip, false);
+});
+
+test("a video-fitted clip uses its timeline duration as the selectable source window", () => {
+  const fitted = {
+    timelineStart: 0,
+    timelineDuration: 40,
+    sourceIn: 0,
+    sourceOut: 180,
+    loop: false,
+  };
+
+  const state = audio.sourceRangeState(fitted, 180);
+  const slipped = audio.slipClip(fitted, 180, 40);
+
+  assert.equal(state.sourceOut, 40);
+  assert.equal(state.sourceSpan, 40);
+  assert.equal(state.maxSourceIn, 140);
+  assert.equal(state.canSlip, true);
+  assert.deepEqual(
+    { sourceIn: slipped.sourceIn, sourceOut: slipped.sourceOut },
+    { sourceIn: 40, sourceOut: 80 },
+  );
+});
+
+test("source range timecodes keep millisecond precision", () => {
+  assert.equal(audio.formatSourceTime(42.125), "0:42.125");
+  assert.equal(audio.formatSourceTime(62.5), "1:02.500");
+  assert.equal(audio.formatSourceTime(3661.001), "1:01:01.001");
+});
+
+test("Alt-drag slips an audio body while trim handles keep their edge actions", () => {
+  assert.equal(audio.importedDragAction(null, true, "move"), "slip");
+  assert.equal(audio.importedDragAction("start", true, "move"), "trim-start");
+  assert.equal(audio.importedDragAction("end", true, "move"), "trim-end");
+  assert.equal(audio.importedDragAction(null, false, "move"), "move");
+});
+
+test("new audio starts at the playhead and fits only the remaining video", () => {
+  assert.deepEqual(audio.fitClipToTimeline(180, 12, 4), {
+    timelineStart: 4,
+    timelineDuration: 8,
+    sourceIn: 0,
+    sourceOut: 8,
+  });
+  assert.deepEqual(audio.fitClipToTimeline(180, 12, 0), {
+    timelineStart: 0,
+    timelineDuration: 12,
+    sourceIn: 0,
+    sourceOut: 12,
+  });
+});
+
+test("source-range dragging measures from the waveform content box", () => {
+  assert.equal(audio.sourceRangePointerValue(112, 101, 200, 11, 180, 172), 0);
+  assert.equal(audio.sourceRangePointerValue(212, 101, 200, 11, 180, 172), 90);
+  assert.equal(audio.sourceRangePointerValue(500, 101, 200, 11, 180, 172), 172);
+});
