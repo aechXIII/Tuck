@@ -110,7 +110,7 @@ body.tl-segment-dragging * {
   background: color-mix(in srgb, var(--segment-color) 46%, #17151f);
   opacity: 1;
 }
-.tl-segment.active {
+#video-track.selected .tl-segment.active {
   border-color: color-mix(in srgb, var(--segment-color) 56%, white);
   background: color-mix(in srgb, var(--segment-color) 52%, #17151f);
   box-shadow:
@@ -118,6 +118,17 @@ body.tl-segment-dragging * {
     0 0 0 1px color-mix(in srgb, var(--segment-color) 22%, transparent),
     0 2px 5px rgba(0, 0, 0, 0.32);
   opacity: 1;
+}
+#tl-segments .tl-segment > .clip-edge {
+  opacity: 0;
+  pointer-events: none;
+}
+#tl-segments .tl-segment:hover > .clip-edge,
+#tl-segments .tl-segment:focus-visible > .clip-edge,
+#video-track.selected #tl-segments .tl-segment.active > .clip-edge,
+#tl-segments .tl-segment > .clip-edge.dragging {
+  opacity: 1;
+  pointer-events: auto;
 }
 .tl-segment-badge {
   display: inline-flex;
@@ -199,8 +210,8 @@ body.tl-segment-dragging * {
 }
 .tl-segment:hover .tl-segment-time,
 .tl-segment:focus-visible .tl-segment-time,
-#timeline.segment-dragging .tl-segment.active .tl-segment-time,
-#timeline.trim-dragging .tl-segment.active .tl-segment-time {
+#video-track.selected #timeline.segment-dragging .tl-segment.active .tl-segment-time,
+#video-track.selected #timeline.trim-dragging .tl-segment.active .tl-segment-time {
   transform: translateX(-50%) translateY(0);
   opacity: 1;
   visibility: visible;

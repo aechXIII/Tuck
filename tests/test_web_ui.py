@@ -400,7 +400,7 @@ def test_segment_editor_controls_payloads_and_accessibility_are_wired() -> None:
 
     assert 'id="tl-segments"' in html
     assert 'id="timeline-row"' in html
-    assert 'aria-label="Clip actions"' in html
+    assert 'aria-label="Segment actions"' in html
     assert 'id="segment-menu-toggle"' not in html
     assert 'id="segment-popover"' not in html
     assert 'aria-label="Active segment start"' in html
@@ -418,7 +418,8 @@ def test_segment_editor_controls_payloads_and_accessibility_are_wired() -> None:
     assert '_tlDrag = "segment-pending"' in html
     assert "_SEGMENT_DRAG_THRESHOLD = 5" in html
     assert 'range.setAttribute("aria-keyshortcuts", "ArrowLeft ArrowRight")' in html
-    assert '" · Click to seek · drag to move"' in html
+    assert '". Click to seek; drag to move"' in html
+    assert "range.title" not in html
     assert 'timeLabel.className = "tl-segment-time"' in html
     assert "formatSegmentTime(segments[i].start)" in html
     assert ".tl-segment:hover .tl-segment-time" in html

@@ -210,10 +210,15 @@ function paintTrimChrome() {
 
   var segments = view.items;
   var active = activeSegmentIndex(c, segments);
+  var sourceGroupSelected =
+    window.AudioTimeline && typeof AudioTimeline.isSourceGroupSelected === "function"
+      ? AudioTimeline.isSourceGroupSelected()
+      : true;
   var bounds = segments[active];
   var startPct = full > 0 ? (bounds.start / full) * 100 : 0;
   var endPct = full > 0 ? (bounds.end / full) * 100 : 100;
   for (var i = 0; i < segments.length; i++) {
+    var segmentAudioMuted = !!segments[i].muted;
     var range = document.createElement("button");
     range.type = "button";
     range.className = "tl-segment" + (i === active ? " active" : "");
@@ -230,9 +235,13 @@ function paintTrimChrome() {
         formatSegmentTime(segments[i].start) +
         " to " +
         formatSegmentTime(segments[i].end) +
+        (segmentAudioMuted ? ", source audio muted" : "") +
         ". Click to seek; drag to move",
     );
-    range.setAttribute("aria-pressed", i === active ? "true" : "false");
+    range.setAttribute(
+      "aria-pressed",
+      i === active && sourceGroupSelected ? "true" : "false",
+    );
     range.setAttribute("aria-keyshortcuts", "ArrowLeft ArrowRight");
     var badgeLabel = document.createElement("span");
     badgeLabel.className = "tl-segment-badge";
@@ -260,25 +269,13 @@ function paintTrimChrome() {
     timeLabel.setAttribute("aria-hidden", "true");
     timeLabel.textContent = timeText;
     range.appendChild(timeLabel);
-    if (i === active) {
-      var edgeIn = document.createElement("span");
-      edgeIn.className = "clip-edge start";
-      edgeIn.dataset.edge = "start";
-      edgeIn.dataset.tip = "Drag to trim segment start";
-      var edgeOut = document.createElement("span");
-      edgeOut.className = "clip-edge end";
-      edgeOut.dataset.edge = "end";
-      edgeOut.dataset.tip = "Drag to trim segment end";
-      range.append(edgeIn, edgeOut);
-    }
-    range.title =
-      "Segment " +
-      (i + 1) +
-      ": " +
-      fmtt(segments[i].start) +
-      "-" +
-      fmtt(segments[i].end) +
-      " · Click to seek · drag to move";
+    var edgeIn = document.createElement("span");
+    edgeIn.className = "clip-edge start";
+    edgeIn.dataset.edge = "start";
+    var edgeOut = document.createElement("span");
+    edgeOut.className = "clip-edge end";
+    edgeOut.dataset.edge = "end";
+    range.append(edgeIn, edgeOut);
     segmentsLayer.appendChild(range);
   }
   paintSelectionFrame(startPct, endPct, segmentColor(active));
@@ -674,15 +671,35 @@ function setSegmentDragCursor(active) {
   document.body.classList.toggle("tl-segment-dragging", !!active);
 }
 
+function setRulerScrubCursor(active) {
+  var ruler = byId("sequence-ruler");
+  if (ruler) ruler.classList.toggle("scrubbing", !!active);
+  document.body.classList.toggle("timeline-scrubbing", !!active);
+}
+
 function onTimelinePointerDown(e) {
   if (e.button != null && e.button !== 0) return;
+  if (window.AudioTimeline && typeof AudioTimeline.selectVideoTrack === "function")
+    AudioTimeline.selectVideoTrack();
   var target = e.target;
   var edge = target && target.closest ? target.closest(".clip-edge") : null;
   var isSegment =
     target && target.classList && target.classList.contains("tl-segment");
   if (edge && edge.dataset.edge) {
-    _tlDrag = edge.dataset.edge === "start" ? "in" : "out";
-    edge.classList.add("dragging");
+    var edgeName = edge.dataset.edge;
+    var edgeSegment = edge.closest(".tl-segment");
+    if (edgeSegment) {
+      var edgeIndex = parseInt(edgeSegment.dataset.segmentIndex, 10);
+      selectSegment(edgeIndex, false);
+      edge = byId("tl-segments").querySelector(
+        '.tl-segment[data-segment-index="' +
+          edgeIndex +
+          '"] .clip-edge.' +
+          (edgeName === "start" ? "start" : "end"),
+      );
+    }
+    _tlDrag = edgeName === "start" ? "in" : "out";
+    if (edge) edge.classList.add("dragging");
     setTrimDragCursor(true);
   } else if (isSegment) {
     var index = parseInt(target.dataset.segmentIndex, 10);
@@ -781,6 +798,7 @@ function onTimelinePointerUp(e) {
   for (var i = 0; i < edgeHandles.length; i++) edgeHandles[i].classList.remove("dragging");
   setTrimDragCursor(false);
   setSegmentDragCursor(false);
+  if (_tlDrag === "ruler") setRulerScrubCursor(false);
   _tlDrag = null;
   if (_previewSec != null) {
     _seekWanted = _previewSec;
@@ -800,9 +818,19 @@ function onTimelinePointerUp(e) {
   if (ruler) {
     ruler.addEventListener("pointerdown", function (e) {
       if (e.button != null && e.button !== 0) return;
-      seekToRatio(timelineRatioFromEvent(e));
+      _tlDrag = "ruler";
+      setRulerScrubCursor(true);
+      if (e.pointerId != null && ruler.setPointerCapture) {
+        try {
+          ruler.setPointerCapture(e.pointerId);
+        } catch (err) {}
+      }
+      processTimelineMove(e);
       e.preventDefault();
     });
+    ruler.addEventListener("pointermove", onTimelinePointerMove);
+    ruler.addEventListener("pointerup", onTimelinePointerUp);
+    ruler.addEventListener("pointercancel", onTimelinePointerUp);
   }
   timeline.addEventListener("pointerdown", onTimelinePointerDown);
   timeline.addEventListener("pointermove", onTimelinePointerMove);

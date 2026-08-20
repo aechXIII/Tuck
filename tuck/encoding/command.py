@@ -250,6 +250,7 @@ def build_base_cmd(
                     filters.extend(
                         [
                             f"adelay={max(0, round(piece.output_start * 1000))}:all=1",
+                            "asetpts=PTS-STARTPTS",
                             f"apad=whole_dur={output_duration}",
                             f"atrim=duration={output_duration}",
                         ]

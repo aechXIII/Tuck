@@ -66,6 +66,7 @@ function nudgeTimelineZoom(delta) {
 
 var timelineResizeState = null;
 var timelineHeightSetting = 0;
+var timelineTrackCount = 2;
 
 function updateTimelineResizeA11y(height) {
   var separator = byId("timeline-resizer");
@@ -85,11 +86,34 @@ function refreshAfterTimelineResize() {
 function applyTimelineHeight(value) {
   var editor = byId("audio-editor");
   if (!editor || !window.TuckLayout) return 0;
-  var height = TuckLayout.clampTimelineHeight(value, window.innerHeight);
+  var height = TuckLayout.clampTimelineHeight(
+    value,
+    window.innerHeight,
+    timelineTrackCount,
+  );
   editor.style.height = height + "px";
   updateTimelineResizeA11y(height);
   refreshAfterTimelineResize();
   return height;
+}
+
+function syncTimelineTrackCount(importedCount) {
+  var count = Math.max(0, Math.round(Number(importedCount) || 0));
+  var nextTrackCount = 2 + count;
+  var addedTrack = nextTrackCount > timelineTrackCount;
+  timelineTrackCount = nextTrackCount;
+  if (!window.TuckLayout) return;
+  if (timelineHeightSetting === 0) {
+    applyTimelineHeight(0);
+    return;
+  }
+  if (!addedTrack) return;
+  var editor = byId("audio-editor");
+  if (!editor) return;
+  var required = TuckLayout.timelineAutoHeight(timelineTrackCount, window.innerHeight);
+  if (editor.getBoundingClientRect().height + 0.5 < required) {
+    saveTimelineHeight(applyTimelineHeight(required));
+  }
 }
 
 function saveTimelineHeight(value) {
@@ -124,7 +148,11 @@ function beginTimelineResize(event) {
     startHeight: editor.getBoundingClientRect().height,
   };
   document.body.classList.add("timeline-resizing");
-  if (separator.setPointerCapture) separator.setPointerCapture(event.pointerId);
+  if (separator.setPointerCapture && event.pointerId != null) {
+    try {
+      separator.setPointerCapture(event.pointerId);
+    } catch (error) {}
+  }
 }
 
 function moveTimelineResize(event) {
@@ -141,7 +169,12 @@ function endTimelineResize(event) {
   var editor = byId("audio-editor");
   timelineResizeState = null;
   document.body.classList.remove("timeline-resizing");
-  if (separator && separator.releasePointerCapture && separator.hasPointerCapture(event.pointerId)) {
+  if (
+    separator &&
+    event.pointerId != null &&
+    separator.releasePointerCapture &&
+    separator.hasPointerCapture(event.pointerId)
+  ) {
     separator.releasePointerCapture(event.pointerId);
   }
   if (editor) saveTimelineHeight(editor.getBoundingClientRect().height);
@@ -172,9 +205,9 @@ function initTimelineResizer() {
   var separator = byId("timeline-resizer");
   if (!separator) return;
   separator.addEventListener("pointerdown", beginTimelineResize);
-  separator.addEventListener("pointermove", moveTimelineResize);
-  separator.addEventListener("pointerup", endTimelineResize);
-  separator.addEventListener("pointercancel", endTimelineResize);
+  window.addEventListener("pointermove", moveTimelineResize);
+  window.addEventListener("pointerup", endTimelineResize);
+  window.addEventListener("pointercancel", endTimelineResize);
   separator.addEventListener("keydown", handleTimelineResizeKey);
   separator.addEventListener("dblclick", resetTimelineHeight);
   restoreTimelineHeight(0);

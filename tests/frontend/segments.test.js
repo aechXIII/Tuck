@@ -44,6 +44,15 @@ test("timeline view state assigns readable segment identities", () => {
   );
 });
 
+test("timeline view state preserves source-audio mute state", () => {
+  const state = segments.timelineViewState(
+    { segments: [{ start: 0, end: 4, muted: true }] },
+    4,
+  );
+
+  assert.equal(state.items[0].muted, true);
+});
+
 test("normalization rejects invalid, short, unordered, and overlapping ranges", () => {
   assert.throws(
     () => segments.normalizeSegments([{ start: 0, end: Number.POSITIVE_INFINITY }], 10),

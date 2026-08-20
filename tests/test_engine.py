@@ -1,3 +1,4 @@
+import array
 import os
 import subprocess
 from pathlib import Path
@@ -83,6 +84,36 @@ def engine():
     return FFmpegEngine()
 
 
+def _audio_peak_at(ffmpeg: str, source: Path, start: float) -> int:
+    decoded = subprocess.run(
+        [
+            ffmpeg,
+            "-v",
+            "error",
+            "-ss",
+            str(start),
+            "-i",
+            str(source),
+            "-t",
+            "0.5",
+            "-map",
+            "0:a:0",
+            "-f",
+            "s16le",
+            "-acodec",
+            "pcm_s16le",
+            "pipe:1",
+        ],
+        capture_output=True,
+        timeout=30,
+        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+    )
+    assert decoded.returncode == 0
+    samples = array.array("h")
+    samples.frombytes(decoded.stdout)
+    return max((abs(sample) for sample in samples), default=0)
+
+
 class TestFFmpegEngine:
     def test_is_ffmpeg_available(self):
         result = is_ffmpeg_available()
@@ -115,6 +146,47 @@ class TestFFmpegEngine:
         result = engine.encode(plan)
         assert result.exists()
         assert result.stat().st_size > 0
+
+    @pytest.mark.ffmpeg
+    def test_encode_source_audio_segments_restores_audio_after_muted_gap(
+        self, engine, tmp_path
+    ):
+        from tuck.engine import _find_ffmpeg
+        from tuck.probe import probe
+
+        ffmpeg = _find_ffmpeg()
+        if not ffmpeg:
+            pytest.skip("ffmpeg unavailable")
+        source = tmp_path / "source-audio-segments.mp4"
+        if not _create_synthetic_video(source, duration=9.0):
+            pytest.skip("Cannot create synthetic video")
+        info = probe(source)
+        output = tmp_path / "source-audio-segments-output.mp4"
+        plan = EncodePlan(
+            source=str(source),
+            output=str(output),
+            target_width=info.width,
+            target_height=info.height,
+            target_fps=info.fps,
+            video_bitrate=500_000,
+            original_video_bitrate=500_000,
+            audio_bitrate=96_000,
+            audio_channels=2,
+            audio_sample_rate=44_100,
+            two_pass=False,
+            preset="ultrafast",
+            target_size=10 * 1024 * 1024,
+            rate_control=RC_EXPLICIT_BITRATE,
+            source_info=info,
+            segments=[Segment(0, 8.8)],
+            source_audio_segments=[Segment(0, 3), Segment(6, 8.8)],
+        )
+
+        result = engine.encode(plan)
+
+        assert _audio_peak_at(ffmpeg, result, 1.0) > 500
+        assert _audio_peak_at(ffmpeg, result, 4.0) < 50
+        assert _audio_peak_at(ffmpeg, result, 7.0) > 500
 
     def test_encode_two_pass(self, engine, real_video_path, tmp_path):
         from tuck.probe import probe

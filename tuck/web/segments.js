@@ -80,12 +80,14 @@
     return {
       status: "ready",
       items: segmentsForClip(clip, duration).map(function (segment, index) {
-        return {
+        var item = {
           index: index,
           badge: "S" + (index + 1),
           start: segment.start,
           end: segment.end,
         };
+        if (segment.muted) item.muted = true;
+        return item;
       }),
     };
   }

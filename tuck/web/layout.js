@@ -8,6 +8,9 @@
   var TIMELINE_MIN_HEIGHT = 170;
   var TIMELINE_MAX_RATIO = 0.55;
   var WORKSPACE_CHROME_HEIGHT = 330;
+  var DEFAULT_TRACK_COUNT = 2;
+  var TIMELINE_AUTO_BASE_HEIGHT = 205;
+  var IMPORTED_TRACK_HEIGHT = 47;
 
   function timelineHeightBounds(viewportHeight) {
     var height = Number(viewportHeight);
@@ -20,17 +23,26 @@
     return {
       min: TIMELINE_MIN_HEIGHT,
       max: max,
-      defaultHeight: Math.max(
-        TIMELINE_MIN_HEIGHT,
-        Math.min(max, Math.round(height * 0.3)),
-      ),
+      defaultHeight: Math.min(max, TIMELINE_AUTO_BASE_HEIGHT),
     };
   }
 
-  function clampTimelineHeight(value, viewportHeight) {
+  function timelineAutoHeight(trackCount, viewportHeight) {
+    var bounds = timelineHeightBounds(viewportHeight);
+    var count = Math.round(Number(trackCount));
+    if (!Number.isFinite(count)) count = DEFAULT_TRACK_COUNT;
+    count = Math.max(DEFAULT_TRACK_COUNT, count);
+    return Math.min(
+      bounds.max,
+      bounds.defaultHeight + (count - DEFAULT_TRACK_COUNT) * IMPORTED_TRACK_HEIGHT,
+    );
+  }
+
+  function clampTimelineHeight(value, viewportHeight, trackCount) {
     var bounds = timelineHeightBounds(viewportHeight);
     var height = Number(value);
-    if (!Number.isFinite(height) || height <= 0) return bounds.defaultHeight;
+    if (!Number.isFinite(height) || height <= 0)
+      return timelineAutoHeight(trackCount, viewportHeight);
     return Math.max(bounds.min, Math.min(bounds.max, Math.round(height)));
   }
 
@@ -46,6 +58,7 @@
 
   return {
     timelineHeightBounds: timelineHeightBounds,
+    timelineAutoHeight: timelineAutoHeight,
     clampTimelineHeight: clampTimelineHeight,
     timelineHeightForKey: timelineHeightForKey,
   };

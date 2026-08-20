@@ -797,8 +797,8 @@
       aria-orientation="horizontal"
       aria-valuemin="170"
       aria-valuemax="300"
-      aria-valuenow="270"
-      aria-valuetext="270 pixels"
+      aria-valuenow="205"
+      aria-valuetext="205 pixels"
       tabindex="0"
       data-tip="Drag to resize timeline · Double-click to reset"
     ></div>
@@ -808,7 +808,8 @@
       aria-label="Video and audio timeline"
     >
       <div id="timeline-row" class="transform-controls seq-toolbar">
-        <div class="dock-command-group" role="group" aria-label="View controls">
+        <div class="timeline-tool-group" role="group" aria-label="View controls">
+          <span class="timeline-tool-label" aria-hidden="true">View</span>
           <div class="dock-zoom" role="group" aria-label="Timeline zoom">
             <button
               type="button"
@@ -855,8 +856,8 @@
             Snap
           </button>
         </div>
-        <div class="dock-divider"></div>
-        <div class="dock-icon-group" role="group" aria-label="Clip actions">
+        <div class="timeline-tool-group" role="group" aria-label="Segment actions">
+          <span class="timeline-tool-label" aria-hidden="true">Segments</span>
           <button
             type="button"
             id="btn-segment-add"
@@ -917,8 +918,8 @@
             </svg>
           </button>
         </div>
-        <div class="dock-divider"></div>
-        <div class="dock-command-group" role="group" aria-label="Audio actions">
+        <div class="timeline-tool-group" role="group" aria-label="Audio actions">
+          <span class="timeline-tool-label" aria-hidden="true">Audio</span>
           <button
             type="button"
             id="audio-fragment-mute"
@@ -948,14 +949,14 @@
             Add audio
           </button>
         </div>
-        <span style="flex: 1"></span>
+        <span class="timeline-toolbar-spacer"></span>
         <span id="tl-time" class="tl-time-readout">0:00 / 0:00</span>
       </div>
       <div id="sequence-frame">
         <div id="sequence-stack">
           <div id="sequence-ruler" class="hid" aria-hidden="true"></div>
           <div class="seq-group" id="source-group">
-            <div class="seq-row video">
+            <div class="seq-row video" id="video-track">
               <div class="seq-head" id="video-track-head">
                 <span class="seq-track-code" aria-hidden="true">V1</span>
                 <span class="seq-track-name" title="Video">Video</span>
@@ -989,10 +990,7 @@
                   aria-label="Mute source audio"
                   aria-pressed="false"
                 >
-                  <svg viewBox="0 0 16 16" aria-hidden="true">
-                    <path d="M1.5 6h2.3l3.4-3v10l-3.4-3H1.5z"></path>
-                    <path d="M10.5 6.2l3.6 3.6M14.1 6.2l-3.6 3.6"></path>
-                  </svg>
+                  M
                 </button>
               </div>
               <div

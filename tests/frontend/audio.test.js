@@ -55,6 +55,25 @@ test("split rejects playheads too close to audio clip edges", () => {
   assert.equal(audio.splitClip(clip, 4.99, "new"), null);
 });
 
+test("splitting a muted audio fragment keeps both pieces muted", () => {
+  const clip = {
+    id: "music",
+    timelineStart: 0,
+    timelineDuration: 10,
+    sourceIn: 4,
+    sourceOut: 14,
+    fadeIn: 0,
+    fadeOut: 0,
+    loop: false,
+    muted: true,
+  };
+
+  const split = audio.splitClip(clip, 4, "second");
+
+  assert.equal(split[0].muted, true);
+  assert.equal(split[1].muted, true);
+});
+
 test("slipping selects another source fragment without moving or resizing the clip", () => {
   const clip = {
     id: "music",
@@ -183,6 +202,21 @@ test("Alt-drag slips an audio body while trim handles keep their edge actions", 
   assert.equal(audio.importedDragAction("start", true, "move"), "trim-start");
   assert.equal(audio.importedDragAction("end", true, "move"), "trim-end");
   assert.equal(audio.importedDragAction(null, false, "move"), "move");
+});
+
+test("selecting video or source audio clears an imported audio clip target", () => {
+  assert.deepEqual(audio.timelineSelection("music-track", "music-clip"), {
+    trackId: "music-track",
+    clipId: "music-clip",
+  });
+  assert.deepEqual(audio.timelineSelection("video", "music-clip"), {
+    trackId: "source",
+    clipId: null,
+  });
+  assert.deepEqual(audio.timelineSelection("source", "music-clip"), {
+    trackId: "source",
+    clipId: null,
+  });
 });
 
 test("new audio starts at the playhead and fits only the remaining video", () => {

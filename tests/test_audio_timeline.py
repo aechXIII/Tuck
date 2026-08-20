@@ -219,6 +219,46 @@ def test_master_audio_mute_omits_imported_inputs() -> None:
     assert "music.mp3" not in command
 
 
+def test_muted_imported_fragment_is_omitted_while_its_sibling_is_rendered() -> None:
+    track = _track(
+        clips=[
+            _clip(
+                timeline_start=0,
+                timeline_duration=4,
+                source_in=0,
+                source_out=4,
+                fade_in=0,
+                fade_out=0,
+                muted=True,
+            ),
+            _clip(
+                timeline_start=4,
+                timeline_duration=4,
+                source_in=8,
+                source_out=12,
+                fade_in=0,
+                fade_out=0,
+            ),
+        ]
+    )
+    encode_plan = EncodePlan(
+        source="source.mp4",
+        output="output.mp4",
+        source_info=_video_info(),
+        segments=[Segment(0, 12)],
+        source_audio_muted=True,
+        audio_bitrate=192_000,
+        audio_tracks=[track],
+    )
+
+    command = build_base_cmd("ffmpeg", encode_plan, Path(encode_plan.source))
+    graph = command[command.index("-filter_complex") + 1]
+
+    assert command.count("-i") == 2
+    assert "atrim=start=8.000:duration=4.000" in graph
+    assert "atrim=start=0.000:duration=4.000" not in graph
+
+
 def test_encode_plan_round_trip_preserves_audio_timeline() -> None:
     original = EncodePlan(
         source="source.mp4",

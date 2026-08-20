@@ -99,7 +99,7 @@ def test_web_ui_contains_visual_crop_overlay_and_request_state() -> None:
     assert html.count('class="crop-handle" data-handle=') == 8
     assert '.crop-handle[data-handle="nw"] {' in styles
     assert '.crop-handle[data-handle="se"] {' in styles
-    assert 'aria-label="Clip actions"' in html
+    assert 'aria-label="Segment actions"' in html
     assert 'id="btn-segments-reset"' in html
     assert 'id="segment-menu"' not in html
     assert "cropTransformForRequest(c)" in encoding_js
@@ -175,6 +175,7 @@ def test_audio_controls_use_consistent_nle_track_vocabulary() -> None:
     assert '<span class="seq-track-code" aria-hidden="true">V1</span>' in html
     assert '<span class="seq-track-code" aria-hidden="true">A1</span>' in html
     assert 'class="seq-track-mute"' in html
+    assert 'class="timeline-tool-group"' in html
     assert 'id="audio-master-toggle"' in html
     assert 'role="switch"' in html
     assert '<svg class="ti-icon"' not in html
@@ -189,10 +190,10 @@ def test_workspace_commands_have_clear_hierarchy() -> None:
     player_js = _asset("player.js")
 
     assert 'aria-label="View controls"' in html
-    assert 'aria-label="Clip actions"' in html
+    assert 'aria-label="Segment actions"' in html
     assert 'aria-label="Audio actions"' in html
     assert 'aria-keyshortcuts="S"' in html
-    assert '<span class="dock-group-label">Clip</span>' not in html
+    assert '<span class="timeline-tool-label" aria-hidden="true">Segments</span>' in html
     assert '<span class="audio-master-title">Output audio</span>' in html
     assert "<span>Include in export</span>" in html
     assert "Imported video files appear here." in html
