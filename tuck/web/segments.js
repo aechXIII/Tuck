@@ -142,7 +142,7 @@
     return availableGaps(segments, duration).length > 0;
   }
 
-  function addSegment(segments, duration, preferredTime) {
+  function addSegment(segments, duration, preferredTime, preferredDuration) {
     var result = normalizeSegments(segments, duration);
     var at = Number.isFinite(preferredTime) ? preferredTime : duration / 2;
     at = Math.max(0, Math.min(duration, at));
@@ -151,14 +151,22 @@
       throw new Error("Shorten a segment to create a gap before adding another one");
 
     var gap = gaps[0];
+    var gapDistance = Math.max(gap.start - at, at - gap.end, 0);
     for (var g = 0; g < gaps.length; g++) {
       if (at >= gaps[g].start && at <= gaps[g].end) {
         gap = gaps[g];
         break;
       }
-      if (gaps[g].end - gaps[g].start > gap.end - gap.start) gap = gaps[g];
+      var distance = Math.max(gaps[g].start - at, at - gaps[g].end, 0);
+      if (distance < gapDistance) {
+        gap = gaps[g];
+        gapDistance = distance;
+      }
     }
-    var length = Math.min(1, gap.end - gap.start);
+    var requestedDuration = Number.isFinite(preferredDuration)
+      ? Math.max(MIN_DURATION, preferredDuration)
+      : 1;
+    var length = Math.min(requestedDuration, gap.end - gap.start);
     var start = Math.max(gap.start, Math.min(at - length / 2, gap.end - length));
     var added = { start: start, end: start + length };
     result.splice(gap.insertAt, 0, added);

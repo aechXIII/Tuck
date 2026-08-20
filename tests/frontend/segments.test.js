@@ -127,6 +127,35 @@ test("adding and removing segments preserves ordered non-overlapping state", () 
   );
 });
 
+test("new segments honor a usable requested duration on long sources", () => {
+  const added = segments.addSegment([{ start: 300, end: 1800 }], 1800, 100, 144);
+
+  assert.equal(added.index, 0);
+  assert.deepEqual(added.segments, [
+    { start: 28, end: 172 },
+    { start: 300, end: 1800 },
+  ]);
+});
+
+test("new segments use the gap nearest an occupied playhead", () => {
+  const added = segments.addSegment(
+    [
+      { start: 300, end: 400 },
+      { start: 420, end: 900 },
+    ],
+    1000,
+    450,
+    80,
+  );
+
+  assert.equal(added.index, 1);
+  assert.deepEqual(added.segments, [
+    { start: 300, end: 400 },
+    { start: 400, end: 420 },
+    { start: 420, end: 900 },
+  ]);
+});
+
 test("moving a segment preserves its duration and stops at neighboring ranges", () => {
   const source = [
     { start: 1, end: 2 },

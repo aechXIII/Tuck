@@ -626,10 +626,13 @@ function addSegment() {
   var full = videoDuration() || (c.probeData && c.probeData.duration) || 0;
   if (full <= 0) return;
   try {
+    var pixelsPerSecond = timelinePxPerSecond();
+    var preferredDuration = pixelsPerSecond > 0 ? Math.max(1, 64 / pixelsPerSecond) : 1;
     var result = SegmentEditing.addSegment(
       clipSegments(c, full),
       full,
       byId("vid").currentTime,
+      preferredDuration,
     );
     setClipSegments(c, result.segments, result.index);
     paintTrimChrome();
