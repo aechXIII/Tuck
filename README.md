@@ -4,12 +4,12 @@ Tuck is a Windows app for compressing and upscaling videos with FFmpeg. It lets 
 
 [![Release](https://img.shields.io/github/v/release/aechXIII/Tuck?style=flat-square&color=3B6AD8)](https://github.com/aechXIII/Tuck/releases) [![License: MIT](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE) [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-lightgrey?style=flat-square)]() [![Buy Me a Coffee](https://img.shields.io/badge/support-Buy%20Me%20a%20Coffee-F5A623?style=flat-square&logo=buy-me-a-coffee)](https://buymeacoffee.com/aechxiii)
 
-> [!CAUTION]
-> **Windows installer temporarily unavailable**
+> [!NOTE]
+> **Microsoft Defender false positive resolved**
 >
-> The Tuck 0.3.2 Windows installer has been temporarily removed after Microsoft Defender's cloud service reported a suspected false positive. The detection was cloud-only; Microsoft Defender's client scan reported no malware.
+> Microsoft reviewed Tuck 0.3.2 and the 0.3.3 release candidate and removed the false-positive cloud detection. Both files are classified as not malware.
 >
-> Microsoft is reviewing the original installer and a security-hardened 0.3.3 candidate. A verified replacement installer will be published after Microsoft completes its review.
+> If Defender still reports an older detection, open Windows Security, go to **Virus & threat protection > Protection updates**, and select **Check for updates**.
 
 
 
@@ -60,7 +60,9 @@ https://github.com/user-attachments/assets/532317a7-e628-455e-b041-4aeceef810b5
 
 ## Install
 
-The prebuilt Windows installer is temporarily unavailable while Microsoft completes its review. The source code and build instructions remain available in this repository.
+1. Download the latest release from [Releases](https://github.com/aechXIII/Tuck/releases).
+2. Run the installer. It installs Tuck to `%LOCALAPPDATA%\Tuck`.
+3. Start Tuck from the Start menu or File Explorer Send To menu.
 
 Tuck needs Windows 10 or 11, [WebView2](https://developer.microsoft.com/en-us/microsoft-edge/webview2/), and FFmpeg. WebView2 is included with current Windows 10 and 11 installations; if it is missing, install it from Microsoft's official download page before starting Tuck.
 
