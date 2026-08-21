@@ -5,6 +5,121 @@ var timelineZoom = 1;
 var TL_ZOOM_MIN = 1;
 var TL_ZOOM_MAX = 8;
 var TL_SNAP_PX = 8;
+var workspaceViewportMode = "";
+var workspacePanels = { libraryOpen: true, inspectorOpen: true };
+var workspaceReturnFocus = null;
+
+function applyWorkspacePanels(restoreFocus) {
+  var overlay = workspaceViewportMode === "overlay";
+  var drawerOpen = overlay && (workspacePanels.libraryOpen || workspacePanels.inspectorOpen);
+  document.body.classList.add("workspace-ready");
+  document.body.classList.toggle("workspace-overlay", overlay);
+  document.body.classList.toggle("library-panel-open", workspacePanels.libraryOpen);
+  document.body.classList.toggle("inspector-panel-open", workspacePanels.inspectorOpen);
+  document.body.classList.toggle(
+    "workspace-drawer-open",
+    drawerOpen,
+  );
+  byId("center").inert = drawerOpen;
+  byId("audio-editor").inert = drawerOpen;
+  byId("qbar").inert = drawerOpen;
+  [
+    ["library", "left", "panel-toggle-library", "library-panel-close"],
+    ["inspector", "right", "panel-toggle-inspector", "inspector-panel-close"],
+  ].forEach(function (entry) {
+    var open = workspacePanels[entry[0] + "Open"];
+    var panel = byId(entry[1]);
+    var toggle = byId(entry[2]);
+    var close = byId(entry[3]);
+    panel.setAttribute("aria-hidden", String(!open));
+    panel.inert = !open;
+    toggle.setAttribute("aria-expanded", String(open));
+    toggle.classList.toggle("on", open);
+    close.setAttribute("aria-label", (overlay ? "Close " : "Hide ") + entry[0]);
+    if (overlay && open) {
+      panel.setAttribute("role", "dialog");
+      panel.setAttribute("aria-modal", "true");
+      panel.setAttribute("aria-label", entry[0] === "library" ? "Library" : "Inspector");
+    } else {
+      panel.removeAttribute("role");
+      panel.removeAttribute("aria-modal");
+      panel.removeAttribute("aria-label");
+    }
+  });
+  if (restoreFocus && workspaceReturnFocus && workspaceReturnFocus.isConnected)
+    workspaceReturnFocus.focus();
+  if (!workspacePanels.libraryOpen && !workspacePanels.inspectorOpen)
+    workspaceReturnFocus = null;
+}
+
+function toggleWorkspacePanel(panel) {
+  if (panel !== "library" && panel !== "inspector") return;
+  var wasOpen = panel === "library" ? workspacePanels.libraryOpen : workspacePanels.inspectorOpen;
+  if (workspaceViewportMode === "overlay" && !wasOpen) {
+    workspaceReturnFocus = document.activeElement;
+  } else if (workspaceViewportMode === "docked" && wasOpen) {
+    workspaceReturnFocus = byId(
+      panel === "library" ? "panel-toggle-library" : "panel-toggle-inspector",
+    );
+  }
+  workspacePanels = TuckLayout.toggleWorkspacePanelState(
+    workspacePanels,
+    panel,
+    window.innerWidth,
+  );
+  applyWorkspacePanels(wasOpen);
+  if (workspaceViewportMode === "overlay" && !wasOpen) {
+    var close = byId(panel === "library" ? "library-panel-close" : "inspector-panel-close");
+    if (close) close.focus();
+  }
+}
+
+function closeWorkspacePanels(restoreFocus) {
+  if (workspaceViewportMode !== "overlay") return;
+  workspacePanels = { libraryOpen: false, inspectorOpen: false };
+  applyWorkspacePanels(!!restoreFocus);
+}
+
+function trapWorkspaceDrawerFocus(event) {
+  if (event.key !== "Tab" || workspaceViewportMode !== "overlay") return false;
+  var panel = workspacePanels.libraryOpen
+    ? byId("left")
+    : workspacePanels.inspectorOpen
+      ? byId("right")
+      : null;
+  if (!panel) return false;
+  var focusable = Array.prototype.filter.call(
+    panel.querySelectorAll(
+      'button:not([disabled]), input:not([disabled]), select:not([disabled]), summary, [tabindex]:not([tabindex="-1"])',
+    ),
+    function (element) {
+      return element.offsetParent !== null && !element.inert;
+    },
+  );
+  if (!focusable.length) return false;
+  var first = focusable[0];
+  var last = focusable[focusable.length - 1];
+  if (!panel.contains(document.activeElement)) {
+    event.preventDefault();
+    first.focus();
+  } else if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+  return true;
+}
+
+function syncWorkspaceForViewport() {
+  var nextMode = TuckLayout.workspaceMode(window.innerWidth);
+  if (nextMode !== workspaceViewportMode) {
+    workspaceViewportMode = nextMode;
+    workspacePanels = TuckLayout.initialWorkspacePanels(window.innerWidth);
+  }
+  applyWorkspacePanels(false);
+}
 
 function toggleSnap() {
   snapOn = !snapOn;
@@ -215,7 +330,22 @@ function initTimelineResizer() {
 
 window.addEventListener("resize", function () {
   applyTimelineHeight(timelineHeightSetting);
+  syncWorkspaceForViewport();
 });
+
+document.addEventListener(
+  "keydown",
+  function (event) {
+    if (trapWorkspaceDrawerFocus(event)) return;
+    if (event.key !== "Escape" || workspaceViewportMode !== "overlay") return;
+    if (!workspacePanels.libraryOpen && !workspacePanels.inspectorOpen) return;
+    if (document.body.classList.contains("settings-open")) return;
+    if (byId("mod-overlay").classList.contains("open")) return;
+    event.preventDefault();
+    closeWorkspacePanels(true);
+  },
+  true,
+);
 
 function setLibraryTab(tab) {
   libraryTab = tab === "audio" ? "audio" : "media";
@@ -237,14 +367,14 @@ function renderAudioLibraryPanel() {
   var clip = selPath ? clips[selPath] : null;
   if (!clip) {
     list.replaceChildren();
-    empty.textContent = "Select a video clip to manage its audio.";
+    empty.textContent = "Select a video to manage audio.";
     empty.classList.remove("hid");
     return;
   }
   var tracks = (clip.audioTimeline && clip.audioTimeline.tracks) || [];
   if (!tracks.length) {
     list.replaceChildren();
-    empty.textContent = "No audio tracks yet. Add music or narration.";
+    empty.textContent = "No audio yet.";
     empty.classList.remove("hid");
     return;
   }
@@ -305,8 +435,18 @@ function renderClipDetails() {
   var host = byId("clip-details-body");
   if (!host) return;
   var clip = selPath ? clips[selPath] : null;
-  if (!clip || !clip.probed || !clip.probeData) {
-    host.innerHTML = '<div class="cd-empty">Select a clip to see details.</div>';
+  var empty = byId("video-inspector-empty");
+  var content = byId("video-inspector-content");
+  var selection = byId("video-selection-name");
+  if (empty) empty.classList.toggle("hid", Boolean(clip));
+  if (content) content.classList.toggle("hid", !clip);
+  if (!clip) {
+    host.replaceChildren();
+    return;
+  }
+  if (selection) selection.textContent = clip.name || "Selected video";
+  if (!clip.probed || !clip.probeData) {
+    host.innerHTML = '<div class="cd-empty">Reading clip details…</div>';
     return;
   }
   var d = clip.probeData;
@@ -650,3 +790,4 @@ function mixerRowHtml(row) {
 }
 
 initTimelineResizer();
+syncWorkspaceForViewport();

@@ -11,6 +11,7 @@
   var DEFAULT_TRACK_COUNT = 2;
   var TIMELINE_AUTO_BASE_HEIGHT = 205;
   var IMPORTED_TRACK_HEIGHT = 47;
+  var WORKSPACE_DOCKED_MIN_WIDTH = 1180;
 
   function timelineHeightBounds(viewportHeight) {
     var height = Number(viewportHeight);
@@ -56,10 +57,42 @@
     return clampTimelineHeight(Number(current) + direction * step, viewportHeight);
   }
 
+  function workspaceMode(viewportWidth) {
+    var width = Number(viewportWidth);
+    if (!Number.isFinite(width)) width = WORKSPACE_DOCKED_MIN_WIDTH;
+    return width >= WORKSPACE_DOCKED_MIN_WIDTH ? "docked" : "overlay";
+  }
+
+  function initialWorkspacePanels(viewportWidth) {
+    var open = workspaceMode(viewportWidth) === "docked";
+    return { libraryOpen: open, inspectorOpen: open };
+  }
+
+  function toggleWorkspacePanelState(state, panel, viewportWidth) {
+    var current = {
+      libraryOpen: !!(state && state.libraryOpen),
+      inspectorOpen: !!(state && state.inspectorOpen),
+    };
+    if (panel !== "library" && panel !== "inspector") return current;
+    var key = panel === "library" ? "libraryOpen" : "inspectorOpen";
+    if (workspaceMode(viewportWidth) === "docked") {
+      current[key] = !current[key];
+      return current;
+    }
+    var opening = !current[key];
+    return {
+      libraryOpen: panel === "library" && opening,
+      inspectorOpen: panel === "inspector" && opening,
+    };
+  }
+
   return {
     timelineHeightBounds: timelineHeightBounds,
     timelineAutoHeight: timelineAutoHeight,
     clampTimelineHeight: clampTimelineHeight,
     timelineHeightForKey: timelineHeightForKey,
+    workspaceMode: workspaceMode,
+    initialWorkspacePanels: initialWorkspacePanels,
+    toggleWorkspacePanelState: toggleWorkspacePanelState,
   };
 });

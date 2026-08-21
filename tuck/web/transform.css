@@ -167,37 +167,40 @@ body.crop-dragging * {
 }
 .transform-segment {
   display: flex;
-  gap: 4px;
+  gap: 8px;
 }
 .transform-segment.grid-3 {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
+  row-gap: 5px;
 }
 .transform-segment button {
   position: relative;
   flex: 1;
-  height: 26px;
+  height: 28px;
   min-width: 0;
   padding: 0 5px;
-  border: 1px solid var(--border2);
-  border-radius: 5px;
-  background: var(--card-bg);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
   color: var(--muted);
   cursor: pointer;
   font: 600 10px var(--font);
 }
 .transform-segment button:hover {
-  background: #191923;
+  background: rgba(255, 255, 255, 0.035);
   color: #fff;
 }
 .transform-segment button.on {
-  background: #2a1f45;
-  border-color: var(--accent);
+  background: transparent;
+  border-bottom-color: var(--accent-light);
   color: #e9d5ff;
 }
 .transform-segment button:focus-visible {
-  outline: 2px solid var(--accent-light);
-  outline-offset: 1px;
+  outline: 0;
+  background: rgba(167, 139, 250, 0.1);
+  color: #f5f3ff;
 }
 .transform-segment button.icon {
   padding: 0;
@@ -303,9 +306,9 @@ body.crop-dragging * {
 .dock-zoom-btn {
   width: 20px;
   height: 20px;
-  border-radius: 5px;
-  background: #1a1a26;
-  border: 1px solid var(--border2);
+  border-radius: 4px;
+  background: transparent;
+  border: 0;
   color: #b4b4c4;
   cursor: pointer;
   font-size: 12px;
@@ -313,7 +316,7 @@ body.crop-dragging * {
   padding: 0;
 }
 .dock-zoom-btn:hover {
-  border-color: var(--accent);
+  background: rgba(255, 255, 255, 0.05);
   color: #fff;
 }
 .dock-zoom-btn:focus-visible {
@@ -349,19 +352,21 @@ body.crop-dragging * {
   flex-shrink: 0;
   background: transparent;
   color: var(--muted);
-  border: 1px solid transparent;
-  border-radius: 6px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
   font: 700 10px var(--font);
   padding: 4px 8px;
   cursor: pointer;
 }
 .dock-toggle:hover:not(.on) {
+  background: rgba(255, 255, 255, 0.04);
   color: #d4d4dc;
 }
 .dock-toggle.on {
-  background: #2a1f45;
+  background: transparent;
   color: #e9d5ff;
-  border-color: var(--accent);
+  border-bottom-color: var(--accent-light);
 }
 .dock-toggle:focus-visible {
   outline: 2px solid var(--accent-light);
@@ -390,9 +395,10 @@ body.crop-dragging * {
 .dock-icon-btn {
   width: 22px;
   height: 22px;
-  border-radius: 6px;
+  border-radius: 4px;
   background: transparent;
-  border: 1px solid var(--border2);
+  border: 0;
+  border-bottom: 2px solid transparent;
   color: #b4b4c4;
   cursor: pointer;
   display: flex;
@@ -416,13 +422,13 @@ body.crop-dragging * {
   fill: none;
 }
 .dock-icon-btn:hover {
-  border-color: var(--accent);
+  background: rgba(255, 255, 255, 0.05);
   color: #fff;
 }
 .dock-icon-btn.on {
-  border-color: var(--accent);
+  border-bottom-color: var(--accent-light);
   color: var(--accent-light);
-  background: #2a1f45;
+  background: transparent;
 }
 .dock-icon-btn:disabled,
 .dock-icon-btn[aria-disabled="true"] {
@@ -437,9 +443,9 @@ body.crop-dragging * {
 .dock-text-btn {
   flex-shrink: 0;
   height: 22px;
-  border-radius: 6px;
+  border-radius: 4px;
   background: transparent;
-  border: 1px solid var(--border2);
+  border: 0;
   color: #b4b4c4;
   cursor: pointer;
   display: flex;
@@ -458,7 +464,7 @@ body.crop-dragging * {
   fill: none;
 }
 .dock-text-btn:hover {
-  border-color: var(--accent);
+  background: rgba(255, 255, 255, 0.05);
   color: #fff;
 }
 .dock-text-btn:focus-visible {

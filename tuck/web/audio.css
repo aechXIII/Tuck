@@ -60,9 +60,10 @@ body.timeline-resizing * {
 #timeline-row.seq-toolbar {
   justify-content: flex-start;
   border-bottom: 1px solid var(--border);
-  padding: 2px 0 8px;
+  gap: 0;
+  padding: 2px 0 7px;
   flex-shrink: 0;
-  min-height: 32px;
+  min-height: 36px;
   overflow-x: visible;
   scrollbar-width: none;
 }
@@ -75,11 +76,14 @@ body.timeline-resizing * {
   height: 20px;
 }
 .tl-time-readout {
+  min-width: 82px;
+  padding: 0 8px;
   color: #cfcfe0;
   font-size: 11px;
   font-family: var(--mono);
   white-space: nowrap;
   flex-shrink: 0;
+  text-align: center;
 }
 .seq-audio-clip:focus-visible {
   outline: 2px solid var(--accent-light);
@@ -611,11 +615,14 @@ body.timeline-scrubbing * {
   align-items: center;
   gap: 3px;
   min-height: 28px;
-  padding: 2px 4px;
-  border: 1px solid #262532;
-  border-radius: 7px;
-  background: #101018;
+  padding: 0 8px;
   flex-shrink: 0;
+}
+.timeline-tool-group:first-child {
+  padding-left: 0;
+}
+.timeline-tool-group:not(:first-child) {
+  border-left: 1px solid #282633;
 }
 .timeline-tool-label {
   padding: 0 4px 0 3px;
@@ -634,7 +641,20 @@ body.timeline-scrubbing * {
 .timeline-tool-group .dock-zoom-btn:hover,
 .timeline-tool-group .dock-icon-btn:hover,
 .timeline-tool-group .dock-text-btn:hover {
-  border-color: #4a4658;
+  background: rgba(255, 255, 255, 0.05);
+}
+.timeline-primary-btn {
+  height: 26px;
+  color: #b8b5c4;
+}
+#btn-segment-add:not(:disabled) {
+  color: #ddd6fe;
+}
+.timeline-command-label {
+  white-space: nowrap;
+}
+.timeline-view-tools {
+  padding-right: 0;
 }
 .timeline-toolbar-spacer {
   flex: 1;
@@ -644,6 +664,34 @@ body.timeline-scrubbing * {
   #audio-editor {
     --timeline-head-width: 148px;
     padding-inline: 12px;
+  }
+}
+@media (max-width: 719px) {
+  #audio-editor {
+    --timeline-head-width: 108px;
+    padding-inline: 8px;
+  }
+  #timeline-row.seq-toolbar {
+    overflow-x: hidden;
+  }
+  .timeline-tool-group {
+    padding-inline: 5px;
+  }
+  .timeline-tool-label,
+  .timeline-command-label {
+    display: none;
+  }
+  .timeline-primary-btn {
+    width: 24px;
+    padding: 0;
+  }
+  #tl-zoom-slider {
+    display: none;
+  }
+  .tl-time-readout {
+    min-width: 72px;
+    padding-inline: 4px;
+    font-size: 10px;
   }
 }
 .seq-tick {

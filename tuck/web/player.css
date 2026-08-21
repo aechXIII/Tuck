@@ -87,7 +87,7 @@ body.tl-segment-dragging * {
   min-width: 4px;
   container-type: inline-size;
   gap: 8px;
-  padding: 4px 24px;
+  padding: 0;
   overflow: visible;
   border: 1px solid color-mix(in srgb, var(--segment-color) 58%, #d8d4e4);
   border-radius: 6px;
@@ -144,6 +144,7 @@ body.tl-segment-dragging * {
   color: #f5f3ff;
   font: 700 9px var(--mono);
   letter-spacing: 0.02em;
+  margin-left: 24px;
   pointer-events: none;
 }
 .tl-segment-copy {
@@ -153,6 +154,7 @@ body.tl-segment-dragging * {
   flex-direction: column;
   align-items: flex-start;
   justify-content: center;
+  margin-right: 24px;
   pointer-events: none;
 }
 .tl-segment-label {
@@ -181,7 +183,8 @@ body.tl-segment-dragging * {
   }
 }
 @container (max-width: 84px) {
-  .tl-segment-badge {
+  .tl-segment-badge,
+  .tl-segment-copy {
     display: none;
   }
 }

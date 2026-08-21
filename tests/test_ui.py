@@ -111,12 +111,18 @@ def test_web_ui_contains_visual_crop_overlay_and_request_state() -> None:
 def test_web_ui_contains_complete_transform_controls() -> None:
     html = Path("tuck/web/index.html").read_text(encoding="utf-8")
     transform_js = _asset("transform.js")
+    video_panel = html.split('id="insp-edit"', 1)[1].split('id="insp-audio"', 1)[0]
+    export_panel = html.split('id="insp-export"', 1)[1].split('id="right-foot"', 1)[0]
     for value in ("free", "16:9", "9:16", "1:1", "4:3"):
         assert f'data-aspect="{value}"' in html
-    assert 'data-sizing="fit"' in html
-    assert 'data-sizing="fill"' in html
-    assert 'data-sizing="stretch"' in html
+    for sizing in ("fit", "fill", "stretch"):
+        assert f'data-sizing="{sizing}"' in video_panel
+        assert f'data-sizing="{sizing}"' not in export_panel
+    assert video_panel.index("Flip") < video_panel.index('data-sizing="fit"')
     assert 'id="transform-fields"' in html
+    assert 'id="video-inspector-empty"' in video_panel
+    assert 'id="video-inspector-content"' in video_panel
+    assert "Video" in html.split('id="insp-tabs"', 1)[1].split('id="right-scroll"', 1)[0]
     assert 'aria-label="Video transform controls"' in html
     assert 'class="transform-controls seq-toolbar"' in html
     assert 'role="toolbar"' in html
@@ -142,7 +148,7 @@ def test_web_ui_contains_complete_transform_controls() -> None:
     assert 'button.setAttribute("aria-pressed", String(active))' in transform_js
 
 
-def test_editor_shell_uses_fixed_panes_and_zoom_gated_timeline_scrolling() -> None:
+def test_editor_shell_uses_adaptive_accessible_panels() -> None:
     styles = _asset("styles.css")
     audio_styles = _asset("audio.css")
     app_js = _asset("app.js")
@@ -150,12 +156,37 @@ def test_editor_shell_uses_fixed_panes_and_zoom_gated_timeline_scrolling() -> No
     panels_js = _asset("panels.js")
     queue_js = _asset("queue.js")
     html = _asset("index.html")
+    topbar = html.split('<div id="tb">', 1)[1].split('<div id="main">', 1)[0]
 
-    assert "--library-width: 220px;" in styles
-    assert "--inspector-width: 300px;" in styles
+    assert "--library-width: 232px;" in styles
+    assert "--inspector-width: 316px;" in styles
     assert "resize: horizontal" not in styles
     assert "new ResizeObserver(function (entries)" not in app_js
     assert 'byId("left").style.width' not in encoding_js
+    assert 'id="panel-toggle-library"' in html
+    assert 'aria-controls="left"' in html
+    assert 'id="panel-toggle-library"' in topbar and 'aria-label="Library"' in topbar
+    assert 'id="panel-toggle-inspector"' in html
+    assert 'aria-controls="right"' in html
+    assert 'id="panel-toggle-inspector"' in topbar and 'aria-label="Inspector"' in topbar
+    assert '<title>Tuck</title>' in html
+    assert 'id="tb-logo"' not in topbar
+    assert topbar.index('id="panel-toggle-library"') < topbar.index('id="btn-undo"')
+    assert topbar.index('id="btn-undo"') < topbar.index('id="btn-redo"')
+    assert topbar.index('id="btn-redo"') < topbar.index('id="settings-toggle"')
+    assert topbar.index('id="settings-toggle"') < topbar.index('id="panel-toggle-inspector"')
+    assert 'id="workspace-backdrop"' in html
+    assert 'id="library-panel-close"' in html
+    assert 'id="inspector-panel-close"' in html
+    assert "function toggleWorkspacePanel(panel)" in panels_js
+    assert "function closeWorkspacePanels(restoreFocus)" in panels_js
+    assert "function syncWorkspaceForViewport()" in panels_js
+    assert "function trapWorkspaceDrawerFocus(event)" in panels_js
+    assert 'byId("center").inert = drawerOpen;' in panels_js
+    assert 'byId("audio-editor").inert = drawerOpen;' in panels_js
+    assert "workspace-drawer-open" in styles
+    assert "@media (max-width: 1179px)" in styles
+    assert "@media (max-width: 719px)" in styles
     assert "overflow-x: hidden;" in audio_styles
     assert "#sequence-frame.is-zoomed" in audio_styles
     assert 'id="timeline-resizer"' in html
@@ -166,6 +197,21 @@ def test_editor_shell_uses_fixed_panes_and_zoom_gated_timeline_scrolling() -> No
     assert 'frame.style.removeProperty("--tl-width");' in panels_js
     assert '<div id="qbar" class="hid">' in html
     assert 'byId("qbar").classList.toggle("hid", items.length === 0)' in queue_js
+
+
+def test_library_panel_has_a_single_actionable_hierarchy() -> None:
+    html = _asset("index.html")
+    styles = _asset("styles.css")
+    library = html.split('id="left"', 1)[1].split('id="center"', 1)[0]
+
+    assert "\n            Video\n" in library
+    assert "\n            Audio\n" in library
+    assert ">Add videos</button" in library
+    assert ">Add audio</button" in library
+    assert "Media library</h3>" not in library
+    assert "body.workspace-overlay .panel-heading" in styles
+    assert "border-bottom: 2px solid var(--accent-light);" in styles
+    assert "#audio-lib-list:empty" in styles
 
 
 def test_audio_controls_use_consistent_nle_track_vocabulary() -> None:
@@ -186,17 +232,28 @@ def test_audio_controls_use_consistent_nle_track_vocabulary() -> None:
 
 def test_workspace_commands_have_clear_hierarchy() -> None:
     html = _asset("index.html")
+    audio_styles = _asset("audio.css")
     panels_js = _asset("panels.js")
     player_js = _asset("player.js")
+    toolbar = html.split('id="timeline-row"', 1)[1].split('id="sequence-frame"', 1)[0]
 
     assert 'aria-label="View controls"' in html
     assert 'aria-label="Segment actions"' in html
     assert 'aria-label="Audio actions"' in html
     assert 'aria-keyshortcuts="S"' in html
     assert '<span class="timeline-tool-label" aria-hidden="true">Segments</span>' in html
+    assert 'class="dock-text-btn timeline-primary-btn"' in toolbar
+    assert '<span class="timeline-command-label">New segment</span>' in toolbar
+    assert '<span class="timeline-command-label">Split</span>' in toolbar
+    assert toolbar.index('aria-label="Segment actions"') < toolbar.index(
+        'aria-label="Audio actions"'
+    )
+    assert toolbar.index('aria-label="Audio actions"') < toolbar.index('id="tl-time"')
+    assert toolbar.index('id="tl-time"') < toolbar.index('aria-label="View controls"')
+    assert "@media (max-width: 719px)" in audio_styles
+    assert "#tl-zoom-slider" in audio_styles
     assert '<span class="audio-master-title">Output audio</span>' in html
     assert "<span>Include in export</span>" in html
-    assert "Imported video files appear here." in html
     assert "Video and audio tracks will appear here." in player_js
     assert "mixer-row-actions" in panels_js
     assert "Remove track" in panels_js

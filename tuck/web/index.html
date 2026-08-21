@@ -2,6 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <title>Tuck</title>
     <link rel="stylesheet" href="styles.css" />
     <link rel="stylesheet" href="settings.css" />
     <link rel="stylesheet" href="player.css" />
@@ -11,7 +12,23 @@
   </head>
   <body>
     <div id="tb">
-      <span id="tb-logo">Tuck</span>
+      <button
+        type="button"
+        class="tb-workspace-btn"
+        id="panel-toggle-library"
+        onclick="toggleWorkspacePanel('library')"
+        aria-controls="left"
+        aria-expanded="false"
+        aria-label="Library"
+        data-tip="Show or hide library"
+      >
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <rect x="1.5" y="2" width="13" height="12" rx="1.5"></rect>
+          <path d="M5.25 2v12"></path>
+        </svg>
+        <span>Library</span>
+      </button>
+      <div class="tb-divider"></div>
       <button
         type="button"
         class="tb-icon-btn"
@@ -40,62 +57,103 @@
           <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
         </svg>
       </button>
-      <div class="tb-divider"></div>
-      <button class="tbbtn" id="settings-toggle" onclick="toggleSettings()">
+      <span class="tb-flex-spacer"></span>
+      <button
+        type="button"
+        class="tb-icon-btn"
+        id="settings-toggle"
+        onclick="toggleSettings()"
+        data-tip="Settings"
+        aria-label="Settings"
+      >
         <svg viewBox="0 0 16 16" aria-hidden="true">
           <circle cx="8" cy="8" r="2"></circle>
           <path
             d="M8 1.5v1.6M8 12.9v1.6M14.5 8h-1.6M3.1 8H1.5M12.5 3.5l-1.1 1.1M4.6 11.3l-1.1 1.1M12.5 12.5l-1.1-1.1M4.6 4.7 3.5 3.5"
           ></path>
         </svg>
-        Settings
+      </button>
+      <div class="tb-divider"></div>
+      <button
+        type="button"
+        class="tb-workspace-btn"
+        id="panel-toggle-inspector"
+        onclick="toggleWorkspacePanel('inspector')"
+        aria-controls="right"
+        aria-expanded="false"
+        aria-label="Inspector"
+        data-tip="Show or hide inspector"
+      >
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <rect x="1.5" y="2" width="13" height="12" rx="1.5"></rect>
+          <path d="M10.75 2v12"></path>
+        </svg>
+        <span>Inspector</span>
       </button>
     </div>
     <div id="main">
       <div id="left">
+        <div class="panel-heading">
+          <span>Library</span>
+          <button
+            type="button"
+            class="panel-close"
+            id="library-panel-close"
+            onclick="toggleWorkspacePanel('library')"
+            aria-label="Hide library"
+            data-tip="Hide library"
+          >
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="m10 3-5 5 5 5"></path>
+            </svg>
+          </button>
+        </div>
+        <div class="lib-tabs" role="group" aria-label="Library section">
+          <button
+            type="button"
+            id="lib-tab-media"
+            class="lib-tab on"
+            aria-pressed="true"
+            onclick="setLibraryTab('media')"
+          >
+            Video
+          </button>
+          <button
+            type="button"
+            id="lib-tab-audio"
+            class="lib-tab"
+            aria-pressed="false"
+            onclick="setLibraryTab('audio')"
+          >
+            Audio
+          </button>
+        </div>
         <div id="left-hdr">
-          <div class="lib-tabs" role="group" aria-label="Library section">
-            <button
-              type="button"
-              id="lib-tab-media"
-              class="lib-tab on"
-              aria-pressed="true"
-              onclick="setLibraryTab('media')"
-            >
-              Media
-            </button>
-            <button
-              type="button"
-              id="lib-tab-audio"
-              class="lib-tab"
-              aria-pressed="false"
-              onclick="setLibraryTab('audio')"
-            >
-              Audio
-            </button>
-          </div>
           <div id="lib-add-row-media" class="lib-add-row">
-            <button id="btn-add" onclick="browse()">+ Add files</button
+            <button id="btn-add" onclick="browse()">Add videos</button
             ><button
               id="btn-rmall"
               onclick="removeAllClips()"
-              title="Remove all"
-              aria-label="Remove all files"
+              data-tip="Remove all videos"
+              aria-label="Remove all videos"
             >
-              ✕
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path
+                  d="M3.5 4.5h9M6.5 4.5v-1a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v1M4.5 4.5l.6 8a1 1 0 0 0 1 .9h3.8a1 1 0 0 0 1-.9l.6-8"
+                ></path>
+                <path d="M6.7 7v4M9.3 7v4"></path>
+              </svg>
             </button>
           </div>
           <div id="lib-add-row-audio" class="lib-add-row hid">
-            <button id="btn-add-audio" onclick="AudioTimeline.browse()">
-              + Add audio
-            </button>
+            <button id="btn-add-audio" onclick="AudioTimeline.browse()">Add audio</button>
           </div>
         </div>
         <div id="lib-panel-media">
           <div id="clips">
             <div id="drop-z" class="show">
-              <h3>Media library</h3>
-              <p>Imported video files appear here.</p>
+              <strong>No videos yet</strong>
+              <span>Drop videos here or add them above.</span>
             </div>
           </div>
         </div>
@@ -217,6 +275,21 @@
         </div>
       </div>
       <div id="right">
+        <div class="panel-heading">
+          <span>Inspector</span>
+          <button
+            type="button"
+            class="panel-close"
+            id="inspector-panel-close"
+            onclick="toggleWorkspacePanel('inspector')"
+            aria-label="Hide inspector"
+            data-tip="Hide inspector"
+          >
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="m6 3 5 5-5 5"></path>
+            </svg>
+          </button>
+        </div>
         <div id="insp-tabs" class="insp-tabs" role="group" aria-label="Inspector section">
           <button
             type="button"
@@ -229,7 +302,7 @@
               <path d="M4.5 1v9.5a1 1 0 0 0 1 1H15"></path>
               <path d="M11.5 15V5.5a1 1 0 0 0-1-1H1"></path>
             </svg>
-            Edit
+            Video
           </button>
           <button
             type="button"
@@ -260,9 +333,15 @@
         </div>
         <div id="right-scroll">
           <div id="insp-edit">
-            <div class="gr">
-              <div class="grt">Transform</div>
-              <div id="transform-fields" role="toolbar" aria-label="Video transform controls">
+            <div id="video-inspector-empty" class="inspector-empty">
+              <strong>Select a video</strong>
+              <span>Choose a clip in the Library to edit its framing and transform.</span>
+            </div>
+            <div id="video-inspector-content" class="inspector-content hid">
+              <div id="video-selection-name" class="inspector-selection"></div>
+              <div class="gr">
+                <div class="grt">Transform</div>
+                <div id="transform-fields" role="toolbar" aria-label="Video transform controls">
                 <div class="enc-field">
                   <label>Crop</label>
                   <div
@@ -434,11 +513,47 @@
                     </button>
                   </div>
                 </div>
+                <div class="enc-field">
+                  <label>Sizing</label>
+                  <div
+                    class="transform-segment"
+                    role="group"
+                    aria-label="Output sizing mode"
+                  >
+                    <button
+                      type="button"
+                      data-sizing="fit"
+                      class="on"
+                      aria-pressed="true"
+                      onclick="setSizingMode('fit')"
+                      data-tip="Keep the entire selected image without distortion"
+                    >
+                      Fit</button
+                    ><button
+                      type="button"
+                      data-sizing="fill"
+                      aria-pressed="false"
+                      onclick="setSizingMode('fill')"
+                      data-tip="Fill the output dimensions and crop excess edges"
+                    >
+                      Fill</button
+                    ><button
+                      type="button"
+                      data-sizing="stretch"
+                      aria-pressed="false"
+                      onclick="setSizingMode('stretch')"
+                      data-tip="Force the selected image to the output dimensions and allow distortion"
+                    >
+                      Stretch
+                    </button>
+                  </div>
+                </div>
               </div>
-            </div>
-            <div class="gr" id="clip-details-card">
-              <div class="grt">Clip details</div>
-              <div id="clip-details-body"></div>
+              </div>
+              <div class="gr" id="clip-details-card">
+                <div class="grt">Clip details</div>
+                <div id="clip-details-body"></div>
+              </div>
             </div>
           </div>
           <div id="insp-audio" class="hid">
@@ -581,41 +696,6 @@
                   <option>Point</option>
                   <option selected>Neighbor</option>
                 </select>
-              </div>
-              <div class="enc-field">
-                <label>Output sizing</label>
-                <div
-                  class="transform-segment"
-                  role="group"
-                  aria-label="Output sizing mode"
-                >
-                  <button
-                    type="button"
-                    data-sizing="fit"
-                    class="on"
-                    aria-pressed="true"
-                    onclick="setSizingMode('fit')"
-                    data-tip="Keep the entire selected image without distortion"
-                  >
-                    Fit</button
-                  ><button
-                    type="button"
-                    data-sizing="fill"
-                    aria-pressed="false"
-                    onclick="setSizingMode('fill')"
-                    data-tip="Fill the output dimensions and crop excess edges"
-                  >
-                    Fill</button
-                  ><button
-                    type="button"
-                    data-sizing="stretch"
-                    aria-pressed="false"
-                    onclick="setSizingMode('stretch')"
-                    data-tip="Force the selected image to the output dimensions and allow distortion"
-                  >
-                    Stretch
-                  </button>
-                </div>
               </div>
             </div>
             <div class="gr">
@@ -790,6 +870,13 @@
         </div>
       </div>
     </div>
+    <button
+      type="button"
+      id="workspace-backdrop"
+      tabindex="-1"
+      aria-label="Close open panel"
+      onclick="closeWorkspacePanels(true)"
+    ></button>
     <div
       id="timeline-resizer"
       role="separator"
@@ -808,60 +895,12 @@
       aria-label="Video and audio timeline"
     >
       <div id="timeline-row" class="transform-controls seq-toolbar">
-        <div class="timeline-tool-group" role="group" aria-label="View controls">
-          <span class="timeline-tool-label" aria-hidden="true">View</span>
-          <div class="dock-zoom" role="group" aria-label="Timeline zoom">
-            <button
-              type="button"
-              class="dock-zoom-btn"
-              onclick="nudgeTimelineZoom(-1)"
-              data-tip="Zoom out"
-              aria-label="Zoom out"
-              disabled
-            >
-              &#8722;
-            </button>
-            <input
-              type="range"
-              id="tl-zoom-slider"
-              min="1"
-              max="8"
-              step="0.5"
-              value="1"
-              oninput="setTimelineZoom(this.value)"
-              aria-label="Timeline zoom level"
-              disabled
-            />
-            <button
-              type="button"
-              class="dock-zoom-btn"
-              onclick="nudgeTimelineZoom(1)"
-              data-tip="Zoom in"
-              aria-label="Zoom in"
-              disabled
-            >
-              +
-            </button>
-          </div>
-          <button
-            type="button"
-            id="btn-snap-toggle"
-            class="dock-toggle on"
-            onclick="toggleSnap()"
-            aria-label="Toggle timeline snapping"
-            aria-pressed="true"
-            data-tip="Snap to playhead and clip edges"
-            disabled
-          >
-            Snap
-          </button>
-        </div>
         <div class="timeline-tool-group" role="group" aria-label="Segment actions">
           <span class="timeline-tool-label" aria-hidden="true">Segments</span>
           <button
             type="button"
             id="btn-segment-add"
-            class="dock-icon-btn"
+            class="dock-text-btn timeline-primary-btn"
             onclick="addSegment()"
             data-tip="New segment"
             aria-label="Add segment"
@@ -871,11 +910,12 @@
               <rect x="1" y="6" width="8" height="6" rx="1.5"></rect>
               <path d="M12.5 2v6M9.5 5h6" />
             </svg>
+            <span class="timeline-command-label">New segment</span>
           </button>
           <button
             type="button"
             id="btn-seq-split"
-            class="dock-icon-btn"
+            class="dock-text-btn timeline-primary-btn"
             onclick="splitAtPlayhead()"
             data-tip="Split (S)"
             aria-label="Split at playhead"
@@ -886,6 +926,7 @@
               <rect x="2" y="5" width="5" height="6" rx="1"></rect>
               <rect x="9" y="5" width="5" height="6" rx="1"></rect>
             </svg>
+            <span class="timeline-command-label">Split</span>
           </button>
           <button
             type="button"
@@ -939,18 +980,66 @@
             id="audio-add"
             class="dock-text-btn"
             onclick="AudioTimeline.browse()"
-            data-tip="Add music or narration"
+            data-tip="Add audio"
             disabled
           >
             <svg viewBox="0 0 16 16" aria-hidden="true">
               <path d="M2 9.5v-3M4.5 11v-6M7 9.5v-3" />
               <path d="M12.5 2v6M9.5 5h6" />
             </svg>
-            Add audio
+            <span class="timeline-command-label">Add audio</span>
           </button>
         </div>
         <span class="timeline-toolbar-spacer"></span>
-        <span id="tl-time" class="tl-time-readout">0:00 / 0:00</span>
+        <span id="tl-time" class="tl-time-readout" aria-label="Timeline position">0:00 / 0:00</span>
+        <div class="timeline-tool-group timeline-view-tools" role="group" aria-label="View controls">
+          <span class="timeline-tool-label" aria-hidden="true">View</span>
+          <button
+            type="button"
+            id="btn-snap-toggle"
+            class="dock-toggle on"
+            onclick="toggleSnap()"
+            aria-label="Toggle timeline snapping"
+            aria-pressed="true"
+            data-tip="Snap to playhead and clip edges"
+            disabled
+          >
+            Snap
+          </button>
+          <div class="dock-zoom" role="group" aria-label="Timeline zoom">
+            <button
+              type="button"
+              class="dock-zoom-btn"
+              onclick="nudgeTimelineZoom(-1)"
+              data-tip="Zoom out"
+              aria-label="Zoom out"
+              disabled
+            >
+              &#8722;
+            </button>
+            <input
+              type="range"
+              id="tl-zoom-slider"
+              min="1"
+              max="8"
+              step="0.5"
+              value="1"
+              oninput="setTimelineZoom(this.value)"
+              aria-label="Timeline zoom level"
+              disabled
+            />
+            <button
+              type="button"
+              class="dock-zoom-btn"
+              onclick="nudgeTimelineZoom(1)"
+              data-tip="Zoom in"
+              aria-label="Zoom in"
+              disabled
+            >
+              +
+            </button>
+          </div>
+        </div>
       </div>
       <div id="sequence-frame">
         <div id="sequence-stack">

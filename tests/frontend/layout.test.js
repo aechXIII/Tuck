@@ -41,3 +41,53 @@ test("timeline separator keys resize predictably and expose range endpoints", ()
   assert.equal(layout.timelineHeightForKey(260, "End", false, 900), 495);
   assert.equal(layout.timelineHeightForKey(260, "Enter", false, 900), null);
 });
+
+test("workspace mode reserves docked panels only on wide windows", () => {
+  assert.equal(layout.workspaceMode(1440), "docked");
+  assert.equal(layout.workspaceMode(1180), "docked");
+  assert.equal(layout.workspaceMode(1179), "overlay");
+  assert.equal(layout.workspaceMode(390), "overlay");
+});
+
+test("workspace panels start open when docked and closed when overlaid", () => {
+  assert.deepEqual(layout.initialWorkspacePanels(1440), {
+    libraryOpen: true,
+    inspectorOpen: true,
+  });
+  assert.deepEqual(layout.initialWorkspacePanels(960), {
+    libraryOpen: false,
+    inspectorOpen: false,
+  });
+});
+
+test("docked panels toggle independently", () => {
+  assert.deepEqual(
+    layout.toggleWorkspacePanelState(
+      { libraryOpen: true, inspectorOpen: true },
+      "library",
+      1440,
+    ),
+    { libraryOpen: false, inspectorOpen: true },
+  );
+});
+
+test("overlay panels are mutually exclusive and toggle closed", () => {
+  const library = layout.toggleWorkspacePanelState(
+    { libraryOpen: false, inspectorOpen: false },
+    "library",
+    960,
+  );
+  assert.deepEqual(library, { libraryOpen: true, inspectorOpen: false });
+  assert.deepEqual(layout.toggleWorkspacePanelState(library, "inspector", 960), {
+    libraryOpen: false,
+    inspectorOpen: true,
+  });
+  assert.deepEqual(
+    layout.toggleWorkspacePanelState(
+      { libraryOpen: false, inspectorOpen: true },
+      "inspector",
+      960,
+    ),
+    { libraryOpen: false, inspectorOpen: false },
+  );
+});
