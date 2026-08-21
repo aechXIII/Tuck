@@ -240,10 +240,49 @@ test("source-range dragging measures from the waveform content box", () => {
   assert.equal(audio.sourceRangePointerValue(500, 101, 200, 11, 180, 172), 172);
 });
 
-test("short source selections keep truthful width with a usable pointer target", () => {
-  assert.equal(audio.sourceRangeHitWidth(12, 28), 28);
-  assert.equal(audio.sourceRangeHitWidth(42, 28), 42);
-  assert.equal(audio.sourceRangeHitWidth(0, 28), 28);
+test("source detail keeps a short selection centered at a useful visual width", () => {
+  const detail = audio.sourceRangeDetailState(51.571, 8.793, 257.254);
+
+  assert.ok(Math.abs(detail.visibleSpan - 21.9825) < 1e-9);
+  assert.ok(Math.abs(detail.viewportStart - 44.97625) < 1e-9);
+  assert.ok(Math.abs(detail.waveformLeftPct + 204.600250199022) < 1e-9);
+  assert.ok(Math.abs(detail.waveformWidthPct - 1170.26725804617) < 1e-9);
+  assert.ok(Math.abs(detail.waveformPositionPct - 19.1167438470024) < 1e-9);
+  assert.equal(detail.selectionStartPct, 30);
+  assert.equal(detail.selectionWidthPct, 40);
+});
+
+test("source detail preserves its fixed frame at the source boundaries", () => {
+  const atStart = audio.sourceRangeDetailState(0, 8, 80);
+  const atEnd = audio.sourceRangeDetailState(72, 8, 80);
+
+  assert.equal(atStart.selectionStartPct, 30);
+  assert.equal(atStart.waveformLeftPct, 30);
+  assert.equal(atEnd.selectionStartPct, 30);
+  assert.equal(atEnd.waveformLeftPct, -330);
+});
+
+test("source detail shows the full waveform when the selection is already wide", () => {
+  const detail = audio.sourceRangeDetailState(20, 60, 100);
+
+  assert.equal(detail.visibleSpan, 100);
+  assert.equal(detail.viewportStart, 0);
+  assert.equal(detail.waveformPositionPct, 0);
+  assert.equal(detail.selectionStartPct, 20);
+  assert.equal(detail.selectionWidthPct, 60);
+});
+
+test("dragging the detail waveform slips audio beneath the fixed frame", () => {
+  assert.ok(
+    Math.abs(audio.sourceRangeDetailDragValue(51.571, -30, 21.9825, 270, 248.461) - 54.0135) <
+      1e-9,
+  );
+  assert.ok(
+    Math.abs(audio.sourceRangeDetailDragValue(51.571, 30, 21.9825, 270, 248.461) - 49.1285) <
+      1e-9,
+  );
+  assert.equal(audio.sourceRangeDetailDragValue(1, 200, 20, 100, 72), 0);
+  assert.equal(audio.sourceRangeDetailDragValue(71, -200, 20, 100, 72), 72);
 });
 
 test("source-range keyboard movement uses precise and accelerated steps", () => {

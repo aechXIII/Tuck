@@ -1448,10 +1448,54 @@
     return Math.max(0, Math.min(Math.max(0, Number(maxSourceIn) || 0), value));
   }
 
-  function sourceRangeHitWidth(visualWidth, minimumWidth) {
-    var visual = Math.max(0, Number(visualWidth) || 0);
-    var minimum = Math.max(0, Number(minimumWidth) || 0);
-    return Math.max(visual, minimum);
+  function sourceRangeDetailState(sourceIn, sourceSpan, sourceDuration) {
+    var start = Math.max(0, Number(sourceIn) || 0);
+    var span = Math.max(0, Number(sourceSpan) || 0);
+    var total = Math.max(0, Number(sourceDuration) || 0);
+    var visibleSpan = span ? Math.min(total, span * 2.5) : total;
+    if (!visibleSpan) {
+      return {
+        visibleSpan: 0,
+        viewportStart: 0,
+        waveformLeftPct: 0,
+        waveformWidthPct: 100,
+        waveformPositionPct: 0,
+        selectionStartPct: 0,
+        selectionWidthPct: 100,
+      };
+    }
+    if (visibleSpan >= total) {
+      return {
+        visibleSpan: visibleSpan,
+        viewportStart: 0,
+        waveformLeftPct: 0,
+        waveformWidthPct: 100,
+        waveformPositionPct: 0,
+        selectionStartPct: total ? (start / total) * 100 : 0,
+        selectionWidthPct: total ? (span / total) * 100 : 100,
+      };
+    }
+    var context = Math.max(0, (visibleSpan - span) / 2);
+    var viewportStart = start - context;
+    var waveformLeftPct = (-viewportStart / visibleSpan) * 100;
+    var waveformWidthPct = (total / visibleSpan) * 100;
+    return {
+      visibleSpan: visibleSpan,
+      viewportStart: viewportStart,
+      waveformLeftPct: waveformLeftPct,
+      waveformWidthPct: waveformWidthPct,
+      waveformPositionPct: (waveformLeftPct / (100 - waveformWidthPct)) * 100,
+      selectionStartPct: (context / visibleSpan) * 100,
+      selectionWidthPct: (span / visibleSpan) * 100,
+    };
+  }
+
+  function sourceRangeDetailDragValue(current, deltaX, visibleSpan, contentWidth, maxSourceIn) {
+    var width = Math.max(1, Number(contentWidth) || 0);
+    var value =
+      (Number(current) || 0) -
+      ((Number(deltaX) || 0) / width) * Math.max(0, Number(visibleSpan) || 0);
+    return Math.max(0, Math.min(Math.max(0, Number(maxSourceIn) || 0), value));
   }
 
   function sourceRangeKeyboardValue(current, maximum, key, largeStep) {
@@ -1545,7 +1589,8 @@
     outputToSourceTime: outputToSourceTime,
     fitClipToTimeline: fitClipToTimeline,
     sourceRangePointerValue: sourceRangePointerValue,
-    sourceRangeHitWidth: sourceRangeHitWidth,
+    sourceRangeDetailState: sourceRangeDetailState,
+    sourceRangeDetailDragValue: sourceRangeDetailDragValue,
     sourceRangeKeyboardValue: sourceRangeKeyboardValue,
     splitClip: splitClip,
     slipClip: slipClip,

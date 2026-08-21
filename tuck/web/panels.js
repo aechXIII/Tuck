@@ -599,8 +599,9 @@ function renderAudioClipRange() {
     '" aria-hidden="true">' +
     esc(info.code) +
     "</span></div>" +
-    '<div class="audio-range-meta"><span>Source range</span><output class="audio-range-value"></output></div>' +
-    '<div class="audio-source-strip"><div class="audio-source-window" role="slider" aria-label="Audio source range" aria-valuemin="0" aria-valuemax="' +
+    '<div class="audio-range-meta"><span>Source</span><output class="audio-range-value"></output></div>' +
+    '<div class="audio-source-picker"><div class="audio-source-label">Overview</div>' +
+    '<div class="audio-source-overview" role="slider" aria-label="Audio source overview" aria-describedby="audio-range-hint" aria-valuemin="0" aria-valuemax="' +
     info.maxSourceIn +
     '" aria-valuenow="' +
     info.sourceIn +
@@ -608,37 +609,67 @@ function renderAudioClipRange() {
     (info.canSlip ? "0" : "-1") +
     '" aria-disabled="' +
     (info.canSlip ? "false" : "true") +
-    '"><span class="audio-source-grip" aria-hidden="true"></span></div></div>' +
-    '<div class="audio-range-foot"><span class="audio-range-hint">' +
-    (info.canSlip ? "Drag to choose another part · Alt-drag on timeline" : "Entire source is in use") +
+    '"><div class="audio-source-overview-window" aria-hidden="true"></div></div>' +
+    '<div class="audio-source-label">Detail</div>' +
+    '<div class="audio-source-detail" role="slider" aria-label="Audio source detail" aria-describedby="audio-range-hint" aria-valuemin="0" aria-valuemax="' +
+    info.maxSourceIn +
+    '" aria-valuenow="' +
+    info.sourceIn +
+    '" tabindex="' +
+    (info.canSlip ? "0" : "-1") +
+    '" aria-disabled="' +
+    (info.canSlip ? "false" : "true") +
+    '">' +
+    '<span class="audio-source-detail-scrim before" aria-hidden="true"></span>' +
+    '<span class="audio-source-detail-scrim after" aria-hidden="true"></span>' +
+    '<div class="audio-source-detail-window" aria-hidden="true"><span class="audio-source-grip"></span></div></div></div>' +
+    '<div class="audio-range-foot"><span class="audio-range-hint" id="audio-range-hint">' +
+    (info.canSlip
+      ? "Click overview to jump · Drag waveform to fine-tune"
+      : "Entire source is in use") +
     '</span><button type="button" class="audio-range-reset"' +
     (info.canSlip ? "" : " disabled") +
     ">Reset</button></div>";
 
-  var strip = host.querySelector(".audio-source-strip");
-  var rangeWindow = host.querySelector(".audio-source-window");
+  var overview = host.querySelector(".audio-source-overview");
+  var overviewWindow = host.querySelector(".audio-source-overview-window");
+  var detail = host.querySelector(".audio-source-detail");
+  var detailBefore = host.querySelector(".audio-source-detail-scrim.before");
+  var detailAfter = host.querySelector(".audio-source-detail-scrim.after");
+  var detailWindow = host.querySelector(".audio-source-detail-window");
   var output = host.querySelector(".audio-range-value");
   var reset = host.querySelector(".audio-range-reset");
-  strip.style.setProperty("--track-color", info.color);
-  if (info.waveformUrl)
-    strip.style.backgroundImage = "url('" + info.waveformUrl.replace(/'/g, "%27") + "')";
+  overview.style.setProperty("--track-color", info.color);
+  detail.style.setProperty("--track-color", info.color);
+  if (info.waveformUrl) {
+    var waveformImage = "url('" + info.waveformUrl.replace(/'/g, "%27") + "')";
+    overview.style.backgroundImage = waveformImage;
+    detail.style.backgroundImage = waveformImage;
+  }
+
+  var detailState = null;
 
   function paintRange(next) {
     info = next || info;
-    rangeWindow.style.left = info.startPct + "%";
-    rangeWindow.style.width = info.widthPct + "%";
-    rangeWindow.style.setProperty(
-      "--audio-source-hit-width",
-      AudioEditing.sourceRangeHitWidth(
-        (strip.clientWidth * info.widthPct) / 100,
-        28,
-      ) + "px",
+    detailState = AudioEditing.sourceRangeDetailState(
+      info.sourceIn,
+      info.sourceSpan,
+      info.sourceDuration,
     );
-    rangeWindow.setAttribute("aria-valuenow", String(info.sourceIn));
-    rangeWindow.setAttribute(
-      "aria-valuetext",
-      formatTime(info.sourceIn) + " to " + formatTime(info.sourceOut),
-    );
+    overviewWindow.style.left = info.startPct + "%";
+    overviewWindow.style.width = info.widthPct + "%";
+    detail.style.backgroundSize = detailState.waveformWidthPct + "% 100%";
+    detail.style.backgroundPosition = detailState.waveformPositionPct + "% center";
+    detailWindow.style.left = detailState.selectionStartPct + "%";
+    detailWindow.style.width = detailState.selectionWidthPct + "%";
+    detailBefore.style.width = detailState.selectionStartPct + "%";
+    detailAfter.style.left =
+      detailState.selectionStartPct + detailState.selectionWidthPct + "%";
+    var valueText = formatTime(info.sourceIn) + " to " + formatTime(info.sourceOut);
+    [overview, detail].forEach(function (control) {
+      control.setAttribute("aria-valuenow", String(info.sourceIn));
+      control.setAttribute("aria-valuetext", valueText);
+    });
     output.textContent =
       formatTime(info.sourceIn) +
       "–" +
@@ -654,67 +685,97 @@ function renderAudioClipRange() {
 
   function updateFromPointer(clientX) {
     if (!pointer) return;
-    var nextSourceIn = AudioEditing.sourceRangePointerValue(
-      clientX,
-      pointer.rect.left,
-      pointer.rect.width,
-      pointer.grabOffset,
-      info.sourceDuration,
-      info.maxSourceIn,
-    );
+    var nextSourceIn =
+      pointer.mode === "detail"
+        ? AudioEditing.sourceRangeDetailDragValue(
+            pointer.sourceIn,
+            clientX - pointer.startX,
+            pointer.visibleSpan,
+            pointer.rect.width,
+            info.maxSourceIn,
+          )
+        : AudioEditing.sourceRangePointerValue(
+            clientX,
+            pointer.rect.left,
+            pointer.rect.width,
+            pointer.grabOffset,
+            info.sourceDuration,
+            info.maxSourceIn,
+          );
     var next = AudioTimeline.setSelectedSourceIn(nextSourceIn, false);
     if (next) paintRange(next);
   }
 
-  strip.onpointerdown = function (event) {
+  function startPointer(mode, element, event) {
     if (event.button != null && event.button !== 0) return;
     event.preventDefault();
-    var stripRect = strip.getBoundingClientRect();
-    var windowRect = rangeWindow.getBoundingClientRect();
+    var rect = element.getBoundingClientRect();
+    var windowRect = overviewWindow.getBoundingClientRect();
+    var onOverviewWindow = mode === "overview" && overviewWindow.contains(event.target);
     pointer = {
       pointerId: event.pointerId,
+      mode: mode,
+      element: element,
+      startX: event.clientX,
+      sourceIn: info.sourceIn,
+      visibleSpan: detailState.visibleSpan,
       rect: {
-        left: stripRect.left + strip.clientLeft,
-        width: strip.clientWidth,
+        left: rect.left + element.clientLeft,
+        width: element.clientWidth,
       },
-      grabOffset: rangeWindow.contains(event.target)
-        ? event.clientX - windowRect.left
-        : windowRect.width / 2,
+      grabOffset: onOverviewWindow ? event.clientX - windowRect.left : windowRect.width / 2,
+      cursorClass:
+        mode === "detail" ? "audio-range-detail-dragging" : "audio-range-overview-dragging",
     };
     if (window.History) History.begin(selPath);
-    strip.classList.add("dragging");
-    document.body.classList.add("audio-range-dragging");
-    if (strip.setPointerCapture) {
+    element.classList.add("dragging");
+    document.body.classList.add(pointer.cursorClass);
+    if (element.setPointerCapture) {
       try {
-        strip.setPointerCapture(event.pointerId);
+        element.setPointerCapture(event.pointerId);
       } catch (err) {}
     }
-    updateFromPointer(event.clientX);
-  };
-  strip.onpointermove = function (event) {
+    if (mode === "overview") updateFromPointer(event.clientX);
+  }
+
+  function movePointer(event) {
     if (!pointer || event.pointerId !== pointer.pointerId) return;
     event.preventDefault();
     updateFromPointer(event.clientX);
-  };
+  }
+
   function finishPointer(event) {
     if (!pointer || event.pointerId !== pointer.pointerId) return;
     if (event.type !== "pointercancel") updateFromPointer(event.clientX);
     if (
-      strip.releasePointerCapture &&
-      strip.hasPointerCapture &&
-      strip.hasPointerCapture(event.pointerId)
+      pointer.element.releasePointerCapture &&
+      pointer.element.hasPointerCapture &&
+      pointer.element.hasPointerCapture(event.pointerId)
     )
-      strip.releasePointerCapture(event.pointerId);
+      pointer.element.releasePointerCapture(event.pointerId);
+    pointer.element.classList.remove("dragging");
     pointer = null;
-    strip.classList.remove("dragging");
-    document.body.classList.remove("audio-range-dragging");
+    document.body.classList.remove(
+      "audio-range-overview-dragging",
+      "audio-range-detail-dragging",
+    );
     AudioTimeline.setSelectedSourceIn(info.sourceIn, true);
     if (window.History) History.commit();
   }
-  strip.onpointerup = finishPointer;
-  strip.onpointercancel = finishPointer;
 
-  rangeWindow.onkeydown = function (event) {
+  overview.onpointerdown = function (event) {
+    startPointer("overview", overview, event);
+  };
+  detail.onpointerdown = function (event) {
+    startPointer("detail", detail, event);
+  };
+  [overview, detail].forEach(function (control) {
+    control.onpointermove = movePointer;
+    control.onpointerup = finishPointer;
+    control.onpointercancel = finishPointer;
+  });
+
+  function moveFromKeyboard(event) {
     var next = AudioEditing.sourceRangeKeyboardValue(
       info.sourceIn,
       info.maxSourceIn,
@@ -726,14 +787,18 @@ function renderAudioClipRange() {
     if (window.History) History.begin(selPath);
     AudioTimeline.setSelectedSourceIn(next, true);
     if (window.History) History.commit();
-  };
+  }
+  overview.onkeydown = moveFromKeyboard;
+  detail.onkeydown = moveFromKeyboard;
+
   function resetRange(event) {
     event.preventDefault();
     if (window.History) History.begin(selPath);
     AudioTimeline.resetSelectedSource();
     if (window.History) History.commit();
   }
-  rangeWindow.ondblclick = resetRange;
+  overview.ondblclick = resetRange;
+  detail.ondblclick = resetRange;
   reset.onclick = resetRange;
 }
 

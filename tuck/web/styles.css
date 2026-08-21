@@ -988,58 +988,101 @@ body.workspace-overlay .panel-heading {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.audio-source-strip {
+.audio-source-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.audio-source-label {
+  color: #858292;
+  font-size: 10px;
+  line-height: 13px;
+}
+.audio-source-label:not(:first-child) {
+  margin-top: 3px;
+}
+.audio-source-overview,
+.audio-source-detail {
   position: relative;
-  height: 42px;
   overflow: hidden;
   border: 1px solid #292938;
   border-radius: 5px;
   background-color: #0e0e14;
+  touch-action: none;
+}
+.audio-source-overview {
+  height: 28px;
   background-position: center;
   background-repeat: no-repeat;
   background-size: 100% 100%;
-  cursor: ew-resize;
-  touch-action: none;
+  cursor: pointer;
 }
-.audio-source-window {
+.audio-source-overview-window {
   position: absolute;
-  top: 3px;
-  bottom: 3px;
+  top: 2px;
+  bottom: 2px;
   min-width: 1px;
-  border: 1px solid color-mix(in srgb, var(--track-color, var(--accent-light)) 62%, white);
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--track-color, var(--accent)) 22%, transparent);
-  box-shadow: 0 0 0 999px rgba(7, 7, 11, 0.48);
+  border: 1px solid color-mix(in srgb, var(--track-color, var(--accent-light)) 72%, white);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--track-color, var(--accent)) 28%, transparent);
+  box-shadow: 0 0 0 999px rgba(7, 7, 11, 0.56);
+}
+.audio-source-detail {
+  height: 68px;
+  background-position: left center;
+  background-repeat: no-repeat;
   cursor: grab;
 }
-.audio-source-window::after {
-  content: "";
+.audio-source-detail-window {
+  position: absolute;
+  z-index: 3;
+  top: 4px;
+  bottom: 4px;
+  min-width: 1px;
+  border: 1px solid color-mix(in srgb, var(--track-color, var(--accent-light)) 72%, white);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--track-color, var(--accent)) 7%, transparent);
+  pointer-events: none;
+}
+.audio-source-detail-scrim {
   position: absolute;
   z-index: 2;
-  top: -4px;
-  bottom: -4px;
-  left: 50%;
-  width: var(--audio-source-hit-width, 28px);
-  transform: translateX(-50%);
+  top: 0;
+  bottom: 0;
+  background: rgba(7, 7, 11, 0.64);
+  pointer-events: none;
 }
-.audio-source-window:active,
-.audio-source-strip.dragging .audio-source-window {
+.audio-source-detail-scrim.before {
+  left: 0;
+}
+.audio-source-detail-scrim.after {
+  right: 0;
+}
+.audio-source-detail:active,
+.audio-source-detail.dragging {
   cursor: grabbing;
 }
-.audio-source-window:focus-visible {
+.audio-source-overview:focus-visible,
+.audio-source-detail:focus-visible {
   outline: 2px solid var(--accent-light);
-  outline-offset: -1px;
+  outline-offset: 2px;
 }
 .audio-source-grip {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 4px;
-  height: 18px;
+  width: 3px;
+  height: 3px;
   transform: translate(-50%, -50%);
-  border-left: 1px solid rgba(255, 255, 255, 0.75);
-  border-right: 1px solid rgba(255, 255, 255, 0.75);
-  opacity: 0.78;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow:
+    -5px 0 rgba(255, 255, 255, 0.85),
+    5px 0 rgba(255, 255, 255, 0.85);
+}
+.audio-source-overview[aria-disabled="true"],
+.audio-source-detail[aria-disabled="true"] {
+  cursor: default;
 }
 .audio-range-foot {
   display: flex;
@@ -1075,9 +1118,14 @@ body.workspace-overlay .panel-heading {
   color: #4f4e5b;
   cursor: default;
 }
-body.audio-range-dragging,
-body.audio-range-dragging * {
-  cursor: ew-resize !important;
+body.audio-range-overview-dragging,
+body.audio-range-overview-dragging * {
+  cursor: pointer !important;
+  user-select: none !important;
+}
+body.audio-range-detail-dragging,
+body.audio-range-detail-dragging * {
+  cursor: grabbing !important;
   user-select: none !important;
 }
 #right-foot {
