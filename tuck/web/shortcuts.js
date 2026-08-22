@@ -36,72 +36,349 @@
     "↑": "up",
     "↓": "down",
   };
-  var SECTIONS = [
+  var COMMANDS = [
     {
-      cat: "General",
+      id: "file.add-videos",
+      category: "General",
       column: 0,
-      items: [
-        { label: "Add videos", keys: [["Ctrl", "O"]], ids: ["ctrl", "o"] },
-        {
-          label: "Open settings",
-          keys: [["Ctrl", ","]],
-          ids: ["ctrl", "comma"],
-        },
-        { label: "Exit Tuck", keys: [["Ctrl", "Q"]], ids: ["ctrl", "q"] },
-        { label: "Close dialog", keys: [["Esc"]], ids: ["esc"] },
-      ],
+      label: "Add videos",
+      bindings: ["Ctrl+O"],
+      context: "editor",
     },
     {
-      cat: "Edit",
-      column: 1,
-      items: [
-        { label: "Undo", keys: [["Ctrl", "Z"]], ids: ["ctrl", "z"] },
-        {
-          label: "Redo",
-          keys: [["Ctrl", "Shift", "Z"], ["Ctrl", "Y"]],
-          ids: ["ctrl", "shift", "z", "y"],
-        },
-      ],
-    },
-    {
-      cat: "Playback & navigation",
+      id: "settings.open",
+      category: "General",
       column: 0,
-      items: [
-        { label: "Play / pause", keys: [["Space"]], ids: ["space"] },
-        {
-          label: "Skip back / forward 3 seconds",
-          keys: [["←"], ["→"]],
-          highlightAll: true,
-          ids: ["left", "right"],
-        },
-        {
-          label: "Select previous / next video",
-          keys: [["↑"], ["↓"]],
-          highlightAll: true,
-          ids: ["up", "down"],
-        },
-      ],
+      label: "Open settings",
+      bindings: ["Ctrl+,"],
+      context: "editor",
     },
     {
-      cat: "Timeline & segments",
+      id: "app.exit",
+      category: "General",
+      column: 0,
+      label: "Exit Tuck",
+      bindings: ["Ctrl+Q"],
+      context: "editor",
+    },
+    {
+      id: "ui.dismiss",
+      category: "General",
+      column: 0,
+      label: "Close dialog",
+      bindings: ["Escape"],
+      context: "global",
+      configurable: false,
+    },
+    {
+      id: "edit.undo",
+      category: "Edit",
       column: 1,
-      items: [
-        { label: "Split at playhead", keys: [["S"]], ids: ["s"] },
-        {
-          label: "Delete selected audio",
-          keys: [["Delete"]],
-          ids: ["del"],
-        },
-        {
-          label: "Adjust trim point",
-          keys: [["←"], ["→"]],
-          note: "Hold Shift for larger steps.",
-          highlightAll: true,
-          ids: ["shift", "left", "right"],
-        },
-      ],
+      label: "Undo",
+      bindings: ["Ctrl+Z"],
+      context: "editor-no-entry",
+    },
+    {
+      id: "edit.redo",
+      category: "Edit",
+      column: 1,
+      label: "Redo",
+      bindings: ["Ctrl+Shift+Z", "Ctrl+Y"],
+      context: "editor-no-entry",
+    },
+    {
+      id: "playback.toggle",
+      category: "Playback & navigation",
+      column: 0,
+      label: "Play / pause",
+      bindings: ["Space"],
+      context: "editor-no-entry",
+    },
+    {
+      id: "playback.seek-backward",
+      category: "Playback & navigation",
+      column: 0,
+      label: "Skip back / forward 3 seconds",
+      guideGroup: "playback.seek",
+      guideHighlightAll: true,
+      bindings: ["ArrowLeft"],
+      context: "editor-no-entry",
+    },
+    {
+      id: "playback.seek-forward",
+      category: "Playback & navigation",
+      column: 0,
+      label: "Skip back / forward 3 seconds",
+      guideGroup: "playback.seek",
+      bindings: ["ArrowRight"],
+      context: "editor-no-entry",
+    },
+    {
+      id: "media.select-previous",
+      category: "Playback & navigation",
+      column: 0,
+      label: "Select previous / next video",
+      guideGroup: "media.select",
+      guideHighlightAll: true,
+      bindings: ["ArrowUp"],
+      context: "editor-no-entry",
+    },
+    {
+      id: "media.select-next",
+      category: "Playback & navigation",
+      column: 0,
+      label: "Select previous / next video",
+      guideGroup: "media.select",
+      bindings: ["ArrowDown"],
+      context: "editor-no-entry",
+    },
+    {
+      id: "timeline.split",
+      category: "Timeline & segments",
+      column: 1,
+      label: "Split at playhead",
+      bindings: ["S"],
+      context: "editor-no-entry",
+    },
+    {
+      id: "audio.delete-selected",
+      category: "Timeline & segments",
+      column: 1,
+      label: "Delete selected audio",
+      bindings: ["Delete"],
+      context: "editor-no-entry",
+    },
+    {
+      id: "timeline.adjust-trim-backward",
+      category: "Timeline & segments",
+      column: 1,
+      label: "Adjust trim point",
+      guideGroup: "timeline.adjust-trim",
+      guideNote: "Hold Shift for larger steps.",
+      guideHighlightAll: true,
+      guideIds: ["shift"],
+      bindings: ["ArrowLeft"],
+      local: true,
+      configurable: false,
+    },
+    {
+      id: "timeline.adjust-trim-forward",
+      category: "Timeline & segments",
+      column: 1,
+      label: "Adjust trim point",
+      guideGroup: "timeline.adjust-trim",
+      bindings: ["ArrowRight"],
+      local: true,
+      configurable: false,
+    },
+    {
+      id: "help.shortcuts",
+      category: "General",
+      column: 0,
+      label: "Open keyboard shortcuts",
+      bindings: ["?"],
+      context: "editor-no-text-entry",
+      guide: false,
     },
   ];
+
+  var DISPLAY_KEYS = {
+    Escape: "Esc",
+    ArrowLeft: "←",
+    ArrowRight: "→",
+    ArrowUp: "↑",
+    ArrowDown: "↓",
+  };
+
+  function bindingParts(binding) {
+    var tokens = String(binding || "").split("+");
+    var key = tokens.pop() || "";
+    var parts = {
+      alt: false,
+      ctrl: false,
+      meta: false,
+      shift: false,
+      key: key,
+    };
+    tokens.forEach(function (token) {
+      var modifier = token.toLowerCase();
+      if (modifier === "alt") parts.alt = true;
+      else if (modifier === "ctrl" || modifier === "control") parts.ctrl = true;
+      else if (modifier === "meta" || modifier === "cmd") parts.meta = true;
+      else if (modifier === "shift") parts.shift = true;
+      else throw new Error("Unknown shortcut modifier: " + token);
+    });
+    return parts;
+  }
+
+  function displayBinding(binding) {
+    var parts = bindingParts(binding);
+    var keys = [];
+    if (parts.ctrl) keys.push("Ctrl");
+    if (parts.meta) keys.push("Meta");
+    if (parts.alt) keys.push("Alt");
+    if (parts.shift) keys.push("Shift");
+    keys.push(DISPLAY_KEYS[parts.key] || parts.key);
+    return keys;
+  }
+
+  function commandSections(commands) {
+    var sections = [];
+    var sectionByCategory = {};
+    var itemByGroup = {};
+
+    (commands || []).forEach(function (command) {
+      if (command.guide === false) return;
+      var category = command.category;
+      if (!category) return;
+      var section = sectionByCategory[category];
+      if (!section) {
+        section = {
+          cat: category,
+          column: command.column === 1 ? 1 : 0,
+          items: [],
+        };
+        sectionByCategory[category] = section;
+        sections.push(section);
+      }
+
+      var group = command.guideGroup || command.id;
+      var item = itemByGroup[group];
+      if (!item) {
+        item = {
+          label: command.label,
+          keys: [],
+          ids: (command.guideIds || []).slice(),
+        };
+        if (command.guideNote) item.note = command.guideNote;
+        if (command.guideHighlightAll) item.highlightAll = true;
+        itemByGroup[group] = item;
+        section.items.push(item);
+      }
+
+      (command.bindings || []).forEach(function (binding) {
+        var keys = displayBinding(binding);
+        item.keys.push(keys);
+        keys.forEach(function (key) {
+          var id = keyId(key);
+          if (id && item.ids.indexOf(id) < 0) item.ids.push(id);
+        });
+      });
+    });
+
+    return sections;
+  }
+
+  function freezeTree(value) {
+    if (!value || typeof value !== "object" || Object.isFrozen(value))
+      return value;
+    Object.keys(value).forEach(function (key) {
+      freezeTree(value[key]);
+    });
+    return Object.freeze(value);
+  }
+
+  var SECTIONS = commandSections(COMMANDS);
+  freezeTree(COMMANDS);
+  freezeTree(SECTIONS);
+
+  function normalizedKey(key) {
+    var aliases = {
+      " ": "space",
+      Spacebar: "space",
+      Esc: "escape",
+      Del: "delete",
+      Left: "arrowleft",
+      Right: "arrowright",
+      Up: "arrowup",
+      Down: "arrowdown",
+    };
+    return String(aliases[key] || key || "").toLowerCase();
+  }
+
+  function matchesBinding(event, binding) {
+    if (!event) return false;
+    var parts = bindingParts(binding);
+    var eventShift = !!event.shiftKey;
+    if (
+      !parts.shift &&
+      eventShift &&
+      String(event.key || "").length === 1 &&
+      !/[a-z0-9]/i.test(event.key)
+    )
+      eventShift = false;
+    return (
+      !!event.altKey === parts.alt &&
+      !!event.ctrlKey === parts.ctrl &&
+      !!event.metaKey === parts.meta &&
+      eventShift === parts.shift &&
+      normalizedKey(event.key) === normalizedKey(parts.key)
+    );
+  }
+
+  function commandAvailable(command, state) {
+    var context = command.context || "editor";
+    var current = state || {};
+    if (
+      context !== "global" &&
+      (current.modalOpen || current.settingsOpen)
+    )
+      return false;
+    if (context === "editor-no-entry" && current.formControlFocused)
+      return false;
+    if (context === "editor-no-text-entry" && current.textEntryFocused)
+      return false;
+    return true;
+  }
+
+  function createRegistry(commands) {
+    var definitions = commands || [];
+    var commandById = {};
+    var actions = {};
+    definitions.forEach(function (command) {
+      if (!command.id || commandById[command.id])
+        throw new Error("Duplicate or missing command id: " + command.id);
+      commandById[command.id] = command;
+    });
+
+    function registerAction(id, action) {
+      if (!commandById[id]) throw new Error("Unknown command: " + id);
+      if (actions[id]) throw new Error("Action already registered: " + id);
+      var registration =
+        typeof action === "function" ? { execute: action } : action;
+      if (!registration || typeof registration.execute !== "function")
+        throw new Error("Command action must provide execute(): " + id);
+      actions[id] = registration;
+    }
+
+    function dispatch(event, state) {
+      if (event && event.defaultPrevented) return null;
+      for (var i = 0; i < definitions.length; i++) {
+        var command = definitions[i];
+        if (command.local || !commandAvailable(command, state)) continue;
+        if (
+          !(command.bindings || []).some(function (binding) {
+            return matchesBinding(event, binding);
+          })
+        )
+          continue;
+        var action = actions[command.id];
+        if (!action) continue;
+        if (
+          typeof action.enabled === "function" &&
+          !action.enabled(event, state || {})
+        )
+          continue;
+        if (event && typeof event.preventDefault === "function")
+          event.preventDefault();
+        action.execute(event, state || {});
+        return command.id;
+      }
+      return null;
+    }
+
+    return { dispatch: dispatch, registerAction: registerAction };
+  }
   var KEYBOARD_LAYOUT = [
     [
       [34, "Esc", "esc"],
@@ -443,13 +720,20 @@
     );
   }
 
+  var registry = createRegistry(COMMANDS);
+
   return {
     bindingMarkup: bindingMarkup,
     bindingText: bindingText,
     cleanupDialog: cleanupDialog,
+    commands: COMMANDS,
+    createRegistry: createRegistry,
+    dispatch: registry.dispatch,
     editorCommandsEnabled: editorCommandsEnabled,
     escapeMarkup: escapeMarkup,
     keyboardRowsMarkup: keyboardRowsMarkup,
+    matchesBinding: matchesBinding,
+    registerAction: registry.registerAction,
     sections: SECTIONS,
     shouldUseSingleColumn: shouldUseSingleColumn,
     tabbableControls: tabbableControls,
@@ -472,6 +756,40 @@
 
   function byId(id) {
     return root.document.getElementById(id);
+  }
+
+  function commandState(event) {
+    var target = (event && event.target) || root.document.activeElement;
+    var textEntryFocused = !!(
+      target &&
+      ((typeof target.matches === "function" &&
+        target.matches("input, select, textarea")) ||
+        target.isContentEditable)
+    );
+    var formControlFocused = !!(
+      target &&
+      ((typeof target.matches === "function" &&
+        target.matches("input, select, textarea, button")) ||
+        target.isContentEditable)
+    );
+    var overlay = byId("mod-overlay");
+    return {
+      modalOpen: !!(
+        overlay &&
+        overlay.classList &&
+        overlay.classList.contains("open")
+      ),
+      settingsOpen: !!(
+        root.document.body &&
+        root.document.body.classList.contains("settings-open")
+      ),
+      formControlFocused: formControlFocused,
+      textEntryFocused: textEntryFocused,
+    };
+  }
+
+  function dispatchCommand(event) {
+    shortcuts.dispatch(event, commandState(event));
   }
 
   function dialogMarkup() {
@@ -613,6 +931,9 @@
     var input = byId("kbs-search-input");
     if (input) input.focus();
   }
+
+  shortcuts.registerAction("help.shortcuts", openDialog);
+  root.addEventListener("keydown", dispatchCommand);
 
   root.clearShortcutSearch = clearSearch;
   root.filterShortcuts = renderResults;

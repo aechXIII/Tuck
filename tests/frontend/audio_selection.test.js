@@ -3,6 +3,8 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
+require("../../tuck/web/shortcuts.js");
+
 function classList() {
   const values = new Set();
   return {
@@ -152,4 +154,28 @@ test("selected imported audio fragments use the segment mute command independent
   global.AudioTimeline.selectTrack(track.id);
 
   assert.equal(fragmentMute.classList.contains("hid"), true);
+});
+
+test("keyboard delete uses the current history-wrapped audio action", () => {
+  global.AudioTimeline.selectClip("music-track", "music-clip");
+  let wrappedCalls = 0;
+  global.AudioTimeline.deleteSelected = function () {
+    wrappedCalls++;
+  };
+  const event = {
+    key: "Delete",
+    ctrlKey: false,
+    shiftKey: false,
+    altKey: false,
+    metaKey: false,
+    preventDefault() {},
+  };
+
+  global.TuckShortcuts.dispatch(event, {
+    modalOpen: false,
+    settingsOpen: false,
+    formControlFocused: false,
+  });
+
+  assert.equal(wrappedCalls, 1);
 });

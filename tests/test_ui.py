@@ -88,6 +88,24 @@ def test_web_ui_forwards_start_metadata_and_releases_old_media_tokens() -> None:
     assert "api.closeWindow()" in html
 
 
+def test_application_shortcuts_use_the_central_command_dispatcher() -> None:
+    shortcuts_js = _asset("shortcuts.js")
+    app_js = _asset("app.js")
+    audio_js = _asset("audio.js")
+    history_js = _asset("history.js")
+
+    assert 'root.addEventListener("keydown", dispatchCommand)' in shortcuts_js
+    assert 'TuckShortcuts.registerAction("file.add-videos"' in app_js
+    assert 'TuckShortcuts.registerAction("settings.open", function () {' in app_js
+    assert "toggleSettings();" in app_js
+    assert "execute: function () {\n    togglePlay();\n  }," in app_js
+    assert 'TuckShortcuts.registerAction("timeline.split"' in audio_js
+    assert 'TuckShortcuts.registerAction("edit.undo"' in history_js
+    assert 'window.addEventListener("keydown", function (e)' not in app_js
+    assert 'root.document.addEventListener("keydown", function (event)' not in audio_js
+    assert 'document.addEventListener("keydown", function (event)' not in history_js
+
+
 def test_web_ui_starts_if_python_calls_init_after_bridge_injection() -> None:
     html = _web_source()
 

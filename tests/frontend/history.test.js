@@ -3,6 +3,8 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
+require("../../tuck/web/shortcuts.js");
+
 const windowListeners = {};
 const documentListeners = {};
 const undoButton = { disabled: true };

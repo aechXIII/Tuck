@@ -162,24 +162,8 @@ var History = (function () {
 })();
 window.History = History;
 
-document.addEventListener("keydown", function (event) {
-  if (
-    window.TuckShortcuts &&
-    !window.TuckShortcuts.editorCommandsEnabled(document)
-  )
-    return;
-  var ctrlOrCmd = event.ctrlKey || event.metaKey;
-  if (!ctrlOrCmd) return;
-  var target = event.target;
-  if (target && (target.matches("input, select, textarea") || target.isContentEditable)) return;
-  if (event.key.toLowerCase() === "z" && !event.shiftKey) {
-    event.preventDefault();
-    History.undo();
-  } else if (event.key.toLowerCase() === "y" || (event.key.toLowerCase() === "z" && event.shiftKey)) {
-    event.preventDefault();
-    History.redo();
-  }
-});
+TuckShortcuts.registerAction("edit.undo", History.undo);
+TuckShortcuts.registerAction("edit.redo", History.redo);
 
 window.addEventListener("load", function () {
   [

@@ -17,6 +17,330 @@ const ITEMS = [
   },
 ];
 
+function keyEvent(key, modifiers = {}) {
+  return {
+    key,
+    ctrlKey: !!modifiers.ctrlKey,
+    shiftKey: !!modifiers.shiftKey,
+    altKey: !!modifiers.altKey,
+    metaKey: !!modifiers.metaKey,
+    defaultPrevented: false,
+    preventDefault() {
+      this.defaultPrevented = true;
+    },
+  };
+}
+
+test("production commands are the source of the existing shortcut guide", () => {
+  const commandIds = shortcuts.commands.map((command) => command.id);
+  const defaultBindings = Object.fromEntries(
+    shortcuts.commands.map((command) => [command.id, command.bindings]),
+  );
+
+  assert.equal(new Set(commandIds).size, commandIds.length);
+  assert.deepEqual(defaultBindings, {
+    "file.add-videos": ["Ctrl+O"],
+    "settings.open": ["Ctrl+,"],
+    "app.exit": ["Ctrl+Q"],
+    "ui.dismiss": ["Escape"],
+    "edit.undo": ["Ctrl+Z"],
+    "edit.redo": ["Ctrl+Shift+Z", "Ctrl+Y"],
+    "playback.toggle": ["Space"],
+    "playback.seek-backward": ["ArrowLeft"],
+    "playback.seek-forward": ["ArrowRight"],
+    "media.select-previous": ["ArrowUp"],
+    "media.select-next": ["ArrowDown"],
+    "timeline.split": ["S"],
+    "audio.delete-selected": ["Delete"],
+    "timeline.adjust-trim-backward": ["ArrowLeft"],
+    "timeline.adjust-trim-forward": ["ArrowRight"],
+    "help.shortcuts": ["?"],
+  });
+  assert.deepEqual(
+    shortcuts.sections.map((section) => ({
+      category: section.cat,
+      column: section.column,
+      items: section.items.map((item) => ({
+        label: item.label,
+        bindings: shortcuts.bindingText(item.keys),
+      })),
+    })),
+    [
+      {
+        category: "General",
+        column: 0,
+        items: [
+          { label: "Add videos", bindings: "Ctrl + O" },
+          { label: "Open settings", bindings: "Ctrl + ," },
+          { label: "Exit Tuck", bindings: "Ctrl + Q" },
+          { label: "Close dialog", bindings: "Esc" },
+        ],
+      },
+      {
+        category: "Edit",
+        column: 1,
+        items: [
+          { label: "Undo", bindings: "Ctrl + Z" },
+          {
+            label: "Redo",
+            bindings: "Ctrl + Shift + Z or Ctrl + Y",
+          },
+        ],
+      },
+      {
+        category: "Playback & navigation",
+        column: 0,
+        items: [
+          { label: "Play / pause", bindings: "Space" },
+          {
+            label: "Skip back / forward 3 seconds",
+            bindings: "← or →",
+          },
+          {
+            label: "Select previous / next video",
+            bindings: "↑ or ↓",
+          },
+        ],
+      },
+      {
+        category: "Timeline & segments",
+        column: 1,
+        items: [
+          { label: "Split at playhead", bindings: "S" },
+          { label: "Delete selected audio", bindings: "Delete" },
+          { label: "Adjust trim point", bindings: "← or →" },
+        ],
+      },
+    ],
+  );
+});
+
+test("dispatchable default bindings do not conflict", () => {
+  const seen = new Map();
+
+  shortcuts.commands
+    .filter((command) => !command.local)
+    .forEach((command) =>
+      command.bindings.forEach((binding) => {
+        assert.equal(
+          seen.has(binding),
+          false,
+          `${binding} is assigned to ${seen.get(binding)} and ${command.id}`,
+        );
+        seen.set(binding, command.id);
+      }),
+    );
+});
+
+test("production command metadata and derived guide sections are immutable", () => {
+  assert.equal(Object.isFrozen(shortcuts.commands), true);
+  assert.equal(Object.isFrozen(shortcuts.commands[0]), true);
+  assert.equal(Object.isFrozen(shortcuts.commands[0].bindings), true);
+  assert.equal(Object.isFrozen(shortcuts.sections), true);
+  assert.equal(Object.isFrozen(shortcuts.sections[0].items), true);
+  assert.throws(() => shortcuts.commands[0].bindings.push("Alt+O"), TypeError);
+});
+
+test("binding matching requires exact modifiers", () => {
+  assert.equal(shortcuts.matchesBinding(keyEvent("o", { ctrlKey: true }), "Ctrl+O"), true);
+  assert.equal(
+    shortcuts.matchesBinding(
+      keyEvent("o", { ctrlKey: true, shiftKey: true }),
+      "Ctrl+O",
+    ),
+    false,
+  );
+  assert.equal(shortcuts.matchesBinding(keyEvent("S"), "S"), true);
+  assert.equal(shortcuts.matchesBinding(keyEvent("S", { altKey: true }), "S"), false);
+  assert.equal(shortcuts.matchesBinding(keyEvent("?", { shiftKey: true }), "?"), true);
+});
+
+test("a registry validates action registration", () => {
+  const registry = shortcuts.createRegistry([
+    { id: "test.run", bindings: ["R"], context: "editor" },
+  ]);
+
+  assert.throws(() => registry.registerAction("missing", () => {}), /Unknown command/);
+  registry.registerAction("test.run", () => {});
+  assert.throws(
+    () => registry.registerAction("test.run", () => {}),
+    /already registered/,
+  );
+});
+
+test("dispatch executes one enabled matching command and prevents the browser default", () => {
+  const registry = shortcuts.createRegistry([
+    { id: "first", bindings: ["R"], context: "editor" },
+    { id: "second", bindings: ["R"], context: "editor" },
+  ]);
+  const calls = [];
+  registry.registerAction("first", {
+    enabled: () => true,
+    execute: () => calls.push("first"),
+  });
+  registry.registerAction("second", () => calls.push("second"));
+  const event = keyEvent("r");
+
+  assert.equal(
+    registry.dispatch(event, {
+      modalOpen: false,
+      settingsOpen: false,
+      formControlFocused: false,
+    }),
+    "first",
+  );
+  assert.deepEqual(calls, ["first"]);
+  assert.equal(event.defaultPrevented, true);
+});
+
+test("dispatch leaves unavailable and unregistered commands to the focused control", () => {
+  const registry = shortcuts.createRegistry([
+    { id: "disabled", bindings: ["D"], context: "editor-no-entry" },
+    { id: "unregistered", bindings: ["U"], context: "editor" },
+  ]);
+  registry.registerAction("disabled", {
+    enabled: () => false,
+    execute: () => assert.fail("disabled command executed"),
+  });
+  const disabledEvent = keyEvent("d");
+  const unregisteredEvent = keyEvent("u");
+
+  assert.equal(
+    registry.dispatch(disabledEvent, {
+      modalOpen: false,
+      settingsOpen: false,
+      formControlFocused: false,
+    }),
+    null,
+  );
+  assert.equal(
+    registry.dispatch(unregisteredEvent, {
+      modalOpen: false,
+      settingsOpen: false,
+      formControlFocused: false,
+    }),
+    null,
+  );
+  assert.equal(disabledEvent.defaultPrevented, false);
+  assert.equal(unregisteredEvent.defaultPrevented, false);
+});
+
+test("dispatch ignores keyboard events already handled by a local control", () => {
+  const registry = shortcuts.createRegistry([
+    { id: "seek.backward", bindings: ["ArrowLeft"], context: "editor" },
+  ]);
+  let calls = 0;
+  registry.registerAction("seek.backward", () => calls++);
+  const event = keyEvent("ArrowLeft");
+  event.preventDefault();
+
+  assert.equal(
+    registry.dispatch(event, {
+      modalOpen: false,
+      settingsOpen: false,
+      formControlFocused: false,
+    }),
+    null,
+  );
+  assert.equal(calls, 0);
+});
+
+test("editor commands are unavailable while a modal or Settings is open", () => {
+  const registry = shortcuts.createRegistry([
+    { id: "editor.run", bindings: ["R"], context: "editor" },
+  ]);
+  let calls = 0;
+  registry.registerAction("editor.run", () => calls++);
+
+  assert.equal(
+    registry.dispatch(keyEvent("r"), {
+      modalOpen: true,
+      settingsOpen: false,
+      formControlFocused: false,
+    }),
+    null,
+  );
+  assert.equal(
+    registry.dispatch(keyEvent("r"), {
+      modalOpen: false,
+      settingsOpen: true,
+      formControlFocused: false,
+    }),
+    null,
+  );
+  assert.equal(calls, 0);
+});
+
+test("global commands can dismiss an open surface", () => {
+  const registry = shortcuts.createRegistry([
+    { id: "ui.dismiss", bindings: ["Escape"], context: "global" },
+  ]);
+  let calls = 0;
+  registry.registerAction("ui.dismiss", () => calls++);
+
+  assert.equal(
+    registry.dispatch(keyEvent("Escape"), {
+      modalOpen: true,
+      settingsOpen: false,
+      formControlFocused: false,
+    }),
+    "ui.dismiss",
+  );
+  assert.equal(calls, 1);
+});
+
+test("editor-no-entry commands do not fire from form controls", () => {
+  const registry = shortcuts.createRegistry([
+    { id: "timeline.split", bindings: ["S"], context: "editor-no-entry" },
+  ]);
+  let calls = 0;
+  registry.registerAction("timeline.split", () => calls++);
+  const event = keyEvent("s");
+
+  assert.equal(
+    registry.dispatch(event, {
+      modalOpen: false,
+      settingsOpen: false,
+      formControlFocused: true,
+    }),
+    null,
+  );
+  assert.equal(calls, 0);
+  assert.equal(event.defaultPrevented, false);
+});
+
+test("text-entry suppression still allows the shortcut guide from buttons", () => {
+  const registry = shortcuts.createRegistry([
+    {
+      id: "help.shortcuts",
+      bindings: ["?"],
+      context: "editor-no-text-entry",
+    },
+  ]);
+  let calls = 0;
+  registry.registerAction("help.shortcuts", () => calls++);
+
+  assert.equal(
+    registry.dispatch(keyEvent("?", { shiftKey: true }), {
+      modalOpen: false,
+      settingsOpen: false,
+      formControlFocused: true,
+      textEntryFocused: false,
+    }),
+    "help.shortcuts",
+  );
+  assert.equal(
+    registry.dispatch(keyEvent("?", { shiftKey: true }), {
+      modalOpen: false,
+      settingsOpen: false,
+      formControlFocused: true,
+      textEntryFocused: true,
+    }),
+    null,
+  );
+  assert.equal(calls, 1);
+});
+
 test("shortcut search returns only matching sections and keyboard keys", () => {
   assert.deepEqual(shortcuts.search(ITEMS, "undo"), {
     query: "undo",

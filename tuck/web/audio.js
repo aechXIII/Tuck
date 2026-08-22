@@ -1371,22 +1371,17 @@
     video.addEventListener("timeupdate", syncPreview);
     video.addEventListener("seeked", syncPreview);
   }
-  root.document.addEventListener("keydown", function (event) {
-    if (
-      root.TuckShortcuts &&
-      !root.TuckShortcuts.editorCommandsEnabled(root.document)
-    )
-      return;
-    if (/^(INPUT|TEXTAREA|SELECT)$/.test(event.target && event.target.tagName)) return;
-    if (event.key === "Delete" && selectedClipId) {
-      event.preventDefault();
+  root.TuckShortcuts.registerAction("audio.delete-selected", {
+    enabled: function () {
+      return !!selectedClipId;
+    },
+    execute: function () {
       apiObject.deleteSelected();
-    }
-    if ((event.key === "s" || event.key === "S") && !event.ctrlKey && !event.metaKey) {
-      event.preventDefault();
-      if (typeof root.splitAtPlayhead === "function") root.splitAtPlayhead();
-      else apiObject.splitSelected();
-    }
+    },
+  });
+  root.TuckShortcuts.registerAction("timeline.split", function () {
+    if (typeof root.splitAtPlayhead === "function") root.splitAtPlayhead();
+    else apiObject.splitSelected();
   });
 })(typeof window !== "undefined" ? window : null, function () {
   function selectedDuration(segments) {

@@ -1046,17 +1046,6 @@ function handleLaunch(data) {
 window.handleIpcMeta = handleLaunch;
 window.handleSendto = handleLaunch;
 
-function formFieldFocused() {
-  var el = document.activeElement;
-  return (
-    el &&
-    (el.matches("input, select, textarea, button") || el.isContentEditable)
-  );
-}
-function textEntryFocused() {
-  var el = document.activeElement;
-  return el && (el.matches("input, select, textarea") || el.isContentEditable);
-}
 function moveSelection(delta) {
   var keys = orderedClipKeys();
   if (!keys.length) return;
@@ -1064,61 +1053,67 @@ function moveSelection(delta) {
   index = Math.max(0, Math.min(keys.length - 1, index + delta));
   selectClip(keys[index]);
 }
-window.addEventListener("keydown", function (e) {
-  if (e.key === "Escape" && byId("mod-overlay").classList.contains("open")) {
-    closeActiveModal();
-    return;
-  }
-  if (e.key === "Escape" && document.body.classList.contains("settings-open")) {
-    closeSettings();
-    return;
-  }
-  if (!TuckShortcuts.editorCommandsEnabled(document)) return;
-  if (e.ctrlKey && e.key.toLowerCase() === "o") {
-    e.preventDefault();
-    browse();
-    return;
-  }
-  if (e.ctrlKey && e.key === ",") {
-    e.preventDefault();
-    toggleSettings();
-    return;
-  }
-  if (e.ctrlKey && e.key.toLowerCase() === "q") {
-    e.preventDefault();
-    if (api) api.closeWindow();
-    return;
-  }
-  if (
-    TuckShortcuts.shouldOpenGuide(e, {
-      modalOpen: byId("mod-overlay").classList.contains("open"),
-      settingsOpen: document.body.classList.contains("settings-open"),
-      textEntryFocused: textEntryFocused(),
-    })
-  ) {
-    e.preventDefault();
-    openKeyboardShortcuts();
-    return;
-  }
-  if (formFieldFocused()) return;
-  if (e.key === " ") {
-    e.preventDefault();
-    if (selPath) togglePlay();
-  }
-  if (e.key === "ArrowDown") {
-    e.preventDefault();
-    moveSelection(1);
-  }
-  if (e.key === "ArrowUp") {
-    e.preventDefault();
-    moveSelection(-1);
-  }
-  if (e.key === "ArrowRight") {
-    e.preventDefault();
-    seekBy(3);
-  }
-  if (e.key === "ArrowLeft") {
-    e.preventDefault();
+TuckShortcuts.registerAction("file.add-videos", browse);
+TuckShortcuts.registerAction("settings.open", function () {
+  toggleSettings();
+});
+TuckShortcuts.registerAction("app.exit", {
+  enabled: function () {
+    return !!api;
+  },
+  execute: function () {
+    api.closeWindow();
+  },
+});
+TuckShortcuts.registerAction("ui.dismiss", {
+  enabled: function () {
+    return (
+      byId("mod-overlay").classList.contains("open") ||
+      document.body.classList.contains("settings-open")
+    );
+  },
+  execute: function () {
+    if (byId("mod-overlay").classList.contains("open")) closeActiveModal();
+    else closeSettings();
+  },
+});
+TuckShortcuts.registerAction("playback.toggle", {
+  enabled: function () {
+    return !!selPath;
+  },
+  execute: function () {
+    togglePlay();
+  },
+});
+TuckShortcuts.registerAction("playback.seek-backward", {
+  enabled: function () {
+    return !!selPath;
+  },
+  execute: function () {
     seekBy(-3);
-  }
+  },
+});
+TuckShortcuts.registerAction("playback.seek-forward", {
+  enabled: function () {
+    return !!selPath;
+  },
+  execute: function () {
+    seekBy(3);
+  },
+});
+TuckShortcuts.registerAction("media.select-previous", {
+  enabled: function () {
+    return orderedClipKeys().length > 0;
+  },
+  execute: function () {
+    moveSelection(-1);
+  },
+});
+TuckShortcuts.registerAction("media.select-next", {
+  enabled: function () {
+    return orderedClipKeys().length > 0;
+  },
+  execute: function () {
+    moveSelection(1);
+  },
 });
