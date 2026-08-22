@@ -151,7 +151,7 @@
       track.waveformUrl.replace(/'/g, "%27") +
       "');background-size:" +
       size +
-      "% 100%;background-position:" +
+      "% 160%;background-position:" +
       position +
       "% center"
     );
@@ -254,7 +254,7 @@
         "url('" + state.sourceWaveformUrl.replace(/'/g, "%27") + "')";
       wave.style.backgroundSize =
         Math.max(100, (total / Math.max(segment.end - segment.start, _MIN_TRIM)) * 100) +
-        "% 100%";
+        "% 160%";
       wave.style.backgroundPosition = (segment.start / total) * 100 + "% center";
       block.appendChild(wave);
     }
@@ -299,32 +299,48 @@
     nameEl.title = track.name;
     head.appendChild(nameEl);
 
-    var muteEl = root.document.createElement("button");
-    muteEl.type = "button";
-    muteEl.className = "seq-track-mute" + (track.muted ? " muted" : "");
-    muteEl.textContent = "M";
-    muteEl.dataset.tip = track.muted ? "Unmute " + track.name : "Mute " + track.name;
-    muteEl.setAttribute("aria-pressed", track.muted ? "true" : "false");
-    muteEl.setAttribute("aria-label", muteEl.dataset.tip);
-    muteEl.onclick = function (event) {
-      event.stopPropagation();
-      selectedTrackId = track.id;
-      apiObject.toggleTrackMute(track.id);
-    };
-    head.appendChild(muteEl);
+    var actions = root.TimelineCore ? root.TimelineCore.trackActions("imported") : ["mute", "remove"];
+    if (actions.indexOf("mute") >= 0) {
+      var muteEl = root.document.createElement("button");
+      muteEl.type = "button";
+      muteEl.className = "seq-track-mute" + (track.muted ? " muted" : "");
+      muteEl.dataset.trackAction = "mute";
+      muteEl.innerHTML =
+        '<svg viewBox="0 0 16 16" aria-hidden="true">' +
+        '<path d="M1.5 6h2.3l3.4-3v10l-3.4-3H1.5z"></path>' +
+        '<path class="track-sound-waves" d="M10 5.1a4 4 0 0 1 0 5.8M12 3.3a6.5 6.5 0 0 1 0 9.4"></path>' +
+        '<path class="track-mute-cross" d="M10.4 6.2l3.4 3.6M13.8 6.2l-3.4 3.6"></path>' +
+        "</svg>";
+      muteEl.dataset.tip = track.muted ? "Unmute " + track.name : "Mute " + track.name;
+      muteEl.setAttribute("aria-pressed", track.muted ? "true" : "false");
+      muteEl.setAttribute("aria-label", muteEl.dataset.tip);
+      muteEl.onclick = function (event) {
+        event.stopPropagation();
+        selectedTrackId = track.id;
+        apiObject.toggleTrackMute(track.id);
+      };
+      head.appendChild(muteEl);
+    }
 
-    var removeEl = root.document.createElement("button");
-    removeEl.type = "button";
-    removeEl.className = "seq-track-remove";
-    removeEl.textContent = "×";
-    removeEl.dataset.tip = "Remove " + track.name;
-    removeEl.setAttribute("aria-label", removeEl.dataset.tip);
-    removeEl.onclick = function (event) {
-      event.stopPropagation();
-      selectedTrackId = track.id;
-      apiObject.removeTrack(track.id);
-    };
-    head.appendChild(removeEl);
+    if (actions.indexOf("remove") >= 0) {
+      var removeEl = root.document.createElement("button");
+      removeEl.type = "button";
+      removeEl.className = "seq-track-remove";
+      removeEl.dataset.trackAction = "remove";
+      removeEl.innerHTML =
+        '<svg viewBox="0 0 16 16" aria-hidden="true">' +
+        '<path d="M3.5 4.5h9M6.5 4.5v-1a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v1M4.5 4.5l.6 8a1 1 0 0 0 1 .9h3.8a1 1 0 0 0 1-.9l.6-8"></path>' +
+        '<path d="M6.7 7v4M9.3 7v4"></path>' +
+        "</svg>";
+      removeEl.dataset.tip = "Remove " + track.name;
+      removeEl.setAttribute("aria-label", removeEl.dataset.tip);
+      removeEl.onclick = function (event) {
+        event.stopPropagation();
+        selectedTrackId = track.id;
+        apiObject.removeTrack(track.id);
+      };
+      head.appendChild(removeEl);
+    }
 
     row.appendChild(head);
 

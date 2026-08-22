@@ -34,6 +34,13 @@ test("timeline heights clamp invalid and out-of-range persisted values", () => {
   assert.equal(layout.clampTimelineHeight("broken", 900), 205);
 });
 
+test("compact persisted timeline heights remain valid", () => {
+  assert.equal(layout.normalizeTimelineHeightSetting(169, 900), 0);
+  assert.equal(layout.normalizeTimelineHeightSetting(170, 900), 170);
+  assert.equal(layout.normalizeTimelineHeightSetting(205, 900), 205);
+  assert.equal(layout.normalizeTimelineHeightSetting(260, 900), 260);
+});
+
 test("timeline separator keys resize predictably and expose range endpoints", () => {
   assert.equal(layout.timelineHeightForKey(260, "ArrowUp", false, 900), 270);
   assert.equal(layout.timelineHeightForKey(260, "ArrowDown", true, 900), 228);

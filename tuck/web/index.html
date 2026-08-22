@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="settings.css" />
     <link rel="stylesheet" href="player.css" />
     <link rel="stylesheet" href="audio.css" />
+    <link rel="stylesheet" href="timeline.css" />
     <link rel="stylesheet" href="queue.css" />
     <link rel="stylesheet" href="transform.css" />
   </head>
@@ -948,7 +949,7 @@
           <button
             type="button"
             id="btn-segment-remove"
-            class="dock-icon-btn"
+            class="dock-text-btn"
             onclick="removeActiveSegment()"
             data-tip="Remove segment"
             aria-label="Remove active segment"
@@ -960,11 +961,12 @@
               />
               <path d="M6.7 7v4M9.3 7v4" />
             </svg>
+            <span class="timeline-command-label">Remove</span>
           </button>
           <button
             type="button"
             id="btn-segments-reset"
-            class="dock-icon-btn hid"
+            class="dock-text-btn hid"
             onclick="resetSegments()"
             data-tip="Reset to full clip"
             aria-label="Reset segments to full source"
@@ -974,6 +976,7 @@
               <polyline points="0.7 2.7 0.7 6.7 4.7 6.7"></polyline>
               <path d="M2.3 10a6 6 0 1 0 1.4-6.2L0.7 6.7"></path>
             </svg>
+            <span class="timeline-command-label">Reset</span>
           </button>
         </div>
         <div class="timeline-tool-group" role="group" aria-label="Audio actions">
@@ -981,7 +984,7 @@
           <button
             type="button"
             id="audio-fragment-mute"
-            class="dock-icon-btn hid"
+            class="dock-text-btn hid"
             onclick="AudioTimeline.toggleFragmentMute()"
             aria-pressed="false"
             aria-label="Mute this segment's source audio"
@@ -991,6 +994,7 @@
               <path d="M1.5 6h2.3l3.4-3v10l-3.4-3H1.5z"></path>
               <path d="M10.5 6.2l3.6 3.6M14.1 6.2l-3.6 3.6"></path>
             </svg>
+            <span class="timeline-command-label">Mute audio</span>
           </button>
           <button
             type="button"
@@ -1022,8 +1026,25 @@
             disabled
           >
             Snap
+            <span class="timeline-switch" aria-hidden="true">
+              <span class="timeline-switch-thumb"></span>
+            </span>
           </button>
           <div class="dock-zoom" role="group" aria-label="Timeline zoom">
+            <button
+              type="button"
+              id="btn-timeline-fit"
+              class="dock-fit-btn"
+              onclick="fitTimeline()"
+              data-tip="Fit timeline"
+              aria-label="Fit timeline to view"
+              disabled
+            >
+              Fit
+              <svg class="timeline-fit-chevron" viewBox="0 0 12 12" aria-hidden="true">
+                <path d="m3.5 4.5 2.5 2.5 2.5-2.5"></path>
+              </svg>
+            </button>
             <button
               type="button"
               class="dock-zoom-btn"
@@ -1091,12 +1112,17 @@
                   type="button"
                   class="seq-track-mute"
                   id="source-audio-label"
+                  data-track-action="mute"
                   onclick="AudioTimeline.toggleSourceMute()"
                   data-tip="Mute source audio"
                   aria-label="Mute source audio"
                   aria-pressed="false"
                 >
-                  M
+                  <svg viewBox="0 0 16 16" aria-hidden="true">
+                    <path d="M1.5 6h2.3l3.4-3v10l-3.4-3H1.5z"></path>
+                    <path class="track-sound-waves" d="M10 5.1a4 4 0 0 1 0 5.8M12 3.3a6.5 6.5 0 0 1 0 9.4"></path>
+                    <path class="track-mute-cross" d="M10.4 6.2l3.4 3.6M13.8 6.2l-3.4 3.6"></path>
+                  </svg>
                 </button>
               </div>
               <div
@@ -1131,7 +1157,9 @@
           ></div>
         </div>
         <div id="seq-playhead-layer" class="hid" aria-hidden="true">
-          <div id="seq-playhead"></div>
+          <div id="seq-playhead">
+            <span id="seq-playhead-time">0:00.00</span>
+          </div>
         </div>
       </div>
     </section>
@@ -1269,6 +1297,7 @@
     <script src="audio.js"></script>
     <script src="panels.js"></script>
     <script src="player.js"></script>
+    <script src="timeline.js"></script>
     <script src="queue.js"></script>
     <script src="settings-state.js"></script>
     <script src="settings.js"></script>

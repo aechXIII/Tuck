@@ -19,6 +19,7 @@ def _web_source() -> str:
             "settings.css",
             "player.css",
             "audio.css",
+            "timeline.css",
             "queue.css",
             "transform.css",
             "shortcuts.js",
@@ -30,6 +31,7 @@ def _web_source() -> str:
             "panels.js",
             "segments.js",
             "player.js",
+            "timeline.js",
             "queue.js",
             "settings.js",
             "transform.js",
@@ -47,6 +49,7 @@ def test_web_ui_is_packaged_source_asset() -> None:
         "settings.css",
         "player.css",
         "audio.css",
+        "timeline.css",
         "queue.css",
         "transform.css",
         "shortcuts.js",
@@ -58,6 +61,7 @@ def test_web_ui_is_packaged_source_asset() -> None:
         "panels.js",
         "segments.js",
         "player.js",
+        "timeline.js",
         "queue.js",
         "settings.js",
         "crop.js",
@@ -158,6 +162,7 @@ def test_editor_shell_uses_adaptive_accessible_panels() -> None:
     app_js = _asset("app.js")
     encoding_js = _asset("encoding-ui.js")
     panels_js = _asset("panels.js")
+    timeline_js = _asset("timeline.js")
     queue_js = _asset("queue.js")
     html = _asset("index.html")
     topbar = html.split('<div id="tb">', 1)[1].split('<div id="main">', 1)[0]
@@ -195,10 +200,16 @@ def test_editor_shell_uses_adaptive_accessible_panels() -> None:
     assert "#sequence-frame.is-zoomed" in audio_styles
     assert 'id="timeline-resizer"' in html
     assert 'role="separator"' in html
-    assert "function handleTimelineResizeKey(event)" in panels_js
-    assert "saveSettings(JSON.stringify({ timeline_height: timelineHeightSetting }))" in panels_js
-    assert 'frame.classList.toggle("is-zoomed", zoomed);' in panels_js
-    assert 'frame.style.removeProperty("--tl-width");' in panels_js
+    assert 'aria-valuemin="170"' in html
+    assert 'aria-valuemax="300"' in html
+    assert 'aria-valuenow="205"' in html
+    assert 'id="seq-playhead-time"' in html
+    assert "function handleTimelineResizeKey(event)" in timeline_js
+    assert "function formatTimelineTime(seconds)" in timeline_js
+    assert 'byId("seq-playhead-time")' in timeline_js
+    assert "saveSettings(JSON.stringify({ timeline_height: timelineHeightSetting }))" in timeline_js
+    assert 'frame.classList.toggle("is-zoomed", zoomed);' in timeline_js
+    assert 'frame.style.removeProperty("--tl-width");' in timeline_js
     assert '<div id="qbar" class="hid">' in html
     assert 'byId("qbar").classList.toggle("hid", items.length === 0)' in queue_js
 
@@ -221,6 +232,7 @@ def test_library_panel_has_a_single_actionable_hierarchy() -> None:
 def test_audio_controls_use_consistent_nle_track_vocabulary() -> None:
     html = _asset("index.html")
     panels_js = _asset("panels.js")
+    timeline_styles = _asset("timeline.css")
 
     assert '<span class="seq-track-code" aria-hidden="true">V1</span>' in html
     assert '<span class="seq-track-code" aria-hidden="true">A1</span>' in html
@@ -232,16 +244,28 @@ def test_audio_controls_use_consistent_nle_track_vocabulary() -> None:
     assert "mixer-track-code" in panels_js
     assert 'class="mixer-mute"' in panels_js
     assert 'type="checkbox" class="mixer-mute"' not in panels_js
+    assert "#video-track #timeline.seq-lane" in timeline_styles
+
+
+def test_waveforms_are_amplified_inside_compact_audio_clips() -> None:
+    audio_js = _asset("audio.js")
+    audio_styles = _asset("audio.css")
+
+    assert '"% 160%;background-position:"' in audio_js
+    assert audio_js.count('"% 160%') == 2
+    assert "opacity: 0.9;" in audio_styles
 
 
 def test_workspace_commands_have_clear_hierarchy() -> None:
     html = _asset("index.html")
     audio_styles = _asset("audio.css")
     panels_js = _asset("panels.js")
-    player_js = _asset("player.js")
+    timeline_js = _asset("timeline.js")
     toolbar = html.split('id="timeline-row"', 1)[1].split('id="sequence-frame"', 1)[0]
 
     assert 'aria-label="View controls"' in html
+    assert 'class="timeline-switch"' in html
+    assert 'class="timeline-fit-chevron"' in html
     assert 'aria-label="Segment actions"' in html
     assert 'aria-label="Audio actions"' in html
     assert 'aria-keyshortcuts="S"' in html
@@ -258,7 +282,7 @@ def test_workspace_commands_have_clear_hierarchy() -> None:
     assert "#tl-zoom-slider" in audio_styles
     assert '<span class="audio-master-title">Output audio</span>' in html
     assert "<span>Include in export</span>" in html
-    assert "Video and audio tracks will appear here." in player_js
+    assert "Video and audio tracks will appear here." in timeline_js
     assert "mixer-row-actions" in panels_js
     assert "Remove track" in panels_js
 

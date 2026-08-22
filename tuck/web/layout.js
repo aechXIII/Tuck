@@ -47,6 +47,13 @@
     return Math.max(bounds.min, Math.min(bounds.max, Math.round(height)));
   }
 
+  function normalizeTimelineHeightSetting(value, viewportHeight) {
+    var bounds = timelineHeightBounds(viewportHeight);
+    var height = Number(value);
+    if (!Number.isFinite(height) || height < bounds.min) return 0;
+    return Math.round(height);
+  }
+
   function timelineHeightForKey(current, key, largeStep, viewportHeight) {
     var bounds = timelineHeightBounds(viewportHeight);
     if (key === "Home") return bounds.min;
@@ -90,6 +97,7 @@
     timelineHeightBounds: timelineHeightBounds,
     timelineAutoHeight: timelineAutoHeight,
     clampTimelineHeight: clampTimelineHeight,
+    normalizeTimelineHeightSetting: normalizeTimelineHeightSetting,
     timelineHeightForKey: timelineHeightForKey,
     workspaceMode: workspaceMode,
     initialWorkspacePanels: initialWorkspacePanels,

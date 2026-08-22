@@ -52,6 +52,7 @@ _THUMBNAIL_SEEK = 0.5  # seek to this fraction of duration (50%)
 _WAVEFORM_WIDTH = 1600
 _WAVEFORM_HEIGHT = 96
 _WAVEFORM_TIMEOUT = 60
+_WAVEFORM_CACHE_VERSION = 2
 _TOKEN_BYTES = 32  # bytes for each token
 
 
@@ -447,7 +448,10 @@ class MediaServer:
 
         stat = file_path.stat()
         cache_key = hashlib.sha256(
-            f"waveform:{file_path}:{stat.st_size}:{stat.st_mtime_ns}".encode()
+            (
+                f"waveform:v{_WAVEFORM_CACHE_VERSION}:"
+                f"{file_path}:{stat.st_size}:{stat.st_mtime_ns}"
+            ).encode()
         ).hexdigest()[:32]
         waveform_path = self._thumb_dir / f"waveform_{cache_key}.png"
         cached = _cached_file_or_none(waveform_path)
@@ -481,7 +485,8 @@ def _run_waveform_ffmpeg(ffmpeg: str, file_path: Path, waveform_path: Path, time
         "-filter_complex",
         (
             "aformat=channel_layouts=mono,"
-            f"showwavespic=s={_WAVEFORM_WIDTH}x{_WAVEFORM_HEIGHT}:colors=0xa78bfa"
+            f"showwavespic=s={_WAVEFORM_WIDTH}x{_WAVEFORM_HEIGHT}:"
+            "colors=0xa78bfa:scale=cbrt:filter=peak"
         ),
         "-frames:v",
         "1",

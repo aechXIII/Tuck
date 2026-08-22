@@ -1,3 +1,4 @@
+import hashlib
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -451,7 +452,38 @@ class TestMediaServer:
         assert first == second
         assert first is not None and Path(first).read_bytes() == b"png"
         assert len(calls) == 1
-        assert "showwavespic" in calls[0][calls[0].index("-filter_complex") + 1]
+        waveform_filter = calls[0][calls[0].index("-filter_complex") + 1]
+        assert "showwavespic" in waveform_filter
+        assert "scale=cbrt" in waveform_filter
+        assert "filter=peak" in waveform_filter
+
+    def test_generate_waveform_ignores_legacy_linear_cache(self, tmp_path, monkeypatch):
+        source = tmp_path / "quiet-video.mp4"
+        source.write_bytes(b"video")
+        cache = tmp_path / "thumbs"
+        server = MediaServer()
+        server.set_thumbnail_cache_dir(cache)
+
+        stat = source.stat()
+        legacy_key = hashlib.sha256(
+            f"waveform:{source.resolve()}:{stat.st_size}:{stat.st_mtime_ns}".encode()
+        ).hexdigest()[:32]
+        (cache / f"waveform_{legacy_key}.png").write_bytes(b"legacy")
+
+        monkeypatch.setattr("tuck.engine._find_ffmpeg", lambda: "ffmpeg")
+        calls = []
+
+        def fake_run(command, **_kwargs):
+            calls.append(command)
+            Path(command[-1]).write_bytes(b"readable")
+            return SimpleNamespace(returncode=0, stderr=b"")
+
+        monkeypatch.setattr("tuck.media_server.subprocess.run", fake_run)
+
+        result = server.generate_waveform(source)
+
+        assert result is not None and Path(result).read_bytes() == b"readable"
+        assert len(calls) == 1
 
     def test_media_server_singleton(self):
         s1 = get_media_server()
