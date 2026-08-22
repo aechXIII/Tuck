@@ -33,6 +33,17 @@ global.clips = {
     audioTimeline: null,
   },
 };
+global.trimActiveSegmentToPlayhead = function () {
+  global.clips[global.selPath].segments[0].start = 4;
+};
+global.AudioTimeline = {
+  render() {},
+  trimSelectedToPlayhead() {
+    global.clips[global.selPath].audioTimeline = {
+      tracks: [{ clips: [{ timelineStart: 4 }] }],
+    };
+  },
+};
 
 require("../../tuck/web/history.js");
 windowListeners.load();
@@ -65,4 +76,32 @@ test("edit history restores clip state and forgets removed clips", () => {
   global.History.forgetClip(global.selPath);
   assert.equal(undoButton.disabled, true);
   assert.equal(redoButton.disabled, true);
+});
+
+test("setting a video segment boundary can be undone and redone", () => {
+  global.clips[global.selPath].segments = [{ start: 0, end: 12 }];
+
+  global.trimActiveSegmentToPlayhead("start");
+  assert.equal(global.clips[global.selPath].segments[0].start, 4);
+
+  global.History.undo();
+  assert.equal(global.clips[global.selPath].segments[0].start, 0);
+
+  global.History.redo();
+  assert.equal(global.clips[global.selPath].segments[0].start, 4);
+  global.History.forgetClip(global.selPath);
+});
+
+test("setting an audio fragment boundary can be undone", () => {
+  global.clips[global.selPath].audioTimeline = null;
+
+  global.AudioTimeline.trimSelectedToPlayhead("start");
+  assert.equal(
+    global.clips[global.selPath].audioTimeline.tracks[0].clips[0].timelineStart,
+    4,
+  );
+
+  global.History.undo();
+  assert.equal(global.clips[global.selPath].audioTimeline, null);
+  global.History.forgetClip(global.selPath);
 });

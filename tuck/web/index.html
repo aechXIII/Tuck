@@ -65,9 +65,9 @@
         class="tb-help-btn"
         id="shortcuts-toggle"
         onclick="openKeyboardShortcuts()"
-        data-tip="Keyboard shortcuts"
+        data-tip="Keyboard shortcuts (? or Ctrl+/)"
         aria-label="Keyboard shortcuts"
-        aria-keyshortcuts="?"
+        aria-keyshortcuts="? Control+/"
       >
         <svg class="tb-help-icon" viewBox="0 0 18 14" aria-hidden="true">
           <rect x="1" y="1" width="16" height="12" rx="2"></rect>
@@ -213,7 +213,8 @@
               id="btn-frame-prev"
               onclick="stepFrame(-1)"
               aria-label="Previous frame"
-              data-tip="Previous frame"
+              aria-keyshortcuts="ArrowLeft"
+              data-tip="Previous frame (Left arrow)"
             >
               <svg viewBox="0 0 16 16" aria-hidden="true">
                 <rect x="2" y="3" width="2" height="10"></rect>
@@ -226,7 +227,8 @@
               id="btn-play"
               onclick="togglePlay()"
               aria-label="Play/Pause"
-              data-tip="Play / pause"
+              aria-keyshortcuts="Space"
+              data-tip="Play / pause (Space)"
             >
               ▶
             </button>
@@ -236,7 +238,8 @@
               id="btn-frame-next"
               onclick="stepFrame(1)"
               aria-label="Next frame"
-              data-tip="Next frame"
+              aria-keyshortcuts="ArrowRight"
+              data-tip="Next frame (Right arrow)"
             >
               <svg viewBox="0 0 16 16" aria-hidden="true">
                 <rect x="12" y="3" width="2" height="10"></rect>
@@ -953,6 +956,7 @@
             onclick="removeActiveSegment()"
             data-tip="Remove segment"
             aria-label="Remove active segment"
+            aria-keyshortcuts="Delete Backspace"
             disabled
           >
             <svg viewBox="0 0 16 16" aria-hidden="true">
@@ -988,6 +992,7 @@
             onclick="AudioTimeline.toggleFragmentMute()"
             aria-pressed="false"
             aria-label="Mute this segment's source audio"
+            aria-keyshortcuts="M"
             data-tip="Mute this segment's source audio"
           >
             <svg viewBox="0 0 16 16" aria-hidden="true">
@@ -1036,8 +1041,9 @@
               id="btn-timeline-fit"
               class="dock-fit-btn"
               onclick="fitTimeline()"
-              data-tip="Fit timeline"
+              data-tip="Fit timeline (Ctrl+0)"
               aria-label="Fit timeline to view"
+              aria-keyshortcuts="Control+0"
               disabled
             >
               Fit
@@ -1049,8 +1055,9 @@
               type="button"
               class="dock-zoom-btn"
               onclick="nudgeTimelineZoom(-1)"
-              data-tip="Zoom out"
+              data-tip="Zoom out (Ctrl+-)"
               aria-label="Zoom out"
+              aria-keyshortcuts="Control+-"
               disabled
             >
               &#8722;
@@ -1070,8 +1077,9 @@
               type="button"
               class="dock-zoom-btn"
               onclick="nudgeTimelineZoom(1)"
-              data-tip="Zoom in"
+              data-tip="Zoom in (Ctrl+=)"
               aria-label="Zoom in"
+              aria-keyshortcuts="Control+="
               disabled
             >
               +
@@ -1144,6 +1152,7 @@
             id="tl-in"
             role="slider"
             aria-label="Active segment start"
+            aria-keyshortcuts="ArrowLeft ArrowRight"
             tabindex="0"
             data-tip="Segment start"
           ></div>
@@ -1152,6 +1161,7 @@
             id="tl-out"
             role="slider"
             aria-label="Active segment end"
+            aria-keyshortcuts="ArrowLeft ArrowRight"
             tabindex="0"
             data-tip="Segment end"
           ></div>

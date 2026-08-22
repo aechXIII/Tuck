@@ -74,6 +74,115 @@ test("splitting a muted audio fragment keeps both pieces muted", () => {
   assert.equal(split[1].muted, true);
 });
 
+test("setting an audio fragment edge to the playhead preserves source alignment", () => {
+  const clip = {
+    id: "music",
+    timelineStart: 2,
+    timelineDuration: 8,
+    sourceIn: 1,
+    sourceOut: 9,
+    fadeIn: 1,
+    fadeOut: 2,
+    loop: false,
+  };
+
+  const start = audio.trimClipToTimelinePoint(
+    clip,
+    "start",
+    5,
+    0,
+    12,
+    20,
+    0.05,
+  );
+  const end = audio.trimClipToTimelinePoint(
+    clip,
+    "end",
+    7,
+    0,
+    12,
+    20,
+    0.05,
+  );
+
+  assert.deepEqual(
+    {
+      timelineStart: start.timelineStart,
+      timelineDuration: start.timelineDuration,
+      sourceIn: start.sourceIn,
+      sourceOut: start.sourceOut,
+    },
+    { timelineStart: 5, timelineDuration: 5, sourceIn: 4, sourceOut: 9 },
+  );
+  assert.deepEqual(
+    {
+      timelineStart: end.timelineStart,
+      timelineDuration: end.timelineDuration,
+      sourceIn: end.sourceIn,
+      sourceOut: end.sourceOut,
+    },
+    { timelineStart: 2, timelineDuration: 5, sourceIn: 1, sourceOut: 6 },
+  );
+});
+
+test("audio playhead trims respect neighbors, source bounds, and minimum duration", () => {
+  const clip = {
+    timelineStart: 2,
+    timelineDuration: 8,
+    sourceIn: 1,
+    sourceOut: 9,
+    fadeIn: 1,
+    fadeOut: 2,
+    loop: false,
+  };
+
+  const extendedStart = audio.trimClipToTimelinePoint(
+    clip,
+    "start",
+    0,
+    0,
+    12,
+    10,
+    0.05,
+  );
+  const extendedEnd = audio.trimClipToTimelinePoint(
+    clip,
+    "end",
+    15,
+    0,
+    12,
+    10,
+    0.05,
+  );
+  const minimumEnd = audio.trimClipToTimelinePoint(
+    clip,
+    "end",
+    2,
+    0,
+    12,
+    10,
+    0.05,
+  );
+
+  assert.deepEqual(
+    {
+      timelineStart: extendedStart.timelineStart,
+      timelineDuration: extendedStart.timelineDuration,
+      sourceIn: extendedStart.sourceIn,
+    },
+    { timelineStart: 1, timelineDuration: 9, sourceIn: 0 },
+  );
+  assert.deepEqual(
+    {
+      timelineDuration: extendedEnd.timelineDuration,
+      sourceOut: extendedEnd.sourceOut,
+    },
+    { timelineDuration: 9, sourceOut: 10 },
+  );
+  assert.equal(minimumEnd.timelineDuration, 0.05);
+  assert.equal(minimumEnd.fadeOut, 0);
+});
+
 test("slipping selects another source fragment without moving or resizing the clip", () => {
   const clip = {
     id: "music",

@@ -46,15 +46,25 @@ test("production commands are the source of the existing shortcut guide", () => 
     "edit.undo": ["Ctrl+Z"],
     "edit.redo": ["Ctrl+Shift+Z", "Ctrl+Y"],
     "playback.toggle": ["Space"],
-    "playback.seek-backward": ["ArrowLeft"],
-    "playback.seek-forward": ["ArrowRight"],
+    "playback.step-backward": ["ArrowLeft"],
+    "playback.step-forward": ["ArrowRight"],
+    "playback.seek-backward": ["Shift+ArrowLeft"],
+    "playback.seek-forward": ["Shift+ArrowRight"],
+    "playback.seek-start": ["Ctrl+ArrowLeft"],
+    "playback.seek-end": ["Ctrl+ArrowRight"],
     "media.select-previous": ["ArrowUp"],
     "media.select-next": ["ArrowDown"],
     "timeline.split": ["S"],
-    "audio.delete-selected": ["Delete"],
+    "audio.toggle-fragment-mute": ["M"],
+    "edit.delete-selection": ["Delete", "Backspace"],
+    "timeline.set-selection-start": ["I"],
+    "timeline.set-selection-end": ["O"],
+    "timeline.zoom-in": ["Ctrl+="],
+    "timeline.zoom-out": ["Ctrl+-"],
+    "timeline.fit": ["Ctrl+0"],
     "timeline.adjust-trim-backward": ["ArrowLeft"],
     "timeline.adjust-trim-forward": ["ArrowRight"],
-    "help.shortcuts": ["?"],
+    "help.shortcuts": ["?", "Ctrl+/"],
   });
   assert.deepEqual(
     shortcuts.sections.map((section) => ({
@@ -93,11 +103,19 @@ test("production commands are the source of the existing shortcut guide", () => 
         items: [
           { label: "Play / pause", bindings: "Space" },
           {
-            label: "Skip back / forward 3 seconds",
+            label: "Previous / next frame",
             bindings: "← or →",
           },
           {
-            label: "Select previous / next video",
+            label: "Skip 3 seconds",
+            bindings: "Shift + ← or Shift + →",
+          },
+          {
+            label: "Go to beginning / end",
+            bindings: "Ctrl + ← or Ctrl + →",
+          },
+          {
+            label: "Previous / next Library video",
             bindings: "↑ or ↓",
           },
         ],
@@ -107,8 +125,14 @@ test("production commands are the source of the existing shortcut guide", () => 
         column: 1,
         items: [
           { label: "Split at playhead", bindings: "S" },
-          { label: "Delete selected audio", bindings: "Delete" },
-          { label: "Adjust trim point", bindings: "← or →" },
+          { label: "Mute / unmute fragment", bindings: "M" },
+          { label: "Delete selected item", bindings: "Delete or Backspace" },
+          { label: "Set selected start / end", bindings: "I or O" },
+          {
+            label: "Zoom timeline in / out",
+            bindings: "Ctrl + = or Ctrl + -",
+          },
+          { label: "Fit timeline", bindings: "Ctrl + 0" },
         ],
       },
     ],
@@ -130,6 +154,20 @@ test("dispatchable default bindings do not conflict", () => {
         seen.set(binding, command.id);
       }),
     );
+});
+
+test("grouped shortcut commands share one guide label", () => {
+  const labelsByGroup = new Map();
+  shortcuts.commands.forEach((command) => {
+    if (!command.guideGroup) return;
+    if (!labelsByGroup.has(command.guideGroup))
+      labelsByGroup.set(command.guideGroup, new Set());
+    labelsByGroup.get(command.guideGroup).add(command.label);
+  });
+
+  labelsByGroup.forEach((labels, group) => {
+    assert.equal(labels.size, 1, `${group} has inconsistent labels`);
+  });
 });
 
 test("production command metadata and derived guide sections are immutable", () => {
@@ -338,6 +376,40 @@ test("text-entry suppression still allows the shortcut guide from buttons", () =
     }),
     null,
   );
+  assert.equal(calls, 1);
+});
+
+test("production editor shortcuts override button focus but preserve text entry", () => {
+  const command = shortcuts.commands.find(
+    (candidate) => candidate.id === "playback.toggle",
+  );
+  const registry = shortcuts.createRegistry([command]);
+  let calls = 0;
+  registry.registerAction("playback.toggle", () => calls++);
+
+  const buttonEvent = keyEvent(" ");
+  assert.equal(
+    registry.dispatch(buttonEvent, {
+      modalOpen: false,
+      settingsOpen: false,
+      formControlFocused: true,
+      textEntryFocused: false,
+    }),
+    "playback.toggle",
+  );
+  assert.equal(buttonEvent.defaultPrevented, true);
+
+  const inputEvent = keyEvent(" ");
+  assert.equal(
+    registry.dispatch(inputEvent, {
+      modalOpen: false,
+      settingsOpen: false,
+      formControlFocused: true,
+      textEntryFocused: true,
+    }),
+    null,
+  );
+  assert.equal(inputEvent.defaultPrevented, false);
   assert.equal(calls, 1);
 });
 
@@ -623,6 +695,13 @@ test("question-mark shortcut opens from controls but not while typing", () => {
   );
   assert.equal(
     shortcuts.shouldOpenGuide(
+      { key: "/", ctrlKey: true, metaKey: false, altKey: false },
+      { modalOpen: false, settingsOpen: false, textEntryFocused: false },
+    ),
+    true,
+  );
+  assert.equal(
+    shortcuts.shouldOpenGuide(
       { key: "?", ctrlKey: false, metaKey: false, altKey: false },
       { modalOpen: false, settingsOpen: false, textEntryFocused: true },
     ),
@@ -650,8 +729,20 @@ test("editor shortcuts are disabled while a modal or settings page is open", () 
 
 test("the production guide renders every physical key with one base keycap style", () => {
   const markup = shortcuts.keyboardRowsMarkup();
+  const renderedIds = new Set(
+    Array.from(markup.matchAll(/data-k="([^"]+)"/g), (match) => match[1]),
+  );
+  const shortcutIds = new Set(
+    shortcuts.sections.flatMap((section) =>
+      section.items.flatMap((item) => item.ids),
+    ),
+  );
 
-  assert.equal(shortcuts.search(shortcuts.sections, "").total, 12);
+  assert.equal(shortcuts.search(shortcuts.sections, "").total, 17);
+  assert.deepEqual(
+    Array.from(shortcutIds).filter((id) => !renderedIds.has(id)),
+    [],
+  );
   assert.match(markup, /class="kbs-key"[^>]*data-k="del"[^>]*>Del<\/div>/);
   assert.match(markup, /class="kbs-key"[^>]*>PgUp<\/div>/);
   assert.doesNotMatch(markup, /kbs-key-(?:util|live)/);

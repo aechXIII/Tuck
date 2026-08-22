@@ -175,11 +175,25 @@ window.addEventListener("load", function () {
   ].forEach(function (name) {
     History.wrap(window, name);
   });
-  ["addSegment", "removeActiveSegment", "resetSegments", "splitAtPlayhead"].forEach(function (name) {
+  [
+    "addSegment",
+    "removeActiveSegment",
+    "resetSegments",
+    "splitAtPlayhead",
+    "trimActiveSegmentToPlayhead",
+  ].forEach(function (name) {
     History.wrap(window, name);
   });
   if (window.AudioTimeline) {
-    ["toggleMaster", "toggleSourceMute", "toggleFragmentMute", "toggleTrackMute", "splitSelected", "deleteSelected"].forEach(
+    [
+      "toggleMaster",
+      "toggleSourceMute",
+      "toggleFragmentMute",
+      "toggleTrackMute",
+      "splitSelected",
+      "trimSelectedToPlayhead",
+      "deleteSelected",
+    ].forEach(
       function (name) {
         History.wrap(window.AudioTimeline, name);
       },

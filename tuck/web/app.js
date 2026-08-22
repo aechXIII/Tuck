@@ -500,6 +500,7 @@ function renderClips() {
       div.setAttribute("tabindex", "0");
       div.setAttribute("role", "option");
       div.setAttribute("aria-selected", selPath === p ? "true" : "false");
+      div.setAttribute("aria-keyshortcuts", "Enter Space Delete ArrowUp ArrowDown");
       div.setAttribute("title", c.name + " - drag handle to reorder");
       div.dataset.clipPath = p;
       if (c._queueItemId) div.dataset.queueItemId = c._queueItemId;
@@ -519,7 +520,7 @@ function renderClips() {
           e.preventDefault();
           selectClip(p);
         }
-        if (e.key === "Delete") {
+        if (e.key === "Delete" || e.key === "Backspace") {
           e.preventDefault();
           removeClip(p);
         }
@@ -1046,12 +1047,28 @@ function handleLaunch(data) {
 window.handleIpcMeta = handleLaunch;
 window.handleSendto = handleLaunch;
 
-function moveSelection(delta) {
+function libraryClipTarget(event) {
+  var target = event && event.target;
+  if (!target || typeof target.closest !== "function") return null;
+  return target.closest("#clips .clip[data-clip-path]");
+}
+
+function moveSelection(delta, event) {
   var keys = orderedClipKeys();
   if (!keys.length) return;
-  var index = selPath ? keys.indexOf(selPath) : 0;
+  var focusedClip = libraryClipTarget(event);
+  var currentPath = focusedClip ? focusedClip.dataset.clipPath : selPath;
+  var index = currentPath ? keys.indexOf(currentPath) : 0;
   index = Math.max(0, Math.min(keys.length - 1, index + delta));
-  selectClip(keys[index]);
+  var nextPath = keys[index];
+  selectClip(nextPath);
+  Array.from(byId("clips").querySelectorAll(".clip[data-clip-path]")).some(
+    function (clip) {
+      if (clip.dataset.clipPath !== nextPath) return false;
+      clip.focus();
+      return true;
+    },
+  );
 }
 TuckShortcuts.registerAction("file.add-videos", browse);
 TuckShortcuts.registerAction("settings.open", function () {
@@ -1069,12 +1086,14 @@ TuckShortcuts.registerAction("ui.dismiss", {
   enabled: function () {
     return (
       byId("mod-overlay").classList.contains("open") ||
-      document.body.classList.contains("settings-open")
+      document.body.classList.contains("settings-open") ||
+      (window.AudioTimeline && AudioTimeline.hasSelection())
     );
   },
   execute: function () {
     if (byId("mod-overlay").classList.contains("open")) closeActiveModal();
-    else closeSettings();
+    else if (document.body.classList.contains("settings-open")) closeSettings();
+    else AudioTimeline.selectVideoTrack();
   },
 });
 TuckShortcuts.registerAction("playback.toggle", {
@@ -1083,6 +1102,22 @@ TuckShortcuts.registerAction("playback.toggle", {
   },
   execute: function () {
     togglePlay();
+  },
+});
+TuckShortcuts.registerAction("playback.step-backward", {
+  enabled: function () {
+    return !!selPath;
+  },
+  execute: function () {
+    stepFrame(-1);
+  },
+});
+TuckShortcuts.registerAction("playback.step-forward", {
+  enabled: function () {
+    return !!selPath;
+  },
+  execute: function () {
+    stepFrame(1);
   },
 });
 TuckShortcuts.registerAction("playback.seek-backward", {
@@ -1101,19 +1136,35 @@ TuckShortcuts.registerAction("playback.seek-forward", {
     seekBy(3);
   },
 });
-TuckShortcuts.registerAction("media.select-previous", {
+TuckShortcuts.registerAction("playback.seek-start", {
   enabled: function () {
-    return orderedClipKeys().length > 0;
+    return !!selPath;
   },
   execute: function () {
-    moveSelection(-1);
+    seekPreview(0);
+  },
+});
+TuckShortcuts.registerAction("playback.seek-end", {
+  enabled: function () {
+    return !!selPath;
+  },
+  execute: function () {
+    seekPreview(videoDuration());
+  },
+});
+TuckShortcuts.registerAction("media.select-previous", {
+  enabled: function (event) {
+    return !!libraryClipTarget(event);
+  },
+  execute: function (event) {
+    moveSelection(-1, event);
   },
 });
 TuckShortcuts.registerAction("media.select-next", {
-  enabled: function () {
-    return orderedClipKeys().length > 0;
+  enabled: function (event) {
+    return !!libraryClipTarget(event);
   },
-  execute: function () {
-    moveSelection(1);
+  execute: function (event) {
+    moveSelection(1, event);
   },
 });

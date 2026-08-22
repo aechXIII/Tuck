@@ -84,7 +84,20 @@ global.clips = {
       tracks: [
         {
           id: "music-track",
-          clips: [{ id: "music-clip" }],
+          sourceDuration: 20,
+          clips: [
+            {
+              id: "music-clip",
+              timelineStart: 2,
+              timelineDuration: 8,
+              sourceIn: 1,
+              sourceOut: 9,
+              fadeIn: 0,
+              fadeOut: 0,
+              loop: false,
+              muted: false,
+            },
+          ],
         },
       ],
     },
@@ -156,6 +169,168 @@ test("selected imported audio fragments use the segment mute command independent
   assert.equal(fragmentMute.classList.contains("hid"), true);
 });
 
+test("M toggles the selected imported audio fragment", () => {
+  const audioClip = global.clips["video.mp4"].audioTimeline.tracks[0].clips[0];
+  audioClip.muted = false;
+  global.AudioTimeline.selectClip("music-track", "music-clip");
+
+  global.TuckShortcuts.dispatch(
+    {
+      key: "m",
+      ctrlKey: false,
+      shiftKey: false,
+      altKey: false,
+      metaKey: false,
+      preventDefault() {},
+    },
+    {
+      modalOpen: false,
+      settingsOpen: false,
+      formControlFocused: false,
+      textEntryFocused: false,
+    },
+  );
+
+  assert.equal(audioClip.muted, true);
+});
+
+test("M toggles source audio for the active video segment", () => {
+  const clip = global.clips["video.mp4"];
+  clip.segments = [{ start: 0, end: 12, muted: false }];
+  global.SegmentEditing.segmentsForClip = () =>
+    clip.segments.map((segment) => ({ ...segment }));
+  global.setClipSegments = (target, segments, active) => {
+    target.segments = segments;
+    target.activeSegment = active;
+  };
+  global.AudioTimeline.selectVideoTrack();
+
+  global.TuckShortcuts.dispatch(
+    {
+      key: "m",
+      ctrlKey: false,
+      shiftKey: false,
+      altKey: false,
+      metaKey: false,
+      preventDefault() {},
+    },
+    {
+      modalOpen: false,
+      settingsOpen: false,
+      formControlFocused: false,
+      textEntryFocused: false,
+    },
+  );
+
+  assert.equal(clip.segments[0].muted, true);
+});
+
+test("I sets the selected imported audio fragment start to the playhead", () => {
+  const audioClip = global.clips["video.mp4"].audioTimeline.tracks[0].clips[0];
+  Object.assign(audioClip, {
+    timelineStart: 2,
+    timelineDuration: 8,
+    sourceIn: 1,
+    sourceOut: 9,
+  });
+  video.currentTime = 5;
+  global.AudioTimeline.selectClip("music-track", "music-clip");
+
+  global.TuckShortcuts.dispatch(
+    {
+      key: "i",
+      ctrlKey: false,
+      shiftKey: false,
+      altKey: false,
+      metaKey: false,
+      preventDefault() {},
+    },
+    {
+      modalOpen: false,
+      settingsOpen: false,
+      formControlFocused: false,
+      textEntryFocused: false,
+    },
+  );
+
+  assert.deepEqual(
+    {
+      timelineStart: audioClip.timelineStart,
+      timelineDuration: audioClip.timelineDuration,
+      sourceIn: audioClip.sourceIn,
+      sourceOut: audioClip.sourceOut,
+    },
+    { timelineStart: 5, timelineDuration: 5, sourceIn: 4, sourceOut: 9 },
+  );
+});
+
+test("O sets the selected imported audio fragment end to the playhead", () => {
+  const audioClip = global.clips["video.mp4"].audioTimeline.tracks[0].clips[0];
+  Object.assign(audioClip, {
+    timelineStart: 2,
+    timelineDuration: 8,
+    sourceIn: 1,
+    sourceOut: 9,
+  });
+  video.currentTime = 7;
+  global.AudioTimeline.selectClip("music-track", "music-clip");
+
+  global.TuckShortcuts.dispatch(
+    {
+      key: "o",
+      ctrlKey: false,
+      shiftKey: false,
+      altKey: false,
+      metaKey: false,
+      preventDefault() {},
+    },
+    {
+      modalOpen: false,
+      settingsOpen: false,
+      formControlFocused: false,
+      textEntryFocused: false,
+    },
+  );
+
+  assert.deepEqual(
+    {
+      timelineStart: audioClip.timelineStart,
+      timelineDuration: audioClip.timelineDuration,
+      sourceIn: audioClip.sourceIn,
+      sourceOut: audioClip.sourceOut,
+    },
+    { timelineStart: 2, timelineDuration: 5, sourceIn: 1, sourceOut: 6 },
+  );
+});
+
+test("I and O route to the active video segment when imported audio is not selected", () => {
+  const endpoints = [];
+  global.canTrimActiveSegmentToPlayhead = () => true;
+  global.trimActiveSegmentToPlayhead = (endpoint) => endpoints.push(endpoint);
+  global.AudioTimeline.selectVideoTrack();
+
+  ["i", "o"].forEach((key) =>
+    global.TuckShortcuts.dispatch(
+      {
+        key,
+        ctrlKey: false,
+        shiftKey: false,
+        altKey: false,
+        metaKey: false,
+        preventDefault() {},
+      },
+      {
+        modalOpen: false,
+        settingsOpen: false,
+        formControlFocused: false,
+        textEntryFocused: false,
+      },
+    ),
+  );
+
+  assert.deepEqual(endpoints, ["start", "end"]);
+});
+
 test("keyboard delete uses the current history-wrapped audio action", () => {
   global.AudioTimeline.selectClip("music-track", "music-clip");
   let wrappedCalls = 0;
@@ -175,6 +350,32 @@ test("keyboard delete uses the current history-wrapped audio action", () => {
     modalOpen: false,
     settingsOpen: false,
     formControlFocused: false,
+  });
+
+  assert.equal(wrappedCalls, 1);
+});
+
+test("keyboard delete removes the active video segment when audio is not selected", () => {
+  global.AudioTimeline.selectVideoTrack();
+  let wrappedCalls = 0;
+  global.canRemoveActiveSegment = () => true;
+  global.removeActiveSegment = function () {
+    wrappedCalls++;
+  };
+  const event = {
+    key: "Delete",
+    ctrlKey: false,
+    shiftKey: false,
+    altKey: false,
+    metaKey: false,
+    preventDefault() {},
+  };
+
+  global.TuckShortcuts.dispatch(event, {
+    modalOpen: false,
+    settingsOpen: false,
+    formControlFocused: false,
+    textEntryFocused: false,
   });
 
   assert.equal(wrappedCalls, 1);

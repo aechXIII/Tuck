@@ -89,18 +89,35 @@ def test_web_ui_forwards_start_metadata_and_releases_old_media_tokens() -> None:
 
 
 def test_application_shortcuts_use_the_central_command_dispatcher() -> None:
+    html = _asset("index.html")
     shortcuts_js = _asset("shortcuts.js")
     app_js = _asset("app.js")
     audio_js = _asset("audio.js")
     history_js = _asset("history.js")
+    timeline_js = _asset("timeline.js")
 
     assert 'root.addEventListener("keydown", dispatchCommand)' in shortcuts_js
     assert 'TuckShortcuts.registerAction("file.add-videos"' in app_js
     assert 'TuckShortcuts.registerAction("settings.open", function () {' in app_js
     assert "toggleSettings();" in app_js
     assert "execute: function () {\n    togglePlay();\n  }," in app_js
+    assert 'TuckShortcuts.registerAction("playback.step-backward"' in app_js
+    assert 'TuckShortcuts.registerAction("playback.step-forward"' in app_js
+    assert "seekPreview(0);" in app_js
+    assert "seekPreview(videoDuration());" in app_js
+    assert "return !!libraryClipTarget(event);" in app_js
+    assert 'if (e.key === "Delete" || e.key === "Backspace")' in app_js
     assert 'TuckShortcuts.registerAction("timeline.split"' in audio_js
+    assert 'TuckShortcuts.registerAction("edit.delete-selection"' in audio_js
+    assert 'root.TuckShortcuts.registerAction("timeline.zoom-in"' in timeline_js
+    assert 'root.TuckShortcuts.registerAction("timeline.zoom-out"' in timeline_js
+    assert 'root.TuckShortcuts.registerAction("timeline.fit"' in timeline_js
     assert 'TuckShortcuts.registerAction("edit.undo"' in history_js
+    assert 'aria-keyshortcuts="Space"' in html
+    assert 'aria-keyshortcuts="? Control+/"' in html
+    assert 'aria-keyshortcuts="ArrowLeft"' in html
+    assert 'aria-keyshortcuts="Control+0"' in html
+    assert 'div.setAttribute("aria-keyshortcuts", "Enter Space Delete ArrowUp ArrowDown")' in app_js
     assert 'window.addEventListener("keydown", function (e)' not in app_js
     assert 'root.document.addEventListener("keydown", function (event)' not in audio_js
     assert 'document.addEventListener("keydown", function (event)' not in history_js

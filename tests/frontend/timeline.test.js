@@ -32,3 +32,31 @@ test("ruler density responds to pixels per second", () => {
   assert.equal(timeline.rulerMajorEvery(1, 40), 5);
   assert.equal(timeline.rulerMajorEvery(0.25, 160), 5);
 });
+
+test("timeline edit keys identify focused segments and trim handles", () => {
+  const segment = {
+    classList: { contains: (name) => name === "tl-segment" },
+    dataset: { segmentIndex: "2" },
+  };
+
+  assert.deepEqual(timeline.editKeyIntent(segment, "ArrowLeft", false), {
+    type: "segment",
+    index: 2,
+    delta: -0.01,
+    snap: false,
+  });
+  assert.deepEqual(
+    timeline.editKeyIntent({ id: "tl-out" }, "ArrowRight", true),
+    {
+      type: "trim",
+      endpoint: "end",
+      delta: 0.1,
+      snap: false,
+    },
+  );
+  assert.equal(
+    timeline.editKeyIntent({ id: "timeline" }, "ArrowLeft", false),
+    null,
+  );
+  assert.equal(timeline.editKeyIntent({ id: "tl-in" }, "Space", false), null);
+});

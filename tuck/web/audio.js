@@ -1320,6 +1320,33 @@
       render();
       setPlanDirty(videoClip);
     },
+    trimSelectedToPlayhead: function (endpoint) {
+      var videoClip = selectedVideo();
+      var selected = findSelected(videoClip);
+      if (!videoClip || !selected) return null;
+      var previousEnd =
+        selected.index > 0
+          ? selected.track.clips[selected.index - 1].timelineStart +
+            selected.track.clips[selected.index - 1].timelineDuration
+          : 0;
+      var nextStart =
+        selected.index + 1 < selected.track.clips.length
+          ? selected.track.clips[selected.index + 1].timelineStart
+          : sourceDuration(videoClip);
+      var trimmed = core.trimClipToTimelinePoint(
+        selected.clip,
+        endpoint,
+        sourceTime(),
+        previousEnd,
+        nextStart,
+        selected.track.sourceDuration,
+        _MIN_TRIM,
+      );
+      Object.assign(selected.clip, trimmed);
+      render();
+      setPlanDirty(videoClip);
+      return selectedClipRangeData(videoClip);
+    },
     deleteSelected: function () {
       var videoClip = selectedVideo();
       if (!videoClip) return;
@@ -1371,12 +1398,58 @@
     video.addEventListener("timeupdate", syncPreview);
     video.addEventListener("seeked", syncPreview);
   }
-  root.TuckShortcuts.registerAction("audio.delete-selected", {
+  function canSetSelectionBoundary() {
+    var clip = selectedVideo();
+    if (!clip) return false;
+    if (findSelected(clip)) return true;
+    return (
+      selectedTrackId === "source" &&
+      typeof root.canTrimActiveSegmentToPlayhead === "function" &&
+      root.canTrimActiveSegmentToPlayhead()
+    );
+  }
+  function setSelectionBoundary(endpoint) {
+    if (findSelected(selectedVideo())) apiObject.trimSelectedToPlayhead(endpoint);
+    else root.trimActiveSegmentToPlayhead(endpoint);
+  }
+  root.TuckShortcuts.registerAction("edit.delete-selection", {
     enabled: function () {
-      return !!selectedClipId;
+      return (
+        !!selectedClipId ||
+        (typeof root.canRemoveActiveSegment === "function" &&
+          root.canRemoveActiveSegment())
+      );
     },
     execute: function () {
-      apiObject.deleteSelected();
+      if (selectedClipId) apiObject.deleteSelected();
+      else root.removeActiveSegment();
+    },
+  });
+  root.TuckShortcuts.registerAction("audio.toggle-fragment-mute", {
+    enabled: function () {
+      var clip = selectedVideo();
+      if (!clip) return false;
+      return (
+        selectedTrackId === "source" ||
+        selectedTrackId === "video" ||
+        !!findSelected(clip)
+      );
+    },
+    execute: function () {
+      if (selectedTrackId === "video") selectedTrackId = "source";
+      apiObject.toggleFragmentMute();
+    },
+  });
+  root.TuckShortcuts.registerAction("timeline.set-selection-start", {
+    enabled: canSetSelectionBoundary,
+    execute: function () {
+      setSelectionBoundary("start");
+    },
+  });
+  root.TuckShortcuts.registerAction("timeline.set-selection-end", {
+    enabled: canSetSelectionBoundary,
+    execute: function () {
+      setSelectionBoundary("end");
     },
   });
   root.TuckShortcuts.registerAction("timeline.split", function () {
@@ -1531,6 +1604,48 @@
     return clip.loop || !timeline ? selected : timeline;
   }
 
+  function trimClipToTimelinePoint(
+    clip,
+    endpoint,
+    timelineTime,
+    previousEnd,
+    nextStart,
+    sourceDuration,
+    minimumDuration,
+  ) {
+    var result = Object.assign({}, clip);
+    var start = Number(clip.timelineStart) || 0;
+    var duration = Math.max(0, Number(clip.timelineDuration) || 0);
+    var end = start + duration;
+    var minimum = Math.max(0, Number(minimumDuration) || 0.05);
+    var point = Number(timelineTime);
+    var sourceIn = Math.max(0, Number(clip.sourceIn) || 0);
+    var sourceTotal = Math.max(0, Number(sourceDuration) || 0);
+    if (endpoint === "start") {
+      var earliest = Math.max(0, Number(previousEnd) || 0);
+      if (!clip.loop) earliest = Math.max(earliest, start - sourceIn);
+      var next = Math.max(earliest, Math.min(point, end - minimum));
+      var delta = next - start;
+      result.timelineStart = next;
+      result.timelineDuration = Math.max(minimum, end - next);
+      if (!clip.loop) result.sourceIn = sourceIn + delta;
+    } else if (endpoint === "end") {
+      var latest = Math.max(start + minimum, Number(nextStart) || 0);
+      if (!clip.loop) latest = Math.min(latest, start + sourceTotal - sourceIn);
+      var trimmedEnd = Math.min(latest, Math.max(point, start + minimum));
+      result.timelineDuration = Math.max(minimum, trimmedEnd - start);
+      if (!clip.loop) result.sourceOut = sourceIn + result.timelineDuration;
+    } else {
+      throw new Error("endpoint must be start or end");
+    }
+    result.fadeIn = Math.min(Number(result.fadeIn) || 0, result.timelineDuration);
+    result.fadeOut = Math.min(
+      Number(result.fadeOut) || 0,
+      result.timelineDuration - result.fadeIn,
+    );
+    return result;
+  }
+
   function slipClip(clip, sourceDuration, delta) {
     var result = Object.assign({}, clip);
     var sourceIn = Number(clip.sourceIn) || 0;
@@ -1609,6 +1724,7 @@
     sourceRangeDetailDragValue: sourceRangeDetailDragValue,
     sourceRangeKeyboardValue: sourceRangeKeyboardValue,
     splitClip: splitClip,
+    trimClipToTimelinePoint: trimClipToTimelinePoint,
     slipClip: slipClip,
     resetSlip: resetSlip,
     sourceRangeState: sourceRangeState,

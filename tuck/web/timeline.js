@@ -63,6 +63,33 @@
     return Math.max(1, Math.ceil(170 / (minor * pps)));
   }
 
+  function editKeyIntent(target, key, largeStep) {
+    var direction = key === "ArrowLeft" ? -1 : key === "ArrowRight" ? 1 : 0;
+    if (!direction || !target) return null;
+    var delta = (largeStep ? 0.1 : 0.01) * direction;
+    if (
+      target.classList &&
+      typeof target.classList.contains === "function" &&
+      target.classList.contains("tl-segment")
+    ) {
+      return {
+        type: "segment",
+        index: parseInt(target.dataset.segmentIndex, 10),
+        delta: delta,
+        snap: false,
+      };
+    }
+    if (target.id === "tl-in" || target.id === "tl-out") {
+      return {
+        type: "trim",
+        endpoint: target.id === "tl-in" ? "start" : "end",
+        delta: delta,
+        snap: false,
+      };
+    }
+    return null;
+  }
+
   return {
     ZOOM_MIN: ZOOM_MIN,
     ZOOM_MAX: ZOOM_MAX,
@@ -71,6 +98,7 @@
     anchorScrollLeft: anchorScrollLeft,
     rulerStep: rulerStep,
     rulerMajorEvery: rulerMajorEvery,
+    editKeyIntent: editKeyIntent,
   };
 });
 
@@ -460,14 +488,14 @@ function segmentSnapCandidates(segments, active, full) {
   return points;
 }
 
-function applyTrimStart(sec) {
+function applyTrimStart(sec, snap) {
   if (!selPath || !clips[selPath]) return null;
   var c = clips[selPath];
   var full = videoDuration() || (c.probeData && c.probeData.duration) || 0;
   if (full <= 0) return null;
   var segments = clipSegments(c, full);
   var active = activeSegmentIndex(c, segments);
-  if (typeof snapCandidateTime === "function")
+  if (snap !== false && typeof snapCandidateTime === "function")
     sec = snapCandidateTime(
       sec,
       segmentSnapCandidates(segments, active, full),
@@ -478,14 +506,14 @@ function applyTrimStart(sec) {
   return segments[active].start;
 }
 
-function applyTrimEnd(sec) {
+function applyTrimEnd(sec, snap) {
   if (!selPath || !clips[selPath]) return null;
   var c = clips[selPath];
   var full = videoDuration() || (c.probeData && c.probeData.duration) || 0;
   if (full <= 0) return null;
   var segments = clipSegments(c, full);
   var active = activeSegmentIndex(c, segments);
-  if (typeof snapCandidateTime === "function")
+  if (snap !== false && typeof snapCandidateTime === "function")
     sec = snapCandidateTime(
       sec,
       segmentSnapCandidates(segments, active, full),
@@ -496,14 +524,38 @@ function applyTrimEnd(sec) {
   return segments[active].end;
 }
 
-function moveActiveSegment(start) {
+function canTrimActiveSegmentToPlayhead() {
+  if (!selPath || !clips[selPath]) return false;
+  var full =
+    videoDuration() ||
+    (clips[selPath].probeData && clips[selPath].probeData.duration) ||
+    0;
+  var video = byId("vid");
+  return full > 0 && !!video && Number.isFinite(video.currentTime);
+}
+
+function trimActiveSegmentToPlayhead(endpoint) {
+  if (!canTrimActiveSegmentToPlayhead()) return null;
+  var time = byId("vid").currentTime;
+  var value =
+    endpoint === "start"
+      ? applyTrimStart(time, false)
+      : applyTrimEnd(time, false);
+  paintTrimChrome();
+  renderClips();
+  reqPreview();
+  if (window.AudioTimeline) AudioTimeline.render();
+  return value;
+}
+
+function moveActiveSegment(start, snap) {
   if (!selPath || !clips[selPath]) return null;
   var c = clips[selPath];
   var full = videoDuration() || (c.probeData && c.probeData.duration) || 0;
   if (full <= 0) return null;
   var segments = clipSegments(c, full);
   var active = activeSegmentIndex(c, segments);
-  if (typeof snapCandidateTime === "function") {
+  if (snap !== false && typeof snapCandidateTime === "function") {
     var duration = segments[active].end - segments[active].start;
     var candidates = segmentSnapCandidates(segments, active, full).reduce(function (acc, p) {
       acc.push(p, p - duration);
@@ -563,6 +615,13 @@ function addSegment() {
   } catch (err) {
     toast(err.message || "No room for another segment.", "err");
   }
+}
+
+function canRemoveActiveSegment() {
+  if (!selPath || !clips[selPath]) return false;
+  var clip = clips[selPath];
+  var full = videoDuration() || (clip.probeData && clip.probeData.duration) || 0;
+  return clipSegments(clip, full).length > 1;
 }
 
 function removeActiveSegment() {
@@ -734,6 +793,39 @@ function onTimelinePointerUp(e) {
   }
 }
 
+function handleTimelineEditKey(e) {
+  var v = byId("vid");
+  if (!v || !v.duration) return;
+  var intent = root.TimelineCore.editKeyIntent(e.target, e.key, e.shiftKey);
+  if (!intent) return;
+  e.preventDefault();
+  var full = videoDuration();
+  var c = selPath ? clips[selPath] : null;
+  var segments = clipSegments(c, full);
+  if (!c) return;
+  if (intent.type === "segment") {
+    if (!segments[intent.index]) return;
+    c.activeSegment = intent.index;
+    var moved = moveActiveSegment(
+      segments[intent.index].start + intent.delta,
+      intent.snap,
+    );
+    paintTrimChrome();
+    if (moved) seekPreview(moved.start);
+  } else {
+    var state = paintTrimChrome();
+    var current = state.bounds[intent.endpoint];
+    var value =
+      intent.endpoint === "start"
+        ? applyTrimStart(current + intent.delta, intent.snap)
+        : applyTrimEnd(current + intent.delta, intent.snap);
+    paintTrimChrome();
+    seekPreview(value);
+  }
+  renderClips();
+  reqPreview();
+}
+
 (function bindTimeline() {
   var timeline = byId("timeline");
   if (!timeline) return;
@@ -778,6 +870,7 @@ function onTimelinePointerUp(e) {
     selectionLayer.addEventListener("pointermove", onTimelinePointerMove);
     selectionLayer.addEventListener("pointerup", onTimelinePointerUp);
     selectionLayer.addEventListener("pointercancel", onTimelinePointerUp);
+    selectionLayer.addEventListener("keydown", handleTimelineEditKey);
   }
   timeline.addEventListener("click", function (e) {
     if (
@@ -788,58 +881,7 @@ function onTimelinePointerUp(e) {
     )
       selectSegment(parseInt(e.target.dataset.segmentIndex, 10), true);
   });
-  timeline.addEventListener("keydown", function (e) {
-    var v = byId("vid");
-    if (!v || !v.duration) return;
-    if (
-      e.target &&
-      e.target.classList &&
-      e.target.classList.contains("tl-segment")
-    ) {
-      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-      e.preventDefault();
-      var index = parseInt(e.target.dataset.segmentIndex, 10);
-      var full = videoDuration();
-      var c = selPath ? clips[selPath] : null;
-      var segments = clipSegments(c, full);
-      if (!c || !segments[index]) return;
-      c.activeSegment = index;
-      var moveDelta =
-        (e.shiftKey ? 0.1 : 0.01) * (e.key === "ArrowLeft" ? -1 : 1);
-      var moved = moveActiveSegment(segments[index].start + moveDelta);
-      paintTrimChrome();
-      if (moved) seekPreview(moved.start);
-      renderClips();
-      reqPreview();
-      return;
-    }
-    if (e.target && (e.target.id === "tl-in" || e.target.id === "tl-out")) {
-      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-      e.preventDefault();
-      var state = paintTrimChrome();
-      var endpoint = e.target.id === "tl-in" ? "start" : "end";
-      var current = state.bounds[endpoint];
-      var delta = (e.shiftKey ? 0.1 : 0.01) * (e.key === "ArrowLeft" ? -1 : 1);
-      var value =
-        endpoint === "start"
-          ? applyTrimStart(current + delta)
-          : applyTrimEnd(current + delta);
-      paintTrimChrome();
-      seekPreview(value);
-      renderClips();
-      reqPreview();
-      return;
-    }
-    var step = e.shiftKey ? 1 : 0.5;
-    if (e.key === "ArrowLeft") {
-      e.preventDefault();
-      seekToRatio(Math.max(0, (v.currentTime - step) / v.duration));
-    }
-    if (e.key === "ArrowRight") {
-      e.preventDefault();
-      seekToRatio(Math.min(1, (v.currentTime + step) / v.duration));
-    }
-  });
+  timeline.addEventListener("keydown", handleTimelineEditKey);
 })();
 
 
@@ -1078,10 +1120,35 @@ function initTimelineResizer() {
 
 
 
+  root.TuckShortcuts.registerAction("timeline.zoom-in", {
+    enabled: function () {
+      return !!selPath;
+    },
+    execute: function () {
+      nudgeTimelineZoom(1);
+    },
+  });
+  root.TuckShortcuts.registerAction("timeline.zoom-out", {
+    enabled: function () {
+      return !!selPath;
+    },
+    execute: function () {
+      nudgeTimelineZoom(-1);
+    },
+  });
+  root.TuckShortcuts.registerAction("timeline.fit", {
+    enabled: function () {
+      return !!selPath;
+    },
+    execute: fitTimeline,
+  });
+
   var api = {
     isDragging: function () { return !!_tlDrag; },
     addSegment: addSegment,
     applyTimelineZoom: applyTimelineZoom,
+    canTrimActiveSegmentToPlayhead: canTrimActiveSegmentToPlayhead,
+    canRemoveActiveSegment: canRemoveActiveSegment,
     clipSegments: clipSegments,
     fitTimeline: fitTimeline,
     nudgeTimelineZoom: nudgeTimelineZoom,
@@ -1100,6 +1167,7 @@ function initTimelineResizer() {
     syncTimelineUI: syncTimelineUI,
     timelinePxPerSecond: timelinePxPerSecond,
     toggleSnap: toggleSnap,
+    trimActiveSegmentToPlayhead: trimActiveSegmentToPlayhead,
     videoDuration: videoDuration,
   };
   root.Timeline = api;
