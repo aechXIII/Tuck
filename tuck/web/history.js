@@ -163,6 +163,11 @@ var History = (function () {
 window.History = History;
 
 document.addEventListener("keydown", function (event) {
+  if (
+    window.TuckShortcuts &&
+    !window.TuckShortcuts.editorCommandsEnabled(document)
+  )
+    return;
   var ctrlOrCmd = event.ctrlKey || event.metaKey;
   if (!ctrlOrCmd) return;
   var target = event.target;

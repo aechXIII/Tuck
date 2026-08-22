@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <title>Tuck</title>
     <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="shortcuts.css" />
     <link rel="stylesheet" href="settings.css" />
     <link rel="stylesheet" href="player.css" />
     <link rel="stylesheet" href="audio.css" />
@@ -58,6 +59,22 @@
         </svg>
       </button>
       <span class="tb-flex-spacer"></span>
+      <button
+        type="button"
+        class="tb-help-btn"
+        id="shortcuts-toggle"
+        onclick="openKeyboardShortcuts()"
+        data-tip="Keyboard shortcuts"
+        aria-label="Keyboard shortcuts"
+        aria-keyshortcuts="?"
+      >
+        <svg class="tb-help-icon" viewBox="0 0 18 14" aria-hidden="true">
+          <rect x="1" y="1" width="16" height="12" rx="2"></rect>
+          <path d="M4 4h1M7 4h1M10 4h1M13 4h1M4 7h1M7 7h1M10 7h1M13 7h1M5 10h8"></path>
+        </svg>
+        <span>Shortcuts</span>
+      </button>
+      <div class="tb-divider"></div>
       <button
         type="button"
         class="tb-icon-btn"
@@ -1247,6 +1264,7 @@
     <script src="segments.js"></script>
     <script src="layout.js"></script>
     <script src="encoding-ui.js"></script>
+    <script src="shortcuts.js"></script>
     <script src="app.js"></script>
     <script src="audio.js"></script>
     <script src="panels.js"></script>

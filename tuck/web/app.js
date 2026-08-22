@@ -113,8 +113,7 @@ function confirmToast(msg, cb) {
               : "Continue",
     cancelLabel = discard ? "Keep editing" : "Go back";
   pendingConfirm = cb;
-  var box = byId("mod-box");
-  box.className = "mod-box confirm-dialog";
+  var box = prepareModalBox("mod-box confirm-dialog");
   box.innerHTML = `<h2 id="confirm-title"></h2>
     <p class="confirm-copy" id="confirm-copy"></p>
     <div class="confirm-actions">
@@ -185,13 +184,13 @@ function resetToProfile() {
 }
 
 function showMod(html) {
-  var box = byId("mod-box");
-  box.className = "mod-box";
+  var box = prepareModalBox("mod-box");
   box.innerHTML = html;
   byId("mod-overlay").classList.add("open");
 }
 function closeMod() {
   byId("mod-overlay").classList.remove("open");
+  resetKeyboardShortcutsDialog(true);
   pendingConfirm = null;
 }
 function cleanUpdateNoteText(text) {
@@ -306,6 +305,12 @@ function closeActiveModal() {
   closeMod();
 }
 
+function prepareModalBox(className) {
+  resetKeyboardShortcutsDialog(false);
+  var box = byId("mod-box");
+  box.className = className;
+  return box;
+}
 var startupData = null;
 var clipOrder = [];
 async function startApp() {
@@ -1048,6 +1053,10 @@ function formFieldFocused() {
     (el.matches("input, select, textarea, button") || el.isContentEditable)
   );
 }
+function textEntryFocused() {
+  var el = document.activeElement;
+  return el && (el.matches("input, select, textarea") || el.isContentEditable);
+}
 function moveSelection(delta) {
   var keys = orderedClipKeys();
   if (!keys.length) return;
@@ -1056,6 +1065,15 @@ function moveSelection(delta) {
   selectClip(keys[index]);
 }
 window.addEventListener("keydown", function (e) {
+  if (e.key === "Escape" && byId("mod-overlay").classList.contains("open")) {
+    closeActiveModal();
+    return;
+  }
+  if (e.key === "Escape" && document.body.classList.contains("settings-open")) {
+    closeSettings();
+    return;
+  }
+  if (!TuckShortcuts.editorCommandsEnabled(document)) return;
   if (e.ctrlKey && e.key.toLowerCase() === "o") {
     e.preventDefault();
     browse();
@@ -1071,12 +1089,15 @@ window.addEventListener("keydown", function (e) {
     if (api) api.closeWindow();
     return;
   }
-  if (e.key === "Escape" && byId("mod-overlay").classList.contains("open")) {
-    closeActiveModal();
-    return;
-  }
-  if (e.key === "Escape" && document.body.classList.contains("settings-open")) {
-    closeSettings();
+  if (
+    TuckShortcuts.shouldOpenGuide(e, {
+      modalOpen: byId("mod-overlay").classList.contains("open"),
+      settingsOpen: document.body.classList.contains("settings-open"),
+      textEntryFocused: textEntryFocused(),
+    })
+  ) {
+    e.preventDefault();
+    openKeyboardShortcuts();
     return;
   }
   if (formFieldFocused()) return;

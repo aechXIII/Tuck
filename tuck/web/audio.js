@@ -1356,6 +1356,11 @@
     video.addEventListener("seeked", syncPreview);
   }
   root.document.addEventListener("keydown", function (event) {
+    if (
+      root.TuckShortcuts &&
+      !root.TuckShortcuts.editorCommandsEnabled(root.document)
+    )
+      return;
     if (/^(INPUT|TEXTAREA|SELECT)$/.test(event.target && event.target.tagName)) return;
     if (event.key === "Delete" && selectedClipId) {
       event.preventDefault();

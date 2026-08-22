@@ -15,11 +15,13 @@ def _web_source() -> str:
         for name in (
             "index.html",
             "styles.css",
+            "shortcuts.css",
             "settings.css",
             "player.css",
             "audio.css",
             "queue.css",
             "transform.css",
+            "shortcuts.js",
             "app.js",
             "audio.js",
             "encoding-ui.js",
@@ -41,11 +43,13 @@ def test_web_ui_is_packaged_source_asset() -> None:
 
     for asset in (
         "styles.css",
+        "shortcuts.css",
         "settings.css",
         "player.css",
         "audio.css",
         "queue.css",
         "transform.css",
+        "shortcuts.js",
         "app.js",
         "audio.js",
         "encoding-ui.js",

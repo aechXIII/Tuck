@@ -208,11 +208,13 @@ def test_resource_path_locates_web_ui() -> None:
     for name in (
         "index.html",
         "styles.css",
+        "shortcuts.css",
         "settings.css",
         "player.css",
         "audio.css",
         "queue.css",
         "transform.css",
+        "shortcuts.js",
         "app.js",
         "audio.js",
         "encoding-ui.js",
@@ -528,7 +530,7 @@ def test_settings_separates_output_and_stages_all_persisted_changes() -> None:
     assert "queueActiveItemIds" in html
     assert "appSettings.open_output_folder_after_queue" in html
     assert 'confirmToast("Discard unsaved settings?"' in html
-    assert 'box.className = "mod-box confirm-dialog"' in html
+    assert 'prepareModalBox("mod-box confirm-dialog")' in html
     assert "Discard changes" in html
     assert "Keep editing" in html
     assert "function acceptConfirm()" in html
