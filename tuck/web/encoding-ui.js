@@ -58,12 +58,13 @@ function persistSession() {
 function updateActionButtons() {
   var up = wf === 1,
     nObj = Object.keys(clips).length,
-    sel = !!selPath;
+    sel = TuckProbeState.isReady(selPath ? clips[selPath] : null),
+    allReady = TuckProbeState.allReady(clips);
   byId("btn-one").textContent = up ? "Upscale selected" : "Compress selected";
   byId("btn-one").disabled = !sel;
   byId("btn-all").textContent =
     (up ? "Upscale all" : "Compress all") + (nObj ? " (" + nObj + ")" : "");
-  byId("btn-all").disabled = !nObj;
+  byId("btn-all").disabled = !allReady;
   byId("btn-all").style.background = up ? "#2a2a3e" : "";
 }
 
@@ -738,6 +739,10 @@ async function compressOne() {
     toast("Select a clip first.", "err");
     return;
   }
+  if (!TuckProbeState.isReady(clips[selPath])) {
+    toast("Retry reading clip details before exporting.", "err");
+    return;
+  }
   var r = await api.enqueueWithOptions(
     JSON.stringify(buildReq(clips[selPath].path)),
   );
@@ -750,6 +755,10 @@ async function compressAll() {
   var keys = orderedClipKeys();
   if (!keys.length) {
     toast("Add clips first.", "err");
+    return;
+  }
+  if (!TuckProbeState.allReady(clips)) {
+    toast("Retry unreadable clip details before exporting all files.", "err");
     return;
   }
   var reqs = [];

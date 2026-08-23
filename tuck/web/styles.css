@@ -738,6 +738,26 @@ body.workspace-overlay .panel-heading {
   color: var(--muted);
   font-size: 11px;
 }
+.cd-probe-error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.cd-probe-error strong {
+  color: #fecaca;
+  font-size: 12px;
+}
+.cd-probe-message {
+  color: #fca5a5;
+  overflow-wrap: anywhere;
+}
+.cd-probe-retry {
+  margin-top: 2px;
+}
 #audio-track-mixer {
   display: flex;
   flex-direction: column;

@@ -934,31 +934,28 @@ function doRemoveAllClips() {
 async function probeClip(p) {
   if (!api) return;
   var c = clips[p];
-  if (!c || c.probed || c.probing) return;
-  c.probing = true;
+  if (!TuckProbeState.begin(c)) return;
+  renderClips();
+  if (selPath === p && typeof renderClipDetails === "function")
+    renderClipDetails();
   try {
     var r = await api.probeFile(p);
-    if (r.ok && r.data) {
-      c.probed = true;
-      c.probeData = r.data;
+    var result = TuckProbeState.complete(c, r);
+    if (result.ok) {
       if (!Array.isArray(c.segments) || !c.segments.length)
-        c.segments = SegmentEditing.fullSegment(r.data.duration);
+        c.segments = SegmentEditing.fullSegment(result.data.duration);
       c.activeSegment = Math.max(
         0,
         Math.min(c.segments.length - 1, c.activeSegment || 0),
       );
-      c.error = "";
-      c._fileSize = r.data.file_size;
+      c._fileSize = result.data.file_size;
       if (window.AudioTimeline) AudioTimeline.onProbe(c);
       if (typeof applySelectedProfileTransform === "function")
         applySelectedProfileTransform(c, false);
-    } else {
-      c.error = (r.data && r.data.error) || "Probe failed";
     }
   } catch (e) {
-    c.error = "Probe error";
+    TuckProbeState.fail(c, e);
   }
-  c.probing = false;
   renderClips();
   if (selPath === p) {
     syncFpsToClip();
@@ -969,6 +966,10 @@ async function probeClip(p) {
     if (typeof renderClipDetails === "function") renderClipDetails();
     reqPreview();
   }
+}
+
+function retryProbeClip(p) {
+  probeClip(p);
 }
 
 async function loadMedia(p) {

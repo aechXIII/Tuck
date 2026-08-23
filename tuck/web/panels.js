@@ -233,8 +233,23 @@ function renderClipDetails() {
     return;
   }
   if (selection) selection.textContent = clip.name || "Selected video";
+  if (clip.error) {
+    host.innerHTML =
+      '<div class="cd-probe-error" role="alert">' +
+      '<strong>Couldn’t read clip details</strong>' +
+      '<span>Playback may still work, but editing and export need the file details.</span>' +
+      '<span class="cd-probe-message">' +
+      esc(errorSummary(clip.error, 160)) +
+      "</span>" +
+      '<button type="button" class="btn2 cd-probe-retry" onclick="retryProbeClip(\'' +
+      escJS(clip.path) +
+      "\')\">Retry</button>" +
+      "</div>";
+    return;
+  }
   if (!clip.probed || !clip.probeData) {
-    host.innerHTML = '<div class="cd-empty">Reading clip details…</div>';
+    host.innerHTML =
+      '<div class="cd-empty" role="status">Reading clip details…</div>';
     return;
   }
   var d = clip.probeData;

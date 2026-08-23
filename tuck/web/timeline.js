@@ -189,26 +189,36 @@ function formatSegmentTime(seconds) {
 }
 
 function paintTrimChrome() {
-  var full = videoDuration();
   var c = selPath ? clips[selPath] : null;
+  var probeStatus = c ? TuckProbeState.status(c) : "empty";
+  var full = probeStatus === "ready" ? videoDuration() : 0;
   var view = SegmentEditing.timelineViewState(c, full);
+  if (probeStatus === "error") view = { status: "error", items: [] };
   var ready = view.status === "ready";
   var editor = byId("audio-editor");
   var emptyState = byId("timeline-empty");
   if (editor) {
     editor.classList.toggle("is-empty", view.status === "empty");
     editor.classList.toggle("is-loading", view.status === "loading");
+    editor.classList.toggle("is-error", view.status === "error");
   }
   if (emptyState) {
     emptyState.hidden = ready;
     var emptyTitle = emptyState.querySelector(".timeline-empty-title");
     var emptyCopy = emptyState.querySelector(".timeline-empty-copy");
     if (emptyTitle)
-      emptyTitle.textContent = view.status === "loading" ? "Preparing timeline" : "Timeline is empty";
+      emptyTitle.textContent =
+        view.status === "loading"
+          ? "Preparing timeline"
+          : view.status === "error"
+            ? "Clip details unavailable"
+            : "Timeline is empty";
     if (emptyCopy)
       emptyCopy.textContent =
         view.status === "loading"
           ? "Reading clip duration and audio tracks"
+          : view.status === "error"
+            ? "Retry from the Video inspector to enable editing."
           : "Video and audio tracks will appear here.";
   }
   var ruler = byId("sequence-ruler");
@@ -240,7 +250,12 @@ function paintTrimChrome() {
     removeButton.disabled = true;
     addButton.disabled = true;
     addButton.setAttribute("aria-disabled", "true");
-    addButton.dataset.tip = view.status === "loading" ? "Preparing timeline" : "Add a video first";
+    addButton.dataset.tip =
+      view.status === "loading"
+        ? "Preparing timeline"
+        : view.status === "error"
+          ? "Retry clip details first"
+          : "Add a video first";
     return {
       full: 0,
       bounds: { start: 0, end: 0 },
