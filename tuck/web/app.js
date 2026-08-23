@@ -53,37 +53,73 @@ function fmtt(s) {
   return m + ":" + ("0" + sec).slice(-2);
 }
 var toastId = 0;
+var toastQueue = [];
+var activeToast = null;
 var pendingConfirm = null;
 function toast(msg, kind) {
-  kind = kind || "";
-  var id = "t" + ++toastId,
-    ct = byId("toast-ct");
+  toastQueue.push({ message: msg, kind: kind || "" });
+  showNextToast();
+}
+function showNextToast() {
+  if (activeToast || !toastQueue.length) return;
+  var item = toastQueue.shift();
+  var presentation = TuckNotifications.presentation(item.kind);
+  var id = "t" + ++toastId;
+  var ct = byId("toast-ct");
   var div = document.createElement("div");
-  div.className = "toast " + kind;
+  div.className = "toast " + presentation.kind;
   div.id = id;
-  div.innerHTML =
-    '<span class="tmsg">' +
-    msg +
-    '</span><button class="tcls" onclick="dismissToast(\'' +
-    id +
-    '\')" aria-label="Dismiss notification">✕</button>';
+  div.setAttribute("role", presentation.role);
+  div.setAttribute("aria-live", presentation.live);
+  div.setAttribute("aria-atomic", "true");
+  div.innerHTML = '<span class="tmsg">' + item.message + "</span>";
+  var close = document.createElement("button");
+  close.type = "button";
+  close.className = "tcls";
+  close.setAttribute("aria-label", "Dismiss notification");
+  close.addEventListener("click", function () {
+    dismissToast(id);
+  });
+  div.appendChild(close);
   ct.appendChild(div);
-  setTimeout(
-    function () {
-      dismissToast(id);
-    },
-    kind === "err" ? 6000 : 3500,
-  );
+  activeToast = {
+    element: div,
+    id: id,
+    remaining: presentation.duration,
+    started: 0,
+    timer: 0,
+  };
+  div.addEventListener("mouseenter", pauseToastTimer);
+  div.addEventListener("mouseleave", resumeToastTimer);
+  div.addEventListener("focusin", pauseToastTimer);
+  div.addEventListener("focusout", resumeToastTimer);
+  resumeToastTimer();
+}
+function pauseToastTimer() {
+  if (!activeToast || !activeToast.timer) return;
+  clearTimeout(activeToast.timer);
+  activeToast.timer = 0;
+  activeToast.remaining -= Date.now() - activeToast.started;
+}
+function resumeToastTimer() {
+  if (!activeToast || activeToast.timer || activeToast.closing) return;
+  activeToast.started = Date.now();
+  activeToast.timer = setTimeout(function () {
+    dismissToast(activeToast.id);
+  }, Math.max(0, activeToast.remaining));
 }
 function dismissToast(id) {
-  var el = byId(id);
-  if (el) {
-    el.style.opacity = "0";
-    el.style.transition = "opacity .2s";
-    setTimeout(function () {
-      if (el.parentNode) el.parentNode.removeChild(el);
-    }, 200);
-  }
+  if (!activeToast || activeToast.id !== id || activeToast.closing) return;
+  clearTimeout(activeToast.timer);
+  activeToast.closing = true;
+  var closing = activeToast;
+  closing.element.classList.add("leaving");
+  setTimeout(function () {
+    if (closing.element.parentNode)
+      closing.element.parentNode.removeChild(closing.element);
+    if (activeToast === closing) activeToast = null;
+    showNextToast();
+  }, 140);
 }
 function confirmToast(msg, cb) {
   var lower = msg.toLowerCase(),
