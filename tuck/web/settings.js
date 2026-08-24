@@ -83,10 +83,10 @@ function toggleSettings() {
 }
 function settingButton(label, action, primary, dirtyAware) {
   return (
-    '<button class="' +
+    '<button type="button" class="' +
     (primary ? "btn1" : "btn2") +
     (dirtyAware ? '" data-settings-save="true" disabled' : '"') +
-    ' onclick="' +
+    ' data-settings-click="' +
     action +
     '">' +
     label +
@@ -137,47 +137,26 @@ async function refreshPMList(filter) {
   var list = byId("pm-list");
   if (!list) return;
   var profiles = await api.getProfilesJson();
-  list.innerHTML = "";
   ["all", "compression", "upscale"].forEach(function (k) {
     var b = byId("pm-" + k);
     if (b) b.classList.toggle("on", k === settingsFilter);
   });
-  profiles.forEach(function (p) {
-    if (
+  var visibleProfiles = profiles.filter(function (p) {
+    return !(
       settingsFilter !== "all" &&
       (p.workflow || "compression") !== settingsFilter
-    )
-      return;
-    var row = document.createElement("div"),
-      badge =
-        p.profile_id === appSettings.default_profile_id
-          ? '<span class="settings-badge">Default</span>'
-          : "";
-    row.className = "settings-list-row";
-    row.innerHTML =
-      '<div class="settings-list-main"><strong>' +
-      esc(p.name) +
-      "</strong><span>" +
-      esc(profileSummary(p)) +
-      "</span>" +
-      badge +
-      '</div><button class="btn2" onclick="editProf(\'' +
-      escJS(p.profile_id) +
-      '\')">Edit</button><details class="profile-actions-menu"><summary class="mbtn" aria-label="More actions for ' +
-      esc(p.name) +
-      '">•••</summary><div class="profile-actions-popover"><button onclick="exportProf(\'' +
-      escJS(p.profile_id) +
-      '\')">Export</button><button onclick="dupProf(\'' +
-      escJS(p.profile_id) +
-      '\')">Duplicate</button><button class="danger" onclick="delProf(\'' +
-      escJS(p.profile_id) +
-      "','" +
-      escJS(p.name) +
-      "')\">Delete</button></div></details>";
-    list.appendChild(row);
+    );
   });
-  if (!list.children.length)
-    list.innerHTML = '<div class="settings-empty">No matching profiles.</div>';
+  Tuck.settingsProfiles.renderProfileList(document, list, visibleProfiles, {
+    defaultProfileId: appSettings.default_profile_id,
+    summarize: profileSummary,
+  });
+  Tuck.settingsProfiles.bindProfileActions(list, function (action, profileId, name) {
+    if (action === "edit") editProf(profileId);
+    else if (action === "export") exportProf(profileId);
+    else if (action === "duplicate") dupProf(profileId);
+    else if (action === "delete") delProf(profileId, name);
+  });
 }
 async function editProf(pid) {
   openSettings("profiles", "editor", pid);
@@ -223,7 +202,7 @@ async function exportProf(pid) {
 }
 function settingsTitle(title, action) {
   var backButton = action
-    ? `<button class="settings-title-back" aria-label="Back" onclick="${action}">
+    ? `<button type="button" class="settings-title-back" aria-label="Back" data-settings-click="${action}">
         ←
       </button>`
     : "";
@@ -240,8 +219,8 @@ function profileEditorTaskHTML() {
   <div class="settings-field full">
     <label>Task</label>
     <div class="profile-editor-task">
-      <button id="pe-c" onclick="peSetTask('compression')">Compress</button>
-      <button id="pe-u" onclick="peSetTask('upscale')">Upscale</button>
+      <button type="button" id="pe-c" data-settings-click="profile-task" data-settings-value="compression">Compress</button>
+      <button type="button" id="pe-u" data-settings-click="profile-task" data-settings-value="upscale">Upscale</button>
     </div>
   </div>`;
 }
@@ -249,22 +228,22 @@ function profileEditorVideoHTML() {
   return `<div class="settings-sec full" id="pe-size-sec">
     <h3>Target Size</h3>
     <div class="sl-row">
-      <input id="pe-size-range" type="range" min="2" max="500" value="50" oninput="peSetSize(this.value)">
+      <input id="pe-size-range" type="range" min="2" max="500" value="50" data-settings-input="profile-size">
       <input
         id="pe-size"
         type="number"
         min="2"
         value="50"
         aria-label="Target size in MB"
-        oninput="peSetSize(this.value)"
+        data-settings-input="profile-size"
       >
       <span>MB</span>
     </div>
     <div class="pset">
-      <button onclick="peSetSize(20)">20 MB</button>
-      <button onclick="peSetSize(50)">50 MB</button>
-      <button onclick="peSetSize(100)">100 MB</button>
-      <button onclick="peSetSize(500)">500 MB</button>
+      <button type="button" data-settings-click="profile-size" data-settings-value="20">20 MB</button>
+      <button type="button" data-settings-click="profile-size" data-settings-value="50">50 MB</button>
+      <button type="button" data-settings-click="profile-size" data-settings-value="100">100 MB</button>
+      <button type="button" data-settings-click="profile-size" data-settings-value="500">500 MB</button>
     </div>
   </div>
   <div class="settings-sec full">
@@ -272,7 +251,7 @@ function profileEditorVideoHTML() {
     <div class="info-row" id="pe-source-res-row">
       <span>Use source resolution</span>
       <label class="chk">
-        <input id="pe-source-res" type="checkbox" onchange="peVisibility()">
+        <input id="pe-source-res" type="checkbox" data-settings-change="profile-visibility">
         <span class="chk-box"></span>
         <span>Source</span>
       </label>
@@ -298,13 +277,13 @@ function profileEditorVideoHTML() {
     <div class="info-row">
       <span>Use source frame rate</span>
       <label class="chk">
-        <input id="pe-source-fps" type="checkbox" onchange="peVisibility()">
+        <input id="pe-source-fps" type="checkbox" data-settings-change="profile-visibility">
         <span class="chk-box"></span>
         <span>Source</span>
       </label>
     </div>
     <div id="pe-fps-row" class="sl-row">
-      <input id="pe-fps-range" type="range" min="1" max="240" value="30" oninput="peSetFps(this.value)">
+      <input id="pe-fps-range" type="range" min="1" max="240" value="30" data-settings-input="profile-fps">
       <input
         id="pe-fps"
         type="number"
@@ -312,7 +291,7 @@ function profileEditorVideoHTML() {
         max="240"
         value="30"
         aria-label="Custom frame rate"
-        oninput="peSetFps(this.value)"
+        data-settings-input="profile-fps"
       >
       <span>fps</span>
     </div>
@@ -324,7 +303,7 @@ function profileEditorTransformHTML() {
     <div class="info-row">
       <span>Apply reusable transform intent</span>
       <label class="chk">
-        <input id="pe-transform-enabled" type="checkbox" onchange="peVisibility()">
+        <input id="pe-transform-enabled" type="checkbox" data-settings-change="profile-visibility">
         <span class="chk-box"></span>
         <span>Enabled</span>
       </label>
@@ -367,7 +346,7 @@ function profileEditorAudioHTML() {
     <div class="info-row">
       <span>Keep source audio</span>
       <label class="chk">
-        <input id="pe-audio-source" type="checkbox" onchange="peVisibility()">
+        <input id="pe-audio-source" type="checkbox" data-settings-change="profile-visibility">
         <span class="chk-box"></span>
         <span>Source</span>
       </label>
@@ -383,12 +362,12 @@ function profileEditorEncodingHTML() {
     <h3>Encoding</h3>
     <div class="settings-field">
       <label for="pe-enc">Encoder</label>
-      <select id="pe-enc" onchange="peEncoderChanged()"></select>
+      <select id="pe-enc" data-settings-change="profile-encoder"></select>
     </div>
     <span class="setting-note">Hardware is faster; software can produce smaller files.</span>
     <div class="settings-field">
       <label for="pe-speed">Encoding speed</label>
-      <select id="pe-speed" onchange="peSpeedChanged()">
+      <select id="pe-speed" data-settings-change="profile-speed">
         <option value="fast">Fast</option>
         <option value="balanced">Balanced</option>
         <option value="best">Best compression</option>
@@ -402,18 +381,18 @@ function profileEditorEncodingHTML() {
       </select>
       <span id="pe-two-pass-note" class="help-tip">Two-pass is available only for software compression.</span>
     </div>
-    <button class="advanced-toggle" id="pe-advanced-button" onclick="peToggleAdvanced()" aria-expanded="false">
+    <button type="button" class="advanced-toggle" id="pe-advanced-button" data-settings-click="toggle-advanced" aria-expanded="false">
       <span>Advanced encoding</span>
       <span class="advanced-arrow">⌄</span>
     </button>
     <div id="pe-advanced" class="hid">
       <div class="settings-field">
         <label for="pe-preset">Native FFmpeg preset</label>
-        <select id="pe-preset" onchange="pePresetChanged()"></select>
+        <select id="pe-preset" data-settings-change="profile-preset"></select>
       </div>
       <div class="settings-field" id="pe-rc-row">
         <label for="pe-rc">Quality method</label>
-        <select id="pe-rc" onchange="peVisibility()"></select>
+        <select id="pe-rc" data-settings-change="profile-visibility"></select>
       </div>
       <div class="settings-field" id="pe-quality-row">
         <label id="pe-quality-label" for="pe-quality">CQ</label>
@@ -433,7 +412,7 @@ function profileEditorEncodingHTML() {
 }
 function profileEditorHTML() {
   var title = settingsProfileId ? "Edit profile" : "New profile";
-  return `${settingsTitle(title, "backToProfiles()")}
+  return `${settingsTitle(title, "back-profiles")}
     <div class="settings-grid">
       ${profileEditorTaskHTML()}
       ${profileEditorVideoHTML()}
@@ -673,8 +652,8 @@ function backToProfiles() {
 }
 async function saveProfEdit() {
   var r = settingsProfileId
-    ? await api.updateProfile(settingsProfileId, JSON.stringify(pePayload()))
-    : await api.createProfile(JSON.stringify(pePayload()));
+    ? await api.updateProfile(settingsProfileId, pePayload())
+    : await api.createProfile(pePayload());
   if (r.ok) {
     await loadSettings();
     settingsView = "page";
@@ -745,11 +724,11 @@ function generalSettingsHTML(s, profiles) {
     <div class="settings-grid">
       <div class="settings-field">
         <label for="set-dp">Default profile</label>
-        <select id="set-dp" onchange="markSettingsDirty()">${options}</select>
+        <select id="set-dp" data-settings-change="mark-dirty">${options}</select>
       </div>
       <div class="settings-field">
         <label for="set-ds">Default scaler</label>
-        <select id="set-ds" onchange="markSettingsDirty()">${scalers}</select>
+        <select id="set-ds" data-settings-change="mark-dirty">${scalers}</select>
       </div>
     </div>
   </div>
@@ -758,7 +737,7 @@ function generalSettingsHTML(s, profiles) {
     <div class="settings-card-copy">Choose what happens after the last queued job finishes.</div>
     <div class="settings-option-list">
       <label class="chk settings-option">
-        <input id="set-open-output-folder" type="checkbox" ${openOutput} onchange="markSettingsDirty()">
+        <input id="set-open-output-folder" type="checkbox" ${openOutput} data-settings-change="mark-dirty">
         <span class="chk-box"></span>
         <span class="settings-option-copy">
           <strong>Open output folder when queue finishes</strong>
@@ -766,7 +745,7 @@ function generalSettingsHTML(s, profiles) {
         </span>
       </label>
       <label class="chk settings-option">
-        <input id="set-auto-clear" type="checkbox" ${autoClear} onchange="markSettingsDirty()">
+        <input id="set-auto-clear" type="checkbox" ${autoClear} data-settings-change="mark-dirty">
         <span class="chk-box"></span>
         <span class="settings-option-copy">
           <strong>Clear completed jobs automatically</strong>
@@ -786,8 +765,8 @@ function outputSettingsHTML(s) {
     <div class="settings-card-copy">Save beside each source file, or choose one folder for every completed export.</div>
     <div class="row">
       <div id="set-od" class="settings-readonly" style="flex:1" data-path="${outputDir}">${outputLabel}</div>
-      <button class="btn2" onclick="browseOut()">Browse…</button>
-      <button class="btn2" onclick="clearOut()">Use source folder</button>
+      <button type="button" class="btn2" data-settings-click="browse-output">Browse…</button>
+      <button type="button" class="btn2" data-settings-click="clear-output">Use source folder</button>
     </div>
   </div>
   <section class="file-naming">
@@ -795,17 +774,17 @@ function outputSettingsHTML(s) {
     <div class="settings-grid">
       <div class="settings-field">
         <label for="set-cs">Compress suffix</label>
-        <input id="set-cs" value="${compressionSuffix}" oninput="markSettingsDirty();updateExampleOutput()">
+        <input id="set-cs" value="${compressionSuffix}" data-settings-input="preview-output">
         <div class="settings-token-row">
-          <button class="settings-token" onclick="insertNamingToken('set-cs','{size}')">{size}</button>
+          <button type="button" class="settings-token" data-settings-click="insert-token" data-settings-target="set-cs" data-settings-token="{size}">{size}</button>
         </div>
       </div>
       <div class="settings-field">
         <label for="set-us">Upscale suffix</label>
-        <input id="set-us" value="${upscaleSuffix}" oninput="markSettingsDirty();updateExampleOutput()">
+        <input id="set-us" value="${upscaleSuffix}" data-settings-input="preview-output">
         <div class="settings-token-row">
-          <button class="settings-token" onclick="insertNamingToken('set-us','{width}')">{width}</button>
-          <button class="settings-token" onclick="insertNamingToken('set-us','{height}')">{height}</button>
+          <button type="button" class="settings-token" data-settings-click="insert-token" data-settings-target="set-us" data-settings-token="{width}">{width}</button>
+          <button type="button" class="settings-token" data-settings-click="insert-token" data-settings-target="set-us" data-settings-token="{height}">{height}</button>
         </div>
       </div>
       <div class="file-naming-example full">
@@ -822,9 +801,9 @@ function outputSettingsHTML(s) {
 function profilesSettingsHTML() {
   return `<div class="settings-profile-filterbar">
     <div class="ft profile-filters" role="group" aria-label="Filter profiles">
-      <button id="pm-all" class="on" onclick="refreshPMList('all')">All</button>
-      <button id="pm-compression" onclick="refreshPMList('compression')">Compress</button>
-      <button id="pm-upscale" onclick="refreshPMList('upscale')">Upscale</button>
+      <button type="button" id="pm-all" class="on" data-settings-click="filter-profiles" data-settings-value="all">All</button>
+      <button type="button" id="pm-compression" data-settings-click="filter-profiles" data-settings-value="compression">Compress</button>
+      <button type="button" id="pm-upscale" data-settings-click="filter-profiles" data-settings-value="upscale">Upscale</button>
     </div>
   </div>
   <div id="pm-list" class="settings-list"></div>`;
@@ -889,7 +868,7 @@ function systemStatusHTML(s) {
           · ${ffmpegPath}
         </div>
         <div class="settings-status-actions">
-          <button class="btn2" onclick="browseFfmpeg()">Change</button>
+          <button type="button" class="btn2" data-settings-click="browse-ffmpeg">Change</button>
         </div>
       </div>
       <div class="settings-status-row">
@@ -901,14 +880,14 @@ function systemStatusHTML(s) {
           · ${ffprobePath}
         </div>
         <div class="settings-status-actions">
-          <button class="btn2" onclick="browseFfprobe()">Change</button>
+          <button type="button" class="btn2" data-settings-click="browse-ffprobe">Change</button>
         </div>
       </div>
       <div class="settings-status-row">
         <div>Encoders</div>
         <div class="settings-status-value">${encoders}</div>
         <div class="settings-status-actions">
-          <button class="btn2" onclick="refreshEncoders()">Rescan</button>
+          <button type="button" class="btn2" data-settings-click="refresh-encoders">Rescan</button>
         </div>
       </div>
       <div class="settings-status-row">
@@ -933,10 +912,10 @@ function systemUpdatesHTML(s) {
         <strong>Tuck ${esc(s.version || "")}</strong>
         <span>${updateStatus}</span>
       </div>
-      <button class="btn2" onclick="checkUpdatesFromSettings()">Check now</button>
+      <button type="button" class="btn2" data-settings-click="check-updates">Check now</button>
     </div>
     <label class="chk" style="margin-top:12px">
-      <input id="set-check-updates" type="checkbox" ${checkUpdates} onchange="markSettingsDirty()">
+      <input id="set-check-updates" type="checkbox" ${checkUpdates} data-settings-change="mark-dirty">
       <span class="chk-box"></span>
       <span>Check automatically at startup</span>
     </label>
@@ -949,9 +928,9 @@ function systemSupportHTML() {
       Copy a sanitized report containing versions, encoder status, and recent errors.
     </div>
     <div class="settings-support-actions">
-      <button class="btn1" onclick="copyDiagnostics()">Copy diagnostics</button>
-      <button class="btn2" onclick="openSupportFolder('logs')">Open logs folder</button>
-      <button class="btn2" onclick="openSupportFolder('config')">Open configuration folder</button>
+      <button type="button" class="btn1" data-settings-click="copy-diagnostics">Copy diagnostics</button>
+      <button type="button" class="btn2" data-settings-click="open-support" data-settings-value="logs">Open logs folder</button>
+      <button type="button" class="btn2" data-settings-click="open-support" data-settings-value="config">Open configuration folder</button>
     </div>
   </div>`;
 }
@@ -969,7 +948,7 @@ function systemAdvancedHTML(s) {
           <div id="set-ffmpeg" class="settings-readonly" style="flex:1" data-path="${ffmpegPath}">
             ${ffmpegLabel}
           </div>
-          <button class="btn2" onclick="clearFfmpeg()">Use automatic</button>
+          <button type="button" class="btn2" data-settings-click="clear-ffmpeg">Use automatic</button>
         </div>
       </div>
       <div class="settings-field full">
@@ -978,12 +957,12 @@ function systemAdvancedHTML(s) {
           <div id="set-ffprobe" class="settings-readonly" style="flex:1" data-path="${ffprobePath}">
             ${ffprobeLabel}
           </div>
-          <button class="btn2" onclick="clearFfprobe()">Use automatic</button>
+          <button type="button" class="btn2" data-settings-click="clear-ffprobe">Use automatic</button>
         </div>
       </div>
       <div class="settings-field full">
         <label for="set-encoder-cache-days">Encoder detection cache</label>
-        <select id="set-encoder-cache-days" onchange="markSettingsDirty()">
+        <select id="set-encoder-cache-days" data-settings-change="mark-dirty">
           <option value="0">Disabled</option>
           <option value="1">1 day</option>
           <option value="7">7 days</option>
@@ -1015,36 +994,36 @@ async function openSettings(page, view, profileId) {
   if (settingsPage === "profiles" && settingsView === "editor") {
     settingsShell("profiles", profileEditorHTML(), {
       html:
-        settingButton("Cancel", "backToProfiles()") +
-        settingButton("Save profile", "saveProfEdit()", true),
+        settingButton("Cancel", "back-profiles") +
+        settingButton("Save profile", "save-profile", true),
     });
     await hydrateEditor();
     return;
   }
   if (settingsPage === "general") {
     content = generalSettingsHTML(s, profiles);
-    actions = { html: settingButton("Save changes", "saveSettings()", true, true) };
+    actions = { html: settingButton("Save changes", "save-general", true, true) };
   } else if (settingsPage === "output") {
     content = outputSettingsHTML(s);
     actions = {
-      html: settingButton("Save changes", "saveOutputSettings()", true, true),
+      html: settingButton("Save changes", "save-output", true, true),
     };
   } else if (settingsPage === "profiles") {
     content = profilesSettingsHTML();
     actions = {
       plain: true,
       html:
-        settingButton("Import", "importProfs()") +
+        settingButton("Import", "import-profiles") +
         '<span class="settings-action-spacer"></span>' +
-        settingButton("+ New profile", "newProf()", true),
+        settingButton("+ New profile", "new-profile", true),
     };
   } else if (settingsPage === "explorer") {
     content = explorerSettingsHTML();
-    actions = { html: settingButton("+ Add shortcut", "instProfSt()", true) };
+    actions = { html: settingButton("+ Add shortcut", "add-shortcut", true) };
   } else {
     content = systemSettingsHTML(s);
     actions = {
-      html: settingButton("Save changes", "saveSystemSettings()", true, true),
+      html: settingButton("Save changes", "save-system", true, true),
     };
   }
   settingsShell(settingsPage, content, actions);
@@ -1133,7 +1112,7 @@ function clearFfprobe() {
   markSettingsDirty();
 }
 async function persistSettings(data) {
-  var r = await api.saveSettings(JSON.stringify(data));
+  var r = await api.saveSettings(data);
   if (r.ok) {
     appSettings = Object.assign(appSettings, data);
     settingsSnapshot = TuckSettingsState.snapshot(settingsPageState());
@@ -1261,16 +1240,16 @@ async function refreshSTList() {
     var repair = document.createElement("button");
     repair.className = "btn2";
     repair.textContent = "Repair";
-    repair.onclick = function () {
+    repair.addEventListener("click", function () {
       repairSt(s);
-    };
+    });
     var remove = document.createElement("button");
     remove.className = "btn2";
     remove.style.color = "var(--danger)";
     remove.textContent = "Remove";
-    remove.onclick = function () {
+    remove.addEventListener("click", function () {
       removeSt(s);
-    };
+    });
     row.appendChild(repair);
     row.appendChild(remove);
     list.appendChild(row);
@@ -1281,27 +1260,17 @@ async function refreshSTList() {
 }
 async function instProfSt() {
   var profiles = await api.getProfilesJson();
-  var content = `${settingsTitle("Add shortcut", "openSettings('explorer')")}
-    <div style="display:flex;flex-direction:column;gap:6px">
-      <button class="mrow" onclick="instGenSt()">
-        <div class="mi">
-          <div class="mti">Tuck</div>
-          <div class="mme">Default shortcut</div>
-        </div>
-      </button>`;
-  profiles.forEach(function (p) {
-    content += `<button
-      class="mrow"
-      onclick="installProfileSt('${escJS(p.profile_id)}','${escJS(p.name)}')"
-    >
-      <div class="mi">
-        <div class="mti">${esc(p.name)}</div>
-        <div class="mme">${esc(profileSummary(p))}</div>
-      </div>
-    </button>`;
-  });
-  content += "</div>";
+  var content = `${settingsTitle("Add shortcut", "open-explorer")}
+    <div id="profile-shortcut-choices" style="display:flex;flex-direction:column;gap:6px"></div>`;
   settingsShell("explorer", content, { html: "" });
+  var choices = byId("profile-shortcut-choices");
+  Tuck.settingsProfiles.renderShortcutChoices(document, choices, profiles, {
+    summarize: profileSummary,
+  });
+  Tuck.settingsProfiles.bindProfileActions(choices, function (action, profileId, name) {
+    if (action === "install-generic-shortcut") instGenSt();
+    else if (action === "install-profile-shortcut") installProfileSt(profileId, name);
+  });
 }
 async function instGenSt() {
   var r = await api.installGenericSendto();
@@ -1336,3 +1305,121 @@ async function repairSt(data) {
   else toast(r.error || "Failed", "err");
   refreshSTList();
 }
+
+Tuck.delegatedEvents.bind(byId("settings-workspace"), {
+  click: {
+    "close-overlay": function (target, event) {
+      if (event.target === target) closeSettings();
+    },
+    close: function () {
+      closeSettings();
+    },
+    navigate: function (target) {
+      navigateSettings(target.dataset.settingsValue);
+    },
+    "back-profiles": function () {
+      backToProfiles();
+    },
+    "save-profile": function () {
+      saveProfEdit();
+    },
+    "save-general": function () {
+      saveSettings();
+    },
+    "save-output": function () {
+      saveOutputSettings();
+    },
+    "import-profiles": function () {
+      importProfs();
+    },
+    "new-profile": function () {
+      newProf();
+    },
+    "add-shortcut": function () {
+      instProfSt();
+    },
+    "save-system": function () {
+      saveSystemSettings();
+    },
+    "open-explorer": function () {
+      openSettings("explorer");
+    },
+    "profile-task": function (target) {
+      peSetTask(target.dataset.settingsValue);
+    },
+    "profile-size": function (target) {
+      peSetSize(target.dataset.settingsValue);
+    },
+    "toggle-advanced": function () {
+      peToggleAdvanced();
+    },
+    "browse-output": function () {
+      browseOut();
+    },
+    "clear-output": function () {
+      clearOut();
+    },
+    "insert-token": function (target) {
+      insertNamingToken(
+        target.dataset.settingsTarget,
+        target.dataset.settingsToken,
+      );
+    },
+    "filter-profiles": function (target) {
+      refreshPMList(target.dataset.settingsValue);
+    },
+    "browse-ffmpeg": function () {
+      browseFfmpeg();
+    },
+    "browse-ffprobe": function () {
+      browseFfprobe();
+    },
+    "refresh-encoders": function () {
+      refreshEncoders();
+    },
+    "check-updates": function () {
+      checkUpdatesFromSettings();
+    },
+    "copy-diagnostics": function () {
+      copyDiagnostics();
+    },
+    "open-support": function (target) {
+      openSupportFolder(target.dataset.settingsValue);
+    },
+    "clear-ffmpeg": function () {
+      clearFfmpeg();
+    },
+    "clear-ffprobe": function () {
+      clearFfprobe();
+    },
+  },
+  input: {
+    "profile-size": function (target) {
+      peSetSize(target.value);
+    },
+    "profile-fps": function (target) {
+      peSetFps(target.value);
+    },
+    "preview-output": function () {
+      markSettingsDirty();
+      updateExampleOutput();
+    },
+  },
+  change: {
+    "profile-visibility": function () {
+      peVisibility();
+    },
+    "profile-encoder": function () {
+      peEncoderChanged();
+    },
+    "profile-speed": function () {
+      peSpeedChanged();
+    },
+    "profile-preset": function () {
+      pePresetChanged();
+    },
+    "mark-dirty": function () {
+      markSettingsDirty();
+    },
+  },
+}, "settings");

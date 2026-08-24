@@ -1,8 +1,7 @@
-import json
-
 import pytest
 
-from tuck.bridge import BridgeAPI, _item_to_dict, _pick_surviving_default
+from tuck.bridge import BridgeAPI
+from tuck.bridge_serialization import queue_item_dict
 from tuck.models import (
     PROFILE_ID_DISCORD_FREE,
     CropRect,
@@ -16,6 +15,7 @@ from tuck.models import (
     VideoTransform,
     find_profile_by_id,
 )
+from tuck.profile_service import pick_surviving_default
 
 
 def test_parse_plan_request_accepts_segments_and_rejects_legacy_mix(tmp_path):
@@ -62,7 +62,7 @@ class TestBridgeQueueState:
         api = BridgeAPI()
         item = QueueItem(plan=EncodePlan(source="clip.mp4", output="out.mp4"))
         monkeypatch.setattr(api._queue, "snapshot", lambda: ([item], item, [item.id]))
-        state = json.loads(api.get_queue_state())
+        state = api.get_queue_state()
         assert state["current_id"] == item.id
         assert state["pending_ids"] == [item.id]
         assert state["items"][0]["id"] == item.id
@@ -77,7 +77,7 @@ class TestBridgeQueueState:
             )
         )
 
-        assert _item_to_dict(item)["crop"] == crop.to_dict()
+        assert queue_item_dict(item)["crop"] == crop.to_dict()
 
     def test_queue_snapshot_exposes_complete_transform(self):
         transform = VideoTransform(
@@ -89,7 +89,7 @@ class TestBridgeQueueState:
             output=OutputGeometry(1080, 1920),
         )
         item = QueueItem(plan=EncodePlan(source="clip.mp4", output="out.mp4", transform=transform))
-        assert _item_to_dict(item)["transform"] == transform.to_dict()
+        assert queue_item_dict(item)["transform"] == transform.to_dict()
 
     def test_clear_completed_returns_removed_count(self):
         api = BridgeAPI()
@@ -97,7 +97,7 @@ class TestBridgeQueueState:
         item.state = QueueState.COMPLETED
         api._queue._items[item.id] = item
 
-        assert json.loads(api.clear_completed()) == {"ok": True, "count": 1}
+        assert api.clear_completed() == {"ok": True, "count": 1}
 
 
 def test_bridge_reuses_probe_metadata_for_unchanged_video(tmp_path, monkeypatch):
@@ -157,22 +157,21 @@ class TestBridgeProfileLifecycle:
         api = BridgeAPI()
         api._settings.load()
 
-        payload = json.dumps(
-            {
-                "name": "My Test Profile",
-                "target_size_bytes": 50 * 1024 * 1024,
-                "resolution_mode": "source",
-                "fps_mode": "source",
-                "rate_control": "target_size",
-                "audio_bitrate": 128000,
-                "preset": "medium",
-                "two_pass": True,
-                "max_width": 1920,
-                "max_height": 1080,
-                "max_fps": 30.0,
-            }
-        )
-        resp = json.loads(api.create_profile(payload))
+        payload = {
+            "name": "My Test Profile",
+            "target_size_bytes": 50 * 1024 * 1024,
+            "resolution_mode": "source",
+            "fps_mode": "source",
+            "rate_control": "target_size",
+            "audio_bitrate": 128000,
+            "preset": "medium",
+            "two_pass": True,
+            "max_width": 1920,
+            "max_height": 1080,
+            "max_fps": 30.0,
+        }
+
+        resp = api.create_profile(payload)
         assert resp["ok"]
         assert "profile_id" in resp
 
@@ -190,23 +189,19 @@ class TestBridgeProfileLifecycle:
 
         api = BridgeAPI()
         api._settings.load()
-        result = json.loads(
-            api.create_profile(
-                json.dumps(
-                    {
-                        "name": "Vertical upload",
-                        "target_size_mb": 10,
-                        "resolution_mode": "custom",
-                        "custom_width": 1080,
-                        "custom_height": 1920,
-                        "transform_intent": {
-                            "crop_aspect": "9:16",
-                            "sizing_mode": "fill",
-                            "rotation": 0,
-                        },
-                    }
-                )
-            )
+        result = api.create_profile(
+            {
+                "name": "Vertical upload",
+                "target_size_mb": 10,
+                "resolution_mode": "custom",
+                "custom_width": 1080,
+                "custom_height": 1920,
+                "transform_intent": {
+                    "crop_aspect": "9:16",
+                    "sizing_mode": "fill",
+                    "rotation": 0,
+                },
+            }
         )
 
         assert result["ok"]
@@ -215,9 +210,7 @@ class TestBridgeProfileLifecycle:
         assert profile.transform_intent is not None
         assert profile.transform_intent.crop_aspect == "9:16"
         exposed = next(
-            item
-            for item in json.loads(api.get_profiles_json())
-            if item["profile_id"] == result["profile_id"]
+            item for item in api.get_profiles_json() if item["profile_id"] == result["profile_id"]
         )
         assert exposed["transform_intent"] == profile.transform_intent.to_dict()
 
@@ -230,28 +223,26 @@ class TestBridgeProfileLifecycle:
 
         api = BridgeAPI()
         api._settings.load()
-        payload = json.dumps(
-            {
-                "name": "Compression Profile",
-                "target_size_mb": 50,
-                "resolution_mode": "source",
-                "fps_mode": "source",
-                "rate_control": "target_size",
-                "audio_bitrate_kbps": 128,
-                "keep_audio": True,
-                "two_pass": True,
-                "preset": "medium",
-                "scaler": "neighbor",
-                "video_encoder": "libx264",
-                "crf": 23,
-                "cq": 23,
-                "tune": "",
-                "workflow": "compression",
-                "rate_control_method": "cbr",
-            }
-        )
+        payload = {
+            "name": "Compression Profile",
+            "target_size_mb": 50,
+            "resolution_mode": "source",
+            "fps_mode": "source",
+            "rate_control": "target_size",
+            "audio_bitrate_kbps": 128,
+            "keep_audio": True,
+            "two_pass": True,
+            "preset": "medium",
+            "scaler": "neighbor",
+            "video_encoder": "libx264",
+            "crf": 23,
+            "cq": 23,
+            "tune": "",
+            "workflow": "compression",
+            "rate_control_method": "cbr",
+        }
 
-        result = json.loads(api.create_profile(payload))
+        result = api.create_profile(payload)
         assert result["ok"]
         profile = find_profile_by_id(api._settings.get_profiles(), result["profile_id"])
         assert profile is not None
@@ -282,7 +273,7 @@ class TestBridgeProfileLifecycle:
         profiles.append(profile)
         api._settings.set_profiles(profiles)
 
-        result = json.loads(api.update_profile("legacy-cqp", "{}"))
+        result = api.update_profile("legacy-cqp", {})
         assert result["ok"]
         restored = find_profile_by_id(api._settings.get_profiles(), "legacy-cqp")
         assert restored is not None
@@ -290,9 +281,7 @@ class TestBridgeProfileLifecycle:
         assert restored.qp == 18
         assert restored.cq == 31
         serialized = next(
-            item
-            for item in json.loads(api.get_profiles_json())
-            if item["profile_id"] == "legacy-cqp"
+            item for item in api.get_profiles_json() if item["profile_id"] == "legacy-cqp"
         )
         assert serialized["qp"] == 18
 
@@ -307,7 +296,7 @@ class TestBridgeProfileLifecycle:
         api._settings.load()
 
         payload = '{"name": ""}'
-        resp = json.loads(api.create_profile(payload))
+        resp = api.create_profile(payload)
         assert not resp["ok"]
 
     def test_create_profile_uses_default_scaler_when_absent(self, tmp_path, monkeypatch):
@@ -324,19 +313,18 @@ class TestBridgeProfileLifecycle:
         api._settings.set_setting("default_scaler", "lanczos")
         api._settings.save()
 
-        payload = json.dumps(
-            {
-                "name": "Scaler Default Test",
-                "target_size_bytes": 50 * 1024 * 1024,
-                "resolution_mode": "source",
-                "fps_mode": "source",
-                "rate_control": "target_size",
-                "audio_bitrate": 128000,
-                "preset": "medium",
-                "two_pass": True,
-            }
-        )
-        resp = json.loads(api.create_profile(payload))
+        payload = {
+            "name": "Scaler Default Test",
+            "target_size_bytes": 50 * 1024 * 1024,
+            "resolution_mode": "source",
+            "fps_mode": "source",
+            "rate_control": "target_size",
+            "audio_bitrate": 128000,
+            "preset": "medium",
+            "two_pass": True,
+        }
+
+        resp = api.create_profile(payload)
         assert resp["ok"]
         assert "profile_id" in resp
 
@@ -358,19 +346,18 @@ class TestBridgeProfileLifecycle:
         api._settings.set_setting("default_scaler", "neighbor")
         api._settings.save()
 
-        payload = json.dumps(
-            {
-                "name": "Scaler Fallback Test",
-                "target_size_bytes": 50 * 1024 * 1024,
-                "resolution_mode": "source",
-                "fps_mode": "source",
-                "rate_control": "target_size",
-                "audio_bitrate": 128000,
-                "preset": "medium",
-                "two_pass": True,
-            }
-        )
-        resp = json.loads(api.create_profile(payload))
+        payload = {
+            "name": "Scaler Fallback Test",
+            "target_size_bytes": 50 * 1024 * 1024,
+            "resolution_mode": "source",
+            "fps_mode": "source",
+            "rate_control": "target_size",
+            "audio_bitrate": 128000,
+            "preset": "medium",
+            "two_pass": True,
+        }
+
+        resp = api.create_profile(payload)
         assert resp["ok"]
 
         profiles = api._settings.get_profiles()
@@ -388,7 +375,7 @@ class TestBridgeProfileLifecycle:
         api = BridgeAPI()
         api._settings.load()
 
-        resp = json.loads(api.duplicate_profile(PROFILE_ID_DISCORD_FREE))
+        resp = api.duplicate_profile(PROFILE_ID_DISCORD_FREE)
         assert resp["ok"]
         assert "profile_id" in resp
         assert resp["profile_id"] != PROFILE_ID_DISCORD_FREE
@@ -412,7 +399,7 @@ class TestBridgeProfileLifecycle:
         profiles.append(custom)
         api._settings.set_profiles(profiles)
 
-        resp = json.loads(api.delete_profile("delete-me"))
+        resp = api.delete_profile("delete-me")
         assert resp["ok"]
 
         remaining = api._settings.get_profiles()
@@ -433,7 +420,7 @@ class TestBridgeProfileLifecycle:
         api._settings.set_profiles(profiles)
         api._settings.set_setting("default_profile_id", "my-default")
 
-        json.loads(api.delete_profile("my-default"))
+        api.delete_profile("my-default")
 
         new_default = api._settings.get_setting("default_profile_id", "")
         assert new_default == PROFILE_ID_DISCORD_FREE
@@ -452,8 +439,8 @@ class TestBridgeProfileLifecycle:
         profiles.append(custom)
         api._settings.set_profiles(profiles)
 
-        payload = json.dumps({"name": "Updated Name", "target_size_mb": 25})
-        resp = json.loads(api.update_profile("updatable-1", payload))
+        payload = {"name": "Updated Name", "target_size_mb": 25}
+        resp = api.update_profile("updatable-1", payload)
         assert resp["ok"]
 
         updated = api._settings.get_profiles()
@@ -487,8 +474,8 @@ class TestBridgeProfileLifecycle:
         profiles.append(custom)
         api._settings.set_profiles(profiles)
 
-        payload = json.dumps({"name": "Renamed Only"})
-        resp = json.loads(api.update_profile("partial-1", payload))
+        payload = {"name": "Renamed Only"}
+        resp = api.update_profile("partial-1", payload)
         assert resp["ok"]
 
         updated = api._settings.get_profiles()
@@ -518,9 +505,7 @@ class TestBridgeProfileLifecycle:
         profiles.append(Profile(name="Bitrate Test", profile_id="br-test"))
         api._settings.set_profiles(profiles)
 
-        resp = json.loads(
-            api.update_profile("br-test", json.dumps({"explicit_bitrate_kbps": 2000}))
-        )
+        resp = api.update_profile("br-test", {"explicit_bitrate_kbps": 2000})
 
         assert not resp["ok"]
 
@@ -543,8 +528,8 @@ class TestBridgeProfileLifecycle:
         profiles.append(custom)
         api._settings.set_profiles(profiles)
 
-        payload = json.dumps({"audio_bitrate_kbps": 192})
-        resp = json.loads(api.update_profile("audio-test", payload))
+        payload = {"audio_bitrate_kbps": 192}
+        resp = api.update_profile("audio-test", payload)
         assert resp["ok"]
 
         updated = api._settings.get_profiles()
@@ -601,15 +586,15 @@ class TestBridgePlanRequest:
         b = api._queue.enqueue(
             EncodePlan(source="b.mp4", output="b_out.mp4", target_size=1024 * 1024)
         )
-        r = json.loads(api.move_item(b.id, 0))
+        r = api.move_item(b.id, 0)
         assert r["ok"]
-        state = json.loads(api.get_queue_state())
+        state = api.get_queue_state()
         assert state["pending_ids"] == [b.id, a.id]
         for invalid_index in (True, 1.9):
-            response = json.loads(api.move_item(a.id, invalid_index))
+            response = api.move_item(a.id, invalid_index)
             assert not response["ok"]
             assert response["error"] == "new_index must be an integer"
-        diag = json.loads(api.get_diagnostics("{}"))
+        diag = api.get_diagnostics({})
         assert diag["ok"]
         assert "Tuck version" in diag["text"]
 
@@ -1148,135 +1133,135 @@ class TestBridgePlanRequest:
         assert req.crf is None
         assert req.tune is None
 
-    def test_normalize_profile_ui_payload_rejects_fractional_float(self, tmp_path):
+    def testnormalize_profile_ui_payload_rejects_fractional_float(self, tmp_path):
 
-        from tuck.bridge import _normalize_profile_ui_payload
+        from tuck.bridge_validation import normalize_profile_ui_payload
 
         with pytest.raises(ValueError, match="must be an integer, not a fractional float"):
-            _normalize_profile_ui_payload({"target_size_mb": 25.5})
+            normalize_profile_ui_payload({"target_size_mb": 25.5})
 
-    def test_normalize_profile_ui_payload_rejects_bool_for_numeric(self):
+    def testnormalize_profile_ui_payload_rejects_bool_for_numeric(self):
 
-        from tuck.bridge import _normalize_profile_ui_payload
-
-        with pytest.raises(ValueError, match="must be a number"):
-            _normalize_profile_ui_payload({"target_size_mb": True})
-
-    def test_normalize_profile_ui_payload_rejects_string_for_numeric(self):
-
-        from tuck.bridge import _normalize_profile_ui_payload
+        from tuck.bridge_validation import normalize_profile_ui_payload
 
         with pytest.raises(ValueError, match="must be a number"):
-            _normalize_profile_ui_payload({"target_size_mb": "not-a-number"})
+            normalize_profile_ui_payload({"target_size_mb": True})
 
-    def test_normalize_profile_ui_payload_rejects_nan(self):
+    def testnormalize_profile_ui_payload_rejects_string_for_numeric(self):
 
-        from tuck.bridge import _normalize_profile_ui_payload
+        from tuck.bridge_validation import normalize_profile_ui_payload
+
+        with pytest.raises(ValueError, match="must be a number"):
+            normalize_profile_ui_payload({"target_size_mb": "not-a-number"})
+
+    def testnormalize_profile_ui_payload_rejects_nan(self):
+
+        from tuck.bridge_validation import normalize_profile_ui_payload
 
         with pytest.raises(ValueError, match="must be a finite number"):
-            _normalize_profile_ui_payload({"target_size_mb": float("nan")})
+            normalize_profile_ui_payload({"target_size_mb": float("nan")})
 
-    def test_normalize_profile_ui_payload_rejects_infinity(self):
+    def testnormalize_profile_ui_payload_rejects_infinity(self):
 
-        from tuck.bridge import _normalize_profile_ui_payload
+        from tuck.bridge_validation import normalize_profile_ui_payload
 
         with pytest.raises(ValueError, match="must be a finite number"):
-            _normalize_profile_ui_payload({"explicit_bitrate_kbps": float("inf")})
+            normalize_profile_ui_payload({"explicit_bitrate_kbps": float("inf")})
 
-    def test_normalize_profile_ui_payload_rejects_string_for_two_pass(self):
+    def testnormalize_profile_ui_payload_rejects_string_for_two_pass(self):
 
-        from tuck.bridge import _normalize_profile_ui_payload
+        from tuck.bridge_validation import normalize_profile_ui_payload
 
         with pytest.raises(ValueError, match="two_pass must be a boolean"):
-            _normalize_profile_ui_payload({"two_pass": "true"})
+            normalize_profile_ui_payload({"two_pass": "true"})
 
-    def test_normalize_profile_ui_payload_rejects_string_for_keep_audio(self):
+    def testnormalize_profile_ui_payload_rejects_string_for_keep_audio(self):
 
-        from tuck.bridge import _normalize_profile_ui_payload
+        from tuck.bridge_validation import normalize_profile_ui_payload
 
         with pytest.raises(ValueError, match="keep_audio must be a boolean"):
-            _normalize_profile_ui_payload({"keep_audio": "false"})
+            normalize_profile_ui_payload({"keep_audio": "false"})
 
-    def test_normalize_profile_ui_payload_accepts_valid_video_encoder(self):
-        from tuck.bridge import _normalize_profile_ui_payload
+    def testnormalize_profile_ui_payload_accepts_valid_video_encoder(self):
+        from tuck.bridge_validation import normalize_profile_ui_payload
 
         for enc in ("libx264", "libx265"):
-            result = _normalize_profile_ui_payload({"video_encoder": enc})
+            result = normalize_profile_ui_payload({"video_encoder": enc})
             assert result["video_encoder"] == enc
 
-    def test_normalize_profile_ui_payload_rejects_invalid_video_encoder(self):
-        from tuck.bridge import _normalize_profile_ui_payload
+    def testnormalize_profile_ui_payload_rejects_invalid_video_encoder(self):
+        from tuck.bridge_validation import normalize_profile_ui_payload
 
         with pytest.raises(ValueError, match="video_encoder must be"):
-            _normalize_profile_ui_payload({"video_encoder": "bogus"})
+            normalize_profile_ui_payload({"video_encoder": "bogus"})
 
-    def test_normalize_profile_ui_payload_rejects_non_string_video_encoder(self):
-        from tuck.bridge import _normalize_profile_ui_payload
+    def testnormalize_profile_ui_payload_rejects_non_string_video_encoder(self):
+        from tuck.bridge_validation import normalize_profile_ui_payload
 
         with pytest.raises(ValueError, match="video_encoder must be"):
-            _normalize_profile_ui_payload({"video_encoder": 123})
+            normalize_profile_ui_payload({"video_encoder": 123})
 
-    def test_normalize_profile_ui_payload_accepts_valid_crf(self):
-        from tuck.bridge import _normalize_profile_ui_payload
+    def testnormalize_profile_ui_payload_accepts_valid_crf(self):
+        from tuck.bridge_validation import normalize_profile_ui_payload
 
         for crf in (0, 23, 51):
-            result = _normalize_profile_ui_payload({"crf": crf})
+            result = normalize_profile_ui_payload({"crf": crf})
             assert result["crf"] == crf
 
-    def test_normalize_profile_ui_payload_rejects_crf_bool(self):
-        from tuck.bridge import _normalize_profile_ui_payload
+    def testnormalize_profile_ui_payload_rejects_crf_bool(self):
+        from tuck.bridge_validation import normalize_profile_ui_payload
 
         with pytest.raises(ValueError, match="crf must be a number"):
-            _normalize_profile_ui_payload({"crf": True})
+            normalize_profile_ui_payload({"crf": True})
 
-    def test_normalize_profile_ui_payload_rejects_crf_string(self):
-        from tuck.bridge import _normalize_profile_ui_payload
+    def testnormalize_profile_ui_payload_rejects_crf_string(self):
+        from tuck.bridge_validation import normalize_profile_ui_payload
 
         with pytest.raises(ValueError, match="crf must be a number"):
-            _normalize_profile_ui_payload({"crf": "23"})
+            normalize_profile_ui_payload({"crf": "23"})
 
-    def test_normalize_profile_ui_payload_rejects_crf_out_of_range_high(self):
-        from tuck.bridge import _normalize_profile_ui_payload
-
-        with pytest.raises(ValueError, match="crf must be between 0 and 51"):
-            _normalize_profile_ui_payload({"crf": 52})
-
-    def test_normalize_profile_ui_payload_rejects_crf_out_of_range_low(self):
-        from tuck.bridge import _normalize_profile_ui_payload
+    def testnormalize_profile_ui_payload_rejects_crf_out_of_range_high(self):
+        from tuck.bridge_validation import normalize_profile_ui_payload
 
         with pytest.raises(ValueError, match="crf must be between 0 and 51"):
-            _normalize_profile_ui_payload({"crf": -1})
+            normalize_profile_ui_payload({"crf": 52})
 
-    def test_normalize_profile_ui_payload_rejects_crf_nan(self):
-        from tuck.bridge import _normalize_profile_ui_payload
+    def testnormalize_profile_ui_payload_rejects_crf_out_of_range_low(self):
+        from tuck.bridge_validation import normalize_profile_ui_payload
+
+        with pytest.raises(ValueError, match="crf must be between 0 and 51"):
+            normalize_profile_ui_payload({"crf": -1})
+
+    def testnormalize_profile_ui_payload_rejects_crf_nan(self):
+        from tuck.bridge_validation import normalize_profile_ui_payload
 
         with pytest.raises(ValueError, match="crf must be finite"):
-            _normalize_profile_ui_payload({"crf": float("nan")})
+            normalize_profile_ui_payload({"crf": float("nan")})
 
-    def test_normalize_profile_ui_payload_rejects_crf_inf(self):
-        from tuck.bridge import _normalize_profile_ui_payload
+    def testnormalize_profile_ui_payload_rejects_crf_inf(self):
+        from tuck.bridge_validation import normalize_profile_ui_payload
 
         with pytest.raises(ValueError, match="crf must be finite"):
-            _normalize_profile_ui_payload({"crf": float("inf")})
+            normalize_profile_ui_payload({"crf": float("inf")})
 
-    def test_normalize_profile_ui_payload_accepts_valid_tune(self):
-        from tuck.bridge import _normalize_profile_ui_payload
+    def testnormalize_profile_ui_payload_accepts_valid_tune(self):
+        from tuck.bridge_validation import normalize_profile_ui_payload
 
         for tune in ("", "film", "animation", "grain", "stillimage", "fastdecode", "zerolatency"):
-            result = _normalize_profile_ui_payload({"tune": tune})
+            result = normalize_profile_ui_payload({"tune": tune})
             assert result["tune"] == tune
 
-    def test_normalize_profile_ui_payload_rejects_invalid_tune(self):
-        from tuck.bridge import _normalize_profile_ui_payload
+    def testnormalize_profile_ui_payload_rejects_invalid_tune(self):
+        from tuck.bridge_validation import normalize_profile_ui_payload
 
         with pytest.raises(ValueError, match="tune must be one of"):
-            _normalize_profile_ui_payload({"tune": "bogus"})
+            normalize_profile_ui_payload({"tune": "bogus"})
 
-    def test_normalize_profile_ui_payload_rejects_non_string_tune(self):
-        from tuck.bridge import _normalize_profile_ui_payload
+    def testnormalize_profile_ui_payload_rejects_non_string_tune(self):
+        from tuck.bridge_validation import normalize_profile_ui_payload
 
         with pytest.raises(ValueError, match="tune must be a string"):
-            _normalize_profile_ui_payload({"tune": 123})
+            normalize_profile_ui_payload({"tune": 123})
 
     def test_create_plan_returns_request_id(self, tmp_path, monkeypatch):
 
@@ -1291,9 +1276,7 @@ class TestBridgePlanRequest:
 
         api = BridgeAPI()
         api._settings.load()
-        resp = json.loads(
-            api.create_plan(json.dumps({"source": str(test_file), "_request_id": 42}))
-        )
+        resp = api.create_plan({"source": str(test_file), "_request_id": 42})
         assert resp.get("_request_id") == 42
 
     def test_create_plan_response_includes_scaler(
@@ -1323,15 +1306,11 @@ class TestBridgePlanRequest:
         profiles.append(custom)
         api._settings.set_profiles(profiles)
 
-        resp = json.loads(
-            api.create_plan(
-                json.dumps(
-                    {
-                        "source": str(sample_video_path),
-                        "profile_id": "scaler-test",
-                    }
-                )
-            )
+        resp = api.create_plan(
+            {
+                "source": str(sample_video_path),
+                "profile_id": "scaler-test",
+            }
         )
         assert resp["ok"]
         assert resp["data"]["scaler"] == "lanczos"
@@ -1363,16 +1342,12 @@ class TestBridgePlanRequest:
         profiles.append(custom)
         api._settings.set_profiles(profiles)
 
-        resp = json.loads(
-            api.create_plan(
-                json.dumps(
-                    {
-                        "source": str(sample_video_path),
-                        "profile_id": "scaler-override",
-                        "scaler": "nearest",
-                    }
-                )
-            )
+        resp = api.create_plan(
+            {
+                "source": str(sample_video_path),
+                "profile_id": "scaler-override",
+                "scaler": "nearest",
+            }
         )
         assert resp["ok"]
         assert resp["data"]["scaler"] == "neighbor"
@@ -1409,15 +1384,11 @@ class TestBridgeWorkflowPropagation:
         profiles.append(custom)
         api._settings.set_profiles(profiles)
 
-        resp = json.loads(
-            api.create_plan(
-                json.dumps(
-                    {
-                        "source": str(sample_video_path),
-                        "profile_id": "wf-test",
-                    }
-                )
-            )
+        resp = api.create_plan(
+            {
+                "source": str(sample_video_path),
+                "profile_id": "wf-test",
+            }
         )
         assert resp["ok"]
         assert resp["data"]["workflow"] == "upscale"
@@ -1454,15 +1425,11 @@ class TestBridgeWorkflowPropagation:
         profiles.append(custom)
         api._settings.set_profiles(profiles)
 
-        resp = json.loads(
-            api.create_plan(
-                json.dumps(
-                    {
-                        "source": str(sample_video_path),
-                        "profile_id": "qp-test",
-                    }
-                )
-            )
+        resp = api.create_plan(
+            {
+                "source": str(sample_video_path),
+                "profile_id": "qp-test",
+            }
         )
         assert resp["ok"]
         assert resp["data"]["qp"] == 20
@@ -1477,7 +1444,7 @@ class TestBridgeWorkflowPropagation:
 
         api = BridgeAPI()
         api._settings.load()
-        resp = json.loads(api.get_settings())
+        resp = api.get_settings()
         profiles = resp.get("profiles", [])
         assert len(profiles) > 0
         p = profiles[0]
@@ -1497,10 +1464,8 @@ class TestBridgeWorkflowPropagation:
         monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
 
         api = BridgeAPI()
-        saved = json.loads(api.save_settings(json.dumps({"open_output_folder_after_queue": True})))
-        invalid = json.loads(
-            api.save_settings(json.dumps({"open_output_folder_after_queue": "yes"}))
-        )
+        saved = api.save_settings({"open_output_folder_after_queue": True})
+        invalid = api.save_settings({"open_output_folder_after_queue": "yes"})
 
         assert saved["ok"]
         assert api._settings.load().open_output_folder_after_queue is True
@@ -1515,9 +1480,9 @@ class TestBridgeWorkflowPropagation:
         monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
 
         api = BridgeAPI()
-        saved = json.loads(api.save_settings(json.dumps({"timeline_height": 260})))
-        reset = json.loads(api.save_settings(json.dumps({"timeline_height": 0})))
-        invalid = json.loads(api.save_settings(json.dumps({"timeline_height": 120})))
+        saved = api.save_settings({"timeline_height": 260})
+        reset = api.save_settings({"timeline_height": 0})
+        invalid = api.save_settings({"timeline_height": 120})
 
         assert saved["ok"]
         assert reset["ok"]
@@ -1533,9 +1498,9 @@ class TestBridgeWorkflowPropagation:
         monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
 
         api = BridgeAPI()
-        assert json.loads(api.save_settings(json.dumps({"encoder_cache_days": 30})))["ok"]
+        assert api.save_settings({"encoder_cache_days": 30})["ok"]
         assert api._settings.load().encoder_cache_days == 30
-        assert not json.loads(api.save_settings(json.dumps({"encoder_cache_days": 366})))["ok"]
+        assert not api.save_settings({"encoder_cache_days": 366})["ok"]
 
     def test_saving_cache_duration_keeps_encoder_cache(self, tmp_path, monkeypatch):
         import tuck.settings as settings_mod
@@ -1549,7 +1514,7 @@ class TestBridgeWorkflowPropagation:
         )
 
         api = BridgeAPI()
-        assert json.loads(api.save_settings(json.dumps({"encoder_cache_days": 30})))["ok"]
+        assert api.save_settings({"encoder_cache_days": 30})["ok"]
         assert cleared == []
 
     def test_get_profiles_json_includes_workflow_fields(self, tmp_path, monkeypatch):
@@ -1562,7 +1527,7 @@ class TestBridgeWorkflowPropagation:
 
         api = BridgeAPI()
         api._settings.load()
-        resp = json.loads(api.get_profiles_json())
+        resp = api.get_profiles_json()
         assert len(resp) > 0
         p = resp[0]
         assert "workflow" in p
@@ -1609,7 +1574,7 @@ class TestBridgeQueueManagement:
         item = api._queue.enqueue(EncodePlan(source="source.mp4", output="output.mp4"))
         item.state = QueueState.FAILED
 
-        response = json.loads(api.retry_item(item.id))
+        response = api.retry_item(item.id)
 
         assert response["ok"]
         assert api._queue.items[-1].state == QueueState.PENDING
@@ -1625,7 +1590,7 @@ class TestBridgeQueueManagement:
         api = BridgeAPI()
         item = api._queue.enqueue(EncodePlan(source="source.mp4", output="output.mp4"))
 
-        response = json.loads(api.stop_after_current())
+        response = api.stop_after_current()
 
         assert response["ok"]
         assert item.state == QueueState.CANCELLED
@@ -1675,8 +1640,8 @@ class TestBridgePreviewEnqueueParity:
             "audio_bitrate": 192000,
         }
 
-        preview_json = json.loads(api.create_plan(json.dumps(request_payload)))
-        enqueue_json = json.loads(api.enqueue_with_options(json.dumps(request_payload)))
+        preview_json = api.create_plan(request_payload)
+        enqueue_json = api.enqueue_with_options(request_payload)
 
         assert preview_json["ok"] == enqueue_json["ok"], (
             f"Parity mismatch: preview={preview_json['ok']}, enqueue={enqueue_json['ok']}"
@@ -1711,9 +1676,9 @@ class TestBridgePreviewEnqueueParity:
         api = BridgeAPI()
         api._settings.load()
 
-        payload = json.dumps({"source": ""})
-        preview = json.loads(api.create_plan(payload))
-        enqueue = json.loads(api.enqueue_with_options(payload))
+        payload = {"source": ""}
+        preview = api.create_plan(payload)
+        enqueue = api.enqueue_with_options(payload)
         assert not preview["ok"]
         assert not enqueue["ok"]
 
@@ -1738,7 +1703,7 @@ class TestDeleteDefaultPolicy:
         api._settings.set_profiles(profiles)
         api._settings.set_setting("default_profile_id", "default-custom")
 
-        json.loads(api.delete_profile("default-custom"))
+        api.delete_profile("default-custom")
         new_default = api._settings.get_setting("default_profile_id", "")
 
         assert new_default != "default-custom"
@@ -1762,22 +1727,22 @@ class TestDeleteDefaultPolicy:
         api._settings.set_profiles([p1, p2])
         api._settings.set_setting("default_profile_id", "user-one")
 
-        json.loads(api.delete_profile("user-one"))
+        api.delete_profile("user-one")
         new_default = api._settings.get_setting("default_profile_id", "")
         assert new_default == "user-two"
 
-    def test_pick_surviving_default_prefers_builtins(self):
+    def testpick_surviving_default_prefers_builtins(self):
 
         p1 = Profile(name="Builtin 500MB", profile_id="discord-500mb")
         p2 = Profile(name="User", profile_id="user-abc")
-        result = _pick_surviving_default([p1, p2])
+        result = pick_surviving_default([p1, p2])
         assert result == "discord-500mb"
 
-    def test_pick_surviving_default_returns_first_if_no_builtins(self):
+    def testpick_surviving_default_returns_first_if_no_builtins(self):
 
         p1 = Profile(name="A", profile_id="aaa")
         p2 = Profile(name="B", profile_id="bbb")
-        result = _pick_surviving_default([p1, p2])
+        result = pick_surviving_default([p1, p2])
         assert result == "aaa"
 
 
@@ -1799,7 +1764,7 @@ class TestBridgeImportExportFromFile:
         export_profiles_json([dup], export_path)
 
         profiles_before = len(api._settings.get_profiles())
-        resp = json.loads(api.import_profiles_from_file(str(export_path)))
+        resp = api.import_profiles_from_file(str(export_path))
         assert resp["ok"]
         assert resp["count"] == 1
         assert len(api._settings.get_profiles()) > profiles_before
@@ -1821,7 +1786,7 @@ class TestBridgeImportExportFromFile:
         export_profiles_json([dup], export_path)
 
         profiles_before = len(api._settings.get_profiles())
-        resp = json.loads(api.import_profiles_from_file(str(export_path)))
+        resp = api.import_profiles_from_file(str(export_path))
         assert resp["ok"]
         assert len(api._settings.get_profiles()) > profiles_before
 
@@ -1834,40 +1799,8 @@ class TestBridgeImportExportFromFile:
 
         api = BridgeAPI()
         api._settings.load()
-        resp = json.loads(api.import_profiles_from_file(str(tmp_path / "nonexistent.json")))
+        resp = api.import_profiles_from_file(str(tmp_path / "nonexistent.json"))
         assert not resp["ok"]
-
-    def test_export_to_file_success(self, tmp_path, monkeypatch):
-        import tuck.settings as settings_mod
-
-        monkeypatch.setattr(settings_mod, "_config_dir", lambda: tmp_path)
-        monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
-        monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
-
-        api = BridgeAPI()
-        api._settings.load()
-
-        export_path = tmp_path / "exported.json"
-        resp = json.loads(api.export_profiles_to_file(str(export_path)))
-        assert resp["ok"]
-        assert export_path.exists()
-
-    def test_export_to_file_roundtrip(self, tmp_path, monkeypatch):
-        import tuck.settings as settings_mod
-
-        monkeypatch.setattr(settings_mod, "_config_dir", lambda: tmp_path)
-        monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
-        monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
-
-        api = BridgeAPI()
-        api._settings.load()
-
-        export_path = tmp_path / "roundtrip.json"
-        resp = json.loads(api.export_profiles_to_file(str(export_path)))
-        assert resp["ok"]
-
-        resp2 = json.loads(api.import_profiles_from_file(str(export_path)))
-        assert resp2["ok"]
 
     def test_export_single_profile_to_file(self, tmp_path, monkeypatch):
         import tuck.settings as settings_mod
@@ -1886,7 +1819,7 @@ class TestBridgeImportExportFromFile:
         api._settings.set_profiles([first, second])
 
         export_path = tmp_path / "second.json"
-        resp = json.loads(api.export_profile_to_file(str(export_path), "second"))
+        resp = api.export_profile_to_file(str(export_path), "second")
 
         assert resp["ok"]
         assert import_profiles_json(export_path) == [second]
@@ -1903,7 +1836,7 @@ class TestBridgeImportExportFromFile:
         api._settings.load()
         export_path = tmp_path / "missing.json"
 
-        resp = json.loads(api.export_profile_to_file(str(export_path), "missing"))
+        resp = api.export_profile_to_file(str(export_path), "missing")
 
         assert resp == {"ok": False, "error": "Profile not found: missing"}
         assert not export_path.exists()
@@ -1919,7 +1852,7 @@ class TestBridgeGetProfilesJson:
 
         api = BridgeAPI()
         api._settings.load()
-        resp = json.loads(api.get_profiles_json())
+        resp = api.get_profiles_json()
         assert isinstance(resp, list)
         assert len(resp) >= 3  # builtins
 
@@ -1932,7 +1865,7 @@ class TestBridgeGetProfilesJson:
 
         api = BridgeAPI()
         api._settings.load()
-        resp = json.loads(api.get_profiles_json())
+        resp = api.get_profiles_json()
         p = resp[0]
         for key in (
             "profile_id",
@@ -1965,7 +1898,7 @@ class TestBridgeRemoveGenericSendTo:
 
         api = BridgeAPI()
         api._settings.load()
-        resp = json.loads(api.remove_generic_sendto())
+        resp = api.remove_generic_sendto()
         assert resp["ok"]
 
 
@@ -1985,121 +1918,115 @@ class TestBridgeRateControlMatrixValidation:
     def test_create_profile_rejects_compression_with_crf(self, tmp_path, monkeypatch):
         """Compression workflow + CRF rate-control method is rejected."""
         api = self._setup_api(tmp_path, monkeypatch)
-        payload = json.dumps(
-            {
-                "name": "Bad Compression CRF",
-                "target_size_bytes": 50 * 1024 * 1024,
-                "resolution_mode": "source",
-                "fps_mode": "source",
-                "rate_control": "target_size",
-                "workflow": "compression",
-                "rate_control_method": "crf",
-                "two_pass": False,
-            }
-        )
-        resp = json.loads(api.create_profile(payload))
+        payload = {
+            "name": "Bad Compression CRF",
+            "target_size_bytes": 50 * 1024 * 1024,
+            "resolution_mode": "source",
+            "fps_mode": "source",
+            "rate_control": "target_size",
+            "workflow": "compression",
+            "rate_control_method": "crf",
+            "two_pass": False,
+        }
+
+        resp = api.create_profile(payload)
         assert not resp["ok"]
         assert "bitrate-driven" in resp["error"] or "quality method" in resp["error"]
 
     def test_create_profile_rejects_compression_with_cqp(self, tmp_path, monkeypatch):
         """Compression workflow + CQP rate-control method is rejected."""
         api = self._setup_api(tmp_path, monkeypatch)
-        payload = json.dumps(
-            {
-                "name": "Bad Compression CQP",
-                "target_size_bytes": 50 * 1024 * 1024,
-                "resolution_mode": "source",
-                "fps_mode": "source",
-                "rate_control": "target_size",
-                "workflow": "compression",
-                "rate_control_method": "cqp",
-                "video_encoder": "h264_nvenc",
-                "two_pass": False,
-            }
-        )
-        resp = json.loads(api.create_profile(payload))
+        payload = {
+            "name": "Bad Compression CQP",
+            "target_size_bytes": 50 * 1024 * 1024,
+            "resolution_mode": "source",
+            "fps_mode": "source",
+            "rate_control": "target_size",
+            "workflow": "compression",
+            "rate_control_method": "cqp",
+            "video_encoder": "h264_nvenc",
+            "two_pass": False,
+        }
+
+        resp = api.create_profile(payload)
         assert not resp["ok"]
         assert "bitrate-driven" in resp["error"] or "quality method" in resp["error"]
 
     def test_create_profile_rejects_two_pass_with_gpu(self, tmp_path, monkeypatch):
         """Two-pass encoding with GPU encoder is rejected."""
         api = self._setup_api(tmp_path, monkeypatch)
-        payload = json.dumps(
-            {
-                "name": "Bad Two-Pass GPU",
-                "target_size_bytes": 50 * 1024 * 1024,
-                "resolution_mode": "source",
-                "fps_mode": "source",
-                "rate_control": "target_size",
-                "workflow": "compression",
-                "rate_control_method": "cbr",
-                "video_encoder": "h264_nvenc",
-                "two_pass": True,
-            }
-        )
-        resp = json.loads(api.create_profile(payload))
+        payload = {
+            "name": "Bad Two-Pass GPU",
+            "target_size_bytes": 50 * 1024 * 1024,
+            "resolution_mode": "source",
+            "fps_mode": "source",
+            "rate_control": "target_size",
+            "workflow": "compression",
+            "rate_control_method": "cbr",
+            "video_encoder": "h264_nvenc",
+            "two_pass": True,
+        }
+
+        resp = api.create_profile(payload)
         assert not resp["ok"]
         assert "Two-pass" in resp["error"]
 
     def test_create_profile_rejects_two_pass_with_upscale(self, tmp_path, monkeypatch):
         """Two-pass encoding with upscale workflow is rejected."""
         api = self._setup_api(tmp_path, monkeypatch)
-        payload = json.dumps(
-            {
-                "name": "Bad Two-Pass Upscale",
-                "target_size_bytes": 500 * 1024 * 1024,
-                "resolution_mode": "custom",
-                "custom_width": 2560,
-                "custom_height": 1440,
-                "fps_mode": "source",
-                "rate_control": "target_size",
-                "workflow": "upscale",
-                "rate_control_method": "crf",
-                "crf": 18,
-                "two_pass": True,
-            }
-        )
-        resp = json.loads(api.create_profile(payload))
+        payload = {
+            "name": "Bad Two-Pass Upscale",
+            "target_size_bytes": 500 * 1024 * 1024,
+            "resolution_mode": "custom",
+            "custom_width": 2560,
+            "custom_height": 1440,
+            "fps_mode": "source",
+            "rate_control": "target_size",
+            "workflow": "upscale",
+            "rate_control_method": "crf",
+            "crf": 18,
+            "two_pass": True,
+        }
+
+        resp = api.create_profile(payload)
         assert not resp["ok"]
         assert "Two-pass" in resp["error"]
 
     def test_create_profile_accepts_compression_with_cbr(self, tmp_path, monkeypatch):
         """Compression workflow + CBR rate-control method is accepted."""
         api = self._setup_api(tmp_path, monkeypatch)
-        payload = json.dumps(
-            {
-                "name": "Good Compression CBR",
-                "target_size_bytes": 50 * 1024 * 1024,
-                "resolution_mode": "source",
-                "fps_mode": "source",
-                "rate_control": "target_size",
-                "workflow": "compression",
-                "rate_control_method": "cbr",
-                "two_pass": True,
-            }
-        )
-        resp = json.loads(api.create_profile(payload))
+        payload = {
+            "name": "Good Compression CBR",
+            "target_size_bytes": 50 * 1024 * 1024,
+            "resolution_mode": "source",
+            "fps_mode": "source",
+            "rate_control": "target_size",
+            "workflow": "compression",
+            "rate_control_method": "cbr",
+            "two_pass": True,
+        }
+
+        resp = api.create_profile(payload)
         assert resp["ok"]
 
     def test_create_profile_accepts_upscale_with_crf(self, tmp_path, monkeypatch):
         """Upscale workflow + CRF rate-control method is accepted."""
         api = self._setup_api(tmp_path, monkeypatch)
-        payload = json.dumps(
-            {
-                "name": "Good Upscale CRF",
-                "target_size_bytes": 500 * 1024 * 1024,
-                "resolution_mode": "custom",
-                "custom_width": 2560,
-                "custom_height": 1440,
-                "fps_mode": "source",
-                "rate_control": "target_size",
-                "workflow": "upscale",
-                "rate_control_method": "crf",
-                "crf": 18,
-                "two_pass": False,
-            }
-        )
-        resp = json.loads(api.create_profile(payload))
+        payload = {
+            "name": "Good Upscale CRF",
+            "target_size_bytes": 500 * 1024 * 1024,
+            "resolution_mode": "custom",
+            "custom_width": 2560,
+            "custom_height": 1440,
+            "fps_mode": "source",
+            "rate_control": "target_size",
+            "workflow": "upscale",
+            "rate_control_method": "crf",
+            "crf": 18,
+            "two_pass": False,
+        }
+
+        resp = api.create_profile(payload)
         assert resp["ok"]
 
     def test_update_profile_rejects_invalid_rc_matrix(self, tmp_path, monkeypatch):
@@ -2120,8 +2047,8 @@ class TestBridgeRateControlMatrixValidation:
         profiles.append(custom)
         api._settings.set_profiles(profiles)
 
-        payload = json.dumps({"rate_control_method": "crf", "two_pass": False})
-        resp = json.loads(api.update_profile("rc-matrix-test", payload))
+        payload = {"rate_control_method": "crf", "two_pass": False}
+        resp = api.update_profile("rc-matrix-test", payload)
         assert not resp["ok"]
         assert "bitrate-driven" in resp["error"] or "quality method" in resp["error"]
 
@@ -2143,6 +2070,6 @@ class TestBridgeRateControlMatrixValidation:
         profiles.append(custom)
         api._settings.set_profiles(profiles)
 
-        payload = json.dumps({"rate_control_method": "cbr", "two_pass": False})
-        resp = json.loads(api.update_profile("rc-matrix-valid", payload))
+        payload = {"rate_control_method": "cbr", "two_pass": False}
+        resp = api.update_profile("rc-matrix-valid", payload)
         assert resp["ok"]

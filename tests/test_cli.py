@@ -123,7 +123,7 @@ class TestCLIIntegration:
         dummy = tmp_path / "dummy.mp4"
         dummy.write_text("not a real video")
 
-        monkeypatch.setattr("tuck.engine._find_ffmpeg", lambda: None)
+        monkeypatch.setattr("tuck.media_tools.find_ffmpeg", lambda: None)
 
         code = cli_main(["compress", str(dummy)])
         assert code == 2
@@ -310,8 +310,8 @@ class TestCLIExitCodes:
         monkeypatch.setattr(settings_mod, "_config_dir", lambda: tmp_path)
         monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
         monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
-        monkeypatch.setattr("tuck.engine._find_ffmpeg", lambda: None)
-        monkeypatch.setattr("tuck.probe._find_ffprobe", lambda: None)
+        monkeypatch.setattr("tuck.media_tools.find_ffmpeg", lambda: None)
+        monkeypatch.setattr("tuck.media_tools.find_ffprobe", lambda: None)
 
         dummy = tmp_path / "dummy.mp4"
         dummy.write_text("not a real video")
@@ -336,7 +336,7 @@ class TestConsoleProgress:
             target_size=1024 * 1024,
         )
 
-        assert _do_encode(plan, object()) == 0
+        assert _do_encode(plan) == 0
 
     def test_encode_output_is_safe_for_legacy_windows_console(self, tmp_path, monkeypatch):
         import io
@@ -371,7 +371,7 @@ class TestConsoleProgress:
             target_size=1024 * 1024,
         )
 
-        assert _do_encode(plan, object()) == 0
+        assert _do_encode(plan) == 0
         stream.flush()
         assert "Complete" in raw.getvalue().decode("cp1252")
 

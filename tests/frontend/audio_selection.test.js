@@ -105,8 +105,28 @@ global.clips = {
 };
 global.renderAudioMixerList = function () {};
 global.renderAudioLibraryPanel = function () {};
+const inspectorTabs = [];
+global.setInspectorTab = function (tab) {
+  inspectorTabs.push(tab);
+};
 
 require("../../tuck/web/audio.js");
+
+test("selecting imported audio reveals the Audio inspector", () => {
+  inspectorTabs.length = 0;
+
+  global.AudioTimeline.selectClip("music-track", "music-clip");
+
+  assert.deepEqual(inspectorTabs, ["audio"]);
+});
+
+test("selecting video or source audio does not change inspector tabs", () => {
+  inspectorTabs.length = 0;
+
+  global.AudioTimeline.selectVideoTrack();
+
+  assert.deepEqual(inspectorTabs, []);
+});
 
 test("clicking video replaces the imported audio command target and selected styling", () => {
   global.AudioTimeline.selectClip("music-track", "music-clip");

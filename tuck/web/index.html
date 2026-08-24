@@ -18,7 +18,8 @@
         type="button"
         class="tb-workspace-btn"
         id="panel-toggle-library"
-        onclick="toggleWorkspacePanel('library')"
+        data-action-click="workspace-toggle"
+        data-action-value="library"
         aria-controls="left"
         aria-expanded="false"
         aria-label="Library"
@@ -35,7 +36,7 @@
         type="button"
         class="tb-icon-btn"
         id="btn-undo"
-        onclick="History.undo()"
+        data-action-click="history-undo"
         disabled
         data-tip="Undo"
         aria-label="Undo"
@@ -49,7 +50,7 @@
         type="button"
         class="tb-icon-btn"
         id="btn-redo"
-        onclick="History.redo()"
+        data-action-click="history-redo"
         disabled
         data-tip="Redo"
         aria-label="Redo"
@@ -64,7 +65,7 @@
         type="button"
         class="tb-help-btn"
         id="shortcuts-toggle"
-        onclick="openKeyboardShortcuts()"
+        data-action-click="shortcuts-open"
         data-tip="Keyboard shortcuts (? or Ctrl+/)"
         aria-label="Keyboard shortcuts"
         aria-keyshortcuts="? Control+/"
@@ -80,7 +81,7 @@
         type="button"
         class="tb-icon-btn"
         id="settings-toggle"
-        onclick="toggleSettings()"
+        data-action-click="settings-toggle"
         data-tip="Settings"
         aria-label="Settings"
       >
@@ -96,7 +97,8 @@
         type="button"
         class="tb-workspace-btn"
         id="panel-toggle-inspector"
-        onclick="toggleWorkspacePanel('inspector')"
+        data-action-click="workspace-toggle"
+        data-action-value="inspector"
         aria-controls="right"
         aria-expanded="false"
         aria-label="Inspector"
@@ -117,7 +119,8 @@
             type="button"
             class="panel-close"
             id="library-panel-close"
-            onclick="toggleWorkspacePanel('library')"
+            data-action-click="workspace-toggle"
+            data-action-value="library"
             aria-label="Hide library"
             data-tip="Hide library"
           >
@@ -132,7 +135,8 @@
             id="lib-tab-media"
             class="lib-tab on"
             aria-pressed="true"
-            onclick="setLibraryTab('media')"
+            data-action-click="library-tab"
+            data-action-value="media"
           >
             Video
           </button>
@@ -141,17 +145,18 @@
             id="lib-tab-audio"
             class="lib-tab"
             aria-pressed="false"
-            onclick="setLibraryTab('audio')"
+            data-action-click="library-tab"
+            data-action-value="audio"
           >
             Audio
           </button>
         </div>
         <div id="left-hdr">
           <div id="lib-add-row-media" class="lib-add-row">
-            <button id="btn-add" onclick="browse()">Add videos</button
+            <button id="btn-add" data-action-click="browse-videos">Add videos</button
             ><button
               id="btn-rmall"
-              onclick="removeAllClips()"
+              data-action-click="remove-all-clips"
               data-tip="Remove all videos"
               aria-label="Remove all videos"
             >
@@ -164,7 +169,7 @@
             </button>
           </div>
           <div id="lib-add-row-audio" class="lib-add-row hid">
-            <button id="btn-add-audio" onclick="AudioTimeline.browse()">Add audio</button>
+            <button id="btn-add-audio" data-action-click="browse-audio">Add audio</button>
           </div>
         </div>
         <div id="lib-panel-media">
@@ -211,7 +216,8 @@
               type="button"
               class="pbtn"
               id="btn-frame-prev"
-              onclick="stepFrame(-1)"
+              data-action-click="player-step-frame"
+              data-action-value="-1"
               aria-label="Previous frame"
               aria-keyshortcuts="ArrowLeft"
               data-tip="Previous frame (Left arrow)"
@@ -225,7 +231,7 @@
               type="button"
               class="pbtn"
               id="btn-play"
-              onclick="togglePlay()"
+              data-action-click="player-toggle-play"
               aria-label="Play/Pause"
               aria-keyshortcuts="Space"
               data-tip="Play / pause (Space)"
@@ -236,7 +242,8 @@
               type="button"
               class="pbtn"
               id="btn-frame-next"
-              onclick="stepFrame(1)"
+              data-action-click="player-step-frame"
+              data-action-value="1"
               aria-label="Next frame"
               aria-keyshortcuts="ArrowRight"
               data-tip="Next frame (Right arrow)"
@@ -254,7 +261,7 @@
               max="1000"
               step="1"
               value="0"
-              oninput="onStageScrub(this.value)"
+              data-action-input="player-scrub"
               aria-label="Seek"
               data-tip="Seek"
             />
@@ -263,7 +270,7 @@
                 type="button"
                 class="pbtn"
                 id="btn-mute"
-                onclick="toggleMute()"
+                data-action-click="player-toggle-mute"
                 aria-label="Mute preview"
                 data-tip="Mute preview"
               ></button>
@@ -273,7 +280,7 @@
                 min="0"
                 max="100"
                 value="80"
-                oninput="setVol(this.value)"
+                data-action-input="player-volume"
                 aria-label="Preview volume"
                 data-tip="Preview volume"
               />
@@ -282,7 +289,7 @@
               type="button"
               class="pbtn"
               id="btn-fullscreen"
-              onclick="toggleFullscreen()"
+              data-action-click="player-fullscreen"
               aria-label="Fullscreen"
               data-tip="Fullscreen"
             >
@@ -302,7 +309,8 @@
             type="button"
             class="panel-close"
             id="inspector-panel-close"
-            onclick="toggleWorkspacePanel('inspector')"
+            data-action-click="workspace-toggle"
+            data-action-value="inspector"
             aria-label="Hide inspector"
             data-tip="Hide inspector"
           >
@@ -317,7 +325,8 @@
             id="insp-tab-edit"
             class="insp-tab on"
             aria-pressed="true"
-            onclick="setInspectorTab('edit')"
+            data-action-click="inspector-tab"
+            data-action-value="edit"
           >
             <svg viewBox="0 0 16 16" aria-hidden="true">
               <path d="M4.5 1v9.5a1 1 0 0 0 1 1H15"></path>
@@ -330,7 +339,8 @@
             id="insp-tab-audio"
             class="insp-tab"
             aria-pressed="false"
-            onclick="setInspectorTab('audio')"
+            data-action-click="inspector-tab"
+            data-action-value="audio"
           >
             <svg viewBox="0 0 16 16" aria-hidden="true">
               <path d="M1.5 6h2.3l3.4-3v10l-3.4-3H1.5z"></path>
@@ -343,7 +353,8 @@
             id="insp-tab-export"
             class="insp-tab"
             aria-pressed="false"
-            onclick="setInspectorTab('export')"
+            data-action-click="inspector-tab"
+            data-action-value="export"
           >
             <svg viewBox="0 0 16 16" aria-hidden="true">
               <path d="M8 1.5v7.8M5.2 6.7 8 9.5l2.8-2.8"></path>
@@ -375,42 +386,42 @@
                       class="on"
                       data-aspect="off"
                       aria-pressed="true"
-                      onclick="setCropAspect('off')"
+                      data-action-click="transform-crop-aspect"
                     >
                       Off</button
                     ><button
                       type="button"
                       data-aspect="free"
                       aria-pressed="false"
-                      onclick="setCropAspect('free')"
+                      data-action-click="transform-crop-aspect"
                     >
                       Free</button
                     ><button
                       type="button"
                       data-aspect="16:9"
                       aria-pressed="false"
-                      onclick="setCropAspect('16:9')"
+                      data-action-click="transform-crop-aspect"
                     >
                       16:9</button
                     ><button
                       type="button"
                       data-aspect="9:16"
                       aria-pressed="false"
-                      onclick="setCropAspect('9:16')"
+                      data-action-click="transform-crop-aspect"
                     >
                       9:16</button
                     ><button
                       type="button"
                       data-aspect="1:1"
                       aria-pressed="false"
-                      onclick="setCropAspect('1:1')"
+                      data-action-click="transform-crop-aspect"
                     >
                       1:1</button
                     ><button
                       type="button"
                       data-aspect="4:3"
                       aria-pressed="false"
-                      onclick="setCropAspect('4:3')"
+                      data-action-click="transform-crop-aspect"
                     >
                       4:3
                     </button>
@@ -428,7 +439,7 @@
                       class="icon on"
                       data-rotation="0"
                       aria-pressed="true"
-                      onclick="setVideoRotation(0)"
+                      data-action-click="transform-rotation"
                       data-tip="No rotation"
                       aria-label="No rotation"
                     >
@@ -441,7 +452,7 @@
                       class="icon"
                       data-rotation="270"
                       aria-pressed="false"
-                      onclick="setVideoRotation(270)"
+                      data-action-click="transform-rotation"
                       data-tip="Rotate 90° counterclockwise"
                       aria-label="Rotate 90° counterclockwise"
                     >
@@ -455,7 +466,7 @@
                       class="icon"
                       data-rotation="90"
                       aria-pressed="false"
-                      onclick="setVideoRotation(90)"
+                      data-action-click="transform-rotation"
                       data-tip="Rotate 90° clockwise"
                       aria-label="Rotate 90° clockwise"
                     >
@@ -469,7 +480,7 @@
                       class="icon"
                       data-rotation="180"
                       aria-pressed="false"
-                      onclick="setVideoRotation(180)"
+                      data-action-click="transform-rotation"
                       data-tip="Rotate 180°"
                       aria-label="Rotate 180°"
                     >
@@ -495,7 +506,8 @@
                       class="icon"
                       id="flip-horizontal"
                       aria-pressed="false"
-                      onclick="toggleVideoFlip('horizontal')"
+                      data-action-click="transform-flip"
+                      data-action-value="horizontal"
                       data-tip="Flip horizontal"
                       aria-label="Flip horizontal"
                     >
@@ -516,7 +528,8 @@
                       class="icon"
                       id="flip-vertical"
                       aria-pressed="false"
-                      onclick="toggleVideoFlip('vertical')"
+                      data-action-click="transform-flip"
+                      data-action-value="vertical"
                       data-tip="Flip vertical"
                       aria-label="Flip vertical"
                     >
@@ -546,7 +559,7 @@
                       data-sizing="fit"
                       class="on"
                       aria-pressed="true"
-                      onclick="setSizingMode('fit')"
+                      data-action-click="transform-sizing"
                       data-tip="Keep the entire selected image without distortion"
                     >
                       Fit</button
@@ -554,7 +567,7 @@
                       type="button"
                       data-sizing="fill"
                       aria-pressed="false"
-                      onclick="setSizingMode('fill')"
+                      data-action-click="transform-sizing"
                       data-tip="Fill the output dimensions and crop excess edges"
                     >
                       Fill</button
@@ -562,7 +575,7 @@
                       type="button"
                       data-sizing="stretch"
                       aria-pressed="false"
-                      onclick="setSizingMode('stretch')"
+                      data-action-click="transform-sizing"
                       data-tip="Force the selected image to the output dimensions and allow distortion"
                     >
                       Stretch
@@ -587,7 +600,7 @@
                 role="switch"
                 aria-checked="true"
                 aria-label="Include audio in export"
-                onclick="AudioTimeline.toggleMaster()"
+                data-action-click="audio-toggle-master"
               >
                 <span>Include in export</span>
                 <span class="audio-toggle-track" aria-hidden="true"
@@ -604,9 +617,20 @@
           <div id="insp-export" class="hid">
             <div class="stitle">Task</div>
             <div id="task-wf" role="group" aria-label="Task selector">
-              <button class="on" id="wf-c" onclick="setWf(0)" aria-pressed="true">
+              <button
+                class="on"
+                id="wf-c"
+                data-action-click="encoding-workflow"
+                data-action-value="0"
+                aria-pressed="true"
+              >
                 Compress</button
-              ><button id="wf-u" onclick="setWf(1)" aria-pressed="false">
+              ><button
+                id="wf-u"
+                data-action-click="encoding-workflow"
+                data-action-value="1"
+                aria-pressed="false"
+              >
                 Upscale
               </button>
             </div>
@@ -614,7 +638,7 @@
               <div class="grt">Profile</div>
               <select
                 id="prof-sel"
-                onchange="onProfileChange()"
+                data-action-change="encoding-profile"
                 aria-label="Select profile"
               ></select>
               <div class="prof-meta">
@@ -624,17 +648,17 @@
                 <summary>Profile options</summary>
                 <div class="profile-options-body">
                   <div class="prof-row">
-                    <button class="btn2" onclick="saveProfileChanges()">
+                    <button class="btn2" data-action-click="encoding-save-profile">
                       Save changes</button
-                    ><button class="btn2" onclick="saveProfileAs()">
+                    ><button class="btn2" data-action-click="encoding-save-profile-as">
                       Save as new…
                     </button>
                   </div>
-                  <button class="btn2" onclick="openSettings('profiles')">
+                  <button class="btn2" data-action-click="settings-open-profiles">
                     Manage profiles
                   </button>
                   <div id="prof-reset-row" class="hid">
-                    <button class="btn2" onclick="resetToProfile()">
+                    <button class="btn2" data-action-click="encoding-reset-profile">
                       Reset to profile
                     </button>
                   </div>
@@ -652,7 +676,7 @@
                     min="2"
                     step="1"
                     value="10"
-                    onchange="onBadgeSize(this.value)"
+                    data-action-change="encoding-badge-size"
                     aria-label="Target size in megabytes"
                   /><span class="badge" id="sz-unit">MB</span></span
                 >
@@ -663,7 +687,7 @@
                 min="2"
                 max="500"
                 value="10"
-                oninput="onSize(this.value)"
+                data-action-input="encoding-target-size"
                 aria-label="Target size in megabytes"
                 aria-valuenow="10"
                 aria-valuemin="1"
@@ -680,7 +704,7 @@
                     type="checkbox"
                     id="use-source-res"
                     checked
-                    onchange="onUseSourceResolution()"
+                    data-action-change="encoding-source-resolution"
                   /><span class="chk-box"></span><span>Source</span></label
                 >
               </div>
@@ -692,7 +716,7 @@
                   value="1920"
                   style="flex: 1; text-align: center"
                   aria-label="Custom width"
-                  onchange="onResolutionGeometryChanged()"
+                  data-action-change="encoding-resolution"
                 /><span style="color: #6b6b7b; font-weight: 700">×</span
                 ><input
                   type="number"
@@ -700,14 +724,14 @@
                   value="1080"
                   style="flex: 1; text-align: center"
                   aria-label="Custom height"
-                  onchange="onResolutionGeometryChanged()"
+                  data-action-change="encoding-resolution"
                 />
               </div>
               <div class="row hid" id="scaler-row" style="margin-top: 4px">
                 <span>Scaler</span
                 ><select
                   id="scaler-sel"
-                  onchange="reqPreview();updateDirty()"
+                  data-action-change="encoding-preview-dirty"
                   style="flex: 1"
                   aria-label="Scaler algorithm"
                 >
@@ -727,7 +751,7 @@
                     type="checkbox"
                     id="use-source-fps"
                     checked
-                    onchange="onUseSourceFps()"
+                    data-action-change="encoding-source-fps"
                   /><span class="chk-box"></span><span>Source</span></label
                 >
               </div>
@@ -741,7 +765,7 @@
                 min="1"
                 max="240"
                 value="30"
-                oninput="onFpsSlider(this.value)"
+                data-action-input="encoding-frame-rate"
                 aria-label="Target frame rate"
                 aria-valuenow="30"
                 aria-valuemin="1"
@@ -756,7 +780,7 @@
                   ><input
                     type="checkbox"
                     id="keep-audio"
-                    onchange="onKeepAudio()"
+                    data-action-change="encoding-keep-audio"
                   /><span class="chk-box"></span><span>Copy when possible</span></label
                 >
               </div>
@@ -769,7 +793,7 @@
                   min="0"
                   max="320"
                   aria-label="Audio bitrate"
-                  onchange="reqPreview();updateDirty()"
+                  data-action-change="encoding-preview-dirty"
                 />
               </div>
             </div>
@@ -779,7 +803,7 @@
                 <label for="enc-sel">Encoder</label
                 ><select
                   id="enc-sel"
-                  onchange="onEncChange()"
+                  data-action-change="encoding-encoder"
                   aria-label="Video encoder"
                 ></select>
               </div>
@@ -790,7 +814,7 @@
                 <label for="speed-sel">Encoding speed</label
                 ><select
                   id="speed-sel"
-                  onchange="onSpeedChange()"
+                  data-action-change="encoding-speed"
                   aria-label="Encoding speed"
                 >
                   <option value="fast">Fast</option>
@@ -802,7 +826,7 @@
                 <label for="two-pass">Two-pass encoding</label
                 ><select
                   id="two-pass"
-                  onchange="onTwoPassChange()"
+                  data-action-change="encoding-two-pass"
                   aria-label="Two-pass encoding"
                 >
                   <option value="on" selected>On</option>
@@ -817,7 +841,7 @@
                 id="adv-toggle"
                 type="button"
                 aria-expanded="false"
-                onclick="toggleAdv()"
+                data-action-click="encoding-toggle-advanced"
               >
                 <span>Advanced encoding</span
                 ><span class="advanced-arrow" aria-hidden="true">⌄</span>
@@ -827,7 +851,7 @@
                   <label for="preset-sel">Native FFmpeg preset</label
                   ><select
                     id="preset-sel"
-                    onchange="onNativePresetChange()"
+                    data-action-change="encoding-native-preset"
                     aria-label="Native FFmpeg preset"
                   ></select>
                 </div>
@@ -835,7 +859,7 @@
                   <label id="rate-label" for="rc-sel">Quality method</label
                   ><select
                     id="rc-sel"
-                    onchange="onRcChange()"
+                    data-action-change="encoding-rate-control"
                     aria-label="Rate control method"
                   ></select>
                 </div>
@@ -847,7 +871,7 @@
                     value="23"
                     min="0"
                     max="51"
-                    onchange="reqPreview();updateDirty()"
+                    data-action-change="encoding-preview-dirty"
                     aria-label="Quality value"
                   />
                   <div class="quality-help">Lower value = higher quality.</div>
@@ -860,7 +884,7 @@
                     value="2000"
                     min="50"
                     max="50000"
-                    onchange="reqPreview();updateDirty()"
+                    data-action-change="encoding-preview-dirty"
                     aria-label="Explicit bitrate"
                   />
                 </div>
@@ -868,7 +892,7 @@
                   <label for="tune-sel">Tune</label
                   ><select
                     id="tune-sel"
-                    onchange="reqPreview();updateDirty()"
+                    data-action-change="encoding-preview-dirty"
                     aria-label="Encoder tune"
                   ></select>
                 </div>
@@ -877,14 +901,14 @@
           </div>
         </div>
         <div id="right-foot" class="hid">
-          <button class="btn1" id="btn-one" onclick="compressOne()">
+          <button class="btn1" id="btn-one" data-action-click="encoding-run-selected">
             Compress selected
           </button>
           <button
             class="btn2"
             style="width: 100%"
             id="btn-all"
-            onclick="compressAll()"
+            data-action-click="encoding-run-all"
           >
             Compress all
           </button>
@@ -896,7 +920,7 @@
       id="workspace-backdrop"
       tabindex="-1"
       aria-label="Close open panel"
-      onclick="closeWorkspacePanels(true)"
+      data-action-click="workspace-close-panels"
     ></button>
     <div
       id="timeline-resizer"
@@ -905,8 +929,8 @@
       aria-orientation="horizontal"
       aria-valuemin="170"
       aria-valuemax="300"
-      aria-valuenow="205"
-      aria-valuetext="205 pixels"
+      aria-valuenow="190"
+      aria-valuetext="190 pixels"
       tabindex="0"
       data-tip="Drag to resize timeline · Double-click to reset"
     ></div>
@@ -922,7 +946,7 @@
             type="button"
             id="btn-segment-add"
             class="dock-text-btn timeline-primary-btn"
-            onclick="addSegment()"
+            data-action-click="timeline-add-segment"
             data-tip="New segment"
             aria-label="Add segment"
             disabled
@@ -937,7 +961,7 @@
             type="button"
             id="btn-seq-split"
             class="dock-text-btn timeline-primary-btn"
-            onclick="splitAtPlayhead()"
+            data-action-click="timeline-split"
             data-tip="Split (S)"
             aria-label="Split at playhead"
             aria-keyshortcuts="S"
@@ -953,7 +977,7 @@
             type="button"
             id="btn-segment-remove"
             class="dock-text-btn"
-            onclick="removeActiveSegment()"
+            data-action-click="timeline-remove-segment"
             data-tip="Remove segment"
             aria-label="Remove active segment"
             aria-keyshortcuts="Delete Backspace"
@@ -971,7 +995,7 @@
             type="button"
             id="btn-segments-reset"
             class="dock-text-btn hid"
-            onclick="resetSegments()"
+            data-action-click="timeline-reset-segments"
             data-tip="Reset to full clip"
             aria-label="Reset segments to full source"
             disabled
@@ -989,7 +1013,7 @@
             type="button"
             id="audio-fragment-mute"
             class="dock-text-btn hid"
-            onclick="AudioTimeline.toggleFragmentMute()"
+            data-action-click="audio-toggle-fragment-mute"
             aria-pressed="false"
             aria-label="Mute this segment's source audio"
             aria-keyshortcuts="M"
@@ -1005,7 +1029,7 @@
             type="button"
             id="audio-add"
             class="dock-text-btn"
-            onclick="AudioTimeline.browse()"
+            data-action-click="browse-audio"
             data-tip="Add audio"
             disabled
           >
@@ -1024,7 +1048,7 @@
             type="button"
             id="btn-snap-toggle"
             class="dock-toggle on"
-            onclick="toggleSnap()"
+            data-action-click="timeline-toggle-snap"
             aria-label="Toggle timeline snapping"
             aria-pressed="true"
             data-tip="Snap to playhead and clip edges"
@@ -1035,12 +1059,25 @@
               <span class="timeline-switch-thumb"></span>
             </span>
           </button>
+          <button
+            type="button"
+            id="btn-timeline-height-fit"
+            class="dock-text-btn"
+            data-action-click="timeline-reset-height"
+            data-tip="Fit timeline height to visible tracks"
+            aria-label="Fit timeline height to tracks"
+          >
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M3 4h10M3 12h10M8 2v4M6.5 4 8 5.5 9.5 4M8 14v-4M6.5 12 8 10.5 9.5 12"></path>
+            </svg>
+            <span class="timeline-command-label">Fit tracks</span>
+          </button>
           <div class="dock-zoom" role="group" aria-label="Timeline zoom">
             <button
               type="button"
               id="btn-timeline-fit"
               class="dock-fit-btn"
-              onclick="fitTimeline()"
+              data-action-click="timeline-fit"
               data-tip="Fit timeline (Ctrl+0)"
               aria-label="Fit timeline to view"
               aria-keyshortcuts="Control+0"
@@ -1054,7 +1091,8 @@
             <button
               type="button"
               class="dock-zoom-btn"
-              onclick="nudgeTimelineZoom(-1)"
+              data-action-click="timeline-nudge-zoom"
+              data-action-value="-1"
               data-tip="Zoom out (Ctrl+-)"
               aria-label="Zoom out"
               aria-keyshortcuts="Control+-"
@@ -1069,14 +1107,15 @@
               max="8"
               step="0.5"
               value="1"
-              oninput="setTimelineZoom(this.value)"
+              data-action-input="timeline-zoom"
               aria-label="Timeline zoom level"
               disabled
             />
             <button
               type="button"
               class="dock-zoom-btn"
-              onclick="nudgeTimelineZoom(1)"
+              data-action-click="timeline-nudge-zoom"
+              data-action-value="1"
               data-tip="Zoom in (Ctrl+=)"
               aria-label="Zoom in"
               aria-keyshortcuts="Control+="
@@ -1121,7 +1160,7 @@
                   class="seq-track-mute"
                   id="source-audio-label"
                   data-track-action="mute"
-                  onclick="AudioTimeline.toggleSourceMute()"
+                  data-action-click="audio-toggle-source-mute"
                   data-tip="Mute source audio"
                   aria-label="Mute source audio"
                   aria-pressed="false"
@@ -1188,24 +1227,27 @@
         <button
           class="qbtn"
           id="btn-stop-after"
-          onclick="stopAfterCurrent()"
+          data-action-click="queue-stop-after-current"
           aria-label="Stop after current job"
+          disabled
         >
           Stop after current
         </button>
         <button
           class="qbtn danger"
           id="btn-cancel"
-          onclick="cancelAll()"
+          data-action-click="queue-cancel-all"
           aria-label="Cancel processing"
+          disabled
         >
           Cancel
         </button>
         <button
           class="qbtn"
           id="btn-clear"
-          onclick="clearDone()"
+          data-action-click="queue-clear-completed"
           aria-label="Clear completed"
+          disabled
         >
           Clear completed
         </button>
@@ -1214,7 +1256,7 @@
     <div
       class="settings-workspace"
       id="settings-workspace"
-      onclick="if(event.target===this)closeSettings()"
+      data-settings-click="close-overlay"
     >
       <div
         class="settings-dialog"
@@ -1228,7 +1270,7 @@
           ><button
             id="settings-close"
             class="mbtn"
-            onclick="closeSettings()"
+            data-settings-click="close"
             aria-label="Close settings"
             title="Close"
           >
@@ -1241,13 +1283,15 @@
               <div class="settings-nav-label">Preferences</div>
               <button
                 id="settings-nav-general"
-                onclick="navigateSettings('general')"
+                data-settings-click="navigate"
+                data-settings-value="general"
               >
                 General
               </button>
               <button
                 id="settings-nav-output"
-                onclick="navigateSettings('output')"
+                data-settings-click="navigate"
+                data-settings-value="output"
               >
                 Output &amp; naming
               </button>
@@ -1256,7 +1300,8 @@
               <div class="settings-nav-label">Library</div>
               <button
                 id="settings-nav-profiles"
-                onclick="navigateSettings('profiles')"
+                data-settings-click="navigate"
+                data-settings-value="profiles"
               >
                 Profiles
               </button>
@@ -1265,7 +1310,8 @@
               <div class="settings-nav-label">Integrations</div>
               <button
                 id="settings-nav-explorer"
-                onclick="navigateSettings('explorer')"
+                data-settings-click="navigate"
+                data-settings-value="explorer"
               >
                 Windows integration
               </button>
@@ -1274,7 +1320,8 @@
               <div class="settings-nav-label">Support</div>
               <button
                 id="settings-nav-system"
-                onclick="navigateSettings('system')"
+                data-settings-click="navigate"
+                data-settings-value="system"
               >
                 System &amp; support
               </button>
@@ -1292,12 +1339,14 @@
     <div
       class="mod-overlay"
       id="mod-overlay"
-      onclick="if(event.target===this)closeActiveModal()"
+      data-action-click="modal-close-overlay"
     >
       <div class="mod-box" id="mod-box"></div>
     </div>
     <div id="toast-ct" aria-label="Notifications"></div>
     <div id="drag-overlay"><h2>Drop video or audio anywhere</h2></div>
+    <script src="dom.js"></script>
+    <script src="delegated-events.js"></script>
     <script src="crop.js"></script>
     <script src="notifications.js"></script>
     <script src="segments.js"></script>
@@ -1305,15 +1354,19 @@
     <script src="layout.js"></script>
     <script src="encoding-ui.js"></script>
     <script src="shortcuts.js"></script>
+    <script src="clip-card.js"></script>
     <script src="app.js"></script>
     <script src="audio.js"></script>
+    <script src="clip-details.js"></script>
     <script src="panels.js"></script>
     <script src="player.js"></script>
     <script src="timeline.js"></script>
     <script src="queue.js"></script>
     <script src="settings-state.js"></script>
+    <script src="settings-profiles.js"></script>
     <script src="settings.js"></script>
     <script src="transform.js"></script>
     <script src="history.js"></script>
+    <script src="ui-bindings.js"></script>
   </body>
 </html>

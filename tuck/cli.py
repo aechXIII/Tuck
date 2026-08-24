@@ -300,7 +300,7 @@ def _process_single_file(args, profile, output_dir: str) -> int:
                 print("Aborted.")
                 return 0
 
-        return _do_encode(p, args)
+        return _do_encode(p)
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
@@ -329,7 +329,7 @@ def _process_file_batch(args, profile, output_dir: str) -> int:
                     print("Skipping.")
                     continue
 
-            code = _do_encode(p, args)
+            code = _do_encode(p)
             if code != 0:
                 errors += 1
         except Exception as e:
@@ -363,7 +363,7 @@ def _cmd_process(args) -> int:
     return _process_file_batch(args, profile, output_dir)
 
 
-def _do_encode(plan, args) -> int:
+def _do_encode(plan) -> int:
     from .engine import FFmpegEngine
     from .models import EncodeProgress
 
@@ -429,15 +429,12 @@ def _encode_queue(
     errors = 0
     results: list[tuple[str, str, float]] = []  # name, output, size_mb
 
-    class _Args:
-        review = False
-
     for idx, path in enumerate(valid, start=1):
         name = Path(path).name
         console.print(f"[accent]{idx:02d}[/accent] [muted]of {total:02d}[/muted]  {name}")
         try:
             enc_plan = create_plan(path, profile, output_dir=output_dir)
-            code = _do_encode(enc_plan, _Args())
+            code = _do_encode(enc_plan)
             if code != 0:
                 errors += 1
             else:

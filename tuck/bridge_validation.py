@@ -6,22 +6,18 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from .models import (
-    _VALID_RC_METHODS,
-    _VALID_SCALERS,
-    _VALID_VIDEO_ENCODER_CHOICES,
-    _VALID_WORKFLOWS,
-    MIN_TARGET_SIZE_BYTES,
+from .models import MIN_TARGET_SIZE_BYTES, AudioTrack, PlanRequest, Segment, VideoTransform
+from .models.encoding_policy import (
     RC_TARGET_SIZE,
+    VALID_RC_METHODS,
+    VALID_SCALERS,
+    VALID_VIDEO_ENCODER_CHOICES,
+    VALID_WORKFLOWS,
     WORKFLOW_COMPRESSION,
-    AudioTrack,
-    PlanRequest,
-    Segment,
-    VideoTransform,
-    _validate_preset_for_encoder,
-    _validate_rc_method_for_encoder,
-    _validate_tune_for_encoder,
+    validate_preset_for_encoder,
     validate_rate_control_matrix,
+    validate_rc_method_for_encoder,
+    validate_tune_for_encoder,
 )
 
 VIDEO_EXTENSIONS = frozenset({".mp4", ".mkv", ".webm", ".mov", ".avi", ".wmv", ".flv", ".m4v"})
@@ -257,9 +253,9 @@ def normalize_profile_ui_payload(data: dict[str, Any]) -> dict[str, Any]:
 
     if "video_encoder" in data:
         ve = data["video_encoder"]
-        if not isinstance(ve, str) or ve not in _VALID_VIDEO_ENCODER_CHOICES:
+        if not isinstance(ve, str) or ve not in VALID_VIDEO_ENCODER_CHOICES:
             raise ValueError(
-                f"video_encoder must be one of {sorted(_VALID_VIDEO_ENCODER_CHOICES)}, not {ve!r}"
+                f"video_encoder must be one of {sorted(VALID_VIDEO_ENCODER_CHOICES)}, not {ve!r}"
             )
 
     if "crf" in data:
@@ -288,7 +284,7 @@ def normalize_profile_ui_payload(data: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(tune, str):
             raise ValueError(f"tune must be a string, not {type(tune).__name__}")
         video_encoder = data.get("video_encoder")
-        _validate_tune_for_encoder(tune, video_encoder)
+        validate_tune_for_encoder(tune, video_encoder)
 
     if "scaler" in data:
         scaler = data["scaler"]
@@ -296,26 +292,26 @@ def normalize_profile_ui_payload(data: dict[str, Any]) -> dict[str, Any]:
             raise ValueError(f"scaler must be a string, not {type(scaler).__name__}")
         if scaler == "nearest":
             data["scaler"] = "neighbor"
-        elif scaler not in _VALID_SCALERS:
-            raise ValueError(f"scaler must be one of {sorted(_VALID_SCALERS)}")
+        elif scaler not in VALID_SCALERS:
+            raise ValueError(f"scaler must be one of {sorted(VALID_SCALERS)}")
 
     if "workflow" in data:
         wf = data["workflow"]
-        if not isinstance(wf, str) or wf not in _VALID_WORKFLOWS:
-            raise ValueError(f"workflow must be one of {sorted(_VALID_WORKFLOWS)}")
+        if not isinstance(wf, str) or wf not in VALID_WORKFLOWS:
+            raise ValueError(f"workflow must be one of {sorted(VALID_WORKFLOWS)}")
 
     if "rate_control_method" in data:
         rcm = data["rate_control_method"]
-        if not isinstance(rcm, str) or rcm not in _VALID_RC_METHODS:
-            raise ValueError(f"rate_control_method must be one of {sorted(_VALID_RC_METHODS)}")
+        if not isinstance(rcm, str) or rcm not in VALID_RC_METHODS:
+            raise ValueError(f"rate_control_method must be one of {sorted(VALID_RC_METHODS)}")
         video_encoder = data.get("video_encoder", "libx264")
-        _validate_rc_method_for_encoder(rcm, video_encoder)
+        validate_rc_method_for_encoder(rcm, video_encoder)
 
     if "preset" in data:
         preset = data["preset"]
         if not isinstance(preset, str):
             raise ValueError("preset must be a string")
-        _validate_preset_for_encoder(preset, data.get("video_encoder", "libx264"))
+        validate_preset_for_encoder(preset, data.get("video_encoder", "libx264"))
 
     workflow = data.get("workflow", WORKFLOW_COMPRESSION)
     if workflow == WORKFLOW_COMPRESSION and "explicit_bitrate" in data:

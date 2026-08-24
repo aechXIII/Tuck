@@ -3,9 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..models import (
-    _AMF_ENCODERS,
-    _CPU_ENCODERS,
-    _NVENC_ENCODERS,
     RCM_CBR,
     RCM_CQ,
     RCM_CQP,
@@ -19,6 +16,7 @@ from ..models import (
     map_source_range_to_output,
     source_audio_output_pieces,
 )
+from ..models.encoding_policy import AMF_ENCODERS, CPU_ENCODERS, NVENC_ENCODERS
 from . import filters as _filters
 from .filters import build_plan_video_filters, join_video_filters
 
@@ -329,7 +327,7 @@ def build_base_cmd(
 
     cmd += ["-c:v", encoder]
 
-    if encoder in _CPU_ENCODERS:
+    if encoder in CPU_ENCODERS:
         cmd += ["-preset", plan.preset]
         tune = getattr(plan, "tune", "")
         if tune:
@@ -344,7 +342,7 @@ def build_base_cmd(
             cmd += ["-minrate", str(bitrate)]
             cmd += ["-maxrate", str(bitrate)]
             cmd += ["-bufsize", str(bitrate)]
-    elif encoder in _NVENC_ENCODERS:
+    elif encoder in NVENC_ENCODERS:
         cmd += ["-preset", nvenc_preset(plan.preset)]
         if rc_method == RCM_CQ:
             bitrate = plan.video_bitrate
@@ -363,7 +361,7 @@ def build_base_cmd(
             if bitrate <= 0:
                 bitrate = 2_000_000
             cmd += ["-rc", "vbr", "-b:v", str(bitrate), "-maxrate", str(bitrate * 2)]
-    elif encoder in _AMF_ENCODERS:
+    elif encoder in AMF_ENCODERS:
         cmd += ["-usage", "transcoding"]
         if rc_method in (RCM_CQ, RCM_CQP):
             cmd += [

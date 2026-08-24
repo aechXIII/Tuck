@@ -31,7 +31,8 @@ from tuck.models import (
     VideoTransform,
     find_profile_by_id,
 )
-from tuck.planner import _make_even, _resolve_output_collision, _scale_resolution, plan
+from tuck.output_paths import resolve_output_collision
+from tuck.planner import _make_even, _scale_resolution, plan
 
 
 class TestScaleResolution:
@@ -608,13 +609,13 @@ class TestPlan:
 class TestOutputCollision:
     def test_no_collision_when_file_does_not_exist(self, tmp_path):
         output = tmp_path / "output.mp4"
-        result = _resolve_output_collision(output)
+        result = resolve_output_collision(output)
         assert result == output
 
     def test_collision_appends_counter(self, tmp_path):
         output = tmp_path / "output.mp4"
         output.write_text("existing")
-        result = _resolve_output_collision(output)
+        result = resolve_output_collision(output)
         assert result != output
         assert result.parent == output.parent
         assert "_1" in result.stem
@@ -624,15 +625,15 @@ class TestOutputCollision:
         output.write_text("existing")
         (tmp_path / "output_1.mp4").write_text("existing")
         (tmp_path / "output_2.mp4").write_text("existing")
-        result = _resolve_output_collision(output)
+        result = resolve_output_collision(output)
         assert result.name == "output_3.mp4"
 
     def test_duplicate_pending_plans_get_different_paths(self, tmp_path):
         output = tmp_path / "output.mp4"
-        first = _resolve_output_collision(output)
+        first = resolve_output_collision(output)
         assert first == output
         output.write_text("first encode done")
-        second = _resolve_output_collision(output)
+        second = resolve_output_collision(output)
         assert second != output
         assert second.name == "output_1.mp4"
 
@@ -640,14 +641,14 @@ class TestOutputCollision:
         output = tmp_path / "output.mp4"
         output.with_suffix(".mp4.reserved").write_text("interrupted encode")
 
-        assert _resolve_output_collision(output, respect_reservation=False) == output
+        assert resolve_output_collision(output, respect_reservation=False) == output
 
     def test_execution_uses_a_new_path_for_reservation_marker(self, tmp_path):
         output = tmp_path / "output.mp4"
         marker = output.with_suffix(".mp4.reserved")
         marker.write_text("active encode")
 
-        result = _resolve_output_collision(output)
+        result = resolve_output_collision(output)
 
         assert result.name == "output_1.mp4"
         assert marker.exists()
@@ -659,7 +660,7 @@ class TestOutputCollision:
         old = time.time() - 86401
         os.utime(marker, (old, old))
 
-        assert _resolve_output_collision(output).name == "output_1.mp4"
+        assert resolve_output_collision(output).name == "output_1.mp4"
         assert marker.exists()
 
 
@@ -801,89 +802,89 @@ class TestUpscaleWorkflow:
 class TestEncoderRateControlCompatibility:
     def test_cpu_encoders_accept_crf(self):
         """CPU encoders accept CRF rate control method."""
-        from tuck.models import _validate_rc_method_for_encoder
+        from tuck.models.encoding_policy import validate_rc_method_for_encoder
 
-        _validate_rc_method_for_encoder("crf", "libx264")
-        _validate_rc_method_for_encoder("crf", "libx265")
+        validate_rc_method_for_encoder("crf", "libx264")
+        validate_rc_method_for_encoder("crf", "libx265")
 
     def test_cpu_encoders_accept_cbr(self):
         """CPU encoders accept CBR rate control method."""
-        from tuck.models import _validate_rc_method_for_encoder
+        from tuck.models.encoding_policy import validate_rc_method_for_encoder
 
-        _validate_rc_method_for_encoder("cbr", "libx264")
-        _validate_rc_method_for_encoder("cbr", "libx265")
+        validate_rc_method_for_encoder("cbr", "libx264")
+        validate_rc_method_for_encoder("cbr", "libx265")
 
     def test_cpu_encoders_reject_cqp(self):
         """CPU encoders reject CQP rate control method."""
         import pytest
 
-        from tuck.models import _validate_rc_method_for_encoder
+        from tuck.models.encoding_policy import validate_rc_method_for_encoder
 
         with pytest.raises(ValueError, match="not supported for libx264"):
-            _validate_rc_method_for_encoder("cqp", "libx264")
+            validate_rc_method_for_encoder("cqp", "libx264")
         with pytest.raises(ValueError, match="not supported for libx265"):
-            _validate_rc_method_for_encoder("cqp", "libx265")
+            validate_rc_method_for_encoder("cqp", "libx265")
 
     def test_cpu_encoders_reject_vbr(self):
         """CPU encoders reject VBR rate control method."""
         import pytest
 
-        from tuck.models import _validate_rc_method_for_encoder
+        from tuck.models.encoding_policy import validate_rc_method_for_encoder
 
         with pytest.raises(ValueError, match="not supported for libx264"):
-            _validate_rc_method_for_encoder("vbr", "libx264")
+            validate_rc_method_for_encoder("vbr", "libx264")
 
     def test_nvenc_encoders_accept_cqp_cbr_vbr(self):
         """NVENC encoders accept CQP, CBR, VBR."""
-        from tuck.models import _validate_rc_method_for_encoder
+        from tuck.models.encoding_policy import validate_rc_method_for_encoder
 
         for enc in ("h264_nvenc", "hevc_nvenc"):
-            _validate_rc_method_for_encoder("cqp", enc)
-            _validate_rc_method_for_encoder("cbr", enc)
-            _validate_rc_method_for_encoder("vbr", enc)
+            validate_rc_method_for_encoder("cqp", enc)
+            validate_rc_method_for_encoder("cbr", enc)
+            validate_rc_method_for_encoder("vbr", enc)
 
     def test_nvenc_encoders_reject_crf(self):
         """NVENC encoders reject CRF."""
         import pytest
 
-        from tuck.models import _validate_rc_method_for_encoder
+        from tuck.models.encoding_policy import validate_rc_method_for_encoder
 
         with pytest.raises(ValueError, match="not supported for h264_nvenc"):
-            _validate_rc_method_for_encoder("crf", "h264_nvenc")
+            validate_rc_method_for_encoder("crf", "h264_nvenc")
 
     def test_amf_encoders_accept_cqp_cbr_vbr(self):
         """AMF encoders accept CQP, CBR, VBR."""
-        from tuck.models import _validate_rc_method_for_encoder
+        from tuck.models.encoding_policy import validate_rc_method_for_encoder
 
         for enc in ("h264_amf", "hevc_amf"):
-            _validate_rc_method_for_encoder("cqp", enc)
-            _validate_rc_method_for_encoder("cbr", enc)
-            _validate_rc_method_for_encoder("vbr", enc)
+            validate_rc_method_for_encoder("cqp", enc)
+            validate_rc_method_for_encoder("cbr", enc)
+            validate_rc_method_for_encoder("vbr", enc)
 
     def test_amf_encoders_reject_crf(self):
         """AMF encoders reject CRF."""
         import pytest
 
-        from tuck.models import _validate_rc_method_for_encoder
+        from tuck.models.encoding_policy import validate_rc_method_for_encoder
 
         with pytest.raises(ValueError, match="not supported for h264_amf"):
-            _validate_rc_method_for_encoder("crf", "h264_amf")
+            validate_rc_method_for_encoder("crf", "h264_amf")
 
     def test_all_six_encoders_in_allowlist(self):
         """All six encoders are in the valid set."""
-        from tuck.models import _VALID_VIDEO_ENCODERS
+        from tuck.models.encoding_policy import VALID_VIDEO_ENCODERS
 
         expected = {"libx264", "libx265", "h264_nvenc", "hevc_nvenc", "h264_amf", "hevc_amf"}
-        assert expected == _VALID_VIDEO_ENCODERS
+        assert expected == VALID_VIDEO_ENCODERS
 
     def test_invalid_encoder_rejected(self):
         """Unknown encoder is rejected."""
         import pytest
 
-        from tuck.models import _validate_rc_method_for_encoder
+        from tuck.models.encoding_policy import validate_rc_method_for_encoder
 
         with pytest.raises(ValueError, match="rate_control_method"):
-            _validate_rc_method_for_encoder("crf", "bogus_encoder")
+            validate_rc_method_for_encoder("crf", "bogus_encoder")
 
 
 class TestPlanTrim:

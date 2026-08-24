@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from tuck.engine import FFmpegEngine
+from tuck.encoding.command import build_base_cmd
 from tuck.models import (
     RC_TARGET_SIZE,
     RCM_CBR,
@@ -124,7 +124,7 @@ def test_legacy_nvenc_cqp_command_uses_constqp():
         qp=18,
     )
 
-    cmd = FFmpegEngine()._build_base_cmd("ffmpeg", plan_data, Path(plan_data.source))
+    cmd = build_base_cmd("ffmpeg", plan_data, Path(plan_data.source))
 
     assert cmd[cmd.index("-rc") : cmd.index("-rc") + 4] == ["-rc", "constqp", "-qp", "18"]
     assert "-cq" not in cmd
@@ -142,7 +142,7 @@ def test_nvenc_cq_command_uses_cq_not_constqp():
         cq=23,
     )
 
-    cmd = FFmpegEngine()._build_base_cmd("ffmpeg", plan_data, Path(plan_data.source))
+    cmd = build_base_cmd("ffmpeg", plan_data, Path(plan_data.source))
 
     assert cmd[cmd.index("-rc") : cmd.index("-rc") + 4] == ["-rc", "vbr", "-cq", "23"]
     assert "constqp" not in cmd
@@ -160,7 +160,7 @@ def test_software_upscale_crf_command_uses_crf():
         crf=20,
     )
 
-    cmd = FFmpegEngine()._build_base_cmd("ffmpeg", plan_data, Path(plan_data.source))
+    cmd = build_base_cmd("ffmpeg", plan_data, Path(plan_data.source))
 
     assert cmd[cmd.index("-crf") : cmd.index("-crf") + 2] == ["-crf", "20"]
 

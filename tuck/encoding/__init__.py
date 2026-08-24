@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from .capabilities import _find_ffmpeg as _find_ffmpeg
 from .capabilities import (
     clear_encoder_cache,
     get_available_encoders,

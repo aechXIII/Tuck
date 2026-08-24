@@ -26,7 +26,17 @@
     };
   }
 
-  var notifications = { presentation: presentation };
+  function createMessageElement(document, message) {
+    var span = document.createElement("span");
+    span.className = "tmsg";
+    span.textContent = String(message);
+    return span;
+  }
+
+  var notifications = {
+    presentation: presentation,
+    createMessageElement: createMessageElement,
+  };
   root.TuckNotifications = notifications;
   if (typeof module !== "undefined" && module.exports) {
     module.exports = notifications;

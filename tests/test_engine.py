@@ -5,15 +5,9 @@ from pathlib import Path
 
 import pytest
 
+from tuck.encoding.command import build_base_cmd, nvenc_preset, scaler_to_ffmpeg_flag
 from tuck.encoding.filters import build_video_filters
-from tuck.engine import (
-    EncodeError,
-    FFmpegEngine,
-    _nvenc_preset,
-    _scaler_to_ffmpeg_flag,
-    cleanup_cache,
-    is_ffmpeg_available,
-)
+from tuck.engine import EncodeError, FFmpegEngine, is_ffmpeg_available
 from tuck.models import (
     ENCODER_AUTO,
     ENCODER_AUTO_COMPRESSION,
@@ -26,6 +20,8 @@ from tuck.models import (
     WORKFLOW_UPSCALE,
     CropRect,
     EncodePlan,
+    EncodeProgress,
+    EncodeStage,
     OutputGeometry,
     Segment,
     VideoTransform,
@@ -34,9 +30,9 @@ from tuck.models import (
 
 def _create_synthetic_video(path: Path, duration: float = 3.0) -> bool:
 
-    from tuck.engine import _find_ffmpeg
+    from tuck.media_tools import find_ffmpeg
 
-    ffmpeg = _find_ffmpeg()
+    ffmpeg = find_ffmpeg()
     if not ffmpeg:
         return False
     try:
@@ -148,13 +144,11 @@ class TestFFmpegEngine:
         assert result.stat().st_size > 0
 
     @pytest.mark.ffmpeg
-    def test_encode_source_audio_segments_restores_audio_after_muted_gap(
-        self, engine, tmp_path
-    ):
-        from tuck.engine import _find_ffmpeg
+    def test_encode_source_audio_segments_restores_audio_after_muted_gap(self, engine, tmp_path):
+        from tuck.media_tools import find_ffmpeg
         from tuck.probe import probe
 
-        ffmpeg = _find_ffmpeg()
+        ffmpeg = find_ffmpeg()
         if not ffmpeg:
             pytest.skip("ffmpeg unavailable")
         source = tmp_path / "source-audio-segments.mp4"
@@ -249,7 +243,11 @@ class TestFFmpegEngine:
         result = engine.encode(plan, on_progress=cb)
         assert result.exists()
 
-        assert len(progress_values) >= 0
+        assert progress_values
+        assert all(isinstance(value, EncodeProgress) for value in progress_values)
+        assert progress_values[0].stage == EncodeStage.PREPARING
+        assert progress_values[-1].stage == EncodeStage.COMPLETED
+        assert progress_values[-1].percent == 100.0
 
     def test_output_reservation_cleanup_and_no_y_flag(self, engine, real_video_path, tmp_path):
 
@@ -286,7 +284,7 @@ class TestFFmpegEngine:
         reservation = output.with_suffix(output.suffix + ".reserved")
         assert not reservation.exists()
 
-        cmd = engine._build_base_cmd("ffmpeg", plan, Path(plan.source))
+        cmd = build_base_cmd("ffmpeg", plan, Path(plan.source))
         assert "-y" not in cmd
 
     def test_nested_output_parent_created_before_reservation(
@@ -414,11 +412,6 @@ class TestFFmpegEngine:
         except EncodeError:
             pass
 
-    def test_cleanup_cache(self, tmp_path):
-        removed = cleanup_cache(tmp_path)
-        assert isinstance(removed, int)
-        assert removed >= 0
-
 
 def test_video_filter_builder_preserves_existing_filter_order() -> None:
     assert build_video_filters(
@@ -465,7 +458,7 @@ def test_build_base_cmd_applies_crop_without_scaling(engine, real_video_path, tm
         transform=VideoTransform(crop=CropRect(10, 20, 200, 100)),
     )
 
-    cmd = engine._build_base_cmd("ffmpeg", plan, Path(plan.source))
+    cmd = build_base_cmd("ffmpeg", plan, Path(plan.source))
 
     assert cmd[cmd.index("-vf") + 1] == "crop=200:100:10:20:exact=1"
 
@@ -501,10 +494,10 @@ def test_cpu_encode_outputs_selected_crop_dimensions(engine, real_video_path, tm
 
 
 def test_cpu_encode_crops_display_rotated_source_coordinates(engine, tmp_path) -> None:
-    from tuck.engine import _find_ffmpeg
+    from tuck.media_tools import find_ffmpeg
     from tuck.probe import probe
 
-    ffmpeg = _find_ffmpeg()
+    ffmpeg = find_ffmpeg()
     if not ffmpeg:
         pytest.skip("ffmpeg unavailable")
 
@@ -618,10 +611,10 @@ def test_cpu_encode_applies_complete_transform_geometry(
 
 
 def test_cpu_encode_outputs_selected_crop_content(engine, tmp_path) -> None:
-    from tuck.engine import _find_ffmpeg
+    from tuck.media_tools import find_ffmpeg
     from tuck.probe import probe
 
-    ffmpeg = _find_ffmpeg()
+    ffmpeg = find_ffmpeg()
     if not ffmpeg:
         pytest.skip("ffmpeg unavailable")
 
@@ -714,21 +707,21 @@ def test_crop_filter_is_shared_by_all_encoder_commands(
         transform=VideoTransform(crop=CropRect(10, 20, 200, 100)),
     )
 
-    cmd = engine._build_base_cmd("ffmpeg", plan, Path(plan.source))
+    cmd = build_base_cmd("ffmpeg", plan, Path(plan.source))
 
     assert cmd[cmd.index("-vf") + 1] == "crop=200:100:10:20:exact=1"
 
 
 class TestScalerFlags:
-    def test_scaler_to_ffmpeg_flag_mappings(self):
-        assert _scaler_to_ffmpeg_flag("bilinear") == "bilinear"
-        assert _scaler_to_ffmpeg_flag("bicubic") == "bicubic"
-        assert _scaler_to_ffmpeg_flag("lanczos") == "lanczos"
-        assert _scaler_to_ffmpeg_flag("nearest") == "neighbor"
+    def testscaler_to_ffmpeg_flag_mappings(self):
+        assert scaler_to_ffmpeg_flag("bilinear") == "bilinear"
+        assert scaler_to_ffmpeg_flag("bicubic") == "bicubic"
+        assert scaler_to_ffmpeg_flag("lanczos") == "lanczos"
+        assert scaler_to_ffmpeg_flag("nearest") == "neighbor"
 
-    def test_scaler_to_ffmpeg_flag_unknown_defaults(self):
-        assert _scaler_to_ffmpeg_flag("bogus") == "neighbor"
-        assert _scaler_to_ffmpeg_flag("") == "neighbor"
+    def testscaler_to_ffmpeg_flag_unknown_defaults(self):
+        assert scaler_to_ffmpeg_flag("bogus") == "neighbor"
+        assert scaler_to_ffmpeg_flag("") == "neighbor"
 
     def test_build_base_cmd_includes_scaler_flags(self, engine, real_video_path, tmp_path):
         from tuck.probe import probe
@@ -762,7 +755,7 @@ class TestScalerFlags:
             ("nearest", "neighbor"),
         ]:
             plan.scaler = scaler
-            cmd = engine._build_base_cmd("ffmpeg", plan, Path(plan.source))
+            cmd = build_base_cmd("ffmpeg", plan, Path(plan.source))
             assert "-vf" in cmd
             vf_index = cmd.index("-vf")
             vf_value = cmd[vf_index + 1]
@@ -786,7 +779,7 @@ class TestScalerFlags:
             scaler="bogus",
         )
 
-        cmd = engine._build_base_cmd("ffmpeg", plan, Path(plan.source))
+        cmd = build_base_cmd("ffmpeg", plan, Path(plan.source))
         assert cmd[cmd.index("-vf") + 1] == "scale=320:240:flags=neighbor,setsar=1"
 
     def test_build_base_cmd_no_scale_no_vf_flags(self, engine, real_video_path, tmp_path):
@@ -813,11 +806,11 @@ class TestScalerFlags:
             profile_id="test",
             apply_scale=False,
         )
-        cmd = engine._build_base_cmd("ffmpeg", plan, Path(plan.source))
+        cmd = build_base_cmd("ffmpeg", plan, Path(plan.source))
         assert "-vf" not in cmd
 
     def test_build_base_cmd_includes_video_encoder(self, engine, real_video_path, tmp_path):
-        """_build_base_cmd uses plan.video_encoder for -c:v."""
+        """The public command builder uses plan.video_encoder for -c:v."""
         from tuck.probe import probe
 
         info = probe(real_video_path)
@@ -841,12 +834,12 @@ class TestScalerFlags:
             source_info=info,
             profile_id="test",
         )
-        cmd = engine._build_base_cmd("ffmpeg", plan, Path(plan.source))
+        cmd = build_base_cmd("ffmpeg", plan, Path(plan.source))
         c_v_index = cmd.index("-c:v")
         assert cmd[c_v_index + 1] == "libx265"
 
     def test_build_base_cmd_includes_bitrate_single_pass(self, engine, real_video_path, tmp_path):
-        """_build_base_cmd uses -b:v for single-pass encoding (ABR, not CRF)."""
+        """The public command builder uses -b:v for single-pass encoding (ABR, not CRF)."""
         from tuck.probe import probe
 
         info = probe(real_video_path)
@@ -870,14 +863,14 @@ class TestScalerFlags:
             source_info=info,
             profile_id="test",
         )
-        cmd = engine._build_base_cmd("ffmpeg", plan, Path(plan.source))
+        cmd = build_base_cmd("ffmpeg", plan, Path(plan.source))
         assert "-b:v" in cmd
         bv_index = cmd.index("-b:v")
         assert cmd[bv_index + 1] == "500000"
         assert "-crf" not in cmd
 
     def test_build_base_cmd_includes_tune(self, engine, real_video_path, tmp_path):
-        """_build_base_cmd includes -tune when plan.tune is set."""
+        """The public command builder includes -tune when plan.tune is set."""
         from tuck.probe import probe
 
         info = probe(real_video_path)
@@ -901,13 +894,13 @@ class TestScalerFlags:
             source_info=info,
             profile_id="test",
         )
-        cmd = engine._build_base_cmd("ffmpeg", plan, Path(plan.source))
+        cmd = build_base_cmd("ffmpeg", plan, Path(plan.source))
         assert "-tune" in cmd
         tune_index = cmd.index("-tune")
         assert cmd[tune_index + 1] == "animation"
 
     def test_build_base_cmd_no_tune_when_empty(self, engine, real_video_path, tmp_path):
-        """_build_base_cmd omits -tune when plan.tune is empty."""
+        """The public command builder omits -tune when plan.tune is empty."""
         from tuck.probe import probe
 
         info = probe(real_video_path)
@@ -931,7 +924,7 @@ class TestScalerFlags:
             source_info=info,
             profile_id="test",
         )
-        cmd = engine._build_base_cmd("ffmpeg", plan, Path(plan.source))
+        cmd = build_base_cmd("ffmpeg", plan, Path(plan.source))
         assert "-tune" not in cmd
 
 
@@ -1219,7 +1212,7 @@ class TestHardwareFallback:
     def test_auto_tries_amd_after_nvenc_initialization_failure(
         self, engine, real_video_path, tmp_path, monkeypatch
     ):
-        monkeypatch.setattr("tuck.encoding.runner._find_ffmpeg", lambda: "ffmpeg")
+        monkeypatch.setattr("tuck.encoding.runner.find_ffmpeg", lambda: "ffmpeg")
         monkeypatch.setattr(
             "tuck.encoding.runner.get_available_encoders",
             lambda: frozenset({"libx264", "h264_nvenc", "h264_amf"}),
@@ -1249,7 +1242,7 @@ class TestHardwareFallback:
     def test_explicit_hardware_failure_does_not_fallback(
         self, engine, real_video_path, tmp_path, monkeypatch
     ):
-        monkeypatch.setattr("tuck.encoding.runner._find_ffmpeg", lambda: "ffmpeg")
+        monkeypatch.setattr("tuck.encoding.runner.find_ffmpeg", lambda: "ffmpeg")
         monkeypatch.setattr(
             "tuck.encoding.runner.get_available_encoders",
             lambda: frozenset({"libx264", "h264_nvenc"}),
@@ -1273,7 +1266,7 @@ class TestHardwareFallback:
     def test_auto_best_compression_keeps_two_pass_for_cpu(
         self, engine, real_video_path, tmp_path, monkeypatch
     ):
-        monkeypatch.setattr("tuck.encoding.runner._find_ffmpeg", lambda: "ffmpeg")
+        monkeypatch.setattr("tuck.encoding.runner.find_ffmpeg", lambda: "ffmpeg")
         monkeypatch.setattr(
             "tuck.encoding.runner.get_available_encoders", lambda: frozenset({"libx264"})
         )
@@ -1302,7 +1295,7 @@ class TestHardwareFallback:
     def test_auto_cpu_fallback_normalizes_hardware_rate_control(
         self, engine, real_video_path, tmp_path, monkeypatch
     ):
-        monkeypatch.setattr("tuck.encoding.runner._find_ffmpeg", lambda: "ffmpeg")
+        monkeypatch.setattr("tuck.encoding.runner.find_ffmpeg", lambda: "ffmpeg")
         monkeypatch.setattr(
             "tuck.encoding.runner.get_available_encoders", lambda: frozenset({"libx264"})
         )
@@ -1439,7 +1432,7 @@ class TestFFmpegCommandPerEncoder:
             source_info=info,
             profile_id="test",
         )
-        cmd = engine._build_base_cmd("ffmpeg", plan, Path(plan.source))
+        cmd = build_base_cmd("ffmpeg", plan, Path(plan.source))
         assert "-crf" in cmd
         crf_idx = cmd.index("-crf")
         assert cmd[crf_idx + 1] == "18"
@@ -1470,7 +1463,7 @@ class TestFFmpegCommandPerEncoder:
             source_info=info,
             profile_id="test",
         )
-        cmd = engine._build_base_cmd("ffmpeg", plan, Path(plan.source))
+        cmd = build_base_cmd("ffmpeg", plan, Path(plan.source))
         assert "-b:v" in cmd
         bv_idx = cmd.index("-b:v")
         assert cmd[bv_idx + 1] == "2000000"
@@ -1505,7 +1498,7 @@ class TestFFmpegCommandPerEncoder:
             source_info=info,
             profile_id="test",
         )
-        cmd = engine._build_base_cmd("ffmpeg", plan, Path(plan.source))
+        cmd = build_base_cmd("ffmpeg", plan, Path(plan.source))
         assert "-rc" in cmd
         rc_idx = cmd.index("-rc")
         assert cmd[rc_idx + 1] == "constqp"
@@ -1538,7 +1531,7 @@ class TestFFmpegCommandPerEncoder:
             source_info=info,
             profile_id="test",
         )
-        cmd = engine._build_base_cmd("ffmpeg", plan, Path(plan.source))
+        cmd = build_base_cmd("ffmpeg", plan, Path(plan.source))
         assert "-rc" in cmd
         rc_idx = cmd.index("-rc")
         assert cmd[rc_idx + 1] == "cbr"
@@ -1569,7 +1562,7 @@ class TestFFmpegCommandPerEncoder:
             source_info=info,
             profile_id="test",
         )
-        cmd = engine._build_base_cmd("ffmpeg", plan, Path(plan.source))
+        cmd = build_base_cmd("ffmpeg", plan, Path(plan.source))
         assert "-rc" in cmd
         rc_idx = cmd.index("-rc")
         assert cmd[rc_idx + 1] == "vbr"
@@ -1602,7 +1595,7 @@ class TestFFmpegCommandPerEncoder:
             source_info=info,
             profile_id="test",
         )
-        cmd = engine._build_base_cmd("ffmpeg", plan, Path(plan.source))
+        cmd = build_base_cmd("ffmpeg", plan, Path(plan.source))
         assert "-rc" in cmd
         rc_idx = cmd.index("-rc")
         assert cmd[rc_idx + 1] == "cqp"
@@ -1635,7 +1628,7 @@ class TestFFmpegCommandPerEncoder:
             source_info=info,
             profile_id="test",
         )
-        cmd = engine._build_base_cmd("ffmpeg", plan, Path(plan.source))
+        cmd = build_base_cmd("ffmpeg", plan, Path(plan.source))
         assert "-rc" in cmd
         rc_idx = cmd.index("-rc")
         assert cmd[rc_idx + 1] == "cbr"
@@ -1666,19 +1659,19 @@ class TestFFmpegCommandPerEncoder:
             source_info=info,
             profile_id="test",
         )
-        cmd = engine._build_base_cmd("ffmpeg", plan, Path(plan.source))
+        cmd = build_base_cmd("ffmpeg", plan, Path(plan.source))
         assert "-rc" in cmd
         rc_idx = cmd.index("-rc")
         assert cmd[rc_idx + 1] == "vbr"
         assert "-b:v" in cmd
         assert "-maxrate" in cmd
 
-    def test_nvenc_preset_mapping(self):
+    def testnvenc_preset_mapping(self):
         """NVENC preset mapping converts x264 preset names to p1-p7."""
-        assert _nvenc_preset("medium") == "p6"
-        assert _nvenc_preset("slow") == "p6"
-        assert _nvenc_preset("fast") == "p4"
-        assert _nvenc_preset("ultrafast") == "p1"
+        assert nvenc_preset("medium") == "p6"
+        assert nvenc_preset("slow") == "p6"
+        assert nvenc_preset("fast") == "p4"
+        assert nvenc_preset("ultrafast") == "p1"
 
 
 class TestTrimFlags:
@@ -1700,7 +1693,7 @@ class TestTrimFlags:
             trim_start=0.0,
             trim_end=info.duration,
         )
-        cmd = engine._build_base_cmd("ffmpeg", plan, Path(plan.source))
+        cmd = build_base_cmd("ffmpeg", plan, Path(plan.source))
         assert "-ss" not in cmd
         assert "-t" not in cmd
 
@@ -1724,7 +1717,7 @@ class TestTrimFlags:
             trim_start=0.5,
             trim_end=min(info.duration, 1.5),
         )
-        cmd = engine._build_base_cmd("ffmpeg", plan, Path(plan.source))
+        cmd = build_base_cmd("ffmpeg", plan, Path(plan.source))
         assert "-ss" in cmd
         ss_idx = cmd.index("-ss")
         assert float(cmd[ss_idx + 1]) == pytest.approx(0.5, abs=0.01)
@@ -1789,7 +1782,7 @@ class TestTrimFlags:
             apply_fps_filter=True,
         )
 
-        cmd = engine._build_base_cmd("ffmpeg", plan, Path(plan.source))
+        cmd = build_base_cmd("ffmpeg", plan, Path(plan.source))
         graph = cmd[cmd.index("-filter_complex") + 1]
 
         assert "trim=start=0.200:end=0.800,setpts=PTS-STARTPTS[v0]" in graph
@@ -1846,7 +1839,7 @@ class TestTrimFlags:
             segments=[Segment(0.2, 0.8), Segment(1.4, 2.1)],
         )
 
-        cmd = engine._build_base_cmd("ffmpeg", plan, Path(plan.source))
+        cmd = build_base_cmd("ffmpeg", plan, Path(plan.source))
         graph = cmd[cmd.index("-filter_complex") + 1]
         assert "[0:a]" not in graph
         assert "concat=n=2:v=1:a=0[vout]" in graph

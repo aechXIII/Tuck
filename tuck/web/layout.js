@@ -9,8 +9,8 @@
   var TIMELINE_MAX_RATIO = 0.55;
   var WORKSPACE_CHROME_HEIGHT = 330;
   var DEFAULT_TRACK_COUNT = 2;
-  var TIMELINE_AUTO_BASE_HEIGHT = 205;
-  var IMPORTED_TRACK_HEIGHT = 47;
+  var TIMELINE_AUTO_BASE_HEIGHT = 190;
+  var IMPORTED_TRACK_HEIGHT = 42;
   var WORKSPACE_DOCKED_MIN_WIDTH = 1180;
 
   function timelineHeightBounds(viewportHeight) {
@@ -52,6 +52,15 @@
     var height = Number(value);
     if (!Number.isFinite(height) || height < bounds.min) return 0;
     return Math.round(height);
+  }
+
+  function initialTimelineHeightSetting(settings) {
+    return settings && settings.timeline_height != null ? settings.timeline_height : 0;
+  }
+
+  function timelineHeightForTrackCount(setting, trackCount, viewportHeight) {
+    if (normalizeTimelineHeightSetting(setting, viewportHeight) !== 0) return null;
+    return timelineAutoHeight(trackCount, viewportHeight);
   }
 
   function timelineHeightForKey(current, key, largeStep, viewportHeight) {
@@ -98,6 +107,8 @@
     timelineAutoHeight: timelineAutoHeight,
     clampTimelineHeight: clampTimelineHeight,
     normalizeTimelineHeightSetting: normalizeTimelineHeightSetting,
+    initialTimelineHeightSetting: initialTimelineHeightSetting,
+    timelineHeightForTrackCount: timelineHeightForTrackCount,
     timelineHeightForKey: timelineHeightForKey,
     workspaceMode: workspaceMode,
     initialWorkspacePanels: initialWorkspacePanels,

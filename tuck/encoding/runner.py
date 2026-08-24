@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from ..formatting import format_size
+from ..media_tools import find_ffmpeg
 from ..models import (
     AUDIO_OVERHEAD_FACTOR,
     ENCODER_AUTO,
@@ -27,8 +28,8 @@ from ..models import (
     EncodePlan,
 )
 from ..models.progress import EncodeProgress, EncodeStage
+from ..output_paths import reservation_path, resolve_output_collision
 from .capabilities import (
-    _find_ffmpeg,
     auto_encoder_candidates,
     get_available_encoders,
     is_hardware_encoder,
@@ -138,17 +139,15 @@ class FFmpegEngine:
                     raise FileNotFoundError(f"Audio source file not found: {audio_source}")
 
     def _reserve_output(self, plan: EncodePlan, output: Path) -> tuple[Path, Path]:
-        reservation = output.with_suffix(output.suffix + ".reserved")
+        reservation = reservation_path(output)
         try:
             fd = os.open(str(reservation), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
             os.close(fd)
         except FileExistsError:
-            from ..planner import _resolve_output_collision
-
-            new_output = _resolve_output_collision(output)
+            new_output = resolve_output_collision(output)
             plan.output = str(new_output)
             output = new_output
-            reservation = output.with_suffix(output.suffix + ".reserved")
+            reservation = reservation_path(output)
             try:
                 fd = os.open(str(reservation), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
                 os.close(fd)
@@ -190,7 +189,7 @@ class FFmpegEngine:
                 if (
                     was_auto
                     and is_hardware_encoder(encoder)
-                    and is_hardware_init_failure(exc.stderr, exc.returncode)
+                    and is_hardware_init_failure(exc.stderr)
                 ):
                     last_hardware_error = exc
                     self._cleanup_output(tmp_output)
@@ -209,12 +208,10 @@ class FFmpegEngine:
         self, result: Path, plan: EncodePlan, output: Path, reservation: Path
     ) -> tuple[Path, Path]:
         if output.exists():
-            from ..planner import _resolve_output_collision
-
             with contextlib.suppress(OSError):
                 reservation.unlink()
-            output = _resolve_output_collision(output)
-            reservation = output.with_suffix(output.suffix + ".reserved")
+            output = resolve_output_collision(output)
+            reservation = reservation_path(output)
             try:
                 fd = os.open(str(reservation), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
                 os.close(fd)
@@ -235,7 +232,7 @@ class FFmpegEngine:
         on_progress: ProgressCallback | None = None,
     ) -> Path:
         plan = copy.deepcopy(plan)
-        ffmpeg_path = _find_ffmpeg()
+        ffmpeg_path = find_ffmpeg()
         if not ffmpeg_path:
             raise FileNotFoundError(
                 "FFmpeg not found. Install FFmpeg and ensure ffmpeg is on PATH "
@@ -628,14 +625,6 @@ class FFmpegEngine:
 
         return output
 
-    def _build_base_cmd(
-        self,
-        ffmpeg: str,
-        plan: EncodePlan,
-        source: Path,
-    ) -> list[str]:
-        return build_base_cmd(ffmpeg, plan, source)
-
     def _consume_stderr(
         self,
         proc: subprocess.Popen,
@@ -745,7 +734,7 @@ class FFmpegEngine:
 
 
 def is_ffmpeg_available() -> bool:
-    return _find_ffmpeg() is not None
+    return find_ffmpeg() is not None
 
 
 def cleanup_cache(cache_dir: Path, max_age_hours: int = 24) -> int:

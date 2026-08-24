@@ -60,3 +60,12 @@ test("timeline edit keys identify focused segments and trim handles", () => {
   );
   assert.equal(timeline.editKeyIntent({ id: "tl-in" }, "Space", false), null);
 });
+
+test("source-audio mute does not change video segment presentation", () => {
+  assert.deepEqual(timeline.segmentPresentationState(1, 1, true), {
+    className: "tl-segment active",
+  });
+  assert.deepEqual(timeline.segmentPresentationState(0, 1, false), {
+    className: "tl-segment",
+  });
+});

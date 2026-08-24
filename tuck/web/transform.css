@@ -119,9 +119,6 @@ body.crop-dragging * {
   user-select: none !important;
 }
 
-#crop-edit-group {
-  padding: 0 4px 0 10px;
-}
 #crop-label {
   color: var(--muted);
   font: 600 11px var(--font);
@@ -217,90 +214,10 @@ body.crop-dragging * {
   stroke-linejoin: round;
   fill: none;
 }
-.chip-group {
-  display: flex;
-  align-items: center;
-  gap: 1px;
-  height: 26px;
-  padding: 0 4px 0 0;
-  background: var(--card-bg);
-  border: 1px solid var(--border2);
-  border-radius: 10px;
-  flex-shrink: 0;
-}
-.chip-group.hid {
-  display: none;
-}
-.chip-label {
-  color: var(--dim);
-  font: 700 9.5px var(--font);
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  padding: 0 4px 0 10px;
-  white-space: nowrap;
-}
-.tool-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 22px;
-  padding: 0 7px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text);
-  font: 600 11px var(--font);
-  cursor: pointer;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-.tool-btn:hover {
-  background: #191923;
-}
-.tool-btn:focus-visible {
-  outline: 2px solid var(--accent-light);
-  outline-offset: 1px;
-}
-.tool-btn.on {
-  color: var(--accent-light);
-}
-.tool-btn.danger {
-  color: #d18a8a;
-}
-.tool-btn.danger:hover {
-  color: #fca5a5;
-}
-.tool-btn.icon-only {
-  width: 22px;
-  padding: 0;
-  justify-content: center;
-}
-.tool-btn:disabled,
-.tool-btn[aria-disabled="true"] {
-  color: var(--dim);
-  cursor: default;
-  opacity: 0.55;
-}
-.tool-btn svg {
-  width: 13px;
-  height: 13px;
-  stroke: currentColor;
-  stroke-width: 1.7;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  fill: none;
-  flex-shrink: 0;
-}
 .dock-zoom {
   display: flex;
   align-items: center;
   gap: 4px;
-  flex-shrink: 0;
-}
-.dock-command-group {
-  display: flex;
-  align-items: center;
-  gap: 6px;
   flex-shrink: 0;
 }
 .dock-zoom-btn {
@@ -369,74 +286,6 @@ body.crop-dragging * {
   border-bottom-color: var(--accent-light);
 }
 .dock-toggle:focus-visible {
-  outline: 2px solid var(--accent-light);
-  outline-offset: 1px;
-}
-.dock-divider {
-  width: 1px;
-  height: 18px;
-  background: var(--border);
-  flex-shrink: 0;
-}
-.dock-icon-group {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-}
-.dock-group-label {
-  color: var(--muted);
-  font: 700 9px var(--font);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  margin-right: 1px;
-  white-space: nowrap;
-}
-.dock-icon-btn {
-  width: 22px;
-  height: 22px;
-  border-radius: 4px;
-  background: transparent;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  color: #b4b4c4;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  padding: 0;
-}
-.dock-icon-btn.text {
-  width: auto;
-  padding: 0 8px;
-  font: 600 10px var(--font);
-}
-.dock-icon-btn svg {
-  width: 12px;
-  height: 12px;
-  stroke: currentColor;
-  stroke-width: 1.6;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  fill: none;
-}
-.dock-icon-btn:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: #fff;
-}
-.dock-icon-btn.on {
-  border-bottom-color: var(--accent-light);
-  color: var(--accent-light);
-  background: transparent;
-}
-.dock-icon-btn:disabled,
-.dock-icon-btn[aria-disabled="true"] {
-  color: var(--dim);
-  cursor: default;
-  opacity: 0.5;
-}
-.dock-icon-btn:focus-visible {
   outline: 2px solid var(--accent-light);
   outline-offset: 1px;
 }

@@ -1,5 +1,4 @@
 import hashlib
-import json
 from pathlib import Path
 from types import SimpleNamespace
 from urllib.error import HTTPError
@@ -437,7 +436,7 @@ class TestMediaServer:
         server.set_thumbnail_cache_dir(cache)
         calls = []
 
-        monkeypatch.setattr("tuck.engine._find_ffmpeg", lambda: "ffmpeg")
+        monkeypatch.setattr("tuck.media_server.find_ffmpeg", lambda: "ffmpeg")
 
         def fake_run(command, **_kwargs):
             calls.append(command)
@@ -470,7 +469,7 @@ class TestMediaServer:
         ).hexdigest()[:32]
         (cache / f"waveform_{legacy_key}.png").write_bytes(b"legacy")
 
-        monkeypatch.setattr("tuck.engine._find_ffmpeg", lambda: "ffmpeg")
+        monkeypatch.setattr("tuck.media_server.find_ffmpeg", lambda: "ffmpeg")
         calls = []
 
         def fake_run(command, **_kwargs):
@@ -502,7 +501,7 @@ class TestBridgeMediaIntegration:
         from tuck.bridge import BridgeAPI
 
         api = BridgeAPI()
-        resp = json.loads(api.get_media_url(str(tmp_path / "no_file.mp4")))
+        resp = api.get_media_url(str(tmp_path / "no_file.mp4"))
         assert not resp["ok"]
         assert "error" in resp
 
@@ -516,7 +515,7 @@ class TestBridgeMediaIntegration:
         from tuck.bridge import BridgeAPI
 
         api = BridgeAPI()
-        resp = json.loads(api.get_thumbnail(str(tmp_path / "no_file.mp4")))
+        resp = api.get_thumbnail(str(tmp_path / "no_file.mp4"))
         assert not resp["ok"]
         assert "error" in resp
 
@@ -530,7 +529,7 @@ class TestBridgeMediaIntegration:
         from tuck.bridge import BridgeAPI
 
         api = BridgeAPI()
-        resp = json.loads(api.release_media_token("some_token"))
+        resp = api.release_media_token("some_token")
         assert resp["ok"]
 
     def test_release_media_token_handles_none(self, tmp_path, monkeypatch):
@@ -543,5 +542,5 @@ class TestBridgeMediaIntegration:
         from tuck.bridge import BridgeAPI
 
         api = BridgeAPI()
-        resp = json.loads(api.release_media_token(None))  # type: ignore[arg-type]
+        resp = api.release_media_token(None)  # type: ignore[arg-type]
         assert resp["ok"]

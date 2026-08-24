@@ -13,6 +13,8 @@ from functools import lru_cache
 from pathlib import Path
 from socketserver import ThreadingTCPServer
 
+from .media_tools import find_ffmpeg, find_ffprobe
+
 logger = logging.getLogger(__name__)
 
 
@@ -248,7 +250,7 @@ def _cached_file_or_none(path: Path) -> str | None:
 
 
 def _thumbnail_seek_time(file_path: Path) -> str:
-    candidate = _find_ffprobe()
+    candidate = find_ffprobe()
     if not candidate:
         return "1"
     try:
@@ -424,9 +426,7 @@ class MediaServer:
         if cached:
             return cached
 
-        from .engine import _find_ffmpeg
-
-        ffmpeg = _find_ffmpeg()
+        ffmpeg = find_ffmpeg()
         if not ffmpeg:
             logger.warning("Cannot generate thumbnail: ffmpeg not found")
             return None
@@ -449,8 +449,7 @@ class MediaServer:
         stat = file_path.stat()
         cache_key = hashlib.sha256(
             (
-                f"waveform:v{_WAVEFORM_CACHE_VERSION}:"
-                f"{file_path}:{stat.st_size}:{stat.st_mtime_ns}"
+                f"waveform:v{_WAVEFORM_CACHE_VERSION}:{file_path}:{stat.st_size}:{stat.st_mtime_ns}"
             ).encode()
         ).hexdigest()[:32]
         waveform_path = self._thumb_dir / f"waveform_{cache_key}.png"
@@ -458,9 +457,7 @@ class MediaServer:
         if cached:
             return cached
 
-        from .engine import _find_ffmpeg
-
-        ffmpeg = _find_ffmpeg()
+        ffmpeg = find_ffmpeg()
         if not ffmpeg:
             logger.warning("Cannot generate waveform: ffmpeg not found")
             return None
@@ -513,19 +510,3 @@ def _run_waveform_ffmpeg(ffmpeg: str, file_path: Path, waveform_path: Path, time
 @lru_cache(maxsize=1)
 def get_media_server() -> MediaServer:
     return MediaServer()
-
-
-def _find_ffprobe() -> str | None:
-
-    import shutil as _shutil
-
-    found = _shutil.which("ffprobe")
-    if found:
-        return found
-    for c in [
-        r"C:\ffmpeg\bin\ffprobe.exe",
-        r"C:\Program Files\ffmpeg\bin\ffprobe.exe",
-    ]:
-        if Path(c).is_file():
-            return c
-    return None

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from tuck.bridge_validation import validate_audio_paths, validate_video_paths
@@ -20,18 +19,39 @@ def _web_source() -> str:
     return "\n".join(path.read_text(encoding="utf-8") for path in web_dir.iterdir())
 
 
+def test_generated_markup_does_not_embed_event_handlers() -> None:
+    for path in Path("tuck/web").glob("*.js"):
+        source = path.read_text(encoding="utf-8")
+        for attribute in ("onclick=", "oninput=", "onchange="):
+            assert attribute not in source, f"{path} contains {attribute}"
+
+
+def test_static_controls_use_the_delegated_action_registry() -> None:
+    html = Path("tuck/web/index.html").read_text(encoding="utf-8")
+
+    for attribute in ("onclick=", "oninput=", "onchange="):
+        assert attribute not in html
+    assert 'src="delegated-events.js"' in html
+    assert 'src="ui-bindings.js"' in html
+    assert html.index('src="delegated-events.js"') < html.index('src="app.js"')
+    assert html.index('src="history.js"') < html.index('src="ui-bindings.js"')
+
+
 class _Bridge:
-    def probe_file(self, path: str) -> str:
-        return json.dumps({"ok": True, "path": path})
+    def probe_file(self, path: str) -> dict[str, object]:
+        return {"ok": True, "path": path}
 
     def get_settings(self) -> str:
         return "not json"
 
-    def get_ipc_files(self) -> str:
-        return "[]"
+    def create_plan(self, request: dict[str, object]) -> dict[str, object]:
+        return {"ok": True, "request": request}
 
-    def get_ipc_metadata(self) -> str:
-        return "{}"
+    def get_ipc_files(self) -> list[object]:
+        return []
+
+    def get_ipc_metadata(self) -> dict[str, object]:
+        return {}
 
 
 class _DialogWindow:
@@ -80,10 +100,16 @@ class TestVideoPathValidation:
 
 
 class TestJsApi:
-    def test_decodes_backend_json(self) -> None:
+    def test_forwards_native_backend_response(self) -> None:
         api = _JsApi(_Bridge())
 
         assert api.probeFile("clip.mp4") == {"ok": True, "path": "clip.mp4"}
+
+    def test_forwards_native_request_object(self) -> None:
+        api = _JsApi(_Bridge())
+        request = {"source": "clip.mp4", "segments": [{"start": 0, "end": 1}]}
+
+        assert api.createPlan(request) == {"ok": True, "request": request}
 
     def test_turns_invalid_backend_json_into_error(self) -> None:
         api = _JsApi(_Bridge())
@@ -143,22 +169,22 @@ class TestJsApi:
     def test_exposes_queue_management_methods(self) -> None:
         api = _JsApi(_Bridge())
         called: list[str] = []
-        api._api.cancel_item = lambda item_id: called.append(item_id) or '{"ok": true}'
-        api._api.retry_item = lambda item_id: called.append(item_id) or '{"ok": true}'
-        api._api.stop_after_current = lambda: '{"ok": true}'
+        api._api.cancel_item = lambda item_id: called.append(item_id) or {"ok": True}
+        api._api.retry_item = lambda item_id: called.append(item_id) or {"ok": True}
+        api._api.stop_after_current = lambda: {"ok": True}
         api._api.move_item = lambda item_id, new_index: (
-            called.append(f"{item_id}:{new_index}") or '{"ok": true}'
+            called.append(f"{item_id}:{new_index}") or {"ok": True}
         )
-        api._api.get_diagnostics = lambda context_json="{}": '{"ok": true, "text": "diag"}'
-        api._api.copy_text = lambda text: called.append(f"copy:{len(text)}") or '{"ok": true}'
-        api._api.open_logs_folder = lambda: called.append("logs") or '{"ok": true}'
-        api._api.open_config_folder = lambda: called.append("config") or '{"ok": true}'
+        api._api.get_diagnostics = lambda context=None: {"ok": True, "text": "diag"}
+        api._api.copy_text = lambda text: called.append(f"copy:{len(text)}") or {"ok": True}
+        api._api.open_logs_folder = lambda: called.append("logs") or {"ok": True}
+        api._api.open_config_folder = lambda: called.append("config") or {"ok": True}
 
         assert api.cancelItem("first") == {"ok": True}
         assert api.retryItem("second") == {"ok": True}
         assert api.stopAfterCurrent() == {"ok": True}
         assert api.moveItem("third", 1) == {"ok": True}
-        assert api.getDiagnostics("{}") == {"ok": True, "text": "diag"}
+        assert api.getDiagnostics({}) == {"ok": True, "text": "diag"}
         assert api.copyText("hello") == {"ok": True}
         assert api.openLogsFolder() == {"ok": True}
         assert api.openConfigFolder() == {"ok": True}
@@ -168,7 +194,7 @@ class TestJsApi:
         api = _JsApi(_Bridge())
         called: list[tuple[str, str]] = []
         api._api.export_profile_to_file = lambda path, profile_id: (
-            called.append((path, profile_id)) or '{"ok": true}'
+            called.append((path, profile_id)) or {"ok": True}
         )
 
         assert api.exportProfileToFile("gaming.json", "gaming") == {"ok": True}
@@ -197,7 +223,7 @@ def test_support_folder_opener_creates_and_opens_directory(tmp_path, monkeypatch
     )
 
     folder = tmp_path / "logs"
-    response = json.loads(BridgeAPI._open_app_folder(folder))
+    response = BridgeAPI._open_app_folder(folder)
 
     assert response == {"ok": True, "path": str(folder)}
     assert folder.is_dir()
@@ -343,14 +369,11 @@ def test_drop_reports_unresolvable_paths_as_rejected() -> None:
 def test_clip_cards_use_icon_statuses_and_compact_metadata() -> None:
     html = _web_source()
 
-    assert 'role="img"' in html
     assert "function clipStateBadge(p)" in html
     assert 'st === "failed" && c._queueError' in html
-    assert '<span class="c-error">' in html
-    assert '"Finished: " + esc(clip.name)' in html
+    assert '"Finished: " + esc(clip.name)' not in html
     assert "appSettings.clear_completed_automatically" in html
     assert 'Failed to process "' in html
-    assert "esc(errorSummary(item.error))" in html
     assert "flex-wrap: wrap" in html
     assert 'completed: ["Completed", "✓", "cst-completed"]' in html
     assert "function formatQueueStatus(item)" in html
@@ -361,19 +384,18 @@ def test_clip_cards_use_icon_statuses_and_compact_metadata() -> None:
     assert "clipReorder" in html
     assert "c-act link" in html
     assert "function cancelQueueItem(itemId)" in html
-    assert "cancelQueueItem('" in html
     assert "function clearDone()" in html
     assert 'clips[p]._queueState === "completed"' in html
     assert ">Rescan</button>" in html
     assert "saveSystemSettings()" in html
     assert 'aria-label="Close settings"' in html
-    assert 'settingButton("Save changes", "saveSystemSettings()", true, true)' in html
+    assert 'settingButton("Save changes", "save-system", true, true)' in html
     assert '"Last checked: " + esc(s.last_update_check)' in html
     assert 'class="settings-readonly"' in html
     assert "Clear completed jobs automatically" in html
-    assert 'onclick="clearOut()"' in html
-    assert 'onclick="clearFfmpeg()"' in html
-    assert 'onclick="clearFfprobe()"' in html
+    assert 'data-settings-click="clear-output"' in html
+    assert 'data-settings-click="clear-ffmpeg"' in html
+    assert 'data-settings-click="clear-ffprobe"' in html
     assert 'st === "running" || st === "processing" || st === "pending"' in html
     assert 'id="btn-diag"' not in html
 
@@ -513,7 +535,8 @@ def test_settings_file_naming_and_subsection_navigation_use_shared_layout() -> N
     assert "Back to profiles" not in html
     assert "button.mrow {" in html
     assert "font: inherit;" in html
-    assert 'settingsTitle("Add shortcut", "openSettings(\'explorer\')")' in html
+    assert 'settingsTitle("Add shortcut", "open-explorer")' in html
+    assert 'src="delegated-events.js"' in html
 
 
 def test_settings_separates_output_and_stages_all_persisted_changes() -> None:
@@ -547,8 +570,6 @@ def test_settings_separates_output_and_stages_all_persisted_changes() -> None:
     assert "Open configuration folder" in html
     assert ".settings-status-row {" in html
     assert "display: grid;" in html
-    assert 'class="profile-actions-menu"' in html
-    assert 'class="profile-actions-popover"' in html
     assert 'class="settings-profile-filterbar"' in html
     assert ".profile-filters {" in html
     assert "width: 100%;" in html
@@ -558,5 +579,6 @@ def test_settings_separates_output_and_stages_all_persisted_changes() -> None:
     assert ".profile-filters button.on {" in html
     assert "color: #ddd2ff;" in html
     assert "plain: true" in html
-    assert 'settingButton("Import", "importProfs()")' in html
-    assert 'settingButton("+ New profile", "newProf()", true)' in html
+    assert 'settingButton("Import", "import-profiles")' in html
+    assert 'settingButton("+ New profile", "new-profile", true)' in html
+    assert "Tuck.delegatedEvents.bind" in html

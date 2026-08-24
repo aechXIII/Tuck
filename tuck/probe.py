@@ -4,41 +4,17 @@ import json
 import logging
 import math
 import os
-import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
 
+from . import media_tools
 from .models import AudioInfo, VideoInfo
 
 logger = logging.getLogger(__name__)
 
 _QUARTER_TURN = 90
 _FULL_TURN = 360
-
-
-def _find_ffprobe() -> str | None:
-    from .settings import get_settings_manager
-
-    mgr = get_settings_manager()
-    custom = mgr.get_setting("ffprobe_path", "")
-    if custom and Path(custom).is_file():
-        return custom
-
-    found = shutil.which("ffprobe")
-    if found:
-        return found
-
-    candidates = [
-        r"C:\ffmpeg\bin\ffprobe.exe",
-        r"C:\Program Files\ffmpeg\bin\ffprobe.exe",
-        r"C:\Program Files (x86)\ffmpeg\bin\ffprobe.exe",
-    ]
-    for c in candidates:
-        if Path(c).is_file():
-            return c
-
-    return None
 
 
 def _run_ffprobe_json(ffprobe_path: str, source: Path, context: str) -> dict:
@@ -167,7 +143,7 @@ def _audio_fields(audio_stream: dict | None) -> tuple[bool, str, int, int, int]:
 
 
 def probe(source: str | Path) -> VideoInfo:
-    ffprobe_path = _find_ffprobe()
+    ffprobe_path = media_tools.find_ffprobe()
     if not ffprobe_path:
         raise FileNotFoundError(
             "ffprobe not found. Install FFmpeg and ensure ffprobe is on PATH "
@@ -233,7 +209,7 @@ def _stream_int(stream: dict, name: str) -> int:
 
 
 def probe_audio(source: str | Path) -> AudioInfo:
-    ffprobe_path = _find_ffprobe()
+    ffprobe_path = media_tools.find_ffprobe()
     if not ffprobe_path:
         raise FileNotFoundError(
             "ffprobe not found. Install FFmpeg and ensure ffprobe is on PATH "
@@ -350,4 +326,4 @@ def _parse_duration_str(dur: str) -> float:
 
 
 def is_ffprobe_available() -> bool:
-    return _find_ffprobe() is not None
+    return media_tools.find_ffprobe() is not None

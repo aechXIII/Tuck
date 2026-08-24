@@ -12,6 +12,7 @@ from typing import Any
 import webview
 from webview.dom import DOMEventHandler
 
+from .bridge_contract import BridgeResult, normalize_bridge_result
 from .bridge_validation import validate_audio_paths, validate_video_paths
 
 logger = logging.getLogger(__name__)
@@ -22,14 +23,8 @@ _JSON_FILE_FILTER = "JSON files (*.json)"
 _EXECUTABLE_FILE_FILTER = "Executable files (*.exe)"
 
 
-def _response(value: str) -> dict[str, Any] | list[Any]:
-    try:
-        result = json.loads(value)
-    except (TypeError, json.JSONDecodeError):
-        return {"ok": False, "error": "Invalid backend response"}
-    if isinstance(result, (dict, list)):
-        return result
-    return {"ok": False, "error": "Invalid backend response"}
+def _response(value: object) -> BridgeResult:
+    return normalize_bridge_result(value)
 
 
 def _dialog_path(result: Sequence[str] | str | None) -> str:
@@ -45,147 +40,140 @@ class _JsApi:
         self._api = bridge_api
         self._window: webview.Window | None = None
 
-    def _call(self, method, *args: object) -> dict[str, Any] | list[Any]:
+    def _call(self, method, *args: object) -> BridgeResult:
         try:
             return _response(method(*args))
         except Exception as e:
             logger.exception("Bridge call failed")
             return {"ok": False, "error": str(e)}
 
-    def probeFile(self, path: str) -> dict[str, Any] | list[Any]:
+    def probeFile(self, path: str) -> BridgeResult:
         return self._call(self._api.probe_file, path)
 
-    def probeAudioFile(self, path: str) -> dict[str, Any] | list[Any]:
+    def probeAudioFile(self, path: str) -> BridgeResult:
         return self._call(self._api.probe_audio_file, path)
 
-    def getWaveform(self, path: str) -> dict[str, Any] | list[Any]:
+    def getWaveform(self, path: str) -> BridgeResult:
         return self._call(self._api.get_waveform, path)
 
-    def getThumbnail(self, path: str) -> dict[str, Any] | list[Any]:
+    def getThumbnail(self, path: str) -> BridgeResult:
         return self._call(self._api.get_thumbnail, path)
 
-    def getMediaUrl(self, path: str) -> dict[str, Any] | list[Any]:
+    def getMediaUrl(self, path: str) -> BridgeResult:
         return self._call(self._api.get_media_url, path)
 
-    def releaseMediaToken(self, token: str) -> dict[str, Any] | list[Any]:
+    def releaseMediaToken(self, token: str) -> BridgeResult:
         return self._call(self._api.release_media_token, token)
 
-    def createPlan(self, request_json: str) -> dict[str, Any] | list[Any]:
-        return self._call(self._api.create_plan, request_json)
+    def createPlan(self, request: dict[str, Any]) -> BridgeResult:
+        return self._call(self._api.create_plan, request)
 
-    def enqueueWithOptions(self, request_json: str) -> dict[str, Any] | list[Any]:
-        return self._call(self._api.enqueue_with_options, request_json)
+    def enqueueWithOptions(self, request: dict[str, Any]) -> BridgeResult:
+        return self._call(self._api.enqueue_with_options, request)
 
-    def enqueueBatch(self, requests_json: str) -> dict[str, Any] | list[Any]:
-        return self._call(self._api.enqueue_batch, requests_json)
+    def enqueueBatch(self, requests: list[dict[str, Any]]) -> BridgeResult:
+        return self._call(self._api.enqueue_batch, requests)
 
-    def cancelItem(self, item_id: str) -> dict[str, Any] | list[Any]:
+    def cancelItem(self, item_id: str) -> BridgeResult:
         return self._call(self._api.cancel_item, item_id)
 
-    def cancelAllItems(self) -> dict[str, Any] | list[Any]:
+    def cancelAllItems(self) -> BridgeResult:
         return self._call(self._api.cancel_all_items)
 
-    def clearCompleted(self) -> dict[str, Any] | list[Any]:
+    def clearCompleted(self) -> BridgeResult:
         return self._call(self._api.clear_completed)
 
-    def moveItem(self, item_id: str, new_index: int) -> dict[str, Any] | list[Any]:
+    def moveItem(self, item_id: str, new_index: int) -> BridgeResult:
         return self._call(self._api.move_item, item_id, new_index)
 
-    def retryItem(self, item_id: str) -> dict[str, Any] | list[Any]:
+    def retryItem(self, item_id: str) -> BridgeResult:
         return self._call(self._api.retry_item, item_id)
 
-    def stopAfterCurrent(self) -> dict[str, Any] | list[Any]:
+    def stopAfterCurrent(self) -> BridgeResult:
         return self._call(self._api.stop_after_current)
 
-    def getQueueState(self) -> dict[str, Any] | list[Any]:
+    def getQueueState(self) -> BridgeResult:
         return self._call(self._api.get_queue_state)
 
-    def getDiagnostics(self, context_json: str = "{}") -> dict[str, Any] | list[Any]:
-        return self._call(self._api.get_diagnostics, context_json)
+    def getDiagnostics(self, context: dict[str, Any] | None = None) -> BridgeResult:
+        return self._call(self._api.get_diagnostics, context)
 
-    def copyText(self, text: str) -> dict[str, Any] | list[Any]:
+    def copyText(self, text: str) -> BridgeResult:
         return self._call(self._api.copy_text, text)
 
-    def openLogsFolder(self) -> dict[str, Any] | list[Any]:
+    def openLogsFolder(self) -> BridgeResult:
         return self._call(self._api.open_logs_folder)
 
-    def openConfigFolder(self) -> dict[str, Any] | list[Any]:
+    def openConfigFolder(self) -> BridgeResult:
         return self._call(self._api.open_config_folder)
 
-    def getSettings(self) -> dict[str, Any] | list[Any]:
+    def getSettings(self) -> BridgeResult:
         return self._call(self._api.get_settings)
 
-    def saveSettings(self, settings_json: str) -> dict[str, Any] | list[Any]:
-        return self._call(self._api.save_settings, settings_json)
+    def saveSettings(self, settings: dict[str, Any]) -> BridgeResult:
+        return self._call(self._api.save_settings, settings)
 
-    def refreshEncoders(self) -> dict[str, Any] | list[Any]:
+    def refreshEncoders(self) -> BridgeResult:
         return self._call(self._api.refresh_encoders)
 
-    def getProfilesJson(self) -> dict[str, Any] | list[Any]:
+    def getProfilesJson(self) -> BridgeResult:
         return self._call(self._api.get_profiles_json)
 
-    def createProfile(self, profile_json: str) -> dict[str, Any] | list[Any]:
-        return self._call(self._api.create_profile, profile_json)
+    def createProfile(self, profile: dict[str, Any]) -> BridgeResult:
+        return self._call(self._api.create_profile, profile)
 
-    def updateProfile(self, profile_id: str, profile_json: str) -> dict[str, Any] | list[Any]:
-        return self._call(self._api.update_profile, profile_id, profile_json)
+    def updateProfile(self, profile_id: str, profile: dict[str, Any]) -> BridgeResult:
+        return self._call(self._api.update_profile, profile_id, profile)
 
-    def deleteProfile(self, profile_id: str) -> dict[str, Any] | list[Any]:
+    def deleteProfile(self, profile_id: str) -> BridgeResult:
         return self._call(self._api.delete_profile, profile_id)
 
-    def duplicateProfile(self, profile_id: str) -> dict[str, Any] | list[Any]:
+    def duplicateProfile(self, profile_id: str) -> BridgeResult:
         return self._call(self._api.duplicate_profile, profile_id)
 
-    def importProfilesFromFile(self, file_path: str) -> dict[str, Any] | list[Any]:
+    def importProfilesFromFile(self, file_path: str) -> BridgeResult:
         return self._call(self._api.import_profiles_from_file, file_path)
 
-    def exportProfilesToFile(self, file_path: str) -> dict[str, Any] | list[Any]:
-        return self._call(self._api.export_profiles_to_file, file_path)
-
-    def exportProfileToFile(self, file_path: str, profile_id: str) -> dict[str, Any] | list[Any]:
+    def exportProfileToFile(self, file_path: str, profile_id: str) -> BridgeResult:
         return self._call(self._api.export_profile_to_file, file_path, profile_id)
 
-    def checkForUpdates(self) -> dict[str, Any] | list[Any]:
+    def checkForUpdates(self) -> BridgeResult:
         return self._call(self._api.check_for_updates)
 
-    def downloadUpdate(self) -> dict[str, Any] | list[Any]:
+    def downloadUpdate(self) -> BridgeResult:
         return self._call(self._api.download_update)
 
-    def getDownloadProgress(self) -> dict[str, Any] | list[Any]:
+    def getDownloadProgress(self) -> BridgeResult:
         return self._call(self._api.get_download_progress)
 
-    def installUpdate(self) -> dict[str, Any] | list[Any]:
+    def installUpdate(self) -> BridgeResult:
         return self._call(self._api.install_update)
 
-    def openOutputFolder(self, path: str) -> dict[str, Any] | list[Any]:
+    def openOutputFolder(self, path: str) -> BridgeResult:
         return self._call(self._api.open_output_folder, path)
 
-    def installGenericSendto(self) -> dict[str, Any] | list[Any]:
+    def installGenericSendto(self) -> BridgeResult:
         return self._call(self._api.install_generic_sendto)
 
-    def removeGenericSendto(self) -> dict[str, Any] | list[Any]:
+    def removeGenericSendto(self) -> BridgeResult:
         return self._call(self._api.remove_generic_sendto)
 
-    def installProfileSendto(
-        self, profile_id: str, action: str = "start"
-    ) -> dict[str, Any] | list[Any]:
+    def installProfileSendto(self, profile_id: str, action: str = "start") -> BridgeResult:
         return self._call(self._api.install_profile_sendto, profile_id, action)
 
-    def removeProfileSendto(self, profile_id: str) -> dict[str, Any] | list[Any]:
+    def removeProfileSendto(self, profile_id: str) -> BridgeResult:
         return self._call(self._api.remove_profile_sendto, profile_id)
 
-    def repairProfileSendto(
-        self, profile_id: str, action: str = "start"
-    ) -> dict[str, Any] | list[Any]:
+    def repairProfileSendto(self, profile_id: str, action: str = "start") -> BridgeResult:
         return self._call(self._api.repair_profile_sendto, profile_id, action)
 
-    def listSendtoShortcuts(self) -> dict[str, Any] | list[Any]:
+    def listSendtoShortcuts(self) -> BridgeResult:
         return self._call(self._api.list_sendto_shortcuts)
 
-    def getIpcFiles(self) -> dict[str, Any] | list[Any]:
+    def getIpcFiles(self) -> BridgeResult:
         return self._call(self._api.get_ipc_files)
 
-    def getIpcMetadata(self) -> dict[str, Any] | list[Any]:
+    def getIpcMetadata(self) -> BridgeResult:
         return self._call(self._api.get_ipc_metadata)
 
     def closeWindow(self) -> dict[str, Any]:

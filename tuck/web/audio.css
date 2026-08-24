@@ -1,7 +1,7 @@
 #audio-editor {
   --timeline-head-width: 180px;
   flex-shrink: 0;
-  height: 205px;
+  height: 190px;
   min-height: 170px;
   max-height: 55vh;
   display: flex;
@@ -69,11 +69,6 @@ body.timeline-resizing * {
 }
 #timeline-row.seq-toolbar::-webkit-scrollbar {
   display: none;
-}
-.transform-inline-label {
-  display: inline-flex;
-  align-items: center;
-  height: 20px;
 }
 .tl-time-readout {
   min-width: 82px;
@@ -634,12 +629,10 @@ body.timeline-scrubbing * {
 }
 .timeline-tool-group .dock-zoom-btn,
 .timeline-tool-group .dock-toggle,
-.timeline-tool-group .dock-icon-btn,
 .timeline-tool-group .dock-text-btn {
   border-color: transparent;
 }
 .timeline-tool-group .dock-zoom-btn:hover,
-.timeline-tool-group .dock-icon-btn:hover,
 .timeline-tool-group .dock-text-btn:hover {
   background: rgba(255, 255, 255, 0.05);
 }

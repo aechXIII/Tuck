@@ -117,7 +117,6 @@ function syncWorkspaceForViewport() {
 }
 
 window.addEventListener("resize", function () {
-  applyTimelineHeight(timelineHeightSetting);
   syncWorkspaceForViewport();
 });
 
@@ -180,10 +179,9 @@ function renderAudioLibraryPanel() {
       '</span><span class="c-time">' +
       fmtt(track.sourceDuration || 0) +
       "</span></div></div>";
-    div.onclick = function () {
+    div.addEventListener("click", function () {
       AudioTimeline.selectTrack(track.id);
-      setInspectorTab("audio");
-    };
+    });
     list.appendChild(div);
   });
 }
@@ -229,27 +227,25 @@ function renderClipDetails() {
   if (empty) empty.classList.toggle("hid", Boolean(clip));
   if (content) content.classList.toggle("hid", !clip);
   if (!clip) {
-    host.replaceChildren();
+    Tuck.clipDetails.render(document, host, { state: "empty" }, retryProbeClip);
     return;
   }
   if (selection) selection.textContent = clip.name || "Selected video";
   if (clip.error) {
-    host.innerHTML =
-      '<div class="cd-probe-error" role="alert">' +
-      '<strong>Couldn’t read clip details</strong>' +
-      '<span>Playback may still work, but editing and export need the file details.</span>' +
-      '<span class="cd-probe-message">' +
-      esc(errorSummary(clip.error, 160)) +
-      "</span>" +
-      '<button type="button" class="btn2 cd-probe-retry" onclick="retryProbeClip(\'' +
-      escJS(clip.path) +
-      "\')\">Retry</button>" +
-      "</div>";
+    Tuck.clipDetails.render(
+      document,
+      host,
+      {
+        state: "error",
+        path: clip.path,
+        error: errorSummary(clip.error, 160),
+      },
+      retryProbeClip,
+    );
     return;
   }
   if (!clip.probed || !clip.probeData) {
-    host.innerHTML =
-      '<div class="cd-empty" role="status">Reading clip details…</div>';
+    Tuck.clipDetails.render(document, host, { state: "loading" }, retryProbeClip);
     return;
   }
   var d = clip.probeData;
@@ -266,17 +262,12 @@ function renderClipDetails() {
     ["Frame rate", d.fps ? Math.round(d.fps * 100) / 100 + " fps" : "—"],
     ["Format", format || "—"],
   ];
-  host.innerHTML = rows
-    .map(function (row) {
-      return (
-        '<div class="cd-row"><span class="cd-k">' +
-        esc(row[0]) +
-        '</span><span class="cd-v">' +
-        esc(String(row[1])) +
-        "</span></div>"
-      );
-    })
-    .join("");
+  Tuck.clipDetails.render(
+    document,
+    host,
+    { state: "ready", rows: rows },
+    retryProbeClip,
+  );
 }
 
 function renderAudioMixerList() {
@@ -331,30 +322,35 @@ function renderAudioMixerList() {
   host.innerHTML = rows.join("");
   state.tracks.concat(clip.probeData && clip.probeData.has_audio ? [{ id: "source" }] : []).forEach(
     function (track) {
-      var row = host.querySelector('[data-mixer-id="' + track.id + '"]');
+      var row = Array.prototype.find.call(
+        host.querySelectorAll(".mixer-row"),
+        function (candidate) {
+          return candidate.dataset.mixerId === String(track.id);
+        },
+      );
       if (!row) return;
       var muteButton = row.querySelector(".mixer-mute");
       var slider = row.querySelector(".mixer-gain");
       var removeBtn = row.querySelector(".mixer-remove");
       if (muteButton)
-        muteButton.onclick = function () {
+        muteButton.addEventListener("click", function () {
           if (track.id === "source") AudioTimeline.toggleSourceMute();
           else AudioTimeline.toggleTrackMute(track.id);
-        };
+        });
       if (slider) {
-        slider.onpointerdown = function () {
+        slider.addEventListener("pointerdown", function () {
           if (window.History) History.begin(selPath);
-        };
-        slider.oninput = function () {
+        });
+        slider.addEventListener("input", function () {
           var output = row.querySelector(".mixer-db");
           if (output) output.textContent = formatGainDb(this.value);
           if (track.id === "source") AudioTimeline.setSourceGain(this.value);
           else AudioTimeline.setTrackGain(track.id, this.value);
-        };
-        slider.onchange = function () {
+        });
+        slider.addEventListener("change", function () {
           if (window.History) History.commit();
-        };
-        slider.ondblclick = function (event) {
+        });
+        slider.addEventListener("dblclick", function (event) {
           event.preventDefault();
           if (window.History) History.begin(selPath);
           this.value = "0";
@@ -363,12 +359,12 @@ function renderAudioMixerList() {
           if (track.id === "source") AudioTimeline.setSourceGain(0);
           else AudioTimeline.setTrackGain(track.id, 0);
           if (window.History) History.commit();
-        };
+        });
       }
       if (removeBtn)
-        removeBtn.onclick = function () {
+        removeBtn.addEventListener("click", function () {
           AudioTimeline.removeTrack(track.id);
-        };
+        });
     },
   );
   renderAudioClipRange();
@@ -566,16 +562,16 @@ function renderAudioClipRange() {
     if (window.History) History.commit();
   }
 
-  overview.onpointerdown = function (event) {
+  overview.addEventListener("pointerdown", function (event) {
     startPointer("overview", overview, event);
-  };
-  detail.onpointerdown = function (event) {
+  });
+  detail.addEventListener("pointerdown", function (event) {
     startPointer("detail", detail, event);
-  };
+  });
   [overview, detail].forEach(function (control) {
-    control.onpointermove = movePointer;
-    control.onpointerup = finishPointer;
-    control.onpointercancel = finishPointer;
+    control.addEventListener("pointermove", movePointer);
+    control.addEventListener("pointerup", finishPointer);
+    control.addEventListener("pointercancel", finishPointer);
   });
 
   function moveFromKeyboard(event) {
@@ -591,8 +587,8 @@ function renderAudioClipRange() {
     AudioTimeline.setSelectedSourceIn(next, true);
     if (window.History) History.commit();
   }
-  overview.onkeydown = moveFromKeyboard;
-  detail.onkeydown = moveFromKeyboard;
+  overview.addEventListener("keydown", moveFromKeyboard);
+  detail.addEventListener("keydown", moveFromKeyboard);
 
   function resetRange(event) {
     event.preventDefault();
@@ -600,9 +596,9 @@ function renderAudioClipRange() {
     AudioTimeline.resetSelectedSource();
     if (window.History) History.commit();
   }
-  overview.ondblclick = resetRange;
-  detail.ondblclick = resetRange;
-  reset.onclick = resetRange;
+  overview.addEventListener("dblclick", resetRange);
+  detail.addEventListener("dblclick", resetRange);
+  reset.addEventListener("click", resetRange);
 }
 
 function formatGainDb(value) {

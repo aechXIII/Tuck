@@ -637,9 +637,16 @@ class TestCacheSafety:
     def test_cleanup_cache_removes_old_files(self, tmp_path):
         old_file = tmp_path / "old.txt"
         old_file.write_text("old")
-        _ = old_file.stat()
+        fresh_file = tmp_path / "fresh.txt"
+        fresh_file.write_text("fresh")
+        old_timestamp = time.time() - 48 * 3600
+        os.utime(old_file, (old_timestamp, old_timestamp))
+
         removed = cleanup_cache(tmp_path, max_age_hours=24)
-        assert isinstance(removed, int)
+
+        assert removed == 1
+        assert not old_file.exists()
+        assert fresh_file.exists()
 
 
 class TestProcessLock:
@@ -782,6 +789,99 @@ class TestAtomicWrite:
             _atomic_write(target, "should not appear")
 
         assert target.is_dir()
+
+
+class TestBackupRecovery:
+    @staticmethod
+    def _configure_dirs(tmp_path, monkeypatch):
+        import tuck.settings as settings_mod
+
+        monkeypatch.setattr(settings_mod, "_config_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
+
+    def test_second_save_preserves_previous_settings_and_profiles(self, tmp_path, monkeypatch):
+        self._configure_dirs(tmp_path, monkeypatch)
+        manager = SettingsManager()
+        manager.load()
+        manager.save()
+        first_settings = settings_path().read_text(encoding="utf-8")
+        first_profiles = profiles_path().read_text(encoding="utf-8")
+
+        manager.set_setting("encoder_cache_days", 30)
+        manager.set_profiles([Profile(name="Custom Profile", profile_id="custom-1")])
+        manager.save()
+
+        assert (
+            settings_path().with_suffix(".json.bak").read_text(encoding="utf-8") == first_settings
+        )
+        assert (
+            profiles_path().with_suffix(".json.bak").read_text(encoding="utf-8") == first_profiles
+        )
+
+    def test_corrupt_settings_primary_recovers_generated_backup(self, tmp_path, monkeypatch):
+        self._configure_dirs(tmp_path, monkeypatch)
+        manager = SettingsManager()
+        manager.load()
+        manager.set_setting("encoder_cache_days", 14)
+        manager.save()
+        manager.set_setting("encoder_cache_days", 30)
+        manager.save()
+        settings_path().write_text("not valid json", encoding="utf-8")
+
+        recovered = SettingsManager().load()
+
+        assert recovered.encoder_cache_days == 14
+
+    def test_corrupt_profiles_primary_recovers_generated_backup(self, tmp_path, monkeypatch):
+        self._configure_dirs(tmp_path, monkeypatch)
+        manager = SettingsManager()
+        manager.load()
+        manager.set_profiles([Profile(name="First Profile", profile_id="custom-1")])
+        manager.save()
+        manager.set_profiles([Profile(name="Second Profile", profile_id="custom-2")])
+        manager.save()
+        profiles_path().write_text("not valid json", encoding="utf-8")
+
+        recovered = SettingsManager().get_profiles()
+
+        recovered_ids = {profile.profile_id for profile in recovered}
+        assert "custom-1" in recovered_ids
+        assert "custom-2" not in recovered_ids
+
+    def test_non_object_settings_primary_returns_defaults(self, tmp_path, monkeypatch):
+        self._configure_dirs(tmp_path, monkeypatch)
+        settings_path().write_text("[]", encoding="utf-8")
+
+        recovered = SettingsManager().load()
+
+        assert recovered.default_profile_id == PROFILE_ID_DISCORD_FREE
+
+    def test_non_object_profiles_primary_returns_defaults(self, tmp_path, monkeypatch):
+        self._configure_dirs(tmp_path, monkeypatch)
+        profiles_path().write_text("[]", encoding="utf-8")
+
+        recovered = SettingsManager().get_profiles()
+
+        assert {profile.profile_id for profile in recovered} == BUILTIN_PROFILE_IDS
+
+    def test_invalid_primary_does_not_replace_last_known_good_backup(self, tmp_path, monkeypatch):
+        self._configure_dirs(tmp_path, monkeypatch)
+        manager = SettingsManager()
+        manager.load()
+        manager.set_setting("encoder_cache_days", 14)
+        manager.save()
+        manager.set_setting("encoder_cache_days", 30)
+        manager.save()
+        backup = settings_path().with_suffix(".json.bak")
+        known_good = backup.read_text(encoding="utf-8")
+        settings_path().write_text("not valid json", encoding="utf-8")
+
+        manager.set_setting("encoder_cache_days", 90)
+        manager.save()
+
+        assert backup.read_text(encoding="utf-8") == known_good
+        assert SettingsManager().load().encoder_cache_days == 90
 
 
 class TestStaleConcurrentMerge:

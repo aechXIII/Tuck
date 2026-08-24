@@ -124,10 +124,10 @@ class TestBridgeIpcFiles:
 
         api = BridgeAPI()
         api.add_ipc_files(["/x/y.mp4", "/z/w.mp4"])
-        result = json.loads(api.get_ipc_files())
+        result = api.get_ipc_files()
         assert result == ["/x/y.mp4", "/z/w.mp4"]
 
-        assert json.loads(api.get_ipc_files()) == []
+        assert api.get_ipc_files() == []
 
     def test_get_ipc_files_empty_buffer(self, tmp_path, monkeypatch):
 
@@ -140,5 +140,5 @@ class TestBridgeIpcFiles:
         from tuck.bridge import BridgeAPI
 
         api = BridgeAPI()
-        result = json.loads(api.get_ipc_files())
+        result = api.get_ipc_files()
         assert result == []

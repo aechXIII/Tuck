@@ -519,8 +519,8 @@ class TestBridgeUpdateProfileValidation:
         profiles.append(custom)
         api._settings.set_profiles(profiles)
 
-        payload = '{"two_pass": "not-a-bool"}'
-        resp = json.loads(api.update_profile("test-custom", payload))
+        payload = {"two_pass": "not-a-bool"}
+        resp = api.update_profile("test-custom", payload)
         assert not resp["ok"]
         assert "two_pass must be a boolean" in resp["error"]
 
@@ -541,8 +541,8 @@ class TestBridgeUpdateProfileValidation:
         profiles.append(custom)
         api._settings.set_profiles(profiles)
 
-        payload = '{"preset": "bogus"}'
-        resp = json.loads(api.update_profile("test-custom2", payload))
+        payload = {"preset": "bogus"}
+        resp = api.update_profile("test-custom2", payload)
         assert not resp["ok"]
         assert "preset must be one of" in resp["error"]
 
@@ -563,8 +563,8 @@ class TestBridgeUpdateProfileValidation:
         profiles.append(custom)
         api._settings.set_profiles(profiles)
 
-        payload = '{"made_up_field": "should_fail"}'
-        resp = json.loads(api.update_profile("test-custom3", payload))
+        payload = {"made_up_field": "should_fail"}
+        resp = api.update_profile("test-custom3", payload)
         assert not resp["ok"]
         assert "unknown fields" in resp["error"]
 
@@ -584,7 +584,7 @@ class TestBridgeUpdateProfileValidation:
         profiles.append(Profile(name="Minimum size", profile_id="minimum-size"))
         api._settings.set_profiles(profiles)
 
-        resp = json.loads(api.update_profile("minimum-size", '{"target_size_mb": 1}'))
+        resp = api.update_profile("minimum-size", {"target_size_mb": 1})
         assert not resp["ok"]
         assert "at least 2" in resp["error"]
 
@@ -605,8 +605,8 @@ class TestBridgeUpdateProfileValidation:
         profiles.append(custom)
         api._settings.set_profiles(profiles)
 
-        payload = '{"target_size_mb": -5}'
-        resp = json.loads(api.update_profile("test-custom4", payload))
+        payload = {"target_size_mb": -5}
+        resp = api.update_profile("test-custom4", payload)
         assert not resp["ok"]
         assert "at least 2" in resp["error"]
 
@@ -1010,9 +1010,9 @@ class TestMergeImportedProfiles:
 class TestNormalizeLegacyRCMatrix:
     def test_compression_crf_normalized_to_cbr(self):
         """Legacy compression+CRF is normalized to compression+CBR."""
-        from tuck.models import _normalize_legacy_rc_matrix
+        from tuck.models.encoding_policy import normalize_legacy_rc_matrix
 
-        new_rcm, new_two_pass = _normalize_legacy_rc_matrix(
+        new_rcm, new_two_pass = normalize_legacy_rc_matrix(
             workflow="compression",
             rate_control="target_size",
             rate_control_method="crf",
@@ -1024,9 +1024,9 @@ class TestNormalizeLegacyRCMatrix:
 
     def test_compression_cqp_normalized_to_cbr(self):
         """Legacy compression+CQP is normalized to compression+CBR."""
-        from tuck.models import _normalize_legacy_rc_matrix
+        from tuck.models.encoding_policy import normalize_legacy_rc_matrix
 
-        new_rcm, new_two_pass = _normalize_legacy_rc_matrix(
+        new_rcm, new_two_pass = normalize_legacy_rc_matrix(
             workflow="compression",
             rate_control="target_size",
             rate_control_method="cqp",
@@ -1038,9 +1038,9 @@ class TestNormalizeLegacyRCMatrix:
 
     def test_upscale_crf_preserved(self):
         """Upscale+CRF is preserved as-is."""
-        from tuck.models import _normalize_legacy_rc_matrix
+        from tuck.models.encoding_policy import normalize_legacy_rc_matrix
 
-        new_rcm, new_two_pass = _normalize_legacy_rc_matrix(
+        new_rcm, new_two_pass = normalize_legacy_rc_matrix(
             workflow="upscale",
             rate_control="target_size",
             rate_control_method="crf",
@@ -1052,9 +1052,9 @@ class TestNormalizeLegacyRCMatrix:
 
     def test_compression_cbr_preserved(self):
         """Compression+CBR is preserved as-is."""
-        from tuck.models import _normalize_legacy_rc_matrix
+        from tuck.models.encoding_policy import normalize_legacy_rc_matrix
 
-        new_rcm, new_two_pass = _normalize_legacy_rc_matrix(
+        new_rcm, new_two_pass = normalize_legacy_rc_matrix(
             workflow="compression",
             rate_control="target_size",
             rate_control_method="cbr",
@@ -1066,9 +1066,9 @@ class TestNormalizeLegacyRCMatrix:
 
     def test_two_pass_disabled_for_gpu(self):
         """Two-pass is disabled for GPU encoders during normalization."""
-        from tuck.models import _normalize_legacy_rc_matrix
+        from tuck.models.encoding_policy import normalize_legacy_rc_matrix
 
-        new_rcm, new_two_pass = _normalize_legacy_rc_matrix(
+        new_rcm, new_two_pass = normalize_legacy_rc_matrix(
             workflow="compression",
             rate_control="target_size",
             rate_control_method="crf",
@@ -1080,9 +1080,9 @@ class TestNormalizeLegacyRCMatrix:
 
     def test_two_pass_disabled_for_upscale(self):
         """Upscale with bitrate + target_size normalizes to crf + no two-pass."""
-        from tuck.models import _normalize_legacy_rc_matrix
+        from tuck.models.encoding_policy import normalize_legacy_rc_matrix
 
-        new_rcm, new_two_pass = _normalize_legacy_rc_matrix(
+        new_rcm, new_two_pass = normalize_legacy_rc_matrix(
             workflow="upscale",
             rate_control="target_size",
             rate_control_method="cbr",
@@ -1094,9 +1094,9 @@ class TestNormalizeLegacyRCMatrix:
 
     def test_two_pass_disabled_for_quality_method(self):
         """Two-pass is disabled when rate-control method is quality-based."""
-        from tuck.models import _normalize_legacy_rc_matrix
+        from tuck.models.encoding_policy import normalize_legacy_rc_matrix
 
-        new_rcm, new_two_pass = _normalize_legacy_rc_matrix(
+        new_rcm, new_two_pass = normalize_legacy_rc_matrix(
             workflow="compression",
             rate_control="target_size",
             rate_control_method="crf",

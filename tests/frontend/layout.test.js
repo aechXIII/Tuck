@@ -7,38 +7,49 @@ test("timeline height bounds preserve a usable preview at supported window sizes
   assert.deepEqual(layout.timelineHeightBounds(900), {
     min: 170,
     max: 495,
-    defaultHeight: 205,
+    defaultHeight: 190,
   });
   assert.deepEqual(layout.timelineHeightBounds(640), {
     min: 170,
     max: 310,
-    defaultHeight: 205,
+    defaultHeight: 190,
   });
 });
 
 test("automatic timeline height fits the default tracks and grows for imported audio", () => {
-  assert.equal(layout.timelineAutoHeight(0, 900), 205);
-  assert.equal(layout.timelineAutoHeight(2, 900), 205);
-  assert.equal(layout.timelineAutoHeight(3, 900), 252);
-  assert.equal(layout.timelineAutoHeight(5, 900), 346);
+  assert.equal(layout.timelineAutoHeight(0, 900), 190);
+  assert.equal(layout.timelineAutoHeight(2, 900), 190);
+  assert.equal(layout.timelineAutoHeight(3, 900), 232);
+  assert.equal(layout.timelineAutoHeight(5, 900), 316);
   assert.equal(layout.timelineAutoHeight(20, 900), 495);
-  assert.equal(layout.timelineAutoHeight(4, 640), 299);
+  assert.equal(layout.timelineAutoHeight(4, 640), 274);
+});
+
+test("track changes preserve a manual timeline height until Fit tracks is used", () => {
+  assert.equal(layout.timelineHeightForTrackCount(200, 3, 900), null);
+  assert.equal(layout.timelineHeightForTrackCount(0, 3, 900), 232);
 });
 
 test("timeline heights clamp invalid and out-of-range persisted values", () => {
   assert.equal(layout.clampTimelineHeight(100, 900), 170);
   assert.equal(layout.clampTimelineHeight(700, 900), 495);
   assert.equal(layout.clampTimelineHeight(260, 900), 260);
-  assert.equal(layout.clampTimelineHeight(0, 900), 205);
-  assert.equal(layout.clampTimelineHeight(0, 900, 4), 299);
-  assert.equal(layout.clampTimelineHeight("broken", 900), 205);
+  assert.equal(layout.clampTimelineHeight(0, 900), 190);
+  assert.equal(layout.clampTimelineHeight(0, 900, 4), 274);
+  assert.equal(layout.clampTimelineHeight("broken", 900), 190);
 });
 
 test("compact persisted timeline heights remain valid", () => {
   assert.equal(layout.normalizeTimelineHeightSetting(169, 900), 0);
   assert.equal(layout.normalizeTimelineHeightSetting(170, 900), 170);
-  assert.equal(layout.normalizeTimelineHeightSetting(205, 900), 205);
+  assert.equal(layout.normalizeTimelineHeightSetting(190, 900), 190);
   assert.equal(layout.normalizeTimelineHeightSetting(260, 900), 260);
+});
+
+test("timeline initialization uses settings that loaded before the timeline", () => {
+  assert.equal(layout.initialTimelineHeightSetting({ timeline_height: 260 }), 260);
+  assert.equal(layout.initialTimelineHeightSetting({}), 0);
+  assert.equal(layout.initialTimelineHeightSetting(null), 0);
 });
 
 test("timeline separator keys resize predictably and expose range endpoints", () => {

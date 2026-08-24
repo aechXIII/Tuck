@@ -37,12 +37,7 @@ function removeThumbnail() {
   if (thumb) thumb.remove();
 }
 function esc(s) {
-  var d = document.createElement("div");
-  d.textContent = s;
-  return d.innerHTML;
-}
-function escJS(s) {
-  return s.replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/"/g, '\\"');
+  return Tuck.dom.escapeHtml(s);
 }
 function fmtt(s) {
   var m = Math.floor(s / 60),
@@ -72,7 +67,7 @@ function showNextToast() {
   div.setAttribute("role", presentation.role);
   div.setAttribute("aria-live", presentation.live);
   div.setAttribute("aria-atomic", "true");
-  div.innerHTML = '<span class="tmsg">' + item.message + "</span>";
+  div.appendChild(TuckNotifications.createMessageElement(document, item.message));
   var close = document.createElement("button");
   close.type = "button";
   close.className = "tcls";
@@ -153,16 +148,18 @@ function confirmToast(msg, cb) {
   box.innerHTML = `<h2 id="confirm-title"></h2>
     <p class="confirm-copy" id="confirm-copy"></p>
     <div class="confirm-actions">
-      <button class="btn2" onclick="closeMod()">${cancelLabel}</button>
-      <button
-        class="btn1 ${discard || remove ? "danger" : ""}"
-        onclick="acceptConfirm()"
-      >
-        ${confirmLabel}
-      </button>
+      <button type="button" class="btn2" id="confirm-cancel"></button>
+      <button type="button" class="btn1" id="confirm-accept"></button>
     </div>`;
   byId("confirm-title").textContent = title;
   byId("confirm-copy").textContent = msg;
+  var cancelButton = byId("confirm-cancel");
+  var acceptButton = byId("confirm-accept");
+  cancelButton.textContent = cancelLabel;
+  cancelButton.addEventListener("click", closeMod);
+  acceptButton.textContent = confirmLabel;
+  acceptButton.classList.toggle("danger", discard || remove);
+  acceptButton.addEventListener("click", acceptConfirm);
   byId("mod-overlay").classList.add("open");
 }
 function acceptConfirm() {
@@ -294,12 +291,14 @@ function showUpdateModal(update) {
     <h3>What's new</h3>
     <div class="update-notes" id="update-notes"></div>
     <div class="brow">
-      <button class="btn2" id="update-later" onclick="closeMod()">Later</button>
-      <button class="btn1" id="update-install" onclick="downloadAndInstallUpdate()">Download &amp; install</button>
+      <button type="button" class="btn2" id="update-later">Later</button>
+      <button type="button" class="btn1" id="update-install">Download &amp; install</button>
     </div>`,
   );
   byId("update-version").textContent = "v" + update.version;
   byId("update-size").textContent = (update.size_mb || 0).toFixed(1) + " MB";
+  byId("update-later").addEventListener("click", closeMod);
+  byId("update-install").addEventListener("click", downloadAndInstallUpdate);
   renderUpdateNotes(update.notes);
 }
 async function downloadAndInstallUpdate() {
@@ -531,37 +530,6 @@ function renderClips() {
   el.classList.remove("show");
   for (var i = 0; i < keys.length; i++) {
     (function (p, c) {
-      var div = document.createElement("div");
-      div.className = "clip clip-drag" + (selPath === p ? " sel" : "");
-      div.setAttribute("tabindex", "0");
-      div.setAttribute("role", "option");
-      div.setAttribute("aria-selected", selPath === p ? "true" : "false");
-      div.setAttribute("aria-keyshortcuts", "Enter Space Delete ArrowUp ArrowDown");
-      div.setAttribute("title", c.name + " - drag handle to reorder");
-      div.dataset.clipPath = p;
-      if (c._queueItemId) div.dataset.queueItemId = c._queueItemId;
-      div.onclick = function () {
-        if (clipReorder && clipReorder.moved) {
-          clipReorder.moved = false;
-          return;
-        }
-        selectClip(p);
-      };
-      div.ondblclick = function () {
-        selectClip(p);
-        togglePlay();
-      };
-      div.onkeydown = function (e) {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          selectClip(p);
-        }
-        if (e.key === "Delete" || e.key === "Backspace") {
-          e.preventDefault();
-          removeClip(p);
-        }
-      };
-
       var statusLabel = c._statusText || "";
       if (!statusLabel && c._queueState === "completed")
         statusLabel = "Completed";
@@ -571,76 +539,40 @@ function renderClips() {
       if (!statusLabel && c._queueState === "cancelled")
         statusLabel = "Cancelled";
 
-      var trailingActs = "";
-      if (c._queueState === "completed" && c._resultPath) {
-        trailingActs += `<button
-          type="button"
-          class="c-act link"
-          data-no-reorder="1"
-          onclick="event.stopPropagation();openResult('${escJS(c._resultPath)}')"
-          title="Open folder"
-          aria-label="Open folder"
-        >Open folder</button>`;
-      }
-      if (
-        (c._queueState === "pending" ||
-          c._queueState === "running" ||
-          c._queueState === "processing") &&
-        c._queueItemId
-      ) {
-        trailingActs += `<button
-          type="button"
-          class="c-act danger"
-          data-no-reorder="1"
-          onclick="event.stopPropagation();cancelQueueItem('${escJS(c._queueItemId)}')"
-          title="Cancel"
-          aria-label="Cancel"
-        >Cancel</button>`;
-      }
-      if (
-        (c._queueState === "failed" || c._queueState === "cancelled") &&
-        c._queueItemId
-      ) {
-        trailingActs +=
-          '<button type="button" class="c-act" data-no-reorder="1" onclick="event.stopPropagation();retryQueueItem(\'' +
-          escJS(c._queueItemId) +
-          '\')" title="Retry" aria-label="Retry">Retry</button>';
-      }
-
-      var statusRow = "";
-      if (statusLabel || trailingActs) {
-        statusRow =
-          '<div class="c-status-row">' +
-          (statusLabel
-            ? '<span class="c-status">' + esc(statusLabel) + "</span>"
-            : '<span class="c-status"></span>') +
-          trailingActs +
-          "</div>";
-      }
-
-      div.innerHTML =
-        '<span class="c-drag" data-drag-handle="1" title="Drag to reorder" aria-label="Drag to reorder">⋮⋮</span>' +
-        '<div class="c1"><div class="c2">' +
-        esc(c.name) +
-        "</div>" +
-        '<div class="c3"><span class="c-meta">' +
-        metaStr(c) +
-        "</span></div>" +
-        statusRow +
-        "</div>" +
-        clipStateBadge(p) +
-        '<button class="c4" data-no-reorder="1" onclick="event.stopPropagation();removeClip(\'' +
-        escJS(p) +
-        '\')" aria-label="Remove ' +
-        esc(c.name) +
-        '" tabindex="0">✕</button>';
-
-      var handle = div.querySelector("[data-drag-handle]");
-      if (handle) {
-        handle.addEventListener("pointerdown", function (ev) {
-          beginClipReorder(ev, p, div);
-        });
-      }
+      var div = Tuck.clipCards.createClipCard(
+        document,
+        {
+          path: p,
+          name: c.name,
+          selected: selPath === p,
+          queueItemId: c._queueItemId || "",
+          queueState: c._queueState || "",
+          resultPath: c._resultPath || "",
+          statusLabel: statusLabel,
+          meta: metaStr(c),
+          badge: clipStateBadge(p),
+        },
+        {
+          select: function () {
+            if (clipReorder && clipReorder.moved) {
+              clipReorder.moved = false;
+              return;
+            }
+            selectClip(p);
+          },
+          togglePlay: function () {
+            selectClip(p);
+            togglePlay();
+          },
+          remove: removeClip,
+          openResult: openResult,
+          cancel: cancelQueueItem,
+          retry: retryQueueItem,
+          beginReorder: function (event) {
+            beginClipReorder(event, p, div);
+          },
+        },
+      );
       cdiv.appendChild(div);
     })(keys[i], clips[keys[i]]);
   }
@@ -781,7 +713,7 @@ function errorSummary(error, limit) {
 function clipStateBadge(p) {
   var c = clips[p],
     st = c._queueState || "";
-  if (!st && !c.error && !c._statusText) return "";
+  if (!st && !c.error && !c._statusText) return null;
   var states = {
     pending: ["Pending", "●", "cst-queued"],
     running: ["Encoding", "↻", "cst-processing"],
@@ -798,17 +730,7 @@ function clipStateBadge(p) {
   var state =
     states[st] ||
     (c.error ? ["Error", "!", "cst-failed"] : ["Ready", "·", "cst-ready"]);
-  return (
-    '<span class="c-st ' +
-    state[2] +
-    '" role="img" title="' +
-    esc(label) +
-    '" aria-label="' +
-    esc(label) +
-    '">' +
-    state[1] +
-    "</span>"
-  );
+  return { label: label, icon: state[1], className: state[2] };
 }
 
 function clipDuration(c) {
@@ -824,13 +746,9 @@ function clipDuration(c) {
 }
 function metaStr(c) {
   if (c._queueState === "failed" && c._queueError)
-    return (
-      '<span class="c-error">' +
-      esc(errorSummary(c._queueError, 100)) +
-      "</span>"
-    );
-  if (c.error) return esc(errorSummary(c.error, 100));
-  if (!c.probed) return "…";
+    return { text: errorSummary(c._queueError, 100), error: true };
+  if (c.error) return { text: errorSummary(c.error, 100), error: false };
+  if (!c.probed) return { text: "…", error: false };
   var d = c.probeData,
     first = [];
   var duration = clipDuration(c);
@@ -850,9 +768,7 @@ function metaStr(c) {
   if (c._resultSize && c._queueState === "completed")
     second += " → " + formatBytes(c._resultSize);
   if (second) first.push(second);
-  return (
-    first.join(" · ")
-  );
+  return { text: first.join(" · "), error: false };
 }
 
 function formatBytes(b) {
@@ -1076,7 +992,7 @@ function handleLaunch(data) {
         r.profile_id = data.profile_id;
         return r;
       });
-      api.enqueueBatch(JSON.stringify(reqs));
+      api.enqueueBatch(reqs);
       pollQueue();
     }, 500);
   }

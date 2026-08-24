@@ -6,6 +6,7 @@ import msvcrt
 import os
 import threading
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 
 import platformdirs
@@ -37,8 +38,6 @@ from .models import (
 
 APP_NAME = "Tuck"
 APP_AUTHOR = "Tuck"
-
-SETTINGS_VERSION = 1
 
 _MISSING: object = object()
 
@@ -74,16 +73,54 @@ def _dict_without_profiles(d: dict) -> dict:
     return {k: v for k, v in d.items() if k != "profiles"}
 
 
-def _atomic_write(path: Path, data: str) -> None:
+def _backup_path(path: Path) -> Path:
+    return path.with_suffix(path.suffix + ".bak")
+
+
+def _is_settings_document(value: object) -> bool:
+    return isinstance(value, dict)
+
+
+def _is_profiles_document(value: object) -> bool:
+    return (
+        isinstance(value, dict)
+        and isinstance(value.get("profiles"), list)
+        and bool(value["profiles"])
+    )
+
+
+def _atomic_write(
+    path: Path,
+    data: str,
+    *,
+    backup_validator: Callable[[object], bool] | None = None,
+) -> None:
     """writes to a temp file, then renames it over the target so
     readers never see a half-written file"""
     tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    backup_tmp: Path | None = None
     try:
         tmp.write_text(data, encoding="utf-8")
+        if backup_validator is not None and path.is_file():
+            try:
+                previous = path.read_text(encoding="utf-8")
+                previous_value = json.loads(previous)
+            except (OSError, json.JSONDecodeError):
+                pass
+            else:
+                if backup_validator(previous_value):
+                    backup = _backup_path(path)
+                    backup_tmp = backup.with_name(f".{backup.name}.{uuid.uuid4().hex}.tmp")
+                    backup_tmp.write_text(previous, encoding="utf-8")
+                    backup_tmp.replace(backup)
+                    backup_tmp = None
         tmp.replace(path)
     except Exception:
         with contextlib.suppress(OSError):
             tmp.unlink(missing_ok=True)
+        if backup_tmp is not None:
+            with contextlib.suppress(OSError):
+                backup_tmp.unlink(missing_ok=True)
         raise
 
 
@@ -192,7 +229,7 @@ class SettingsManager:
 
                 self._settings.profiles = profiles_to_dicts(self._profiles or [])
                 data = json.dumps(self._settings.to_dict(), indent=2, ensure_ascii=False)
-                _atomic_write(sp, data)
+                _atomic_write(sp, data, backup_validator=_is_settings_document)
 
                 if self._profiles is not None:
                     wrapped = {
@@ -200,7 +237,7 @@ class SettingsManager:
                         "profiles": profiles_to_dicts(self._profiles),
                     }
                     profiles_data = json.dumps(wrapped, indent=2, ensure_ascii=False)
-                    _atomic_write(pp, profiles_data)
+                    _atomic_write(pp, profiles_data, backup_validator=_is_profiles_document)
 
                 self._settings_snapshot = _dict_without_profiles(self._settings.to_dict())
                 self._profiles_snapshot = profiles_to_dicts(self._profiles or [])
@@ -212,6 +249,8 @@ class SettingsManager:
             disk_data = json.loads(disk_raw)
         except (OSError, json.JSONDecodeError):
             return  # disk is unreadable; write our version
+        if not _is_settings_document(disk_data):
+            return
 
         disk_migrated = self._migrate_settings(disk_data)
         disk_cmp = _dict_without_profiles(disk_migrated)
@@ -228,6 +267,8 @@ class SettingsManager:
             disk_raw = pp.read_text(encoding="utf-8")
             disk_data = json.loads(disk_raw)
         except (OSError, json.JSONDecodeError):
+            return
+        if not isinstance(disk_data, dict):
             return
 
         disk_profile_dicts: list[dict] = disk_data.get("profiles", [])
@@ -320,40 +361,36 @@ class SettingsManager:
 
     def _load_settings(self) -> AppSettings:
         sp = settings_path()
-        try:
-            if sp.exists():
-                raw = sp.read_text(encoding="utf-8")
+        for candidate in (sp, _backup_path(sp)):
+            try:
+                if not candidate.exists():
+                    continue
+                raw = candidate.read_text(encoding="utf-8")
                 data = json.loads(raw)
+                if not _is_settings_document(data):
+                    continue
                 migrated = self._migrate_settings(data)
                 settings = AppSettings.from_dict(migrated)
                 self._settings_snapshot = _dict_without_profiles(migrated)
                 return settings
-        except (json.JSONDecodeError, TypeError, ValueError):
-            backup = sp.with_suffix(".json.bak")
-            if backup.exists():
-                try:
-                    raw = backup.read_text(encoding="utf-8")
-                    data = json.loads(raw)
-                    migrated = self._migrate_settings(data)
-                    settings = AppSettings.from_dict(migrated)
-                    self._settings_snapshot = _dict_without_profiles(migrated)
-                    return settings
-                except Exception:
-                    pass
+            except (OSError, json.JSONDecodeError, TypeError, ValueError):
+                continue
         defaults = AppSettings()
         self._settings_snapshot = _dict_without_profiles(defaults.to_dict())
         return defaults
 
     def _load_profiles(self) -> list[Profile]:
         pp = profiles_path()
-        try:
-            if pp.exists():
-                profiles = import_profiles_json(pp)
+        for candidate in (pp, _backup_path(pp)):
+            try:
+                if not candidate.exists():
+                    continue
+                profiles = import_profiles_json(candidate)
                 profiles = self._migrate_profiles(profiles)
                 self._profiles_snapshot = profiles_to_dicts(profiles)
                 return profiles
-        except (json.JSONDecodeError, TypeError, ValueError, KeyError):
-            pass
+            except (OSError, json.JSONDecodeError, TypeError, ValueError, KeyError):
+                continue
 
         defaults = [Profile.from_dict(p.to_dict()) for p in DEFAULT_PROFILES]
         self._profiles_snapshot = profiles_to_dicts(defaults)

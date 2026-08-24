@@ -24,3 +24,28 @@ test("notification semantics announce errors urgently and other updates politely
     duration: 3500,
   });
 });
+
+test("notification messages render untrusted markup as text", () => {
+  const created = [];
+  const document = {
+    createElement(tagName) {
+      const element = {
+        tagName,
+        className: "",
+        children: [],
+        textContent: "",
+      };
+      created.push(element);
+      return element;
+    },
+  };
+  const payload = '<img src=x onerror="globalThis.pwned=true">';
+
+  const message = notifications.createMessageElement(document, payload);
+
+  assert.equal(created.length, 1);
+  assert.equal(message.tagName, "span");
+  assert.equal(message.className, "tmsg");
+  assert.equal(message.textContent, payload);
+  assert.deepEqual(message.children, []);
+});

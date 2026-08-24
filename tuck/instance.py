@@ -256,7 +256,7 @@ class SingleInstance:
             cds = ctypes.cast(lparam, ctypes.POINTER(COPYDATASTRUCT)).contents
             if cds.cbData <= 0 or cds.cbData > MAX_PAYLOAD_SIZE or not cds.lpData:
                 return 0
-            if not _is_local_process(hwnd, wparam):
+            if not _is_local_process(wparam):
                 return 0
             data_bytes = ctypes.string_at(cds.lpData, cds.cbData)
             success = handle_ipc_payload(
@@ -420,7 +420,7 @@ class SingleInstance:
 
 
 # wParam=0 is accepted because the sender HWND is not always available
-def _is_local_process(hwnd: int, wparam: int) -> bool:
+def _is_local_process(wparam: int) -> bool:
 
     if not wparam:
         return True

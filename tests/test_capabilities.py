@@ -4,7 +4,6 @@ import os
 from tuck.encoding.capabilities import (
     _detect_usable_encoders,
     auto_encoder_candidates,
-    cpu_fallback_encoder,
     get_encoder_capabilities,
     is_hardware_init_failure,
     resolve_encoder,
@@ -144,20 +143,16 @@ class TestPersistentEncoderCache:
 
 class TestHardwareFailureClassification:
     def test_nvenc_missing_device(self):
-        assert is_hardware_init_failure("No NVENC capable devices found", 1)
+        assert is_hardware_init_failure("No NVENC capable devices found")
 
     def test_amf_init(self):
-        assert is_hardware_init_failure("Failed to initialise AMF context", 1)
+        assert is_hardware_init_failure("Failed to initialise AMF context")
 
     def test_unrelated_input_error(self):
-        assert not is_hardware_init_failure("No such file or directory", 1)
+        assert not is_hardware_init_failure("No such file or directory")
 
     def test_permission_error_not_hw(self):
-        assert not is_hardware_init_failure("Permission denied writing output", 1)
-
-    def test_cpu_fallback_mapping(self):
-        assert cpu_fallback_encoder("h264_nvenc") == "libx264"
-        assert cpu_fallback_encoder("hevc_amf") == "libx265"
+        assert not is_hardware_init_failure("Permission denied writing output")
 
 
 class TestCapabilitiesDict:

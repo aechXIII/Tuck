@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 
+from tuck.encoding.command import build_base_cmd
 from tuck.encoding.filters import build_video_filters
 from tuck.engine import FFmpegEngine
 from tuck.models import (
@@ -147,7 +148,7 @@ def test_all_encoders_share_the_combined_filter_chain(encoder):
         rate_control_method=RCM_CBR,
         transform=transform,
     )
-    cmd = FFmpegEngine()._build_base_cmd("ffmpeg", plan, Path(plan.source))
+    cmd = build_base_cmd("ffmpeg", plan, Path(plan.source))
     assert cmd[cmd.index("-vf") + 1] == (
         "crop=800:600:100:50:exact=1,transpose=cclock,hflip,"
         "crop=450:800:75:0:exact=1,scale=1080:1920:flags=neighbor"

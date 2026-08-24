@@ -93,7 +93,7 @@
     background 0.15s;
   font-family: var(--font);
 }
-.qbtn:hover {
+.qbtn:hover:not(:disabled) {
   background: #1a1a2a;
   color: #fff;
 }
@@ -101,7 +101,12 @@
   outline: 2px solid var(--accent-light);
   outline-offset: -1px;
 }
-.qbtn.danger:hover {
+.qbtn:disabled {
+  color: #4f4f60;
+  background: transparent;
+  cursor: default;
+}
+.qbtn.danger:hover:not(:disabled) {
   color: var(--danger);
   background: #2a1520;
 }

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import json
-
 from tuck.bridge import BridgeAPI
 from tuck.bridge_validation import validate_video_paths
 
@@ -53,7 +51,7 @@ class TestAddIpcFiles:
         api.add_ipc_files(["C:\\videos\\a.mp4", "C:\\videos\\b.mkv"])
         api.add_ipc_files(["C:\\videos\\a.mp4", "C:\\videos\\c.avi"])
 
-        files = json.loads(api.get_ipc_files())
+        files = api.get_ipc_files()
         assert len(files) == 3
         assert "C:\\videos\\a.mp4" in files
 
@@ -66,8 +64,8 @@ class TestAddIpcFiles:
 
         api = BridgeAPI()
         api.add_ipc_files(["C:\\videos\\x.mp4"])
-        assert json.loads(api.get_ipc_files()) == ["C:\\videos\\x.mp4"]
-        assert json.loads(api.get_ipc_files()) == []
+        assert api.get_ipc_files() == ["C:\\videos\\x.mp4"]
+        assert api.get_ipc_files() == []
 
     def test_metadata_replaces_previous_value(self, tmp_path, monkeypatch) -> None:
         import tuck.settings as settings_mod
@@ -79,8 +77,8 @@ class TestAddIpcFiles:
         api = BridgeAPI()
         api.add_ipc_metadata({"profile_id": "discord-10mb", "action": "review"})
 
-        assert json.loads(api.get_ipc_metadata()) == {
+        assert api.get_ipc_metadata() == {
             "profile_id": "discord-10mb",
             "action": "review",
         }
-        assert json.loads(api.get_ipc_metadata()) == {}
+        assert api.get_ipc_metadata() == {}

@@ -10,6 +10,127 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, ClassVar
 
+from .encoding_policy import (
+    AMF_ENCODERS as AMF_ENCODERS,
+)
+from .encoding_policy import (
+    AUTO_ENCODERS as AUTO_ENCODERS,
+)
+from .encoding_policy import (
+    CPU_ENCODERS as CPU_ENCODERS,
+)
+from .encoding_policy import (
+    ENCODER_AUTO as ENCODER_AUTO,
+)
+from .encoding_policy import (
+    ENCODER_AUTO_COMPRESSION as ENCODER_AUTO_COMPRESSION,
+)
+from .encoding_policy import (
+    ENCODER_AUTO_FAST as ENCODER_AUTO_FAST,
+)
+from .encoding_policy import (
+    FPS_MODE_CUSTOM as FPS_MODE_CUSTOM,
+)
+from .encoding_policy import (
+    FPS_MODE_LIMIT as FPS_MODE_LIMIT,
+)
+from .encoding_policy import (
+    FPS_MODE_SOURCE as FPS_MODE_SOURCE,
+)
+from .encoding_policy import (
+    NVENC_ENCODERS as NVENC_ENCODERS,
+)
+from .encoding_policy import (
+    RC_EXPLICIT_BITRATE as RC_EXPLICIT_BITRATE,
+)
+from .encoding_policy import (
+    RC_TARGET_SIZE as RC_TARGET_SIZE,
+)
+from .encoding_policy import (
+    RCM_CBR as RCM_CBR,
+)
+from .encoding_policy import (
+    RCM_CQ as RCM_CQ,
+)
+from .encoding_policy import (
+    RCM_CQP as RCM_CQP,
+)
+from .encoding_policy import (
+    RCM_CRF as RCM_CRF,
+)
+from .encoding_policy import (
+    RCM_VBR as RCM_VBR,
+)
+from .encoding_policy import (
+    RES_MODE_CUSTOM as RES_MODE_CUSTOM,
+)
+from .encoding_policy import (
+    RES_MODE_LIMIT as RES_MODE_LIMIT,
+)
+from .encoding_policy import (
+    RES_MODE_SOURCE as RES_MODE_SOURCE,
+)
+from .encoding_policy import (
+    SCALER_BICUBIC as SCALER_BICUBIC,
+)
+from .encoding_policy import (
+    SCALER_BILINEAR as SCALER_BILINEAR,
+)
+from .encoding_policy import (
+    SCALER_LANCZOS as SCALER_LANCZOS,
+)
+from .encoding_policy import (
+    SCALER_NEIGHBOR as SCALER_NEIGHBOR,
+)
+from .encoding_policy import (
+    SCALER_POINT as SCALER_POINT,
+)
+from .encoding_policy import (
+    VALID_FPS_MODES as VALID_FPS_MODES,
+)
+from .encoding_policy import (
+    VALID_PRESETS as VALID_PRESETS,
+)
+from .encoding_policy import (
+    VALID_RC_METHODS as VALID_RC_METHODS,
+)
+from .encoding_policy import (
+    VALID_RC_MODES as VALID_RC_MODES,
+)
+from .encoding_policy import (
+    VALID_RES_MODES as VALID_RES_MODES,
+)
+from .encoding_policy import (
+    VALID_SCALERS as VALID_SCALERS,
+)
+from .encoding_policy import (
+    VALID_VIDEO_ENCODER_CHOICES as VALID_VIDEO_ENCODER_CHOICES,
+)
+from .encoding_policy import (
+    VALID_WORKFLOWS as VALID_WORKFLOWS,
+)
+from .encoding_policy import (
+    WORKFLOW_COMPRESSION as WORKFLOW_COMPRESSION,
+)
+from .encoding_policy import (
+    WORKFLOW_UPSCALE as WORKFLOW_UPSCALE,
+)
+from .encoding_policy import (
+    X264_TUNES as X264_TUNES,
+)
+from .encoding_policy import (
+    X265_TUNES as X265_TUNES,
+)
+from .encoding_policy import (
+    native_preset_for_encoder,
+    normalize_legacy_rc_matrix,
+    validate_preset_for_encoder,
+    validate_rc_method_for_encoder,
+    validate_tune_for_encoder,
+)
+from .encoding_policy import (
+    validate_rate_control_matrix as validate_rate_control_matrix,
+)
 from .progress import EncodeProgress as EncodeProgress
 from .progress import EncodeStage as EncodeStage
 from .transforms import (
@@ -102,193 +223,6 @@ class QueueState(Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
-
-
-RES_MODE_SOURCE = "source"
-RES_MODE_LIMIT = "limit"
-RES_MODE_CUSTOM = "custom"
-FPS_MODE_SOURCE = "source"
-FPS_MODE_LIMIT = "limit"
-FPS_MODE_CUSTOM = "custom"
-RC_TARGET_SIZE = "target_size"
-RC_EXPLICIT_BITRATE = "explicit_bitrate"
-WORKFLOW_COMPRESSION = "compression"
-WORKFLOW_UPSCALE = "upscale"
-RCM_CRF = "crf"
-RCM_CQP = "cqp"
-RCM_CQ = "cq"
-RCM_CBR = "cbr"
-RCM_VBR = "vbr"
-
-SCALER_BILINEAR = "bilinear"
-SCALER_BICUBIC = "bicubic"
-SCALER_LANCZOS = "lanczos"
-SCALER_NEIGHBOR = "neighbor"
-SCALER_POINT = "point"
-
-_VALID_RES_MODES = frozenset({RES_MODE_SOURCE, RES_MODE_LIMIT, RES_MODE_CUSTOM})
-_VALID_FPS_MODES = frozenset({FPS_MODE_SOURCE, FPS_MODE_LIMIT, FPS_MODE_CUSTOM})
-_VALID_RC_MODES = frozenset({RC_TARGET_SIZE, RC_EXPLICIT_BITRATE})
-_VALID_WORKFLOWS = frozenset({WORKFLOW_COMPRESSION, WORKFLOW_UPSCALE})
-_VALID_RC_METHODS = frozenset({RCM_CRF, RCM_CQP, RCM_CQ, RCM_CBR, RCM_VBR})
-_VALID_SCALERS = frozenset(
-    {SCALER_BILINEAR, SCALER_BICUBIC, SCALER_LANCZOS, SCALER_NEIGHBOR, SCALER_POINT}
-)
-ENCODER_AUTO = "auto"
-ENCODER_AUTO_COMPRESSION = "auto_compression"
-ENCODER_AUTO_FAST = "auto_fast"
-_AUTO_ENCODERS: frozenset[str] = frozenset(
-    {ENCODER_AUTO, ENCODER_AUTO_COMPRESSION, ENCODER_AUTO_FAST}
-)
-
-_VALID_VIDEO_ENCODERS: frozenset[str] = frozenset(
-    {"libx264", "libx265", "h264_nvenc", "hevc_nvenc", "h264_amf", "hevc_amf"}
-)
-_VALID_VIDEO_ENCODER_CHOICES: frozenset[str] = _VALID_VIDEO_ENCODERS | _AUTO_ENCODERS
-
-_CPU_ENCODERS: frozenset[str] = frozenset({"libx264", "libx265"})
-_NVENC_ENCODERS: frozenset[str] = frozenset({"h264_nvenc", "hevc_nvenc"})
-_AMF_ENCODERS: frozenset[str] = frozenset({"h264_amf", "hevc_amf"})
-
-X264_TUNES: frozenset[str] = frozenset(
-    {"", "film", "animation", "grain", "stillimage", "psnr", "ssim", "fastdecode", "zerolatency"}
-)
-X265_TUNES: frozenset[str] = frozenset(
-    {"", "psnr", "ssim", "grain", "zerolatency", "fastdecode", "animation"}
-)
-_ALL_TUNES: frozenset[str] = X264_TUNES | X265_TUNES
-
-
-def _validate_tune_for_encoder(tune: str, video_encoder: str | None) -> None:
-    if tune not in _ALL_TUNES:
-        raise ValueError(f"tune must be one of {sorted(_ALL_TUNES)}")
-    if not tune:
-        return
-    if video_encoder == "libx265" and tune not in X265_TUNES:
-        raise ValueError(f"tune '{tune}' is not compatible with libx265")
-    if video_encoder == "libx264" and tune not in X264_TUNES:
-        raise ValueError(f"tune '{tune}' is not compatible with libx264")
-
-
-def _validate_rc_method_for_encoder(rc_method: str, video_encoder: str) -> None:
-    if rc_method not in _VALID_RC_METHODS:
-        raise ValueError(f"rate_control_method must be one of {sorted(_VALID_RC_METHODS)}")
-    if video_encoder in _AUTO_ENCODERS:
-        return
-    if video_encoder not in _VALID_VIDEO_ENCODERS:
-        raise ValueError(
-            f"rate_control_method: unknown video_encoder '{video_encoder}'; "
-            f"must be one of {sorted(_VALID_VIDEO_ENCODER_CHOICES)}"
-        )
-    if video_encoder in _CPU_ENCODERS:
-        if rc_method not in (RCM_CRF, RCM_CBR):
-            raise ValueError(
-                f"rate_control_method '{rc_method}' not supported for {video_encoder}; "
-                f"use crf or cbr"
-            )
-    elif (video_encoder in _NVENC_ENCODERS or video_encoder in _AMF_ENCODERS) and rc_method not in (
-        RCM_CQ,
-        RCM_CQP,
-        RCM_CBR,
-        RCM_VBR,
-    ):
-        raise ValueError(
-            f"rate_control_method '{rc_method}' not supported for {video_encoder}; "
-            f"use cq, cbr, or vbr"
-        )
-
-
-_QUALITY_RC_METHODS: frozenset[str] = frozenset({RCM_CRF, RCM_CQ, RCM_CQP})
-_BITRATE_RC_METHODS: frozenset[str] = frozenset({RCM_CBR, RCM_VBR})
-
-
-def validate_rate_control_matrix(
-    workflow: str,
-    rate_control: str,
-    rate_control_method: str,
-    video_encoder: str,
-    two_pass: bool,
-) -> None:
-    is_compression = workflow == WORKFLOW_COMPRESSION
-    is_upscale = workflow == WORKFLOW_UPSCALE
-    is_quality_method = rate_control_method in _QUALITY_RC_METHODS
-    is_bitrate_method = rate_control_method in _BITRATE_RC_METHODS
-    is_auto = video_encoder in _AUTO_ENCODERS
-    is_cpu = video_encoder in _CPU_ENCODERS or is_auto
-
-    if is_compression:
-        if rate_control != RC_TARGET_SIZE:
-            raise ValueError("Compression workflow requires rate_control 'target_size'.")
-        if is_quality_method:
-            raise ValueError(
-                "Compression requires a bitrate-driven method; quality method is not supported."
-            )
-
-    if is_upscale:
-        if is_bitrate_method and rate_control != RC_EXPLICIT_BITRATE:
-            raise ValueError(
-                "Upscale workflow with CBR/VBR requires rate_control 'explicit_bitrate'."
-            )
-        if is_quality_method and rate_control != RC_TARGET_SIZE:
-            raise ValueError("Upscale CRF or constant quality requires rate_control 'target_size'.")
-        if (
-            video_encoder in _CPU_ENCODERS
-            and rate_control_method != RCM_CRF
-            and not is_bitrate_method
-        ):
-            raise ValueError("Software Upscale requires CRF or an explicit bitrate method.")
-        if (
-            not is_auto
-            and video_encoder in _NVENC_ENCODERS | _AMF_ENCODERS
-            and rate_control_method == RCM_CRF
-        ):
-            raise ValueError(
-                "Hardware Upscale requires constant quality or an explicit bitrate method."
-            )
-
-    if two_pass:
-        if not is_compression:
-            raise ValueError("Two-pass encoding is only available for Compression workflow.")
-        if not is_cpu or video_encoder in (ENCODER_AUTO, ENCODER_AUTO_FAST):
-            raise ValueError(
-                f"Two-pass encoding is only available for CPU encoders "
-                f"(libx264/libx265), not '{video_encoder}'."
-            )
-        if not is_bitrate_method:
-            raise ValueError(
-                f"Two-pass encoding requires a bitrate-driven rate-control method "
-                f"(CBR for CPU), not '{rate_control_method}'."
-            )
-
-
-def _normalize_legacy_rc_matrix(
-    workflow: str,
-    rate_control: str,
-    rate_control_method: str,
-    video_encoder: str,
-    two_pass: bool,
-) -> tuple[str, bool]:
-    is_compression = workflow == WORKFLOW_COMPRESSION
-    is_upscale = workflow == WORKFLOW_UPSCALE
-    is_quality_method = rate_control_method in _QUALITY_RC_METHODS
-    is_cpu = video_encoder in _CPU_ENCODERS
-
-    new_rcm = rate_control_method
-    new_two_pass = two_pass
-
-    if is_compression:
-        new_rcm = RCM_CBR
-        new_two_pass = new_two_pass and is_cpu
-
-    if is_upscale and not is_quality_method and rate_control == RC_TARGET_SIZE:
-        new_rcm = RCM_CRF if is_cpu else RCM_CQ
-
-    if new_two_pass and (
-        workflow != WORKFLOW_COMPRESSION or not is_cpu or new_rcm not in _BITRATE_RC_METHODS
-    ):
-        new_two_pass = False
-
-    return new_rcm, new_two_pass
 
 
 @dataclass
@@ -607,8 +541,9 @@ def audio_independent_from_pieces(
     if not pieces or len(pieces) != len(segments):
         return True
     return any(
-        abs(piece.source_start - segment.start) > 1e-6 or abs(piece.source_end - segment.end) > 1e-6
-        for piece, segment in zip(pieces, segments, strict=True)
+        abs(piece.source_start - segments[index].start) > 1e-6
+        or abs(piece.source_end - segments[index].end) > 1e-6
+        for index, piece in enumerate(pieces)
     )
 
 
@@ -714,17 +649,17 @@ class PlanRequest:
     transform: VideoTransform | None = None
 
     def validate(self) -> None:
-        if self.resolution_mode is not None and self.resolution_mode not in _VALID_RES_MODES:
+        if self.resolution_mode is not None and self.resolution_mode not in VALID_RES_MODES:
             raise ValueError(f"Invalid resolution_mode: {self.resolution_mode!r}")
-        if self.fps_mode is not None and self.fps_mode not in _VALID_FPS_MODES:
+        if self.fps_mode is not None and self.fps_mode not in VALID_FPS_MODES:
             raise ValueError(f"Invalid fps_mode: {self.fps_mode!r}")
-        if self.rate_control is not None and self.rate_control not in _VALID_RC_MODES:
+        if self.rate_control is not None and self.rate_control not in VALID_RC_MODES:
             raise ValueError(f"Invalid rate_control: {self.rate_control!r}")
-        if self.workflow is not None and self.workflow not in _VALID_WORKFLOWS:
+        if self.workflow is not None and self.workflow not in VALID_WORKFLOWS:
             raise ValueError(f"Invalid workflow: {self.workflow!r}")
         if (
             self.rate_control_method is not None
-            and self.rate_control_method not in _VALID_RC_METHODS
+            and self.rate_control_method not in VALID_RC_METHODS
         ):
             raise ValueError(f"Invalid rate_control_method: {self.rate_control_method!r}")
         if self.rate_control_method == RCM_CQP:
@@ -752,17 +687,14 @@ class PlanRequest:
         if self.target_size_bytes is not None and self.target_size_bytes < MIN_TARGET_SIZE_BYTES:
             raise ValueError("target_size_bytes must be at least 2 MB")
 
-        if self.scaler is not None and self.scaler not in _VALID_SCALERS:
+        if self.scaler is not None and self.scaler not in VALID_SCALERS:
             if self.scaler == "nearest":
                 self.scaler = SCALER_NEIGHBOR
             else:
                 raise ValueError(f"Invalid scaler: {self.scaler!r}")
 
-        if (
-            self.video_encoder is not None
-            and self.video_encoder not in _VALID_VIDEO_ENCODER_CHOICES
-        ):
-            raise ValueError(f"video_encoder must be one of {sorted(_VALID_VIDEO_ENCODER_CHOICES)}")
+        if self.video_encoder is not None and self.video_encoder not in VALID_VIDEO_ENCODER_CHOICES:
+            raise ValueError(f"video_encoder must be one of {sorted(VALID_VIDEO_ENCODER_CHOICES)}")
 
         if self.crf is not None and (self.crf < 0 or self.crf > 51):
             raise ValueError("crf must be between 0 and 51")
@@ -774,13 +706,13 @@ class PlanRequest:
             raise ValueError("qp must be between 0 and 51")
 
         if self.tune is not None:
-            _validate_tune_for_encoder(self.tune, self.video_encoder)
+            validate_tune_for_encoder(self.tune, self.video_encoder)
 
         if self.two_pass is not None and not isinstance(self.two_pass, bool):
             raise ValueError("two_pass must be a boolean")
 
-        if self.preset is not None and self.preset not in _VALID_PRESETS:
-            raise ValueError(f"preset must be one of {sorted(_VALID_PRESETS)}")
+        if self.preset is not None and self.preset not in VALID_PRESETS:
+            raise ValueError(f"preset must be one of {sorted(VALID_PRESETS)}")
 
         if self.transform is not None and not isinstance(self.transform, VideoTransform):
             raise ValueError("transform must be a VideoTransform or None")
@@ -1320,7 +1252,6 @@ DEFAULT_PROFILES: list[Profile] = [
 ]
 
 PROFILE_ID_LEGACY_CUSTOM = "custom"
-LEGACY_BUILTIN_IDS = frozenset({"custom"})
 
 
 def profiles_to_dicts(profiles: list[Profile]) -> list[dict[str, Any]]:
@@ -1373,28 +1304,6 @@ def import_profiles_json(path: Path) -> list[Profile]:
     return dicts_to_profiles(profiles_data)
 
 
-_X26X_PRESETS = frozenset(
-    {"ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow"}
-)
-_NVENC_PRESETS = frozenset({"p1", "p2", "p3", "p4", "p5", "p6", "p7"})
-_AMF_PRESETS = frozenset({"speed", "balanced", "quality"})
-_VALID_PRESETS = _X26X_PRESETS | _NVENC_PRESETS | _AMF_PRESETS
-
-
-def _validate_preset_for_encoder(preset: str, video_encoder: str) -> None:
-    if video_encoder in _AUTO_ENCODERS:
-        if preset not in _VALID_PRESETS:
-            raise ValueError(f"preset must be one of {sorted(_VALID_PRESETS)}")
-        return
-    valid = (
-        _X26X_PRESETS
-        if video_encoder in _CPU_ENCODERS
-        else (_NVENC_PRESETS if video_encoder in _NVENC_ENCODERS else _AMF_PRESETS)
-    )
-    if preset not in valid:
-        raise ValueError(f"preset must be one of {sorted(valid)} for {video_encoder}")
-
-
 _PROFILE_REQUIRED = frozenset({"name", "profile_id"})
 _PROFILE_KNOWN = frozenset(
     {
@@ -1431,36 +1340,6 @@ _PROFILE_KNOWN = frozenset(
 )
 
 
-def _native_preset_for_encoder(preset: str, video_encoder: str) -> str:
-    if video_encoder in _AUTO_ENCODERS:
-        return preset if preset in _VALID_PRESETS else "medium"
-    if video_encoder in _CPU_ENCODERS:
-        return preset if preset in _X26X_PRESETS else "medium"
-    if video_encoder in _NVENC_ENCODERS:
-        return {
-            "ultrafast": "p1",
-            "superfast": "p2",
-            "veryfast": "p3",
-            "faster": "p3",
-            "fast": "p4",
-            "medium": "p6",
-            "slow": "p6",
-            "slower": "p7",
-            "veryslow": "p7",
-        }.get(preset, preset if preset in _NVENC_PRESETS else "p5")
-    return {
-        "ultrafast": "speed",
-        "superfast": "speed",
-        "veryfast": "speed",
-        "faster": "speed",
-        "fast": "balanced",
-        "medium": "balanced",
-        "slow": "quality",
-        "slower": "quality",
-        "veryslow": "quality",
-    }.get(preset, preset if preset in _AMF_PRESETS else "balanced")
-
-
 def _migrate_profile_data(data: dict[str, Any]) -> dict[str, Any]:
     data = dict(data)
     version = data.get("schema_version", 1)
@@ -1471,18 +1350,18 @@ def _migrate_profile_data(data: dict[str, Any]) -> dict[str, Any]:
     if workflow == WORKFLOW_COMPRESSION:
         data["rate_control"] = RC_TARGET_SIZE
         data["explicit_bitrate"] = 0
-        data["rate_control_method"] = RCM_CBR if encoder in _CPU_ENCODERS else RCM_VBR
-        data["two_pass"] = bool(data.get("two_pass", True)) and encoder in _CPU_ENCODERS
+        data["rate_control_method"] = RCM_CBR if encoder in CPU_ENCODERS else RCM_VBR
+        data["two_pass"] = bool(data.get("two_pass", True)) and encoder in CPU_ENCODERS
     else:
         if method == RCM_CQP:
             data["rate_control"] = RC_TARGET_SIZE
-        elif encoder in _NVENC_ENCODERS and method == RCM_CRF:
+        elif encoder in NVENC_ENCODERS and method == RCM_CRF:
             data["rate_control_method"] = RCM_CQ
             data["cq"] = data.get("cq", data.get("qp", 23))
             data["rate_control"] = RC_TARGET_SIZE
         elif method in (RCM_CBR, RCM_VBR):
             data["rate_control"] = RC_EXPLICIT_BITRATE
-        elif encoder in _CPU_ENCODERS:
+        elif encoder in CPU_ENCODERS:
             data["rate_control_method"] = RCM_CRF
             data["rate_control"] = RC_TARGET_SIZE
         else:
@@ -1491,7 +1370,7 @@ def _migrate_profile_data(data: dict[str, Any]) -> dict[str, Any]:
             data["cq"] = data.get("cq", data.get("qp", 23))
         data["two_pass"] = False
 
-    data["preset"] = _native_preset_for_encoder(data.get("preset", "medium"), encoder)
+    data["preset"] = native_preset_for_encoder(data.get("preset", "medium"), encoder)
     if version < PROFILE_SCHEMA_VERSION:
         data["schema_version"] = PROFILE_SCHEMA_VERSION
     return data
@@ -1619,8 +1498,8 @@ def _validate_profile_dict(data: dict[str, Any]) -> None:
         raise ValueError("explicit_bitrate must be >= 0")
 
     preset = data.get("preset", "medium")
-    if preset not in _VALID_PRESETS:
-        raise ValueError(f"preset must be one of {sorted(_VALID_PRESETS)}")
+    if preset not in VALID_PRESETS:
+        raise ValueError(f"preset must be one of {sorted(VALID_PRESETS)}")
 
     two_pass = data.get("two_pass", True)
     if not isinstance(two_pass, bool):
@@ -1630,29 +1509,29 @@ def _validate_profile_dict(data: dict[str, Any]) -> None:
         raise ValueError("keep_audio must be a boolean")
 
     resolution_mode = data.get("resolution_mode", RES_MODE_SOURCE)
-    if resolution_mode not in _VALID_RES_MODES:
-        raise ValueError(f"resolution_mode must be one of {sorted(_VALID_RES_MODES)}")
+    if resolution_mode not in VALID_RES_MODES:
+        raise ValueError(f"resolution_mode must be one of {sorted(VALID_RES_MODES)}")
 
     fps_mode = data.get("fps_mode", FPS_MODE_SOURCE)
-    if fps_mode not in _VALID_FPS_MODES:
-        raise ValueError(f"fps_mode must be one of {sorted(_VALID_FPS_MODES)}")
+    if fps_mode not in VALID_FPS_MODES:
+        raise ValueError(f"fps_mode must be one of {sorted(VALID_FPS_MODES)}")
 
     rate_control = data.get("rate_control", RC_TARGET_SIZE)
-    if rate_control not in _VALID_RC_MODES:
-        raise ValueError(f"rate_control must be one of {sorted(_VALID_RC_MODES)}")
+    if rate_control not in VALID_RC_MODES:
+        raise ValueError(f"rate_control must be one of {sorted(VALID_RC_MODES)}")
     if data.get("workflow", WORKFLOW_COMPRESSION) == WORKFLOW_COMPRESSION and ebr:
         raise ValueError("Compression profiles cannot persist an explicit bitrate")
 
     scaler = data.get("scaler", SCALER_NEIGHBOR)
-    if scaler not in _VALID_SCALERS:
+    if scaler not in VALID_SCALERS:
         if scaler == "nearest":
             data["scaler"] = SCALER_NEIGHBOR
         else:
-            raise ValueError(f"scaler must be one of {sorted(_VALID_SCALERS)}")
+            raise ValueError(f"scaler must be one of {sorted(VALID_SCALERS)}")
 
     video_encoder = data.get("video_encoder", "libx264")
-    if video_encoder not in _VALID_VIDEO_ENCODER_CHOICES:
-        raise ValueError(f"video_encoder must be one of {sorted(_VALID_VIDEO_ENCODER_CHOICES)}")
+    if video_encoder not in VALID_VIDEO_ENCODER_CHOICES:
+        raise ValueError(f"video_encoder must be one of {sorted(VALID_VIDEO_ENCODER_CHOICES)}")
 
     crf = data.get("crf", 23)
     if isinstance(crf, bool) or not isinstance(crf, (int, float)):
@@ -1684,22 +1563,22 @@ def _validate_profile_dict(data: dict[str, Any]) -> None:
     tune = data.get("tune", "")
     if not isinstance(tune, str):
         raise ValueError("tune must be a string")
-    _validate_tune_for_encoder(tune, video_encoder)
+    validate_tune_for_encoder(tune, video_encoder)
 
     workflow = data.get("workflow", WORKFLOW_COMPRESSION)
-    if workflow not in _VALID_WORKFLOWS:
-        raise ValueError(f"workflow must be one of {sorted(_VALID_WORKFLOWS)}")
+    if workflow not in VALID_WORKFLOWS:
+        raise ValueError(f"workflow must be one of {sorted(VALID_WORKFLOWS)}")
 
     rc_method = data.get("rate_control_method", RCM_CBR)
-    if rc_method not in _VALID_RC_METHODS:
-        raise ValueError(f"rate_control_method must be one of {sorted(_VALID_RC_METHODS)}")
-    _validate_rc_method_for_encoder(rc_method, video_encoder)
-    _validate_preset_for_encoder(preset, video_encoder)
+    if rc_method not in VALID_RC_METHODS:
+        raise ValueError(f"rate_control_method must be one of {sorted(VALID_RC_METHODS)}")
+    validate_rc_method_for_encoder(rc_method, video_encoder)
+    validate_preset_for_encoder(preset, video_encoder)
 
     two_pass = data.get("two_pass", True)
     rate_control = data.get("rate_control", RC_TARGET_SIZE)
 
-    new_rcm, new_two_pass = _normalize_legacy_rc_matrix(
+    new_rcm, new_two_pass = normalize_legacy_rc_matrix(
         workflow, rate_control, rc_method, video_encoder, two_pass
     )
     if new_rcm != rc_method:

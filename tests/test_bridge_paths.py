@@ -1,5 +1,3 @@
-import json
-
 import pytest
 
 from tuck.bridge import BridgeAPI
@@ -73,7 +71,7 @@ class TestBridgePathValidation:
         monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
 
         api = BridgeAPI()
-        resp = json.loads(api.probe_file(str(tmp_path / "no_such_file.mp4")))
+        resp = api.probe_file(str(tmp_path / "no_such_file.mp4"))
         assert not resp["ok"]
         assert "error" in resp
 
@@ -86,7 +84,7 @@ class TestBridgePathValidation:
         monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
 
         api = BridgeAPI()
-        resp = json.loads(api.probe_file(""))
+        resp = api.probe_file("")
         assert not resp["ok"]
         assert "error" in resp
 
@@ -103,8 +101,8 @@ class TestBridgeDragDropSafety:
         api = BridgeAPI()
         api._settings.load()
 
-        payload = json.dumps({"source": str(tmp_path / "ghost.mp4"), "profile_id": "discord-10mb"})
-        resp = json.loads(api.enqueue_with_options(payload))
+        payload = {"source": str(tmp_path / "ghost.mp4"), "profile_id": "discord-10mb"}
+        resp = api.enqueue_with_options(payload)
         assert not resp["ok"]
         assert "error" in resp
 
@@ -119,13 +117,12 @@ class TestBridgeDragDropSafety:
         api = BridgeAPI()
         api._settings.load()
 
-        payload = json.dumps(
-            [
-                {"source": str(tmp_path / "a.mp4"), "profile_id": "discord-10mb"},
-                {"source": str(tmp_path / "b.mp4"), "profile_id": "discord-10mb"},
-            ]
-        )
-        resp = json.loads(api.enqueue_batch(payload))
+        payload = [
+            {"source": str(tmp_path / "a.mp4"), "profile_id": "discord-10mb"},
+            {"source": str(tmp_path / "b.mp4"), "profile_id": "discord-10mb"},
+        ]
+
+        resp = api.enqueue_batch(payload)
         assert not resp["ok"]
         assert "No files could be enqueued" in resp["error"]
 
@@ -140,7 +137,7 @@ class TestBridgeDragDropSafety:
         api = BridgeAPI()
         api._settings.load()
 
-        payload = json.dumps({"source": str(tmp_path / "ghost.mp4"), "profile_id": "discord-10mb"})
-        resp = json.loads(api.create_plan(payload))
+        payload = {"source": str(tmp_path / "ghost.mp4"), "profile_id": "discord-10mb"}
+        resp = api.create_plan(payload)
         assert not resp["ok"]
         assert "error" in resp

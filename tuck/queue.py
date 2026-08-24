@@ -6,13 +6,13 @@ import logging
 import os
 import threading
 from collections import deque
-from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
 from .engine import EncodeCancelled, FFmpegEngine
 from .models import EncodePlan, QueueItem, QueueState
 from .models.progress import EncodeProgress, EncodeStage
+from .output_paths import resolve_output_collision
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +26,6 @@ class ProcessingQueue:
         self._running = False
         self._current_item: QueueItem | None = None
         self._worker_thread: threading.Thread | None = None
-        self._on_item_change: Callable[[QueueItem], None] | None = None
         self._stop_after_current = False
 
     @property
@@ -39,17 +38,9 @@ class ProcessingQueue:
         with self._condition:
             return list(self._pending)
 
-    @property
-    def current_item(self) -> QueueItem | None:
-        with self._condition:
-            return self._current_item
-
     def snapshot(self) -> tuple[list[QueueItem], QueueItem | None, list[str]]:
         with self._condition:
             return list(self._items.values()), self._current_item, list(self._pending)
-
-    def set_on_item_change(self, callback: Callable[[QueueItem], None]) -> None:
-        self._on_item_change = callback
 
     def enqueue(self, plan: EncodePlan) -> QueueItem:
         item = QueueItem(
@@ -62,7 +53,6 @@ class ProcessingQueue:
             self._items[item.id] = item
             self._pending.append(item.id)
             self._condition.notify()
-        self._notify(item)
         return item
 
     def cancel(self, item_id: str) -> bool:
@@ -75,7 +65,6 @@ class ProcessingQueue:
                 item.state = QueueState.CANCELLED
                 item.status_text = "Cancelled"
                 item.finished_at = datetime.now(timezone.utc).isoformat()
-                self._notify(item)
                 return True
             if item.state == QueueState.RUNNING:
                 self._engine.cancel()
@@ -85,17 +74,13 @@ class ProcessingQueue:
     def cancel_all(self) -> None:
         self._engine.cancel()
         with self._condition:
-            changed: list[QueueItem] = []
             for item_id in list(self._pending):
                 item = self._items.get(item_id)
                 if item and item.state == QueueState.PENDING:
                     item.state = QueueState.CANCELLED
                     item.status_text = "Cancelled"
                     item.finished_at = datetime.now(timezone.utc).isoformat()
-                    changed.append(item)
             self._pending.clear()
-            for item in changed:
-                self._notify(item)
 
     def remove(self, item_id: str) -> bool:
         with self._condition:
@@ -155,25 +140,20 @@ class ProcessingQueue:
             self._items[retry_item.id] = retry_item
             self._pending.append(retry_item.id)
             self._condition.notify()
-        self._notify(retry_item)
         return retry_item
 
     def stop_after_current(self) -> None:
         with self._condition:
             self._stop_after_current = self._current_item is not None
-            changed: list[QueueItem] = []
             for item_id in list(self._pending):
                 item = self._items.get(item_id)
                 if item and item.state == QueueState.PENDING:
                     item.state = QueueState.CANCELLED
                     item.status_text = "Cancelled"
                     item.finished_at = datetime.now(timezone.utc).isoformat()
-                    changed.append(item)
             self._pending.clear()
             if self._current_item is None:
                 self._running = False
-            for item in changed:
-                self._notify(item)
             self._condition.notify_all()
 
     def start(self) -> None:
@@ -227,7 +207,6 @@ class ProcessingQueue:
                 item.error = ""
                 item.error_detail = ""
 
-            self._notify(item)
             try:
                 plan = item.plan
                 if plan is None:
@@ -235,17 +214,14 @@ class ProcessingQueue:
                     item.error = "No plan associated with queue item"
                     item.status_text = "Failed"
                     item.finished_at = datetime.now(timezone.utc).isoformat()
-                    self._notify(item)
                     with self._condition:
                         self._current_item = None
                     continue
 
-                from .planner import _resolve_output_collision
-
                 attempt_plan = copy.deepcopy(plan)
-                attempt_plan.output = str(_resolve_output_collision(Path(attempt_plan.output)))
+                attempt_plan.output = str(resolve_output_collision(Path(attempt_plan.output)))
 
-                _source = attempt_plan.source
+                source = attempt_plan.source
                 result_path = self._engine.encode(
                     attempt_plan,
                     on_progress=lambda p, _item=item: self._on_progress(_item, p),
@@ -259,7 +235,7 @@ class ProcessingQueue:
                     percent=100.0, stage=EncodeStage.COMPLETED, message="Completed"
                 )
                 item.finished_at = datetime.now(timezone.utc).isoformat()
-                logger.info("Completed: %s -> %s", _source, result_path)
+                logger.info("Completed: %s -> %s", source, result_path)
             except EncodeCancelled:
                 item.state = QueueState.CANCELLED
                 item.error = "Cancelled by user"
@@ -286,7 +262,6 @@ class ProcessingQueue:
                     e,
                 )
 
-            self._notify(item)
             with self._condition:
                 self._current_item = None
                 stop_now = self._stop_after_current
@@ -308,12 +283,6 @@ class ProcessingQueue:
         else:
             item.progress = float(progress)
             item.status_text = f"{item.progress:.0f}%"
-        self._notify(item)
-
-    def _notify(self, item: QueueItem) -> None:
-        if self._on_item_change:
-            with contextlib.suppress(Exception):
-                self._on_item_change(item)
 
     def _remove_pending_id(self, item_id: str) -> None:
         with contextlib.suppress(ValueError):

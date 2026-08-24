@@ -689,13 +689,11 @@ class TestBridgeSendTo:
         monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
         monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
 
-        import json
-
         from tuck.bridge import BridgeAPI
 
         api = BridgeAPI()
         api._settings.load()
-        resp = json.loads(api.install_profile_sendto("nonexistent-profile"))
+        resp = api.install_profile_sendto("nonexistent-profile")
         assert not resp["ok"]
         assert "Profile not found" in resp["error"]
 
@@ -707,13 +705,11 @@ class TestBridgeSendTo:
         monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
         monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
 
-        import json
-
         from tuck.bridge import BridgeAPI
 
         api = BridgeAPI()
         api._settings.load()
-        resp = json.loads(api.remove_profile_sendto("No Such Profile"))
+        resp = api.remove_profile_sendto("No Such Profile")
         assert resp["ok"]
         assert not resp["removed"]
 
@@ -724,13 +720,11 @@ class TestBridgeSendTo:
         monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
         monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
 
-        import json
-
         from tuck.bridge import BridgeAPI
 
         api = BridgeAPI()
         api._settings.load()
-        resp = json.loads(api.repair_profile_sendto("nonexistent"))
+        resp = api.repair_profile_sendto("nonexistent")
         assert not resp["ok"]
         assert "Profile not found" in resp["error"]
 
@@ -742,13 +736,11 @@ class TestBridgeSendTo:
         monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
         monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
 
-        import json
-
         from tuck.bridge import BridgeAPI
 
         api = BridgeAPI()
         api._settings.load()
-        resp = json.loads(api.list_sendto_shortcuts())
+        resp = api.list_sendto_shortcuts()
         assert resp["ok"]
         assert isinstance(resp["shortcuts"], list)
 
@@ -850,8 +842,6 @@ class TestDeleteProfileRemovesBatch:
         monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
         monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
 
-        import json
-
         from tuck.bridge import BridgeAPI
         from tuck.models import Profile
 
@@ -864,7 +854,7 @@ class TestDeleteProfileRemovesBatch:
 
         bat_path = tmp_path / f"{PROFILE_SHORTCUT_PREFIX}to-delete-bat.bat"
         _make_marker_bat(bat_path)
-        resp = json.loads(api.delete_profile("to-delete-bat"))
+        resp = api.delete_profile("to-delete-bat")
         assert resp["ok"]
         assert not bat_path.exists()
 
@@ -876,8 +866,6 @@ class TestDeleteProfileRemovesBatch:
         monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
         monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
         monkeypatch.setattr("tuck.sendto._verify_lnk_ownership", lambda p: True)
-
-        import json
 
         from tuck.bridge import BridgeAPI
         from tuck.models import Profile
@@ -891,7 +879,7 @@ class TestDeleteProfileRemovesBatch:
 
         lnk_path = tmp_path / f"{PROFILE_SHORTCUT_PREFIX}to-delete-lnk.lnk"
         lnk_path.write_text("tuck")
-        resp = json.loads(api.delete_profile("to-delete-lnk"))
+        resp = api.delete_profile("to-delete-lnk")
         assert resp["ok"]
         assert not lnk_path.exists()
 
@@ -903,8 +891,6 @@ class TestDeleteProfileRemovesBatch:
         monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
         monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
         monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
-
-        import json
 
         from tuck.bridge import BridgeAPI
         from tuck.models import Profile
@@ -918,7 +904,7 @@ class TestDeleteProfileRemovesBatch:
 
         foreign_bat = tmp_path / f"{PROFILE_SHORTCUT_PREFIX}keep-me.bat"
         _make_foreign_bat(foreign_bat)
-        resp = json.loads(api.delete_profile("keep-me"))
+        resp = api.delete_profile("keep-me")
         assert resp["ok"]
         assert foreign_bat.exists()
 
@@ -931,7 +917,6 @@ class TestRemoveGenericSendTo:
         monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
         monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
         monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
-        import json
 
         from tuck.bridge import BridgeAPI
 
@@ -942,7 +927,7 @@ class TestRemoveGenericSendTo:
 
         _make_marker_bat(tmp_path / f"{PROFILE_SHORTCUT_PREFIX}keep-me.bat")
 
-        resp = json.loads(api.remove_generic_sendto())
+        resp = api.remove_generic_sendto()
         assert resp["ok"]
         assert not (tmp_path / SENDTO_BATCH_NAME).exists()
         assert (tmp_path / f"{PROFILE_SHORTCUT_PREFIX}keep-me.bat").exists()
@@ -954,7 +939,6 @@ class TestRemoveGenericSendTo:
         monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
         monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
         monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
-        import json
 
         from tuck.bridge import BridgeAPI
 
@@ -962,7 +946,7 @@ class TestRemoveGenericSendTo:
         api._settings.load()
 
         _make_foreign_bat(tmp_path / SENDTO_BATCH_NAME)
-        resp = json.loads(api.remove_generic_sendto())
+        resp = api.remove_generic_sendto()
         assert resp["ok"]
         assert (tmp_path / SENDTO_BATCH_NAME).exists()
 
@@ -974,7 +958,6 @@ class TestRemoveGenericSendTo:
         monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
         monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
         monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
-        import json
 
         from tuck.bridge import BridgeAPI
 
@@ -989,7 +972,7 @@ class TestRemoveGenericSendTo:
         foreign_lnk = tmp_path / f"{PROFILE_SHORTCUT_PREFIX}keep-me.lnk"
         foreign_lnk.write_text("foreign")
 
-        resp = json.loads(api.remove_generic_sendto())
+        resp = api.remove_generic_sendto()
         assert resp["ok"]
 
         assert not owned_lnk.exists()

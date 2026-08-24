@@ -90,6 +90,12 @@
     return null;
   }
 
+  function segmentPresentationState(index, activeIndex) {
+    return {
+      className: "tl-segment" + (index === activeIndex ? " active" : ""),
+    };
+  }
+
   return {
     ZOOM_MIN: ZOOM_MIN,
     ZOOM_MAX: ZOOM_MAX,
@@ -99,6 +105,7 @@
     rulerStep: rulerStep,
     rulerMajorEvery: rulerMajorEvery,
     editKeyIntent: editKeyIntent,
+    segmentPresentationState: segmentPresentationState,
   };
 });
 
@@ -110,7 +117,6 @@
   var snapOn = true;
   var timelineZoom = 1;
   var TL_ZOOM_MIN = root.TimelineCore.ZOOM_MIN;
-  var TL_ZOOM_MAX = root.TimelineCore.ZOOM_MAX;
   var TL_SNAP_PX = 8;
 
 var _tlDrag = null;
@@ -277,9 +283,10 @@ function paintTrimChrome() {
   var endPct = full > 0 ? (bounds.end / full) * 100 : 100;
   for (var i = 0; i < segments.length; i++) {
     var segmentAudioMuted = !!segments[i].muted;
+    var presentation = TimelineCore.segmentPresentationState(i, active);
     var range = document.createElement("button");
     range.type = "button";
-    range.className = "tl-segment" + (i === active ? " active" : "");
+    range.className = presentation.className;
     range.dataset.segmentIndex = String(i);
     range.style.setProperty("--segment-color", segmentColor(i));
     range.style.left = (segments[i].start / (full || 1)) * 100 + "%";
@@ -301,6 +308,21 @@ function paintTrimChrome() {
       i === active && sourceGroupSelected ? "true" : "false",
     );
     range.setAttribute("aria-keyshortcuts", "ArrowLeft ArrowRight");
+    var surface = document.createElement("span");
+    surface.className = "tl-segment-surface";
+    var touchesPrevious =
+      i > 0 && Math.abs(segments[i - 1].end - segments[i].start) < 0.001;
+    var touchesNext =
+      i + 1 < segments.length &&
+      Math.abs(segments[i].end - segments[i + 1].start) < 0.001;
+    surface.style.setProperty(
+      "--segment-inset-start",
+      touchesPrevious ? "2px" : "0px",
+    );
+    surface.style.setProperty(
+      "--segment-inset-end",
+      touchesNext ? "2px" : "0px",
+    );
     var badgeLabel = document.createElement("span");
     badgeLabel.className = "tl-segment-badge";
     badgeLabel.setAttribute("aria-hidden", "true");
@@ -321,7 +343,8 @@ function paintTrimChrome() {
       formatSelectedDuration(segments[i].end - segments[i].start);
     rangeLabel.textContent = timeText;
     copy.append(nameLabel, rangeLabel);
-    range.append(badgeLabel, copy);
+    surface.append(badgeLabel, copy);
+    range.appendChild(surface);
     var timeLabel = document.createElement("span");
     timeLabel.className = "tl-segment-time";
     timeLabel.setAttribute("aria-hidden", "true");
@@ -1017,21 +1040,14 @@ function applyTimelineHeight(value) {
 
 function syncTimelineTrackCount(importedCount) {
   var count = Math.max(0, Math.round(Number(importedCount) || 0));
-  var nextTrackCount = 2 + count;
-  var addedTrack = nextTrackCount > timelineTrackCount;
-  timelineTrackCount = nextTrackCount;
+  timelineTrackCount = 2 + count;
   if (!window.TuckLayout) return;
-  if (timelineHeightSetting === 0) {
-    applyTimelineHeight(0);
-    return;
-  }
-  if (!addedTrack) return;
-  var editor = byId("audio-editor");
-  if (!editor) return;
-  var required = TuckLayout.timelineAutoHeight(timelineTrackCount, window.innerHeight);
-  if (editor.getBoundingClientRect().height + 0.5 < required) {
-    saveTimelineHeight(applyTimelineHeight(required));
-  }
+  var height = TuckLayout.timelineHeightForTrackCount(
+    timelineHeightSetting,
+    timelineTrackCount,
+    window.innerHeight,
+  );
+  if (height != null) applyTimelineHeight(height);
 }
 
 function saveTimelineHeight(value) {
@@ -1039,7 +1055,7 @@ function saveTimelineHeight(value) {
   if (window.appSettings) appSettings.timeline_height = timelineHeightSetting;
   if (!api || typeof api.saveSettings !== "function") return;
   api
-    .saveSettings(JSON.stringify({ timeline_height: timelineHeightSetting }))
+    .saveSettings({ timeline_height: timelineHeightSetting })
     .then(function (response) {
       if (!response.ok) toast(response.error || "Could not save timeline height.", "err");
     })
@@ -1124,13 +1140,16 @@ function resetTimelineHeight(event) {
 function initTimelineResizer() {
   var separator = byId("timeline-resizer");
   if (!separator) return;
+  window.addEventListener("resize", function () {
+    applyTimelineHeight(timelineHeightSetting);
+  });
   separator.addEventListener("pointerdown", beginTimelineResize);
   window.addEventListener("pointermove", moveTimelineResize);
   window.addEventListener("pointerup", endTimelineResize);
   window.addEventListener("pointercancel", endTimelineResize);
   separator.addEventListener("keydown", handleTimelineResizeKey);
   separator.addEventListener("dblclick", resetTimelineHeight);
-  restoreTimelineHeight(0);
+  restoreTimelineHeight(TuckLayout.initialTimelineHeightSetting(root.appSettings));
 }
 
 
@@ -1170,6 +1189,7 @@ function initTimelineResizer() {
     paintTrimChrome: paintTrimChrome,
     playbackSegments: playbackSegments,
     removeActiveSegment: removeActiveSegment,
+    resetTimelineHeight: resetTimelineHeight,
     resetSegments: resetSegments,
     restoreTimelineHeight: restoreTimelineHeight,
     segmentColor: segmentColor,

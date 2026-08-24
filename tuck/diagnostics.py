@@ -9,7 +9,8 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__
-from .encoding.capabilities import _find_ffmpeg, get_encoder_capabilities
+from .encoding.capabilities import get_encoder_capabilities
+from .media_tools import find_ffmpeg
 from .models import EncodePlan
 from .probe import is_ffprobe_available
 
@@ -61,7 +62,7 @@ def build_diagnostics(
     profile_name: str = "",
     extra: dict[str, Any] | None = None,
 ) -> str:
-    ffmpeg_path = _find_ffmpeg() or ""
+    ffmpeg_path = find_ffmpeg() or ""
     caps = get_encoder_capabilities()
     packaged = bool(getattr(sys, "frozen", False) or hasattr(sys, "_MEIPACK"))
 

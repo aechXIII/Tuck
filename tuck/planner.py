@@ -5,17 +5,19 @@ import math
 from dataclasses import replace
 from pathlib import Path
 
+from .encoding.target_size import (
+    MAX_AUDIO_BITRATE,
+    MIN_VIDEO_BITRATE,
+    calculate_target_size_bitrates,
+)
 from .formatting import format_size
 from .models import (
-    _AMF_ENCODERS,
-    _NVENC_ENCODERS,
     ENCODER_AUTO,
     ENCODER_AUTO_FAST,
     FPS_MODE_CUSTOM,
     FPS_MODE_LIMIT,
     FPS_MODE_SOURCE,
     RC_EXPLICIT_BITRATE,
-    RCM_CBR,
     RES_MODE_CUSTOM,
     RES_MODE_LIMIT,
     RES_MODE_SOURCE,
@@ -35,14 +37,16 @@ from .models import (
     oriented_dimensions,
     source_audio_output_pieces,
     validate_audio_tracks,
-    validate_rate_control_matrix,
     validate_segments,
 )
+from .models.encoding_policy import (
+    AMF_ENCODERS,
+    NVENC_ENCODERS,
+)
+from .output_paths import resolve_output_collision
+from .planner_options import resolve_plan_options
 
 logger = logging.getLogger(__name__)
-
-MIN_VIDEO_BITRATE = 50_000
-MAX_AUDIO_BITRATE = 320_000
 
 
 def plan(
@@ -61,98 +65,28 @@ def plan(
     source = Path(source)
     info = source_info if source_info is not None else probe(source)
 
-    res_mode = profile.resolution_mode
-    fps_mode = profile.fps_mode
-    rate_ctrl = profile.rate_control
-    explicit_br = profile.explicit_bitrate
-    audio_br = profile.audio_bitrate
-    workflow = getattr(profile, "workflow", "compression")
-    rc_method = getattr(profile, "rate_control_method", RCM_CBR)
-    qp_val = getattr(profile, "qp", 23)
-    cq_val = getattr(profile, "cq", qp_val)
-    audio_enabled = True
-    source_audio_muted = False
-    source_audio_gain_db = 0.0
-    source_audio_segments = None
-    audio_tracks = []
-
-    if request is not None:
-        request.validate()
-        if request.target_size_bytes is not None:
-            pass
-        if request.resolution_mode is not None:
-            res_mode = request.resolution_mode
-        if request.fps_mode is not None:
-            fps_mode = request.fps_mode
-        if request.rate_control is not None:
-            rate_ctrl = request.rate_control
-        if request.explicit_bitrate is not None:
-            explicit_br = request.explicit_bitrate
-        if request.audio_bitrate is not None:
-            audio_br = request.audio_bitrate
-        if request.audio_enabled is not None:
-            audio_enabled = request.audio_enabled
-        if request.source_audio_muted is not None:
-            source_audio_muted = request.source_audio_muted
-        if request.source_audio_gain_db is not None:
-            source_audio_gain_db = float(request.source_audio_gain_db)
-        if request.source_audio_segments is not None:
-            source_audio_segments = list(request.source_audio_segments)
-        if request.audio_tracks is not None:
-            audio_tracks = list(request.audio_tracks)
-        if request.workflow is not None:
-            workflow = request.workflow
-        if request.rate_control_method is not None:
-            rc_method = request.rate_control_method
-        if request.cq is not None:
-            cq_val = request.cq
-        if request.qp is not None:
-            qp_val = request.qp
-
-    if request is not None and request.keep_audio is not None:
-        keep_audio = bool(request.keep_audio)
-    else:
-        keep_audio = bool(getattr(profile, "keep_audio", False))
-
-    scaler = getattr(profile, "scaler", None) or "neighbor"
-    if request is not None and request.scaler is not None:
-        scaler = request.scaler
-
-    video_encoder = getattr(profile, "video_encoder", "libx264")
-    crf = getattr(profile, "crf", 23)
-    tune = getattr(profile, "tune", "")
-
-    if request is not None:
-        if request.video_encoder is not None:
-            video_encoder = request.video_encoder
-        if request.crf is not None:
-            crf = request.crf
-        if request.tune is not None:
-            tune = request.tune
-
-    two_pass = profile.two_pass
-    preset = profile.preset
-    if request is not None:
-        if request.two_pass is not None:
-            two_pass = request.two_pass
-        if request.preset is not None:
-            preset = request.preset
-
-    from .models import (
-        _native_preset_for_encoder,
-        _normalize_legacy_rc_matrix,
-        _validate_rc_method_for_encoder,
-        _validate_tune_for_encoder,
-    )
-
-    preset = _native_preset_for_encoder(preset, video_encoder)
-    _validate_tune_for_encoder(tune, video_encoder)
-    _validate_rc_method_for_encoder(rc_method, video_encoder)
-    if request is None or request.rate_control_method is None:
-        rc_method, two_pass = _normalize_legacy_rc_matrix(
-            workflow, rate_ctrl, rc_method, video_encoder, two_pass
-        )
-    validate_rate_control_matrix(workflow, rate_ctrl, rc_method, video_encoder, two_pass)
+    options = resolve_plan_options(profile, request)
+    res_mode = options.resolution_mode
+    fps_mode = options.fps_mode
+    rate_ctrl = options.rate_control
+    explicit_br = options.explicit_bitrate
+    audio_br = options.audio_bitrate
+    workflow = options.workflow
+    rc_method = options.rate_control_method
+    qp_val = options.qp
+    cq_val = options.cq
+    audio_enabled = options.audio_enabled
+    source_audio_muted = options.source_audio_muted
+    source_audio_gain_db = options.source_audio_gain_db
+    source_audio_segments = options.source_audio_segments
+    audio_tracks = options.audio_tracks
+    keep_audio = options.keep_audio
+    scaler = options.scaler
+    video_encoder = options.video_encoder
+    crf = options.crf
+    tune = options.tune
+    two_pass = options.two_pass
+    preset = options.preset
 
     if not math.isfinite(info.duration) or info.duration <= 0:
         raise ValueError(f"Duration is zero or negative: {info.duration:.2f}s")
@@ -265,7 +199,7 @@ def plan(
     if output.resolve() == source.resolve():
         raise ValueError("Output path must differ from source path")
 
-    output = _resolve_output_collision(output, respect_reservation=False)
+    output = resolve_output_collision(output, respect_reservation=False)
 
     oriented_width, oriented_height = oriented_dimensions(transform, info.width, info.height)
     resolution_width, resolution_height = oriented_width, oriented_height
@@ -400,9 +334,7 @@ def plan(
                 f"Lower the explicit bitrate or choose a larger profile."
             )
     else:
-        from .encoding.target_size import calculate_target_size_bitrates
-
-        hardware = video_encoder in _NVENC_ENCODERS | _AMF_ENCODERS
+        hardware = video_encoder in NVENC_ENCODERS | AMF_ENCODERS
         if video_encoder in (ENCODER_AUTO, ENCODER_AUTO_FAST):
             hardware = True
         ts_plan = calculate_target_size_bitrates(
@@ -484,40 +416,6 @@ def plan(
     )
 
     return enc_plan
-
-
-def _reservation_path(output: Path) -> Path:
-    return output.with_suffix(output.suffix + ".reserved")
-
-
-def _reservation_exists(output: Path) -> bool:
-    return _reservation_path(output).exists()
-
-
-def _path_is_taken(output: Path, *, respect_reservation: bool = True) -> bool:
-    if output.exists():
-        return True
-    if not respect_reservation:
-        return False
-    return _reservation_exists(output)
-
-
-def _resolve_output_collision(output: Path, *, respect_reservation: bool = True) -> Path:
-    if not _path_is_taken(output, respect_reservation=respect_reservation):
-        return output
-    base = output.parent / output.stem
-    suffix = output.suffix
-    counter = 1
-    while True:
-        candidate = base.parent / f"{base.name}_{counter}{suffix}"
-        if not _path_is_taken(candidate, respect_reservation=respect_reservation):
-            logger.info("Output collision resolved: %s -> %s", output, candidate)
-            return candidate
-        counter += 1
-        if counter > 100:
-            raise ValueError(
-                f"Too many output file collisions for {output}. Clean up existing files."
-            )
 
 
 def _scale_resolution(

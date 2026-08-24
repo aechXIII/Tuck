@@ -6,14 +6,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from tuck.engine import _find_ffmpeg
+from tuck.media_tools import find_ffmpeg
 from tuck.probe import _parse_display_rotation, probe, probe_audio
 
 
 def test_probe_audio_accepts_audio_only_files(tmp_path, monkeypatch) -> None:
     source = tmp_path / "music.flac"
     source.write_bytes(b"audio")
-    monkeypatch.setattr("tuck.probe._find_ffprobe", lambda: "ffprobe")
+    monkeypatch.setattr("tuck.media_tools.find_ffprobe", lambda: "ffprobe")
     monkeypatch.setattr(
         "tuck.probe.subprocess.run",
         lambda *_args, **_kwargs: SimpleNamespace(
@@ -54,7 +54,7 @@ def test_parse_display_rotation_preserves_non_quarter_angles() -> None:
 
 
 def test_probe_reports_display_oriented_dimensions(tmp_path) -> None:
-    ffmpeg = _find_ffmpeg()
+    ffmpeg = find_ffmpeg()
     if not ffmpeg:
         pytest.skip("ffmpeg unavailable")
 

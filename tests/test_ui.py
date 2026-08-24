@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 WEB_DIR = Path("tuck/web")
@@ -11,32 +12,9 @@ def _asset(name: str) -> str:
 
 def _web_source() -> str:
     return "\n".join(
-        _asset(name)
-        for name in (
-            "index.html",
-            "styles.css",
-            "shortcuts.css",
-            "settings.css",
-            "player.css",
-            "audio.css",
-            "timeline.css",
-            "queue.css",
-            "transform.css",
-            "shortcuts.js",
-            "notifications.js",
-            "app.js",
-            "audio.js",
-            "encoding-ui.js",
-            "history.js",
-            "layout.js",
-            "panels.js",
-            "segments.js",
-            "player.js",
-            "timeline.js",
-            "queue.js",
-            "settings.js",
-            "transform.js",
-        )
+        path.read_text(encoding="utf-8")
+        for path in sorted(WEB_DIR.iterdir())
+        if path.suffix in {".css", ".html", ".js"}
     )
 
 
@@ -44,32 +22,9 @@ def test_web_ui_is_packaged_source_asset() -> None:
     html = _asset("index.html")
     app_js = _asset("app.js")
 
-    for asset in (
-        "styles.css",
-        "shortcuts.css",
-        "settings.css",
-        "player.css",
-        "audio.css",
-        "timeline.css",
-        "queue.css",
-        "transform.css",
-        "shortcuts.js",
-        "notifications.js",
-        "app.js",
-        "audio.js",
-        "encoding-ui.js",
-        "history.js",
-        "layout.js",
-        "panels.js",
-        "segments.js",
-        "player.js",
-        "timeline.js",
-        "queue.js",
-        "settings.js",
-        "crop.js",
-        "transform.js",
-    ):
-        assert asset in html
+    assets = re.findall(r'<(?:link|script)\b[^>]*(?:href|src)="([^"]+)"', html)
+    assert assets
+    for asset in assets:
         assert (WEB_DIR / asset).is_file()
     assert "window.pywebview.api" in app_js
     assert "pywebviewready" in app_js
@@ -108,7 +63,6 @@ def test_application_shortcuts_use_the_central_command_dispatcher() -> None:
     assert "seekPreview(0);" in app_js
     assert "seekPreview(videoDuration());" in app_js
     assert "return !!libraryClipTarget(event);" in app_js
-    assert 'if (e.key === "Delete" || e.key === "Backspace")' in app_js
     assert 'TuckShortcuts.registerAction("timeline.split"' in audio_js
     assert 'TuckShortcuts.registerAction("edit.delete-selection"' in audio_js
     assert 'root.TuckShortcuts.registerAction("timeline.zoom-in"' in timeline_js
@@ -119,7 +73,6 @@ def test_application_shortcuts_use_the_central_command_dispatcher() -> None:
     assert 'aria-keyshortcuts="? Control+/"' in html
     assert 'aria-keyshortcuts="ArrowLeft"' in html
     assert 'aria-keyshortcuts="Control+0"' in html
-    assert 'div.setAttribute("aria-keyshortcuts", "Enter Space Delete ArrowUp ArrowDown")' in app_js
     assert 'window.addEventListener("keydown", function (e)' not in app_js
     assert 'root.document.addEventListener("keydown", function (event)' not in audio_js
     assert 'document.addEventListener("keydown", function (event)' not in history_js
@@ -206,6 +159,8 @@ def test_editor_shell_uses_adaptive_accessible_panels() -> None:
 
     assert "--library-width: 232px;" in styles
     assert "--inspector-width: 316px;" in styles
+    assert "--inspector-wide-width: 344px;" in styles
+    assert "--inspector-overlay-width: clamp(336px, 38vw, 380px);" in styles
     assert "resize: horizontal" not in styles
     assert "new ResizeObserver(function (entries)" not in app_js
     assert 'byId("left").style.width' not in encoding_js
@@ -215,7 +170,7 @@ def test_editor_shell_uses_adaptive_accessible_panels() -> None:
     assert 'id="panel-toggle-inspector"' in html
     assert 'aria-controls="right"' in html
     assert 'id="panel-toggle-inspector"' in topbar and 'aria-label="Inspector"' in topbar
-    assert '<title>Tuck</title>' in html
+    assert "<title>Tuck</title>" in html
     assert 'id="tb-logo"' not in topbar
     assert topbar.index('id="panel-toggle-library"') < topbar.index('id="btn-undo"')
     assert topbar.index('id="btn-undo"') < topbar.index('id="btn-redo"')
@@ -239,12 +194,15 @@ def test_editor_shell_uses_adaptive_accessible_panels() -> None:
     assert 'role="separator"' in html
     assert 'aria-valuemin="170"' in html
     assert 'aria-valuemax="300"' in html
-    assert 'aria-valuenow="205"' in html
+    assert 'aria-valuenow="190"' in html
+    assert 'id="btn-timeline-height-fit"' in html
+    assert 'aria-label="Fit timeline height to tracks"' in html
     assert 'id="seq-playhead-time"' in html
     assert "function handleTimelineResizeKey(event)" in timeline_js
+    assert "resetTimelineHeight: resetTimelineHeight" in timeline_js
     assert "function formatTimelineTime(seconds)" in timeline_js
     assert 'byId("seq-playhead-time")' in timeline_js
-    assert "saveSettings(JSON.stringify({ timeline_height: timelineHeightSetting }))" in timeline_js
+    assert "saveSettings({ timeline_height: timelineHeightSetting })" in timeline_js
     assert 'frame.classList.toggle("is-zoomed", zoomed);' in timeline_js
     assert 'frame.style.removeProperty("--tl-width");' in timeline_js
     assert '<div id="qbar" class="hid">' in html

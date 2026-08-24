@@ -18,9 +18,9 @@ def temp_dir():
 
 def _create_valid_mp4(path: Path) -> bool:
 
-    from tuck.engine import _find_ffmpeg
+    from tuck.media_tools import find_ffmpeg
 
-    ffmpeg = _find_ffmpeg()
+    ffmpeg = find_ffmpeg()
     if not ffmpeg:
         return False
     try:

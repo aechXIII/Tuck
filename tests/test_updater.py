@@ -282,7 +282,7 @@ class TestBridgeUpdateCheckConcurrency:
 
         api._checking_updates = True
 
-        result = json.loads(api.check_for_updates())
+        result = api.check_for_updates()
         assert not result["available"]
         assert "already in progress" in result["error"]
 
@@ -318,7 +318,7 @@ class TestBridgeUpdateCheckConcurrency:
         assert not api._checking_updates
 
         with patch("tuck.bridge._check_for_updates", side_effect=RuntimeError("boom")):
-            result = json.loads(api.check_for_updates())
+            result = api.check_for_updates()
 
         assert not result["available"]
         assert result.get("error") == "boom"

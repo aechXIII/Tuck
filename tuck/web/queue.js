@@ -43,15 +43,14 @@ function mapQueueItems(items) {
       clip._progress = item.progress || 0;
       if (item.error) clip._queueError = item.error;
       if (item.state === "completed" && previousState !== "completed") {
-        toast("Finished: " + esc(clip.name), "ok");
         completed = true;
       }
       if (item.state === "failed" && previousState !== "failed")
         toast(
           'Failed to process "' +
-            esc(clip.name) +
+            clip.name +
             '": ' +
-            esc(errorSummary(item.error)),
+            errorSummary(item.error),
           "err",
         );
       if (item.result_size) clip._resultSize = item.result_size;
@@ -125,10 +124,12 @@ async function pollQueue() {
       else if (items[i].state === "pending") pending.push(items[i]);
     }
     var done = 0,
+      completedCount = 0,
       failed = 0;
     for (var j = 0; j < items.length; j++) {
       if (["completed", "failed", "cancelled"].indexOf(items[j].state) >= 0)
         done++;
+      if (items[j].state === "completed") completedCount++;
       if (items[j].state === "failed") failed++;
     }
     var active = running.length + pending.length;
@@ -162,6 +163,9 @@ async function pollQueue() {
     byId("qbar").classList.toggle("hid", items.length === 0);
     byId("q-active").classList.toggle("hid", items.length === 0);
     byId("qidle").classList.toggle("hid", items.length > 0);
+    byId("btn-stop-after").disabled = active === 0;
+    byId("btn-cancel").disabled = active === 0;
+    byId("btn-clear").disabled = completedCount === 0;
     if (!items.length) return;
     if (running.length) {
       var item = running[0],
@@ -320,7 +324,7 @@ async function copyDiagnostics(itemId) {
       toast("Diagnostics is unavailable in this build.", "err");
       return;
     }
-    var r = await api.getDiagnostics(JSON.stringify(ctx));
+    var r = await api.getDiagnostics(ctx);
     if (!r || !r.ok || !r.text) {
       toast((r && r.error) || "Could not build diagnostics.", "err");
       return;

@@ -9,14 +9,17 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from ..media_tools import find_ffmpeg
 from ..models import (
-    _AMF_ENCODERS,
-    _CPU_ENCODERS,
-    _NVENC_ENCODERS,
-    _VALID_VIDEO_ENCODERS,
     ENCODER_AUTO,
     ENCODER_AUTO_COMPRESSION,
     ENCODER_AUTO_FAST,
+)
+from ..models.encoding_policy import (
+    AMF_ENCODERS,
+    CPU_ENCODERS,
+    NVENC_ENCODERS,
+    VALID_VIDEO_ENCODERS,
 )
 
 logger = logging.getLogger(__name__)
@@ -63,31 +66,6 @@ class EncoderCapabilities:
         }
 
 
-def _find_ffmpeg() -> str | None:
-    from ..settings import get_settings_manager
-
-    mgr = get_settings_manager()
-    custom = mgr.get_setting("ffmpeg_path", "")
-    if custom and os.path.isfile(str(custom)):
-        return str(custom)
-
-    import shutil
-
-    found = shutil.which("ffmpeg")
-    if found:
-        return found
-
-    candidates = [
-        r"C:\ffmpeg\bin\ffmpeg.exe",
-        r"C:\Program Files\ffmpeg\bin\ffmpeg.exe",
-        r"C:\Program Files (x86)\ffmpeg\bin\ffmpeg.exe",
-    ]
-    for c in candidates:
-        if os.path.isfile(c):
-            return c
-    return None
-
-
 def _detect_available_encoders(ffmpeg_path: str) -> frozenset[str]:
     try:
         result = subprocess.run(
@@ -102,7 +80,7 @@ def _detect_available_encoders(ffmpeg_path: str) -> frozenset[str]:
             return frozenset()
         available: set[str] = set()
         for line in result.stdout.splitlines():
-            for enc in _VALID_VIDEO_ENCODERS:
+            for enc in VALID_VIDEO_ENCODERS:
                 if enc in line:
                     available.add(enc)
         return frozenset(available)
@@ -148,10 +126,10 @@ def _hardware_encoder_works(ffmpeg_path: str, encoder: str) -> bool:
 
 def _detect_usable_encoders(ffmpeg_path: str) -> frozenset[str]:
     compiled = _detect_available_encoders(ffmpeg_path)
-    usable = set(compiled - (_NVENC_ENCODERS | _AMF_ENCODERS))
+    usable = set(compiled - (NVENC_ENCODERS | AMF_ENCODERS))
     usable.update(
         encoder
-        for encoder in compiled & (_NVENC_ENCODERS | _AMF_ENCODERS)
+        for encoder in compiled & (NVENC_ENCODERS | AMF_ENCODERS)
         if _hardware_encoder_works(ffmpeg_path, encoder)
     )
     return frozenset(usable)
@@ -174,7 +152,7 @@ def _load_cached_encoders(ffmpeg_path: str, max_age_days: int) -> frozenset[str]
             return None
         encoders = data["encoders"]
         if not isinstance(encoders, list) or not all(
-            isinstance(encoder, str) and encoder in _VALID_VIDEO_ENCODERS for encoder in encoders
+            isinstance(encoder, str) and encoder in VALID_VIDEO_ENCODERS for encoder in encoders
         ):
             return None
         return frozenset(encoders)
@@ -207,7 +185,7 @@ def get_available_encoders(*, refresh: bool = False) -> frozenset[str]:
     with _encoder_cache_lock:
         if _encoder_cache is not None and not refresh:
             return _encoder_cache
-        ffmpeg_path = _find_ffmpeg()
+        ffmpeg_path = find_ffmpeg()
         if not ffmpeg_path:
             _encoder_cache = frozenset()
             return _encoder_cache
@@ -241,9 +219,9 @@ def get_encoder_capabilities(
     encs = available if available is not None else get_available_encoders()
     return EncoderCapabilities(
         available=encs,
-        has_nvidia=bool(encs & _NVENC_ENCODERS),
-        has_amd=bool(encs & _AMF_ENCODERS),
-        has_cpu=bool(encs & _CPU_ENCODERS),
+        has_nvidia=bool(encs & NVENC_ENCODERS),
+        has_amd=bool(encs & AMF_ENCODERS),
+        has_cpu=bool(encs & CPU_ENCODERS),
     )
 
 
@@ -294,18 +272,11 @@ def resolve_encoder(
 
 
 def is_hardware_encoder(encoder: str) -> bool:
-    return encoder in _NVENC_ENCODERS or encoder in _AMF_ENCODERS
+    return encoder in NVENC_ENCODERS or encoder in AMF_ENCODERS
 
 
-def is_hardware_init_failure(stderr: str, returncode: int = -1) -> bool:
-    _ = returncode
+def is_hardware_init_failure(stderr: str) -> bool:
     text = (stderr or "").lower()
     if not text:
         return False
     return any(marker in text for marker in _HW_INIT_MARKERS)
-
-
-def cpu_fallback_encoder(encoder: str) -> str:
-    if encoder in ("hevc_nvenc", "hevc_amf", "libx265"):
-        return "libx265"
-    return "libx264"

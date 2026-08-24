@@ -130,13 +130,8 @@ def run_gui(
     from .bridge import BridgeAPI
 
     api = BridgeAPI()
-    cleaned_up = False
 
     def _cleanup_backends() -> None:
-        nonlocal cleaned_up
-        if cleaned_up:
-            return
-        cleaned_up = True
         api._queue.stop()
         api._media_server.stop()
 

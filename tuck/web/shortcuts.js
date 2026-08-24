@@ -888,14 +888,14 @@
         <h2 id="kbs-dialog-title">Keyboard shortcuts</h2>
         <p>Browse the keyboard or search by action and key.</p>
       </div>
-      <button type="button" class="kbs-close" onclick="closeMod()" aria-label="Close keyboard shortcuts">
+      <button type="button" class="kbs-close" id="kbs-dialog-close" aria-label="Close keyboard shortcuts">
         <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3l10 10M13 3L3 13"></path></svg>
       </button>
     </div>
     <div class="kbs-search">
       <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.5"></circle><line x1="10" y1="10" x2="14" y2="14"></line></svg>
-      <input type="search" id="kbs-search-input" aria-label="Search keyboard shortcuts" placeholder="Search actions or keys…" autocomplete="off" spellcheck="false" oninput="filterShortcuts(this.value)" />
-      <button type="button" class="kbs-clear is-hidden" id="kbs-search-clear" onclick="clearShortcutSearch()" aria-label="Clear search" aria-hidden="true" disabled tabindex="-1">
+      <input type="search" id="kbs-search-input" aria-label="Search keyboard shortcuts" placeholder="Search actions or keys…" autocomplete="off" spellcheck="false" />
+      <button type="button" class="kbs-clear is-hidden" id="kbs-search-clear" aria-label="Clear search" aria-hidden="true" disabled tabindex="-1">
         <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"></path></svg>
       </button>
       <span id="kbs-match-count" aria-live="polite"></span>
@@ -1011,6 +1011,12 @@
     box.innerHTML = dialogMarkup();
     box.removeEventListener("keydown", trapFocus);
     box.addEventListener("keydown", trapFocus);
+    byId("kbs-dialog-close").addEventListener("click", root.closeMod);
+    byId("kbs-search-clear").addEventListener("click", clearSearch);
+    var input = byId("kbs-search-input");
+    input.addEventListener("input", function () {
+      renderResults(input.value);
+    });
     returnFocus =
       root.document.activeElement &&
       root.document.activeElement !== root.document.body
@@ -1018,15 +1024,12 @@
         : byId("shortcuts-toggle");
     byId("mod-overlay").classList.add("open");
     renderResults("");
-    var input = byId("kbs-search-input");
     if (input) input.focus();
   }
 
   shortcuts.registerAction("help.shortcuts", openDialog);
   root.addEventListener("keydown", dispatchCommand);
 
-  root.clearShortcutSearch = clearSearch;
-  root.filterShortcuts = renderResults;
   root.openKeyboardShortcuts = openDialog;
   root.resetKeyboardShortcutsDialog = resetDialog;
 })(typeof window !== "undefined" ? window : null);

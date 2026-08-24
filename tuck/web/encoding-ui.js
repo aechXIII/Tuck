@@ -50,7 +50,7 @@ function persistSession() {
     last_upscale_profile_id: lastUpscale,
     left_sidebar_width: 220,
   };
-  api.saveSettings(JSON.stringify(data)).then(function (r) {
+  api.saveSettings(data).then(function (r) {
     if (r.ok) appSettings = Object.assign(appSettings, data);
   });
 }
@@ -279,10 +279,10 @@ function updateSizePresets(v) {
     var b = document.createElement("button");
     b.textContent = mb + " MB";
     if (mb === v) b.classList.add("on");
-    b.onclick = function () {
+    b.addEventListener("click", function () {
       byId("sz-slider").value = mb;
       onSize(mb);
-    };
+    });
     c.appendChild(b);
   });
 }
@@ -641,7 +641,7 @@ async function reqPreview() {
   var req = buildReq(path);
   req._request_id = requestId;
   try {
-    var r = await api.createPlan(JSON.stringify(req));
+    var r = await api.createPlan(req);
     if (
       r.ok &&
       r.data &&
@@ -743,9 +743,7 @@ async function compressOne() {
     toast("Retry reading clip details before exporting.", "err");
     return;
   }
-  var r = await api.enqueueWithOptions(
-    JSON.stringify(buildReq(clips[selPath].path)),
-  );
+  var r = await api.enqueueWithOptions(buildReq(clips[selPath].path));
   if (!r.ok) toast("Error: " + r.error, "err");
   pollQueue();
 }
@@ -764,7 +762,7 @@ async function compressAll() {
   var reqs = [];
   for (var i = 0; i < keys.length; i++)
     reqs.push(buildReq(clips[keys[i]].path));
-  var r = await api.enqueueBatch(JSON.stringify(reqs));
+  var r = await api.enqueueBatch(reqs);
   if (!r.ok) toast("Error: " + (r.error || "Failed"), "err");
   if (r.errors && r.errors.length) toast("Some errors occurred.", "err");
   pollQueue();
@@ -781,7 +779,7 @@ async function saveProfileChanges() {
     .selectedOptions[0].textContent.split(" (")[0]
     .trim();
   var data = savePayload(name);
-  var r = await api.updateProfile(pid, JSON.stringify(data));
+  var r = await api.updateProfile(pid, data);
   if (r.ok) {
     if (selPath && clips[selPath]) {
       clips[selPath].transformOverride = false;
@@ -802,10 +800,12 @@ async function saveProfileAs() {
       <input type="text" id="sp-name" placeholder="My profile">
     </div>
     <div class="mod-btns">
-      <button class="btn2" onclick="closeMod()">Cancel</button>
-      <button class="btn1" style="width:auto" onclick="doSaveAs()">Save</button>
+      <button type="button" class="btn2" id="sp-cancel">Cancel</button>
+      <button type="button" class="btn1" id="sp-save" style="width:auto">Save</button>
     </div>`,
   );
+  byId("sp-cancel").addEventListener("click", closeMod);
+  byId("sp-save").addEventListener("click", doSaveAs);
   setTimeout(function () {
     var inp = byId("sp-name");
     if (inp) {
@@ -824,7 +824,7 @@ async function doSaveAs() {
   }
   closeMod();
   var data = savePayload(name);
-  var r = await api.createProfile(JSON.stringify(data));
+  var r = await api.createProfile(data);
   if (r.ok) {
     await loadSettings();
     snapProf();

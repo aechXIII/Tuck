@@ -197,6 +197,11 @@
     selectedTrackId = selection.trackId;
     selectedClipId = selection.clipId;
     paintTimelineSelection();
+    if (
+      selection.trackId !== "source" &&
+      typeof root.setInspectorTab === "function"
+    )
+      root.setInspectorTab("audio");
   }
 
   function renderSourceTrack(clip, state, total) {
@@ -314,11 +319,11 @@
       muteEl.dataset.tip = track.muted ? "Unmute " + track.name : "Mute " + track.name;
       muteEl.setAttribute("aria-pressed", track.muted ? "true" : "false");
       muteEl.setAttribute("aria-label", muteEl.dataset.tip);
-      muteEl.onclick = function (event) {
+      muteEl.addEventListener("click", function (event) {
         event.stopPropagation();
         selectedTrackId = track.id;
         apiObject.toggleTrackMute(track.id);
-      };
+      });
       head.appendChild(muteEl);
     }
 
@@ -334,11 +339,11 @@
         "</svg>";
       removeEl.dataset.tip = "Remove " + track.name;
       removeEl.setAttribute("aria-label", removeEl.dataset.tip);
-      removeEl.onclick = function (event) {
+      removeEl.addEventListener("click", function (event) {
         event.stopPropagation();
         selectedTrackId = track.id;
         apiObject.removeTrack(track.id);
-      };
+      });
       head.appendChild(removeEl);
     }
 
@@ -444,10 +449,7 @@
     if (master) {
       master.classList.toggle("on", state.enabled);
       master.setAttribute("aria-checked", state.enabled ? "true" : "false");
-      master.setAttribute(
-        "aria-label",
-        state.enabled ? "Exclude from export" : "Include in export",
-      );
+      master.setAttribute("aria-label", "Include audio in export");
     }
     renderSourceTrack(clip, state, total);
     var tracks = root.byId("imported-audio-tracks");
