@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="1500"
+  height="1500"
+  viewBox="0 0 1500 1500"
+  role="img"
+  aria-labelledby="title description"
+>
+  <title id="title">Tuck logo</title>
+  <desc id="description">The original purple Tuck split-panel logo on a transparent background.</desc>
+
+  <defs>
+    <linearGradient id="cursor-gradient" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#c9b3fc" />
+      <stop offset="1" stop-color="#c8affc" />
+    </linearGradient>
+  </defs>
+
+  <path
+    fill="#7d39fc"
+    d="M665 542H321c-60.8 0-110 49.2-110 110v196c0 60.8 49.2 110 110 110h344c13.3 0 24-10.7 24-24V566c0-13.3-10.7-24-24-24Z"
+  />
+  <path
+    fill="#7d39fc"
+    d="M835 542h344c60.8 0 110 49.2 110 110v196c0 60.8-49.2 110-110 110H835c-13.3 0-24-10.7-24-24V566c0-13.3 10.7-24 24-24Z"
+  />
+  <path
+    fill="url(#cursor-gradient)"
+    d="M706 372h88c8.8 0 16 7.2 16 16v88l-45 45v516c0 8.3-6.7 15-15 15s-15-6.7-15-15V521l-45-45v-88c0-8.8 7.2-16 16-16Z"
+  />
+</svg>

@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="1024"
+  height="1024"
+  viewBox="0 0 1024 1024"
+  role="img"
+  aria-labelledby="title description"
+>
+  <title id="title">Tuck transparent icon</title>
+  <desc id="description">A purple split-panel Tuck mark on a transparent background.</desc>
+
+  <defs>
+    <linearGradient id="center-gradient" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#c7b0ff" />
+      <stop offset="1" stop-color="#b594ff" />
+    </linearGradient>
+  </defs>
+
+  <!-- Optical scaling fills Windows' 24 px taskbar slot without clipping. -->
+  <g transform="translate(512 512) scale(1.2 1.25) translate(-512 -512)">
+    <path
+      fill="#7d39fc"
+      d="M392 402H246c-68.5 0-124 55.5-124 124v96c0 68.5 55.5 124 124 124h146c13.3 0 24-10.7 24-24V426c0-13.3-10.7-24-24-24Z"
+    />
+    <path
+      fill="#7d39fc"
+      d="M632 402h146c68.5 0 124 55.5 124 124v96c0 68.5-55.5 124-124 124H632c-13.3 0-24-10.7-24-24V426c0-13.3 10.7-24 24-24Z"
+    />
+    <path
+      fill="url(#center-gradient)"
+      stroke="#5a2da8"
+      stroke-width="8"
+      stroke-linejoin="round"
+      paint-order="stroke fill"
+      d="M480 358h64v407c0 17.7-14.3 32-32 32s-32-14.3-32-32V358Z"
+    />
+    <path
+      fill="url(#center-gradient)"
+      stroke="#5a2da8"
+      stroke-width="8"
+      stroke-linejoin="round"
+      paint-order="stroke fill"
+      d="M480 242h64c17.7 0 32 14.3 32 32v64l-64 60-64-60v-64c0-17.7 14.3-32 32-32Z"
+    />
+  </g>
+</svg>
