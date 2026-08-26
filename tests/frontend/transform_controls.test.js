@@ -110,3 +110,25 @@ test("transform controls are unavailable until a probed clip is selected", () =>
   assert.equal(transformFields.disabled, false);
   assert.equal(allControls.every((item) => !item.disabled), true);
 });
+
+test("reset all restores every transform value instead of only clearing crop", () => {
+  const clip = {
+    cropAspect: "9:16",
+    crop: { x: 10, y: 20, width: 720, height: 1280 },
+    rotation: 270,
+    flipHorizontal: true,
+    flipVertical: true,
+    sizingMode: "fill",
+  };
+
+  global.resetVideoTransformValues(clip);
+
+  assert.deepEqual(clip, {
+    cropAspect: "off",
+    crop: null,
+    rotation: 0,
+    flipHorizontal: false,
+    flipVertical: false,
+    sizingMode: "fit",
+  });
+});

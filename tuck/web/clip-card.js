@@ -30,9 +30,10 @@
 
   function appendStatus(document, cardMain, model) {
     var state = model.queueState || "";
+    if (state === "pending") return;
     var hasOpen = state === "completed" && model.resultPath;
     var hasCancel =
-      (state === "pending" || state === "running" || state === "processing") &&
+      (state === "running" || state === "processing") &&
       model.queueItemId;
     var hasRetry =
       (state === "failed" || state === "cancelled") && model.queueItemId;
@@ -68,6 +69,67 @@
     card.appendChild(element);
   }
 
+  function libraryGroup(model) {
+    var state = model.queueState || "";
+    if (state === "running" || state === "processing") return "encoding";
+    if (state === "pending") return "queued";
+    return "ready";
+  }
+
+  function groupClipModels(models) {
+    var definitions = [
+      { key: "encoding", label: "Encoding" },
+      { key: "queued", label: "Queued" },
+      { key: "ready", label: "Ready" },
+    ];
+    return definitions
+      .map(function (definition) {
+        return {
+          key: definition.key,
+          label: definition.label,
+          items: models.filter(function (model) {
+            return libraryGroup(model) === definition.key;
+          }),
+        };
+      })
+      .filter(function (group) {
+        return group.items.length > 0;
+      });
+  }
+
+  function groupHeading(group) {
+    if (!group || group.key === "encoding") return group ? group.label : "";
+    return group.label + " · " + group.items.length;
+  }
+
+  function groupedClipPaths(models) {
+    return groupClipModels(models).reduce(function (paths, group) {
+      return paths.concat(
+        group.items.map(function (model) {
+          return model.path;
+        }),
+      );
+    }, []);
+  }
+
+  function formatLibrarySize(bytes) {
+    if (!bytes) return "0 B";
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+    if (bytes < 1024 * 1024 * 1024)
+      return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+    return (bytes / (1024 * 1024 * 1024)).toFixed(1) + " GB";
+  }
+
+  function librarySummary(models) {
+    var bytes = models.reduce(function (total, model) {
+      return total + (Number(model.fileSize) || 0);
+    }, 0);
+    return {
+      countLabel: models.length + (models.length === 1 ? " video" : " videos"),
+      sizeLabel: formatLibrarySize(bytes),
+    };
+  }
+
   function createClipCard(document, model, callbacks) {
     var card = createElement(
       document,
@@ -80,6 +142,7 @@
     card.setAttribute("aria-keyshortcuts", "Enter Space Delete ArrowUp ArrowDown");
     card.setAttribute("title", model.name + " - drag handle to reorder");
     card.dataset.clipPath = model.path;
+    card.dataset.queueState = model.queueState || "ready";
     if (model.queueItemId) card.dataset.queueItemId = model.queueItemId;
 
     var drag = createElement(document, "span", "c-drag", "⋮⋮");
@@ -101,9 +164,39 @@
     }
     metadata.appendChild(metadataText);
     main.appendChild(metadata);
+    if (
+      model.queueState === "running" ||
+      model.queueState === "processing"
+    ) {
+      var progress = Math.max(0, Math.min(100, Number(model.progress) || 0));
+      var progressTrack = createElement(document, "div", "c-progress");
+      var progressFill = createElement(document, "span", "c-progress-fill");
+      progressFill.setAttribute("style", "width:" + progress + "%");
+      progressTrack.setAttribute("role", "progressbar");
+      progressTrack.setAttribute("aria-label", "Encoding progress");
+      progressTrack.setAttribute("aria-valuemin", "0");
+      progressTrack.setAttribute("aria-valuemax", "100");
+      progressTrack.setAttribute("aria-valuenow", String(Math.round(progress)));
+      progressTrack.appendChild(progressFill);
+      main.appendChild(progressTrack);
+    }
     appendStatus(document, main, model);
     card.appendChild(main);
-    appendBadge(document, card, model.badge);
+    if (model.queueState === "pending") {
+      var queued = createActionButton(
+        document,
+        "cancel",
+        "Cancel queued export",
+        "c-queue-badge",
+      );
+      queued.textContent = "QUEUED";
+      card.appendChild(queued);
+    } else if (
+      model.queueState !== "running" &&
+      model.queueState !== "processing"
+    ) {
+      appendBadge(document, card, model.badge);
+    }
 
     var remove = createActionButton(document, "remove", "Remove " + model.name, "c4");
     remove.textContent = "✕";
@@ -144,7 +237,13 @@
     return card;
   }
 
-  var api = { createClipCard: createClipCard };
+  var api = {
+    createClipCard: createClipCard,
+    groupClipModels: groupClipModels,
+    groupHeading: groupHeading,
+    groupedClipPaths: groupedClipPaths,
+    librarySummary: librarySummary,
+  };
   if (root) {
     root.Tuck = root.Tuck || {};
     root.Tuck.clipCards = api;

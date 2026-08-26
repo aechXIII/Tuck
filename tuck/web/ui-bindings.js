@@ -72,6 +72,9 @@
     "transform-sizing": function (target) {
       root.setSizingMode(target.dataset.sizing);
     },
+    "transform-reset-all": function () {
+      root.resetVideoTransform();
+    },
     "audio-toggle-master": function () {
       root.AudioTimeline.toggleMaster();
     },
@@ -171,12 +174,18 @@
     "encoding-resolution": function () {
       root.onResolutionGeometryChanged();
     },
+    "encoding-resolution-facade": function (target) {
+      root.onExportResolutionChoice(target.value);
+    },
     "encoding-preview-dirty": function () {
       root.reqPreview();
       root.updateDirty();
     },
     "encoding-source-fps": function () {
       root.onUseSourceFps();
+    },
+    "encoding-frame-rate-facade": function (target) {
+      root.onExportFrameRateChoice(target.value);
     },
     "encoding-keep-audio": function () {
       root.onKeepAudio();

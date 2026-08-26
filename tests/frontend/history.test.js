@@ -36,6 +36,16 @@ global.clips = {
 global.trimActiveSegmentToPlayhead = function () {
   global.clips[global.selPath].segments[0].start = 4;
 };
+global.resetVideoTransform = function () {
+  Object.assign(global.clips[global.selPath], {
+    crop: null,
+    cropAspect: "off",
+    rotation: 0,
+    flipHorizontal: false,
+    flipVertical: false,
+    sizingMode: "fit",
+  });
+};
 global.AudioTimeline = {
   render() {},
   trimSelectedToPlayhead() {
@@ -103,5 +113,34 @@ test("setting an audio fragment boundary can be undone", () => {
 
   global.History.undo();
   assert.equal(global.clips[global.selPath].audioTimeline, null);
+  global.History.forgetClip(global.selPath);
+});
+
+test("reset all transforms can be undone and redone", () => {
+  Object.assign(global.clips[global.selPath], {
+    crop: { x: 10, y: 20, width: 720, height: 1280 },
+    cropAspect: "9:16",
+    rotation: 270,
+    flipHorizontal: true,
+    flipVertical: true,
+    sizingMode: "fill",
+  });
+
+  global.resetVideoTransform();
+  assert.equal(global.clips[global.selPath].rotation, 0);
+  assert.equal(global.clips[global.selPath].crop, null);
+
+  global.History.undo();
+  assert.equal(global.clips[global.selPath].rotation, 270);
+  assert.deepEqual(global.clips[global.selPath].crop, {
+    x: 10,
+    y: 20,
+    width: 720,
+    height: 1280,
+  });
+
+  global.History.redo();
+  assert.equal(global.clips[global.selPath].rotation, 0);
+  assert.equal(global.clips[global.selPath].crop, null);
   global.History.forgetClip(global.selPath);
 });

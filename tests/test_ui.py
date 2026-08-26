@@ -30,6 +30,13 @@ def test_web_ui_is_packaged_source_asset() -> None:
     assert "pywebviewready" in app_js
 
 
+def test_workspace_surface_styles_load_in_owner_order() -> None:
+    html = _asset("index.html")
+
+    links = re.findall(r'<link\b[^>]*href="([^"]+\.css)"', html)
+    assert links[:4] == ["styles.css", "library.css", "inspector.css", "export.css"]
+
+
 def test_web_ui_uses_python_managed_drop_paths() -> None:
     html = _web_source()
 
@@ -220,7 +227,6 @@ def test_library_panel_has_a_single_actionable_hierarchy() -> None:
     assert ">Add audio</button" in library
     assert "Media library</h3>" not in library
     assert "body.workspace-overlay .panel-heading" in styles
-    assert "border-bottom: 2px solid var(--accent-light);" in styles
     assert "#audio-lib-list:empty" in styles
 
 
@@ -240,15 +246,6 @@ def test_audio_controls_use_consistent_nle_track_vocabulary() -> None:
     assert 'class="mixer-mute"' in panels_js
     assert 'type="checkbox" class="mixer-mute"' not in panels_js
     assert "#video-track #timeline.seq-lane" in timeline_styles
-
-
-def test_waveforms_are_amplified_inside_compact_audio_clips() -> None:
-    audio_js = _asset("audio.js")
-    audio_styles = _asset("audio.css")
-
-    assert '"% 160%;background-position:"' in audio_js
-    assert audio_js.count('"% 160%') == 2
-    assert "opacity: 0.9;" in audio_styles
 
 
 def test_workspace_commands_have_clear_hierarchy() -> None:
@@ -279,7 +276,6 @@ def test_workspace_commands_have_clear_hierarchy() -> None:
     assert "<span>Include in export</span>" in html
     assert "Video and audio tracks will appear here." in timeline_js
     assert "mixer-row-actions" in panels_js
-    assert "Remove track" in panels_js
 
 
 def test_removing_the_last_video_clears_timeline_state() -> None:

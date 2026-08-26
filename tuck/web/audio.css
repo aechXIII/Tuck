@@ -240,10 +240,10 @@ body.timeline-resizing * {
   outline-offset: 1px;
 }
 .seq-row.video .seq-head {
-  --segment-color: var(--accent);
+  --segment-color: #7c3aed;
 }
 #source-audio-track .seq-head {
-  --segment-color: var(--accent-light);
+  --segment-color: #4c3a86;
 }
 #imported-audio-tracks:has(.seq-row) {
   margin-top: 5px;

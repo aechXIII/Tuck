@@ -65,7 +65,16 @@ function toggleWorkspacePanel(panel) {
   applyWorkspacePanels(wasOpen);
   if (workspaceViewportMode === "overlay" && !wasOpen) {
     var close = byId(panel === "library" ? "library-panel-close" : "inspector-panel-close");
-    if (close) close.focus();
+    var visibleClose = close && close.offsetParent !== null ? close : null;
+    var activeTab = byId(
+      panel === "library"
+        ? libraryTab === "audio"
+          ? "lib-tab-audio"
+          : "lib-tab-media"
+        : "insp-tab-" + inspectorTab,
+    );
+    if (visibleClose) visibleClose.focus();
+    else if (activeTab) activeTab.focus();
   }
 }
 
@@ -144,6 +153,7 @@ function setLibraryTab(tab) {
   byId("lib-add-row-audio").classList.toggle("hid", libraryTab !== "audio");
   byId("lib-panel-media").classList.toggle("hid", libraryTab !== "media");
   byId("lib-panel-audio").classList.toggle("hid", libraryTab !== "audio");
+  byId("library-summary").classList.toggle("hid", libraryTab !== "media");
   if (libraryTab === "audio") renderAudioLibraryPanel();
 }
 
@@ -224,6 +234,7 @@ function renderClipDetails() {
   var empty = byId("video-inspector-empty");
   var content = byId("video-inspector-content");
   var selection = byId("video-selection-name");
+  var selectionMeta = byId("video-selection-meta");
   if (empty) empty.classList.toggle("hid", Boolean(clip));
   if (content) content.classList.toggle("hid", !clip);
   if (!clip) {
@@ -231,6 +242,7 @@ function renderClipDetails() {
     return;
   }
   if (selection) selection.textContent = clip.name || "Selected video";
+  if (selectionMeta) selectionMeta.textContent = "Reading clip details…";
   if (clip.error) {
     Tuck.clipDetails.render(
       document,
@@ -249,19 +261,24 @@ function renderClipDetails() {
     return;
   }
   var d = clip.probeData;
+  if (selectionMeta) {
+    selectionMeta.textContent =
+      (d.width && d.height ? d.width + "×" + d.height + " · " : "") +
+      fmtt(d.duration || 0);
+  }
   var format = [
     formatCodec(d.video_codec),
     d.has_audio ? formatCodec(d.audio_codec) : null,
   ]
     .filter(Boolean)
     .join(" / ");
-  var rows = [
-    ["File", clip.name],
-    ["Duration", fmtt(d.duration || 0)],
-    ["Resolution", d.width && d.height ? d.width + "×" + d.height : "—"],
-    ["Frame rate", d.fps ? Math.round(d.fps * 100) / 100 + " fps" : "—"],
-    ["Format", format || "—"],
-  ];
+  var rows = Tuck.clipDetails.sourceFileRows({
+    duration: fmtt(d.duration || 0),
+    resolution: d.width && d.height ? d.width + "×" + d.height : "—",
+    frameRate: d.fps ? Math.round(d.fps * 100) / 100 + " fps" : "—",
+    format: format || "—",
+    size: clip._fileSize ? formatBytes(clip._fileSize) : "—",
+  });
   Tuck.clipDetails.render(
     document,
     host,
@@ -294,7 +311,7 @@ function renderAudioMixerList() {
         muted: state.sourceMuted,
         gain: state.sourceGainDb,
         removable: false,
-        color: "#a78bfa",
+        color: "#5B469B",
       }),
     );
     trackNumber = 2;
@@ -609,32 +626,40 @@ function formatGainDb(value) {
 function mixerRowHtml(row) {
   var gain = Math.max(-24, Math.min(12, Number(row.gain) || 0));
   var gainDisplay = formatGainDb(gain);
+  var muteLabel = (row.muted ? "Unmute " : "Mute ") + row.name;
   return (
     '<div class="mixer-row" data-mixer-id="' +
     esc(row.id) +
+    '" data-removable="' +
+    (row.removable ? "true" : "false") +
     '" style="--track-color:' +
     row.color +
     '">' +
-    '<div class="mixer-row-top">' +
+    '<div class="mixer-row-identity">' +
     '<span class="mixer-track-code" aria-hidden="true">' +
     esc(row.code) +
     '</span><span class="mixer-identity"><span class="mixer-name" title="' +
     esc(row.name) +
     '">' +
     esc(row.name) +
-    '</span><span class="mixer-role">' +
-    esc(row.role) +
-    "</span></span>" +
+    "</span></span></div>" +
+    '<div class="mixer-row-actions">' +
     '<button type="button" class="mixer-mute" aria-pressed="' +
     (row.muted ? "true" : "false") +
     '" aria-label="' +
-    (row.muted ? "Unmute " : "Mute ") +
-    esc(row.name) +
+    esc(muteLabel) +
+    '" data-tip="' +
+    esc(muteLabel) +
     '">' +
-    (row.muted ? "Muted" : "Mute") +
+    '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6h2.2l3-2.7v9.4l-3-2.7H2z"></path><path class="mixer-sound-waves" d="M10.2 5.2a4 4 0 0 1 0 5.6"></path><path class="mixer-mute-cross" d="m10.2 6.2 3.4 3.6m0-3.6-3.4 3.6"></path></svg>' +
     "</button>" +
+    (row.removable
+      ? '<button type="button" class="mixer-remove" aria-label="Remove ' +
+        esc(row.name) +
+        '" data-tip="Remove imported audio track"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 4.5h9M6 4.5l.4-1.5h3.2l.4 1.5M4.8 4.5l.6 8h5.2l.6-8M7 7v3.5M9 7v3.5"></path></svg></button>'
+      : "") +
     "</div>" +
-    '<div class="mixer-row-bottom">' +
+    '<div class="mixer-row-level">' +
     '<input type="range" class="mixer-gain" min="-24" max="12" step="1" value="' +
     gain +
     '" aria-label="' +
@@ -642,13 +667,7 @@ function mixerRowHtml(row) {
     ' gain in decibels"/>' +
     '<span class="mixer-db">' +
     gainDisplay +
-    "</span>" +
-    "</div>" +
-    (row.removable
-      ? '<div class="mixer-row-actions"><button type="button" class="mixer-remove" aria-label="Remove ' +
-        esc(row.name) +
-        '" data-tip="Remove imported audio track">Remove track</button></div>'
-      : "") +
+    "</span></div>" +
     "</div>"
   );
 }

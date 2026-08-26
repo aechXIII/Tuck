@@ -4,6 +4,9 @@
     <meta charset="UTF-8" />
     <title>Tuck</title>
     <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="library.css" />
+    <link rel="stylesheet" href="inspector.css" />
+    <link rel="stylesheet" href="export.css" />
     <link rel="stylesheet" href="shortcuts.css" />
     <link rel="stylesheet" href="settings.css" />
     <link rel="stylesheet" href="player.css" />
@@ -183,6 +186,10 @@
         <div id="lib-panel-audio" class="hid">
           <div id="audio-lib-list"></div>
           <div id="audio-lib-empty" class="lib-empty"></div>
+        </div>
+        <div id="library-summary" aria-label="Library summary">
+          <span id="library-summary-count">0 videos</span>
+          <span id="library-summary-size">0 B</span>
         </div>
       </div>
       <div id="center">
@@ -370,9 +377,19 @@
               <span>Choose a clip in the Library to edit its framing and transform.</span>
             </div>
             <div id="video-inspector-content" class="inspector-content hid">
-              <div id="video-selection-name" class="inspector-selection"></div>
+              <div class="inspector-summary video-summary">
+                <div id="video-selection-name" class="inspector-summary-title"></div>
+                <div id="video-selection-meta" class="inspector-summary-detail"></div>
+              </div>
               <div class="gr">
-                <div class="grt">Transform</div>
+                <div class="inspector-label-row">
+                  <div class="grt">Transform</div>
+                  <button
+                    type="button"
+                    class="inspector-reset"
+                    data-action-click="transform-reset-all"
+                  >Reset all</button>
+                </div>
                 <div id="transform-fields" role="toolbar" aria-label="Video transform controls">
                 <div class="enc-field">
                   <label>Crop</label>
@@ -428,7 +445,7 @@
                   </div>
                 </div>
                 <div class="enc-field">
-                  <label>Rotation</label>
+                  <label>Rotate</label>
                   <div
                     class="transform-segment"
                     role="group"
@@ -503,7 +520,7 @@
                   >
                     <button
                       type="button"
-                      class="icon"
+                      class="icon labeled"
                       id="flip-horizontal"
                       aria-pressed="false"
                       data-action-click="transform-flip"
@@ -522,10 +539,11 @@
                         <polyline points="7 8 3 12 7 16"></polyline>
                         <polyline points="17 8 21 12 17 16"></polyline>
                       </svg>
+                      <span>Horizontal</span>
                     </button>
                     <button
                       type="button"
-                      class="icon"
+                      class="icon labeled"
                       id="flip-vertical"
                       aria-pressed="false"
                       data-action-click="transform-flip"
@@ -544,6 +562,7 @@
                         <polyline points="8 7 12 3 16 7"></polyline>
                         <polyline points="8 17 12 21 16 17"></polyline>
                       </svg>
+                      <span>Vertical</span>
                     </button>
                   </div>
                 </div>
@@ -585,7 +604,7 @@
               </div>
               </div>
               <div class="gr" id="clip-details-card">
-                <div class="grt">Clip details</div>
+                <div class="grt">Source file</div>
                 <div id="clip-details-body"></div>
               </div>
             </div>
@@ -609,13 +628,74 @@
               </button>
             </div>
             <div class="audio-section-heading">
-              <span>Tracks</span><span id="audio-track-count">0</span>
+              <span class="audio-section-title">Tracks <span id="audio-track-count">0</span></span>
+              <button
+                type="button"
+                class="audio-track-add"
+                data-action-click="browse-audio"
+              ><span aria-hidden="true">+</span> Add</button>
             </div>
             <div id="audio-track-mixer"></div>
             <div id="audio-clip-range" class="hid"></div>
           </div>
           <div id="insp-export" class="hid">
-            <div class="stitle">Task</div>
+            <div class="inspector-summary export-summary">
+              <div class="export-summary-heading">
+                <span id="export-summary-title" class="inspector-summary-title">10 MB</span>
+                <span id="export-summary-modified" class="export-modified-dot" aria-label="Modified settings"></span>
+              </div>
+              <div id="export-summary-detail" class="inspector-summary-detail">
+                1920×1080 · 30 fps · H.264 · AAC 128k
+              </div>
+            </div>
+            <div class="gr" id="profile-card">
+              <div class="inspector-label-row">
+                <div class="grt">Profile</div>
+                <button class="inspector-text-action" data-action-click="encoding-save-profile">
+                  Save changes
+                </button>
+              </div>
+              <div class="profile-select-row">
+                <select
+                  id="prof-sel"
+                  data-action-change="encoding-profile"
+                  aria-label="Select profile"
+                ></select>
+                <button
+                  type="button"
+                  class="profile-reset-button"
+                  data-action-click="encoding-reset-profile"
+                  aria-label="Reset to profile"
+                  data-tip="Reset to profile"
+                >
+                  <svg viewBox="0 0 16 16" aria-hidden="true">
+                    <polyline points="1.5 3 1.5 6.5 5 6.5"></polyline>
+                    <path d="M3 9.5a5.5 5.5 0 1 0 1.3-5.7L1.5 6.5"></path>
+                  </svg>
+                </button>
+              </div>
+              <div class="prof-meta">
+                <span class="mod-badge" id="mod-badge">Modified</span>
+              </div>
+              <details class="profile-options">
+                <summary>Profile options</summary>
+                <div class="profile-options-body">
+                  <div class="prof-row">
+                    <button class="btn2" data-action-click="encoding-save-profile-as">
+                      Save as new…
+                    </button>
+                  </div>
+                  <button class="btn2" data-action-click="settings-open-profiles">
+                    Manage profiles
+                  </button>
+                  <div id="prof-reset-row" class="hid">
+                    <button class="btn2" data-action-click="encoding-reset-profile">
+                      Reset to profile
+                    </button>
+                  </div>
+                </div>
+              </details>
+            </div>
             <div id="task-wf" role="group" aria-label="Task selector">
               <button
                 class="on"
@@ -634,40 +714,9 @@
                 Upscale
               </button>
             </div>
-            <div class="gr" id="profile-card">
-              <div class="grt">Profile</div>
-              <select
-                id="prof-sel"
-                data-action-change="encoding-profile"
-                aria-label="Select profile"
-              ></select>
-              <div class="prof-meta">
-                <span class="mod-badge" id="mod-badge">Modified</span>
-              </div>
-              <details class="profile-options">
-                <summary>Profile options</summary>
-                <div class="profile-options-body">
-                  <div class="prof-row">
-                    <button class="btn2" data-action-click="encoding-save-profile">
-                      Save changes</button
-                    ><button class="btn2" data-action-click="encoding-save-profile-as">
-                      Save as new…
-                    </button>
-                  </div>
-                  <button class="btn2" data-action-click="settings-open-profiles">
-                    Manage profiles
-                  </button>
-                  <div id="prof-reset-row" class="hid">
-                    <button class="btn2" data-action-click="encoding-reset-profile">
-                      Reset to profile
-                    </button>
-                  </div>
-                </div>
-              </details>
-            </div>
             <div class="gr" id="sz-grp">
               <div class="grt">
-                <span>Target Size</span
+                <span>Size</span
                 ><span style="float: right"
                   ><input
                     class="badge"
@@ -696,83 +745,100 @@
               <div class="pset" id="sz-presets"></div>
               <span class="help-tip" id="calc-br">Calculated bitrate: --</span>
             </div>
-            <div class="gr">
-              <div class="info-row">
-                <span class="grt" style="margin: 0">Resolution</span
-                ><label class="chk" id="res-source-wrap" style="font-size: 11px"
-                  ><input
-                    type="checkbox"
-                    id="use-source-res"
-                    checked
-                    data-action-change="encoding-source-resolution"
-                  /><span class="chk-box"></span><span>Source</span></label
-                >
+            <div class="stitle adjust-title">Adjust</div>
+            <details class="adjust-panel" open>
+              <summary><span>Video</span><span id="export-video-summary">Source</span></summary>
+              <div class="adjust-panel-body">
+                <div class="export-video-facades">
+                  <div class="export-setting-line">
+                    <label for="export-res-select">Resolution</label>
+                    <select
+                      id="export-res-select"
+                      data-action-change="encoding-resolution-facade"
+                      aria-label="Output resolution"
+                    ></select>
+                  </div>
+                  <div class="export-setting-line">
+                    <label for="export-fps-select">Frame rate</label>
+                    <select
+                      id="export-fps-select"
+                      data-action-change="encoding-frame-rate-facade"
+                      aria-label="Output frame rate"
+                    ></select>
+                  </div>
+                </div>
+                <div class="export-native-video-controls" id="export-native-video-controls">
+                  <label id="res-source-wrap">
+                    <input
+                      type="checkbox"
+                      id="use-source-res"
+                      checked
+                      data-action-change="encoding-source-resolution"
+                    />Source resolution
+                  </label>
+                  <input type="hidden" id="res-mode" value="source" />
+                  <div id="res-cust">
+                    <span class="export-custom-label">Custom</span>
+                    <input
+                      type="number"
+                      id="res-w"
+                      value="1920"
+                      aria-label="Custom width"
+                      data-action-change="encoding-resolution"
+                    />
+                    <input
+                      type="number"
+                      id="res-h"
+                      value="1080"
+                      aria-label="Custom height"
+                      data-action-change="encoding-resolution"
+                    />
+                  </div>
+                  <div id="scaler-row">
+                    <label class="export-custom-label" for="scaler-sel">Scaler</label>
+                    <select
+                      id="scaler-sel"
+                      data-action-change="encoding-preview-dirty"
+                      aria-label="Scaler algorithm"
+                    >
+                      <option>Bilinear</option>
+                      <option>Bicubic</option>
+                      <option>Lanczos</option>
+                      <option>Point</option>
+                      <option selected>Neighbor</option>
+                    </select>
+                  </div>
+                  <label>
+                    <input
+                      type="checkbox"
+                      id="use-source-fps"
+                      checked
+                      data-action-change="encoding-source-fps"
+                    />Source frame rate
+                  </label>
+                  <div class="export-custom-fps-row">
+                    <label class="export-custom-fps-label" for="fps-slider">Custom fps</label>
+                    <span id="fps-badge">30 fps</span>
+                  </div>
+                  <input
+                    type="range"
+                    id="fps-slider"
+                    min="1"
+                    max="240"
+                    value="30"
+                    data-action-input="encoding-frame-rate"
+                    aria-label="Target frame rate"
+                    aria-valuenow="30"
+                    aria-valuemin="1"
+                    aria-valuemax="240"
+                  />
+                  <input type="hidden" id="fps-val" value="30" />
+                </div>
               </div>
-              <input type="hidden" id="res-mode" value="source" />
-              <div class="row" id="res-cust" style="margin-top: 8px">
-                <input
-                  type="number"
-                  id="res-w"
-                  value="1920"
-                  style="flex: 1; text-align: center"
-                  aria-label="Custom width"
-                  data-action-change="encoding-resolution"
-                /><span style="color: #6b6b7b; font-weight: 700">×</span
-                ><input
-                  type="number"
-                  id="res-h"
-                  value="1080"
-                  style="flex: 1; text-align: center"
-                  aria-label="Custom height"
-                  data-action-change="encoding-resolution"
-                />
-              </div>
-              <div class="row hid" id="scaler-row" style="margin-top: 4px">
-                <span>Scaler</span
-                ><select
-                  id="scaler-sel"
-                  data-action-change="encoding-preview-dirty"
-                  style="flex: 1"
-                  aria-label="Scaler algorithm"
-                >
-                  <option>Bilinear</option>
-                  <option>Bicubic</option>
-                  <option>Lanczos</option>
-                  <option>Point</option>
-                  <option selected>Neighbor</option>
-                </select>
-              </div>
-            </div>
-            <div class="gr">
-              <div class="info-row">
-                <span class="grt" style="margin: 0">Frame Rate</span
-                ><label class="chk" style="font-size: 11px"
-                  ><input
-                    type="checkbox"
-                    id="use-source-fps"
-                    checked
-                    data-action-change="encoding-source-fps"
-                  /><span class="chk-box"></span><span>Source</span></label
-                >
-              </div>
-              <div class="row">
-                <span>Frame rate</span
-                ><span class="badge" id="fps-badge">30 fps</span>
-              </div>
-              <input
-                type="range"
-                id="fps-slider"
-                min="1"
-                max="240"
-                value="30"
-                data-action-input="encoding-frame-rate"
-                aria-label="Target frame rate"
-                aria-valuenow="30"
-                aria-valuemin="1"
-                aria-valuemax="240"
-              />
-              <input type="hidden" id="fps-val" value="30" />
-            </div>
+            </details>
+            <details class="adjust-panel">
+              <summary><span>Audio</span><span id="export-audio-summary">AAC 128k</span></summary>
+              <div class="adjust-panel-body">
             <div class="gr">
               <div class="info-row">
                 <span class="grt" style="margin: 0">Audio encoding</span
@@ -797,6 +863,11 @@
                 />
               </div>
             </div>
+              </div>
+            </details>
+            <details class="adjust-panel">
+              <summary><span>Encoder</span><span id="export-encoder-summary">H.264 · Balanced</span></summary>
+              <div class="adjust-panel-body">
             <div class="gr">
               <div class="grt">Encoding</div>
               <div class="enc-field">
@@ -898,20 +969,32 @@
                 </div>
               </div>
             </div>
+              </div>
+            </details>
           </div>
         </div>
         <div id="right-foot" class="hid">
           <button class="btn1" id="btn-one" data-action-click="encoding-run-selected">
             Compress selected
           </button>
-          <button
-            class="btn2"
-            style="width: 100%"
-            id="btn-all"
-            data-action-click="encoding-run-all"
-          >
-            Compress all
-          </button>
+          <details class="export-actions">
+            <summary aria-label="More export actions" data-tip="More export actions">
+              <svg viewBox="0 0 12 12" aria-hidden="true">
+                <path d="M2.5 4.5 6 8l3.5-3.5"></path>
+              </svg>
+            </summary>
+            <div class="export-actions-menu">
+              <button class="btn2" id="btn-all" data-action-click="encoding-run-all">
+                Compress all
+              </button>
+              <button class="btn2" data-action-click="encoding-save-profile-as">
+                Save as new profile…
+              </button>
+              <button class="btn2" data-action-click="settings-open-profiles">
+                Manage profiles
+              </button>
+            </div>
+          </details>
         </div>
       </div>
     </div>
@@ -1352,6 +1435,7 @@
     <script src="segments.js"></script>
     <script src="probe-state.js"></script>
     <script src="layout.js"></script>
+    <script src="inspector-ui.js"></script>
     <script src="encoding-ui.js"></script>
     <script src="shortcuts.js"></script>
     <script src="clip-card.js"></script>

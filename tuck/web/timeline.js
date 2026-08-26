@@ -96,6 +96,17 @@
     };
   }
 
+  function clipFill(kind, selected, muted, segmentColor) {
+    if (muted) return "#22222B";
+    if (kind === "source") return "#4C3A86";
+    if (kind === "imported") return segmentColor || "#115E56";
+    return selected ? "#6D28D9" : segmentColor || "#6D28D9";
+  }
+
+  function videoSegmentSelected(index, activeIndex, sourceGroupSelected) {
+    return index === activeIndex && !!sourceGroupSelected;
+  }
+
   return {
     ZOOM_MIN: ZOOM_MIN,
     ZOOM_MAX: ZOOM_MAX,
@@ -106,6 +117,8 @@
     rulerMajorEvery: rulerMajorEvery,
     editKeyIntent: editKeyIntent,
     segmentPresentationState: segmentPresentationState,
+    clipFill: clipFill,
+    videoSegmentSelected: videoSegmentSelected,
   };
 });
 
@@ -127,12 +140,12 @@ var _segmentPointerX = 0;
 var _segmentClickTime = 0;
 var _SEGMENT_DRAG_THRESHOLD = 5;
 var _SEGMENT_COLORS = [
-  "#6d28d9",
-  "#a855f7",
-  "#8b5cf6",
-  "#c084fc",
-  "#7e22ce",
-  "#9333ea",
+  "#6D28D9",
+  "#A855F7",
+  "#8B5CF6",
+  "#C084FC",
+  "#7E22CE",
+  "#9333EA",
 ];
 
 function segmentColor(index) {
@@ -289,6 +302,15 @@ function paintTrimChrome() {
     range.className = presentation.className;
     range.dataset.segmentIndex = String(i);
     range.style.setProperty("--segment-color", segmentColor(i));
+    range.style.setProperty(
+      "--clip-fill",
+      root.TimelineCore.clipFill(
+        "video",
+        root.TimelineCore.videoSegmentSelected(i, active, sourceGroupSelected),
+        false,
+        segmentColor(i),
+      ),
+    );
     range.style.left = (segments[i].start / (full || 1)) * 100 + "%";
     range.style.width =
       ((segments[i].end - segments[i].start) / (full || 1)) * 100 + "%";
@@ -315,14 +337,8 @@ function paintTrimChrome() {
     var touchesNext =
       i + 1 < segments.length &&
       Math.abs(segments[i].end - segments[i + 1].start) < 0.001;
-    surface.style.setProperty(
-      "--segment-inset-start",
-      touchesPrevious ? "2px" : "0px",
-    );
-    surface.style.setProperty(
-      "--segment-inset-end",
-      touchesNext ? "2px" : "0px",
-    );
+    range.classList.toggle("joins-previous", touchesPrevious);
+    range.classList.toggle("joins-next", touchesNext);
     var badgeLabel = document.createElement("span");
     badgeLabel.className = "tl-segment-badge";
     badgeLabel.setAttribute("aria-hidden", "true");

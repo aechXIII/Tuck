@@ -9,6 +9,13 @@ const segments = [
   { start: 6, end: 10 },
 ];
 
+test("imported audio tracks cycle through distinct semantic colors", () => {
+  assert.equal(audio.trackColor(0), "#0F766E");
+  assert.equal(audio.trackColor(1), "#B45309");
+  assert.equal(audio.trackColor(2), "#0369A1");
+  assert.equal(audio.trackColor(6), "#0F766E");
+});
+
 test("source and output time mapping stays continuous across removed gaps", () => {
   assert.equal(audio.selectedDuration(segments), 6);
   assert.equal(audio.sourceToOutputTime(segments, 2), 1);
@@ -349,7 +356,9 @@ test("source-range dragging measures from the waveform content box", () => {
   assert.equal(audio.sourceRangePointerValue(500, 101, 200, 11, 180, 172), 172);
 });
 
-test("source detail keeps a short selection centered at a useful visual width", () => {
+test("waveform positioning maps source slices to CSS backgrounds", () => {
+  assert.equal(audio.waveformPositionPct(5, 5, 10), 100);
+
   const detail = audio.sourceRangeDetailState(51.571, 8.793, 257.254);
 
   assert.ok(Math.abs(detail.visibleSpan - 21.9825) < 1e-9);

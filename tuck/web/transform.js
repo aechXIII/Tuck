@@ -480,6 +480,28 @@
     if (typeof root.reqPreview === "function") root.reqPreview();
   }
 
+  function resetVideoTransformValues(clip) {
+    clip.cropAspect = "off";
+    clip.crop = null;
+    clip.rotation = 0;
+    clip.flipHorizontal = false;
+    clip.flipVertical = false;
+    clip.sizingMode = "fit";
+  }
+
+  function resetVideoTransform() {
+    var clip = selectedClip();
+    if (!clip) return;
+    resetVideoTransformValues(clip);
+    clip.transformOverride = true;
+    clip.transformIntentTouched = true;
+    clip.planData = null;
+    syncTransformControls();
+    paintCropOverlay();
+    if (typeof root.renderClips === "function") root.renderClips();
+    if (typeof root.reqPreview === "function") root.reqPreview();
+  }
+
   function cropTransformForRequest(clip) {
     if (!clip) return null;
     var transform = {
@@ -757,6 +779,8 @@
   root.paintCropOverlay = paintCropOverlay;
   root.clearCrop = clearCrop;
   root.cropTransformForRequest = cropTransformForRequest;
+  root.resetVideoTransform = resetVideoTransform;
+  root.resetVideoTransformValues = resetVideoTransformValues;
   root.setCropAspect = setCropAspect;
   root.setSizingMode = setSizingMode;
   root.setVideoRotation = setVideoRotation;

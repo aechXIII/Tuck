@@ -66,6 +66,138 @@ function updateActionButtons() {
     (up ? "Upscale all" : "Compress all") + (nObj ? " (" + nObj + ")" : "");
   byId("btn-all").disabled = !allReady;
   byId("btn-all").style.background = up ? "#2a2a3e" : "";
+  syncExportSummary();
+}
+
+function syncExportSummary() {
+  if (!window.Tuck || !Tuck.inspectorUi) return;
+  var keepAudio = byId("keep-audio").checked;
+  var audioBitrateKbps = byId("audio-br").value;
+  var speed = byId("speed-sel").value;
+  var videoEncoder = byId("enc-sel").value;
+  var summary = Tuck.inspectorUi.exportSummary({
+    workflow: wf === 1 ? "upscale" : "compression",
+    targetSizeMb: byId("sz-slider").value,
+    width: byId("res-w").value,
+    height: byId("res-h").value,
+    fps: byId("fps-val").value,
+    videoEncoder: videoEncoder,
+    audioBitrateKbps: audioBitrateKbps,
+    audioEnabled: keepAudio || Number(audioBitrateKbps) > 0,
+    keepAudio: keepAudio,
+    speed: speed,
+    modified: byId("mod-badge").classList.contains("show"),
+  });
+  byId("export-summary-title").textContent = summary.title;
+  byId("export-summary-detail").textContent = summary.detail;
+  byId("export-summary-modified").classList.toggle("show", summary.modified);
+  byId("export-audio-summary").textContent = Tuck.inspectorUi.audioSummary({
+    audioEnabled: keepAudio || Number(audioBitrateKbps) > 0,
+    keepAudio: keepAudio,
+    audioBitrateKbps: audioBitrateKbps,
+  });
+  byId("export-encoder-summary").textContent = Tuck.inspectorUi.encoderPanelSummary({
+    videoEncoder: videoEncoder,
+    speed: speed,
+  });
+  syncExportVideoFacades();
+}
+
+function replaceInspectorOptions(select, options) {
+  if (!select) return;
+  var current = select.value;
+  var unchanged =
+    select.options.length === options.length &&
+    options.every(function (choice, index) {
+      var existing = select.options[index];
+      return existing.value === choice.value && existing.textContent === choice.label;
+    });
+  if (unchanged) return;
+  select.replaceChildren();
+  options.forEach(function (choice) {
+    var option = document.createElement("option");
+    option.value = choice.value;
+    option.textContent = choice.label;
+    select.appendChild(option);
+  });
+  if (options.some(function (choice) { return choice.value === current; })) {
+    select.value = current;
+  }
+}
+
+function selectedSourceVideo() {
+  var clip = selPath ? clips[selPath] : null;
+  var data = clip && clip.probed && clip.probeData ? clip.probeData : null;
+  return {
+    width: data && data.width ? data.width : Number(byId("res-w").value) || 1920,
+    height: data && data.height ? data.height : Number(byId("res-h").value) || 1080,
+    fps: data && data.fps ? Math.round(data.fps) : Number(byId("fps-val").value) || 30,
+  };
+}
+
+function syncExportVideoFacades() {
+  var resolution = byId("export-res-select");
+  var frameRate = byId("export-fps-select");
+  if (!resolution || !frameRate || !window.Tuck || !Tuck.inspectorUi) return;
+  var source = selectedSourceVideo();
+  replaceInspectorOptions(
+    resolution,
+    Tuck.inspectorUi.resolutionChoices(source.width, source.height),
+  );
+  replaceInspectorOptions(frameRate, Tuck.inspectorUi.frameRateChoices(source.fps));
+
+  if (resolution.dataset.explicitCustom === "1") resolution.value = "custom";
+  else if (byId("use-source-res").checked) resolution.value = "source";
+  else {
+    var customResolution = byId("res-w").value + "x" + byId("res-h").value;
+    resolution.value = Array.from(resolution.options).some(function (option) {
+      return option.value === customResolution;
+    })
+      ? customResolution
+      : "custom";
+  }
+  if (frameRate.dataset.explicitCustom === "1") frameRate.value = "custom";
+  else if (byId("use-source-fps").checked) frameRate.value = "source";
+  else {
+    var customFps = String(Number(byId("fps-val").value) || source.fps);
+    frameRate.value = Array.from(frameRate.options).some(function (option) {
+      return option.value === customFps;
+    })
+      ? customFps
+      : "custom";
+  }
+  var nativeControls = byId("export-native-video-controls");
+  nativeControls.classList.toggle("show-resolution", resolution.value === "custom");
+  nativeControls.classList.toggle("show-scaler", resolution.value !== "source");
+  nativeControls.classList.toggle("show-fps", frameRate.value === "custom");
+  byId("export-video-summary").textContent =
+    resolution.value === "source" && frameRate.value === "source" ? "Source" : "Adjusted";
+}
+
+function onExportResolutionChoice(value) {
+  byId("export-res-select").dataset.explicitCustom = value === "custom" ? "1" : "";
+  var decision = Tuck.inspectorUi.resolutionDecision(value);
+  var source = decision.mode === "source";
+  byId("use-source-res").checked = source;
+  byId("res-mode").value = source ? "source" : "custom";
+  if (decision.width && decision.height) {
+    byId("res-w").value = decision.width;
+    byId("res-h").value = decision.height;
+  }
+  if (source) syncResolutionToClip(true);
+  onResMode();
+  syncExportVideoFacades();
+}
+
+function onExportFrameRateChoice(value) {
+  byId("export-fps-select").dataset.explicitCustom = value === "custom" ? "1" : "";
+  var source = value === "source";
+  byId("use-source-fps").checked = source;
+  if (source) syncFpsToClip(true);
+  else if (value !== "custom") onFpsSlider(value);
+  reqPreview();
+  updateDirty();
+  syncExportVideoFacades();
 }
 
 async function loadSettings() {
@@ -192,6 +324,7 @@ function applyProfile(forceTransform) {
   byId("sz-slider").value = sizeMb;
   byId("sz-badge").value = sizeMb;
   updateSizePresets(sizeMb);
+  byId("export-res-select").dataset.explicitCustom = "";
   byId("res-mode").value = p.resolution_mode === "custom" ? "custom" : "source";
   byId("use-source-res").checked = wf === 0 && p.resolution_mode !== "custom";
   byId("res-w").value = p.custom_width || p.max_width || 1920;
@@ -275,7 +408,7 @@ function onBadgeSize(v) {
 function updateSizePresets(v) {
   var c = byId("sz-presets");
   c.innerHTML = "";
-  [10, 50, 100, 500].forEach(function (mb) {
+  Tuck.inspectorUi.sizePresets().forEach(function (mb) {
     var b = document.createElement("button");
     b.textContent = mb + " MB";
     if (mb === v) b.classList.add("on");
@@ -287,6 +420,7 @@ function updateSizePresets(v) {
   });
 }
 function onUseSourceResolution() {
+  byId("export-res-select").dataset.explicitCustom = "";
   byId("res-mode").value = byId("use-source-res").checked ? "source" : "custom";
   if (byId("use-source-res").checked) syncResolutionToClip(true);
   onResMode();
@@ -314,6 +448,7 @@ function syncResolutionToClip(forceSourceValue) {
   }
 }
 function onUseSourceFps() {
+  byId("export-fps-select").dataset.explicitCustom = "";
   if (byId("use-source-fps").checked) syncFpsToClip(true);
   reqPreview();
   updateDirty();

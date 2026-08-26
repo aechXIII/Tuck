@@ -56,7 +56,17 @@
     });
   }
 
-  var api = { render: render };
+  function sourceFileRows(values) {
+    return [
+      ["Duration", values.duration],
+      ["Resolution", values.resolution],
+      ["Frame rate", values.frameRate],
+      ["Format", values.format],
+      ["Size", values.size],
+    ];
+  }
+
+  var api = { render: render, sourceFileRows: sourceFileRows };
   if (root) {
     root.Tuck = root.Tuck || {};
     root.Tuck.clipDetails = api;

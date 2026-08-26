@@ -130,7 +130,7 @@ body.crop-dragging * {
 #transform-fields {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 #transform-fields.disabled {
   opacity: 0.42;
@@ -164,12 +164,13 @@ body.crop-dragging * {
 }
 .transform-segment {
   display: flex;
-  gap: 8px;
+  gap: 1px;
+  background: #1e1e26;
 }
 .transform-segment.grid-3 {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  row-gap: 5px;
+  gap: 1px;
 }
 .transform-segment button {
   position: relative;
@@ -178,7 +179,7 @@ body.crop-dragging * {
   min-width: 0;
   padding: 0 5px;
   border: 0;
-  border-bottom: 2px solid transparent;
+  border: 0;
   border-radius: 0;
   background: transparent;
   color: var(--muted);
@@ -190,9 +191,8 @@ body.crop-dragging * {
   color: #fff;
 }
 .transform-segment button.on {
-  background: transparent;
-  border-bottom-color: var(--accent-light);
-  color: #e9d5ff;
+  background: var(--accent);
+  color: #fff;
 }
 .transform-segment button:focus-visible {
   outline: 0;
@@ -204,6 +204,10 @@ body.crop-dragging * {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+}
+.transform-segment button.icon.labeled {
+  gap: 6px;
+  padding-inline: 8px;
 }
 .transform-segment button.icon svg {
   width: 12px;

@@ -101,3 +101,103 @@ test("clip cards keep backend data inert and delegate exact action values", () =
   assert.deepEqual(calls.pop(), ["remove", model.path]);
   assert.equal(globalThis.pwned, undefined);
 });
+
+test("library groups active work ahead of queued and ready clips without reordering within a group", () => {
+  const clips = [
+    { path: "ready-a.mp4", queueState: "" },
+    { path: "queued-a.mp4", queueState: "pending" },
+    { path: "encoding-a.mp4", queueState: "running" },
+    { path: "ready-b.mp4", queueState: "completed" },
+    { path: "encoding-b.mp4", queueState: "processing" },
+    { path: "queued-b.mp4", queueState: "pending" },
+  ];
+
+  assert.deepEqual(
+    clipCards.groupClipModels(clips).map((group) => ({
+      key: group.key,
+      label: group.label,
+      paths: group.items.map((clip) => clip.path),
+    })),
+    [
+      {
+        key: "encoding",
+        label: "Encoding",
+        paths: ["encoding-a.mp4", "encoding-b.mp4"],
+      },
+      {
+        key: "queued",
+        label: "Queued",
+        paths: ["queued-a.mp4", "queued-b.mp4"],
+      },
+      {
+        key: "ready",
+        label: "Ready",
+        paths: ["ready-a.mp4", "ready-b.mp4"],
+      },
+    ],
+  );
+  assert.deepEqual(clipCards.groupedClipPaths(clips), [
+    "encoding-a.mp4",
+    "encoding-b.mp4",
+    "queued-a.mp4",
+    "queued-b.mp4",
+    "ready-a.mp4",
+    "ready-b.mp4",
+  ]);
+  assert.equal(clipCards.groupHeading({ key: "encoding", label: "Encoding", items: [{}, {}] }), "Encoding");
+  assert.equal(clipCards.groupHeading({ key: "queued", label: "Queued", items: [{}] }), "Queued · 1");
+  assert.equal(clipCards.groupHeading({ key: "ready", label: "Ready", items: [{}, {}] }), "Ready · 2");
+});
+
+test("queued cards use their compact badge as the per-item cancel action", () => {
+  const calls = [];
+  const card = clipCards.createClipCard(
+    document,
+    {
+      path: "queued.mp4",
+      name: "queued.mp4",
+      selected: false,
+      queueItemId: "q1",
+      queueState: "pending",
+      statusLabel: "Pending",
+      meta: { text: "3840×2160 · 1.4 GB", error: false },
+    },
+    {
+      select() {},
+      togglePlay() {},
+      remove() {},
+      openResult() {},
+      cancel(id) { calls.push(id); },
+      retry() {},
+      beginReorder() {},
+    },
+  );
+
+  const badge = descendants(card).find((element) => element.className === "c-queue-badge");
+  assert.equal(badge.textContent, "QUEUED");
+  assert.equal(
+    descendants(card).find((element) => element.className === "c-status-row"),
+    undefined,
+  );
+  assert.equal(action(card, "cancel"), badge);
+  assert.equal(badge.attributes["aria-label"], "Cancel queued export");
+  card.listeners.click[0]({ target: badge, stopPropagation() {} });
+  assert.deepEqual(calls, ["q1"]);
+});
+
+test("library omits empty status sections and reports a hand-checked summary", () => {
+  const clips = [
+    { path: "one.mp4", queueState: "", fileSize: 1_500_000_000 },
+    { path: "two.mp4", queueState: "failed", fileSize: 540_000_000 },
+    { path: "three.mp4", queueState: "cancelled", fileSize: 0 },
+  ];
+
+  const groups = clipCards.groupClipModels(clips);
+  assert.deepEqual(groups.map((group) => [group.key, group.items.length]), [
+    ["ready", 3],
+  ]);
+  assert.deepEqual(clipCards.librarySummary(clips), {
+    countLabel: "3 videos",
+    sizeLabel: "1.9 GB",
+  });
+});

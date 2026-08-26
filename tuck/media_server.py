@@ -9,6 +9,7 @@ import re
 import secrets
 import subprocess
 import threading
+import time
 from functools import lru_cache
 from pathlib import Path
 from socketserver import ThreadingTCPServer
@@ -51,10 +52,12 @@ for ext, mime in [
 _MAX_THUMBNAIL_DIM = 480  # Maximum width/height for thumbnails
 _THUMBNAIL_TIMEOUT = 15  # seconds
 _THUMBNAIL_SEEK = 0.5  # seek to this fraction of duration (50%)
-_WAVEFORM_WIDTH = 1600
+_WAVEFORM_WIDTH = 8192
 _WAVEFORM_HEIGHT = 96
 _WAVEFORM_TIMEOUT = 60
-_WAVEFORM_CACHE_VERSION = 2
+_WAVEFORM_CACHE_VERSION = 8
+_WAVEFORM_TARGET_PEAK_DB = -1.0
+_WAVEFORM_MAX_GAIN_DB = 60.0
 _TOKEN_BYTES = 32  # bytes for each token
 
 
@@ -472,6 +475,10 @@ class MediaServer:
 
 
 def _run_waveform_ffmpeg(ffmpeg: str, file_path: Path, waveform_path: Path, timeout: float) -> bool:
+    started = time.monotonic()
+    gain_db = _waveform_gain_db(ffmpeg, file_path, timeout)
+    remaining_timeout = max(0.1, timeout - (time.monotonic() - started))
+    gain_filter = f"volume={gain_db:g}dB," if gain_db > 0 else ""
     command = [
         ffmpeg,
         "-y",
@@ -482,8 +489,9 @@ def _run_waveform_ffmpeg(ffmpeg: str, file_path: Path, waveform_path: Path, time
         "-filter_complex",
         (
             "aformat=channel_layouts=mono,"
+            f"{gain_filter}"
             f"showwavespic=s={_WAVEFORM_WIDTH}x{_WAVEFORM_HEIGHT}:"
-            "colors=0xa78bfa:scale=cbrt:filter=peak"
+            "colors=0xa78bfa:scale=sqrt:filter=peak"
         ),
         "-frames:v",
         "1",
@@ -492,7 +500,7 @@ def _run_waveform_ffmpeg(ffmpeg: str, file_path: Path, waveform_path: Path, time
     result = subprocess.run(
         command,
         capture_output=True,
-        timeout=timeout,
+        timeout=remaining_timeout,
         creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
     )
     if result.returncode != 0:
@@ -505,6 +513,43 @@ def _run_waveform_ffmpeg(ffmpeg: str, file_path: Path, waveform_path: Path, time
         )
         return False
     return True
+
+
+def _waveform_gain_db(ffmpeg: str, file_path: Path, timeout: float) -> float:
+    command = [
+        ffmpeg,
+        "-hide_banner",
+        "-nostats",
+        "-v",
+        "info",
+        "-i",
+        str(file_path),
+        "-map",
+        "0:a:0",
+        "-af",
+        "aformat=channel_layouts=mono,volumedetect",
+        "-f",
+        "null",
+        os.devnull,
+    ]
+    result = subprocess.run(
+        command,
+        capture_output=True,
+        timeout=timeout,
+        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+    )
+    if result.returncode != 0:
+        return 0.0
+
+    match = re.search(rb"max_volume:\s*([-+]?\d+(?:\.\d+)?)\s*dB", result.stderr)
+    if not match:
+        return 0.0
+
+    peak_db = float(match.group(1))
+    return max(
+        0.0,
+        min(_WAVEFORM_MAX_GAIN_DB, _WAVEFORM_TARGET_PEAK_DB - peak_db),
+    )
 
 
 @lru_cache(maxsize=1)

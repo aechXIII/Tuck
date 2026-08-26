@@ -13,11 +13,8 @@
   var _groupDragEvent = null;
   var _MIN_TRIM = root.SegmentEditing.MIN_DURATION;
 
-  // Imported tracks use colors outside the video purple
-  var TRACK_COLORS = ["#0d9488", "#b45309", "#0369a1", "#4d7c0f", "#a21caf", "#c2410c"];
-
   function trackColor(index) {
-    return TRACK_COLORS[index % TRACK_COLORS.length];
+    return core.trackColor(index);
   }
 
   function nextId(prefix) {
@@ -143,15 +140,19 @@
     var size = audioClip.loop
       ? Math.max(12, (track.sourceDuration / sourceSpan) * 100)
       : Math.max(100, (track.sourceDuration / sourceSpan) * 100);
-    var position = track.sourceDuration
-      ? Math.max(0, Math.min(100, (audioClip.sourceIn / track.sourceDuration) * 100))
-      : 0;
+    var position = Math.max(
+      0,
+      Math.min(
+        100,
+        core.waveformPositionPct(audioClip.sourceIn, sourceSpan, track.sourceDuration),
+      ),
+    );
     return (
       "background-image:url('" +
       track.waveformUrl.replace(/'/g, "%27") +
       "');background-size:" +
       size +
-      "% 160%;background-position:" +
+      "% 100%;background-position:" +
       position +
       "% center"
     );
@@ -159,6 +160,15 @@
 
   function pct(value, total) {
     return (value / Math.max(total, 0.0001)) * 100 + "%";
+  }
+
+  function timelineItemsTouch(previousEnd, nextStart) {
+    return Math.abs(Number(previousEnd) - Number(nextStart)) < 0.001;
+  }
+
+  function addJoinClasses(element, touchesPrevious, touchesNext) {
+    element.classList.toggle("joins-previous", !!touchesPrevious);
+    element.classList.toggle("joins-next", !!touchesNext);
   }
 
   function paintTimelineSelection() {
@@ -238,18 +248,42 @@
     var videoActive =
       clip && Number.isInteger(clip.activeSegment) ? clip.activeSegment : 0;
     videoSegs.forEach(function (segment, index) {
-      lane.appendChild(sourceAudioBlock(segment, index, index === videoActive, state, total));
+      lane.appendChild(
+        sourceAudioBlock(
+          segment,
+          index,
+          index === videoActive,
+          state,
+          total,
+          index > 0 && timelineItemsTouch(videoSegs[index - 1].end, segment.start),
+          index + 1 < videoSegs.length &&
+            timelineItemsTouch(segment.end, videoSegs[index + 1].start),
+        ),
+      );
     });
   }
 
-  function sourceAudioBlock(segment, index, selected, state, total) {
+  function sourceAudioBlock(
+    segment,
+    index,
+    selected,
+    state,
+    total,
+    touchesPrevious,
+    touchesNext,
+  ) {
     var block = root.document.createElement("div");
     block.className =
       "seq-audio-clip" + (selected ? " selected" : "") + (segment.muted ? " muted" : "");
+    addJoinClasses(block, touchesPrevious, touchesNext);
     if (segment.muted) block.dataset.tip = "Source audio muted for this segment";
     block.dataset.audioKind = "source";
     block.dataset.segmentIndex = String(index);
     block.style.setProperty("--segment-color", root.segmentColor(index));
+    block.style.setProperty(
+      "--clip-fill",
+      root.TimelineCore.clipFill("source", selected, !!segment.muted),
+    );
     block.style.left = pct(segment.start, total);
     block.style.width = pct(Math.max(0, segment.end - segment.start), total);
     if (state.sourceWaveformUrl) {
@@ -259,8 +293,10 @@
         "url('" + state.sourceWaveformUrl.replace(/'/g, "%27") + "')";
       wave.style.backgroundSize =
         Math.max(100, (total / Math.max(segment.end - segment.start, _MIN_TRIM)) * 100) +
-        "% 160%";
-      wave.style.backgroundPosition = (segment.start / total) * 100 + "% center";
+        "% 100%";
+      wave.style.backgroundPosition =
+        core.waveformPositionPct(segment.start, segment.end - segment.start, total) +
+        "% center";
       block.appendChild(wave);
     }
     if (segment.muted) {
@@ -353,13 +389,28 @@
     lane.className = "seq-lane audio-lane";
     lane.dataset.trackId = track.id;
     lane.addEventListener("pointerdown", onLanePointerDown);
-    track.clips.forEach(function (audioClip) {
+    track.clips.forEach(function (audioClip, clipIndex) {
       var selected = audioClip.id === selectedClipId;
       var el = root.document.createElement("div");
       el.className =
         "seq-audio-clip imported" +
         (selected ? " selected" : "") +
         (audioClip.muted ? " muted" : "");
+      var previousClip = clipIndex > 0 ? track.clips[clipIndex - 1] : null;
+      var nextClip = clipIndex + 1 < track.clips.length ? track.clips[clipIndex + 1] : null;
+      addJoinClasses(
+        el,
+        previousClip &&
+          timelineItemsTouch(
+            previousClip.timelineStart + previousClip.timelineDuration,
+            audioClip.timelineStart,
+          ),
+        nextClip &&
+          timelineItemsTouch(
+            audioClip.timelineStart + audioClip.timelineDuration,
+            nextClip.timelineStart,
+          ),
+      );
       el.dataset.clipId = audioClip.id;
       el.dataset.trackId = track.id;
       el.tabIndex = 0;
@@ -375,6 +426,15 @@
       el.dataset.tip = "Drag to move · Alt-drag to choose another source fragment";
       el.style.left = pct(audioClip.timelineStart, total);
       el.style.width = pct(audioClip.timelineDuration, total);
+      el.style.setProperty(
+        "--clip-fill",
+        root.TimelineCore.clipFill(
+          "imported",
+          selected,
+          !!audioClip.muted,
+          trackColor(index),
+        ),
+      );
 
       var wave = root.document.createElement("div");
       wave.className = "audio-waveform";
@@ -1459,6 +1519,13 @@
     else apiObject.splitSelected();
   });
 })(typeof window !== "undefined" ? window : null, function () {
+  var TRACK_COLORS = ["#0F766E", "#B45309", "#0369A1", "#4D7C0F", "#A21CAF", "#C2410C"];
+
+  function trackColor(index) {
+    var normalized = Math.max(0, Number(index) || 0);
+    return TRACK_COLORS[Math.floor(normalized) % TRACK_COLORS.length];
+  }
+
   function selectedDuration(segments) {
     return (segments || []).reduce(function (total, segment) {
       return total + Math.max(0, Number(segment.end) - Number(segment.start));
@@ -1575,10 +1642,18 @@
       viewportStart: viewportStart,
       waveformLeftPct: waveformLeftPct,
       waveformWidthPct: waveformWidthPct,
-      waveformPositionPct: (waveformLeftPct / (100 - waveformWidthPct)) * 100,
+      waveformPositionPct: waveformPositionPct(viewportStart, visibleSpan, total),
       selectionStartPct: (context / visibleSpan) * 100,
       selectionWidthPct: (span / visibleSpan) * 100,
     };
+  }
+
+  function waveformPositionPct(sourceIn, sourceSpan, sourceDuration) {
+    var start = Number(sourceIn) || 0;
+    var span = Math.max(0, Number(sourceSpan) || 0);
+    var total = Math.max(0, Number(sourceDuration) || 0);
+    var movableSpan = total - span;
+    return Math.abs(movableSpan) > 0.000001 ? (start / movableSpan) * 100 : 0;
   }
 
   function sourceRangeDetailDragValue(current, deltaX, visibleSpan, contentWidth, maxSourceIn) {
@@ -1717,11 +1792,13 @@
   }
 
   return {
+    trackColor: trackColor,
     selectedDuration: selectedDuration,
     sourceToOutputTime: sourceToOutputTime,
     outputToSourceTime: outputToSourceTime,
     fitClipToTimeline: fitClipToTimeline,
     sourceRangePointerValue: sourceRangePointerValue,
+    waveformPositionPct: waveformPositionPct,
     sourceRangeDetailState: sourceRangeDetailState,
     sourceRangeDetailDragValue: sourceRangeDetailDragValue,
     sourceRangeKeyboardValue: sourceRangeKeyboardValue,

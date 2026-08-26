@@ -6,10 +6,40 @@ from urllib.request import Request, urlopen
 
 import pytest
 
-from tuck.media_server import MediaServer, get_media_server
+from tuck.media_server import MediaServer, _waveform_gain_db, get_media_server
 
 
 class TestMediaServer:
+    @pytest.mark.parametrize(
+        ("returncode", "stderr", "expected"),
+        [
+            (0, b"[Parsed_volumedetect] max_volume: -21.0 dB", 20.0),
+            (0, b"[Parsed_volumedetect] max_volume: -120.0 dB", 60.0),
+            (0, b"[Parsed_volumedetect] max_volume: 0.0 dB", 0.0),
+            (0, b"volumedetect produced no peak", 0.0),
+            (1, b"max_volume: -21.0 dB", 0.0),
+        ],
+    )
+    def test_waveform_gain_handles_detection_results(
+        self, tmp_path, monkeypatch, returncode, stderr, expected
+    ):
+        source = tmp_path / "source.wav"
+        source.write_bytes(b"audio")
+        calls = []
+
+        def fake_run(command, **kwargs):
+            calls.append((command, kwargs))
+            return SimpleNamespace(returncode=returncode, stderr=stderr)
+
+        monkeypatch.setattr("tuck.media_server.subprocess.run", fake_run)
+
+        assert _waveform_gain_db("ffmpeg", source, 3.5) == expected
+        assert len(calls) == 1
+        command, kwargs = calls[0]
+        assert "volumedetect" in command[command.index("-af") + 1]
+        assert command[command.index("-map") + 1] == "0:a:0"
+        assert kwargs["timeout"] == 3.5
+
     def test_register_file_returns_token(self, tmp_path):
         f = tmp_path / "test.mp4"
         f.write_text("dummy video content")
@@ -440,6 +470,10 @@ class TestMediaServer:
 
         def fake_run(command, **_kwargs):
             calls.append(command)
+            if "volumedetect" in " ".join(command):
+                return SimpleNamespace(
+                    returncode=0, stderr=b"[Parsed_volumedetect] max_volume: -21.0 dB"
+                )
             Path(command[-1]).write_bytes(b"png")
             return SimpleNamespace(returncode=0, stderr=b"")
 
@@ -450,10 +484,11 @@ class TestMediaServer:
 
         assert first == second
         assert first is not None and Path(first).read_bytes() == b"png"
-        assert len(calls) == 1
-        waveform_filter = calls[0][calls[0].index("-filter_complex") + 1]
-        assert "showwavespic" in waveform_filter
-        assert "scale=cbrt" in waveform_filter
+        assert len(calls) == 2
+        waveform_filter = calls[1][calls[1].index("-filter_complex") + 1]
+        assert "volume=20dB" in waveform_filter
+        assert "showwavespic=s=8192x96" in waveform_filter
+        assert "scale=sqrt" in waveform_filter
         assert "filter=peak" in waveform_filter
 
     def test_generate_waveform_ignores_legacy_linear_cache(self, tmp_path, monkeypatch):
@@ -474,6 +509,8 @@ class TestMediaServer:
 
         def fake_run(command, **_kwargs):
             calls.append(command)
+            if "volumedetect" in " ".join(command):
+                return SimpleNamespace(returncode=0, stderr=b"max_volume: -12.0 dB")
             Path(command[-1]).write_bytes(b"readable")
             return SimpleNamespace(returncode=0, stderr=b"")
 
@@ -482,7 +519,7 @@ class TestMediaServer:
         result = server.generate_waveform(source)
 
         assert result is not None and Path(result).read_bytes() == b"readable"
-        assert len(calls) == 1
+        assert len(calls) == 2
 
     def test_media_server_singleton(self):
         s1 = get_media_server()

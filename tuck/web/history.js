@@ -172,6 +172,7 @@ window.addEventListener("load", function () {
     "toggleVideoFlip",
     "setSizingMode",
     "clearCrop",
+    "resetVideoTransform",
   ].forEach(function (name) {
     History.wrap(window, name);
   });

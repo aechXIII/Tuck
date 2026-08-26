@@ -201,12 +201,14 @@ function updateDirty() {
   if (!_trackDirty || !profSnapshot) {
     byId("mod-badge").classList.remove("show");
     byId("prof-reset-row").classList.add("hid");
+    if (typeof syncExportSummary === "function") syncExportSummary();
     return;
   }
   var cur = JSON.stringify(profileControlState());
   var dirty = profSnapshot !== cur;
   byId("mod-badge").classList.toggle("show", dirty);
   byId("prof-reset-row").classList.toggle("hid", !dirty);
+  if (typeof syncExportSummary === "function") syncExportSummary();
 }
 function resetToProfile() {
   _trackDirty = false;
@@ -524,59 +526,88 @@ function renderClips() {
   byId("btn-rmall").style.display = keys.length ? "block" : "none";
   if (!keys.length) {
     el.classList.add("show");
+    updateLibrarySummary([]);
     updateActionButtons();
     return;
   }
   el.classList.remove("show");
-  for (var i = 0; i < keys.length; i++) {
-    (function (p, c) {
-      var statusLabel = c._statusText || "";
-      if (!statusLabel && c._queueState === "completed")
-        statusLabel = "Completed";
-      if (!statusLabel && c._queueState === "pending") statusLabel = "Pending";
-      if (!statusLabel && c._queueState === "running") statusLabel = "Encoding";
-      if (!statusLabel && c._queueState === "failed") statusLabel = "Failed";
-      if (!statusLabel && c._queueState === "cancelled")
-        statusLabel = "Cancelled";
-
-      var div = Tuck.clipCards.createClipCard(
-        document,
-        {
-          path: p,
-          name: c.name,
-          selected: selPath === p,
-          queueItemId: c._queueItemId || "",
-          queueState: c._queueState || "",
-          resultPath: c._resultPath || "",
-          statusLabel: statusLabel,
-          meta: metaStr(c),
-          badge: clipStateBadge(p),
-        },
-        {
-          select: function () {
-            if (clipReorder && clipReorder.moved) {
-              clipReorder.moved = false;
-              return;
-            }
-            selectClip(p);
-          },
-          togglePlay: function () {
-            selectClip(p);
-            togglePlay();
-          },
-          remove: removeClip,
-          openResult: openResult,
-          cancel: cancelQueueItem,
-          retry: retryQueueItem,
-          beginReorder: function (event) {
-            beginClipReorder(event, p, div);
-          },
-        },
-      );
-      cdiv.appendChild(div);
-    })(keys[i], clips[keys[i]]);
+  var models = keys.map(function (p) {
+    var c = clips[p];
+    var statusLabel = c._statusText || "";
+    if (!statusLabel && c._queueState === "completed") statusLabel = "Completed";
+    if (!statusLabel && c._queueState === "pending") statusLabel = "Pending";
+    if (!statusLabel && c._queueState === "running") statusLabel = "Encoding";
+    if (!statusLabel && c._queueState === "failed") statusLabel = "Failed";
+    if (!statusLabel && c._queueState === "cancelled") statusLabel = "Cancelled";
+    return {
+      path: p,
+      name: c.name,
+      selected: selPath === p,
+      queueItemId: c._queueItemId || "",
+      queueState: c._queueState || "",
+      resultPath: c._resultPath || "",
+      statusLabel: statusLabel,
+      progress: c._progress || 0,
+      fileSize: c._fileSize || 0,
+      meta: metaStr(c),
+      badge: clipStateBadge(p),
+    };
+  });
+  var groups = Tuck.clipCards.groupClipModels(models);
+  for (var g = 0; g < groups.length; g++) {
+    var group = groups[g];
+    var section = document.createElement("section");
+    section.className = "lib-group lib-group-" + group.key;
+    section.dataset.libraryGroup = group.key;
+    var headingId = "library-group-label-" + group.key;
+    section.setAttribute("aria-labelledby", headingId);
+    var heading = document.createElement("div");
+    heading.className = "lib-section-heading";
+    var label = document.createElement("span");
+    label.id = headingId;
+    label.textContent = Tuck.clipCards.groupHeading(group);
+    heading.appendChild(label);
+    section.appendChild(heading);
+    for (var i = 0; i < group.items.length; i++) {
+      appendLibraryClip(section, group.items[i]);
+    }
+    cdiv.appendChild(section);
   }
+  updateLibrarySummary(models);
   updateActionButtons();
+}
+
+function appendLibraryClip(container, model) {
+  var p = model.path;
+  var div = Tuck.clipCards.createClipCard(document, model, {
+    select: function () {
+      if (clipReorder && clipReorder.moved) {
+        clipReorder.moved = false;
+        return;
+      }
+      selectClip(p);
+    },
+    togglePlay: function () {
+      selectClip(p);
+      togglePlay();
+    },
+    remove: removeClip,
+    openResult: openResult,
+    cancel: cancelQueueItem,
+    retry: retryQueueItem,
+    beginReorder: function (event) {
+      beginClipReorder(event, p, div);
+    },
+  });
+  container.appendChild(div);
+}
+
+function updateLibrarySummary(models) {
+  var summary = Tuck.clipCards.librarySummary(models);
+  var count = byId("library-summary-count");
+  var size = byId("library-summary-size");
+  if (count) count.textContent = summary.countLabel;
+  if (size) size.textContent = summary.sizeLabel;
 }
 
 var clipReorder = {
@@ -754,9 +785,11 @@ function metaStr(c) {
   var duration = clipDuration(c);
   if (duration) first.push(duration);
   if (d.width && d.height) first.push(d.width + "×" + d.height);
-  if (c.crop) first.push("crop " + c.crop.width + "×" + c.crop.height);
-  if (c.rotation) first.push(c.rotation + "°");
-  if (c.flipHorizontal || c.flipVertical)
+  var encoding = c._queueState === "running" || c._queueState === "processing";
+  if (!encoding && c.crop)
+    first.push("crop " + c.crop.width + "×" + c.crop.height);
+  if (!encoding && c.rotation) first.push(c.rotation + "°");
+  if (!encoding && (c.flipHorizontal || c.flipVertical))
     first.push(
       c.flipHorizontal && c.flipVertical
         ? "flip H+V"
@@ -764,7 +797,7 @@ function metaStr(c) {
           ? "flip H"
           : "flip V",
     );
-  var second = c._fileSize ? formatBytes(c._fileSize) : "";
+  var second = !encoding && c._fileSize ? formatBytes(c._fileSize) : "";
   if (c._resultSize && c._queueState === "completed")
     second += " → " + formatBytes(c._resultSize);
   if (second) first.push(second);
@@ -805,6 +838,7 @@ function selectClip(p) {
   else if (c.probed) {
     syncFpsToClip();
     syncResolutionToClip();
+    if (typeof syncExportSummary === "function") syncExportSummary();
     reqPreview();
   }
 }
@@ -1007,7 +1041,11 @@ function libraryClipTarget(event) {
 }
 
 function moveSelection(delta, event) {
-  var keys = orderedClipKeys();
+  var keys = Tuck.clipCards.groupedClipPaths(
+    orderedClipKeys().map(function (path) {
+      return { path: path, queueState: clips[path]._queueState || "" };
+    }),
+  );
   if (!keys.length) return;
   var focusedClip = libraryClipTarget(event);
   var currentPath = focusedClip ? focusedClip.dataset.clipPath : selPath;

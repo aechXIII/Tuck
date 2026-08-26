@@ -234,6 +234,9 @@ def test_resource_path_locates_web_ui() -> None:
     for name in (
         "index.html",
         "styles.css",
+        "library.css",
+        "inspector.css",
+        "export.css",
         "shortcuts.css",
         "settings.css",
         "player.css",
