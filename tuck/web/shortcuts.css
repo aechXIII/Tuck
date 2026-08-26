@@ -1,27 +1,3 @@
-.tb-help-btn {
-  align-self: stretch;
-  min-height: var(--topbar-height);
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 1px 10px 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  color: #9292a4;
-  font: 600 12px var(--font);
-  cursor: pointer;
-}
-.tb-help-btn:hover {
-  background: rgba(167, 139, 250, 0.1);
-  color: #d4d4dc;
-}
-.tb-help-btn:focus-visible {
-  outline: 2px solid var(--accent-light);
-  outline-offset: -2px;
-  background: rgba(167, 139, 250, 0.1);
-  color: #f5f3ff;
-}
 .tb-help-icon {
   flex: none;
   width: 16px;
@@ -329,14 +305,6 @@
   font-weight: 600;
 }
 
-@media (max-width: 719px) {
-  .tb-help-btn {
-    padding: 1px 8px 0;
-  }
-  .tb-help-btn span {
-    display: none;
-  }
-}
 @media (max-width: 559px) {
   .mod-box.shortcuts-dialog {
     max-height: calc(100vh - 32px);

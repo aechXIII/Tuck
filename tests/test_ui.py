@@ -37,6 +37,15 @@ def test_workspace_surface_styles_load_in_owner_order() -> None:
     assert links[:4] == ["styles.css", "library.css", "inspector.css", "export.css"]
 
 
+def test_topbar_settings_control_has_visible_and_accessible_label() -> None:
+    html = _asset("index.html")
+    settings = re.search(r'<button\b[^>]*id="settings-toggle"[^>]*>.*?</button>', html, re.DOTALL)
+
+    assert settings is not None
+    assert 'aria-label="Settings"' in settings.group(0)
+    assert "<span>Settings</span>" in settings.group(0)
+
+
 def test_web_ui_uses_python_managed_drop_paths() -> None:
     html = _web_source()
 

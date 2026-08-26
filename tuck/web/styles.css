@@ -98,6 +98,36 @@ body {
   background: rgba(167, 139, 250, 0.1);
   color: #f5f3ff;
 }
+.tb-command-btn {
+  align-self: stretch;
+  min-height: var(--topbar-height);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 1px 10px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #9292a4;
+  font: 600 12px var(--font);
+  cursor: pointer;
+}
+.tb-command-btn:hover {
+  background: rgba(167, 139, 250, 0.1);
+  color: #d4d4dc;
+}
+.tb-command-btn:focus-visible {
+  outline: 2px solid var(--accent-light);
+  outline-offset: -2px;
+  background: rgba(167, 139, 250, 0.1);
+  color: #f5f3ff;
+}
+.tb-settings-icon {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  fill: currentColor;
+}
 .tb-icon-btn {
   background: transparent;
   border: none;
@@ -1990,6 +2020,12 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
     justify-content: center;
   }
   .tb-workspace-btn span {
+    display: none;
+  }
+  .tb-command-btn {
+    padding: 1px 8px 0;
+  }
+  .tb-command-btn span {
     display: none;
   }
 }
