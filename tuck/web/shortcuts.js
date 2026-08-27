@@ -171,6 +171,14 @@
       context: "editor-no-text-entry",
     },
     {
+      id: "timeline.add-segment",
+      category: "Timeline & segments",
+      column: 1,
+      label: "Add segment",
+      bindings: ["A"],
+      context: "editor-no-text-entry",
+    },
+    {
       id: "timeline.split",
       category: "Timeline & segments",
       column: 1,
@@ -509,7 +517,7 @@
     ],
     [
       [63, "Caps"],
-      [34, "A"],
+      [34, "A", "a"],
       [34, "S", "s"],
       [34, "D"],
       [34, "F"],

@@ -396,7 +396,7 @@ function paintTrimChrome() {
   var canAdd = SegmentEditing.canAddSegment(segments, full || 1);
   addButton.disabled = !canAdd;
   addButton.setAttribute("aria-disabled", canAdd ? "false" : "true");
-  addButton.dataset.tip = canAdd ? "New segment" : "Shorten a segment first";
+  addButton.dataset.tip = canAdd ? "Add segment (A)" : "Shorten a segment first";
   if (window.AudioTimeline && AudioTimeline.paintSource)
     AudioTimeline.paintSource();
   if (window.AudioTimeline && AudioTimeline.paintMixer)
@@ -1170,6 +1170,15 @@ function initTimelineResizer() {
 
 
 
+  root.TuckShortcuts.registerAction("timeline.add-segment", {
+    enabled: function () {
+      if (!selPath || !clips[selPath]) return false;
+      var clip = clips[selPath];
+      var full = videoDuration() || (clip.probeData && clip.probeData.duration) || 0;
+      return full > 0 && SegmentEditing.canAddSegment(clipSegments(clip, full), full);
+    },
+    execute: addSegment,
+  });
   root.TuckShortcuts.registerAction("timeline.zoom-in", {
     enabled: function () {
       return !!selPath;

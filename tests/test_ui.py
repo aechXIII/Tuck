@@ -276,7 +276,7 @@ def test_workspace_commands_have_clear_hierarchy() -> None:
     assert 'aria-keyshortcuts="S"' in html
     assert '<span class="timeline-tool-label" aria-hidden="true">Segments</span>' in html
     assert 'class="dock-text-btn timeline-primary-btn"' in toolbar
-    assert '<span class="timeline-command-label">New segment</span>' in toolbar
+    assert '<span class="timeline-command-label">Add segment</span>' in toolbar
     assert '<span class="timeline-command-label">Split</span>' in toolbar
     assert toolbar.index('aria-label="Segment actions"') < toolbar.index(
         'aria-label="Audio actions"'

@@ -54,6 +54,7 @@ test("production commands are the source of the existing shortcut guide", () => 
     "playback.seek-end": ["Ctrl+ArrowRight"],
     "media.select-previous": ["ArrowUp"],
     "media.select-next": ["ArrowDown"],
+    "timeline.add-segment": ["A"],
     "timeline.split": ["S"],
     "audio.toggle-fragment-mute": ["M"],
     "edit.delete-selection": ["Delete", "Backspace"],
@@ -124,6 +125,7 @@ test("production commands are the source of the existing shortcut guide", () => 
         category: "Timeline & segments",
         column: 1,
         items: [
+          { label: "Add segment", bindings: "A" },
           { label: "Split at playhead", bindings: "S" },
           { label: "Mute / unmute fragment", bindings: "M" },
           { label: "Delete selected item", bindings: "Delete or Backspace" },
@@ -738,7 +740,7 @@ test("the production guide renders every physical key with one base keycap style
     ),
   );
 
-  assert.equal(shortcuts.search(shortcuts.sections, "").total, 17);
+  assert.equal(shortcuts.search(shortcuts.sections, "").total, 18);
   assert.deepEqual(
     Array.from(shortcutIds).filter((id) => !renderedIds.has(id)),
     [],
