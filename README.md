@@ -1,8 +1,24 @@
-# Tuck
+<div>
+<h1 align="center">
+  <a href="https://github.com/aechXIII/Tuck"><img width="196" alt="Tuck logo" src="assets/tuck_logo_no_bg.svg"></a>
+  <br>
+  Tuck
+</h1>
 
-Tuck is a Windows app for compressing and upscaling videos with FFmpeg. It lets you trim, crop, rotate, and resize clips before encoding, and includes ready-made profiles for Discord upload limits.
+<p align="center"><strong>Trim, compress, and upscale videos on Windows.</strong></p>
 
-[![Release](https://img.shields.io/github/v/release/aechXIII/Tuck?style=flat-square&color=3B6AD8)](https://github.com/aechXIII/Tuck/releases) [![License: GPL-3.0-only](https://img.shields.io/badge/license-GPL--3.0--only-blue?style=flat-square)](LICENSE) [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-lightgrey?style=flat-square)]() [![Buy Me a Coffee](https://img.shields.io/badge/support-Buy%20Me%20a%20Coffee-F5A623?style=flat-square&logo=buy-me-a-coffee)](https://buymeacoffee.com/aechxiii)
+<p align="center">
+    <a href="https://github.com/aechXIII/Tuck/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/aechXIII/Tuck?style=flat-square&label=Release&color=7C3AED"></a>
+    <a href="https://github.com/aechXIII/Tuck/releases"><img alt="Total downloads" src="https://img.shields.io/github/downloads/aechXIII/Tuck/total?style=flat-square&label=Downloads&color=7C3AED"></a>
+    <img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-7C3AED?style=flat-square&logo=windows&logoColor=white">
+    <a href="LICENSE"><img alt="GPL v3 license" src="https://img.shields.io/badge/License-GPL%20v3-7C3AED?style=flat-square"></a>
+  <a href="https://x.com/aechxiii">
+  <img alt="Follow @aechxiii on X" src="https://img.shields.io/badge/Follow-%40aechxiii-7C3AED?style=flat-square&logo=x&logoColor=white">
+</a>
+  </p>
+</div>
+
+---
 
 > [!NOTE]
 > **Microsoft Defender false positive resolved**
@@ -11,122 +27,85 @@ Tuck is a Windows app for compressing and upscaling videos with FFmpeg. It lets 
 >
 > If Defender still reports an older detection, open Windows Security, go to **Virus & threat protection > Protection updates**, and select **Check for updates**.
 
+Tuck is a lightweight Windows video "editor", compressor, and upscaler built around FFmpeg. Use it to quickly remove unwanted segments, add or modify audio tracks, crop or transform the video and after that - export to a desired file size or resolution.
 
+<img src="docs/screenshots/Tuck_GUI.png" alt="Tuck editor">
 
-https://github.com/user-attachments/assets/532317a7-e628-455e-b041-4aeceef810b5
+## Download
 
+Tuck supports Windows 10 and 11. The installer includes the Microsoft Edge WebView2 setup, but FFmpeg must be installed separately.
 
-![Tuck](docs/screenshots/Tuck_GUI.png)
+1. Download the latest installer from the [Releases page](https://github.com/aechXIII/Tuck/releases/latest), then run it.
 
-<details>
-<summary>Send To</summary>
+2. Install FFmpeg and FFprobe:
 
-![Tuck Send To](docs/screenshots/Tuck_SENDTO.png)
+   ```powershell
+   winget install --exact --id Gyan.FFmpeg
+   ```
 
-</details>
+3. Restart Tuck.
+
+If `winget` is unavailable, install a Windows build from the [FFmpeg download page](https://ffmpeg.org/download.html). Make `ffmpeg.exe` and `ffprobe.exe` available in `PATH` or select them under
+**Settings > System & support > Advanced system settings**.
 
 ## Features
 
-**Trim and transform**
-- Trim clips on a stacked video-and-audio timeline before encoding
-- Cut source audio independently while leaving the picture in that range
-- Add music, narration, or sound effects on independent waveform tracks
-- Move, trim, split, loop, fade, mute, and mix imported audio with the source audio
-- Crop directly in the preview using a freeform selection or fixed aspect ratio
-- Rotate in 90-degree steps or flip the picture horizontally or vertically
-- Choose Fit to keep the whole picture, Fill to crop it to the output frame, or Stretch to match the exact output dimensions
-
-**Compress**
-- Default Discord presets for 20 MB, 50 MB, and 500 MB files
-- Two-pass encoding with target-size retries; outputs over the configured limit are never published
-- Auto (best compression) favors quality per byte. Auto (fastest available) uses NVIDIA or AMD hardware when possible
-- Choose CPU, NVIDIA, or AMD H.264/H.265 encoders. If your selected encoder is unavailable, Tuck tells you instead of silently switching
-
-**Upscale**
-- Default 1440p and 4K presets
-- Quality-based encoding with CRF or CQP
-- Choose the scaler you prefer
-
-**Profiles and queue**
-- Create, edit, copy, and import profiles, or export one profile at a time
-- Profiles can remember aspect ratio, sizing mode, and rotation. Each clip keeps its own crop region
-- Queue several files, drag pending jobs into order, and follow each encode's stage, pass, speed, ETA, and retry progress
-- Cancel a pending or running job. Failed and cancelled jobs can be retried with their original trim and encode settings
-- Stop after the current job or clear completed jobs automatically. Failed and cancelled jobs stay available for inspection or retry
-- Keep source resolution and FPS, or set limits per profile
-- Copy a support report that hides local paths, or open the logs and configuration folders directly
-
-**Windows**
-- Drag files into the app
-- Add Tuck or a profile to the File Explorer Send To menu
-- Check GitHub Releases for updates
-
-## Install
-
-1. Download the latest release from [Releases](https://github.com/aechXIII/Tuck/releases).
-2. Run the installer. It installs Tuck to `%LOCALAPPDATA%\Tuck`.
-3. Start Tuck from the Start menu or File Explorer Send To menu.
-
-Tuck needs Windows 10 or 11, [WebView2](https://developer.microsoft.com/en-us/microsoft-edge/webview2/), and FFmpeg. WebView2 is included with current Windows 10 and 11 installations; if it is missing, install it from Microsoft's official download page before starting Tuck.
-
-Install FFmpeg from PowerShell, then restart Tuck:
-
-```powershell
-winget install -e --id Gyan.FFmpeg
-```
-
-If `winget` is unavailable, download a Windows build from [FFmpeg](https://ffmpeg.org/download.html). Extract `ffmpeg.exe` and `ffprobe.exe` to `C:\ffmpeg\bin`. You can also set custom FFmpeg and FFprobe paths in **Settings**.
+- **Timeline editing:** Split a video into segments, trim or remove unwanted parts, and mute source audio or individual fragments.
+- **Audio editing:** Add new audio files and position them on the timeline. Imported audio can be moved, trimmed, split, muted, or given its own volume level.
+- **Crop and resize:** Crop directly in the preview, rotate in 90-degree steps, flip the
+  picture horizontally or vertically, and choose **Fit**, **Fill**, or **Stretch** for the
+  output frame.
+- **Compression and upscaling:** Compress to a chosen file-size limit, or upscale to 1440p, 4K, or a custom resolution. Built-in profiles cover [Discord's](https://support.discord.com/hc/en-us/articles/25444343291031-File-Attachments-FAQ) 20 MB, 50 MB, and 500 MB upload limits.
+- **Encoding queue:** Encode with FFmpeg using software or supported NVIDIA and AMD hardware. Queue multiple videos, reorder pending exports, cancel a pending or running export, and retry failed or cancelled exports.
+- **Profiles and Windows integration:** Save reusable profiles, import or export profiles, drag videos into Tuck, and add Tuck or a specific profile to File Explorer's **Send To** menu.
 
 ## Use
 
-1. Add one or more video files and optionally trim, crop, rotate, flip, or mix audio into the selected clip.
-2. Select a compression or upscale profile and encoder.
-3. Start the queue. You can reorder pending jobs, cancel a pending or running job, and retry failed or cancelled jobs without changing the original request.
-4. Use **Settings > System > Copy diagnostics** after a failure to copy a path-sanitized support report.
-
-For File Explorer, select video files, right-click them, then use **Send To > Tuck**. You can also add profile-specific shortcuts from Settings.
+1. Add one or more videos and select the clip you want to edit.
+2. Make any timeline, audio, crop, or sizing changes.
+3. Choose **Compress** or **Upscale**, select a profile, and start the export.
 
 ## Command line
 
-After installing, use `tuck` from a new terminal:
+The installer adds `tuck` to `PATH`. Open a new terminal after installing Tuck.
 
 ```powershell
 tuck profiles list
-tuck probe video.mp4
-tuck compress video.mp4 --profile discord-50mb
-tuck compress video.mp4 --size 25
-tuck upscale video.mp4 --to 1440p
-tuck upscale video.mp4 --resolution 2560x1440
+tuck probe clip.mp4
+tuck compress clip.mp4 --profile discord-50mb
+tuck compress clip.mp4 --size 25
+tuck upscale clip.mp4 --to 1440p
+tuck upscale clip.mp4 --resolution 2560x1440
 ```
 
-Run `tuck --help` for all commands.
+Run `tuck --help` for the complete command list.
+
+## Support
+
+If an export fails, open **Settings > System & support**, choose **Copy diagnostics**, and
+include the report in a [GitHub issue](https://github.com/aechXIII/Tuck/issues). Tuck removes local file paths from the report.
 
 ## Build from source
 
-Requires Python 3.10 or newer. Install [Inno Setup 6](https://jrsoftware.org/isdl.php) to build the installer.
+Running Tuck from source requires Windows, Python 3.10 or newer, and FFmpeg:
 
 ```powershell
 .\scripts\setup.ps1
 .\scripts\run.ps1
 ```
 
+Create a packaged build with:
+
 ```powershell
 .\scripts\build.ps1 -Clean
+```
+
+Building the installer also requires [Inno Setup 6](https://jrsoftware.org/isdl.php):
+
+```powershell
 .\scripts\build.ps1 -Clean -Installer
 ```
 
-Run the checks before a release:
-
-```powershell
-pytest
-ruff format --check tuck/ tests/
-ruff check tuck/ tests/
-pyright tuck/
-node --test
-```
-
-The app build is in `dist\Tuck\`. The installer is in `scripts\Output\`.
-
 ## License
 
-Tuck is licensed under the GNU General Public License v3.0 only (`GPL-3.0-only`). See [LICENSE](LICENSE).
+Tuck is available under the [GNU General Public License v3.0 only](LICENSE).

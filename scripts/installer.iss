@@ -5,8 +5,8 @@
 ; TuckCli.exe for CLI operations (including uninstall cleanup)
 
 #define MyAppName "Tuck"
-#define MyAppVersion "0.3.2"
-#define MyAppPublisher "Tuck contributors"
+#define MyAppVersion "0.4.0"
+#define MyAppPublisher "aechXIII"
 #define MyAppURL "https://github.com/aechXIII/Tuck"
 #define MyAppExeName "Tuck.exe"
 #define MyAppCliName "TuckCli.exe"
