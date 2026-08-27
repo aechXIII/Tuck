@@ -679,6 +679,7 @@ function settingsPageState() {
     return {
       defaultProfile: byId("set-dp").value,
       defaultScaler: byId("set-ds").value,
+      inspectorStartPanel: byId("set-inspector-start").value,
       openOutput: byId("set-open-output-folder").checked,
       autoClear: byId("set-auto-clear").checked,
     };
@@ -718,6 +719,18 @@ function generalSettingsHTML(s, profiles) {
     .join("");
   var autoClear = s.clear_completed_automatically ? "checked" : "";
   var openOutput = s.open_output_folder_after_queue ? "checked" : "";
+  var inspectorStart = s.inspector_start_panel || "export";
+  var inspectorOptions = [
+    ["last", "Last used"],
+    ["video", "Video"],
+    ["audio", "Audio"],
+    ["export", "Export"],
+  ]
+    .map(function (option) {
+      var selected = option[0] === inspectorStart ? "selected" : "";
+      return `<option value="${option[0]}" ${selected}>${option[1]}</option>`;
+    })
+    .join("");
   return `<div class="settings-card">
     <div class="settings-card-title">Task defaults</div>
     <div class="settings-card-copy">Used for settings not included in the selected profile.</div>
@@ -729,6 +742,15 @@ function generalSettingsHTML(s, profiles) {
       <div class="settings-field">
         <label for="set-ds">Default scaler</label>
         <select id="set-ds" data-settings-change="mark-dirty">${scalers}</select>
+      </div>
+    </div>
+  </div>
+  <div class="settings-card">
+    <div class="settings-card-title">Inspector</div>
+    <div class="settings-grid">
+      <div class="settings-field full">
+        <label for="set-inspector-start">Open on launch</label>
+        <select id="set-inspector-start" data-settings-change="mark-dirty">${inspectorOptions}</select>
       </div>
     </div>
   </div>
@@ -1139,6 +1161,7 @@ async function saveSettings() {
   await persistSettings({
     default_profile_id: byId("set-dp").value,
     default_scaler: byId("set-ds").value.toLowerCase(),
+    inspector_start_panel: byId("set-inspector-start").value,
     clear_completed_automatically: byId("set-auto-clear").checked,
     open_output_folder_after_queue: byId("set-open-output-folder").checked,
   });

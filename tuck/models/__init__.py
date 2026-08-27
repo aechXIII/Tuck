@@ -1159,6 +1159,8 @@ class AppSettings:
     last_upscale_profile_id: str = ""
     left_sidebar_width: int = 240
     timeline_height: int = 0
+    inspector_start_panel: str = "export"
+    last_inspector_panel: str = "export"
     window_width: int = 1240
     window_height: int = 800
     profiles: list[dict[str, Any]] = field(default_factory=list)

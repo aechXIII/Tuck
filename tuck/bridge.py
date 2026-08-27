@@ -468,6 +468,8 @@ class BridgeAPI:
             "last_upscale_profile_id": getattr(s, "last_upscale_profile_id", ""),
             "left_sidebar_width": getattr(s, "left_sidebar_width", 240),
             "timeline_height": getattr(s, "timeline_height", 0),
+            "inspector_start_panel": getattr(s, "inspector_start_panel", "export"),
+            "last_inspector_panel": getattr(s, "last_inspector_panel", "export"),
             "compression_suffix": getattr(s, "compression_suffix", "_tucked_{size}")
             or "_tucked_{size}",
             "upscale_suffix": getattr(s, "upscale_suffix", "_upscaled_{width}x{height}")
@@ -503,6 +505,8 @@ class BridgeAPI:
             "last_upscale_profile_id",
             "left_sidebar_width",
             "timeline_height",
+            "inspector_start_panel",
+            "last_inspector_panel",
             "compression_suffix",
             "upscale_suffix",
         }
@@ -538,6 +542,27 @@ class BridgeAPI:
                     return {
                         "ok": False,
                         "error": "timeline_height must be 0 or 170 to 2400",
+                    }
+
+                if key == "inspector_start_panel" and data[key] not in (
+                    "last",
+                    "video",
+                    "audio",
+                    "export",
+                ):
+                    return {
+                        "ok": False,
+                        "error": "inspector_start_panel must be last, video, audio, or export",
+                    }
+
+                if key == "last_inspector_panel" and data[key] not in (
+                    "video",
+                    "audio",
+                    "export",
+                ):
+                    return {
+                        "ok": False,
+                        "error": "last_inspector_panel must be video, audio, or export",
                     }
 
                 if key == "default_profile_id" and not isinstance(data[key], str):

@@ -1455,6 +1455,8 @@ class TestBridgeWorkflowPropagation:
         assert resp["last_update_check"] == ""
         assert resp["open_output_folder_after_queue"] is False
         assert resp["timeline_height"] == 0
+        assert resp["inspector_start_panel"] == "export"
+        assert resp["last_inspector_panel"] == "export"
 
     def test_save_settings_validates_open_output_folder_after_queue(self, tmp_path, monkeypatch):
         import tuck.settings as settings_mod
@@ -1489,6 +1491,32 @@ class TestBridgeWorkflowPropagation:
         assert api._settings.load().timeline_height == 0
         assert not invalid["ok"]
         assert invalid["error"] == "timeline_height must be 0 or 170 to 2400"
+
+    def test_save_settings_validates_inspector_panel_preferences(self, tmp_path, monkeypatch):
+        import tuck.settings as settings_mod
+
+        monkeypatch.setattr(settings_mod, "_config_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
+
+        api = BridgeAPI()
+        assert api.save_settings({"inspector_start_panel": "last"})["ok"]
+        assert api.save_settings({"last_inspector_panel": "audio"})["ok"]
+
+        settings = api._settings.load()
+        assert settings.inspector_start_panel == "last"
+        assert settings.last_inspector_panel == "audio"
+
+        invalid_start = api.save_settings({"inspector_start_panel": "edit"})
+        invalid_last = api.save_settings({"last_inspector_panel": "last"})
+        assert invalid_start == {
+            "ok": False,
+            "error": "inspector_start_panel must be last, video, audio, or export",
+        }
+        assert invalid_last == {
+            "ok": False,
+            "error": "last_inspector_panel must be video, audio, or export",
+        }
 
     def test_save_settings_validates_encoder_cache_days(self, tmp_path, monkeypatch):
         import tuck.settings as settings_mod

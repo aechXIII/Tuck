@@ -328,8 +328,8 @@
           <button
             type="button"
             id="insp-tab-edit"
-            class="insp-tab on"
-            aria-pressed="true"
+            class="insp-tab"
+            aria-pressed="false"
             data-action-click="inspector-tab"
             data-action-value="edit"
           >
@@ -356,8 +356,8 @@
           <button
             type="button"
             id="insp-tab-export"
-            class="insp-tab"
-            aria-pressed="false"
+            class="insp-tab on"
+            aria-pressed="true"
             data-action-click="inspector-tab"
             data-action-value="export"
           >
@@ -369,7 +369,7 @@
           </button>
         </div>
         <div id="right-scroll">
-          <div id="insp-edit">
+          <div id="insp-edit" class="hid">
             <div id="video-inspector-empty" class="inspector-empty">
               <strong>Select a video</strong>
               <span>Choose a video from the Library to crop, rotate, flip, or resize it.</span>
@@ -636,7 +636,7 @@
             <div id="audio-track-mixer"></div>
             <div id="audio-clip-range" class="hid"></div>
           </div>
-          <div id="insp-export" class="hid">
+          <div id="insp-export">
             <div class="inspector-summary export-summary">
               <div class="export-summary-heading">
                 <span id="export-summary-title" class="inspector-summary-title">10 MB</span>
@@ -982,7 +982,7 @@
             </details>
           </div>
         </div>
-        <div id="right-foot" class="hid">
+        <div id="right-foot">
           <button class="btn1" id="btn-one" data-action-click="encoding-run-selected">
             Compress selected
           </button>

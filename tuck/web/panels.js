@@ -1,5 +1,6 @@
 var libraryTab = "media";
-var inspectorTab = "edit";
+var inspectorTab = "export";
+var inspectorSettingsSave = Promise.resolve();
 var workspaceViewportMode = "";
 var workspacePanels = { libraryOpen: true, inspectorOpen: true };
 var workspaceReturnFocus = null;
@@ -196,7 +197,25 @@ function renderAudioLibraryPanel() {
   });
 }
 
-function setInspectorTab(tab) {
+function rememberInspectorTab(tab) {
+  if (!api) return;
+  var panel = tab === "edit" ? "video" : tab;
+  appSettings.last_inspector_panel = panel;
+  inspectorSettingsSave = inspectorSettingsSave
+    .catch(function () {})
+    .then(function () {
+      return api.saveSettings({ last_inspector_panel: panel });
+    })
+    .then(function (result) {
+      if (!result.ok)
+        toast(result.error || "Could not remember the Inspector panel.", "err");
+    })
+    .catch(function () {
+      toast("Could not remember the Inspector panel.", "err");
+    });
+}
+
+function setInspectorTab(tab, remember) {
   inspectorTab = tab === "audio" || tab === "export" ? tab : "edit";
   ["edit", "audio", "export"].forEach(function (t) {
     var active = t === inspectorTab;
@@ -206,6 +225,7 @@ function setInspectorTab(tab) {
   });
   byId("right-foot").classList.toggle("hid", inspectorTab !== "export");
   if (inspectorTab === "audio") renderAudioMixerList();
+  if (remember !== false) rememberInspectorTab(inspectorTab);
 }
 
 var CODEC_LABELS = {

@@ -87,3 +87,12 @@ test("upscale summary describes the output without inventing a target size", () 
     },
   );
 });
+
+test("inspector startup resolves fixed and last-used panel preferences", () => {
+  assert.equal(inspectorUi.startupTab("video", "export"), "edit");
+  assert.equal(inspectorUi.startupTab("audio", "edit"), "audio");
+  assert.equal(inspectorUi.startupTab("export", "audio"), "export");
+  assert.equal(inspectorUi.startupTab("last", "audio"), "audio");
+  assert.equal(inspectorUi.startupTab("last", "unexpected"), "export");
+  assert.equal(inspectorUi.startupTab("unexpected", "audio"), "export");
+});

@@ -51,3 +51,42 @@ test("workspace resize is safe before the later timeline script loads", () => {
   assert.doesNotThrow(() => listeners.resize());
   assert.equal(context.workspaceViewportMode, "overlay");
 });
+
+test("selecting an Inspector tab remembers the user-facing panel name", async () => {
+  const elements = new Map();
+  const saved = [];
+  const context = {
+    TuckLayout: layout,
+    api: {
+      async saveSettings(settings) {
+        saved.push(settings);
+        return { ok: true };
+      },
+    },
+    appSettings: {},
+    byId(id) {
+      if (!elements.has(id)) elements.set(id, fakeElement());
+      return elements.get(id);
+    },
+    document: {
+      activeElement: null,
+      addEventListener() {},
+      body: fakeElement(),
+    },
+    renderAudioMixerList() {},
+    toast() {},
+    window: {
+      TuckLayout: layout,
+      addEventListener() {},
+      innerWidth: 1240,
+    },
+  };
+
+  vm.runInNewContext(panelsSource, context, { filename: "panels.js" });
+  context.setInspectorTab("export");
+  await context.inspectorSettingsSave;
+
+  assert.equal(context.appSettings.last_inspector_panel, "export");
+  assert.equal(saved.length, 1);
+  assert.equal(saved[0].last_inspector_panel, "export");
+});

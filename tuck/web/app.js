@@ -357,6 +357,13 @@ async function startApp() {
   updateSizePresets(10);
   try {
     await loadSettings();
+    setInspectorTab(
+      Tuck.inspectorUi.startupTab(
+        appSettings.inspector_start_panel,
+        appSettings.last_inspector_panel,
+      ),
+      false,
+    );
   } catch (e) {
     toast("Could not load settings.", "err");
   }

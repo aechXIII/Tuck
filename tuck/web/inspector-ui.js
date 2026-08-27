@@ -104,6 +104,16 @@
     ];
   }
 
+  function startupTab(preference, lastPanel) {
+    if (preference === "video") return "edit";
+    if (preference === "audio" || preference === "export") return preference;
+    if (preference === "last") {
+      if (lastPanel === "video") return "edit";
+      if (lastPanel === "audio" || lastPanel === "export") return lastPanel;
+    }
+    return "export";
+  }
+
   return {
     audioSummary: audioSummary,
     encoderPanelSummary: encoderPanelSummary,
@@ -113,5 +123,6 @@
     resolutionChoices: resolutionChoices,
     resolutionDecision: resolutionDecision,
     sizePresets: sizePresets,
+    startupTab: startupTab,
   };
 });
