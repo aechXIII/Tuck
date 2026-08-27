@@ -398,7 +398,7 @@ class TestConsoleProgress:
 
         assert run_sendto_console([]) == 1
         stream.flush()
-        assert "Send To -> Tuck" in raw.getvalue().decode("cp1252")
+        assert "Send To -> Tuck Compress" in raw.getvalue().decode("cp1252")
 
 
 class TestParseSendtoArgs:

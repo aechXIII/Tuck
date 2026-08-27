@@ -1274,7 +1274,7 @@ async function instProfSt() {
 }
 async function instGenSt() {
   var r = await api.installGenericSendto();
-  if (r.ok) toast("Default Explorer shortcut installed.", "ok");
+  if (r.ok) toast("Explorer shortcuts installed.", "ok");
   else toast(r.error || "Failed", "err");
   openSettings("explorer");
 }
@@ -1285,7 +1285,7 @@ async function installProfileSt(pid, name) {
   openSettings("explorer");
 }
 async function removeSt(data) {
-  confirmToast("Remove shortcut?", function () {
+  confirmToast(data.type === "generic" ? "Remove both Tuck shortcuts?" : "Remove shortcut?", function () {
     (data.type === "generic"
       ? api.removeGenericSendto()
       : api.removeProfileSendto(data.profile_id || data.name || "")

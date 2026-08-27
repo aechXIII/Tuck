@@ -51,7 +51,6 @@ Source: "MicrosoftEdgeWebView2Setup.exe"; DestDir: "{tmp}"; Flags: deleteafterin
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
-Name: "{usersendto}\Tuck"; Filename: "{app}\{#MyAppExeName}"; Parameters: "--sendto-files"; Tasks: sendto; Comment: "Compress with Tuck"
 
 [Run]
 Filename: "{tmp}\MicrosoftEdgeWebView2Setup.exe"; Parameters: "/silent /install"; StatusMsg: "Installing Microsoft Edge WebView2 Runtime..."; Flags: waituntilterminated skipifdoesntexist
@@ -118,10 +117,27 @@ begin
   RegDeleteValue(HKCU, TuckRegistryKey, PathAddedValue);
 end;
 
+procedure InstallSendToShortcuts;
+var
+  ResultCode: Integer;
+begin
+  if not WizardIsTaskSelected('sendto') then
+    Exit;
+  if not Exec(ExpandConstant('{app}\{#MyAppCliName}'), 'sendto install', '', SW_HIDE,
+      ewWaitUntilTerminated, ResultCode) then begin
+    MsgBox('Tuck could not start Send To shortcut installation.', mbError, MB_OK);
+    Exit;
+  end;
+  if ResultCode <> 0 then
+    MsgBox('Tuck could not install its Send To shortcuts because a same-named shortcut is already present and is not owned by Tuck. The existing shortcut was left unchanged.', mbError, MB_OK);
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
-  if CurStep = ssPostInstall then
+  if CurStep = ssPostInstall then begin
     AddTuckToPath;
+    InstallSendToShortcuts;
+  end;
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);

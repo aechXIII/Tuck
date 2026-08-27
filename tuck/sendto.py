@@ -9,6 +9,8 @@ logger = logging.getLogger(__name__)
 
 SENDTO_SHORTCUT_NAME = "Tuck.lnk"
 SENDTO_BATCH_NAME = "Tuck.bat"
+SENDTO_COMPRESS_SHORTCUT_NAME = "Tuck Compress.lnk"
+SENDTO_COMPRESS_BATCH_NAME = "Tuck Compress.bat"
 PROFILE_SHORTCUT_PREFIX = "Tuck - "
 
 # embedded in .lnk Description and .bat REM lines so Tuck can tell which shortcuts it owns
@@ -33,7 +35,12 @@ def _sendto_dir() -> Path:
 
 def _get_target_path() -> str | None:
     if getattr(sys, "frozen", False):
-        return sys.executable
+        executable = Path(sys.executable)
+        if executable.name.casefold() == "tuckcli.exe":
+            gui_executable = executable.with_name("Tuck.exe")
+            if gui_executable.is_file():
+                return str(gui_executable)
+        return str(executable)
     return sys.executable
 
 
@@ -74,12 +81,67 @@ def _get_batch_path() -> Path:
     return _sendto_dir() / SENDTO_BATCH_NAME
 
 
+def _get_compress_shortcut_path() -> Path:
+    return _sendto_dir() / SENDTO_COMPRESS_SHORTCUT_NAME
+
+
+def _get_compress_batch_path() -> Path:
+    return _sendto_dir() / SENDTO_COMPRESS_BATCH_NAME
+
+
 def _can_create_shortcuts() -> bool:
     try:
         import pythoncom  # noqa: F401
     except ImportError:
         return False
     return os.name == "nt"
+
+
+def _is_legacy_generic_shortcut(path: Path) -> bool:
+    if path.name != SENDTO_SHORTCUT_NAME or not path.is_file() or not _can_create_shortcuts():
+        return False
+    try:
+        with path.open("rb") as shortcut_file:
+            if shortcut_file.read(len(_SHELL_LINK_HEADER)) != _SHELL_LINK_HEADER:
+                return False
+
+        import pythoncom
+        from win32com.client import Dispatch
+
+        pythoncom.CoInitialize()
+        try:
+            shell = Dispatch("WScript.Shell")
+            shortcut = shell.CreateShortCut(str(path))
+            target = _get_target_path()
+            return bool(
+                target
+                and (shortcut.TargetPath or "").casefold() == target.casefold()
+                and (shortcut.Arguments or "").strip() == "--sendto-files"
+                and (shortcut.Description or "").strip() == "Compress with Tuck"
+            )
+        finally:
+            shortcut = None
+            shell = None
+            pythoncom.CoUninitialize()
+    except Exception:
+        return False
+
+
+def _generic_destination_paths() -> tuple[Path, ...]:
+    return (
+        _get_generic_shortcut_path(),
+        _get_compress_shortcut_path(),
+        _get_batch_path(),
+        _get_compress_batch_path(),
+    )
+
+
+def _ensure_generic_destinations_available() -> None:
+    for path in _generic_destination_paths():
+        if path.exists() and not (_is_tuck_shortcut(path) or _is_legacy_generic_shortcut(path)):
+            raise FileExistsError(
+                f"Explorer shortcut already exists and is not owned by Tuck: {path}"
+            )
 
 
 def install_sendto() -> Path:
@@ -89,29 +151,45 @@ def install_sendto() -> Path:
 
     sendto = _sendto_dir()
     sendto.mkdir(parents=True, exist_ok=True)
+    _ensure_generic_destinations_available()
     shortcut_path = _get_generic_shortcut_path()
 
-    batch_path = _get_batch_path()
-    if batch_path.exists():
-        batch_path.unlink()
-        logger.info("Removed old batch fallback: %s", batch_path)
+    batch_paths = (_get_batch_path(), _get_compress_batch_path())
+    for batch_path in batch_paths:
+        if batch_path.exists() and _is_tuck_shortcut(batch_path):
+            batch_path.unlink()
+            logger.info("Removed old batch fallback: %s", batch_path)
 
     if _can_create_shortcuts():
-        args = _get_args()
+        args = _get_args(action=ACTION_REVIEW)
         _create_windows_shortcut(
             target,
             shortcut_path,
             arguments=args,
             working_dir=_get_working_dir(),
+            description="Open in Tuck",
+            shortcut_type="generic",
+        )
+        compress_path = _get_compress_shortcut_path()
+        _create_windows_shortcut(
+            target,
+            compress_path,
+            arguments=_get_args(action=ACTION_START),
+            working_dir=_get_working_dir(),
             description="Compress with Tuck",
             shortcut_type="generic",
         )
-        logger.info("Send To shortcut created at %s", shortcut_path)
+        logger.info("Send To shortcuts created at %s and %s", shortcut_path, compress_path)
         return shortcut_path
     else:
-        args = _get_args()
-        batch = _create_batch_fallback(target, args, sendto)
-        logger.info("Send To batch fallback created at %s", batch)
+        batch = _create_batch_fallback(target, _get_args(action=ACTION_REVIEW), sendto)
+        compress_batch = _create_batch_fallback(
+            target,
+            _get_args(action=ACTION_START),
+            sendto,
+            suffix=" Compress",
+        )
+        logger.info("Send To batch fallbacks created at %s and %s", batch, compress_batch)
         return batch
 
 
@@ -152,7 +230,12 @@ def install_profile_shortcut(
 
 def uninstall_sendto() -> None:
     sendto = _sendto_dir()
-    for name in (SENDTO_SHORTCUT_NAME, SENDTO_BATCH_NAME):
+    for name in (
+        SENDTO_SHORTCUT_NAME,
+        SENDTO_BATCH_NAME,
+        SENDTO_COMPRESS_SHORTCUT_NAME,
+        SENDTO_COMPRESS_BATCH_NAME,
+    ):
         p = sendto / name
         if p.exists() and _is_tuck_shortcut(p):
             p.unlink()
@@ -193,11 +276,16 @@ def repair_sendto() -> bool:
         logger.debug("pywin32 COM not available; cannot repair .lnk shortcuts")
         return False
 
-    shortcut_path = _get_generic_shortcut_path()
-    if not shortcut_path.exists():
+    shortcut_specs = (
+        (_get_generic_shortcut_path(), ACTION_REVIEW, "Open in Tuck"),
+        (_get_compress_shortcut_path(), ACTION_START, "Compress with Tuck"),
+    )
+    if not any(
+        path.exists() and (_is_tuck_shortcut(path) or _is_legacy_generic_shortcut(path))
+        for path, _, _ in shortcut_specs
+    ):
         return False
-    if not _is_tuck_shortcut(shortcut_path):
-        return False
+    _ensure_generic_destinations_available()
     target = _get_target_path()
     if not target:
         return False
@@ -206,23 +294,33 @@ def repair_sendto() -> bool:
         import pythoncom
         from win32com.client import Dispatch
 
+        repaired = False
+        sc = None
         pythoncom.CoInitialize()
         try:
             shell = Dispatch("WScript.Shell")
-            sc = shell.CreateShortCut(str(shortcut_path))
-            expected_args = " ".join(_get_args())
-            if sc.TargetPath == target and (sc.Arguments or "") == expected_args:
-                return False
-            _create_windows_shortcut(
-                target,
-                shortcut_path,
-                arguments=_get_args(),
-                working_dir=_get_working_dir(),
-                description="Compress with Tuck",
-                shortcut_type="generic",
-            )
-            logger.info("Repaired Send To shortcut: %s", shortcut_path)
-            return True
+            for shortcut_path, action, description in shortcut_specs:
+                expected_args = " ".join(_get_args(action=action))
+                if shortcut_path.exists():
+                    if not (
+                        _is_tuck_shortcut(shortcut_path)
+                        or _is_legacy_generic_shortcut(shortcut_path)
+                    ):
+                        continue
+                    sc = shell.CreateShortCut(str(shortcut_path))
+                    if sc.TargetPath == target and (sc.Arguments or "") == expected_args:
+                        continue
+                _create_windows_shortcut(
+                    target,
+                    shortcut_path,
+                    arguments=_get_args(action=action),
+                    working_dir=_get_working_dir(),
+                    description=description,
+                    shortcut_type="generic",
+                )
+                logger.info("Repaired Send To shortcut: %s", shortcut_path)
+                repaired = True
+            return repaired
         finally:
             sc = None
             shell = None
@@ -291,21 +389,18 @@ def repair_profile_shortcut(
 
 def list_sendto_shortcuts() -> list[dict[str, str]]:
     result: list[dict[str, str]] = []
+    generic_entries: list[tuple[Path, bool]] = []
     sendto = _sendto_dir()
     if not sendto.exists():
         return result
     for entry in sorted(sendto.iterdir()):
-        if (entry.name == SENDTO_SHORTCUT_NAME and entry.suffix == ".lnk") or (
-            entry.name == SENDTO_BATCH_NAME and entry.suffix == ".bat"
-        ):
-            result.append(
-                {
-                    "name": "Tuck (default)",
-                    "path": str(entry),
-                    "type": "generic",
-                    "status": "ok" if _is_tuck_shortcut(entry) else "broken",
-                }
-            )
+        if entry.name in {
+            SENDTO_SHORTCUT_NAME,
+            SENDTO_BATCH_NAME,
+            SENDTO_COMPRESS_SHORTCUT_NAME,
+            SENDTO_COMPRESS_BATCH_NAME,
+        }:
+            generic_entries.append((entry, _is_tuck_shortcut(entry)))
         elif (
             entry.name.startswith(PROFILE_SHORTCUT_PREFIX)
             and entry.suffix in (".lnk", ".bat")
@@ -321,6 +416,24 @@ def list_sendto_shortcuts() -> list[dict[str, str]]:
                     "status": "ok",
                 }
             )
+    if generic_entries:
+        names = {entry.stem for entry, _ in generic_entries}
+        review_entry = next(
+            (entry for entry, _ in generic_entries if entry.stem == "Tuck"),
+            generic_entries[0][0],
+        )
+        complete = {"Tuck", "Tuck Compress"}.issubset(names)
+        result.insert(
+            0,
+            {
+                "name": "Tuck + Tuck Compress",
+                "path": str(review_entry),
+                "type": "generic",
+                "status": "ok"
+                if complete and all(owned for _, owned in generic_entries)
+                else "broken",
+            },
+        )
     return result
 
 
