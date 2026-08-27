@@ -33,7 +33,7 @@
           document,
           "span",
           "",
-          "Playback may still work, but editing and export need the file details.",
+          "You may still be able to play this video, but Tuck needs its details to edit or export it.",
         ),
       );
       error.appendChild(

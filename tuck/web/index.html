@@ -177,7 +177,7 @@
           <div id="clips">
             <div id="drop-z" class="show">
               <strong>No videos yet</strong>
-              <span>Drop videos here or add them above.</span>
+              <span>Drop videos here, or select Add videos.</span>
             </div>
           </div>
         </div>
@@ -372,7 +372,7 @@
           <div id="insp-edit">
             <div id="video-inspector-empty" class="inspector-empty">
               <strong>Select a video</strong>
-              <span>Choose a clip in the Library to edit its framing and transform.</span>
+              <span>Choose a video from the Library to crop, rotate, flip, or resize it.</span>
             </div>
             <div id="video-inspector-content" class="inspector-content hid">
               <div class="inspector-summary video-summary">
@@ -577,7 +577,7 @@
                       class="on"
                       aria-pressed="true"
                       data-action-click="transform-sizing"
-                      data-tip="Keep the entire selected image without distortion"
+                      data-tip="Show the entire video without stretching it."
                     >
                       Fit</button
                     ><button
@@ -585,7 +585,7 @@
                       data-sizing="fill"
                       aria-pressed="false"
                       data-action-click="transform-sizing"
-                      data-tip="Fill the output dimensions and crop excess edges"
+                      data-tip="Fill the frame. Some edges may be cropped."
                     >
                       Fill</button
                     ><button
@@ -593,7 +593,7 @@
                       data-sizing="stretch"
                       aria-pressed="false"
                       data-action-click="transform-sizing"
-                      data-tip="Force the selected image to the output dimensions and allow distortion"
+                      data-tip="Fill the frame by stretching the video."
                     >
                       Stretch
                     </button>
@@ -649,9 +649,23 @@
             <div class="gr" id="profile-card">
               <div class="inspector-label-row">
                 <div class="grt">Profile</div>
-                <button class="inspector-text-action" data-action-click="encoding-save-profile">
-                  Save changes
-                </button>
+                <div class="inspector-label-actions">
+                  <button
+                    type="button"
+                    class="inspector-text-action"
+                    data-action-click="settings-open-profiles"
+                    aria-label="Manage profiles"
+                  >
+                    Manage
+                  </button>
+                  <button
+                    type="button"
+                    class="inspector-text-action"
+                    data-action-click="encoding-save-profile"
+                  >
+                    Save changes
+                  </button>
+                </div>
               </div>
               <div class="profile-select-row">
                 <select
@@ -683,9 +697,6 @@
                       Save as new…
                     </button>
                   </div>
-                  <button class="btn2" data-action-click="settings-open-profiles">
-                    Manage profiles
-                  </button>
                   <div id="prof-reset-row" class="hid">
                     <button class="btn2" data-action-click="encoding-reset-profile">
                       Reset to profile
@@ -1262,8 +1273,8 @@
           <div id="imported-audio-tracks"></div>
         </div>
         <div id="timeline-empty" class="timeline-empty" aria-live="polite">
-          <span class="timeline-empty-title">Timeline is empty</span>
-          <span class="timeline-empty-copy">Video and audio tracks will appear here.</span>
+          <span class="timeline-empty-title">No video selected</span>
+          <span class="timeline-empty-copy">Choose a video from the Library to view its timeline.</span>
         </div>
         <div id="seq-selection-layer">
           <div id="seq-selection" hidden></div>

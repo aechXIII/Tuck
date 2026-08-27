@@ -164,7 +164,7 @@ function renderAudioLibraryPanel() {
   var clip = selPath ? clips[selPath] : null;
   if (!clip) {
     list.replaceChildren();
-    empty.textContent = "Select a video to manage audio.";
+    empty.textContent = "Choose a video to see its audio tracks.";
     empty.classList.remove("hid");
     return;
   }
@@ -294,7 +294,7 @@ function renderAudioMixerList() {
   var clip = selPath ? clips[selPath] : null;
   if (!clip || !clip.audioTimeline) {
     if (count) count.textContent = "0";
-    host.innerHTML = '<div class="cd-empty">Select a video clip to mix its audio.</div>';
+    host.innerHTML = '<div class="cd-empty">Choose a video to adjust its audio.</div>';
     renderAudioClipRange();
     return;
   }
@@ -332,7 +332,7 @@ function renderAudioMixerList() {
   });
   if (count) count.textContent = String(rows.length);
   if (!rows.length) {
-    host.innerHTML = '<div class="cd-empty">No audio on this clip yet. Use “Add audio” on the timeline.</div>';
+    host.innerHTML = '<div class="cd-empty">This video has no audio tracks. Use Add audio in the timeline toolbar to add one.</div>';
     renderAudioClipRange();
     return;
   }

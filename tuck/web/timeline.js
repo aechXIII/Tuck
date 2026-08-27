@@ -231,14 +231,14 @@ function paintTrimChrome() {
           ? "Preparing timeline"
           : view.status === "error"
             ? "Clip details unavailable"
-            : "Timeline is empty";
+            : "No video selected";
     if (emptyCopy)
       emptyCopy.textContent =
         view.status === "loading"
           ? "Reading clip duration and audio tracks"
           : view.status === "error"
             ? "Retry from the Video inspector to enable editing."
-          : "Video and audio tracks will appear here.";
+          : "Choose a video from the Library to view its timeline.";
   }
   var ruler = byId("sequence-ruler");
   if (ruler) {

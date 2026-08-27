@@ -46,6 +46,11 @@
 .inspector-label-row .grt {
   margin-bottom: 0;
 }
+.inspector-label-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
 .inspector-reset,
 .inspector-text-action {
   border: 0;
@@ -53,6 +58,7 @@
   color: #9b98a8;
   cursor: pointer;
   font: 600 10px var(--font);
+  white-space: nowrap;
 }
 .inspector-reset:hover,
 .inspector-text-action:hover {

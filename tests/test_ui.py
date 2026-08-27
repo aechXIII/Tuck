@@ -206,6 +206,11 @@ def test_editor_shell_uses_adaptive_accessible_panels() -> None:
     assert "@media (max-width: 719px)" in styles
     assert "overflow-x: hidden;" in audio_styles
     assert "#sequence-frame.is-zoomed" in audio_styles
+    assert "body.library-panel-open .timeline-empty" in audio_styles
+    assert "left: var(--library-width);" in audio_styles
+    assert "body.inspector-panel-open .timeline-empty" in audio_styles
+    assert "right: var(--inspector-width);" in audio_styles
+    assert "right: var(--inspector-wide-width);" in audio_styles
     assert 'id="timeline-resizer"' in html
     assert 'role="separator"' in html
     assert 'aria-valuemin="170"' in html
@@ -261,7 +266,6 @@ def test_workspace_commands_have_clear_hierarchy() -> None:
     html = _asset("index.html")
     audio_styles = _asset("audio.css")
     panels_js = _asset("panels.js")
-    timeline_js = _asset("timeline.js")
     toolbar = html.split('id="timeline-row"', 1)[1].split('id="sequence-frame"', 1)[0]
 
     assert 'aria-label="View controls"' in html
@@ -283,7 +287,6 @@ def test_workspace_commands_have_clear_hierarchy() -> None:
     assert "#tl-zoom-slider" in audio_styles
     assert '<span class="audio-master-title">Output audio</span>' in html
     assert "<span>Include in export</span>" in html
-    assert "Video and audio tracks will appear here." in timeline_js
     assert "mixer-row-actions" in panels_js
 
 
@@ -327,6 +330,18 @@ def test_settings_save_state_is_wired_into_the_ui() -> None:
     assert persist_settings.index("await loadSettings();") < persist_settings.index(
         'indicator.textContent = "Saved";'
     )
+
+
+def test_profile_management_is_visible_without_opening_an_overflow_menu() -> None:
+    html = _asset("index.html")
+    profile_card = html.split('id="profile-card"', 1)[1].split('id="task-wf"', 1)[0]
+    profile_header = profile_card.split('class="profile-select-row"', 1)[0]
+    profile_options = profile_card.split('<details class="profile-options">', 1)[1]
+
+    assert 'data-action-click="settings-open-profiles"' in profile_header
+    assert 'aria-label="Manage profiles"' in profile_header
+    assert 'data-action-click="encoding-save-profile"' in profile_header
+    assert 'data-action-click="settings-open-profiles"' not in profile_options
 
 
 def test_thumbnail_is_created_only_when_a_valid_source_exists() -> None:

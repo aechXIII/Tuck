@@ -93,7 +93,7 @@ body.timeline-resizing * {
 }
 .timeline-empty {
   position: absolute;
-  inset: 32px 0 0 calc(var(--timeline-head-width) + 8px);
+  inset: 32px 0 0;
   z-index: 3;
   display: flex;
   flex-direction: column;
@@ -103,6 +103,19 @@ body.timeline-resizing * {
   padding: 12px;
   text-align: center;
   pointer-events: none;
+}
+@media (min-width: 1180px) {
+  body.library-panel-open .timeline-empty {
+    left: var(--library-width);
+  }
+  body.inspector-panel-open .timeline-empty {
+    right: var(--inspector-width);
+  }
+}
+@media (min-width: 1440px) {
+  body.inspector-panel-open .timeline-empty {
+    right: var(--inspector-wide-width);
+  }
 }
 .timeline-empty[hidden] {
   display: none;

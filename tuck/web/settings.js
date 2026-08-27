@@ -301,7 +301,7 @@ function profileEditorTransformHTML() {
   return `<div class="settings-sec full">
     <h3>Transform defaults</h3>
     <div class="info-row">
-      <span>Apply reusable transform intent</span>
+      <span>Apply transform settings from this profile</span>
       <label class="chk">
         <input id="pe-transform-enabled" type="checkbox" data-settings-change="profile-visibility">
         <span class="chk-box"></span>
@@ -336,7 +336,7 @@ function profileEditorTransformHTML() {
           <option value="270">90° counterclockwise</option>
         </select>
       </div>
-      <span class="setting-note">Manual crop position and dimensions are never saved.</span>
+      <span class="setting-note">Profiles save the crop shape, but not its exact position or size.</span>
     </div>
   </div>`;
 }
@@ -720,7 +720,7 @@ function generalSettingsHTML(s, profiles) {
   var openOutput = s.open_output_folder_after_queue ? "checked" : "";
   return `<div class="settings-card">
     <div class="settings-card-title">Task defaults</div>
-    <div class="settings-card-copy">Applied when a profile does not provide its own value.</div>
+    <div class="settings-card-copy">Used for settings not included in the selected profile.</div>
     <div class="settings-grid">
       <div class="settings-field">
         <label for="set-dp">Default profile</label>
@@ -812,8 +812,8 @@ function explorerSettingsHTML() {
   return `<div class="settings-card">
     <div class="settings-card-title">Windows Send to shortcuts</div>
     <div class="settings-card-copy">
-      Send videos into Tuck directly from File Explorer.
-      Broken shortcuts can be repaired in place.
+      Open videos in Tuck from File Explorer.
+      If a shortcut stops working, you can repair it here.
     </div>
     <div id="st-list" class="settings-list"></div>
   </div>`;
@@ -903,7 +903,7 @@ function systemStatusHTML(s) {
 function systemUpdatesHTML(s) {
   var updateStatus = s.last_update_check
     ? "Last checked: " + esc(s.last_update_check)
-    : "Current update status: ready to check.";
+    : "Not checked yet.";
   var checkUpdates = s.check_updates ? "checked" : "";
   return `<div class="settings-card">
     <div class="settings-card-title">Updates</div>
@@ -925,7 +925,8 @@ function systemSupportHTML() {
   return `<div class="settings-card">
     <div class="settings-card-title">Support</div>
     <div class="settings-card-copy">
-      Copy a sanitized report containing versions, encoder status, and recent errors.
+      Copy a diagnostic report with app versions, encoder status, and recent errors.
+      Personal folder paths are removed.
     </div>
     <div class="settings-support-actions">
       <button type="button" class="btn1" data-settings-click="copy-diagnostics">Copy diagnostics</button>
