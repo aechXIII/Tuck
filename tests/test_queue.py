@@ -3,7 +3,16 @@ import time
 from collections import deque
 from pathlib import Path
 
-from tuck.models import CropRect, EncodePlan, OutputGeometry, QueueState, Segment, VideoTransform
+from tuck.models import (
+    AudioClip,
+    AudioTrack,
+    CropRect,
+    EncodePlan,
+    OutputGeometry,
+    QueueState,
+    Segment,
+    VideoTransform,
+)
 from tuck.queue import ProcessingQueue
 
 
@@ -49,6 +58,43 @@ class TestQueueOrdering:
         plan.transform = VideoTransform()
         assert item.plan is not None
         assert item.plan.transform == transform
+
+    def test_enqueue_snapshots_timeline_and_audio_state(self):
+        q = ProcessingQueue()
+        plan = _plan("timeline")
+        plan.segments = [Segment(1, 4)]
+        plan.source_audio_segments = [Segment(1, 4)]
+        plan.audio_tracks = [
+            AudioTrack(
+                track_id="music",
+                name="Music",
+                clips=[
+                    AudioClip(
+                        source="music.wav",
+                        timeline_start=0,
+                        source_in=0,
+                        source_out=3,
+                        timeline_duration=3,
+                    )
+                ],
+            )
+        ]
+
+        item = q.enqueue(plan)
+        plan.segments[0] = Segment(5, 8)
+        plan.source_audio_segments[0] = Segment(5, 8)
+        plan.audio_tracks[0].clips[0] = AudioClip(
+            source="replacement.wav",
+            timeline_start=0,
+            source_in=0,
+            source_out=2,
+            timeline_duration=2,
+        )
+
+        assert item.plan is not None
+        assert item.plan.segments == [Segment(1, 4)]
+        assert item.plan.source_audio_segments == [Segment(1, 4)]
+        assert item.plan.audio_tracks[0].clips[0].source == "music.wav"
 
     def test_move_item_index(self):
         q = ProcessingQueue()
