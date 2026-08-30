@@ -3,19 +3,24 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-WEB_DIR = Path("tuck/web")
+FRONTEND_DIR = Path("frontend")
+INDEX_PATH = FRONTEND_DIR / "index.html"
+WEB_DIR = FRONTEND_DIR / "public" / "legacy"
 
 
 def _asset(name: str) -> str:
+    if name == "index.html":
+        return INDEX_PATH.read_text(encoding="utf-8")
     return (WEB_DIR / name).read_text(encoding="utf-8")
 
 
 def _web_source() -> str:
-    return "\n".join(
+    legacy = (
         path.read_text(encoding="utf-8")
         for path in sorted(WEB_DIR.iterdir())
-        if path.suffix in {".css", ".html", ".js"}
+        if path.suffix in {".css", ".js"}
     )
+    return "\n".join((INDEX_PATH.read_text(encoding="utf-8"), *legacy))
 
 
 def test_web_ui_is_packaged_source_asset() -> None:
@@ -25,7 +30,12 @@ def test_web_ui_is_packaged_source_asset() -> None:
     assets = re.findall(r'<(?:link|script)\b[^>]*(?:href|src)="([^"]+)"', html)
     assert assets
     for asset in assets:
-        assert (WEB_DIR / asset).is_file()
+        path = (
+            WEB_DIR / asset.removeprefix("/legacy/")
+            if asset.startswith("/legacy/")
+            else FRONTEND_DIR / asset
+        )
+        assert path.is_file()
     assert "window.pywebview.api" in app_js
     assert "pywebviewready" in app_js
 
@@ -34,7 +44,12 @@ def test_workspace_surface_styles_load_in_owner_order() -> None:
     html = _asset("index.html")
 
     links = re.findall(r'<link\b[^>]*href="([^"]+\.css)"', html)
-    assert links[:4] == ["styles.css", "library.css", "inspector.css", "export.css"]
+    assert links[:4] == [
+        "/legacy/styles.css",
+        "/legacy/library.css",
+        "/legacy/inspector.css",
+        "/legacy/export.css",
+    ]
 
 
 def test_topbar_settings_control_has_visible_and_accessible_label() -> None:
@@ -102,7 +117,7 @@ def test_web_ui_starts_if_python_calls_init_after_bridge_injection() -> None:
 
 
 def test_web_ui_contains_visual_crop_overlay_and_request_state() -> None:
-    html = Path("tuck/web/index.html").read_text(encoding="utf-8")
+    html = INDEX_PATH.read_text(encoding="utf-8")
     encoding_js = _asset("encoding-ui.js")
     crop_js = _asset("crop.js")
     transform_js = _asset("transform.js")
@@ -123,7 +138,7 @@ def test_web_ui_contains_visual_crop_overlay_and_request_state() -> None:
 
 
 def test_web_ui_contains_complete_transform_controls() -> None:
-    html = Path("tuck/web/index.html").read_text(encoding="utf-8")
+    html = INDEX_PATH.read_text(encoding="utf-8")
     transform_js = _asset("transform.js")
     video_panel = html.split('id="insp-edit"', 1)[1].split('id="insp-audio"', 1)[0]
     export_panel = html.split('id="insp-export"', 1)[1].split('id="right-foot"', 1)[0]
@@ -321,7 +336,7 @@ def test_settings_save_state_is_wired_into_the_ui() -> None:
     settings_js = _asset("settings.js")
 
     assert '<details class="profile-options">' in html
-    assert 'src="settings-state.js"' in html
+    assert 'src="/legacy/settings-state.js"' in html
     assert 'data-settings-save="true"' in settings_js
     assert "function captureSettingsSnapshot()" in settings_js
     persist_settings = settings_js.split("async function persistSettings", 1)[1].split(

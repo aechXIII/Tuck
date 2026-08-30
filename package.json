@@ -1,0 +1,23 @@
+{
+  "name": "tuck-frontend",
+  "private": true,
+  "version": "0.4.0",
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test frontend/tests/unit/**/*.test.ts tests/frontend/**/*.test.js",
+    "test:e2e": "playwright test",
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1",
+    "@types/node": "20.19.43",
+    "tsx": "4.23.13",
+    "typescript": "5.9.3",
+    "vite": "7.3.6"
+  }
+}

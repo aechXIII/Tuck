@@ -3,7 +3,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-require("../../tuck/web/shortcuts.js");
+require("../../frontend/public/legacy/shortcuts.js");
 
 function classList() {
   const values = new Set();
@@ -110,7 +110,7 @@ global.setInspectorTab = function (tab) {
   inspectorTabs.push(tab);
 };
 
-require("../../tuck/web/audio.js");
+require("../../frontend/public/legacy/audio.js");
 
 test("selecting imported audio reveals the Audio inspector", () => {
   inspectorTabs.length = 0;

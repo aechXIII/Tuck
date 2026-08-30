@@ -2,7 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const notifications = require("../../tuck/web/notifications.js");
+const notifications = require("../../frontend/public/legacy/notifications.js");
 
 test("notification semantics announce errors urgently and other updates politely", () => {
   assert.deepEqual(notifications.presentation("err"), {

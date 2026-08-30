@@ -2,7 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const probeState = require("../../tuck/web/probe-state.js");
+const probeState = require("../../frontend/public/legacy/probe-state.js");
 
 test("probe failure preserves the bridge error and leaves a retryable state", () => {
   const clip = {

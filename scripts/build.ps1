@@ -32,6 +32,18 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Host "  pywebview: OK ($webviewCheck)" -ForegroundColor Green
 
+if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
+  Write-Error "npm was not found. Install a supported Node.js version and run npm ci."
+  exit 1
+}
+
+Write-Host "Building frontend..." -ForegroundColor Cyan
+& npm run build
+if ($LASTEXITCODE -ne 0) {
+  Write-Error "Frontend build failed. Run npm ci, then npm run build, and retry."
+  exit 1
+}
+
 if ($Clean) {
   if (Test-Path ".\build") { Remove-Item -Recurse -Force ".\build" }
   if (Test-Path ".\dist") { Remove-Item -Recurse -Force ".\dist" }
@@ -57,11 +69,13 @@ if (-not (Test-Path ".\dist\Tuck\TuckCli.exe")) {
 }
 Write-Host "OK: dist\Tuck\TuckCli.exe" -ForegroundColor Green
 
-$webAssets = Get-ChildItem -LiteralPath ".\tuck\web" -File |
-  Sort-Object Name |
-  Select-Object -ExpandProperty Name
+$frontendBuild = (Resolve-Path -LiteralPath ".\frontend\dist").Path
+$webAssets = Get-ChildItem -LiteralPath $frontendBuild -File -Recurse | Sort-Object FullName
 foreach ($asset in $webAssets) {
-  $assetPath = ".\dist\Tuck\_internal\tuck\web\$asset"
+  $relativePath = $asset.FullName.Substring($frontendBuild.Length).TrimStart(
+    [System.IO.Path]::DirectorySeparatorChar
+  )
+  $assetPath = Join-Path ".\dist\Tuck\_internal\frontend\dist" $relativePath
   if (-not (Test-Path $assetPath)) {
     Write-Error "Expected packaged web UI asset missing: $assetPath"
     exit 1

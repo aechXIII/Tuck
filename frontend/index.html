@@ -3,17 +3,17 @@
   <head>
     <meta charset="UTF-8" />
     <title>Tuck</title>
-    <link rel="stylesheet" href="styles.css" />
-    <link rel="stylesheet" href="library.css" />
-    <link rel="stylesheet" href="inspector.css" />
-    <link rel="stylesheet" href="export.css" />
-    <link rel="stylesheet" href="shortcuts.css" />
-    <link rel="stylesheet" href="settings.css" />
-    <link rel="stylesheet" href="player.css" />
-    <link rel="stylesheet" href="audio.css" />
-    <link rel="stylesheet" href="timeline.css" />
-    <link rel="stylesheet" href="queue.css" />
-    <link rel="stylesheet" href="transform.css" />
+    <link rel="stylesheet" href="/legacy/styles.css" />
+    <link rel="stylesheet" href="/legacy/library.css" />
+    <link rel="stylesheet" href="/legacy/inspector.css" />
+    <link rel="stylesheet" href="/legacy/export.css" />
+    <link rel="stylesheet" href="/legacy/shortcuts.css" />
+    <link rel="stylesheet" href="/legacy/settings.css" />
+    <link rel="stylesheet" href="/legacy/player.css" />
+    <link rel="stylesheet" href="/legacy/audio.css" />
+    <link rel="stylesheet" href="/legacy/timeline.css" />
+    <link rel="stylesheet" href="/legacy/queue.css" />
+    <link rel="stylesheet" href="/legacy/transform.css" />
   </head>
   <body>
     <div id="tb">
@@ -196,7 +196,7 @@
         </div>
         <div id="stage">
           <div id="media-viewport">
-            <video id="vid"></video>
+            <video id="vid" aria-label="Video preview"></video>
           </div>
           <div id="crop-ui" aria-label="Video crop overlay">
             <div class="crop-dim" id="crop-dim-top"></div>
@@ -1438,29 +1438,30 @@
     </div>
     <div id="toast-ct" aria-label="Notifications"></div>
     <div id="drag-overlay"><h2>Drop video or audio anywhere</h2></div>
-    <script src="dom.js"></script>
-    <script src="delegated-events.js"></script>
-    <script src="crop.js"></script>
-    <script src="notifications.js"></script>
-    <script src="segments.js"></script>
-    <script src="probe-state.js"></script>
-    <script src="layout.js"></script>
-    <script src="inspector-ui.js"></script>
-    <script src="encoding-ui.js"></script>
-    <script src="shortcuts.js"></script>
-    <script src="clip-card.js"></script>
-    <script src="app.js"></script>
-    <script src="audio.js"></script>
-    <script src="clip-details.js"></script>
-    <script src="panels.js"></script>
-    <script src="player.js"></script>
-    <script src="timeline.js"></script>
-    <script src="queue.js"></script>
-    <script src="settings-state.js"></script>
-    <script src="settings-profiles.js"></script>
-    <script src="settings.js"></script>
-    <script src="transform.js"></script>
-    <script src="history.js"></script>
-    <script src="ui-bindings.js"></script>
+    <script src="/legacy/dom.js"></script>
+    <script src="/legacy/delegated-events.js"></script>
+    <script src="/legacy/crop.js"></script>
+    <script src="/legacy/notifications.js"></script>
+    <script src="/legacy/segments.js"></script>
+    <script src="/legacy/probe-state.js"></script>
+    <script src="/legacy/layout.js"></script>
+    <script src="/legacy/inspector-ui.js"></script>
+    <script src="/legacy/encoding-ui.js"></script>
+    <script src="/legacy/shortcuts.js"></script>
+    <script src="/legacy/clip-card.js"></script>
+    <script src="/legacy/app.js"></script>
+    <script src="/legacy/audio.js"></script>
+    <script src="/legacy/clip-details.js"></script>
+    <script src="/legacy/panels.js"></script>
+    <script src="/legacy/player.js"></script>
+    <script src="/legacy/timeline.js"></script>
+    <script src="/legacy/queue.js"></script>
+    <script src="/legacy/settings-state.js"></script>
+    <script src="/legacy/settings-profiles.js"></script>
+    <script src="/legacy/settings.js"></script>
+    <script src="/legacy/transform.js"></script>
+    <script src="/legacy/history.js"></script>
+    <script src="/legacy/ui-bindings.js"></script>
+    <script type="module" src="./src/main.ts"></script>
   </body>
 </html>

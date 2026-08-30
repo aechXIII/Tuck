@@ -3,7 +3,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-require("../../tuck/web/shortcuts.js");
+require("../../frontend/public/legacy/shortcuts.js");
 
 const windowListeners = {};
 const documentListeners = {};
@@ -55,7 +55,7 @@ global.AudioTimeline = {
   },
 };
 
-require("../../tuck/web/history.js");
+require("../../frontend/public/legacy/history.js");
 windowListeners.load();
 
 test("edit history restores clip state and forgets removed clips", () => {

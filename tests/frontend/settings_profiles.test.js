@@ -2,7 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const settingsProfiles = require("../../tuck/web/settings-profiles.js");
+const settingsProfiles = require("../../frontend/public/legacy/settings-profiles.js");
 
 class FakeElement {
   constructor(tagName) {

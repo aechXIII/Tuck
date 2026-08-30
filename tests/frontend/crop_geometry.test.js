@@ -2,7 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const crop = require("../../tuck/web/crop.js");
+const crop = require("../../frontend/public/legacy/crop.js");
 
 test("crop initializes to the full source frame", () => {
   assert.deepEqual(crop.selectionCrop(null, 1920, 1080), {

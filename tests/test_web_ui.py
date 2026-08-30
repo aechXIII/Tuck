@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
+import tuck.web_ui as web_ui
 from tuck.bridge_validation import validate_audio_paths, validate_video_paths
 from tuck.web_ui import (
     _bind_drag_drop,
@@ -13,28 +16,31 @@ from tuck.web_ui import (
     _window_size,
 )
 
+FRONTEND_INDEX = Path("frontend/index.html")
+LEGACY_WEB_DIR = Path("frontend/public/legacy")
+
 
 def _web_source() -> str:
-    web_dir = Path("tuck/web")
-    return "\n".join(path.read_text(encoding="utf-8") for path in web_dir.iterdir())
+    sources = [FRONTEND_INDEX, *sorted(LEGACY_WEB_DIR.iterdir())]
+    return "\n".join(path.read_text(encoding="utf-8") for path in sources)
 
 
 def test_generated_markup_does_not_embed_event_handlers() -> None:
-    for path in Path("tuck/web").glob("*.js"):
+    for path in LEGACY_WEB_DIR.glob("*.js"):
         source = path.read_text(encoding="utf-8")
         for attribute in ("onclick=", "oninput=", "onchange="):
             assert attribute not in source, f"{path} contains {attribute}"
 
 
 def test_static_controls_use_the_delegated_action_registry() -> None:
-    html = Path("tuck/web/index.html").read_text(encoding="utf-8")
+    html = FRONTEND_INDEX.read_text(encoding="utf-8")
 
     for attribute in ("onclick=", "oninput=", "onchange="):
         assert attribute not in html
-    assert 'src="delegated-events.js"' in html
-    assert 'src="ui-bindings.js"' in html
-    assert html.index('src="delegated-events.js"') < html.index('src="app.js"')
-    assert html.index('src="history.js"') < html.index('src="ui-bindings.js"')
+    assert 'src="/legacy/delegated-events.js"' in html
+    assert 'src="/legacy/ui-bindings.js"' in html
+    assert html.index('src="/legacy/delegated-events.js"') < html.index('src="/legacy/app.js"')
+    assert html.index('src="/legacy/history.js"') < html.index('src="/legacy/ui-bindings.js"')
 
 
 class _Bridge:
@@ -230,9 +236,9 @@ def test_support_folder_opener_creates_and_opens_directory(tmp_path, monkeypatch
     assert opened == [["explorer", str(folder)]]
 
 
-def test_resource_path_locates_web_ui() -> None:
+def test_resource_path_locates_frontend_sources() -> None:
+    assert _get_resource_path("frontend/index.html").is_file()
     for name in (
-        "index.html",
         "styles.css",
         "library.css",
         "inspector.css",
@@ -258,11 +264,30 @@ def test_resource_path_locates_web_ui() -> None:
         "crop.js",
         "transform.js",
     ):
-        assert _get_resource_path(f"tuck/web/{name}").is_file()
+        assert _get_resource_path(f"frontend/public/legacy/{name}").is_file()
+
+
+def test_web_gui_requires_the_vite_production_entry(tmp_path, monkeypatch) -> None:
+    requested: list[str] = []
+    missing_entry = tmp_path / "frontend" / "dist" / "index.html"
+
+    def resource_path(relative: str) -> Path:
+        requested.append(relative)
+        return missing_entry
+
+    monkeypatch.setattr(web_ui, "_get_resource_path", resource_path)
+
+    with pytest.raises(
+        FileNotFoundError,
+        match=r"npm run build.*frontend[\\/]dist[\\/]index\.html",
+    ):
+        web_ui.run_web_gui(object())
+
+    assert requested == ["frontend/dist/index.html"]
 
 
 def test_profile_settings_export_individual_profiles() -> None:
-    source = Path("tuck/web/settings.js").read_text(encoding="utf-8")
+    source = (LEGACY_WEB_DIR / "settings.js").read_text(encoding="utf-8")
 
     assert "api.exportProfileToFile(r.path, pid)" in source
     assert 'settingButton("Export", "exportProfs()")' not in source
@@ -539,7 +564,7 @@ def test_settings_file_naming_and_subsection_navigation_use_shared_layout() -> N
     assert "button.mrow {" in html
     assert "font: inherit;" in html
     assert 'settingsTitle("Add shortcut", "open-explorer")' in html
-    assert 'src="delegated-events.js"' in html
+    assert 'src="/legacy/delegated-events.js"' in html
 
 
 def test_settings_separates_output_and_stages_all_persisted_changes() -> None:

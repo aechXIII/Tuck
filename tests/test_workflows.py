@@ -61,13 +61,12 @@ def test_pyinstaller_spec_builds_a_real_one_folder_app() -> None:
     assert spec.count("exclude_binaries=True") == 2
     assert "a.zipfiles" in spec
     assert "upx=True" not in spec
-    assert '(str(_root / "tuck" / "web"), "tuck/web")' in spec
+    assert '(str(_root / "frontend" / "dist"), "frontend/dist")' in spec
 
 
-def test_wheel_and_build_smoke_checks_include_split_web_assets() -> None:
-    pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
+def test_build_smoke_checks_include_vite_output() -> None:
     build_script = Path("scripts/build.ps1").read_text(encoding="utf-8")
 
-    assert 'tuck = ["web/*"]' in pyproject
-    assert 'Get-ChildItem -LiteralPath ".\\tuck\\web" -File' in build_script
-    assert '".\\dist\\Tuck\\_internal\\tuck\\web\\$asset"' in build_script
+    assert "& npm run build" in build_script
+    assert 'Resolve-Path -LiteralPath ".\\frontend\\dist"' in build_script
+    assert '".\\dist\\Tuck\\_internal\\frontend\\dist"' in build_script

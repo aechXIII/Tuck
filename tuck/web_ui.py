@@ -379,9 +379,12 @@ def run_web_gui(
     sendto_profile_id: str | None = None,
     sendto_action: str | None = None,
 ) -> int:
-    html_path = _get_resource_path("tuck/web/index.html")
+    html_path = _get_resource_path("frontend/dist/index.html")
     if not html_path.is_file():
-        raise FileNotFoundError(f"Web UI asset is missing: {html_path}")
+        raise FileNotFoundError(
+            "The built web UI is missing. Run `npm run build` from the repository root "
+            f"to create frontend/dist/index.html (expected: {html_path})."
+        )
 
     initial_files, rejected = validate_video_paths(files or [])
     if rejected:

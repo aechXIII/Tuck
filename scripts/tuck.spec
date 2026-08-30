@@ -70,7 +70,7 @@ a = Analysis(
     datas=[
         (str(_root / "assets" / "Tuck.ico"), "assets"),
         (str(_root / "LICENSE"), "."),
-        (str(_root / "tuck" / "web"), "tuck/web"),
+        (str(_root / "frontend" / "dist"), "frontend/dist"),
     ]
     + _pywin32_datas,
     hiddenimports=[

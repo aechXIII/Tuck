@@ -4,9 +4,9 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 
-const layout = require("../../tuck/web/layout.js");
+const layout = require("../../frontend/public/legacy/layout.js");
 const panelsSource = fs.readFileSync(
-  path.join(__dirname, "../../tuck/web/panels.js"),
+  path.join(__dirname, "../../frontend/public/legacy/panels.js"),
   "utf8",
 );
 

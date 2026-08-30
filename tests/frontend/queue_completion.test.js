@@ -5,8 +5,8 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
-const dom = require("../../tuck/web/dom.js");
-const { queueCompletionOutput } = require("../../tuck/web/queue.js");
+const dom = require("../../frontend/public/legacy/dom.js");
+const { queueCompletionOutput } = require("../../frontend/public/legacy/queue.js");
 
 function queueHarness(items, previousState) {
   const elements = {};
@@ -66,7 +66,7 @@ function queueHarness(items, previousState) {
   };
   vm.createContext(context);
   vm.runInContext(
-    fs.readFileSync(path.join(__dirname, "../../tuck/web/queue.js"), "utf8"),
+    fs.readFileSync(path.join(__dirname, "../../frontend/public/legacy/queue.js"), "utf8"),
     context,
   );
   return { context, elements, toasts };

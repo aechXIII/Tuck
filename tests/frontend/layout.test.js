@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const layout = require("../../tuck/web/layout.js");
+const layout = require("../../frontend/public/legacy/layout.js");
 
 test("timeline height bounds preserve a usable preview at supported window sizes", () => {
   assert.deepEqual(layout.timelineHeightBounds(900), {

@@ -76,7 +76,7 @@ global.clips = {
   },
 };
 
-require("../../tuck/web/transform.js");
+require("../../frontend/public/legacy/transform.js");
 
 test("transform controls expose selected state to assistive technology", () => {
   global.syncTransformControls();

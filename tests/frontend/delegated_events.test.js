@@ -3,7 +3,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const delegatedEvents = require("../../tuck/web/delegated-events.js");
+const delegatedEvents = require("../../frontend/public/legacy/delegated-events.js");
 
 class FakeElement {
   constructor(parentElement = null) {
