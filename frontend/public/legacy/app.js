@@ -15,6 +15,22 @@ var settingsDirty = false;
 var _trackDirty = true;
 var previewRequestId = 0;
 
+async function legacyBackendResult(call) {
+  var result = await call;
+  if (result.ok) {
+    if (Array.isArray(result.value)) return result.value;
+    if (result.value && typeof result.value === "object")
+      return Object.assign({ ok: true }, result.value);
+    return { ok: true, value: result.value };
+  }
+  return {
+    ok: false,
+    error: result.error.message,
+    code: result.error.code,
+    details: result.error.details,
+  };
+}
+
 function byId(id) {
   return document.getElementById(id);
 }
@@ -309,7 +325,7 @@ async function downloadAndInstallUpdate() {
   button.disabled = true;
   later.disabled = true;
   try {
-    var started = await api.downloadUpdate();
+    var started = await legacyBackendResult(api.downloadUpdate());
     if (!started.ok) {
       throw new Error(started.error || "Could not start the download");
     }
@@ -317,7 +333,7 @@ async function downloadAndInstallUpdate() {
       await new Promise(function (resolve) {
         setTimeout(resolve, 500);
       });
-      var progress = await api.getDownloadProgress();
+      var progress = await legacyBackendResult(api.getDownloadProgress());
       if (progress.downloading) {
         button.textContent = "Downloading " + (progress.progress || 0) + "%";
         continue;
@@ -327,7 +343,7 @@ async function downloadAndInstallUpdate() {
       throw new Error("Download stopped unexpectedly");
     }
     button.textContent = "Starting installer...";
-    var installed = await api.installUpdate();
+    var installed = await legacyBackendResult(api.installUpdate());
     if (!installed.ok)
       throw new Error(installed.error || "Could not start the installer");
     await api.closeWindow();
@@ -376,17 +392,14 @@ async function startApp() {
   if (data.files && data.files.length) addFiles(data.files);
   if (data.sendto) handleSendto(data.sendto);
 }
+window.attachBackendClient = function (client) {
+  api = client;
+  startApp();
+};
 window.initApp = function (data) {
   startupData = data || { files: [], sendto: null };
-  if (window.pywebview && window.pywebview.api) {
-    api = window.pywebview.api;
-    startApp();
-  }
+  if (window.tuckBackendClient) window.attachBackendClient(window.tuckBackendClient);
 };
-window.addEventListener("pywebviewready", function () {
-  api = window.pywebview.api;
-  startApp();
-});
 
 var dragDepth = 0;
 function isFileDrag(e) {
@@ -442,7 +455,7 @@ dz.addEventListener("drop", function (e) {
 async function browse() {
   if (!api) return;
   try {
-    var r = await api.pickFiles();
+    var r = await legacyBackendResult(api.pickFiles());
     if (r.ok && Array.isArray(r.files) && r.files.length) addFiles(r.files);
     else if (!r.ok)
       toast("Could not add files: " + (r.error || "Unknown error"), "err");
@@ -546,6 +559,7 @@ function renderClips() {
     if (!statusLabel && c._queueState === "running") statusLabel = "Encoding";
     if (!statusLabel && c._queueState === "failed") statusLabel = "Failed";
     if (!statusLabel && c._queueState === "cancelled") statusLabel = "Cancelled";
+    if (!statusLabel && c.error) statusLabel = "Could not read details";
     return {
       path: p,
       name: c.name,
@@ -555,6 +569,7 @@ function renderClips() {
       resultPath: c._resultPath || "",
       statusLabel: statusLabel,
       progress: c._progress || 0,
+      probeError: !!c.error,
       fileSize: c._fileSize || 0,
       meta: metaStr(c),
       badge: clipStateBadge(p),
@@ -602,6 +617,7 @@ function appendLibraryClip(container, model) {
     openResult: openResult,
     cancel: cancelQueueItem,
     retry: retryQueueItem,
+    retryProbe: retryProbeClip,
     beginReorder: function (event) {
       beginClipReorder(event, p, div);
     },
@@ -932,7 +948,7 @@ async function probeClip(p) {
   if (selPath === p && typeof renderClipDetails === "function")
     renderClipDetails();
   try {
-    var r = await api.probeFile(p);
+    var r = await legacyBackendResult(api.probeFile(p));
     var result = TuckProbeState.complete(c, r);
     if (result.ok) {
       if (!Array.isArray(c.segments) || !c.segments.length)
@@ -968,7 +984,7 @@ function retryProbeClip(p) {
 async function loadMedia(p) {
   if (!api) return;
   try {
-    var r = await api.getMediaUrl(p);
+    var r = await legacyBackendResult(api.getMediaUrl(p));
     if (r.ok && r.url) {
       var v = byId("vid");
       v.src = r.url;
@@ -986,7 +1002,7 @@ async function loadMedia(p) {
 async function loadThumb(p) {
   if (!api) return;
   try {
-    var r = await api.getThumbnail(p);
+    var r = await legacyBackendResult(api.getThumbnail(p));
     if (r.ok && r.thumbnail) {
       showThumbnail(r.thumbnail);
     }
@@ -995,7 +1011,7 @@ async function loadThumb(p) {
 
 async function checkUpdates(silent) {
   if (!api) return;
-  var r = await api.checkForUpdates();
+  var r = await legacyBackendResult(api.checkForUpdates());
   if (r.error) {
     if (!silent) toast("Update check failed: " + r.error, "err");
     return;

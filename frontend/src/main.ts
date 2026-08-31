@@ -1,23 +1,16 @@
-interface DesktopHost {
-  initApp?: (data: unknown) => void;
-  pywebview?: {
-    api?: object;
-  };
-}
+import {
+  createPywebviewClientFromWindow,
+  hasPywebviewApi,
+  PYWEBVIEW_READY_EVENT,
+  setBackendClient,
+} from "./backend/index.ts";
 
 const BACKEND_GRACE_PERIOD_MS = 2_000;
 let backendTimer: number | undefined;
 let blockedSiblings: HTMLElement[] = [];
 
-export function hasDesktopBackend(host: unknown): host is DesktopHost {
-  if (typeof host !== "object" || host === null) return false;
-  const pywebview = (host as DesktopHost).pywebview;
-  return (
-    typeof pywebview === "object" &&
-    pywebview !== null &&
-    typeof pywebview.api === "object" &&
-    pywebview.api !== null
-  );
+export function hasDesktopBackend(host: unknown): boolean {
+  return hasPywebviewApi(host);
 }
 
 function showBackendUnavailable(): void {
@@ -63,28 +56,41 @@ function markDesktopBackendReady(): void {
   blockedSiblings = [];
 }
 
-function waitForDesktopBackend(): void {
-  if (hasDesktopBackend(window)) {
+function installDesktopBackend(): boolean {
+  if (window.tuckBackendClient) {
+    setBackendClient(window.tuckBackendClient);
+    window.attachBackendClient?.(window.tuckBackendClient);
     markDesktopBackendReady();
-    return;
+    return true;
   }
+  const client = createPywebviewClientFromWindow(window);
+  if (!client) return false;
+  setBackendClient(client);
+  window.tuckBackendClient = client;
+  window.attachBackendClient?.(client);
+  markDesktopBackendReady();
+  return true;
+}
+
+function waitForDesktopBackend(): void {
+  if (installDesktopBackend()) return;
   backendTimer = window.setTimeout(() => {
     backendTimer = undefined;
-    if (hasDesktopBackend(window)) markDesktopBackendReady();
-    else showBackendUnavailable();
+    if (!installDesktopBackend()) showBackendUnavailable();
   }, BACKEND_GRACE_PERIOD_MS);
 }
 
 if (typeof window !== "undefined") {
   void import("./startup.css");
-  window.addEventListener("pywebviewready", markDesktopBackendReady);
+  window.addEventListener(PYWEBVIEW_READY_EVENT, installDesktopBackend, {
+    once: true,
+  });
 
-  const host = window as Window & DesktopHost;
-  const legacyInitApp = host.initApp;
+  const legacyInitApp = window.initApp;
   if (legacyInitApp) {
-    host.initApp = (data: unknown) => {
-      markDesktopBackendReady();
+    window.initApp = (data: unknown) => {
       legacyInitApp(data);
+      installDesktopBackend();
     };
   }
 

@@ -50,7 +50,7 @@ function persistSession() {
     last_upscale_profile_id: lastUpscale,
     left_sidebar_width: 220,
   };
-  api.saveSettings(data).then(function (r) {
+  legacyBackendResult(api.saveSettings(data)).then(function (r) {
     if (r.ok) appSettings = Object.assign(appSettings, data);
   });
 }
@@ -202,7 +202,7 @@ function onExportFrameRateChoice(value) {
 
 async function loadSettings() {
   if (!api) return;
-  var s = await api.getSettings();
+  var s = await legacyBackendResult(api.getSettings());
   appSettings = s;
   if (typeof restoreTimelineHeight === "function") {
     restoreTimelineHeight(s.timeline_height);
@@ -776,7 +776,7 @@ async function reqPreview() {
   var req = buildReq(path);
   req._request_id = requestId;
   try {
-    var r = await api.createPlan(req);
+    var r = await legacyBackendResult(api.createPlan(req));
     if (
       r.ok &&
       r.data &&
@@ -878,7 +878,7 @@ async function compressOne() {
     toast("Retry reading clip details before exporting.", "err");
     return;
   }
-  var r = await api.enqueueWithOptions(buildReq(clips[selPath].path));
+  var r = await legacyBackendResult(api.enqueueWithOptions(buildReq(clips[selPath].path)));
   if (!r.ok) toast("Error: " + r.error, "err");
   pollQueue();
 }
@@ -897,7 +897,7 @@ async function compressAll() {
   var reqs = [];
   for (var i = 0; i < keys.length; i++)
     reqs.push(buildReq(clips[keys[i]].path));
-  var r = await api.enqueueBatch(reqs);
+  var r = await legacyBackendResult(api.enqueueBatch(reqs));
   if (!r.ok) toast("Error: " + (r.error || "Failed"), "err");
   if (r.errors && r.errors.length) toast("Some errors occurred.", "err");
   pollQueue();
@@ -914,7 +914,7 @@ async function saveProfileChanges() {
     .selectedOptions[0].textContent.split(" (")[0]
     .trim();
   var data = savePayload(name);
-  var r = await api.updateProfile(pid, data);
+  var r = await legacyBackendResult(api.updateProfile(pid, data));
   if (r.ok) {
     if (selPath && clips[selPath]) {
       clips[selPath].transformOverride = false;
@@ -959,7 +959,7 @@ async function doSaveAs() {
   }
   closeMod();
   var data = savePayload(name);
-  var r = await api.createProfile(data);
+  var r = await legacyBackendResult(api.createProfile(data));
   if (r.ok) {
     await loadSettings();
     snapProf();

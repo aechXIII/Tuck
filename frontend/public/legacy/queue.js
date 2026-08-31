@@ -113,7 +113,7 @@ function formatEta(seconds) {
 async function pollQueue() {
   if (!api) return;
   try {
-    var state = await api.getQueueState(),
+    var state = await legacyBackendResult(api.getQueueState()),
       items = state.items || [],
       running = [],
       pending = [];
@@ -206,7 +206,7 @@ async function pollQueue() {
 async function cancelQueueItem(itemId) {
   if (!api || !itemId || typeof api.cancelItem !== "function") return;
   try {
-    var r = await api.cancelItem(itemId);
+    var r = await legacyBackendResult(api.cancelItem(itemId));
     if (!r || !r.ok) toast((r && r.error) || "Could not cancel item.", "err");
     await pollQueue();
   } catch (err) {
@@ -218,7 +218,7 @@ async function retryQueueItem(itemId) {
   if (!api || !itemId || retryInFlight[itemId]) return;
   retryInFlight[itemId] = true;
   try {
-    var r = await api.retryItem(itemId);
+    var r = await legacyBackendResult(api.retryItem(itemId));
     if (!r.ok) toast(r.error || "Could not retry.", "err");
     pollQueue();
   } finally {
@@ -229,7 +229,7 @@ async function retryQueueItem(itemId) {
 async function openResult(path) {
   if (!api || !path) return;
   try {
-    var r = await api.openOutputFolder(path);
+    var r = await legacyBackendResult(api.openOutputFolder(path));
     if (!r || !r.ok) toast((r && r.error) || "Could not open folder.", "err");
   } catch (e) {
     toast("Could not open folder.", "err");
@@ -324,14 +324,14 @@ async function copyDiagnostics(itemId) {
       toast("Diagnostics is unavailable in this build.", "err");
       return;
     }
-    var r = await api.getDiagnostics(ctx);
+    var r = await legacyBackendResult(api.getDiagnostics(ctx));
     if (!r || !r.ok || !r.text) {
       toast((r && r.error) || "Could not build diagnostics.", "err");
       return;
     }
     var copied = false;
     if (typeof api.copyText === "function") {
-      var cr = await api.copyText(r.text);
+      var cr = await legacyBackendResult(api.copyText(r.text));
       copied = !!(cr && cr.ok);
     }
     if (!copied) {
@@ -369,7 +369,7 @@ async function stopAfterCurrent() {
   confirmToast(
     "Finish the current job and cancel the rest?",
     async function () {
-      var r = await api.stopAfterCurrent();
+      var r = await legacyBackendResult(api.stopAfterCurrent());
       if (!r || !r.ok) toast((r && r.error) || "Could not stop queue.", "err");
       else {
         toast("Queue will stop after the current job.", "ok");
@@ -390,7 +390,7 @@ async function cancelAll() {
 }
 async function clearDone() {
   if (!api) return;
-  var r = await api.clearCompleted();
+  var r = await legacyBackendResult(api.clearCompleted());
   if (r && r.ok) {
     for (var p in clips) {
       if (clips.hasOwnProperty(p) && clips[p]._queueState === "completed")
@@ -408,8 +408,8 @@ async function clearDone() {
 async function pollIpc() {
   if (!api) return;
   try {
-    var files = await api.getIpcFiles();
-    var metadata = await api.getIpcMetadata();
+    var files = await legacyBackendResult(api.getIpcFiles());
+    var metadata = await legacyBackendResult(api.getIpcMetadata());
     if (Array.isArray(files) && files.length) addFiles(files);
     if (metadata && Object.keys(metadata).length) {
       metadata.files = files;

@@ -1017,7 +1017,7 @@
   async function loadWaveform(clip, target, path) {
     if (!root.api || typeof root.api.getWaveform !== "function") return;
     try {
-      var result = await root.api.getWaveform(path);
+      var result = await root.legacyBackendResult(root.api.getWaveform(path));
       if (!result.ok || !result.url || !clip.audioTimeline) return;
       if (target === clip.audioTimeline) {
         target.sourceWaveformUrl = result.url;
@@ -1070,9 +1070,9 @@
         ) {
           throw new Error("This audio source is already on the timeline; split its clip to reuse it");
         }
-        var probed = await root.api.probeAudioFile(paths[i]);
+        var probed = await root.legacyBackendResult(root.api.probeAudioFile(paths[i]));
         if (!probed.ok || !probed.data) throw new Error(probed.error || "Could not read audio");
-        var media = await root.api.getMediaUrl(paths[i]);
+        var media = await root.legacyBackendResult(root.api.getMediaUrl(paths[i]));
         if (!media.ok || !media.url) throw new Error(media.error || "Could not load audio");
         var duration = Number(probed.data.duration) || 0;
         if (duration < _MIN_TRIM) throw new Error("Audio file is too short");
@@ -1245,7 +1245,7 @@
     browse: async function () {
       if (!root.api || typeof root.api.pickAudioFiles !== "function") return;
       try {
-        var result = await root.api.pickAudioFiles();
+        var result = await root.legacyBackendResult(root.api.pickAudioFiles());
         if (result.ok && result.files && result.files.length) addPaths(result.files, []);
         else if (!result.ok) root.toast(result.error || "Could not choose audio files.", "err");
       } catch (err) {

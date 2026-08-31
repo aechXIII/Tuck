@@ -36,8 +36,11 @@ def test_web_ui_is_packaged_source_asset() -> None:
             else FRONTEND_DIR / asset
         )
         assert path.is_file()
-    assert "window.pywebview.api" in app_js
-    assert "pywebviewready" in app_js
+    assert "window.pywebview" not in app_js
+    assert "window.attachBackendClient = function (client)" in app_js
+    assert "pywebviewready" in (FRONTEND_DIR / "src" / "backend" / "pywebview.ts").read_text(
+        encoding="utf-8"
+    )
 
 
 def test_workspace_surface_styles_load_in_owner_order() -> None:
@@ -110,10 +113,13 @@ def test_application_shortcuts_use_the_central_command_dispatcher() -> None:
 
 
 def test_web_ui_starts_if_python_calls_init_after_bridge_injection() -> None:
-    html = _web_source()
+    app_js = _asset("app.js")
+    main_ts = (FRONTEND_DIR / "src" / "main.ts").read_text(encoding="utf-8")
 
-    assert "if (window.pywebview && window.pywebview.api)" in html
-    assert "var p = paths[i];" in html
+    assert "if (window.tuckBackendClient) window.attachBackendClient(window.tuckBackendClient);" in app_js
+    assert "const legacyInitApp = window.initApp;" in main_ts
+    assert "legacyInitApp(data);" in main_ts
+    assert "installDesktopBackend();" in main_ts
 
 
 def test_web_ui_contains_visual_crop_overlay_and_request_state() -> None:
@@ -421,7 +427,7 @@ def test_update_download_starts_the_installer_without_a_second_prompt() -> None:
 
     assert "Download &amp; install" in html
     assert "async function downloadAndInstallUpdate()" in html
-    assert "var installed = await api.installUpdate();" in html
+    assert "var installed = await legacyBackendResult(api.installUpdate());" in html
     assert "await api.closeWindow();" in html
     assert "Update downloaded. Install now?" not in html
 

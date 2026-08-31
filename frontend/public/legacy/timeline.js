@@ -1070,8 +1070,9 @@ function saveTimelineHeight(value) {
   timelineHeightSetting = value > 0 ? Math.round(value) : 0;
   if (window.appSettings) appSettings.timeline_height = timelineHeightSetting;
   if (!api || typeof api.saveSettings !== "function") return;
-  api
-    .saveSettings({ timeline_height: timelineHeightSetting })
+  legacyBackendResult(
+    api.saveSettings({ timeline_height: timelineHeightSetting }),
+  )
     .then(function (response) {
       if (!response.ok) toast(response.error || "Could not save timeline height.", "err");
     })

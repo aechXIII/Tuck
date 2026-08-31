@@ -33,7 +33,7 @@ function queueHarness(items, previousState) {
   const context = {
     api: {
       async getQueueState() {
-        return { items };
+        return { ok: true, value: { items } };
       },
     },
     appSettings: {
@@ -58,6 +58,12 @@ function queueHarness(items, previousState) {
       return "0:10";
     },
     lastQueueHadActive: true,
+    async legacyBackendResult(call) {
+      const result = await call;
+      return result.ok
+        ? Object.assign({ ok: true }, result.value)
+        : { ok: false, error: result.error.message };
+    },
     renderClips() {},
     setTimeout,
     toast(message, type) {

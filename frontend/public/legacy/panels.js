@@ -204,7 +204,7 @@ function rememberInspectorTab(tab) {
   inspectorSettingsSave = inspectorSettingsSave
     .catch(function () {})
     .then(function () {
-      return api.saveSettings({ last_inspector_panel: panel });
+      return legacyBackendResult(api.saveSettings({ last_inspector_panel: panel }));
     })
     .then(function (result) {
       if (!result.ok)

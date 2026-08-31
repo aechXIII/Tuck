@@ -136,7 +136,7 @@ async function refreshPMList(filter) {
   settingsFilter = filter || settingsFilter;
   var list = byId("pm-list");
   if (!list) return;
-  var profiles = await api.getProfilesJson();
+  var profiles = await legacyBackendResult(api.getProfilesJson());
   ["all", "compression", "upscale"].forEach(function (k) {
     var b = byId("pm-" + k);
     if (b) b.classList.toggle("on", k === settingsFilter);
@@ -165,7 +165,7 @@ async function newProf() {
   openSettings("profiles", "editor", "");
 }
 async function dupProf(pid) {
-  var r = await api.duplicateProfile(pid);
+  var r = await legacyBackendResult(api.duplicateProfile(pid));
   if (r.ok) {
     await loadSettings();
     refreshPMList();
@@ -174,7 +174,7 @@ async function dupProf(pid) {
 }
 async function delProf(pid, name) {
   confirmToast('Delete "' + name + '"?', function () {
-    api.deleteProfile(pid).then(async function (r) {
+    legacyBackendResult(api.deleteProfile(pid)).then(async function (r) {
       if (r.ok) {
         await loadSettings();
         refreshPMList();
@@ -184,9 +184,9 @@ async function delProf(pid, name) {
   });
 }
 async function importProfs() {
-  var r = await api.pickImportFile();
+  var r = await legacyBackendResult(api.pickImportFile());
   if (!r.ok || !r.path) return;
-  var result = await api.importProfilesFromFile(r.path);
+  var result = await legacyBackendResult(api.importProfilesFromFile(r.path));
   if (result.ok) {
     await loadSettings();
     refreshPMList();
@@ -194,9 +194,9 @@ async function importProfs() {
   } else toast(result.error, "err");
 }
 async function exportProf(pid) {
-  var r = await api.pickSaveFile(pid + ".json");
+  var r = await legacyBackendResult(api.pickSaveFile(pid + ".json"));
   if (!r.ok || !r.path) return;
-  var result = await api.exportProfileToFile(r.path, pid);
+  var result = await legacyBackendResult(api.exportProfileToFile(r.path, pid));
   if (result.ok) toast("Profile exported.", "ok");
   else toast(result.error, "err");
 }
@@ -575,7 +575,7 @@ async function hydrateEditor() {
   populateEditorEncoders();
   var p = null;
   if (settingsProfileId) {
-    var profiles = await api.getProfilesJson();
+    var profiles = await legacyBackendResult(api.getProfilesJson());
     p = profiles.find(function (x) {
       return x.profile_id === settingsProfileId;
     });
@@ -652,8 +652,8 @@ function backToProfiles() {
 }
 async function saveProfEdit() {
   var r = settingsProfileId
-    ? await api.updateProfile(settingsProfileId, pePayload())
-    : await api.createProfile(pePayload());
+    ? await legacyBackendResult(api.updateProfile(settingsProfileId, pePayload()))
+    : await legacyBackendResult(api.createProfile(pePayload()));
   if (r.ok) {
     await loadSettings();
     settingsView = "page";
@@ -1010,7 +1010,7 @@ async function openSettings(page, view, profileId) {
   settingsPage = page || settingsPage;
   settingsView = view || "page";
   if (profileId !== undefined) settingsProfileId = profileId;
-  var s = await api.getSettings(),
+  var s = await legacyBackendResult(api.getSettings()),
     profiles = s.profiles || [],
     content = "",
     actions = { html: "" };
@@ -1099,7 +1099,7 @@ function clearPath(id, placeholder) {
   byId(id).textContent = placeholder;
 }
 async function browseOut() {
-  var r = await api.pickFolder();
+  var r = await legacyBackendResult(api.pickFolder());
   if (r.ok && r.path) {
     byId("set-od").dataset.path = r.path;
     byId("set-od").textContent = r.path;
@@ -1111,7 +1111,7 @@ function clearOut() {
   markSettingsDirty();
 }
 async function browseFfmpeg() {
-  var r = await api.pickFfmpegFile();
+  var r = await legacyBackendResult(api.pickFfmpegFile());
   if (r.ok && r.path) {
     byId("set-ffmpeg").dataset.path = r.path;
     byId("set-ffmpeg").textContent = r.path;
@@ -1119,7 +1119,7 @@ async function browseFfmpeg() {
   }
 }
 async function browseFfprobe() {
-  var r = await api.pickFfprobeFile();
+  var r = await legacyBackendResult(api.pickFfprobeFile());
   if (r.ok && r.path) {
     byId("set-ffprobe").dataset.path = r.path;
     byId("set-ffprobe").textContent = r.path;
@@ -1135,7 +1135,7 @@ function clearFfprobe() {
   markSettingsDirty();
 }
 async function persistSettings(data) {
-  var r = await api.saveSettings(data);
+  var r = await legacyBackendResult(api.saveSettings(data));
   if (r.ok) {
     appSettings = Object.assign(appSettings, data);
     settingsSnapshot = TuckSettingsState.snapshot(settingsPageState());
@@ -1189,7 +1189,7 @@ async function refreshEncoders() {
     });
     return;
   }
-  var r = await api.refreshEncoders();
+  var r = await legacyBackendResult(api.refreshEncoders());
   if (r.ok) {
     availEncoders = r.available_encoders || [];
     updateEncOpts();
@@ -1206,7 +1206,9 @@ function insertNamingToken(id, token) {
 }
 async function openSupportFolder(kind) {
   var r =
-    kind === "logs" ? await api.openLogsFolder() : await api.openConfigFolder();
+    kind === "logs"
+      ? await legacyBackendResult(api.openLogsFolder())
+      : await legacyBackendResult(api.openConfigFolder());
   if (!r.ok) toast(r.error || "Could not open folder.", "err");
 }
 function updateExampleOutput() {
@@ -1234,7 +1236,7 @@ function profileShortcutName(id) {
 async function refreshSTList() {
   var list = byId("st-list");
   if (!list) return;
-  var r = await api.listSendtoShortcuts();
+  var r = await legacyBackendResult(api.listSendtoShortcuts());
   list.innerHTML = "";
   (r.shortcuts || []).forEach(function (s) {
     var row = document.createElement("div"),
@@ -1283,7 +1285,7 @@ async function refreshSTList() {
       '<div class="settings-empty">No Explorer shortcuts installed.</div>';
 }
 async function instProfSt() {
-  var profiles = await api.getProfilesJson();
+  var profiles = await legacyBackendResult(api.getProfilesJson());
   var content = `${settingsTitle("Add shortcut", "open-explorer")}
     <div id="profile-shortcut-choices" style="display:flex;flex-direction:column;gap:6px"></div>`;
   settingsShell("explorer", content, { html: "" });
@@ -1297,22 +1299,23 @@ async function instProfSt() {
   });
 }
 async function instGenSt() {
-  var r = await api.installGenericSendto();
+  var r = await legacyBackendResult(api.installGenericSendto());
   if (r.ok) toast("Explorer shortcuts installed.", "ok");
   else toast(r.error || "Failed", "err");
   openSettings("explorer");
 }
 async function installProfileSt(pid, name) {
-  var r = await api.installProfileSendto(pid, "start");
+  var r = await legacyBackendResult(api.installProfileSendto(pid, "start"));
   if (r.ok) toast('Added "' + name + '" to Explorer.', "ok");
   else toast(r.error || "Failed", "err");
   openSettings("explorer");
 }
 async function removeSt(data) {
   confirmToast(data.type === "generic" ? "Remove both Tuck shortcuts?" : "Remove shortcut?", function () {
-    (data.type === "generic"
-      ? api.removeGenericSendto()
-      : api.removeProfileSendto(data.profile_id || data.name || "")
+    legacyBackendResult(
+      data.type === "generic"
+        ? api.removeGenericSendto()
+        : api.removeProfileSendto(data.profile_id || data.name || ""),
     ).then(function (r) {
       if (r.ok) toast("Shortcut removed.", "ok");
       else toast(r.error || "Failed", "err");
@@ -1323,8 +1326,10 @@ async function removeSt(data) {
 async function repairSt(data) {
   var r =
     data.type === "generic"
-      ? await api.installGenericSendto()
-      : await api.repairProfileSendto(data.profile_id || data.name || "");
+      ? await legacyBackendResult(api.installGenericSendto())
+      : await legacyBackendResult(
+          api.repairProfileSendto(data.profile_id || data.name || ""),
+        );
   if (r.ok) toast("Shortcut repaired.", "ok");
   else toast(r.error || "Failed", "err");
   refreshSTList();

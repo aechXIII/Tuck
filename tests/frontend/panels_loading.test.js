@@ -60,7 +60,7 @@ test("selecting an Inspector tab remembers the user-facing panel name", async ()
     api: {
       async saveSettings(settings) {
         saved.push(settings);
-        return { ok: true };
+        return { ok: true, value: {} };
       },
     },
     appSettings: {},
@@ -72,6 +72,12 @@ test("selecting an Inspector tab remembers the user-facing panel name", async ()
       activeElement: null,
       addEventListener() {},
       body: fakeElement(),
+    },
+    async legacyBackendResult(call) {
+      const result = await call;
+      return result.ok
+        ? Object.assign({ ok: true }, result.value)
+        : { ok: false, error: result.error.message };
     },
     renderAudioMixerList() {},
     toast() {},

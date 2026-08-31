@@ -37,7 +37,15 @@
       model.queueItemId;
     var hasRetry =
       (state === "failed" || state === "cancelled") && model.queueItemId;
-    if (!model.statusLabel && !hasOpen && !hasCancel && !hasRetry) return;
+    var hasProbeRetry = !!model.probeError;
+    if (
+      !model.statusLabel &&
+      !hasOpen &&
+      !hasCancel &&
+      !hasRetry &&
+      !hasProbeRetry
+    )
+      return;
 
     var row = createElement(document, "div", "c-status-row");
     row.appendChild(createElement(document, "span", "c-status", model.statusLabel || ""));
@@ -51,6 +59,16 @@
     }
     if (hasRetry) {
       row.appendChild(createActionButton(document, "retry", "Retry", "c-act"));
+    }
+    if (hasProbeRetry) {
+      row.appendChild(
+        createActionButton(
+          document,
+          "retry-probe",
+          "Retry reading " + model.name,
+          "c-act",
+        ),
+      );
     }
     cardMain.appendChild(row);
   }
@@ -213,6 +231,7 @@
       if (action === "open-result") callbacks.openResult(model.resultPath);
       else if (action === "cancel") callbacks.cancel(model.queueItemId);
       else if (action === "retry") callbacks.retry(model.queueItemId);
+      else if (action === "retry-probe") callbacks.retryProbe(model.path);
       else if (action === "remove") callbacks.remove(model.path);
     });
     card.addEventListener("dblclick", function () {
