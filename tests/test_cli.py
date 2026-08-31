@@ -383,6 +383,7 @@ class TestConsoleProgress:
         import tuck.settings as settings_mod
         from tuck.app import run_sendto_console
 
+        monkeypatch.setattr("tuck.app._ensure_console", lambda: None)
         monkeypatch.setattr(settings_mod, "_config_dir", lambda: tmp_path)
         monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
         monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)

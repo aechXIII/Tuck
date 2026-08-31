@@ -40,18 +40,42 @@ APP_NAME = "Tuck"
 APP_AUTHOR = "Tuck"
 
 _MISSING: object = object()
+_storage_root: Path | None = None
+
+
+def configure_storage_root(root: Path | None) -> None:
+    """Override persisted paths for an isolated sidecar process before settings load."""
+    global _storage_root
+    if _settings_manager is not None:
+        raise RuntimeError("Storage root must be configured before settings are created.")
+    _storage_root = root.resolve() if root is not None else None
+
+
+def _storage_path(name: str, fallback: Callable[[], Path]) -> Path:
+    if _storage_root is None:
+        return fallback()
+    path = _storage_root / name
+    path.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 def _config_dir() -> Path:
-    return Path(platformdirs.user_config_dir(APP_NAME, APP_AUTHOR, ensure_exists=True))
+    return _storage_path(
+        "config",
+        lambda: Path(platformdirs.user_config_dir(APP_NAME, APP_AUTHOR, ensure_exists=True)),
+    )
 
 
 def _data_dir() -> Path:
-    return Path(platformdirs.user_data_dir(APP_NAME, APP_AUTHOR, ensure_exists=True))
+    return _storage_path(
+        "data", lambda: Path(platformdirs.user_data_dir(APP_NAME, APP_AUTHOR, ensure_exists=True))
+    )
 
 
 def _cache_dir() -> Path:
-    return Path(platformdirs.user_cache_dir(APP_NAME, APP_AUTHOR, ensure_exists=True))
+    return _storage_path(
+        "cache", lambda: Path(platformdirs.user_cache_dir(APP_NAME, APP_AUTHOR, ensure_exists=True))
+    )
 
 
 def _log_dir() -> Path:

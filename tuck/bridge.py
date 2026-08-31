@@ -26,8 +26,8 @@ from .encoding.capabilities import (
     get_available_encoders,
     get_encoder_capabilities,
 )
+from .engine import cleanup_cache, is_ffmpeg_available
 from .engine import get_available_encoders as _engine_available_encoders
-from .engine import is_ffmpeg_available
 from .media_server import get_media_server
 from .media_tools import find_ffmpeg, find_ffprobe
 from .models import (
@@ -72,6 +72,20 @@ class BridgeAPI:
         self._media_server = get_media_server()
         self._media_server.set_thumbnail_cache_dir(self._settings.cache_dir / "thumbs")
         self._media_server.start()
+
+    @property
+    def log_dir(self) -> Path:
+        return self._settings.log_dir
+
+    def start_background_services(self) -> None:
+        """Start the queue service for a GUI or sidecar lifetime."""
+        self._queue.start()
+
+    def stop_background_services(self) -> None:
+        """Stop process-owned services using the GUI cleanup order."""
+        self._queue.stop()
+        self._media_server.stop()
+        cleanup_cache(self._settings.cache_dir)
 
     def add_ipc_files(self, paths: list[str]) -> None:
         with self._ipc_lock:

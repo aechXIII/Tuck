@@ -116,7 +116,10 @@ def test_web_ui_starts_if_python_calls_init_after_bridge_injection() -> None:
     app_js = _asset("app.js")
     main_ts = (FRONTEND_DIR / "src" / "main.ts").read_text(encoding="utf-8")
 
-    assert "if (window.tuckBackendClient) window.attachBackendClient(window.tuckBackendClient);" in app_js
+    assert (
+        "if (window.tuckBackendClient) window.attachBackendClient(window.tuckBackendClient);"
+        in app_js
+    )
     assert "const legacyInitApp = window.initApp;" in main_ts
     assert "legacyInitApp(data);" in main_ts
     assert "installDesktopBackend();" in main_ts

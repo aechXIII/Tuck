@@ -131,17 +131,8 @@ def run_gui(
 
     api = BridgeAPI()
 
-    def _cleanup_backends() -> None:
-        api._queue.stop()
-        api._media_server.stop()
-
-        from .engine import cleanup_cache
-        from .settings import get_settings_manager
-
-        cleanup_cache(get_settings_manager().cache_dir)
-
     try:
-        api._queue.start()
+        api.start_background_services()
         from .web_ui import run_web_gui
 
         return run_web_gui(
@@ -151,7 +142,7 @@ def run_gui(
             sendto_action=sendto_action,
         )
     finally:
-        _cleanup_backends()
+        api.stop_background_services()
 
 
 def main() -> int:

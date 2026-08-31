@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tuck.app/contracts/backend-protocol-v1.schema.json",
+  "title": "Tuck backend protocol v1 frame",
+  "oneOf": [
+    { "$ref": "#/$defs/request" },
+    { "$ref": "#/$defs/response" },
+    { "$ref": "#/$defs/event" }
+  ],
+  "$defs": {
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "protocol", "id", "method", "params"],
+      "properties": {
+        "kind": { "const": "request" },
+        "protocol": { "const": 1 },
+        "id": { "type": "string", "minLength": 1 },
+        "method": { "type": "string", "minLength": 1 },
+        "params": { "type": "object" }
+      }
+    },
+    "response": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "protocol", "id", "ok"],
+      "properties": {
+        "kind": { "const": "response" },
+        "protocol": { "const": 1 },
+        "id": { "type": "string", "minLength": 1 },
+        "ok": { "type": "boolean" },
+        "result": {},
+        "error": { "$ref": "#/$defs/error" }
+      },
+      "oneOf": [
+        { "properties": { "ok": { "const": true } }, "required": ["result"], "not": { "required": ["error"] } },
+        { "properties": { "ok": { "const": false } }, "required": ["error"], "not": { "required": ["result"] } }
+      ]
+    },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "protocol", "event", "payload"],
+      "properties": {
+        "kind": { "const": "event" },
+        "protocol": { "const": 1 },
+        "event": { "enum": ["backend_ready", "backend_fatal"] },
+        "payload": { "type": "object" }
+      }
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message", "details"],
+      "properties": {
+        "code": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
+        "message": { "type": "string" },
+        "details": { "type": "object" }
+      }
+    }
+  }
+}
