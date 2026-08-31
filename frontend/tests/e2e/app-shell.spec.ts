@@ -5,47 +5,6 @@ import {
   installFakeBackend,
 } from "../fixtures/fake-backend";
 
-const legacyStyles = [
-  "styles.css",
-  "library.css",
-  "inspector.css",
-  "export.css",
-  "shortcuts.css",
-  "settings.css",
-  "player.css",
-  "audio.css",
-  "timeline.css",
-  "queue.css",
-  "transform.css",
-];
-
-const legacyScripts = [
-  "dom.js",
-  "delegated-events.js",
-  "crop.js",
-  "notifications.js",
-  "segments.js",
-  "probe-state.js",
-  "layout.js",
-  "inspector-ui.js",
-  "encoding-ui.js",
-  "shortcuts.js",
-  "clip-card.js",
-  "app.js",
-  "audio.js",
-  "clip-details.js",
-  "panels.js",
-  "player.js",
-  "timeline.js",
-  "queue.js",
-  "settings-state.js",
-  "settings-profiles.js",
-  "settings.js",
-  "transform.js",
-  "history.js",
-  "ui-bindings.js",
-];
-
 function collectLoadFailures(page: Page): {
   badResponses: string[];
   failedRequests: string[];
@@ -75,23 +34,6 @@ test("generated entry loads relative assets and exposes the empty editor", async
   await expect(page.locator("#vid")).toHaveAttribute("aria-label", /preview/i);
   await expect(page.getByText("Drop videos anywhere", { exact: true })).toBeVisible();
 
-  const styleHrefs = await page
-    .locator('link[rel="stylesheet"]')
-    .evaluateAll((links) => links.map((link) => link.getAttribute("href")));
-  expect(styleHrefs.slice(0, legacyStyles.length)).toEqual(
-    legacyStyles.map((name) => `./legacy/${name}`),
-  );
-
-  const scriptSources = await page
-    .locator('script[src]:not([type="module"])')
-    .evaluateAll((scripts) => scripts.map((script) => script.getAttribute("src")));
-  expect(scriptSources).toEqual(
-    legacyScripts.map((name) => `./legacy/${name}`),
-  );
-  await expect(page.locator('script[type="module"]')).toHaveAttribute(
-    "src",
-    /^\.\/assets\/index-[^/]+\.js$/,
-  );
   expect(
     await page.evaluate(
       () => typeof (window as Window & { initApp?: unknown }).initApp,

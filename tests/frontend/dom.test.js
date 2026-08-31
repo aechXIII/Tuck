@@ -3,7 +3,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const dom = require("../../frontend/public/legacy/dom.js");
+const dom = require("../../frontend/src/ui/dom.ts");
 
 test("HTML escaping protects both text and quoted attributes", () => {
   assert.equal(

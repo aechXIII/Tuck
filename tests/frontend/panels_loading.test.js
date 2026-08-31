@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 
-const layout = require("../../frontend/public/legacy/layout.js");
+const layout = require("../../frontend/src/ui/layout.ts");
 const panelsSource = fs.readFileSync(
   path.join(__dirname, "../../frontend/public/legacy/panels.js"),
   "utf8",

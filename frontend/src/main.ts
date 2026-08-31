@@ -7,12 +7,21 @@ import {
   setBackendClient,
 } from "./backend/index.ts";
 import type { TauriBackendClient } from "./backend/index.ts";
+import {
+  installLegacyFoundationCompatibility,
+  loadClassicScript,
+  loadLegacyFeatureScripts,
+} from "./compatibility.ts";
 
 const BACKEND_GRACE_PERIOD_MS = 2_000;
 let backendTimer: number | undefined;
 let blockedSiblings: HTMLElement[] = [];
 let tauriStartupStarted = false;
 let legacyInitApp: ((data: unknown) => void) | undefined;
+let legacyFeaturesReady = false;
+let pendingDesktopClient: Parameters<NonNullable<typeof window.attachBackendClient>>[0] | undefined;
+let pendingInitData: unknown;
+let hasPendingInitData = false;
 
 export function hasDesktopBackend(host: unknown): boolean {
   return hasPywebviewApi(host) || hasTauriInvoke(host);
@@ -96,6 +105,10 @@ function markDesktopBackendReady(): void {
 function attachDesktopBackend(client: Parameters<NonNullable<typeof window.attachBackendClient>>[0]): void {
   setBackendClient(client);
   window.tuckBackendClient = client;
+  if (!legacyFeaturesReady) {
+    pendingDesktopClient = client;
+    return;
+  }
   window.attachBackendClient?.(client);
   markDesktopBackendReady();
 }
@@ -139,21 +152,38 @@ function waitForDesktopBackend(): void {
   }, BACKEND_GRACE_PERIOD_MS);
 }
 
-if (typeof window !== "undefined") {
+async function bootstrapFrontend(): Promise<void> {
+  installLegacyFoundationCompatibility(window);
+  window.initApp = (data: unknown): void => {
+    pendingInitData = data;
+    hasPendingInitData = true;
+  };
+
   void import("./startup.css");
   window.addEventListener(PYWEBVIEW_READY_EVENT, installDesktopBackend, {
     once: true,
   });
 
-  const initialLegacyInitApp = window.initApp;
-  legacyInitApp = initialLegacyInitApp;
-  if (initialLegacyInitApp) {
+  try {
+    await loadLegacyFeatureScripts((source) => loadClassicScript(document, source));
+  } catch (error) {
+    showBackendUnavailable(error instanceof Error ? error.message : String(error));
+    return;
+  }
+
+  legacyInitApp = window.initApp;
+  if (legacyInitApp) {
     window.initApp = (data: unknown) => {
-      initialLegacyInitApp(data);
+      legacyInitApp?.(data);
       installDesktopBackend();
     };
   }
+  legacyFeaturesReady = true;
+  if (hasPendingInitData) window.initApp?.(pendingInitData);
+  if (pendingDesktopClient) attachDesktopBackend(pendingDesktopClient);
 
   if (document.readyState === "complete") waitForDesktopBackend();
   else window.addEventListener("load", waitForDesktopBackend, { once: true });
 }
+
+if (typeof window !== "undefined") void bootstrapFrontend();

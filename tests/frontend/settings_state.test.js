@@ -2,7 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const settingsState = require("../../frontend/public/legacy/settings-state.js");
+const settingsState = require("../../frontend/src/state/settings-state.ts");
 
 test("settings dirty state clears when controls return to their opening values", () => {
   const opening = settingsState.snapshot({ profile: "balanced", autoClear: false });

@@ -2,7 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const probeState = require("../../frontend/public/legacy/probe-state.js");
+const probeState = require("../../frontend/src/state/probe.ts");
 
 test("probe failure preserves the bridge error and leaves a retryable state", () => {
   const clip = {

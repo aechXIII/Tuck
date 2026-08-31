@@ -5,7 +5,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
-const dom = require("../../frontend/public/legacy/dom.js");
+const dom = require("../../frontend/src/ui/dom.ts");
 const { queueCompletionOutput } = require("../../frontend/public/legacy/queue.js");
 
 function queueHarness(items, previousState) {
