@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-backend-request"
+description = "Allows the finite typed backend request command."
+commands.allow = ["backend_request"]

@@ -6,6 +6,11 @@ export {
   hasPywebviewApi,
   PYWEBVIEW_READY_EVENT,
 } from "./pywebview.ts";
+export {
+  createTauriBackendClient,
+  createTauriBackendClientFromWindow,
+  hasTauriInvoke,
+} from "./tauri.ts";
 export type {
   BackendCall,
   BackendClient,
@@ -14,3 +19,4 @@ export type {
   DomainBackendClient,
   NativeBackendClient,
 } from "./types.ts";
+export type { TauriBackendClient, TauriInvoke } from "./tauri.ts";

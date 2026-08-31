@@ -13,7 +13,11 @@
     "test:e2e": "playwright test",
     "tauri": "tauri"
   },
+  "dependencies": {
+    "@tauri-apps/api": "2.11.1"
+  },
   "devDependencies": {
+    "@tauri-apps/cli": "2.11.4",
     "@playwright/test": "1.62.1",
     "@types/node": "20.19.43",
     "tsx": "4.23.13",
