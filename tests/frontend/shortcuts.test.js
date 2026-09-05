@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const shortcuts = require("../../frontend/public/legacy/shortcuts.js");
+const shortcuts = require("../../frontend/src/features/shortcuts/shortcuts.ts");
 
 const ITEMS = [
   {

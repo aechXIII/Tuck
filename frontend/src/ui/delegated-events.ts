@@ -2,17 +2,27 @@ export type DelegatedEventType = "click" | "input" | "change";
 export type DelegatedHandler = (target: HTMLElement, event: Event) => void;
 export type DelegatedHandlers = Partial<Record<DelegatedEventType, Record<string, DelegatedHandler>>>;
 
+function isHtmlElement(value: EventTarget | null): value is HTMLElement {
+  return typeof HTMLElement === "undefined"
+    ? Boolean(value && typeof value === "object" && "dataset" in value && "parentElement" in value)
+    : value instanceof HTMLElement;
+}
+
+function isElementLike(value: EventTarget | null): value is Element {
+  return typeof Element === "undefined"
+    ? isHtmlElement(value)
+    : value instanceof Element;
+}
+
 function findActionTarget(container: HTMLElement, eventTarget: EventTarget | null, datasetKey: string): HTMLElement | null {
-  const isElementLike = (value: EventTarget | null): value is HTMLElement =>
-    typeof HTMLElement === "undefined"
-      ? Boolean(value && typeof value === "object" && "dataset" in value && "parentElement" in value)
-      : value instanceof HTMLElement;
   let target = isElementLike(eventTarget) ? eventTarget : null;
   const initial = target;
   let selected: HTMLElement | null = null;
   while (target) {
-    if (target === container) return selected ?? (target === initial && target.dataset[datasetKey] ? target : null);
-    if (!selected && target.dataset[datasetKey]) selected = target;
+    if (target === container)
+      return selected ??
+        (target === initial && isHtmlElement(target) && target.dataset[datasetKey] ? target : null);
+    if (!selected && isHtmlElement(target) && target.dataset[datasetKey]) selected = target;
     target = target.parentElement;
   }
   return null;

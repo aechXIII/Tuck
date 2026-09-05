@@ -71,23 +71,10 @@ export function installLegacyFoundationCompatibility(windowRef: Window): void {
 }
 
 const LEGACY_FEATURE_SCRIPTS = [
-  "./legacy/crop.js",
-  "./legacy/segments.js",
-  "./legacy/inspector-ui.js",
-  "./legacy/shortcuts.js",
-  "./legacy/clip-card.js",
   "./legacy/encoding-ui.js",
-  "./legacy/app.js",
-  "./legacy/audio.js",
-  "./legacy/clip-details.js",
-  "./legacy/panels.js",
-  "./legacy/player.js",
-  "./legacy/timeline.js",
   "./legacy/queue.js",
   "./legacy/settings-profiles.js",
   "./legacy/settings.js",
-  "./legacy/transform.js",
-  "./legacy/history.js",
   "./legacy/ui-bindings.js",
 ] as const;
 

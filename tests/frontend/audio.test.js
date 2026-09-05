@@ -2,7 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const audio = require("../../frontend/public/legacy/audio.js");
+const audio = require("../../frontend/src/features/audio/audio-core.ts");
 
 const segments = [
   { start: 1, end: 3 },

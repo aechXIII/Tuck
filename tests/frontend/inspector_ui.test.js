@@ -2,7 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const inspectorUi = require("../../frontend/public/legacy/inspector-ui.js");
+const inspectorUi = require("../../frontend/src/features/panels/inspector-ui.ts");
 
 test("export summary presents the current output decision in one compact line", () => {
   assert.deepEqual(

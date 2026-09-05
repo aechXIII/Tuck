@@ -8,6 +8,10 @@ import {
 } from "./backend/index.ts";
 import type { TauriBackendClient } from "./backend/index.ts";
 import {
+  installEditorRuntime,
+  type EditorRuntime,
+} from "./features/editor/runtime.ts";
+import {
   installLegacyFoundationCompatibility,
   loadClassicScript,
   loadLegacyFeatureScripts,
@@ -17,11 +21,9 @@ const BACKEND_GRACE_PERIOD_MS = 2_000;
 let backendTimer: number | undefined;
 let blockedSiblings: HTMLElement[] = [];
 let tauriStartupStarted = false;
-let legacyInitApp: ((data: unknown) => void) | undefined;
-let legacyFeaturesReady = false;
+let editorRuntime: EditorRuntime | undefined;
+let compatibilityScriptsReady = false;
 let pendingDesktopClient: Parameters<NonNullable<typeof window.attachBackendClient>>[0] | undefined;
-let pendingInitData: unknown;
-let hasPendingInitData = false;
 
 export function hasDesktopBackend(host: unknown): boolean {
   return hasPywebviewApi(host) || hasTauriInvoke(host);
@@ -105,11 +107,11 @@ function markDesktopBackendReady(): void {
 function attachDesktopBackend(client: Parameters<NonNullable<typeof window.attachBackendClient>>[0]): void {
   setBackendClient(client);
   window.tuckBackendClient = client;
-  if (!legacyFeaturesReady) {
+  if (!editorRuntime || !compatibilityScriptsReady) {
     pendingDesktopClient = client;
     return;
   }
-  window.attachBackendClient?.(client);
+  editorRuntime.attachBackendClient(client);
   markDesktopBackendReady();
 }
 
@@ -123,7 +125,7 @@ function startTauriBackend(client: TauriBackendClient): void {
       showBackendUnavailable(result.error.message);
       return;
     }
-    legacyInitApp?.({ files: [], sendto: null });
+    editorRuntime?.initApp({ files: [], sendto: null });
     attachDesktopBackend(client);
   });
 }
@@ -154,10 +156,9 @@ function waitForDesktopBackend(): void {
 
 async function bootstrapFrontend(): Promise<void> {
   installLegacyFoundationCompatibility(window);
-  window.initApp = (data: unknown): void => {
-    pendingInitData = data;
-    hasPendingInitData = true;
-  };
+  editorRuntime = installEditorRuntime(window);
+  window.initApp = (data: unknown): void => editorRuntime?.initApp(data);
+  window.attachBackendClient = attachDesktopBackend;
 
   void import("./startup.css");
   window.addEventListener(PYWEBVIEW_READY_EVENT, installDesktopBackend, {
@@ -170,16 +171,8 @@ async function bootstrapFrontend(): Promise<void> {
     showBackendUnavailable(error instanceof Error ? error.message : String(error));
     return;
   }
-
-  legacyInitApp = window.initApp;
-  if (legacyInitApp) {
-    window.initApp = (data: unknown) => {
-      legacyInitApp?.(data);
-      installDesktopBackend();
-    };
-  }
-  legacyFeaturesReady = true;
-  if (hasPendingInitData) window.initApp?.(pendingInitData);
+  editorRuntime.activateLegacyShell();
+  compatibilityScriptsReady = true;
   if (pendingDesktopClient) attachDesktopBackend(pendingDesktopClient);
 
   if (document.readyState === "complete") waitForDesktopBackend();

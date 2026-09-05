@@ -118,7 +118,13 @@ async function pollQueue() {
       running = [],
       pending = [];
     mapQueueItems(items);
-    if (!(clipReorder && clipReorder.active)) renderClips();
+    var reordering =
+      typeof Tuck !== "undefined" &&
+      Tuck.library &&
+      Tuck.library.isReordering &&
+      Tuck.library.isReordering();
+    if (!reordering)
+      renderClips();
     for (var i = 0; i < items.length; i++) {
       if (items[i].state === "running") running.push(items[i]);
       else if (items[i].state === "pending") pending.push(items[i]);

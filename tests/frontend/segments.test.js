@@ -2,7 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const segments = require("../../frontend/public/legacy/segments.js");
+const segments = require("../../frontend/src/features/timeline/segments.ts");
 
 test("omitted segments select the full source", () => {
   assert.deepEqual(segments.normalizeSegments(null, 10), [{ start: 0, end: 10 }]);

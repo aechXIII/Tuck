@@ -2,7 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const clipCards = require("../../frontend/public/legacy/clip-card.js");
+const clipCards = require("../../frontend/src/features/library/clip-card.ts");
 
 class FakeElement {
   constructor(tagName) {

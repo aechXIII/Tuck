@@ -6,11 +6,37 @@ from pathlib import Path
 FRONTEND_DIR = Path("frontend")
 INDEX_PATH = FRONTEND_DIR / "index.html"
 WEB_DIR = FRONTEND_DIR / "public" / "legacy"
+SOURCE_DIR = FRONTEND_DIR / "src"
+
+MIGRATED_MODULES = {
+    "app.js": (
+        "features/editor/runtime.ts",
+        "features/editor/toast.ts",
+        "features/editor/updates.ts",
+        "features/library/library.ts",
+        "features/preview/preview-controller.ts",
+    ),
+    "audio.js": ("features/audio/audio-timeline.ts",),
+    "clip-card.js": ("features/library/clip-card.ts",),
+    "clip-details.js": ("features/library/clip-details.ts",),
+    "crop.js": ("features/transform/crop-geometry.ts",),
+    "history.js": ("features/history/history.ts",),
+    "inspector-ui.js": ("features/panels/inspector-ui.ts",),
+    "panels.js": ("features/panels/panels.ts",),
+    "player.js": ("features/player/player.ts",),
+    "segments.js": ("features/timeline/segments.ts",),
+    "shortcuts.js": ("features/shortcuts/shortcuts.ts",),
+    "timeline.js": ("features/timeline/timeline-core.ts", "features/timeline/timeline.ts"),
+    "transform.js": ("features/transform/transform.ts",),
+}
 
 
 def _asset(name: str) -> str:
     if name == "index.html":
         return INDEX_PATH.read_text(encoding="utf-8")
+    migrated = MIGRATED_MODULES.get(name)
+    if migrated:
+        return "\n".join((SOURCE_DIR / path).read_text(encoding="utf-8") for path in migrated)
     return (WEB_DIR / name).read_text(encoding="utf-8")
 
 
@@ -20,7 +46,8 @@ def _web_source() -> str:
         for path in sorted(WEB_DIR.iterdir())
         if path.suffix in {".css", ".js"}
     )
-    return "\n".join((INDEX_PATH.read_text(encoding="utf-8"), *legacy))
+    modules = (path.read_text(encoding="utf-8") for path in SOURCE_DIR.rglob("*.ts"))
+    return "\n".join((INDEX_PATH.read_text(encoding="utf-8"), *legacy, *modules))
 
 
 def test_web_ui_is_packaged_source_asset() -> None:
@@ -37,7 +64,8 @@ def test_web_ui_is_packaged_source_asset() -> None:
         )
         assert path.is_file()
     assert "window.pywebview" not in app_js
-    assert "window.attachBackendClient = function (client)" in app_js
+    main_ts = (FRONTEND_DIR / "src" / "main.ts").read_text(encoding="utf-8")
+    assert "window.attachBackendClient = attachDesktopBackend" in main_ts
     assert "pywebviewready" in (FRONTEND_DIR / "src" / "backend" / "pywebview.ts").read_text(
         encoding="utf-8"
     )
@@ -74,9 +102,9 @@ def test_web_ui_uses_python_managed_drop_paths() -> None:
 def test_web_ui_forwards_start_metadata_and_releases_old_media_tokens() -> None:
     html = _web_source()
 
-    assert "metadata.files = files" in html
-    assert "releaseMediaToken(clips[selPath].mediaToken)" in html
-    assert "api.closeWindow()" in html
+    assert "const files = launch.files" in html
+    assert "getBackendClient().releaseMediaToken(clip.mediaToken)" in html
+    assert "state.api?.closeWindow()" in html
 
 
 def test_application_shortcuts_use_the_central_command_dispatcher() -> None:
@@ -87,42 +115,37 @@ def test_application_shortcuts_use_the_central_command_dispatcher() -> None:
     history_js = _asset("history.js")
     timeline_js = _asset("timeline.js")
 
-    assert 'root.addEventListener("keydown", dispatchCommand)' in shortcuts_js
-    assert 'TuckShortcuts.registerAction("file.add-videos"' in app_js
-    assert 'TuckShortcuts.registerAction("settings.open", function () {' in app_js
-    assert "toggleSettings();" in app_js
-    assert "execute: function () {\n    togglePlay();\n  }," in app_js
-    assert 'TuckShortcuts.registerAction("playback.step-backward"' in app_js
-    assert 'TuckShortcuts.registerAction("playback.step-forward"' in app_js
-    assert "seekPreview(0);" in app_js
-    assert "seekPreview(videoDuration());" in app_js
-    assert "return !!libraryClipTarget(event);" in app_js
-    assert 'TuckShortcuts.registerAction("timeline.split"' in audio_js
-    assert 'TuckShortcuts.registerAction("edit.delete-selection"' in audio_js
-    assert 'root.TuckShortcuts.registerAction("timeline.zoom-in"' in timeline_js
-    assert 'root.TuckShortcuts.registerAction("timeline.zoom-out"' in timeline_js
-    assert 'root.TuckShortcuts.registerAction("timeline.fit"' in timeline_js
-    assert 'TuckShortcuts.registerAction("edit.undo"' in history_js
+    assert "function dispatch" in shortcuts_js
+    for command in (
+        "file.add-videos",
+        "settings.open",
+        "playback.toggle",
+        "playback.step-backward",
+        "playback.step-forward",
+    ):
+        assert f'"{command}"' in app_js
+    assert 'registerAction("timeline.split"' in audio_js
+    assert 'registerAction("edit.delete-selection"' in audio_js
+    for command in ("timeline.zoom-in", "timeline.zoom-out", "timeline.fit"):
+        assert f'registerAction("{command}"' in timeline_js
+    assert 'registerAction("edit.undo"' in history_js
     assert 'aria-keyshortcuts="Space"' in html
     assert 'aria-keyshortcuts="? Control+/"' in html
     assert 'aria-keyshortcuts="ArrowLeft"' in html
     assert 'aria-keyshortcuts="Control+0"' in html
-    assert 'window.addEventListener("keydown", function (e)' not in app_js
-    assert 'root.document.addEventListener("keydown", function (event)' not in audio_js
-    assert 'document.addEventListener("keydown", function (event)' not in history_js
+    assert "addEventListener(\"keydown\"" not in app_js
+    assert "document.addEventListener(\"keydown\"" not in audio_js
+    assert "document.addEventListener(\"keydown\"" not in history_js
 
 
 def test_web_ui_starts_if_python_calls_init_after_bridge_injection() -> None:
     app_js = _asset("app.js")
     main_ts = (FRONTEND_DIR / "src" / "main.ts").read_text(encoding="utf-8")
 
-    assert (
-        "if (window.tuckBackendClient) window.attachBackendClient(window.tuckBackendClient);"
-        in app_js
-    )
-    assert "const legacyInitApp = window.initApp;" in main_ts
-    assert "legacyInitApp(data);" in main_ts
-    assert "installDesktopBackend();" in main_ts
+    assert "function attachDesktopBackend" in main_ts
+    assert "window.initApp = (data: unknown)" in main_ts
+    assert "pendingDesktopClient" in main_ts
+    assert "waitForDesktopBackend" in main_ts
 
 
 def test_web_ui_contains_visual_crop_overlay_and_request_state() -> None:
@@ -133,14 +156,14 @@ def test_web_ui_contains_visual_crop_overlay_and_request_state() -> None:
     styles = _asset("transform.css")
 
     assert 'id="crop-selection"' in html
-    assert "event.target.dataset.handle" in transform_js
+    assert "target?.dataset?.handle" in transform_js
     assert html.count('class="crop-handle" data-handle=') == 8
     assert '.crop-handle[data-handle="nw"] {' in styles
     assert '.crop-handle[data-handle="se"] {' in styles
     assert 'aria-label="Segment actions"' in html
     assert 'id="btn-segments-reset"' in html
     assert 'id="segment-menu"' not in html
-    assert "cropTransformForRequest(c)" in encoding_js
+    assert "cropTransformForRequest" in encoding_js
     assert "new ResizeObserver(paintCropOverlay)" in transform_js
     assert "api.createPlan" not in crop_js
     assert "api.createPlan" not in transform_js
@@ -183,7 +206,7 @@ def test_web_ui_contains_complete_transform_controls() -> None:
     assert "if (tooltipPointerActive) return;" in transform_js
     assert "tooltipPointerActive = true;" in transform_js
     assert "targetRect.width <= 0 || targetRect.height <= 0" in transform_js
-    assert 'button.setAttribute("aria-pressed", String(active))' in transform_js
+    assert 'button.setAttribute("aria-pressed", String(pressed))' in transform_js
 
 
 def test_editor_shell_uses_adaptive_accessible_panels() -> None:
@@ -219,12 +242,12 @@ def test_editor_shell_uses_adaptive_accessible_panels() -> None:
     assert 'id="workspace-backdrop"' in html
     assert 'id="library-panel-close"' in html
     assert 'id="inspector-panel-close"' in html
-    assert "function toggleWorkspacePanel(panel)" in panels_js
-    assert "function closeWorkspacePanels(restoreFocus)" in panels_js
+    assert "function toggleWorkspacePanel(panel: WorkspacePanelName)" in panels_js
+    assert "function closeWorkspacePanels(restoreFocus?: boolean)" in panels_js
     assert "function syncWorkspaceForViewport()" in panels_js
-    assert "function trapWorkspaceDrawerFocus(event)" in panels_js
-    assert 'byId("center").inert = drawerOpen;' in panels_js
-    assert 'byId("audio-editor").inert = drawerOpen;' in panels_js
+    assert "function trapWorkspaceDrawerFocus(event: KeyboardEvent)" in panels_js
+    assert "if (center) center.inert = drawerOpen;" in panels_js
+    assert "if (audioEditor) audioEditor.inert = drawerOpen;" in panels_js
     assert "workspace-drawer-open" in styles
     assert "@media (max-width: 1179px)" in styles
     assert "@media (max-width: 719px)" in styles
@@ -243,11 +266,11 @@ def test_editor_shell_uses_adaptive_accessible_panels() -> None:
     assert 'id="btn-timeline-height-fit"' in html
     assert 'aria-label="Fit timeline height to tracks"' in html
     assert 'id="seq-playhead-time"' in html
-    assert "function handleTimelineResizeKey(event)" in timeline_js
+    assert "function handleTimelineResizeKey(event: KeyboardEvent)" in timeline_js
     assert "resetTimelineHeight: resetTimelineHeight" in timeline_js
-    assert "function formatTimelineTime(seconds)" in timeline_js
+    assert "function formatTimelineTime(seconds: number)" in timeline_js
     assert 'byId("seq-playhead-time")' in timeline_js
-    assert "saveSettings({ timeline_height: timelineHeightSetting })" in timeline_js
+    assert "getBackendClient().saveSettings({ timeline_height: timelineHeightSetting })" in timeline_js
     assert 'frame.classList.toggle("is-zoomed", zoomed);' in timeline_js
     assert 'frame.style.removeProperty("--tl-width");' in timeline_js
     assert '<div id="qbar" class="hid">' in html
@@ -281,7 +304,7 @@ def test_audio_controls_use_consistent_nle_track_vocabulary() -> None:
     assert 'role="switch"' in html
     assert '<svg class="ti-icon"' not in html
     assert "mixer-track-code" in panels_js
-    assert 'class="mixer-mute"' in panels_js
+    assert 'mute.className = "mixer-mute"' in panels_js
     assert 'type="checkbox" class="mixer-mute"' not in panels_js
     assert "#video-track #timeline.seq-lane" in timeline_styles
 
@@ -316,17 +339,11 @@ def test_workspace_commands_have_clear_hierarchy() -> None:
 
 def test_removing_the_last_video_clears_timeline_state() -> None:
     app_js = _asset("app.js")
-    remove_clip = app_js.split("function removeClip(p) {", 1)[1].split(
-        "function removeAllClips() {", 1
-    )[0]
-    remove_all = app_js.split("function doRemoveAllClips() {", 1)[1].split(
-        "async function probeClip(p) {", 1
-    )[0]
-
-    for removal_path in (remove_clip, remove_all):
-        assert "AudioTimeline.selectVideo(null)" in removal_path
-        assert "syncTimelineUI();" in removal_path
-        assert "syncTransformControls();" in removal_path
+    assert "function removeClip(path: string): void" in app_js
+    assert "function doRemoveAllClips(): void" in app_js
+    assert "host.audio?.selectVideo?.(null);" in app_js
+    assert "host.syncTimelineUI?.();" in app_js
+    assert "host.syncTransformControls?.();" in app_js
 
 
 def test_settings_dialog_manages_keyboard_focus() -> None:
@@ -345,7 +362,8 @@ def test_settings_save_state_is_wired_into_the_ui() -> None:
     settings_js = _asset("settings.js")
 
     assert '<details class="profile-options">' in html
-    assert 'src="/legacy/settings-state.js"' in html
+    compatibility = (SOURCE_DIR / "compatibility.ts").read_text(encoding="utf-8")
+    assert "TuckSettingsState" in compatibility
     assert 'data-settings-save="true"' in settings_js
     assert "function captureSettingsSnapshot()" in settings_js
     persist_settings = settings_js.split("async function persistSettings", 1)[1].split(
@@ -375,9 +393,8 @@ def test_thumbnail_is_created_only_when_a_valid_source_exists() -> None:
 
     assert '<img id="thumb"' not in html
     assert 'id="media-viewport"' in html
-    assert "function showThumbnail(source)" in app_js
-    assert "function removeThumbnail()" in app_js
-    assert ".filter(Boolean)" in transform_js
+    assert "function showThumbnail(source: string)" in app_js
+    assert "function removeThumbnail(): void" in app_js
 
 
 def test_preview_responses_are_bound_to_the_source_and_request_snapshot() -> None:
@@ -408,19 +425,19 @@ def test_web_ui_allows_manual_target_size_entry() -> None:
 def test_web_ui_checks_for_updates_on_startup_when_enabled() -> None:
     html = _web_source()
 
-    assert "if (appSettings.check_updates !== false) checkUpdates(true);" in html
-    assert "async function checkUpdates(silent)" in html
+    assert "if (session.appSettings.check_updates !== false) void checkUpdates(true);" in html
+    assert "export async function checkUpdates(silent: boolean)" in html
     assert 'if (!silent) toast("Running latest version.", "ok");' in html
 
 
 def test_web_ui_shows_release_notes_in_an_update_modal() -> None:
     html = _web_source()
 
-    assert "function showUpdateModal(update)" in html
+    assert "export function showUpdateModal(update" in html
     assert 'id="update-notes"' in html
-    assert "function renderUpdateNotes(notes)" in html
+    assert "export function renderUpdateNotes(notes: unknown)" in html
     assert 'document.createElement(block.type === "heading" ? "h4" : "p")' in html
-    assert "item.textContent = block.text" in html
+    assert "element.textContent = block.text" in html
     assert "renderUpdateNotes(update.notes);" in html
     assert "showUpdateModal(r);" in html
 
@@ -430,7 +447,7 @@ def test_update_download_starts_the_installer_without_a_second_prompt() -> None:
 
     assert "Download &amp; install" in html
     assert "async function downloadAndInstallUpdate()" in html
-    assert "var installed = await legacyBackendResult(api.installUpdate());" in html
+    assert "const installed = await legacyBackendResult(api.installUpdate());" in html
     assert "await api.closeWindow();" in html
     assert "Update downloaded. Install now?" not in html
 

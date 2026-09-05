@@ -3,7 +3,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const timeline = require("../../frontend/public/legacy/timeline.js");
+const timeline = require("../../frontend/src/features/timeline/timeline-core.ts");
 
 test("track actions expose only controls owned by each track kind", () => {
   assert.deepEqual(timeline.trackActions("video"), []);

@@ -18,10 +18,11 @@ from tuck.web_ui import (
 
 FRONTEND_INDEX = Path("frontend/index.html")
 LEGACY_WEB_DIR = Path("frontend/public/legacy")
+SOURCE_DIR = Path("frontend/src")
 
 
 def _web_source() -> str:
-    sources = [FRONTEND_INDEX, *sorted(LEGACY_WEB_DIR.iterdir())]
+    sources = [FRONTEND_INDEX, *sorted(LEGACY_WEB_DIR.iterdir()), *sorted(SOURCE_DIR.rglob("*.ts"))]
     return "\n".join(path.read_text(encoding="utf-8") for path in sources)
 
 
@@ -37,10 +38,9 @@ def test_static_controls_use_the_delegated_action_registry() -> None:
 
     for attribute in ("onclick=", "oninput=", "onchange="):
         assert attribute not in html
-    assert 'src="/legacy/delegated-events.js"' in html
-    assert 'src="/legacy/ui-bindings.js"' in html
-    assert html.index('src="/legacy/delegated-events.js"') < html.index('src="/legacy/app.js"')
-    assert html.index('src="/legacy/history.js"') < html.index('src="/legacy/ui-bindings.js"')
+    assert '<script type="module" src="./src/main.ts"></script>' in html
+    assert (SOURCE_DIR / "compatibility.ts").is_file()
+    assert (LEGACY_WEB_DIR / "ui-bindings.js").is_file()
 
 
 class _Bridge:
@@ -249,20 +249,11 @@ def test_resource_path_locates_frontend_sources() -> None:
         "audio.css",
         "queue.css",
         "transform.css",
-        "shortcuts.js",
-        "app.js",
-        "audio.js",
         "encoding-ui.js",
-        "history.js",
-        "layout.js",
-        "panels.js",
-        "segments.js",
-        "player.js",
         "queue.js",
         "settings.js",
-        "settings-state.js",
-        "crop.js",
-        "transform.js",
+        "settings-profiles.js",
+        "ui-bindings.js",
     ):
         assert _get_resource_path(f"frontend/public/legacy/{name}").is_file()
 
@@ -397,8 +388,8 @@ def test_drop_reports_unresolvable_paths_as_rejected() -> None:
 def test_clip_cards_use_icon_statuses_and_compact_metadata() -> None:
     html = _web_source()
 
-    assert "function clipStateBadge(p)" in html
-    assert 'st === "failed" && c._queueError' in html
+    assert "function clipStateBadge(path: string)" in html
+    assert 'st === "failed" && clip._queueError' in html
     assert '"Finished: " + esc(clip.name)' not in html
     assert "appSettings.clear_completed_automatically" in html
     assert 'Failed to process "' in html
@@ -473,7 +464,7 @@ def test_segment_editor_controls_payloads_and_accessibility_are_wired() -> None:
     assert '". Click to seek; drag to move"' in html
     assert "range.title" not in html
     assert 'timeLabel.className = "tl-segment-time"' in html
-    assert "formatSegmentTime(segments[i].start)" in html
+    assert "formatSegmentTime(segment.start)" in html
     assert ".tl-segment:hover .tl-segment-time" in html
     assert "#timeline.segment-dragging .tl-segment.active .tl-segment-time" in html
     assert "#timeline.trim-dragging .tl-segment.active .tl-segment-time" in html
@@ -564,7 +555,7 @@ def test_settings_file_naming_and_subsection_navigation_use_shared_layout() -> N
     assert "button.mrow {" in html
     assert "font: inherit;" in html
     assert 'settingsTitle("Add shortcut", "open-explorer")' in html
-    assert 'src="/legacy/delegated-events.js"' in html
+    assert "tuck.delegatedEvents = { bind: bindDelegatedEvents" in html
 
 
 def test_settings_separates_output_and_stages_all_persisted_changes() -> None:

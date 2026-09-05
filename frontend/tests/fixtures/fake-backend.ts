@@ -5,6 +5,8 @@ import type { BackendCall, BackendClient } from "../../src/backend/types.ts";
 export interface FakeBackendCall extends BackendCall {}
 
 export interface FakeBackendFixture {
+  holdMethods?: readonly (keyof BackendClient)[];
+  queueStateAfterEnqueue?: unknown;
   responseSequences?: Partial<Record<keyof BackendClient, unknown[]>>;
   responses: Partial<Record<keyof BackendClient, unknown>>;
   startup: {
@@ -41,8 +43,10 @@ export async function installFakeBackend(
   fixture: FakeBackendFixture,
 ): Promise<void> {
   await page.addInitScript(
-    ({ responseSequences, responses, startup }) => {
+    ({ holdMethods, queueStateAfterEnqueue, responseSequences, responses, startup }) => {
       const calls: BackendCall[] = [];
+      const held = new Map<string, Array<(value: unknown) => void>>();
+      let hasEnqueuedWork = false;
       const clone = (value: unknown): unknown =>
         value === undefined ? undefined : JSON.parse(JSON.stringify(value));
       const respond = async (
@@ -54,9 +58,36 @@ export async function installFakeBackend(
           args: Array.isArray(clonedArgs) ? clonedArgs : [],
           method,
         });
+        if (holdMethods?.includes(method)) {
+          const released = await new Promise((resolve) => {
+            const queue = held.get(method) ?? [];
+            queue.push(resolve);
+            held.set(method, queue);
+          });
+          if (released !== undefined) return clone(released);
+        }
+        if (method === "enqueueWithOptions" || method === "enqueueBatch") {
+          hasEnqueuedWork = true;
+        }
+        if (
+          method === "getQueueState" &&
+          hasEnqueuedWork &&
+          queueStateAfterEnqueue !== undefined
+        ) {
+          return clone(queueStateAfterEnqueue);
+        }
         const sequence = responseSequences?.[method];
         if (sequence?.length) return clone(sequence.shift());
         return clone(responses[method] ?? { ok: true });
+      };
+      (
+        window as Window & {
+          __tuckReleaseHeld?: (method: string, value?: unknown) => void;
+        }
+      ).__tuckReleaseHeld = (method, value) => {
+        const queue = held.get(method);
+        const resolve = queue?.shift();
+        resolve?.(value);
       };
       const api = {
         probeFile: (path: string) => respond("probeFile", [path]),
@@ -126,6 +157,12 @@ export async function installFakeBackend(
         { once: true },
       );
     },
-    fixture,
+    {
+      holdMethods: fixture.holdMethods,
+      queueStateAfterEnqueue: fixture.queueStateAfterEnqueue,
+      responseSequences: fixture.responseSequences,
+      responses: fixture.responses,
+      startup: fixture.startup,
+    },
   );
 }

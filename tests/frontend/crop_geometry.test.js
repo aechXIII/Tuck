@@ -2,7 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const crop = require("../../frontend/public/legacy/crop.js");
+const crop = require("../../frontend/src/features/transform/crop-geometry.ts");
 
 test("crop initializes to the full source frame", () => {
   assert.deepEqual(crop.selectionCrop(null, 1920, 1080), {
