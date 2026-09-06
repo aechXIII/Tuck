@@ -106,6 +106,7 @@ def run_server(
                     payload={
                         "code": "INTERNAL_ERROR",
                         "message": "The backend could not start.",
+                        "details": {},
                     },
                 )
             )

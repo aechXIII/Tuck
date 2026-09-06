@@ -54,18 +54,26 @@ def _validate_executable_path(executable_path: str | Path | None) -> str:
     return str(candidate)
 
 
-def _get_target_path(executable_path: str | Path | None = None) -> str | None:
+def _get_target_path(
+    executable_path: str | Path | None = None,
+    action: str = ACTION_REVIEW,
+) -> str | None:
     if executable_path is not None:
         validated = _validate_executable_path(executable_path)
         if validated:
             return validated
     if getattr(sys, "frozen", False):
-        executable = Path(sys.executable)
-        if executable.name.casefold() == "tuckcli.exe":
-            gui_executable = executable.with_name("Tuck.exe")
-            if gui_executable.is_file():
-                return str(gui_executable)
-        return str(executable)
+        # in a packaged install Tuck.exe (editor), TuckCli.exe (headless console
+        # encode) and tuck-sidecar.exe share one directory; "review" opens the
+        # editor and "start" runs the encoder, so resolve by sibling name and
+        # the shortcut works whichever process created it
+        exe_dir = Path(sys.executable).parent
+        preferred = "TuckCli.exe" if action == ACTION_START else "Tuck.exe"
+        for name in (preferred, "Tuck.exe", "TuckCli.exe"):
+            candidate = exe_dir / name
+            if candidate.is_file():
+                return str(candidate)
+        return str(Path(sys.executable))
     return sys.executable
 
 
@@ -170,10 +178,9 @@ def _ensure_generic_destinations_available() -> None:
 
 
 def install_sendto(executable_path: str | Path | None = None) -> Path:
-    target = (
-        _get_target_path(executable_path) if executable_path is not None else _get_target_path()
-    )
-    if not target:
+    review_target = _get_target_path(executable_path, ACTION_REVIEW)
+    start_target = _get_target_path(executable_path, ACTION_START)
+    if not review_target or not start_target:
         raise RuntimeError("Cannot determine Tuck executable path")
 
     sendto = _sendto_dir()
@@ -188,18 +195,17 @@ def install_sendto(executable_path: str | Path | None = None) -> Path:
             logger.info("Removed old batch fallback: %s", batch_path)
 
     if _can_create_shortcuts():
-        args = _get_args(action=ACTION_REVIEW)
         _create_windows_shortcut(
-            target,
+            review_target,
             shortcut_path,
-            arguments=args,
+            arguments=_get_args(action=ACTION_REVIEW),
             working_dir=_get_working_dir(),
             description="Open in Tuck",
             shortcut_type="generic",
         )
         compress_path = _get_compress_shortcut_path()
         _create_windows_shortcut(
-            target,
+            start_target,
             compress_path,
             arguments=_get_args(action=ACTION_START),
             working_dir=_get_working_dir(),
@@ -209,9 +215,9 @@ def install_sendto(executable_path: str | Path | None = None) -> Path:
         logger.info("Send To shortcuts created at %s and %s", shortcut_path, compress_path)
         return shortcut_path
     else:
-        batch = _create_batch_fallback(target, _get_args(action=ACTION_REVIEW), sendto)
+        batch = _create_batch_fallback(review_target, _get_args(action=ACTION_REVIEW), sendto)
         compress_batch = _create_batch_fallback(
-            target,
+            start_target,
             _get_args(action=ACTION_START),
             sendto,
             suffix=" Compress",
@@ -226,9 +232,7 @@ def install_profile_shortcut(
     action: str = ACTION_START,
     executable_path: str | Path | None = None,
 ) -> Path:
-    target = (
-        _get_target_path(executable_path) if executable_path is not None else _get_target_path()
-    )
+    target = _get_target_path(executable_path, action)
     if not target:
         raise RuntimeError("Cannot determine Tuck executable path")
 
@@ -316,14 +320,6 @@ def repair_sendto(executable_path: str | Path | None = None) -> bool:
     ):
         return False
     _ensure_generic_destinations_available()
-    try:
-        target = (
-            _get_target_path(executable_path) if executable_path is not None else _get_target_path()
-        )
-    except (ValueError, TypeError):
-        return False
-    if not target:
-        return False
 
     try:
         import pythoncom
@@ -335,6 +331,12 @@ def repair_sendto(executable_path: str | Path | None = None) -> bool:
         try:
             shell = Dispatch("WScript.Shell")
             for shortcut_path, action, description in shortcut_specs:
+                try:
+                    target = _get_target_path(executable_path, action)
+                except (ValueError, TypeError):
+                    return repaired
+                if not target:
+                    return repaired
                 expected_args = " ".join(_get_args(action=action))
                 if shortcut_path.exists():
                     if not (
@@ -375,11 +377,7 @@ def repair_profile_shortcut(
 
     if batch_path.exists() and _is_tuck_shortcut(batch_path):
         try:
-            target = (
-                _get_target_path(executable_path)
-                if executable_path is not None
-                else _get_target_path()
-            )
+            target = _get_target_path(executable_path, action)
         except (ValueError, TypeError):
             return False
         if not target:
@@ -397,9 +395,7 @@ def repair_profile_shortcut(
     if not _is_tuck_shortcut(shortcut_path):
         return False
     try:
-        target = (
-            _get_target_path(executable_path) if executable_path is not None else _get_target_path()
-        )
+        target = _get_target_path(executable_path, action)
     except (ValueError, TypeError):
         return False
     if not target:

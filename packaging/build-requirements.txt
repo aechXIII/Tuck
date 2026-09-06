@@ -1,0 +1,5 @@
+# Build-time-only tools for the packaged sidecar/CLI. Not shipped, not runtime
+# dependencies. Pinned so the frozen build is reproducible.
+pyinstaller==6.22.2
+setuptools==80.9.0
+wheel==0.45.1

@@ -6,20 +6,49 @@ use crate::backend::protocol::PublicBackendError;
 use crate::platform::startup::{deliver_second_instance_args, normalize_startup_args};
 
 pub struct StartupState {
-    pub files: Mutex<Vec<String>>,
+    launch: Mutex<LaunchDelivery>,
+}
+
+struct LaunchDelivery {
+    files: Vec<String>,
+    buffered_second_instance_files: Vec<Vec<String>>,
+    event_delivery_enabled: bool,
 }
 
 impl StartupState {
     pub fn new(files: Vec<String>) -> Self {
         Self {
-            files: Mutex::new(files),
+            launch: Mutex::new(LaunchDelivery {
+                files,
+                buffered_second_instance_files: Vec::new(),
+                event_delivery_enabled: false,
+            }),
         }
     }
     pub fn get(&self) -> Vec<String> {
-        self.files.lock().unwrap().clone()
+        self.launch.lock().unwrap().files.clone()
     }
     pub fn set(&self, files: Vec<String>) {
-        *self.files.lock().unwrap() = files;
+        self.launch.lock().unwrap().files = files;
+    }
+
+    /// Returns whether the files must be delivered through the Tauri event.
+    pub fn deliver_second_instance_files(&self, files: Vec<String>) -> bool {
+        let mut launch = self.launch.lock().unwrap();
+        if launch.event_delivery_enabled {
+            true
+        } else {
+            launch.buffered_second_instance_files.push(files);
+            false
+        }
+    }
+
+    pub fn take_launch_files_and_enable_event_delivery(&self) -> Vec<String> {
+        let mut launch = self.launch.lock().unwrap();
+        let buffered_files = std::mem::take(&mut launch.buffered_second_instance_files);
+        launch.files.extend(buffered_files.into_iter().flatten());
+        launch.event_delivery_enabled = true;
+        std::mem::take(&mut launch.files)
     }
 }
 
@@ -30,7 +59,7 @@ pub fn extract_startup_args() -> Vec<String> {
 
 #[tauri::command]
 pub fn get_startup_files(state: tauri::State<'_, StartupState>) -> Vec<String> {
-    state.get()
+    state.take_launch_files_and_enable_event_delivery()
 }
 
 // Second instance handling: normalize and attempt to deliver via event
@@ -38,29 +67,34 @@ pub fn handle_second_instance(
     app: &tauri::AppHandle,
     args: Vec<String>,
 ) -> Result<(), PublicBackendError> {
-    let files = normalize_startup_args(args);
+    // The single-instance plugin forwards std::env::args(), including the
+    // executable path. Startup extraction already skips that first argument.
+    let files = normalize_startup_args(args.into_iter().skip(1).collect());
+    let window = app.get_webview_window("main").ok_or_else(|| {
+        PublicBackendError::new(
+            "BACKEND_EXITED",
+            "Primary window not available for second instance.",
+        )
+    })?;
+    // Opening Tuck again should still bring its existing window forward even
+    // when the second process did not receive a media-file argument.
+    let _ = window.set_focus();
     if files.is_empty() {
         return Err(PublicBackendError::new(
             "INVALID_REQUEST",
             "Second instance has no valid files.",
         ));
     }
-    // Try to deliver to primary window via event; if primary not available, error
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.emit("second-instance", &files);
-        // Also update startup state
-        if let Some(state) = app.try_state::<StartupState>() {
-            state.set(files);
+    if let Some(state) = app.try_state::<StartupState>() {
+        if state.deliver_second_instance_files(files.clone()) {
+            let _ = window.emit("second-instance", &files);
         }
-        // Focus window
-        let _ = window.set_focus();
-        Ok(())
     } else {
-        Err(PublicBackendError::new(
-            "BACKEND_EXITED",
-            "Primary window not available for second instance.",
-        ))
+        // A running Tauri app always manages StartupState. Preserve delivery if
+        // a future shell configuration omits it rather than dropping files.
+        let _ = window.emit("second-instance", &files);
     }
+    Ok(())
 }
 
 pub fn try_forward_to_primary<F>(args: Vec<String>, forwarder: F) -> Result<(), PublicBackendError>
@@ -87,6 +121,39 @@ mod tests {
         assert_eq!(state.get(), vec!["a"]);
         state.set(vec!["b".to_owned(), "c".to_owned()]);
         assert_eq!(state.get(), vec!["b", "c"]);
+    }
+
+    #[test]
+    fn startup_state_drains_initial_and_buffered_second_instance_files() {
+        let state = StartupState::new(vec!["initial.mp4".to_owned()]);
+        assert!(!state.deliver_second_instance_files(vec!["later.mp4".to_owned()]));
+
+        assert_eq!(
+            state.take_launch_files_and_enable_event_delivery(),
+            vec!["initial.mp4".to_owned(), "later.mp4".to_owned()]
+        );
+        assert!(state
+            .take_launch_files_and_enable_event_delivery()
+            .is_empty());
+    }
+
+    #[test]
+    fn listener_registered_before_startup_drain_uses_only_the_buffered_delivery() {
+        let state = StartupState::new(Vec::new());
+
+        // The WebView has installed its listener but has not yet completed the
+        // startup command that confirms event delivery is safe.
+        assert!(!state.deliver_second_instance_files(vec!["before-ready.mp4".to_owned()]));
+        assert_eq!(
+            state.take_launch_files_and_enable_event_delivery(),
+            vec!["before-ready.mp4".to_owned()]
+        );
+
+        // later forwards use the event and are no longer included in startup
+        assert!(state.deliver_second_instance_files(vec!["after-ready.mp4".to_owned()]));
+        assert!(state
+            .take_launch_files_and_enable_event_delivery()
+            .is_empty());
     }
 
     #[test]

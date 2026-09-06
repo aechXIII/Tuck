@@ -7,6 +7,8 @@
   ],
   "permissions": [
     "core:window:allow-close",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
     "dialog:default",
     "clipboard-manager:allow-write-text",
     "allow-backend-request",

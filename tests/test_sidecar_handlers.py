@@ -26,6 +26,10 @@ class RecordingApi:
         self.calls.append(("get_queue_state", None))
         return {"items": [], "current_id": None, "pending_ids": []}
 
+    def get_storage_paths(self) -> dict[str, object]:
+        self.calls.append(("get_storage_paths", None))
+        return {"ok": True, "config_dir": "C:/Tuck/config", "log_dir": "C:/Tuck/data/logs"}
+
 
 def _request(method: str, params: dict[str, object], request_id: str = "request-1") -> Request:
     return Request(request_id=request_id, method=method, params=params)
@@ -81,6 +85,16 @@ def test_cancellation_request_is_bound_through_the_allowlist() -> None:
     assert api.calls == [("cancel_item", "item-4")]
     assert response.ok is True
     assert response.result == {"canceled_id": "item-4"}
+
+
+def test_storage_paths_are_available_only_through_the_allowlisted_empty_request() -> None:
+    api = RecordingApi()
+
+    response = dispatch(api, _request("get_storage_paths", {}))
+
+    assert api.calls == [("get_storage_paths", None)]
+    assert response.ok is True
+    assert response.result == {"config_dir": "C:/Tuck/config", "log_dir": "C:/Tuck/data/logs"}
 
 
 def test_handler_exception_is_logged_and_mapped_without_leaking_its_message(caplog) -> None:

@@ -94,7 +94,7 @@ fn parse_event(frame: &Map<String, Value>) -> Result<BackendFrame, PublicBackend
         "backend_ready" => Ok(BackendFrame::Ready {
             backend_version: string_field(payload, "backend_version")?.to_owned(),
         }),
-        "backend_fatal" => Ok(BackendFrame::Fatal(error_from_object(payload)?)),
+        "backend_fatal" => Ok(BackendFrame::Fatal(error_from_fatal_payload(payload)?)),
         _ => Err(invalid_frame()),
     }
 }
@@ -130,6 +130,28 @@ fn error_from_object(value: &Map<String, Value>) -> Result<PublicBackendError, P
         code: string_field(value, "code")?.to_owned(),
         message: string_field(value, "message")?.to_owned(),
         details: object_field(value, "details")?.clone(),
+    })
+}
+
+fn error_from_fatal_payload(
+    value: &Map<String, Value>,
+) -> Result<PublicBackendError, PublicBackendError> {
+    // The Python sidecar's fatal event predates response errors and omits
+    // details. Keep that wire format compatible while retaining strict
+    // validation for ordinary response errors.
+    let expected: BTreeSet<&str> = ["code", "message", "details"].into_iter().collect();
+    let legacy: BTreeSet<&str> = ["code", "message"].into_iter().collect();
+    let actual: BTreeSet<&str> = value.keys().map(String::as_str).collect();
+    if actual != expected && actual != legacy {
+        return Err(invalid_frame());
+    }
+    Ok(PublicBackendError {
+        code: string_field(value, "code")?.to_owned(),
+        message: string_field(value, "message")?.to_owned(),
+        details: match value.get("details") {
+            Some(_) => object_field(value, "details")?.clone(),
+            None => Map::new(),
+        },
     })
 }
 
@@ -193,4 +215,23 @@ fn invalid_frame() -> PublicBackendError {
         "MALFORMED_BACKEND_OUTPUT",
         "The backend emitted an invalid protocol frame.",
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn accepts_the_sidecars_legacy_fatal_event_without_details() {
+        let frame = parse_stdout_frame(
+            r#"{"kind":"event","protocol":1,"event":"backend_fatal","payload":{"code":"INTERNAL_ERROR","message":"The backend could not start."}}"#,
+        )
+        .expect("legacy fatal event is part of the sidecar protocol");
+
+        assert!(matches!(
+            frame,
+            BackendFrame::Fatal(PublicBackendError { ref code, ref details, .. })
+                if code == "INTERNAL_ERROR" && details.is_empty()
+        ));
+    }
 }

@@ -1,8 +1,12 @@
-use tauri::Manager;
+use std::path::PathBuf;
+
+use serde::Deserialize;
+use serde_json::Value;
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_dialog::DialogExt;
 
-use crate::backend::protocol::PublicBackendError;
+use crate::backend::{protocol::PublicBackendError, BackendState};
+use crate::commands::backend::BackendCommand;
 use crate::platform::capabilities::{current_capabilities, PlatformCapabilities};
 use crate::platform::opener::{
     open_app_folder_with_validation, open_with_validation, SystemOpener,
@@ -135,23 +139,75 @@ pub async fn open_output_folder(path: String) -> Result<(), PublicBackendError> 
 }
 
 #[tauri::command]
-pub async fn open_logs_folder(app: tauri::AppHandle) -> Result<(), PublicBackendError> {
-    let base = app
-        .path()
-        .app_log_dir()
-        .unwrap_or_else(|_| std::env::temp_dir().join("tuck_logs"));
-    let opener = SystemOpener;
-    open_app_folder_with_validation(&base, &opener)
+pub async fn open_logs_folder(
+    state: tauri::State<'_, BackendState>,
+) -> Result<(), PublicBackendError> {
+    open_storage_folder(&state, StorageFolder::Logs).await
 }
 
 #[tauri::command]
-pub async fn open_config_folder(app: tauri::AppHandle) -> Result<(), PublicBackendError> {
-    let base = app
-        .path()
-        .app_config_dir()
-        .unwrap_or_else(|_| std::env::temp_dir().join("tuck_config"));
+pub async fn open_config_folder(
+    state: tauri::State<'_, BackendState>,
+) -> Result<(), PublicBackendError> {
+    open_storage_folder(&state, StorageFolder::Config).await
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StoragePaths {
+    config_dir: String,
+    data_dir: String,
+    cache_dir: String,
+    log_dir: String,
+}
+
+enum StorageFolder {
+    Config,
+    Logs,
+}
+
+async fn open_storage_folder(
+    state: &BackendState,
+    folder: StorageFolder,
+) -> Result<(), PublicBackendError> {
+    let paths = state.request(BackendCommand::GetStoragePaths).await?;
+    let path = storage_folder(paths, folder)?;
     let opener = SystemOpener;
-    open_app_folder_with_validation(&base, &opener)
+    open_app_folder_with_validation(&path, &opener)
+}
+
+fn storage_folder(value: Value, folder: StorageFolder) -> Result<PathBuf, PublicBackendError> {
+    let paths: StoragePaths = serde_json::from_value(value).map_err(|_| {
+        PublicBackendError::new(
+            "MALFORMED_BACKEND_OUTPUT",
+            "The backend returned invalid storage locations.",
+        )
+    })?;
+    let config_dir = validate_storage_path(&paths.config_dir)?;
+    let _data_dir = validate_storage_path(&paths.data_dir)?;
+    let _cache_dir = validate_storage_path(&paths.cache_dir)?;
+    let log_dir = validate_storage_path(&paths.log_dir)?;
+    Ok(match folder {
+        StorageFolder::Config => config_dir,
+        StorageFolder::Logs => log_dir,
+    })
+}
+
+fn validate_storage_path(raw_path: &str) -> Result<PathBuf, PublicBackendError> {
+    if raw_path.trim().is_empty() || raw_path.contains('\0') {
+        return Err(PublicBackendError::new(
+            "MALFORMED_BACKEND_OUTPUT",
+            "The backend returned an invalid storage location.",
+        ));
+    }
+    let path = PathBuf::from(raw_path);
+    if !path.is_absolute() {
+        return Err(PublicBackendError::new(
+            "MALFORMED_BACKEND_OUTPUT",
+            "The backend returned a relative storage location.",
+        ));
+    }
+    Ok(path)
 }
 
 #[tauri::command]
@@ -181,5 +237,48 @@ mod tests {
     #[test]
     fn clipboard_text_valid_passes_validation() {
         assert!(validate_clipboard_text("hello").is_ok());
+    }
+
+    #[test]
+    fn storage_folders_use_the_sidecars_authoritative_paths() {
+        let paths = serde_json::json!({
+            "config_dir": "C:\\Users\\Tuck\\config",
+            "data_dir": "C:\\Users\\Tuck\\data",
+            "cache_dir": "C:\\Users\\Tuck\\cache",
+            "log_dir": "C:\\Users\\Tuck\\data\\logs",
+        });
+
+        assert_eq!(
+            storage_folder(paths.clone(), StorageFolder::Config).unwrap(),
+            PathBuf::from("C:\\Users\\Tuck\\config")
+        );
+        assert_eq!(
+            storage_folder(paths, StorageFolder::Logs).unwrap(),
+            PathBuf::from("C:\\Users\\Tuck\\data\\logs")
+        );
+    }
+
+    #[test]
+    fn storage_folder_rejects_malformed_or_relative_backend_paths() {
+        let malformed = serde_json::json!({ "config_dir": "C:\\config" });
+        assert_eq!(
+            storage_folder(malformed, StorageFolder::Config)
+                .expect_err("all sidecar storage paths are required")
+                .code,
+            "MALFORMED_BACKEND_OUTPUT"
+        );
+
+        let relative = serde_json::json!({
+            "config_dir": "config",
+            "data_dir": "data",
+            "cache_dir": "cache",
+            "log_dir": "logs",
+        });
+        assert_eq!(
+            storage_folder(relative, StorageFolder::Config)
+                .expect_err("storage folders must be absolute")
+                .code,
+            "MALFORMED_BACKEND_OUTPUT"
+        );
     }
 }

@@ -4,6 +4,8 @@ import {
   PYWEBVIEW_READY_EVENT,
   setBackendClient,
 } from "./backend/index.ts";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import type { BackendClient } from "./backend/types.ts";
 import type { TauriBackendClient } from "./backend/index.ts";
 import {
@@ -11,6 +13,7 @@ import {
   type EditorRuntime,
 } from "./features/editor/runtime.ts";
 import { backendUnavailableMessage, hasDesktopBackend } from "./desktop-status.ts";
+import { createSecondInstanceLaunchQueue } from "./platform/second-instance.ts";
 import "./styles/index.ts";
 
 export { backendUnavailableMessage, hasDesktopBackend };
@@ -100,7 +103,17 @@ function startTauriBackend(client: TauriBackendClient): void {
   tauriStartupStarted = true;
   client.onFatal((error) => showBackendUnavailable(error.message));
   showBackendLoading();
-  void client.health().then(async (result) => {
+
+  // Rust keeps forwarded paths buffered until this listener has completed the
+  // startup request; later forwards arrive only through this event.
+  const secondInstanceLaunches = createSecondInstanceLaunchQueue((files) => {
+    editorRuntime?.initApp({ files, sendto: null });
+  });
+  const listenerReady = listen<string[]>("second-instance", (event) => {
+    secondInstanceLaunches.enqueue(event.payload);
+  }).catch(() => undefined);
+
+  void listenerReady.then(() => client.health()).then(async (result) => {
     if (!result.ok) {
       showBackendUnavailable(result.error.message);
       return;
@@ -108,20 +121,19 @@ function startTauriBackend(client: TauriBackendClient): void {
     // Fetch startup files after backend is ready (normalized in Rust, validated in Python)
     let startupFiles: string[] = [];
     try {
-      const { invoke } = await import("@tauri-apps/api/core");
       const files = (await invoke("get_startup_files", {})) as unknown;
-      if (Array.isArray(files)) startupFiles = files.filter((f) => typeof f === "string") as string[];
-      // Listen for second-instance forwarding
-      const { listen } = await import("@tauri-apps/api/event");
-      await listen<string[]>("second-instance", (event) => {
-        const incoming = Array.isArray(event.payload) ? (event.payload as string[]) : [];
-        if (incoming.length) window.initApp?.({ files: incoming, sendto: null });
-      });
+      if (Array.isArray(files)) {
+        startupFiles = files.filter((file): file is string => typeof file === "string");
+      }
     } catch {
-      // Startup files are best-effort; ignore errors
+      // the backend health result remains authoritative if launch-file delivery fails
     }
-    editorRuntime?.initApp({ files: startupFiles, sendto: null });
+    editorRuntime?.initApp({
+      files: startupFiles.concat(secondInstanceLaunches.drain()),
+      sendto: null,
+    });
     attachDesktopBackend(client);
+    secondInstanceLaunches.markReadyAndFlush();
   });
 }
 

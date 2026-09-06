@@ -1,0 +1,66 @@
+{
+  "lockfile_version": 1,
+  "purpose": "Pinned Windows FFmpeg and ffprobe binaries. The builder verifies the archive and every bundled file against these hashes before packaging.",
+  "generated_utc": "2026-09-03",
+  "approved_by": "repository owner (aechXIII), 2026-09-03",
+  "platform": "windows",
+  "architecture": "x86_64",
+  "distribution": {
+    "provider": "gyan.dev",
+    "provider_url": "https://www.gyan.dev/ffmpeg/builds/",
+    "build_name": "ffmpeg-7.1.1-full_build",
+    "ffmpeg_version": "7.1.1",
+    "provider_version_string": "7.1.1-full_build-www.gyan.dev",
+    "build_type": "64-bit static (shared=no); single self-contained .exe per tool, no DLL payload",
+    "released": "2025-03-10"
+  },
+  "license": {
+    "spdx": "GPL-3.0-only",
+    "classification": "GPL v3 (configure flags: --enable-gpl --enable-version3). NOT built with --enable-nonfree, so redistribution is permitted. Compatible with Tuck's own GPL-3.0-only license and with the GPL codecs it relies on (libx264, libx265).",
+    "configure_flags": "--enable-gpl --enable-version3 --enable-static --disable-w32threads --disable-autodetect --enable-fontconfig --enable-iconv --enable-gnutls --enable-lcms2 --enable-libxml2 --enable-gmp --enable-bzlib --enable-lzma --enable-libsnappy --enable-zlib --enable-librist --enable-libsrt --enable-libssh --enable-libzmq --enable-avisynth --enable-libbluray --enable-libcaca --enable-libdvdnav --enable-libdvdread --enable-sdl2 --enable-libaribb24 --enable-libaribcaption --enable-libdav1d --enable-libdavs2 --enable-libopenjpeg --enable-libquirc --enable-libuavs3d --enable-libxevd --enable-libzvbi --enable-libqrencode --enable-librav1e --enable-libsvtav1 --enable-libvvenc --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxavs2 --enable-libxeve --enable-libxvid --enable-libaom --enable-libjxl --enable-libvpx --enable-mediafoundation --enable-libass --enable-frei0r --enable-libfreetype --enable-libfribidi --enable-libharfbuzz --enable-liblensfun --enable-libvidstab --enable-libvmaf --enable-libzimg --enable-amf --enable-cuda-llvm --enable-cuvid --enable-dxva2 --enable-d3d11va --enable-d3d12va --enable-ffnvcodec --enable-libvpl --enable-nvdec --enable-nvenc --enable-vaapi --enable-libshaderc --enable-vulkan --enable-libplacebo --enable-opencl --enable-libcdio --enable-libgme --enable-libmodplug --enable-libopenmpt --enable-libopencore-amrwb --enable-libmp3lame --enable-libshine --enable-libtheora --enable-libtwolame --enable-libvo-amrwbenc --enable-libcodec2 --enable-libilbc --enable-libgsm --enable-liblc3 --enable-libopencore-amrnb --enable-libopus --enable-libspeex --enable-libvorbis --enable-ladspa --enable-libbs2b --enable-libflite --enable-libmysofa --enable-librubberband --enable-libsoxr --enable-chromaprint",
+    "patent_notice": "FFmpeg upstream grants no patent license. H.264, H.265, and AAC may be covered by third-party patents."
+  },
+  "archive": {
+    "filename": "ffmpeg-7.1.1-full_build.zip",
+    "url": "https://github.com/GyanD/codexffmpeg/releases/download/7.1.1/ffmpeg-7.1.1-full_build.zip",
+    "size_bytes": 177650503,
+    "sha256": "d760e1b3574402ed18b4865851f87d87e73965a982e6453212df8621fed1c508"
+  },
+  "members": [
+    {
+      "archive_path": "ffmpeg-7.1.1-full_build/bin/ffmpeg.exe",
+      "install_as": "ffmpeg.exe",
+      "role": "encoder",
+      "size_bytes": 148234240,
+      "sha256": "b1383f5d07470d503edecdaee4bddc5891e986e916a698299b357f79cfe445fd"
+    },
+    {
+      "archive_path": "ffmpeg-7.1.1-full_build/bin/ffprobe.exe",
+      "install_as": "ffprobe.exe",
+      "role": "prober",
+      "size_bytes": 148097536,
+      "sha256": "012bddded3cbc5204055210d7ff4f0b3f7521bca441a694939856d01909f5756"
+    },
+    {
+      "archive_path": "ffmpeg-7.1.1-full_build/LICENSE",
+      "install_as": "FFmpeg-LICENSE.txt",
+      "role": "notice",
+      "size_bytes": 35147,
+      "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
+    },
+    {
+      "archive_path": "ffmpeg-7.1.1-full_build/README.txt",
+      "install_as": "FFmpeg-README.txt",
+      "role": "notice",
+      "size_bytes": 43770,
+      "sha256": "d694901bad3d99b2f3748e983b8bdaa8cf594e35e128cb872e07ed11d0cfd344"
+    }
+  ],
+  "corresponding_source": {
+    "obligation": "Distribute matching FFmpeg and external-library sources with the build instructions alongside releases that bundle these binaries.",
+    "ffmpeg_release_tarball_url": "https://ffmpeg.org/releases/ffmpeg-7.1.1.tar.xz",
+    "upstream_commit": "db69d06eeeab4f46da15030a80d539efb4503ca8",
+    "upstream_commit_url": "https://github.com/FFmpeg/FFmpeg/commit/db69d06eeeab4f46da15030a80d539efb4503ca8",
+    "note": "The FFmpeg tarball covers FFmpeg itself. Obtain the matching external-library sources and build instructions from the binary provider before redistribution."
+  }
+}

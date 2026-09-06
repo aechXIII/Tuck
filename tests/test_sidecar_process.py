@@ -187,6 +187,21 @@ def test_subprocess_emits_readiness_then_health_and_orderly_shutdown(
     assert ready["protocol"] == 1
     assert ready["payload"] is not None
 
+    sidecar.send(_request("storage-1", "get_storage_paths", {}))
+    storage = sidecar.receive()
+    assert storage == {
+        "kind": "response",
+        "protocol": 1,
+        "id": "storage-1",
+        "ok": True,
+        "result": {
+            "config_dir": str(sidecar.data_root / "config"),
+            "data_dir": str(sidecar.data_root / "data"),
+            "cache_dir": str(sidecar.data_root / "cache"),
+            "log_dir": str(sidecar.data_root / "data" / "logs"),
+        },
+    }
+
     sidecar.send(_request("health-1", "health", {}))
     assert sidecar.receive() == {
         "kind": "response",
@@ -317,7 +332,11 @@ def test_subprocess_reports_a_safe_fatal_event_before_crash(tmp_path: Path) -> N
             "kind": "event",
             "protocol": 1,
             "event": "backend_fatal",
-            "payload": {"code": "INTERNAL_ERROR", "message": "The backend could not start."},
+            "payload": {
+                "code": "INTERNAL_ERROR",
+                "message": "The backend could not start.",
+                "details": {},
+            },
         }
         assert sidecar.process.wait(timeout=5) == 1
     finally:
@@ -406,5 +425,9 @@ def test_server_reports_a_safe_fatal_event_when_startup_crashes() -> None:
         "kind": "event",
         "protocol": 1,
         "event": "backend_fatal",
-        "payload": {"code": "INTERNAL_ERROR", "message": "The backend could not start."},
+        "payload": {
+            "code": "INTERNAL_ERROR",
+            "message": "The backend could not start.",
+            "details": {},
+        },
     }

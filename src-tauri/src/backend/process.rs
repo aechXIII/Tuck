@@ -11,9 +11,13 @@ use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
 use tokio::sync::{oneshot, Mutex, Notify};
 
 use crate::commands::backend::BackendCommand;
+use crate::platform::ProcessTreeGuard;
 
 use super::pending::PendingRequests;
 use super::protocol::{parse_stdout_frame, PublicBackendError, MAX_FRAME_BYTES};
+
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(10);
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
@@ -26,6 +30,7 @@ pub struct BackendLaunchConfig {
     args: Vec<OsString>,
     working_directory: PathBuf,
     data_root: Option<PathBuf>,
+    extra_env: Vec<(OsString, OsString)>,
 }
 
 impl BackendLaunchConfig {
@@ -53,6 +58,7 @@ impl BackendLaunchConfig {
             ],
             working_directory: repository_root,
             data_root: Some(data_root),
+            extra_env: Vec::new(),
         })
     }
 
@@ -60,6 +66,35 @@ impl BackendLaunchConfig {
         let mut config = Self::development(repository_root, PathBuf::new())?;
         config.data_root = None;
         Ok(config)
+    }
+
+    pub fn packaged(
+        sidecar: PathBuf,
+        resource_dir: PathBuf,
+        ffmpeg: Option<PathBuf>,
+        ffprobe: Option<PathBuf>,
+    ) -> Result<Self, PublicBackendError> {
+        if !sidecar.is_file() {
+            return Err(PublicBackendError::new(
+                "BACKEND_START_FAILED",
+                "The packaged Tuck backend is missing from the application resources.",
+            ));
+        }
+        let mut extra_env = Vec::new();
+        if let Some(path) = ffmpeg.filter(|path| path.is_file()) {
+            extra_env.push(("TUCK_BUNDLED_FFMPEG".into(), path.into_os_string()));
+        }
+        if let Some(path) = ffprobe.filter(|path| path.is_file()) {
+            extra_env.push(("TUCK_BUNDLED_FFPROBE".into(), path.into_os_string()));
+        }
+        Ok(Self {
+            program: sidecar,
+            args: vec!["--protocol".into(), "1".into()],
+            working_directory: resource_dir,
+            // no data root override: keep the historical %LOCALAPPDATA%\Tuck\Tuck location
+            data_root: None,
+            extra_env,
+        })
     }
 
     pub fn command<I, S>(
@@ -77,6 +112,7 @@ impl BackendLaunchConfig {
             args: args.into_iter().map(Into::into).collect(),
             working_directory,
             data_root: Some(data_root),
+            extra_env: Vec::new(),
         }
     }
 }
@@ -109,6 +145,7 @@ impl BackendState {
 }
 
 pub struct BackendProcess {
+    _process_tree: Option<ProcessTreeGuard>,
     child: Mutex<Option<Child>>,
     stdin: Mutex<Option<ChildStdin>>,
     pending: PendingRequests,
@@ -138,14 +175,31 @@ impl BackendProcess {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
+        // the frozen sidecar is a console executable; without this flag Windows
+        // shows an empty console window behind the packaged GUI
+        #[cfg(windows)]
+        command.creation_flags(CREATE_NO_WINDOW);
         if let Some(data_root) = &config.data_root {
             command.env("TUCK_SIDECAR_DATA_ROOT", data_root);
+        } else {
+            // This lets the shell and sidecar agree on the platformdirs default
+            // instead of inheriting a test-only storage-root override.
+            command.env_remove("TUCK_SIDECAR_DATA_ROOT");
+        }
+        for (key, value) in &config.extra_env {
+            command.env(key, value);
         }
 
         let mut child = command.spawn().map_err(|_| {
             PublicBackendError::new(
                 "BACKEND_START_FAILED",
                 "The Python backend process could not start.",
+            )
+        })?;
+        let process_tree = ProcessTreeGuard::attach(&child).map_err(|_| {
+            PublicBackendError::new(
+                "BACKEND_START_FAILED",
+                "The Python backend process could not be supervised.",
             )
         })?;
         let stdin = child.stdin.take().ok_or_else(|| {
@@ -167,6 +221,7 @@ impl BackendProcess {
             )
         })?;
         let process = Arc::new(Self {
+            _process_tree: Some(process_tree),
             child: Mutex::new(Some(child)),
             stdin: Mutex::new(Some(stdin)),
             pending: PendingRequests::new(),
@@ -212,6 +267,7 @@ impl BackendProcess {
 
     pub fn unavailable(error: PublicBackendError) -> Self {
         Self {
+            _process_tree: None,
             child: Mutex::new(None),
             stdin: Mutex::new(None),
             pending: PendingRequests::new(),
@@ -626,6 +682,7 @@ impl BackendCommand {
             | Self::RetryItem { .. }
             | Self::StopAfterCurrent
             | Self::GetDiagnostics { .. }
+            | Self::GetStoragePaths
             | Self::GetSettings
             | Self::SaveSettings { .. }
             | Self::RefreshEncoders
@@ -653,5 +710,75 @@ impl BackendCommand {
             | Self::EnqueueWithOptions { .. }
             | Self::EnqueueBatch { .. } => MEDIA_REQUEST_TIMEOUT,
         }
+    }
+}
+
+#[cfg(test)]
+mod launch_config_tests {
+    use super::*;
+    use std::fs;
+
+    fn temp_dir(name: &str) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("tuck-launchcfg-{name}-{}", std::process::id()));
+        let _ = fs::create_dir_all(&dir);
+        dir
+    }
+
+    fn env_value(config: &BackendLaunchConfig, key: &str) -> Option<OsString> {
+        config
+            .extra_env
+            .iter()
+            .find(|(name, _)| name == key)
+            .map(|(_, value)| value.clone())
+    }
+
+    #[test]
+    fn packaged_requires_the_sidecar_executable() {
+        let dir = temp_dir("missing");
+        let result =
+            BackendLaunchConfig::packaged(dir.join("tuck-sidecar.exe"), dir.clone(), None, None);
+        let Err(error) = result else {
+            panic!("missing sidecar must fail");
+        };
+        assert_eq!(error.code, "BACKEND_START_FAILED");
+    }
+
+    #[test]
+    fn packaged_passes_only_existing_media_tools_and_no_data_root() {
+        let dir = temp_dir("tools");
+        let sidecar = dir.join("tuck-sidecar.exe");
+        let ffmpeg = dir.join("ffmpeg.exe");
+        fs::write(&sidecar, b"MZ").unwrap();
+        fs::write(&ffmpeg, b"MZ").unwrap();
+        let missing_ffprobe = dir.join("ffprobe.exe");
+
+        let config = BackendLaunchConfig::packaged(
+            sidecar.clone(),
+            dir.clone(),
+            Some(ffmpeg.clone()),
+            Some(missing_ffprobe),
+        )
+        .expect("valid packaged config");
+
+        assert_eq!(config.program, sidecar);
+        assert_eq!(
+            config.args,
+            vec![OsString::from("--protocol"), OsString::from("1")]
+        );
+        assert!(
+            config.data_root.is_none(),
+            "packaged build keeps the historical data dir"
+        );
+        assert_eq!(
+            env_value(&config, "TUCK_BUNDLED_FFMPEG"),
+            Some(ffmpeg.into_os_string())
+        );
+        assert!(
+            env_value(&config, "TUCK_BUNDLED_FFPROBE").is_none(),
+            "a missing ffprobe is not advertised to the sidecar"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
     }
 }

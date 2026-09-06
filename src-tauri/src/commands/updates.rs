@@ -8,7 +8,7 @@ pub struct UpdateCheck {
     pub notes: Option<String>,
 }
 
-// In 0.5.0, Windows packaged builds have updater enabled, but we have no signing key configured yet.
+// packaged updates stay disabled until the signed release channel is configured
 // so this is a disabled/tested adapter that clearly reports not configured or unsupported
 pub fn check_for_updates_inner(
     platform: &str,

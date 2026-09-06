@@ -51,6 +51,7 @@ pub enum BackendCommand {
     GetDiagnostics {
         context: Option<Value>,
     },
+    GetStoragePaths,
     GetSettings,
     SaveSettings {
         settings: Value,
@@ -130,6 +131,7 @@ impl BackendCommand {
                     ("get_diagnostics", json!({}))
                 }
             }
+            Self::GetStoragePaths => ("get_storage_paths", json!({})),
             Self::GetSettings => ("get_settings", json!({})),
             Self::SaveSettings { settings } => ("save_settings", json!({ "settings": settings })),
             Self::RefreshEncoders => ("refresh_encoders", json!({})),

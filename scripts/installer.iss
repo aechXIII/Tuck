@@ -1,8 +1,6 @@
-; Per-user Tuck installer
-; Build: iscc scripts/installer.iss
-;
-; Produces a windowed Tuck.exe for GUI / Send To and a console
-; TuckCli.exe for CLI operations (including uninstall cleanup)
+; maintains the 0.4.x Inno Setup package
+; the Tauri Windows package is configured in src-tauri/tauri.conf.json and
+; src-tauri/installer-hooks.nsh
 
 #define MyAppName "Tuck"
 #define MyAppVersion "0.4.0"

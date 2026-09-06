@@ -121,3 +121,18 @@ replace = "__version__ = \"{new_version}\""
 filename = "scripts/installer.iss"
 search = "#define MyAppVersion \"{current_version}\""
 replace = "#define MyAppVersion \"{new_version}\""
+
+[[tool.bumpversion.files]]
+filename = "package.json"
+search = "\"version\": \"{current_version}\""
+replace = "\"version\": \"{new_version}\""
+
+[[tool.bumpversion.files]]
+filename = "src-tauri/Cargo.toml"
+search = "version = \"{current_version}\""
+replace = "version = \"{new_version}\""
+
+[[tool.bumpversion.files]]
+filename = "src-tauri/tauri.conf.json"
+search = "\"version\": \"{current_version}\""
+replace = "\"version\": \"{new_version}\""

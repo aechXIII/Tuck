@@ -4,6 +4,26 @@ from tuck.bridge import BridgeAPI
 
 
 class TestBridgePathValidation:
+    def test_storage_paths_are_reported_by_the_python_settings_owner(self, tmp_path, monkeypatch):
+        import tuck.settings as settings_mod
+
+        config = tmp_path / "config"
+        data = tmp_path / "data"
+        cache = tmp_path / "cache"
+        monkeypatch.setattr(settings_mod, "_config_dir", lambda: config)
+        monkeypatch.setattr(settings_mod, "_data_dir", lambda: data)
+        monkeypatch.setattr(settings_mod, "_cache_dir", lambda: cache)
+
+        result = BridgeAPI().get_storage_paths()
+
+        assert result == {
+            "ok": True,
+            "config_dir": str(config),
+            "data_dir": str(data),
+            "cache_dir": str(cache),
+            "log_dir": str(data / "logs"),
+        }
+
     def test_validate_path_accepts_real_file(self, tmp_path, monkeypatch):
         import tuck.settings as settings_mod
 

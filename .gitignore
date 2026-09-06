@@ -58,6 +58,7 @@ scripts/Output/
 # Package
 *.tar.gz
 *.whl
+packaging/staging/
 
 # Node / frontend build outputs
 node_modules/

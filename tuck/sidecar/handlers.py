@@ -231,6 +231,11 @@ def _get_settings(api: BridgeAPI, params: dict[str, object]) -> object:
     return api.get_settings()
 
 
+def _get_storage_paths(api: BridgeAPI, params: dict[str, object]) -> object:
+    _empty(params)
+    return api.get_storage_paths()
+
+
 def _save_settings(api: BridgeAPI, params: dict[str, object]) -> object:
     return api.save_settings(_object(params, "settings"))
 
@@ -353,6 +358,7 @@ _HANDLERS: dict[str, Handler] = {
     "get_queue_state": _get_queue_state,
     "get_diagnostics": _get_diagnostics,
     "get_settings": _get_settings,
+    "get_storage_paths": _get_storage_paths,
     "save_settings": _save_settings,
     "refresh_encoders": _refresh_encoders,
     "get_profiles_json": _get_profiles_json,

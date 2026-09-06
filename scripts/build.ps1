@@ -1,9 +1,6 @@
 param(
-  [Parameter(Mandatory = $false)]
   [switch]$Clean,
-  [Parameter(Mandatory = $false)]
-  [switch]$Installer,
-  [Parameter(Mandatory = $false)]
+  [switch]$SkipSidecar,
   [string]$PythonExecutable = ".\.venv\Scripts\python.exe"
 )
 
@@ -14,119 +11,50 @@ if (-not (Test-Path -LiteralPath $PythonExecutable)) {
   Write-Error "Python executable not found: $PythonExecutable. Run scripts\setup.ps1 first."
   exit 1
 }
-
-# Check pywin32
-Write-Host "Checking pywin32 installation..." -ForegroundColor Cyan
-$pywin32Check = & $PythonExecutable -c "import win32com.client; import pythoncom; import pywintypes; print('OK')" 2>&1
-if ($LASTEXITCODE -ne 0) {
-  Write-Error "pywin32 is not installed correctly in the venv. Run: .\.venv\Scripts\python.exe -m pip install pywin32"
-  exit 1
-}
-Write-Host "  pywin32: OK" -ForegroundColor Green
-
-Write-Host "Checking pywebview installation..." -ForegroundColor Cyan
-$webviewCheck = & $PythonExecutable -c "import webview; print('OK')" 2>&1
-if ($LASTEXITCODE -ne 0) {
-  Write-Error "pywebview is not installed correctly in the venv. Run scripts\setup.ps1."
-  exit 1
-}
-Write-Host "  pywebview: OK ($webviewCheck)" -ForegroundColor Green
-
-if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
-  Write-Error "npm was not found. Install a supported Node.js version and run npm ci."
-  exit 1
-}
-
-Write-Host "Building frontend..." -ForegroundColor Cyan
-& npm run build
-if ($LASTEXITCODE -ne 0) {
-  Write-Error "Frontend build failed. Run npm ci, then npm run build, and retry."
-  exit 1
+foreach ($tool in @("npm", "cargo")) {
+  if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) {
+    Write-Error "$tool was not found on PATH."
+    exit 1
+  }
 }
 
 if ($Clean) {
-  if (Test-Path ".\build") { Remove-Item -Recurse -Force ".\build" }
-  if (Test-Path ".\dist") { Remove-Item -Recurse -Force ".\dist" }
+  foreach ($path in @(
+      ".\dist", ".\build\sidecar-venv", ".\build\sidecar-pyinstaller",
+      ".\packaging\staging", ".\src-tauri\target\release\bundle"
+    )) {
+    if (Test-Path -LiteralPath $path) { Remove-Item -Recurse -Force -LiteralPath $path }
+  }
 }
 
-Write-Host "Building Tuck with PyInstaller..." -ForegroundColor Cyan
-& $PythonExecutable -m PyInstaller --noconfirm scripts/tuck.spec
+if (-not $SkipSidecar) {
+  Write-Host "==> Building the Python sidecar, CLI, and bundled media tools" -ForegroundColor Cyan
+  & $PythonExecutable scripts/build_sidecar.py --python $PythonExecutable
+  if ($LASTEXITCODE -ne 0) { Write-Error "build_sidecar.py failed."; exit 1 }
+}
 
-if ($LASTEXITCODE -ne 0) {
-  Write-Error "PyInstaller build failed."
+if (-not (Test-Path -LiteralPath ".\packaging\staging\app\tuck-sidecar.exe")) {
+  Write-Error "packaging\staging\app\tuck-sidecar.exe missing. Run without -SkipSidecar."
   exit 1
 }
 
-if (-not (Test-Path ".\dist\Tuck\Tuck.exe")) {
-  Write-Error "Expected dist\Tuck\Tuck.exe (onedir build) missing."
+Write-Host "==> Building the Tauri Windows bundle" -ForegroundColor Cyan
+& npm run tauri build
+if ($LASTEXITCODE -ne 0) { Write-Error "npm run tauri build failed."; exit 1 }
+
+$installer = Get-ChildItem -LiteralPath ".\src-tauri\target\release\bundle\nsis" -Filter "*-setup.exe" `
+  -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+if (-not $installer) {
+  Write-Error "No NSIS installer found under src-tauri\target\release\bundle\nsis."
   exit 1
 }
-Write-Host "OK: dist\Tuck\Tuck.exe" -ForegroundColor Green
 
-if (-not (Test-Path ".\dist\Tuck\TuckCli.exe")) {
-  Write-Error "Expected dist\Tuck\TuckCli.exe (onedir build, console) missing."
-  exit 1
-}
-Write-Host "OK: dist\Tuck\TuckCli.exe" -ForegroundColor Green
+Write-Host "==> Verifying the built installer" -ForegroundColor Cyan
+& $PythonExecutable scripts/verify_package.py --platform windows --artifact $installer.FullName
+if ($LASTEXITCODE -ne 0) { Write-Error "verify_package.py failed."; exit 1 }
 
-$frontendBuild = (Resolve-Path -LiteralPath ".\frontend\dist").Path
-$webAssets = Get-ChildItem -LiteralPath $frontendBuild -File -Recurse | Sort-Object FullName
-foreach ($asset in $webAssets) {
-  $relativePath = $asset.FullName.Substring($frontendBuild.Length).TrimStart(
-    [System.IO.Path]::DirectorySeparatorChar
-  )
-  $assetPath = Join-Path ".\dist\Tuck\_internal\frontend\dist" $relativePath
-  if (-not (Test-Path $assetPath)) {
-    Write-Error "Expected packaged web UI asset missing: $assetPath"
-    exit 1
-  }
-}
-Write-Host "OK: packaged web UI ($($webAssets.Count) assets)" -ForegroundColor Green
-
-# Check pywin32 runtime files
-Write-Host "Checking for pywin32 runtime files in dist..." -ForegroundColor Cyan
-$pywin32Artifacts = @(
-  (Get-ChildItem -Path ".\dist\Tuck" -Filter "pythoncom*.dll" -Recurse -ErrorAction SilentlyContinue),
-  (Get-ChildItem -Path ".\dist\Tuck" -Filter "pywintypes*.dll" -Recurse -ErrorAction SilentlyContinue)
-) | Where-Object { $_ }
-if ($pywin32Artifacts.Count -gt 0) {
-  Write-Host "  pywin32 runtime: OK ($($pywin32Artifacts.Count) files found)" -ForegroundColor Green
-} else {
-  Write-Warning "  WARNING: No pywin32 runtime files (pythoncom*.dll, pywintypes*.dll) found in dist."
-  Write-Warning "  Shortcut creation in frozen builds may fail with ImportError."
-  Write-Warning "  Ensure pywin32 is installed in the venv before building."
-}
-
-if ($Installer) {
-  $webViewBootstrapper = ".\scripts\MicrosoftEdgeWebView2Setup.exe"
-  if (-not (Test-Path $webViewBootstrapper)) {
-    Write-Host "Downloading Evergreen WebView2 Runtime Bootstrapper..." -ForegroundColor Cyan
-    Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/p/?LinkId=2124703" -OutFile $webViewBootstrapper
-  }
-  if (-not (Test-Path $webViewBootstrapper)) {
-    Write-Error "WebView2 Runtime Bootstrapper download failed."
-    exit 1
-  }
-
-  $iscc = @(
-    "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
-    "C:\Program Files\Inno Setup 6\ISCC.exe"
-  ) | Where-Object { Test-Path $_ } | Select-Object -First 1
-
-  if (-not $iscc) {
-    Write-Warning "Inno Setup 6 not found. Install from https://jrsoftware.org/isdl.php"
-    exit 1
-  }
-
-  Write-Host "Compiling installer..." -ForegroundColor Cyan
-  & $iscc "scripts\installer.iss"
-
-  if ($LASTEXITCODE -ne 0) {
-    Write-Error "Inno Setup failed."
-    exit 1
-  }
-
-  $verLine = Select-String -Path "scripts\installer.iss" -Pattern '#define MyAppVersion' | Select-Object -First 1
-  $ver = if ($verLine) { ($verLine.Line -replace '.*"(.+)".*','$1') } else { "unknown" }
-  Write-Host "OK: scripts\Output\Tuck-Setup-$ver-x64.exe" -ForegroundColor Green
-}
+$hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $installer.FullName).Hash.ToLower()
+Write-Host ""
+Write-Host "OK  $($installer.FullName)" -ForegroundColor Green
+Write-Host "    SHA-256 $hash" -ForegroundColor Green
+Write-Host "    $([math]::Round($installer.Length / 1MB, 1)) MB" -ForegroundColor Green

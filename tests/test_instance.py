@@ -1,6 +1,46 @@
+import ctypes
 import json
+import os
+from ctypes import wintypes
 
+import pytest
+
+from tuck import instance
 from tuck.instance import handle_ipc_payload
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Win32 signatures are configured only on Windows")
+def test_file_mapping_functions_use_pointer_safe_win32_signatures() -> None:
+    kernel32 = ctypes.windll.kernel32
+
+    assert kernel32.CreateFileMappingW.argtypes == [
+        wintypes.HANDLE,
+        wintypes.LPVOID,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.LPCWSTR,
+    ]
+    assert kernel32.CreateFileMappingW.restype is wintypes.HANDLE
+    assert kernel32.OpenFileMappingW.argtypes == [
+        wintypes.DWORD,
+        wintypes.BOOL,
+        wintypes.LPCWSTR,
+    ]
+    assert kernel32.OpenFileMappingW.restype is wintypes.HANDLE
+    assert kernel32.MapViewOfFile.argtypes == [
+        wintypes.HANDLE,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        ctypes.c_size_t,
+    ]
+    assert kernel32.MapViewOfFile.restype is wintypes.LPVOID
+    assert kernel32.UnmapViewOfFile.argtypes == [wintypes.LPVOID]
+    assert kernel32.UnmapViewOfFile.restype is wintypes.BOOL
+    assert kernel32.CloseHandle.argtypes == [wintypes.HANDLE]
+    assert kernel32.CloseHandle.restype is wintypes.BOOL
+    assert instance._kernel32 is kernel32
 
 
 class TestHandleIpcPayload:

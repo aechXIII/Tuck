@@ -1,4 +1,5 @@
 import { getBackendClient, hasBackendClient } from "../../backend/client.ts";
+import { hasTauriInvoke } from "../../backend/index.ts";
 import type { BackendClient } from "../../backend/types.ts";
 import {
   bindDelegatedEvents,
@@ -621,6 +622,30 @@ export function installEditorRuntime(
       event.preventDefault();
       dropZone.classList.remove("over");
     });
+
+    // Tauri intercepts OS file drops before the WebView, so HTML5 `drop` never
+    // carries file paths; real import comes from the webview drag-drop event
+    if (hasTauriInvoke(windowRef)) {
+      void (async () => {
+        try {
+          const { getCurrentWebview } = await import("@tauri-apps/api/webview");
+          await getCurrentWebview().onDragDropEvent((event) => {
+            const payload = event.payload;
+            if (payload.type === "enter" || payload.type === "over") {
+              overlay?.classList.add("show");
+            } else if (payload.type === "leave") {
+              overlay?.classList.remove("show");
+            } else if (payload.type === "drop") {
+              overlay?.classList.remove("show");
+              dropZone?.classList.remove("over");
+              if (payload.paths.length) library.addFiles(payload.paths);
+            }
+          });
+        } catch (error) {
+          console.error("[tuck] could not attach webview drag-drop listener", error);
+        }
+      })();
+    }
   }
 
   let queueTimer: number | null = null;
@@ -657,7 +682,14 @@ export function installEditorRuntime(
   }
 
   function initApp(data: unknown): void {
-    pendingLaunch = launchData(data);
+    const launch = launchData(data);
+    if (started) {
+      const files = launch.files?.filter((file): file is string => typeof file === "string") ?? [];
+      if (files.length) library.addFiles(files);
+      if (launch.sendto !== undefined && launch.sendto !== null) handleSendto(launch.sendto);
+      return;
+    }
+    pendingLaunch = launch;
     void startApp();
   }
 

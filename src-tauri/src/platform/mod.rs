@@ -13,7 +13,17 @@ use tokio::process::Child;
 #[cfg(target_os = "linux")]
 pub use linux::terminate_process_tree;
 #[cfg(target_os = "windows")]
-pub use windows::terminate_process_tree;
+pub use windows::{configure_webview, terminate_process_tree, ProcessTreeGuard};
+
+#[cfg(not(target_os = "windows"))]
+pub struct ProcessTreeGuard;
+
+#[cfg(not(target_os = "windows"))]
+impl ProcessTreeGuard {
+    pub fn attach(_child: &Child) -> std::io::Result<Self> {
+        Ok(Self)
+    }
+}
 
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
 pub async fn terminate_process_tree(child: &mut Child) -> std::io::Result<()> {

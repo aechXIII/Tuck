@@ -3,6 +3,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
+from .packaged import bundled_media_tool
 from .settings import get_settings_manager
 
 _WINDOWS_LOCATIONS = {
@@ -25,6 +26,12 @@ def _find_tool(name: str, setting_name: str) -> str | None:
         configured_path = Path(str(configured))
         if configured_path.is_file():
             return str(configured_path)
+
+    # installed builds use the verified bundle unless the user deliberately
+    # selected another valid executable in Settings
+    bundled = bundled_media_tool(name)
+    if bundled is not None:
+        return str(bundled)
 
     found = shutil.which(name)
     if found:

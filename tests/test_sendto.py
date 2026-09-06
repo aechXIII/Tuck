@@ -4,6 +4,8 @@ from pathlib import Path
 from tuck.sendto import (
     _SHELL_LINK_HEADER,
     _TUCK_MARKER,
+    ACTION_REVIEW,
+    ACTION_START,
     PROFILE_SHORTCUT_PREFIX,
     SENDTO_BATCH_NAME,
     SENDTO_COMPRESS_BATCH_NAME,
@@ -54,7 +56,7 @@ class TestSendToDir:
 
 
 class TestVerifyBatOwnership:
-    def test_recognises_marker_bat(self, tmp_path):
+    def test_recognizes_marker_bat(self, tmp_path):
         f = tmp_path / "Tuck.bat"
         _make_marker_bat(f)
         assert _verify_bat_ownership(f)
@@ -585,6 +587,19 @@ class TestGetTargetPath:
 
         assert _get_target_path() == str(gui_path)
 
+    def test_get_target_path_frozen_uses_gui_for_review_and_cli_for_compress(
+        self, tmp_path, monkeypatch
+    ):
+        cli_path = tmp_path / "TuckCli.exe"
+        gui_path = tmp_path / "Tuck.exe"
+        cli_path.touch()
+        gui_path.touch()
+        monkeypatch.setattr("sys.frozen", True, raising=False)
+        monkeypatch.setattr("sys.executable", str(cli_path))
+
+        assert _get_target_path(action=ACTION_REVIEW) == str(gui_path)
+        assert _get_target_path(action=ACTION_START) == str(cli_path)
+
 
 class TestGetWorkingDir:
     def test_get_working_dir_returns_path(self):
@@ -670,7 +685,7 @@ class TestBatchFallback:
     def test_install_sendto_batch_fallback(self, tmp_path, monkeypatch):
         monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
         monkeypatch.setattr("tuck.sendto._can_create_shortcuts", lambda: False)
-        monkeypatch.setattr("tuck.sendto._get_target_path", lambda: sys.executable)
+        monkeypatch.setattr("tuck.sendto._get_target_path", lambda *a, **k: sys.executable)
         monkeypatch.setattr("tuck.sendto._get_working_dir", lambda: str(tmp_path))
 
         result = install_sendto()
@@ -692,7 +707,7 @@ class TestBatchFallback:
     def test_install_profile_shortcut_batch_fallback(self, tmp_path, monkeypatch):
         monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
         monkeypatch.setattr("tuck.sendto._can_create_shortcuts", lambda: False)
-        monkeypatch.setattr("tuck.sendto._get_target_path", lambda: sys.executable)
+        monkeypatch.setattr("tuck.sendto._get_target_path", lambda *a, **k: sys.executable)
 
         result = install_profile_shortcut("my-profile", "My Profile", action="start")
         assert result.suffix == ".bat"
@@ -725,7 +740,7 @@ class TestBatchFallback:
     def test_install_sendto_rejects_foreign_generic_collision(self, tmp_path, monkeypatch):
         monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
         monkeypatch.setattr("tuck.sendto._can_create_shortcuts", lambda: False)
-        monkeypatch.setattr("tuck.sendto._get_target_path", lambda: sys.executable)
+        monkeypatch.setattr("tuck.sendto._get_target_path", lambda *a, **k: sys.executable)
         foreign_path = tmp_path / SENDTO_COMPRESS_BATCH_NAME
         _make_foreign_bat(foreign_path)
         original = foreign_path.read_bytes()
@@ -767,7 +782,7 @@ class TestRepairGenericShortcuts:
         shell = FakeShell()
         monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
         monkeypatch.setattr("tuck.sendto._can_create_shortcuts", lambda: True)
-        monkeypatch.setattr("tuck.sendto._get_target_path", lambda: r"C:\Tuck\Tuck.exe")
+        monkeypatch.setattr("tuck.sendto._get_target_path", lambda *a, **k: r"C:\Tuck\Tuck.exe")
         monkeypatch.setattr("win32com.client.Dispatch", lambda _name: shell)
 
         assert repair_sendto()
@@ -808,7 +823,7 @@ class TestRepairGenericShortcuts:
         shell = FakeShell()
         monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
         monkeypatch.setattr("tuck.sendto._can_create_shortcuts", lambda: True)
-        monkeypatch.setattr("tuck.sendto._get_target_path", lambda: r"C:\Tuck\Tuck.exe")
+        monkeypatch.setattr("tuck.sendto._get_target_path", lambda *a, **k: r"C:\Tuck\Tuck.exe")
         monkeypatch.setattr("win32com.client.Dispatch", lambda _name: shell)
 
         try:

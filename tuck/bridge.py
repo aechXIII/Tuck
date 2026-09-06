@@ -77,6 +77,21 @@ class BridgeAPI:
     def log_dir(self) -> Path:
         return self._settings.log_dir
 
+    def get_storage_paths(self) -> BridgeResult:
+        """Return the persisted locations owned by Python's settings service.
+
+        Desktop callers must use these paths instead of independently deriving
+        platform-specific application directories.
+        """
+
+        return {
+            "ok": True,
+            "config_dir": str(self._settings.config_dir),
+            "data_dir": str(self._settings.data_dir),
+            "cache_dir": str(self._settings.cache_dir),
+            "log_dir": str(self._settings.log_dir),
+        }
+
     def start_background_services(self) -> None:
         """Start the queue service for a GUI or sidecar lifetime."""
         self._queue.start()

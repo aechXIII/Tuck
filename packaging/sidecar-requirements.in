@@ -1,0 +1,11 @@
+# Runtime dependencies for the packaged Python sidecar and Windows CLI.
+#
+# This is the reproducible build input. Regenerate the pinned, hashed lock with:
+#   pip-compile --generate-hashes --output-file packaging/sidecar-constraints.txt \
+#       packaging/sidecar-requirements.in
+#
+# The sidecar has no GUI: pywebview / pythonnet are deliberately absent.
+platformdirs>=4.0
+rich>=13.7
+packaging>=23.0
+pywin32>=306; sys_platform == "win32"

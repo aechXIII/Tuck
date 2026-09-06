@@ -55,6 +55,40 @@ if _user32 is not None:
     ]
     _user32.SetWindowLongPtrW.restype = ctypes.c_void_p
 
+_kernel32 = ctypes.windll.kernel32 if os.name == "nt" else None
+if _kernel32 is not None:
+    _kernel32.CreateFileMappingW.argtypes = [
+        wintypes.HANDLE,
+        wintypes.LPVOID,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.LPCWSTR,
+    ]
+    _kernel32.CreateFileMappingW.restype = wintypes.HANDLE
+
+    _kernel32.OpenFileMappingW.argtypes = [
+        wintypes.DWORD,
+        wintypes.BOOL,
+        wintypes.LPCWSTR,
+    ]
+    _kernel32.OpenFileMappingW.restype = wintypes.HANDLE
+
+    _kernel32.MapViewOfFile.argtypes = [
+        wintypes.HANDLE,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        ctypes.c_size_t,
+    ]
+    _kernel32.MapViewOfFile.restype = wintypes.LPVOID
+
+    _kernel32.UnmapViewOfFile.argtypes = [wintypes.LPVOID]
+    _kernel32.UnmapViewOfFile.restype = wintypes.BOOL
+
+    _kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    _kernel32.CloseHandle.restype = wintypes.BOOL
+
 
 class COPYDATASTRUCT(ctypes.Structure):
     _fields_ = [

@@ -40,6 +40,18 @@ fn finite_commands_serialize_to_allowlisted_sidecar_requests() {
             "params": {},
         }),
     );
+    assert_eq!(
+        BackendCommand::GetStoragePaths
+            .to_sidecar_request("storage-9")
+            .expect("storage command should serialize"),
+        json!({
+            "kind": "request",
+            "protocol": 1,
+            "id": "storage-9",
+            "method": "get_storage_paths",
+            "params": {},
+        }),
+    );
 }
 
 #[tokio::test]
@@ -164,6 +176,33 @@ async fn real_sidecar_completes_health_and_graceful_shutdown() {
 
     process.shutdown().await.expect("graceful shutdown");
     assert!(!process.is_running().await);
+}
+
+#[tokio::test]
+async fn real_sidecar_reports_its_authoritative_storage_paths() {
+    let data_root = temporary_data_root("storage-paths");
+    let process = BackendProcess::launch(
+        BackendLaunchConfig::development(repository_root(), data_root.clone())
+            .expect("repository virtual environment should be available"),
+    )
+    .await
+    .expect("real sidecar starts");
+
+    assert_eq!(
+        process
+            .request(BackendCommand::GetStoragePaths)
+            .await
+            .expect("storage path response"),
+        json!({
+            "config_dir": data_root.join("config").to_string_lossy(),
+            "data_dir": data_root.join("data").to_string_lossy(),
+            "cache_dir": data_root.join("cache").to_string_lossy(),
+            "log_dir": data_root.join("data").join("logs").to_string_lossy(),
+        }),
+    );
+
+    process.shutdown().await.expect("graceful shutdown");
+    let _ = std::fs::remove_dir_all(data_root);
 }
 
 #[tokio::test]
