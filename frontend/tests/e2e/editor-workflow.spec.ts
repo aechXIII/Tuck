@@ -93,10 +93,15 @@ test("queue progress becomes visible after compressing the selected video", asyn
   await expect(page.locator("#qfname")).toContainText("Morning clip.mp4");
 });
 
-test("the rendered editor works when the retired classic editor script is unavailable", async ({
+test("the editor runs entirely from the single module entry with no classic scripts", async ({
   page,
 }) => {
-  await page.route("**/legacy/app.js", (route) => route.abort());
+  const classicScripts: string[] = [];
+  page.on("request", (request) => {
+    if (request.resourceType() === "script" && /\/legacy\//.test(request.url())) {
+      classicScripts.push(request.url());
+    }
+  });
   await page.setViewportSize({ width: 1240, height: 800 });
   await installFakeBackend(page, editorFixture());
   await page.goto("/");
@@ -104,6 +109,12 @@ test("the rendered editor works when the retired classic editor script is unavai
   await page.getByRole("button", { name: "Add videos" }).click();
   await expect(page.locator(".c2")).toContainText("Morning clip.mp4");
   await expect(page.getByRole("button", { name: "Play/Pause" })).toBeEnabled();
+
+  const moduleScripts = await page.$$eval("script", (nodes) =>
+    nodes.filter((node) => node.getAttribute("src")).map((node) => node.getAttribute("type")),
+  );
+  expect(moduleScripts).toEqual(["module"]);
+  expect(classicScripts).toEqual([]);
 });
 
 test("a failed probe keeps retry enabled and recovers without executing backend HTML", async ({

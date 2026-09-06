@@ -1,5 +1,9 @@
-import { getBackendClient } from "../../backend/client.ts";
+import { getBackendClient, hasBackendClient } from "../../backend/client.ts";
 import type { BackendClient } from "../../backend/types.ts";
+import {
+  bindDelegatedEvents,
+  type DelegatedHandlers,
+} from "../../ui/delegated-events.ts";
 import * as InspectorUi from "../panels/inspector-ui.ts";
 import { installAudioTimeline } from "../audio/audio-timeline.ts";
 import { installHistory, type HistoryApi } from "../history/history.ts";
@@ -16,8 +20,13 @@ import { installShortcuts, type ShortcutsApi } from "../shortcuts/shortcuts.ts";
 import { installTimeline } from "../timeline/timeline.ts";
 import { SegmentEditing } from "../timeline/segments.ts";
 import { installTransform, type TransformApi } from "../transform/transform.ts";
-import { checkUpdates } from "./updates.ts";
-import { legacyBackendResult } from "./backend-compat.ts";
+import {
+  installEncodingControls,
+  type EncodingControlsApi,
+} from "../export/encoding-controls.ts";
+import { installQueue, type QueueApi } from "../queue/queue.ts";
+import { installSettings, type SettingsApi } from "../settings/settings.ts";
+import { checkUpdates, checkUpdatesFromSettings } from "./updates.ts";
 import { errorSummary, formatBytes, formatTime } from "./format.ts";
 import {
   closeActiveModal,
@@ -28,6 +37,7 @@ import {
   toast,
 } from "./toast.ts";
 import { createEditorSession, type EditorSession } from "./session.ts";
+import type { EditorClip } from "./types.ts";
 import type { Segment } from "../../types/foundation.ts";
 
 interface LaunchData {
@@ -35,18 +45,9 @@ interface LaunchData {
   readonly sendto?: unknown;
 }
 
-interface LegacyState {
-  api: BackendClient | null;
-  lastComp: string;
-  lastQueueHadActive: boolean;
-  lastUpscale: string;
-  previewRequestId: number;
-  workflow: number;
-}
-
 export interface EditorRuntime {
-  activateLegacyShell(): void;
-  attachBackendClient(client: BackendClient): void;
+  start(): void;
+  attachBackendClient(): void;
   initApp(data: unknown): void;
   readonly session: EditorSession;
 }
@@ -67,73 +68,19 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
-function replaceRecord(target: Record<string, unknown>, value: unknown): void {
-  if (!isRecord(value)) return;
-  for (const key of Object.keys(target)) delete target[key];
-  Object.assign(target, value);
-}
-
-function replaceArray(target: unknown[], value: unknown): void {
-  if (!Array.isArray(value)) return;
-  target.splice(0, target.length, ...value);
-}
-
 function launchData(value: unknown): LaunchData {
   return isRecord(value) ? value : {};
-}
-
-function legacyCall(windowRef: Window, name: string, ...args: unknown[]): unknown {
-  const handler = Reflect.get(windowRef, name);
-  return typeof handler === "function"
-    ? Reflect.apply(handler, windowRef, args)
-    : undefined;
-}
-
-async function legacyCallAsync(
-  windowRef: Window,
-  name: string,
-  ...args: unknown[]
-): Promise<unknown> {
-  return await Promise.resolve(legacyCall(windowRef, name, ...args));
-}
-
-function exposeValue(windowRef: Window, name: string, value: unknown): void {
-  Object.defineProperty(windowRef, name, {
-    configurable: true,
-    value,
-    writable: true,
-  });
-}
-
-function exposeAccessor(
-  windowRef: Window,
-  name: string,
-  get: () => unknown,
-  set: (value: unknown) => void,
-): void {
-  Object.defineProperty(windowRef, name, {
-    configurable: true,
-    enumerable: true,
-    get,
-    set,
-  });
 }
 
 export function installEditorRuntime(
   windowRef: Window & typeof globalThis = window,
 ): EditorRuntime {
   const session = createEditorSession();
-  const state: LegacyState = {
-    api: null,
-    lastComp: "",
-    lastQueueHadActive: false,
-    lastUpscale: "",
-    previewRequestId: 0,
-    workflow: 0,
-  };
   let started = false;
-  let legacyShellReady = false;
+  let shellReady = false;
+  let backendReady = false;
   let pendingLaunch: LaunchData | null = null;
+
   let history: HistoryApi;
   let library: LibraryApi;
   let panels: PanelsApi;
@@ -141,7 +88,13 @@ export function installEditorRuntime(
   let transform: TransformApi;
   let shortcuts: ShortcutsApi;
   let shortcutDialog: ShortcutDialogApi;
-  let profileSnapshot = "";
+  let encoding: EncodingControlsApi;
+  let queue: QueueApi;
+  let settings: SettingsApi;
+
+  const requestPreview = (): void => {
+    void encoding?.reqPreview();
+  };
 
   function panelAudioRange(): AudioClipRangeInfo | null {
     const range = audio.getSelectedClipRange();
@@ -183,9 +136,7 @@ export function installEditorRuntime(
     selPath: () => session.selPath,
     History: history,
     renderClips: () => library?.renderClips(),
-    reqPreview: () => {
-      legacyCall(windowRef, "reqPreview");
-    },
+    reqPreview: requestPreview,
   });
 
   const audio = installAudioTimeline({
@@ -196,9 +147,7 @@ export function installEditorRuntime(
     toast,
     setInspectorTab: (tab, persist) => panels?.setInspectorTab(tab, persist),
     renderClips: () => library?.renderClips(),
-    reqPreview: () => {
-      legacyCall(windowRef, "reqPreview");
-    },
+    reqPreview: requestPreview,
     setClipSegments: (clip, segments, active) =>
       timeline?.setClipSegments(clip, segments.filter(isSegment), active),
     paintTrimChrome: () => timeline?.paintTrimChrome(),
@@ -234,9 +183,7 @@ export function installEditorRuntime(
     seekToRatio: (ratio) => player?.seekToRatio(ratio),
     paintStageScrub: (percentage) => player?.paintStageScrub(percentage),
     renderClips: () => library?.renderClips(),
-    reqPreview: () => {
-      legacyCall(windowRef, "reqPreview");
-    },
+    reqPreview: requestPreview,
     paintCropOverlay: () => transform?.paintCropOverlay(),
     setPreviewSec: (seconds) => player?.setPreviewSec(seconds),
     getPreviewSec: () => player?.getPreviewSec() ?? null,
@@ -268,7 +215,7 @@ export function installEditorRuntime(
     document: windowRef.document,
   });
 
-  const backend: Pick<BackendClient, "saveSettings"> = {
+  const settingsBackend: Pick<BackendClient, "saveSettings"> = {
     saveSettings: (patch) => getBackendClient().saveSettings(patch),
   };
   panels = installPanels({
@@ -278,7 +225,7 @@ export function installEditorRuntime(
     clips: () => session.clips,
     selPath: () => session.selPath,
     appSettings: session.appSettings,
-    backend,
+    backend: settingsBackend,
     toast,
     formatTime: (seconds) => {
       const minutes = Math.floor(seconds / 60);
@@ -324,27 +271,14 @@ export function installEditorRuntime(
     windowRef,
     audio,
     history,
-    applyProfile: (force) => {
-      legacyCall(windowRef, "applyProfile", force);
-    },
-    applySelectedProfileTransform: (clip, force) => {
-      legacyCall(windowRef, "applySelectedProfileTransform", clip, force);
-    },
-    reqPreview: () => {
-      legacyCall(windowRef, "reqPreview");
-    },
-    updateActionButtons: () => {
-      legacyCall(windowRef, "updateActionButtons");
-    },
-    syncFpsToClip: (force) => {
-      legacyCall(windowRef, "syncFpsToClip", force);
-    },
-    syncResolutionToClip: (force) => {
-      legacyCall(windowRef, "syncResolutionToClip", force);
-    },
-    syncExportSummary: () => {
-      legacyCall(windowRef, "syncExportSummary");
-    },
+    applyProfile: (force) => encoding?.applyProfile(force),
+    applySelectedProfileTransform: (clip, force) =>
+      encoding?.applySelectedProfileTransform(clip, force),
+    reqPreview: requestPreview,
+    updateActionButtons: () => encoding?.updateActionButtons(),
+    syncFpsToClip: (force) => encoding?.syncFpsToClip(force),
+    syncResolutionToClip: (force) => encoding?.syncResolutionToClip(force),
+    syncExportSummary: () => encoding?.syncExportSummary(),
     syncTransformControls: () => transform.syncTransformControls(),
     paintCropOverlay: () => transform.paintCropOverlay(),
     renderClipDetails: () => panels.renderClipDetails(),
@@ -352,19 +286,55 @@ export function installEditorRuntime(
     syncTimelineUI: () => timeline.syncTimelineUI(),
     togglePlay: () => player.togglePlay(),
     openResult: (path) => {
-      legacyCall(windowRef, "openResult", path);
+      void queue?.openResult(path);
     },
     cancelQueueItem: async (itemId) => {
-      await legacyCallAsync(windowRef, "cancelQueueItem", itemId);
+      await queue?.cancelQueueItem(itemId);
     },
     retryQueueItem: async (itemId) => {
-      await legacyCallAsync(windowRef, "retryQueueItem", itemId);
+      await queue?.retryQueueItem(itemId);
     },
     pollQueue: async () => {
-      await legacyCallAsync(windowRef, "pollQueue");
+      await queue?.pollQueue();
     },
     libraryTab: () => panels.getLibraryTab(),
     setInspectorTab: (tab, persist) => panels.setInspectorTab(tab, persist),
+  });
+
+  queue = installQueue({
+    session,
+    byId,
+    getBackendClient,
+    renderClips: () => library.renderClips(),
+    removeClip: (path) => library.removeClip(path),
+    isReordering: () => library.isReordering(),
+    workflow: () => encoding?.workflow() ?? 0,
+    addFiles: (files) => library.addFiles(files),
+    onSendto: (data) => handleSendto(data),
+  });
+
+  encoding = installEncodingControls({
+    session,
+    byId,
+    getBackendClient,
+    syncTransformControls: () => transform.syncTransformControls(),
+    paintCropOverlay: () => transform.paintCropOverlay(),
+    cropTransformForRequest: (clip) => transform.cropTransformForRequest(clip),
+    restoreTimelineHeight: (value) => timeline.restoreTimelineHeight(value),
+    orderedClipKeys: () => library.orderedClipKeys(),
+    audioRequestPayload: (clip) =>
+      audio.requestPayload(clip) as Record<string, unknown>,
+    pollQueue: () => queue.pollQueue(),
+  });
+
+  settings = installSettings({
+    session,
+    byId,
+    getBackendClient,
+    reloadEditorSettings: () => encoding.loadSettings(),
+    setAvailableEncoders: (encoders) => encoding.setAvailableEncoders(encoders),
+    copyDiagnostics: () => queue.copyDiagnostics(),
+    checkForUpdates: () => checkUpdatesFromSettings(),
   });
 
   shortcutDialog = installShortcutDialog({
@@ -403,6 +373,36 @@ export function installEditorRuntime(
     },
   });
 
+  for (const name of [
+    "setCropAspect",
+    "setVideoRotation",
+    "toggleVideoFlip",
+    "setSizingMode",
+    "resetVideoTransform",
+  ]) {
+    history.wrap(transform, name);
+  }
+  for (const name of [
+    "addSegment",
+    "removeActiveSegment",
+    "resetSegments",
+    "splitAtPlayhead",
+  ]) {
+    history.wrap(timeline, name);
+  }
+  for (const name of [
+    "toggleMaster",
+    "toggleSourceMute",
+    "toggleFragmentMute",
+    "toggleTrackMute",
+    "splitSelected",
+    "trimSelectedToPlayhead",
+    "deleteSelected",
+  ]) {
+    history.wrap(audio, name);
+  }
+  history.updateButtons();
+
   function refreshEditor(): void {
     library?.renderClips();
     timeline.syncTimelineUI();
@@ -411,197 +411,109 @@ export function installEditorRuntime(
     panels.renderClipDetails();
   }
 
-  function installLegacyStateCompatibility(): void {
-    exposeAccessor(windowRef, "api", () => state.api, (value) => {
-      state.api = value instanceof Object ? (value as BackendClient) : null;
-    });
-    exposeAccessor(windowRef, "clips", () => session.clips, (value) => {
-      replaceRecord(session.clips, value);
-    });
-    exposeAccessor(windowRef, "clipOrder", () => session.clipOrder, (value) => {
-      replaceArray(session.clipOrder, value);
-    });
-    exposeAccessor(windowRef, "selPath", () => session.selPath, (value) => {
-      session.selPath = typeof value === "string" ? value : null;
-    });
-    exposeAccessor(windowRef, "allProfiles", () => session.allProfiles, (value) => {
-      replaceArray(session.allProfiles, value);
-    });
-    exposeAccessor(windowRef, "availEncoders", () => session.availEncoders, (value) => {
-      replaceArray(session.availEncoders, value);
-    });
-    exposeAccessor(windowRef, "appSettings", () => session.appSettings, (value) => {
-      replaceRecord(session.appSettings, value);
-    });
-    exposeAccessor(windowRef, "wf", () => state.workflow, (value) => {
-      state.workflow = Number(value) || 0;
-    });
-    exposeAccessor(windowRef, "lastComp", () => state.lastComp, (value) => {
-      state.lastComp = typeof value === "string" ? value : "";
-    });
-    exposeAccessor(windowRef, "lastUpscale", () => state.lastUpscale, (value) => {
-      state.lastUpscale = typeof value === "string" ? value : "";
-    });
-    exposeAccessor(windowRef, "lastQueueHadActive", () => state.lastQueueHadActive, (value) => {
-      state.lastQueueHadActive = value === true;
-    });
-    exposeAccessor(windowRef, "muted", () => session.muted, (value) => {
-      session.muted = value === true;
-    });
-    exposeAccessor(windowRef, "volBefore", () => session.volBefore, (value) => {
-      session.volBefore = typeof value === "number" ? value : session.volBefore;
-    });
-    exposeAccessor(windowRef, "settingsDirty", () => session.settingsDirty, (value) => {
-      session.settingsDirty = value === true;
-    });
-    exposeAccessor(windowRef, "previewRequestId", () => state.previewRequestId, (value) => {
-      state.previewRequestId = typeof value === "number" ? value : state.previewRequestId;
-    });
+  function handleSendto(data: unknown): void {
+    const profileId =
+      isRecord(data) && typeof data.profile_id === "string" ? data.profile_id : "";
+    if (!profileId) return;
+    const select = byId<HTMLSelectElement>("prof-sel");
+    if (select) select.value = profileId;
+    encoding.onProfileChange();
   }
 
-  function installLegacyFunctionCompatibility(): void {
-    const tuck = windowRef.Tuck ?? {};
-    tuck.inspectorUi = InspectorUi;
-    tuck.library = { isReordering: library.isReordering };
-    windowRef.Tuck = tuck;
-    exposeValue(windowRef, "History", history);
-    exposeValue(windowRef, "AudioTimeline", audio);
-    exposeValue(windowRef, "SegmentEditing", SegmentEditing);
-    exposeValue(windowRef, "byId", byId);
-    exposeValue(windowRef, "fmtt", formatTime);
-    exposeValue(windowRef, "formatBytes", formatBytes);
-    exposeValue(windowRef, "errorSummary", errorSummary);
-    exposeValue(windowRef, "legacyBackendResult", legacyBackendResult);
-    exposeValue(windowRef, "toast", toast);
-    exposeValue(windowRef, "confirmToast", confirmToast);
-    exposeValue(windowRef, "showMod", showMod);
-    exposeValue(windowRef, "closeMod", closeMod);
-    exposeValue(windowRef, "addFiles", library.addFiles);
-    exposeValue(windowRef, "browse", library.browse);
-    exposeValue(windowRef, "removeClip", library.removeClip);
-    exposeValue(windowRef, "removeAllClips", library.removeAllClips);
-    exposeValue(windowRef, "renderClips", library.renderClips);
-    exposeValue(windowRef, "selectClip", library.selectClip);
-    exposeValue(windowRef, "retryProbeClip", library.retryProbeClip);
-    exposeValue(windowRef, "moveSelection", library.moveSelection);
-    exposeValue(windowRef, "toggleWorkspacePanel", panels.toggleWorkspacePanel);
-    exposeValue(windowRef, "closeWorkspacePanels", panels.closeWorkspacePanels);
-    exposeValue(windowRef, "setLibraryTab", panels.setLibraryTab);
-    exposeValue(windowRef, "setInspectorTab", panels.setInspectorTab);
-    exposeValue(windowRef, "renderClipDetails", panels.renderClipDetails);
-    exposeValue(windowRef, "renderAudioLibraryPanel", panels.renderAudioLibraryPanel);
-    exposeValue(windowRef, "togglePlay", player.togglePlay);
-    exposeValue(windowRef, "seekBy", player.seekBy);
-    exposeValue(windowRef, "stepFrame", player.stepFrame);
-    exposeValue(windowRef, "toggleFullscreen", player.toggleFullscreen);
-    exposeValue(windowRef, "onStageScrub", player.onStageScrub);
-    exposeValue(windowRef, "toggleMute", player.toggleMute);
-    exposeValue(windowRef, "setVol", player.setVol);
-    exposeValue(windowRef, "setCropAspect", transform.setCropAspect);
-    exposeValue(windowRef, "setVideoRotation", transform.setVideoRotation);
-    exposeValue(windowRef, "toggleVideoFlip", transform.toggleVideoFlip);
-    exposeValue(windowRef, "setSizingMode", transform.setSizingMode);
-    exposeValue(windowRef, "resetVideoTransform", transform.resetVideoTransform);
-    exposeValue(windowRef, "cropTransformForRequest", transform.cropTransformForRequest);
-    exposeValue(windowRef, "addSegment", timeline.addSegment);
-    exposeValue(windowRef, "splitAtPlayhead", timeline.splitAtPlayhead);
-    exposeValue(windowRef, "removeActiveSegment", timeline.removeActiveSegment);
-    exposeValue(windowRef, "resetSegments", timeline.resetSegments);
-    exposeValue(windowRef, "toggleSnap", timeline.toggleSnap);
-    exposeValue(windowRef, "resetTimelineHeight", timeline.resetTimelineHeight);
-    exposeValue(windowRef, "fitTimeline", timeline.fitTimeline);
-    exposeValue(windowRef, "nudgeTimelineZoom", timeline.nudgeTimelineZoom);
-    exposeValue(windowRef, "openKeyboardShortcuts", shortcutDialog.openDialog);
-    exposeValue(windowRef, "resetKeyboardShortcutsDialog", shortcutDialog.resetDialog);
-    exposeValue(windowRef, "closeActiveModal", closeActiveModal);
-    exposeValue(windowRef, "profileControlState", profileControlState);
-    exposeValue(windowRef, "snapProf", snapProf);
-    exposeValue(windowRef, "updateDirty", updateDirty);
-    exposeValue(windowRef, "resetToProfile", resetToProfile);
-
-    for (const name of [
-      "setCropAspect",
-      "setVideoRotation",
-      "toggleVideoFlip",
-      "setSizingMode",
-      "resetVideoTransform",
-      "addSegment",
-      "removeActiveSegment",
-      "resetSegments",
-      "splitAtPlayhead",
-    ]) {
-      history.wrap(windowRef, name);
-    }
-    for (const name of [
-      "toggleMaster",
-      "toggleSourceMute",
-      "toggleFragmentMute",
-      "toggleTrackMute",
-      "splitSelected",
-      "trimSelectedToPlayhead",
-      "deleteSelected",
-    ]) {
-      history.wrap(audio, name);
-    }
-    history.updateButtons();
+  function numericValue(target: HTMLElement): number {
+    return Number(target.dataset.actionValue);
   }
 
-  function controlValue(id: string): string {
-    const element = byId<HTMLInputElement | HTMLSelectElement>(id);
-    return element?.value ?? "";
-  }
-
-  function controlChecked(id: string): boolean {
-    return byId<HTMLInputElement>(id)?.checked ?? false;
-  }
-
-  function profileControlState(): Record<string, string | boolean | number> {
-    const clip = session.selPath ? session.clips[session.selPath] : undefined;
-    return {
-      pid: controlValue("prof-sel"),
-      size: controlValue("sz-slider"),
-      rm: controlValue("res-mode"),
-      rw: controlValue("res-w"),
-      rh: controlValue("res-h"),
-      fps: controlValue("fps-val"),
-      ka: controlChecked("keep-audio"),
-      abr: controlValue("audio-br"),
-      tp: controlValue("two-pass"),
-      pre: controlValue("preset-sel"),
-      sc: controlValue("scaler-sel"),
-      enc: controlValue("enc-sel"),
-      rc: controlValue("rc-sel"),
-      q: controlValue("quality-val"),
-      br: controlValue("br-val"),
-      tu: controlValue("tune-sel"),
-      aspect: clip?.cropAspect ?? "off",
-      rotation: clip?.rotation ?? 0,
-      sizing: clip?.sizingMode ?? "fit",
+  function installActionBindings(): void {
+    const handlers: DelegatedHandlers = {
+      click: {
+        "workspace-toggle": (target) =>
+          panels.toggleWorkspacePanel(
+            (target.dataset.actionValue ?? "") as never,
+          ),
+        "workspace-close-panels": () => panels.closeWorkspacePanels(true),
+        "history-undo": () => history.undo(),
+        "history-redo": () => history.redo(),
+        "shortcuts-open": () => shortcutDialog.openDialog(),
+        "settings-toggle": () => settings.toggle(),
+        "settings-open-profiles": () => void settings.open("profiles"),
+        "library-tab": (target) => panels.setLibraryTab(target.dataset.actionValue ?? ""),
+        "inspector-tab": (target) => panels.setInspectorTab(target.dataset.actionValue ?? ""),
+        "browse-videos": () => void library.browse(),
+        "remove-all-clips": () => library.removeAllClips(),
+        "browse-audio": () => void audio.browse(),
+        "player-step-frame": (target) => player.stepFrame(numericValue(target)),
+        "player-toggle-play": () => player.togglePlay(),
+        "player-toggle-mute": () => player.toggleMute(),
+        "player-fullscreen": () => player.toggleFullscreen(),
+        "transform-crop-aspect": (target) =>
+          transform.setCropAspect(target.dataset.aspect ?? "off"),
+        "transform-rotation": (target) =>
+          transform.setVideoRotation(Number(target.dataset.rotation)),
+        "transform-flip": (target) =>
+          transform.toggleVideoFlip(
+            (target.dataset.actionValue as "horizontal" | "vertical") ?? "horizontal",
+          ),
+        "transform-sizing": (target) =>
+          transform.setSizingMode(target.dataset.sizing ?? "fit"),
+        "transform-reset-all": () => transform.resetVideoTransform(),
+        "audio-toggle-master": () => audio.toggleMaster(),
+        "audio-toggle-fragment-mute": () => audio.toggleFragmentMute(),
+        "audio-toggle-source-mute": () => audio.toggleSourceMute(),
+        "encoding-workflow": (target) => encoding.setWf(numericValue(target)),
+        "encoding-save-profile": () => void encoding.saveProfileChanges(),
+        "encoding-save-profile-as": () => void encoding.saveProfileAs(),
+        "encoding-reset-profile": () => encoding.resetToProfile(),
+        "encoding-toggle-advanced": () => encoding.toggleAdvanced(),
+        "encoding-run-selected": () => void encoding.compressOne(),
+        "encoding-run-all": () => void encoding.compressAll(),
+        "timeline-add-segment": () => timeline.addSegment(),
+        "timeline-split": () => timeline.splitAtPlayhead(),
+        "timeline-remove-segment": () => timeline.removeActiveSegment(),
+        "timeline-reset-segments": () => timeline.resetSegments(),
+        "timeline-toggle-snap": () => timeline.toggleSnap(),
+        "timeline-reset-height": (_target, event) =>
+          timeline.resetTimelineHeight(event as MouseEvent),
+        "timeline-fit": () => timeline.fitTimeline(),
+        "timeline-nudge-zoom": (target) => timeline.nudgeTimelineZoom(numericValue(target)),
+        "queue-stop-after-current": () => queue.stopAfterCurrent(),
+        "queue-cancel-all": () => queue.cancelAll(),
+        "queue-clear-completed": () => void queue.clearDone(),
+        "modal-close-overlay": (target, event) => {
+          if (event.target === target) closeActiveModal();
+        },
+      },
+      input: {
+        "player-scrub": (target) => player.onStageScrub((target as HTMLInputElement).value),
+        "player-volume": (target) => player.setVol((target as HTMLInputElement).value),
+        "encoding-target-size": (target) =>
+          encoding.onSize((target as HTMLInputElement).value),
+        "encoding-frame-rate": (target) =>
+          encoding.onFpsSlider((target as HTMLInputElement).value),
+        "timeline-zoom": (target) =>
+          timeline.setTimelineZoom(Number((target as HTMLInputElement).value)),
+      },
+      change: {
+        "encoding-profile": () => encoding.onProfileChange(),
+        "encoding-badge-size": (target) =>
+          encoding.onBadgeSize((target as HTMLInputElement).value),
+        "encoding-source-resolution": () => encoding.onUseSourceResolution(),
+        "encoding-resolution": () => encoding.onResolutionGeometryChanged(),
+        "encoding-resolution-facade": (target) =>
+          encoding.onExportResolutionChoice((target as HTMLSelectElement).value),
+        "encoding-preview-dirty": () => encoding.reqPreviewAndDirty(),
+        "encoding-source-fps": () => encoding.onUseSourceFps(),
+        "encoding-frame-rate-facade": (target) =>
+          encoding.onExportFrameRateChoice((target as HTMLSelectElement).value),
+        "encoding-keep-audio": () => encoding.onKeepAudio(),
+        "encoding-encoder": () => encoding.onEncChange(),
+        "encoding-speed": () => encoding.onSpeedChange(),
+        "encoding-two-pass": () => encoding.onTwoPassChange(),
+        "encoding-native-preset": () => encoding.onNativePresetChange(),
+        "encoding-rate-control": () => encoding.onRcChange(),
+      },
     };
-  }
-
-  function updateDirty(): void {
-    if (!profileSnapshot) {
-      byId("mod-badge")?.classList.remove("show");
-      byId("prof-reset-row")?.classList.add("hid");
-      legacyCall(windowRef, "syncExportSummary");
-      return;
-    }
-    const dirty = profileSnapshot !== JSON.stringify(profileControlState());
-    byId("mod-badge")?.classList.toggle("show", dirty);
-    byId("prof-reset-row")?.classList.toggle("hid", !dirty);
-    legacyCall(windowRef, "syncExportSummary");
-  }
-
-  function snapProf(): void {
-    profileSnapshot = JSON.stringify(profileControlState());
-    updateDirty();
-  }
-
-  function resetToProfile(): void {
-    legacyCall(windowRef, "applyProfile", true);
-    snapProf();
-    toast("Settings reset to profile.", "ok");
+    bindDelegatedEvents(windowRef.document.body, handlers);
   }
 
   function installEditorShortcuts(): void {
@@ -609,12 +521,12 @@ export function installEditorRuntime(
       void library.browse();
     });
     shortcuts.registerAction("settings.open", () => {
-      legacyCall(windowRef, "toggleSettings");
+      settings.toggle();
     });
     shortcuts.registerAction("app.exit", {
-      enabled: () => state.api !== null,
+      enabled: () => hasBackendClient(),
       execute: () => {
-        void state.api?.closeWindow();
+        if (hasBackendClient()) void getBackendClient().closeWindow();
       },
     });
     shortcuts.registerAction("ui.dismiss", {
@@ -626,7 +538,7 @@ export function installEditorRuntime(
         if (windowRef.document.getElementById("mod-overlay")?.classList.contains("open")) {
           closeActiveModal();
         } else if (windowRef.document.body.classList.contains("settings-open")) {
-          legacyCall(windowRef, "closeSettings");
+          settings.close();
         } else {
           audio.selectVideoTrack();
         }
@@ -711,14 +623,16 @@ export function installEditorRuntime(
     });
   }
 
+  let queueTimer: number | null = null;
+
   async function startApp(): Promise<void> {
-    if (started || !legacyShellReady || !state.api || !pendingLaunch) return;
+    if (started || !shellReady || !backendReady || !pendingLaunch) return;
     started = true;
     const launch = pendingLaunch;
     pendingLaunch = null;
-    legacyCall(windowRef, "updateSizePresets", 10);
+    encoding.updateSizePresets(10);
     try {
-      await legacyCallAsync(windowRef, "loadSettings");
+      await encoding.loadSettings();
       panels.setInspectorTab(
         InspectorUi.startupTab(
           String(session.appSettings.inspector_start_panel ?? ""),
@@ -730,16 +644,16 @@ export function installEditorRuntime(
       toast("Could not load settings.", "err");
     }
     if (session.appSettings.check_updates !== false) void checkUpdates(true);
-    if (Reflect.get(windowRef, "queueTimer") === null) {
-      const timer = windowRef.setInterval(() => {
-        void legacyCallAsync(windowRef, "pollQueue");
-        void legacyCallAsync(windowRef, "pollIpc");
+    if (queueTimer === null) {
+      queueTimer = windowRef.setInterval(() => {
+        void queue.pollQueue();
+        void queue.pollIpc();
       }, 500);
-      Reflect.set(windowRef, "queueTimer", timer);
     }
-    const files = launch.files?.filter((file): file is string => typeof file === "string") ?? [];
+    const files =
+      launch.files?.filter((file): file is string => typeof file === "string") ?? [];
     if (files.length) library.addFiles(files);
-    if (launch.sendto !== undefined) legacyCall(windowRef, "handleSendto", launch.sendto);
+    if (launch.sendto !== undefined && launch.sendto !== null) handleSendto(launch.sendto);
   }
 
   function initApp(data: unknown): void {
@@ -747,30 +661,18 @@ export function installEditorRuntime(
     void startApp();
   }
 
-  function attachBackendClient(client: BackendClient): void {
-    state.api = client;
+  function attachBackendClient(): void {
+    backendReady = true;
     void startApp();
   }
 
-  installLegacyStateCompatibility();
-  installLegacyFunctionCompatibility();
+  installActionBindings();
   installEditorShortcuts();
   installFileDropHandlers();
-  exposeValue(windowRef, "handleIpcMeta", (data: unknown) => {
-    legacyCall(windowRef, "handleSendto", data);
-  });
-  exposeValue(windowRef, "handleSendto", (data: unknown) => {
-    const profileId = isRecord(data) && typeof data.profile_id === "string" ? data.profile_id : "";
-    if (profileId) {
-      const select = byId<HTMLSelectElement>("prof-sel");
-      if (select) select.value = profileId;
-      legacyCall(windowRef, "onProfileChange");
-    }
-  });
 
   return {
-    activateLegacyShell() {
-      legacyShellReady = true;
+    start() {
+      shellReady = true;
       void startApp();
     },
     attachBackendClient,
@@ -778,3 +680,6 @@ export function installEditorRuntime(
     session,
   };
 }
+
+export type { EditorClip };
+export { formatBytes, formatTime, errorSummary, showMod, closeMod, confirmToast, SegmentEditing };

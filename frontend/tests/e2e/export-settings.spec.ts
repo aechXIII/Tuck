@@ -1,0 +1,272 @@
+import { expect, test, type Page } from "@playwright/test";
+
+import {
+  healthyBackendFixture,
+  installFakeBackend,
+  type FakeBackendFixture,
+} from "../fixtures/fake-backend";
+
+const VIDEO = "C:\\media\\Clip one.mp4";
+
+function probeData(overrides: Record<string, unknown> = {}) {
+  return {
+    duration: 12,
+    file_size: 1_048_576,
+    height: 1080,
+    width: 1920,
+    fps: 30,
+    has_audio: true,
+    format: "mp4",
+    video_codec: "h264",
+    audio_codec: "aac",
+    ...overrides,
+  };
+}
+
+function exportFixture(): FakeBackendFixture {
+  const fixture = healthyBackendFixture();
+  fixture.responses.pickFiles = { ok: true, files: [VIDEO] };
+  fixture.responses.probeFile = { ok: true, data: probeData() };
+  fixture.responses.getMediaUrl = { ok: true, url: "https://media.test/v", token: "t" };
+  fixture.responses.getThumbnail = { ok: true, thumbnail: "data:image/png;base64,aaa" };
+  fixture.responses.createPlan = {
+    ok: true,
+    data: { video_bitrate_kbps: 1200, segment_count: 1, selected_duration: 12 },
+  };
+  fixture.responses.enqueueWithOptions = { ok: true };
+  return fixture;
+}
+
+function pageErrors(page: Page): string[] {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  return errors;
+}
+
+async function addVideo(page: Page): Promise<void> {
+  await page.getByRole("button", { name: "Add videos" }).click();
+  await expect(page.getByRole("button", { name: "Compress selected" })).toBeEnabled();
+}
+
+async function calls(page: Page, method: string): Promise<Array<{ args: readonly unknown[] }>> {
+  return page.evaluate(
+    (name) => (window.__tuckFakeBackendCalls ?? []).filter((call) => call.method === name),
+    method,
+  );
+}
+
+test("compress selected builds a typed plan request from the export form", async ({ page }) => {
+  const errors = pageErrors(page);
+  await page.setViewportSize({ width: 1240, height: 800 });
+  await installFakeBackend(page, exportFixture());
+  await page.goto("/");
+  await addVideo(page);
+
+  await page.getByRole("button", { name: "Compress selected" }).click();
+
+  await expect.poll(async () => (await calls(page, "enqueueWithOptions")).length).toBe(1);
+  const [enqueue] = await calls(page, "enqueueWithOptions");
+  const request = enqueue!.args[0] as Record<string, unknown>;
+  expect(request).toMatchObject({
+    source: VIDEO,
+    workflow: "compression",
+    rate_control: "target_size",
+    resolution_mode: "source",
+    fps_mode: "source",
+    keep_audio: false,
+    video_encoder: "auto_compression",
+    target_size_bytes: 10 * 1024 * 1024,
+    audio_bitrate: 128000,
+  });
+  expect(request._request_id).toBeUndefined();
+  expect(errors).toEqual([]);
+});
+
+test("a rejected enqueue surfaces the backend error without an unhandled failure", async ({
+  page,
+}) => {
+  const errors = pageErrors(page);
+  const fixture = exportFixture();
+  fixture.responses.enqueueWithOptions = { ok: false, error: "Queue is full right now" };
+  await page.setViewportSize({ width: 1240, height: 800 });
+  await installFakeBackend(page, fixture);
+  await page.goto("/");
+  await addVideo(page);
+
+  await page.getByRole("button", { name: "Compress selected" }).click();
+
+  await expect(page.getByRole("alert")).toContainText("Queue is full right now");
+  await expect(page.getByRole("button", { name: "Compress selected" })).toBeEnabled();
+  expect(errors).toEqual([]);
+});
+
+test("a running job drives the queue bar count, progress, eta, and controls", async ({ page }) => {
+  const fixture = exportFixture();
+  fixture.queueStateAfterEnqueue = {
+    items: [
+      {
+        id: "job-1",
+        source: "Clip one.mp4",
+        source_path: VIDEO,
+        state: "running",
+        progress: 40,
+        progress_info: { eta_seconds: 12 },
+        segment_count: 1,
+        duration: 12,
+      },
+    ],
+  };
+  await page.setViewportSize({ width: 1240, height: 800 });
+  await installFakeBackend(page, fixture);
+  await page.goto("/");
+  await addVideo(page);
+
+  await page.getByRole("button", { name: "Compress selected" }).click();
+  await expect(page.locator("#qbar")).toBeVisible();
+  await expect(page.locator("#qprog")).toHaveAttribute("value", "40");
+  await expect(page.locator("#qcnt")).toHaveText("1/1");
+  await expect(page.locator("#qeta")).toContainText("ETA 00:12");
+  await expect(page.locator("#qfname")).toContainText("Clip one.mp4");
+  await expect(page.getByRole("button", { name: "Cancel processing" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Stop after current job" })).toBeEnabled();
+});
+
+test("stop-after-current failure keeps the queue controls usable", async ({ page }) => {
+  const fixture = exportFixture();
+  fixture.queueStateAfterEnqueue = {
+    items: [
+      {
+        id: "job-1",
+        source: "Clip one.mp4",
+        source_path: VIDEO,
+        state: "running",
+        progress: 20,
+        segment_count: 1,
+      },
+    ],
+  };
+  fixture.responses.stopAfterCurrent = { ok: false, error: "Runner already stopping" };
+  await page.setViewportSize({ width: 1240, height: 800 });
+  await installFakeBackend(page, fixture);
+  await page.goto("/");
+  await addVideo(page);
+  await page.getByRole("button", { name: "Compress selected" }).click();
+
+  const stop = page.getByRole("button", { name: "Stop after current job" });
+  await expect(stop).toBeEnabled();
+  await stop.click();
+  await page.locator("#confirm-accept").click();
+  await expect(page.getByRole("alert")).toContainText("Runner already stopping");
+  await expect(stop).toBeEnabled();
+});
+
+test("profile manager renders an untrusted profile name as inert text", async ({ page }) => {
+  const errors = pageErrors(page);
+  const hostile = '<img src=x onerror="globalThis.__tuckProfilePwned=true">';
+  const fixture = exportFixture();
+  fixture.responses.getProfilesJson = [
+    {
+      profile_id: "p1",
+      name: hostile,
+      workflow: "compression",
+      target_size_bytes: 10 * 1024 * 1024,
+      resolution_mode: "source",
+      fps_mode: "source",
+    },
+  ];
+  await page.setViewportSize({ width: 1240, height: 800 });
+  await installFakeBackend(page, fixture);
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Settings" }).click();
+  await page.locator("#settings-nav-profiles").click();
+  await expect(page.locator("#pm-list")).toContainText(hostile);
+  await expect(page.locator("#pm-list img")).toHaveCount(0);
+  expect(await page.evaluate(() => Reflect.get(window, "__tuckProfilePwned"))).toBeUndefined();
+  expect(errors).toEqual([]);
+});
+
+test("failed profile import reports the backend error", async ({ page }) => {
+  const fixture = exportFixture();
+  fixture.responses.pickImportFile = { ok: true, path: "C:\\profiles.json" };
+  fixture.responses.importProfilesFromFile = { ok: false, error: "File is not valid JSON" };
+  await page.setViewportSize({ width: 1240, height: 800 });
+  await installFakeBackend(page, fixture);
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Settings" }).click();
+  await page.locator("#settings-nav-profiles").click();
+  await page.locator("#settings-actions").getByRole("button", { name: "Import" }).click();
+  await expect(page.getByRole("alert")).toContainText("File is not valid JSON");
+});
+
+test("the update check renders release notes as plain text", async ({ page }) => {
+  const fixture = exportFixture();
+  fixture.responses.getSettings = {
+    ...(healthyBackendFixture().responses.getSettings as Record<string, unknown>),
+    version: "0.4.0",
+  };
+  fixture.responses.checkForUpdates = {
+    ok: true,
+    available: true,
+    version: "0.5.0",
+    size_mb: 12.5,
+    notes: "## Highlights\n- Fixed **the crash** and a [tracked issue](https://example.test)\n- Faster startup",
+  };
+  await page.setViewportSize({ width: 1240, height: 800 });
+  await installFakeBackend(page, fixture);
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Settings" }).click();
+  await page.locator("#settings-nav-system").click();
+  await page.locator("#settings-page").getByRole("button", { name: "Check now" }).click();
+
+  const notes = page.locator("#update-notes");
+  await expect(notes).toContainText("Fixed the crash and a tracked issue");
+  await expect(notes.locator("a")).toHaveCount(0);
+  await expect(notes.locator("strong")).toHaveCount(0);
+  await expect(page.locator("#update-version")).toHaveText("v0.5.0");
+});
+
+test("update check failures fall back to a visible error toast", async ({ page }) => {
+  const fixture = exportFixture();
+  fixture.responses.checkForUpdates = { ok: true, available: false, error: "GitHub unreachable" };
+  await page.setViewportSize({ width: 1240, height: 800 });
+  await installFakeBackend(page, fixture);
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Settings" }).click();
+  await page.locator("#settings-nav-system").click();
+  await page.locator("#settings-page").getByRole("button", { name: "Check now" }).click();
+  await expect(page.getByRole("alert")).toContainText("Update check failed: GitHub unreachable");
+});
+
+test("the settings dialog traps Tab focus inside the dialog", async ({ page }) => {
+  await page.setViewportSize({ width: 1240, height: 800 });
+  await installFakeBackend(page, exportFixture());
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Settings" }).click();
+  const dialog = page.getByRole("dialog", { name: "Settings" });
+  await expect(dialog).toBeVisible();
+  for (let i = 0; i < 25; i += 1) await page.keyboard.press("Tab");
+  const focusInside = await page.evaluate(() => {
+    const dialogEl = document.querySelector(".settings-dialog");
+    return !!dialogEl && dialogEl.contains(document.activeElement);
+  });
+  expect(focusInside).toBe(true);
+});
+
+test("the editor still renders when settings fail to load at startup", async ({ page }) => {
+  const errors = pageErrors(page);
+  const fixture = exportFixture();
+  fixture.responses.getSettings = { ok: false, error: "settings backend offline" };
+  await page.setViewportSize({ width: 1240, height: 800 });
+  await installFakeBackend(page, fixture);
+  await page.goto("/");
+
+  await expect(page.getByRole("button", { name: "Add videos" })).toBeVisible();
+  await page.getByRole("button", { name: "Settings" }).click();
+  await expect(page.getByRole("dialog", { name: "Settings" })).toBeVisible();
+  expect(errors).toEqual([]);
+});

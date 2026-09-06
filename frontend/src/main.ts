@@ -1,44 +1,26 @@
 import {
   createPywebviewClientFromWindow,
   createTauriBackendClientFromWindow,
-  hasPywebviewApi,
-  hasTauriInvoke,
   PYWEBVIEW_READY_EVENT,
   setBackendClient,
 } from "./backend/index.ts";
+import type { BackendClient } from "./backend/types.ts";
 import type { TauriBackendClient } from "./backend/index.ts";
 import {
   installEditorRuntime,
   type EditorRuntime,
 } from "./features/editor/runtime.ts";
-import {
-  installLegacyFoundationCompatibility,
-  loadClassicScript,
-  loadLegacyFeatureScripts,
-} from "./compatibility.ts";
+import { backendUnavailableMessage, hasDesktopBackend } from "./desktop-status.ts";
+import "./styles/index.ts";
+
+export { backendUnavailableMessage, hasDesktopBackend };
 
 const BACKEND_GRACE_PERIOD_MS = 2_000;
 let backendTimer: number | undefined;
 let blockedSiblings: HTMLElement[] = [];
 let tauriStartupStarted = false;
 let editorRuntime: EditorRuntime | undefined;
-let compatibilityScriptsReady = false;
-let pendingDesktopClient: Parameters<NonNullable<typeof window.attachBackendClient>>[0] | undefined;
-
-export function hasDesktopBackend(host: unknown): boolean {
-  return hasPywebviewApi(host) || hasTauriInvoke(host);
-}
-
-export function backendUnavailableMessage(reason?: string): string {
-  const normalizedReason = reason?.trim();
-  if (normalizedReason) {
-    const sentence = /[.!?]$/.test(normalizedReason)
-      ? normalizedReason
-      : `${normalizedReason}.`;
-    return `Tuck could not connect to its desktop backend: ${sentence} Close and reopen Tuck.`;
-  }
-  return "Tuck could not connect to its desktop backend. Close and reopen Tuck. Developers should run npm run build before launching the Python app.";
-}
+let backendAttached = false;
 
 function showBackendLoading(): void {
   if (document.getElementById("backend-connecting")) return;
@@ -104,14 +86,12 @@ function markDesktopBackendReady(): void {
   blockedSiblings = [];
 }
 
-function attachDesktopBackend(client: Parameters<NonNullable<typeof window.attachBackendClient>>[0]): void {
+function attachDesktopBackend(client: BackendClient): void {
+  if (backendAttached) return;
+  backendAttached = true;
   setBackendClient(client);
   window.tuckBackendClient = client;
-  if (!editorRuntime || !compatibilityScriptsReady) {
-    pendingDesktopClient = client;
-    return;
-  }
-  editorRuntime.attachBackendClient(client);
+  editorRuntime?.attachBackendClient();
   markDesktopBackendReady();
 }
 
@@ -154,29 +134,19 @@ function waitForDesktopBackend(): void {
   }, BACKEND_GRACE_PERIOD_MS);
 }
 
-async function bootstrapFrontend(): Promise<void> {
-  installLegacyFoundationCompatibility(window);
+function bootstrapFrontend(): void {
   editorRuntime = installEditorRuntime(window);
   window.initApp = (data: unknown): void => editorRuntime?.initApp(data);
   window.attachBackendClient = attachDesktopBackend;
 
-  void import("./startup.css");
   window.addEventListener(PYWEBVIEW_READY_EVENT, installDesktopBackend, {
     once: true,
   });
 
-  try {
-    await loadLegacyFeatureScripts((source) => loadClassicScript(document, source));
-  } catch (error) {
-    showBackendUnavailable(error instanceof Error ? error.message : String(error));
-    return;
-  }
-  editorRuntime.activateLegacyShell();
-  compatibilityScriptsReady = true;
-  if (pendingDesktopClient) attachDesktopBackend(pendingDesktopClient);
+  editorRuntime.start();
 
   if (document.readyState === "complete") waitForDesktopBackend();
   else window.addEventListener("load", waitForDesktopBackend, { once: true });
 }
 
-if (typeof window !== "undefined") void bootstrapFrontend();
+if (typeof window !== "undefined") bootstrapFrontend();

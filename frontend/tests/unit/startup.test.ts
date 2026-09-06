@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { backendUnavailableMessage, hasDesktopBackend } from "../../src/main.ts";
+import { backendUnavailableMessage, hasDesktopBackend } from "../../src/desktop-status.ts";
 
 test("desktop backend detection requires an API object", () => {
   assert.equal(hasDesktopBackend(undefined), false);
