@@ -100,12 +100,27 @@ function startTauriBackend(client: TauriBackendClient): void {
   tauriStartupStarted = true;
   client.onFatal((error) => showBackendUnavailable(error.message));
   showBackendLoading();
-  void client.health().then((result) => {
+  void client.health().then(async (result) => {
     if (!result.ok) {
       showBackendUnavailable(result.error.message);
       return;
     }
-    editorRuntime?.initApp({ files: [], sendto: null });
+    // Fetch startup files after backend is ready (normalized in Rust, validated in Python)
+    let startupFiles: string[] = [];
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const files = (await invoke("get_startup_files", {})) as unknown;
+      if (Array.isArray(files)) startupFiles = files.filter((f) => typeof f === "string") as string[];
+      // Listen for second-instance forwarding
+      const { listen } = await import("@tauri-apps/api/event");
+      await listen<string[]>("second-instance", (event) => {
+        const incoming = Array.isArray(event.payload) ? (event.payload as string[]) : [];
+        if (incoming.length) window.initApp?.({ files: incoming, sendto: null });
+      });
+    } catch {
+      // Startup files are best-effort; ignore errors
+    }
+    editorRuntime?.initApp({ files: startupFiles, sendto: null });
     attachDesktopBackend(client);
   });
 }

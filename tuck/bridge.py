@@ -391,7 +391,9 @@ class BridgeAPI:
         )
         return {"ok": True, "text": text}
 
-    def install_profile_sendto(self, profile_id: str, action: str = "start") -> BridgeResult:
+    def install_profile_sendto(
+        self, profile_id: str, action: str = "start", executable_path: str | None = None
+    ) -> BridgeResult:
 
         profiles = self._settings.get_profiles()
         found = find_profile_by_id(profiles, profile_id)
@@ -400,7 +402,9 @@ class BridgeAPI:
         try:
             from .sendto import install_profile_shortcut
 
-            path = install_profile_shortcut(profile_id, found.name, action=action)
+            path = install_profile_shortcut(
+                profile_id, found.name, action=action, executable_path=executable_path
+            )
             return {"ok": True, "path": str(path)}
         except Exception as e:
             return {"ok": False, "error": str(e)}
@@ -415,7 +419,9 @@ class BridgeAPI:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
-    def repair_profile_sendto(self, profile_id: str, action: str = "start") -> BridgeResult:
+    def repair_profile_sendto(
+        self, profile_id: str, action: str = "start", executable_path: str | None = None
+    ) -> BridgeResult:
 
         profiles = self._settings.get_profiles()
         found = find_profile_by_id(profiles, profile_id)
@@ -424,7 +430,9 @@ class BridgeAPI:
         try:
             from .sendto import repair_profile_shortcut
 
-            repaired = repair_profile_shortcut(profile_id, found.name, action=action)
+            repaired = repair_profile_shortcut(
+                profile_id, found.name, action=action, executable_path=executable_path
+            )
             return {"ok": True, "repaired": repaired}
         except Exception as e:
             return {"ok": False, "error": str(e)}
@@ -439,14 +447,14 @@ class BridgeAPI:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
-    def install_generic_sendto(self) -> BridgeResult:
+    def install_generic_sendto(self, executable_path: str | None = None) -> BridgeResult:
 
         try:
             from .sendto import install_sendto, repair_sendto
 
-            if repair_sendto():
+            if repair_sendto(executable_path=executable_path):
                 return {"ok": True, "repaired": True}
-            path = install_sendto()
+            path = install_sendto(executable_path=executable_path)
             return {"ok": True, "path": str(path)}
         except Exception as e:
             return {"ok": False, "error": str(e)}

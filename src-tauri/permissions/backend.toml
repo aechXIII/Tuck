@@ -2,3 +2,8 @@
 identifier = "allow-backend-request"
 description = "Allows the finite typed backend request command."
 commands.allow = ["backend_request"]
+
+[[permission]]
+identifier = "allow-native-commands"
+description = "Allows native desktop commands for dialogs, clipboard, folders, and window."
+commands.allow = ["platform_capabilities", "pick_video_files", "pick_audio_files", "pick_folder", "pick_ffmpeg_file", "pick_ffprobe_file", "pick_import_file", "pick_save_file", "copy_text", "open_output_folder", "open_logs_folder", "open_config_folder", "close_window", "check_for_updates", "download_update", "install_update", "get_download_progress", "get_startup_files"]

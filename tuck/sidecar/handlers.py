@@ -280,8 +280,14 @@ def _export_profile_to_file(api: BridgeAPI, params: dict[str, object]) -> object
 
 
 def _install_generic_sendto(api: BridgeAPI, params: dict[str, object]) -> object:
-    _empty(params)
-    return api.install_generic_sendto()
+    if set(params) - {"executable_path"}:
+        raise _ParameterError
+    exec_path = params.get("executable_path")
+    if exec_path is not None and not isinstance(exec_path, str):
+        raise _ParameterError
+    return api.install_generic_sendto(
+        executable_path=exec_path if isinstance(exec_path, str) else None
+    )
 
 
 def _remove_generic_sendto(api: BridgeAPI, params: dict[str, object]) -> object:
@@ -291,12 +297,17 @@ def _remove_generic_sendto(api: BridgeAPI, params: dict[str, object]) -> object:
 
 def _install_profile_sendto(api: BridgeAPI, params: dict[str, object]) -> object:
     profile_id = params.get("profile_id")
-    if set(params) - {"profile_id", "action"} or not isinstance(profile_id, str):
+    if set(params) - {"profile_id", "action", "executable_path"} or not isinstance(profile_id, str):
         raise _ParameterError
     action = params.get("action", "start")
     if not isinstance(action, str):
         raise _ParameterError
-    return api.install_profile_sendto(profile_id, action)
+    exec_path = params.get("executable_path")
+    if exec_path is not None and not isinstance(exec_path, str):
+        raise _ParameterError
+    return api.install_profile_sendto(
+        profile_id, action, executable_path=exec_path if isinstance(exec_path, str) else None
+    )
 
 
 def _remove_profile_sendto(api: BridgeAPI, params: dict[str, object]) -> object:
@@ -305,12 +316,17 @@ def _remove_profile_sendto(api: BridgeAPI, params: dict[str, object]) -> object:
 
 def _repair_profile_sendto(api: BridgeAPI, params: dict[str, object]) -> object:
     profile_id = params.get("profile_id")
-    if set(params) - {"profile_id", "action"} or not isinstance(profile_id, str):
+    if set(params) - {"profile_id", "action", "executable_path"} or not isinstance(profile_id, str):
         raise _ParameterError
     action = params.get("action", "start")
     if not isinstance(action, str):
         raise _ParameterError
-    return api.repair_profile_sendto(profile_id, action)
+    exec_path = params.get("executable_path")
+    if exec_path is not None and not isinstance(exec_path, str):
+        raise _ParameterError
+    return api.repair_profile_sendto(
+        profile_id, action, executable_path=exec_path if isinstance(exec_path, str) else None
+    )
 
 
 def _list_sendto_shortcuts(api: BridgeAPI, params: dict[str, object]) -> object:

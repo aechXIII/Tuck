@@ -23,6 +23,7 @@ import {
   type ProfileListEntry,
 } from "../profiles/profile-list.ts";
 import { legacyBackendResult } from "../editor/backend-compat.ts";
+import { fetchPlatformCapabilities } from "../../platform/capabilities.ts";
 import { confirmToast, toast } from "../editor/toast.ts";
 import type { EditorSession } from "../editor/session.ts";
 
@@ -125,6 +126,13 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         <span class="settings-action-spacer"></span>
         ${actions.html}`
       : "";
+    // Hide explorer integration on Linux where Send To is unavailable
+    void fetchPlatformCapabilities().then((caps) => {
+      const explorerNav = byId("settings-nav-explorer");
+      if (explorerNav) explorerNav.style.display = caps.sendToIntegration ? "" : "none";
+      const updaterBtn = document.querySelector<HTMLElement>("[data-settings-click=\"check-updates\"]");
+      if (updaterBtn) updaterBtn.style.display = caps.automaticUpdater ? "" : "none";
+    });
     for (const name of ["general", "output", "profiles", "explorer", "system"]) {
       const button = byId(`settings-nav-${name}`);
       if (!button) continue;

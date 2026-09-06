@@ -31,14 +31,23 @@ test("Tauri transport maps probe requests through the finite backend command", a
 });
 
 test("Tauri transport keeps unavailable native operations explicit", async () => {
-  const client = createTauriBackendClient(async () => ({ status: "ok" }));
+  const client = createTauriBackendClient(async (command) => {
+    if (command === "pick_video_files") return [];
+    return { status: "ok" };
+  });
 
+  // pickFiles is now a native Tauri command and should succeed via invoke
   assert.deepEqual(await client.pickFiles(), {
+    ok: true,
+    value: { files: [] },
+  });
+  // IPC methods are pywebview-specific and remain unavailable in Tauri
+  assert.deepEqual(await client.getIpcFiles(), {
     ok: false,
     error: {
       code: "BACKEND_METHOD_UNAVAILABLE",
-      message: "Desktop backend method pickFiles is not available in the Tauri shell yet",
-      details: { method: "pickFiles" },
+      message: "Desktop backend method getIpcFiles is not available in the Tauri shell yet",
+      details: { method: "getIpcFiles" },
     },
   });
 });
@@ -59,6 +68,30 @@ test("Tauri transport publishes a fatal backend exit to the shell", async () => 
   assert.equal(result.ok, false);
   assert.deepEqual(failures, ["BACKEND_EXITED"]);
   unsubscribe();
+});
+
+test("Tauri transport routes probeAudioFile through backend_request", async () => {
+  const calls: Array<{ command: string; args: Record<string, unknown> }> = [];
+  const client = createTauriBackendClient(async (command, args) => {
+    calls.push({ command, args });
+    return { data: { duration: 5 } };
+  });
+
+  assert.deepEqual(await client.probeAudioFile("audio.mp3"), {
+    ok: true,
+    value: { data: { duration: 5 } },
+  });
+  assert.deepEqual(calls, [
+    {
+      command: "backend_request",
+      args: {
+        command: {
+          command: "probe_audio_file",
+          payload: { path: "audio.mp3" },
+        },
+      },
+    },
+  ]);
 });
 
 test("Tauri runtime detection requires the injected invoke function", () => {

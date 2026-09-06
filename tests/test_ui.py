@@ -7,6 +7,7 @@ FRONTEND_DIR = Path("frontend")
 INDEX_PATH = FRONTEND_DIR / "index.html"
 WEB_DIR = FRONTEND_DIR / "public" / "legacy"
 SOURCE_DIR = FRONTEND_DIR / "src"
+STYLES_DIR = SOURCE_DIR / "styles"
 
 MIGRATED_MODULES = {
     "app.js": (
@@ -22,7 +23,15 @@ MIGRATED_MODULES = {
     "crop.js": ("features/transform/crop-geometry.ts",),
     "history.js": ("features/history/history.ts",),
     "inspector-ui.js": ("features/panels/inspector-ui.ts",),
+    "encoding-ui.js": (
+        "features/export/encoding-controls.ts",
+        "features/export/encoder-options.ts",
+        "features/export/encoder-select.ts",
+        "features/export/plan-request.ts",
+    ),
     "panels.js": ("features/panels/panels.ts",),
+    "queue.js": ("features/queue/queue.ts", "features/queue/queue-view.ts"),
+    "settings.js": ("features/settings/settings.ts",),
     "player.js": ("features/player/player.ts",),
     "segments.js": ("features/timeline/segments.ts",),
     "shortcuts.js": ("features/shortcuts/shortcuts.ts",),
@@ -37,14 +46,16 @@ def _asset(name: str) -> str:
     migrated = MIGRATED_MODULES.get(name)
     if migrated:
         return "\n".join((SOURCE_DIR / path).read_text(encoding="utf-8") for path in migrated)
+    if name.endswith(".css"):
+        return (STYLES_DIR / name).read_text(encoding="utf-8")
     return (WEB_DIR / name).read_text(encoding="utf-8")
 
 
 def _web_source() -> str:
     legacy = (
         path.read_text(encoding="utf-8")
-        for path in sorted(WEB_DIR.iterdir())
-        if path.suffix in {".css", ".js"}
+        for path in sorted(STYLES_DIR.iterdir())
+        if path.suffix == ".css"
     )
     modules = (path.read_text(encoding="utf-8") for path in SOURCE_DIR.rglob("*.ts"))
     return "\n".join((INDEX_PATH.read_text(encoding="utf-8"), *legacy, *modules))
@@ -73,14 +84,13 @@ def test_web_ui_is_packaged_source_asset() -> None:
 
 def test_workspace_surface_styles_load_in_owner_order() -> None:
     html = _asset("index.html")
+    main_ts = (SOURCE_DIR / "main.ts").read_text(encoding="utf-8")
 
-    links = re.findall(r'<link\b[^>]*href="([^"]+\.css)"', html)
-    assert links[:4] == [
-        "/legacy/styles.css",
-        "/legacy/library.css",
-        "/legacy/inspector.css",
-        "/legacy/export.css",
-    ]
+    # CSS is imported by TypeScript modules and bundled by Vite, not linked in HTML
+    assert '<script type="module" src="./src/main.ts"></script>' in html
+    assert "./styles/index.ts" in main_ts
+    for name in ("styles.css", "library.css", "inspector.css", "export.css"):
+        assert (STYLES_DIR / name).is_file()
 
 
 def test_topbar_settings_control_has_visible_and_accessible_label() -> None:
@@ -102,9 +112,9 @@ def test_web_ui_uses_python_managed_drop_paths() -> None:
 def test_web_ui_forwards_start_metadata_and_releases_old_media_tokens() -> None:
     html = _web_source()
 
-    assert "const files = launch.files" in html
+    assert "launch.files" in html
     assert "getBackendClient().releaseMediaToken(clip.mediaToken)" in html
-    assert "state.api?.closeWindow()" in html
+    assert "getBackendClient().closeWindow()" in html
 
 
 def test_application_shortcuts_use_the_central_command_dispatcher() -> None:
@@ -133,18 +143,19 @@ def test_application_shortcuts_use_the_central_command_dispatcher() -> None:
     assert 'aria-keyshortcuts="? Control+/"' in html
     assert 'aria-keyshortcuts="ArrowLeft"' in html
     assert 'aria-keyshortcuts="Control+0"' in html
-    assert "addEventListener(\"keydown\"" not in app_js
-    assert "document.addEventListener(\"keydown\"" not in audio_js
-    assert "document.addEventListener(\"keydown\"" not in history_js
+    assert 'addEventListener("keydown"' not in app_js
+    assert 'document.addEventListener("keydown"' not in audio_js
+    assert 'document.addEventListener("keydown"' not in history_js
 
 
 def test_web_ui_starts_if_python_calls_init_after_bridge_injection() -> None:
-    app_js = _asset("app.js")
+    _app_js = _asset("app.js")
     main_ts = (FRONTEND_DIR / "src" / "main.ts").read_text(encoding="utf-8")
 
     assert "function attachDesktopBackend" in main_ts
     assert "window.initApp = (data: unknown)" in main_ts
-    assert "pendingDesktopClient" in main_ts
+    assert "window.attachBackendClient = attachDesktopBackend" in main_ts
+    assert "if (window.tuckBackendClient)" in main_ts
     assert "waitForDesktopBackend" in main_ts
 
 
@@ -270,11 +281,15 @@ def test_editor_shell_uses_adaptive_accessible_panels() -> None:
     assert "resetTimelineHeight: resetTimelineHeight" in timeline_js
     assert "function formatTimelineTime(seconds: number)" in timeline_js
     assert 'byId("seq-playhead-time")' in timeline_js
-    assert "getBackendClient().saveSettings({ timeline_height: timelineHeightSetting })" in timeline_js
+    assert (
+        "getBackendClient().saveSettings({ timeline_height: timelineHeightSetting })" in timeline_js
+    )
     assert 'frame.classList.toggle("is-zoomed", zoomed);' in timeline_js
     assert 'frame.style.removeProperty("--tl-width");' in timeline_js
     assert '<div id="qbar" class="hid">' in html
-    assert 'byId("qbar").classList.toggle("hid", items.length === 0)' in queue_js
+    assert 'toggleHidden("qbar", !queueView.barVisible)' in queue_js
+    assert 'byId(id)?.classList.toggle("hid", hidden)' in queue_js
+    assert "barVisible: items.length > 0" in queue_js
 
 
 def test_library_panel_has_a_single_actionable_hierarchy() -> None:
@@ -351,8 +366,8 @@ def test_settings_dialog_manages_keyboard_focus() -> None:
     settings_js = _asset("settings.js")
 
     assert 'id="settings-close"' in html
-    assert "var settingsReturnFocus" in settings_js
-    assert "function trapSettingsFocus(event)" in settings_js
+    assert "let settingsReturnFocus" in settings_js
+    assert "function trapSettingsFocus(event: KeyboardEvent)" in settings_js
     assert 'document.addEventListener("keydown", trapSettingsFocus)' in settings_js
     assert "settingsReturnFocus.focus();" in settings_js
 
@@ -362,14 +377,14 @@ def test_settings_save_state_is_wired_into_the_ui() -> None:
     settings_js = _asset("settings.js")
 
     assert '<details class="profile-options">' in html
-    compatibility = (SOURCE_DIR / "compatibility.ts").read_text(encoding="utf-8")
-    assert "TuckSettingsState" in compatibility
+    # Settings state is owned by the module, not a legacy window global.
+    assert "settingsDirty = settingsAreDirty(snapshot, settingsPageState())" in settings_js
     assert 'data-settings-save="true"' in settings_js
     assert "function captureSettingsSnapshot()" in settings_js
     persist_settings = settings_js.split("async function persistSettings", 1)[1].split(
-        "async function saveSettings", 1
+        "async function saveGeneralSettings", 1
     )[0]
-    assert persist_settings.index("await loadSettings();") < persist_settings.index(
+    assert persist_settings.index("await deps.reloadEditorSettings();") < persist_settings.index(
         'indicator.textContent = "Saved";'
     )
 
@@ -389,7 +404,7 @@ def test_profile_management_is_visible_without_opening_an_overflow_menu() -> Non
 def test_thumbnail_is_created_only_when_a_valid_source_exists() -> None:
     html = _asset("index.html")
     app_js = _asset("app.js")
-    transform_js = _asset("transform.js")
+    _transform_js = _asset("transform.js")
 
     assert '<img id="thumb"' not in html
     assert 'id="media-viewport"' in html
@@ -401,9 +416,10 @@ def test_preview_responses_are_bound_to_the_source_and_request_snapshot() -> Non
     encoding_js = _asset("encoding-ui.js")
     transform_js = _asset("transform.js")
 
-    assert "var path = selPath;" in encoding_js
-    assert "req._request_id = requestId;" in encoding_js
-    assert "clips[path] === clip" in encoding_js
+    assert "const path = session.selPath;" in encoding_js
+    assert "clip._previewRequestId = requestId;" in encoding_js
+    assert "const req = buildRequest(path as string, requestId);" in encoding_js
+    assert "session.clips[path as string] === clip" in encoding_js
     assert "clip._previewRequestId === requestId" in encoding_js
     assert "r._request_id === requestId" in encoding_js
     assert 'document.getElementById("res-mode")' not in transform_js
@@ -417,8 +433,8 @@ def test_web_ui_allows_manual_target_size_entry() -> None:
     assert 'min="2"' in html
     assert "#sz-badge {" in html
     assert "color: #c4b5fd;" in html
-    assert "function onBadgeSize(v)" in html
-    assert 'byId("sz-slider").max = Math.max(500, size)' in html
+    assert "function onBadgeSize(value: string)" in html
+    assert 'input("sz-slider").max = String(Math.max(500, size))' in html
     assert "if (!size || size < 2)" in html
 
 

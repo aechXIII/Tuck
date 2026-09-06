@@ -617,12 +617,41 @@ fn versions_are_compatible(backend_version: &str) -> bool {
 impl BackendCommand {
     fn timeout(&self) -> Duration {
         match self {
-            Self::Health | Self::GetQueueState | Self::CancelItem { .. } | Self::Shutdown => {
-                LIGHT_REQUEST_TIMEOUT
-            }
-            Self::ProbeFile { .. } | Self::CreatePlan { .. } | Self::EnqueueWithOptions { .. } => {
-                MEDIA_REQUEST_TIMEOUT
-            }
+            Self::Health
+            | Self::GetQueueState
+            | Self::CancelItem { .. }
+            | Self::CancelAllItems
+            | Self::ClearCompleted
+            | Self::MoveItem { .. }
+            | Self::RetryItem { .. }
+            | Self::StopAfterCurrent
+            | Self::GetDiagnostics { .. }
+            | Self::GetSettings
+            | Self::SaveSettings { .. }
+            | Self::RefreshEncoders
+            | Self::GetProfilesJson
+            | Self::CreateProfile { .. }
+            | Self::UpdateProfile { .. }
+            | Self::DeleteProfile { .. }
+            | Self::DuplicateProfile { .. }
+            | Self::ImportProfilesFromFile { .. }
+            | Self::ExportProfileToFile { .. }
+            | Self::InstallGenericSendto { .. }
+            | Self::RemoveGenericSendto
+            | Self::InstallProfileSendto { .. }
+            | Self::RemoveProfileSendto { .. }
+            | Self::RepairProfileSendto { .. }
+            | Self::ListSendtoShortcuts
+            | Self::Shutdown => LIGHT_REQUEST_TIMEOUT,
+            Self::ProbeFile { .. }
+            | Self::ProbeAudioFile { .. }
+            | Self::GetWaveform { .. }
+            | Self::GetThumbnail { .. }
+            | Self::GetMediaUrl { .. }
+            | Self::ReleaseMediaToken { .. }
+            | Self::CreatePlan { .. }
+            | Self::EnqueueWithOptions { .. }
+            | Self::EnqueueBatch { .. } => MEDIA_REQUEST_TIMEOUT,
         }
     }
 }

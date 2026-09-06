@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import contextlib
 import json
-import msvcrt
 import os
+
+try:
+    import msvcrt  # type: ignore[import-not-found]
+except ImportError:
+    msvcrt = None  # type: ignore[assignment]
 import threading
 import uuid
 from collections.abc import Callable
@@ -169,7 +173,8 @@ class _ProcessLock:
                 os.write(fd, b"\x00")
 
             os.lseek(fd, 0, os.SEEK_SET)
-            msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
+            if msvcrt is not None:
+                msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
         except OSError as exc:
             os.close(fd)
             raise OSError(
@@ -185,7 +190,8 @@ class _ProcessLock:
         if self._fd is not None:
             try:
                 os.lseek(self._fd, 0, os.SEEK_SET)
-                msvcrt.locking(self._fd, msvcrt.LK_UNLCK, 1)
+                if msvcrt is not None and getattr(self, "_fd", None) is not None:
+                    msvcrt.locking(self._fd, msvcrt.LK_UNLCK, 1)
             finally:
                 os.close(self._fd)
                 self._fd = None

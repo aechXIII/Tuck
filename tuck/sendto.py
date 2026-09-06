@@ -33,7 +33,32 @@ def _sendto_dir() -> Path:
     return Path.home() / "SendTo"
 
 
-def _get_target_path() -> str | None:
+def _validate_executable_path(executable_path: str | Path | None) -> str:
+    if executable_path is None:
+        return ""
+    if not isinstance(executable_path, (str, Path)):
+        raise TypeError("executable_path must be a string path")
+    text = str(executable_path).strip()
+    if not text:
+        raise ValueError("executable_path must be a non-empty string")
+    if "\x00" in text:
+        raise ValueError("executable_path contains invalid characters")
+    candidate = Path(text)
+    if not candidate.is_absolute():
+        raise ValueError(f"executable_path must be absolute: {text}")
+    if not candidate.parent.exists():
+        raise ValueError(f"executable_path parent does not exist: {text}")
+    name = candidate.name.lower()
+    if "tuck" not in name and "python" not in name:
+        raise ValueError(f"executable_path does not look like a Tuck executable: {text}")
+    return str(candidate)
+
+
+def _get_target_path(executable_path: str | Path | None = None) -> str | None:
+    if executable_path is not None:
+        validated = _validate_executable_path(executable_path)
+        if validated:
+            return validated
     if getattr(sys, "frozen", False):
         executable = Path(sys.executable)
         if executable.name.casefold() == "tuckcli.exe":
@@ -144,8 +169,10 @@ def _ensure_generic_destinations_available() -> None:
             )
 
 
-def install_sendto() -> Path:
-    target = _get_target_path()
+def install_sendto(executable_path: str | Path | None = None) -> Path:
+    target = (
+        _get_target_path(executable_path) if executable_path is not None else _get_target_path()
+    )
     if not target:
         raise RuntimeError("Cannot determine Tuck executable path")
 
@@ -197,8 +224,11 @@ def install_profile_shortcut(
     profile_id: str,
     profile_name: str,
     action: str = ACTION_START,
+    executable_path: str | Path | None = None,
 ) -> Path:
-    target = _get_target_path()
+    target = (
+        _get_target_path(executable_path) if executable_path is not None else _get_target_path()
+    )
     if not target:
         raise RuntimeError("Cannot determine Tuck executable path")
 
@@ -271,7 +301,7 @@ def remove_all_profile_shortcuts() -> int:
     return count
 
 
-def repair_sendto() -> bool:
+def repair_sendto(executable_path: str | Path | None = None) -> bool:
     if not _can_create_shortcuts():
         logger.debug("pywin32 COM not available; cannot repair .lnk shortcuts")
         return False
@@ -286,7 +316,12 @@ def repair_sendto() -> bool:
     ):
         return False
     _ensure_generic_destinations_available()
-    target = _get_target_path()
+    try:
+        target = (
+            _get_target_path(executable_path) if executable_path is not None else _get_target_path()
+        )
+    except (ValueError, TypeError):
+        return False
     if not target:
         return False
 
@@ -333,12 +368,20 @@ def repair_profile_shortcut(
     profile_id: str,
     profile_name: str,
     action: str = ACTION_START,
+    executable_path: str | Path | None = None,
 ) -> bool:
     shortcut_path = _get_profile_shortcut_path(profile_id)
     batch_path = _get_profile_batch_path(profile_id)
 
     if batch_path.exists() and _is_tuck_shortcut(batch_path):
-        target = _get_target_path()
+        try:
+            target = (
+                _get_target_path(executable_path)
+                if executable_path is not None
+                else _get_target_path()
+            )
+        except (ValueError, TypeError):
+            return False
         if not target:
             return False
         args = _get_args(for_profile=profile_id, action=action)
@@ -353,7 +396,12 @@ def repair_profile_shortcut(
         return False
     if not _is_tuck_shortcut(shortcut_path):
         return False
-    target = _get_target_path()
+    try:
+        target = (
+            _get_target_path(executable_path) if executable_path is not None else _get_target_path()
+        )
+    except (ValueError, TypeError):
+        return False
     if not target:
         return False
 

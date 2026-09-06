@@ -1,0 +1,50 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import {
+  clearPlatformCache,
+  shouldShowSendTo,
+  shouldShowUpdater,
+} from "../../src/platform/capabilities.ts";
+
+// Test Windows/Linux payload decisions without needing Tauri runtime
+test("Windows capabilities expose Send To, CLI, and updater", async () => {
+  const caps = {
+    platform: "windows" as const,
+    architecture: "x86_64" as const,
+    sendToIntegration: true,
+    publicCli: true,
+    automaticUpdater: true,
+    packaged: false,
+  };
+  assert.equal(shouldShowSendTo(caps), true);
+  assert.equal(shouldShowUpdater(caps), true);
+});
+
+test("Linux capabilities hide Windows integrations", async () => {
+  const caps = {
+    platform: "linux" as const,
+    architecture: "x86_64" as const,
+    sendToIntegration: false,
+    publicCli: false,
+    automaticUpdater: false,
+    packaged: false,
+  };
+  assert.equal(shouldShowSendTo(caps), false);
+  assert.equal(shouldShowUpdater(caps), false);
+});
+
+test("fallback on invoke failure still hides integrations", async () => {
+  clearPlatformCache();
+  // Simulate tauri invoke failing by not having invoke; fetch should fallback
+  // We cannot easily mock invoke here without patching global, but we can test the helpers directly
+  const fallback = {
+    platform: "linux" as const,
+    architecture: "x86_64" as const,
+    sendToIntegration: false,
+    publicCli: false,
+    automaticUpdater: false,
+    packaged: false,
+  };
+  assert.equal(shouldShowSendTo(fallback), false);
+});

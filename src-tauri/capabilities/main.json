@@ -1,7 +1,15 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main",
-  "description": "Allows the main Tuck window to use only the typed backend request command.",
-  "windows": ["main"],
-  "permissions": ["allow-backend-request"]
+  "description": "Allows the main window to use typed backend and native desktop commands with least privilege.",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:window:allow-close",
+    "dialog:default",
+    "clipboard-manager:allow-write-text",
+    "allow-backend-request",
+    "allow-native-commands"
+  ]
 }

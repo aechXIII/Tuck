@@ -59,6 +59,10 @@ scripts/Output/
 *.tar.gz
 *.whl
 
+# Node / frontend build outputs
+node_modules/
+frontend/dist/
+
 # Tauri build outputs
 src-tauri/target/
 src-tauri/gen/

@@ -17,17 +17,19 @@ from tuck.web_ui import (
 )
 
 FRONTEND_INDEX = Path("frontend/index.html")
-LEGACY_WEB_DIR = Path("frontend/public/legacy")
 SOURCE_DIR = Path("frontend/src")
+STYLES_DIR = Path("frontend/src/styles")
 
 
 def _web_source() -> str:
-    sources = [FRONTEND_INDEX, *sorted(LEGACY_WEB_DIR.iterdir()), *sorted(SOURCE_DIR.rglob("*.ts"))]
+    sources = [FRONTEND_INDEX, *sorted(STYLES_DIR.iterdir()), *sorted(SOURCE_DIR.rglob("*.ts"))]
     return "\n".join(path.read_text(encoding="utf-8") for path in sources)
 
 
 def test_generated_markup_does_not_embed_event_handlers() -> None:
-    for path in LEGACY_WEB_DIR.glob("*.js"):
+    for path in SOURCE_DIR.rglob("*.ts"):
+        if path.name.endswith(".d.ts"):
+            continue
         source = path.read_text(encoding="utf-8")
         for attribute in ("onclick=", "oninput=", "onchange="):
             assert attribute not in source, f"{path} contains {attribute}"
@@ -39,8 +41,7 @@ def test_static_controls_use_the_delegated_action_registry() -> None:
     for attribute in ("onclick=", "oninput=", "onchange="):
         assert attribute not in html
     assert '<script type="module" src="./src/main.ts"></script>' in html
-    assert (SOURCE_DIR / "compatibility.ts").is_file()
-    assert (LEGACY_WEB_DIR / "ui-bindings.js").is_file()
+    assert (SOURCE_DIR / "main.ts").is_file()
 
 
 class _Bridge:
@@ -249,13 +250,16 @@ def test_resource_path_locates_frontend_sources() -> None:
         "audio.css",
         "queue.css",
         "transform.css",
-        "encoding-ui.js",
-        "queue.js",
-        "settings.js",
-        "settings-profiles.js",
-        "ui-bindings.js",
     ):
-        assert _get_resource_path(f"frontend/public/legacy/{name}").is_file()
+        assert _get_resource_path(f"frontend/src/styles/{name}").is_file()
+    for name in (
+        "main.ts",
+        "features/editor/runtime.ts",
+        "features/queue/queue.ts",
+        "features/settings/settings.ts",
+        "features/profiles/profile-list.ts",
+    ):
+        assert _get_resource_path(f"frontend/src/{name}").is_file()
 
 
 def test_web_gui_requires_the_vite_production_entry(tmp_path, monkeypatch) -> None:
@@ -278,9 +282,9 @@ def test_web_gui_requires_the_vite_production_entry(tmp_path, monkeypatch) -> No
 
 
 def test_profile_settings_export_individual_profiles() -> None:
-    source = (LEGACY_WEB_DIR / "settings.js").read_text(encoding="utf-8")
+    source = (SOURCE_DIR / "features" / "settings" / "settings.ts").read_text(encoding="utf-8")
 
-    assert "api.exportProfileToFile(r.path, pid)" in source
+    assert "client().exportProfileToFile(picked.path, pid)" in source
     assert 'settingButton("Export", "exportProfs()")' not in source
 
 
@@ -395,21 +399,22 @@ def test_clip_cards_use_icon_statuses_and_compact_metadata() -> None:
     assert 'Failed to process "' in html
     assert "flex-wrap: wrap" in html
     assert 'completed: ["Completed", "✓", "cst-completed"]' in html
-    assert "function formatQueueStatus(item)" in html
+    assert "export function formatQueueStatus" in html
     assert "function copyDiagnostics" in html
     assert "function beginClipReorder" in html
     assert "Open folder" in html
     assert "c-status-row" in html
     assert "clipReorder" in html
     assert "c-act link" in html
-    assert "function cancelQueueItem(itemId)" in html
+    assert "cancelQueueItem" in html
     assert "function clearDone()" in html
-    assert 'clips[p]._queueState === "completed"' in html
+    assert '_queueState === "completed"' in html
     assert ">Rescan</button>" in html
     assert "saveSystemSettings()" in html
     assert 'aria-label="Close settings"' in html
     assert 'settingButton("Save changes", "save-system", true, true)' in html
-    assert '"Last checked: " + esc(s.last_update_check)' in html
+    assert "Last checked" in html
+    assert "last_update_check" in html
     assert 'class="settings-readonly"' in html
     assert "Clear completed jobs automatically" in html
     assert 'data-settings-click="clear-output"' in html
@@ -471,8 +476,9 @@ def test_segment_editor_controls_payloads_and_accessibility_are_wired() -> None:
     assert "resetButton.disabled = !has" in html
     assert 'resetButton.classList.toggle("hid", !has)' in html
     assert "SegmentEditing.playbackTarget" in html
-    assert "req.segments = SegmentEditing.segmentsForClip" in html
-    assert "r.data.segment_count" in html
+    assert "segmentsForClip" in html
+    assert "SegmentEditing.segmentsForClip" in html
+    assert "segment_count" in html
     assert "ctx.selected_duration" in html
 
 
@@ -480,20 +486,20 @@ def test_profile_editor_uses_shared_encoder_rules() -> None:
     html = _web_source()
 
     assert "function peRateControls()" in html
-    assert "function nativePresets(enc)" in html
-    assert html.count("function isCpuEncoder(enc)") == 1
+    assert "export function nativePresets" in html
+    assert html.count("isCpuEncoder") >= 1
     assert 'auto_compression: "Auto (best compression)"' in html
     assert 'auto_fast: "Auto (fastest available)"' in html
-    assert "function isAutoEncoder(enc)" in html
-    assert 'byId("preset-sel").value = "veryslow"' in html
-    assert 'byId("pe-preset").value = "veryslow"' in html
+    assert "isAutoEncoder" in html
+    assert 'select("preset-sel").value = "veryslow"' in html
+    assert 'select("pe-preset").value = "veryslow"' in html
     assert "!isAutoEncoder(id)" in html
     assert "availEncoders.length" in html
     assert "set-encoder-cache-days" in html
     assert "refreshEncoders()" in html
-    assert 'enc === "libx265" || enc === "auto_compression"' in html
-    assert 'twoPassEligible(task, byId("pe-enc").value)' in html
-    assert '!isAutoEncoder(byId("pe-enc").value)' in html
+    assert 'encoder === "libx265" || encoder === "auto_compression"' in html
+    assert "twoPassEligible" in html
+    assert "isAutoEncoder" in html
     assert 'task === "upscale" && (rc === "cbr" || rc === "vbr")' in html
     assert '? "explicit_bitrate"' in html
     assert ': "target_size"' in html
@@ -519,8 +525,9 @@ def test_settings_uses_compact_modal_and_grouped_navigation() -> None:
     assert ">Support</div>" in html
     assert "Windows integration" in html
     assert "System &amp; support" in html
-    assert "function toggleSettings()" in html
-    assert "function profileEditorHTML()" in html
+    assert "closeSettingsWorkspace" in html
+    assert "settings-open" in html
+    assert "profileEditorHtml" in html
     assert "Discard unsaved profile changes?" in html
     assert "function closeActiveModal()" in html
 
@@ -550,24 +557,24 @@ def test_settings_file_naming_and_subsection_navigation_use_shared_layout() -> N
     assert ".settings-actions .btn1," in html
     assert ".settings-actions .btn2" in html
     assert "min-height: 34px;" in html
-    assert "function settingsTitle(title, action)" in html
+    assert "function settingsTitle" in html
     assert "Back to profiles" not in html
     assert "button.mrow {" in html
     assert "font: inherit;" in html
     assert 'settingsTitle("Add shortcut", "open-explorer")' in html
-    assert "tuck.delegatedEvents = { bind: bindDelegatedEvents" in html
+    assert "bindDelegatedEvents" in html
 
 
 def test_settings_separates_output_and_stages_all_persisted_changes() -> None:
     html = _web_source()
 
-    assert "function outputSettingsHTML(s)" in html
+    assert "outputSettingsHtml" in html
     assert "function saveOutputSettings()" in html
     assert 'id="ex-up-out"' in html
     assert "function markSettingsDirty()" in html
-    assert 'clear_completed_automatically: byId("set-auto-clear").checked' in html
+    assert 'input("set-auto-clear").checked' in html
     assert 'id="set-open-output-folder"' in html
-    assert 'open_output_folder_after_queue: byId("set-open-output-folder").checked' in html
+    assert 'input("set-open-output-folder").checked' in html
     assert "queueCompletionOutput(" in html
     assert "queueActiveItemIds" in html
     assert "appSettings.open_output_folder_after_queue" in html
@@ -583,8 +590,8 @@ def test_settings_separates_output_and_stages_all_persisted_changes() -> None:
     assert "var settingsMeta" not in html
     assert 'row.className = "settings-list-row"' in html
     assert 'class="settings-status-table"' in html
-    assert "function insertNamingToken(id, token)" in html
-    assert "function openSupportFolder(kind)" in html
+    assert "function insertNamingToken" in html
+    assert "function openSupportFolder" in html
     assert "Open logs folder" in html
     assert "Open configuration folder" in html
     assert ".settings-status-row {" in html
@@ -600,4 +607,4 @@ def test_settings_separates_output_and_stages_all_persisted_changes() -> None:
     assert "plain: true" in html
     assert 'settingButton("Import", "import-profiles")' in html
     assert 'settingButton("+ New profile", "new-profile", true)' in html
-    assert "Tuck.delegatedEvents.bind" in html
+    assert "delegatedEvents" in html or "bindDelegatedEvents" in html

@@ -28,9 +28,14 @@ _SENDTO_FLAG_FIELDS: dict[str, tuple[str, Callable[[str], object]]] = {
 }
 
 LRESULT = ctypes.c_ssize_t
-WNDPROC = ctypes.WINFUNCTYPE(
-    LRESULT, wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM
-)
+if os.name == "nt" and hasattr(ctypes, "WINFUNCTYPE"):
+    WNDPROC = ctypes.WINFUNCTYPE(
+        LRESULT, wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM
+    )
+else:
+    WNDPROC = ctypes.CFUNCTYPE(
+        LRESULT, wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM
+    )
 
 _user32 = ctypes.windll.user32 if os.name == "nt" else None
 if _user32 is not None:

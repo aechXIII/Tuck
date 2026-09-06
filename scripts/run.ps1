@@ -16,21 +16,14 @@ if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
   exit 1
 }
 
-Write-Host "Building frontend..." -ForegroundColor Cyan
-& npm run build
-if ($LASTEXITCODE -ne 0) {
-  Write-Error "Frontend build failed. Run npm ci, then npm run build, and retry."
+if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
+  Write-Error "cargo was not found. Install Rust stable and retry."
   exit 1
 }
 
-# Quick dependency check
-$check = & .\.venv\Scripts\python.exe -c "import webview, packaging; import win32com.client; print('OK')" 2>&1
-if ($LASTEXITCODE -ne 0) {
-  Write-Warning "Some dependencies missing or broken. Re-run scripts\setup.ps1."
-}
-
+Write-Host "Starting Tauri development shell..." -ForegroundColor Cyan
 if ($Background) {
-  Start-Process -FilePath ".\.venv\Scripts\pythonw.exe" -ArgumentList "-m tuck" -WorkingDirectory (Get-Location)
+  Start-Process -FilePath "npm" -ArgumentList "run tauri dev" -WorkingDirectory (Get-Location)
 } else {
-  & .\.venv\Scripts\python.exe -m tuck
+  & npm run tauri dev
 }
