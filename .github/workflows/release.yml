@@ -1,15 +1,235 @@
 name: Release
 
+# A tag push (v*) assembles a public release; the publish job is blocked unless
+# the Tauri updater signing key is configured. A manual run assembles a
+# release candidate: same build, verification, manifest, and checksums, no
+# secrets, and nothing is published.
 on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: "Release channel to assemble"
+        type: choice
+        options:
+          - release-candidate
+        default: release-candidate
   push:
     tags:
       - "v*"
 
+permissions:
+  contents: read
+
+env:
+  RELEASE_CHANNEL: ${{ github.event_name == 'workflow_dispatch' && inputs.channel || 'release' }}
+
 jobs:
-  build:
+  build-windows:
+    name: Build Windows (native)
     runs-on: windows-latest
-    permissions:
-      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Install FFmpeg and 7-Zip
+        run: |
+          choco install ffmpeg --yes --no-progress
+          choco install 7zip --yes --no-progress
+
+      - name: Lint and type-check
+        run: |
+          ruff format --check tuck/ tests/ scripts/
+          ruff check tuck/ tests/ scripts/
+          pyright tuck/
+
+      - name: Python tests
+        run: pytest -m "not slow"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Frontend checks
+        run: |
+          npm run typecheck
+          npm run test
+
+      - name: Set up the Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo build data
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Build the Python sidecar and bundled media tools
+        run: python scripts/build_sidecar.py --python python
+
+      - name: Build the Tauri Windows bundle
+        run: npm run tauri build
+
+      - name: Name the installer artifact
+        id: artifact
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem src-tauri/target/release/bundle/nsis -Filter *-setup.exe |
+            Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if (-not $installer) { throw "no NSIS installer was produced" }
+          $name = python scripts/build_metadata.py artifact-name --platform windows
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item $installer.FullName "dist/$name"
+          "path=dist/$name" | Out-File -Append -Encoding ascii $env:GITHUB_OUTPUT
+
+      - name: Inspect the built installer
+        run: python scripts/verify_package.py --platform windows --artifact "${{ steps.artifact.outputs.path }}"
+
+      - name: Startup smoke test
+        run: python scripts/smoke_packaged.py --staging
+
+      - name: Checksum the installer
+        run: python scripts/build_metadata.py checksum "${{ steps.artifact.outputs.path }}"
+
+      - name: Record the manifest entry
+        run: >
+          python scripts/build_metadata.py entry
+          --platform windows --kind nsis-installer
+          --path "${{ steps.artifact.outputs.path }}"
+          --verified-package --verified-smoke
+          --out dist/entry-windows.json
+
+      - name: Upload the Windows build
+        uses: actions/upload-artifact@v4
+        with:
+          name: tuck-windows
+          path: |
+            dist/Tuck-Setup-*-x64.exe
+            dist/Tuck-Setup-*-x64.exe.sha256
+            dist/entry-windows.json
+          retention-days: 7
+          if-no-files-found: error
+
+  build-linux:
+    name: Build Linux (frozen Ubuntu 22.04 baseline)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Install the build toolchain, WebKitGTK, and GStreamer
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev patchelf \
+            build-essential nasm cmake pkg-config \
+            squashfs-tools xvfb x11-utils \
+            gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
+            gstreamer1.0-plugins-bad gstreamer1.0-libav libgstreamer1.0-dev \
+            ffmpeg
+
+      - name: Lint and type-check
+        run: |
+          ruff format --check tuck/ tests/ scripts/
+          ruff check tuck/ tests/ scripts/
+          pyright tuck/
+
+      - name: Python tests
+        run: pytest -m "not slow"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Frontend checks
+        run: |
+          npm run typecheck
+          npm run test
+
+      - name: Set up the Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo build data
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Build the AppImage
+        run: ./scripts/build-linux.sh --clean
+
+      - name: Name the AppImage artifact
+        id: artifact
+        run: |
+          src=$(find src-tauri/target/release/bundle/appimage -maxdepth 1 -type f -name '*.AppImage' | sort | tail -n 1)
+          if [ -z "$src" ]; then
+            echo "no AppImage was produced" >&2
+            exit 1
+          fi
+          name=$(python scripts/build_metadata.py artifact-name --platform linux)
+          mkdir -p dist
+          cp "$src" "dist/$name"
+          echo "path=dist/$name" >> "$GITHUB_OUTPUT"
+
+      - name: Re-verify the renamed AppImage
+        run: python scripts/verify_package.py --platform linux --artifact "${{ steps.artifact.outputs.path }}"
+
+      - name: Startup smoke test
+        run: python scripts/smoke_packaged.py --platform linux --artifact "${{ steps.artifact.outputs.path }}"
+
+      - name: Checksum the AppImage
+        run: python scripts/build_metadata.py checksum "${{ steps.artifact.outputs.path }}"
+
+      - name: Record the manifest entry
+        run: >
+          python scripts/build_metadata.py entry
+          --platform linux --kind appimage
+          --path "${{ steps.artifact.outputs.path }}"
+          --verified-package --verified-smoke
+          --out dist/entry-linux.json
+
+      - name: Upload the Linux build
+        uses: actions/upload-artifact@v4
+        with:
+          name: tuck-linux
+          path: |
+            dist/Tuck-*-x86_64.AppImage
+            dist/Tuck-*-x86_64.AppImage.sha256
+            dist/entry-linux.json
+          retention-days: 7
+          if-no-files-found: error
+
+  metadata:
+    name: Assemble release metadata
+    needs: [build-windows, build-linux]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -18,144 +238,130 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
-
-      - name: Install FFmpeg
-        run: |
-          choco install ffmpeg --yes --no-progress
-          ffmpeg -version
-          ffprobe -version
-
-      - name: Ruff format check
-        run: ruff format --check tuck/ tests/
-
-      - name: Ruff lint
-        run: ruff check tuck/ tests/
-
-      - name: Pyright
-        run: pyright tuck/
-
-      - name: Validate version consistency
-        run: |
-          $tag = "${{ github.ref_name }}".TrimStart('v')
-          Write-Host "Tag version: $tag"
-
-          # Read pyproject.toml version
-          $pyproject = Get-Content pyproject.toml -Raw
-          if ($pyproject -match 'version\s*=\s*"([^"]+)"') {
-            $pyprojectVer = $matches[1]
-            Write-Host "pyproject.toml version: $pyprojectVer"
-            if ($pyprojectVer -ne $tag) {
-              Write-Error "pyproject.toml version ($pyprojectVer) does not match tag ($tag)"
-              exit 1
-            }
-          } else {
-            Write-Error "Could not parse version from pyproject.toml"
-            exit 1
-          }
-
-          # Read __init__.py version
-          $init = Get-Content tuck/__init__.py -Raw
-          if ($init -match '__version__\s*=\s*"([^"]+)"') {
-            $initVer = $matches[1]
-            Write-Host "__init__.py version: $initVer"
-            if ($initVer -ne $tag) {
-              Write-Error "__init__.py version ($initVer) does not match tag ($tag)"
-              exit 1
-            }
-          } else {
-            Write-Error "Could not parse version from __init__.py"
-            exit 1
-          }
-
-          # Read installer.iss version
-          $iss = Get-Content scripts/installer.iss -Raw
-          if ($iss -match 'MyAppVersion\s+"([^"]+)"') {
-            $issVer = $matches[1]
-            Write-Host "installer.iss version: $issVer"
-            if ($issVer -ne $tag) {
-              Write-Error "installer.iss version ($issVer) does not match tag ($tag)"
-              exit 1
-            }
-          } else {
-            Write-Error "Could not parse version from installer.iss"
-            exit 1
-          }
-
-          Write-Host "All version strings agree: $tag"
-
-      - name: Run tests
-        run: pytest
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - name: Download the Windows build
+        uses: actions/download-artifact@v4
         with:
-          node-version: "20"
+          name: tuck-windows
+          path: dist
 
-      - name: Frontend tests
-        run: node --test
-
-      - name: Build with PyInstaller
-        run: pyinstaller scripts/tuck.spec
-
-      - name: Smoke test packaged executable (CLI)
-        run: |
-          $tag = "${{ github.ref_name }}".TrimStart('v')
-          $version = & "dist\Tuck\TuckCli.exe" --version
-          Write-Host "Packaged version: $version"
-          if ($LASTEXITCODE -ne 0) {
-            Write-Error "Packaged executable --version failed with exit code $LASTEXITCODE"
-            exit 1
-          }
-          $expected = "Tuck $tag"
-          if ($version.Trim() -ne $expected) {
-            Write-Error "Unexpected version output: $version (expected $expected)"
-            exit 1
-          }
-
-      - name: Verify GUI executable exists
-        run: |
-          if (-not (Test-Path "dist\Tuck\Tuck.exe")) {
-            Write-Error "GUI executable (windowed) not found"
-            exit 1
-          }
-          Write-Host "GUI executable present: dist\Tuck\Tuck.exe"
-
-      - name: Create installer
-        uses: Minionguyjpro/Inno-Setup-Action@v1.2.8
+      - name: Download the Linux build
+        uses: actions/download-artifact@v4
         with:
-          path: scripts/installer.iss
+          name: tuck-linux
+          path: dist
 
-      - name: Compute installer SHA-256
-        run: |
-          $version = "${{ github.ref_name }}".TrimStart('v')
-          $installer = Get-Item "scripts/Output/Tuck-Setup-$version-x64.exe"
-          $hash = (Get-FileHash -Path $installer.FullName -Algorithm SHA256).Hash.ToLower()
-          "$hash  $($installer.Name)" | Out-File -Encoding ASCII -FilePath "$($installer.FullName).sha256"
-          Write-Host "Installer SHA-256: $hash"
+      - name: Assemble the release manifest
+        run: >
+          python scripts/build_metadata.py manifest
+          --channel "$RELEASE_CHANNEL"
+          --entry dist/entry-windows.json
+          --entry dist/entry-linux.json
+          --git-commit "$GITHUB_SHA"
+          --git-ref "$GITHUB_REF"
+          --out dist/tuck-release-manifest.json
 
-      - name: Extract release notes
-        shell: pwsh
+      - name: Copy third-party notices
         run: |
-          $version = "${{ github.ref_name }}".TrimStart('v')
-          $content = Get-Content CHANGELOG.md -Raw
-          $pattern = "(?s)## \[$([regex]::Escape($version))\].*?(?=\r?\n## \[|\z)"
-          $match = [regex]::Match($content, $pattern)
-          if (-not $match.Success) {
-            Write-Error "No changelog entry found for $version"
+          cp packaging/THIRD_PARTY_NOTICES.md dist/THIRD_PARTY_NOTICES.md
+          cp packaging/THIRD_PARTY_NOTICES_LINUX.md dist/THIRD_PARTY_NOTICES_LINUX.md
+
+      - name: Write the combined checksum list
+        working-directory: dist
+        run: |
+          sha256sum Tuck-Setup-*-x64.exe Tuck-*-x86_64.AppImage > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Verify the assembled release
+        run: >
+          python scripts/verify_release.py
+          --manifest dist/tuck-release-manifest.json
+          --artifacts-dir dist
+
+      - name: Upload the release metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: tuck-release-metadata
+          path: |
+            dist/tuck-release-manifest.json
+            dist/SHA256SUMS
+            dist/THIRD_PARTY_NOTICES.md
+            dist/THIRD_PARTY_NOTICES_LINUX.md
+          retention-days: 7
+          if-no-files-found: error
+
+  publish:
+    name: Publish the signed release
+    needs: [metadata]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    environment: release
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Download every built artifact
+        uses: actions/download-artifact@v4
+        with:
+          pattern: tuck-*
+          path: dist
+          merge-multiple: true
+
+      - name: Require the Tauri updater signing key
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          if [ -z "${TAURI_SIGNING_PRIVATE_KEY}" ]; then
+            echo "::error::Public release blocked: the Tauri updater signing key is not configured."
+            echo "Generate a keypair with 'npm run tauri signer generate', then add the"
+            echo "TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD secrets to the"
+            echo "protected 'release' environment and re-run this tag. Release candidates build"
+            echo "unsigned artifacts without it; a production release will not ship unsigned."
             exit 1
-          }
-          $match.Value.Trim() | Set-Content release-notes.md -Encoding utf8
+          fi
+          python - <<'PY'
+          import json
+          import pathlib
 
-      - name: Create GitHub Release
+          manifest_path = pathlib.Path("dist/tuck-release-manifest.json")
+          manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+          manifest["signing"]["tauri_updater"] = "enabled"
+          manifest_path.write_text(
+              json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+          )
+          PY
+
+      - name: Verify the signed release
+        run: >
+          python scripts/verify_release.py
+          --manifest dist/tuck-release-manifest.json
+          --artifacts-dir dist
+          --require-signed
+
+      - name: Extract the release notes
+        run: >
+          python scripts/build_metadata.py release-notes
+          --changelog CHANGELOG.md
+          --out dist/release-notes.md
+
+      - name: Create the GitHub release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            scripts/Output/Tuck-Setup-*.exe
-            scripts/Output/Tuck-Setup-*.exe.sha256
-          body_path: release-notes.md
+            dist/Tuck-Setup-*-x64.exe
+            dist/Tuck-Setup-*-x64.exe.sha256
+            dist/Tuck-*-x86_64.AppImage
+            dist/Tuck-*-x86_64.AppImage.sha256
+            dist/SHA256SUMS
+            dist/tuck-release-manifest.json
+            dist/THIRD_PARTY_NOTICES.md
+            dist/THIRD_PARTY_NOTICES_LINUX.md
+          body_path: dist/release-notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

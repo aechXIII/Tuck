@@ -6,11 +6,17 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
-  test:
-    runs-on: windows-latest
+  python:
+    name: Python ${{ matrix.python-version }} (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
+        os: [windows-latest, ubuntu-22.04]
         python-version: ["3.10", "3.11", "3.12"]
 
     steps:
@@ -20,42 +26,146 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+          cache: pip
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
-      - name: Install FFmpeg
+      - name: Install FFmpeg (Windows)
+        if: runner.os == 'Windows'
         run: |
           choco install ffmpeg --yes --no-progress
           ffmpeg -version
           ffprobe -version
 
+      - name: Install FFmpeg (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          ffmpeg -version
+          ffprobe -version
+
       - name: Ruff format check
-        run: ruff format --check tuck/ tests/
+        run: ruff format --check tuck/ tests/ scripts/
 
       - name: Ruff lint
-        run: ruff check tuck/ tests/
+        run: ruff check tuck/ tests/ scripts/
 
       - name: Pyright
         run: pyright tuck/
 
       - name: Pytest
-        run: pytest --cov=tuck --cov-report=xml --cov-report=term
-
-      - name: Set up Node.js
-        if: matrix.python-version == '3.12'
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-
-      - name: Frontend tests
-        if: matrix.python-version == '3.12'
-        run: node --test
+        run: pytest -m "not slow" --cov=tuck --cov-report=xml --cov-report=term
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4
-        if: matrix.python-version == '3.12'
+        if: matrix.os == 'windows-latest' && matrix.python-version == '3.12'
         with:
           file: ./coverage.xml
+
+  frontend:
+    name: Frontend (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-22.04]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm run test
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Rendered integration tests
+        run: npm run test:e2e
+
+  rust:
+    name: Rust (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-22.04]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build the frontend for the Tauri context
+        run: npm run build
+
+      - name: Set up Python for the backend integration tests
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Create the sidecar virtualenv (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          python -m venv .venv
+          .venv\Scripts\python -m pip install --upgrade pip
+          .venv\Scripts\pip install -e .
+
+      - name: Create the sidecar virtualenv (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/pip install -e .
+
+      - name: Install WebKitGTK and AppImage build dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            librsvg2-dev \
+            libayatana-appindicator3-dev \
+            patchelf
+
+      - name: Set up the Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Cargo build data
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: cargo fmt
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
+
+      - name: cargo clippy
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features --locked -- -D warnings
+
+      - name: cargo test
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked
