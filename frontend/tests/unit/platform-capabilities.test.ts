@@ -25,18 +25,18 @@ test("Windows capabilities expose Send To, CLI, and updater", async () => {
   assert.equal(shouldShowUpdater(caps), true);
 });
 
-test("Linux capabilities hide Windows integrations", async () => {
+test("Linux capabilities hide Windows integrations but keep the updater", async () => {
   const caps = {
     platform: "linux" as const,
     architecture: "x86_64" as const,
     sendToIntegration: false,
     publicCli: false,
-    automaticUpdater: false,
+    automaticUpdater: true,
     hardwareAcceleration: false,
     packaged: false,
   };
   assert.equal(shouldShowSendTo(caps), false);
-  assert.equal(shouldShowUpdater(caps), false);
+  assert.equal(shouldShowUpdater(caps), true);
   assert.equal(supportsHardwareEncoders(caps), false);
   assert.deepEqual(encodersForPlatform(["libx264", "h264_nvenc", "hevc_amf"], caps), ["libx264"]);
   assert.equal(encoderForPlatform("h264_nvenc", caps), "libx264");

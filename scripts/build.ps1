@@ -39,7 +39,14 @@ if (-not (Test-Path -LiteralPath ".\packaging\staging\app\tuck-sidecar.exe")) {
 }
 
 Write-Host "==> Building the Tauri Windows bundle" -ForegroundColor Cyan
-& npm run tauri build
+# emit the signed updater artifacts only when a signing key is present. a local
+# build without one still succeeds, it just skips the .sig / updater package
+$tauriArgs = @()
+if ($env:TAURI_SIGNING_PRIVATE_KEY) {
+  Write-Host "    signing key present -> emitting updater artifacts" -ForegroundColor Cyan
+  $tauriArgs = @("--", "--config", '{"bundle":{"createUpdaterArtifacts":true}}')
+}
+& npm run tauri build @tauriArgs
 if ($LASTEXITCODE -ne 0) { Write-Error "npm run tauri build failed."; exit 1 }
 
 $installer = Get-ChildItem -LiteralPath ".\src-tauri\target\release\bundle\nsis" -Filter "*-setup.exe" `

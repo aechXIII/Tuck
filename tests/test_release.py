@@ -232,9 +232,58 @@ def test_verify_release_rejects_an_unverified_artifact(tmp_path: Path) -> None:
 # --- signing / publish gating -------------------------------------------------------
 
 
+def _signed_release(tmp_path: Path) -> tuple[Path, Path]:
+    """A `release` channel manifest with a `.sig` per artifact and a latest.json."""
+
+    version = bm.project_version(_REPO)
+    dist = tmp_path / "dist"
+    win = _fake_artifact(dist, bm.artifact_name("windows", version), b"nsis")
+    lin = _fake_artifact(dist, bm.artifact_name("linux", version), b"appimage")
+    (dist / f"{win.name}.sig").write_text("WIN-SIGNATURE-BLOB", encoding="utf-8")
+    (dist / f"{lin.name}.sig").write_text("LINUX-SIGNATURE-BLOB", encoding="utf-8")
+
+    entries = [
+        bm.artifact_entry(
+            win,
+            "windows",
+            kind="nsis-installer",
+            verified_package=True,
+            verified_smoke=True,
+            signed=True,
+        ),
+        bm.artifact_entry(
+            lin,
+            "linux",
+            kind="appimage",
+            verified_package=True,
+            verified_smoke=True,
+            signed=True,
+        ),
+    ]
+    manifest = bm.build_manifest(channel="release", artifacts=entries, root=_REPO)
+    (dist / bm.MANIFEST_FILENAME).write_text(
+        json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8"
+    )
+
+    feed = bm.build_updater_manifest(
+        version=version,
+        notes="- Something changed",
+        signatures={"windows": "WIN-SIGNATURE-BLOB", "linux": "LINUX-SIGNATURE-BLOB"},
+    )
+    (dist / bm.UPDATER_FEED_FILENAME).write_text(json.dumps(feed), encoding="utf-8")
+    return dist / bm.MANIFEST_FILENAME, dist
+
+
 def test_release_candidate_passes_without_any_signing_secret(tmp_path: Path) -> None:
     manifest_path, dist = _candidate_manifest(tmp_path)
     vr.verify_release(manifest_path, artifacts_dir=dist, root=_REPO, require_signed=False)
+
+
+def test_release_candidate_artifacts_are_recorded_unsigned(tmp_path: Path) -> None:
+    manifest_path, _ = _candidate_manifest(tmp_path)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["signing"]["tauri_updater"] == "disabled"
+    assert all(a["signed"] is False for a in manifest["artifacts"])
 
 
 def test_public_release_is_blocked_when_the_updater_key_is_absent(tmp_path: Path) -> None:
@@ -247,26 +296,40 @@ def test_public_release_is_blocked_when_the_updater_key_is_absent(tmp_path: Path
         vr.verify_release(manifest_path, artifacts_dir=dist, root=_REPO, require_signed=True)
 
 
-def test_public_release_passes_once_the_updater_signing_is_enabled(tmp_path: Path) -> None:
-    version = bm.project_version(_REPO)
-    dist = tmp_path / "dist"
-    win = _fake_artifact(dist, bm.artifact_name("windows", version), b"nsis")
-    lin = _fake_artifact(dist, bm.artifact_name("linux", version), b"appimage")
-    entries = [
-        bm.artifact_entry(
-            win, "windows", kind="nsis-installer", verified_package=True, verified_smoke=True
-        ),
-        bm.artifact_entry(
-            lin, "linux", kind="appimage", verified_package=True, verified_smoke=True
-        ),
-    ]
-    manifest = bm.build_manifest(
-        channel="release", artifacts=entries, root=_REPO, updater_enabled=True
-    )
-    manifest_path = dist / bm.MANIFEST_FILENAME
-    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
-
+def test_signed_public_release_passes_with_sig_files_and_a_matching_latest_json(
+    tmp_path: Path,
+) -> None:
+    manifest_path, dist = _signed_release(tmp_path)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["signing"]["tauri_updater"] == "enabled"
     vr.verify_release(manifest_path, artifacts_dir=dist, root=_REPO, require_signed=True)
+
+
+def test_signed_release_needs_a_signature_beside_every_artifact(tmp_path: Path) -> None:
+    manifest_path, dist = _signed_release(tmp_path)
+    version = bm.project_version(_REPO)
+    (dist / f"{bm.artifact_name('linux', version)}.sig").unlink()
+
+    with pytest.raises(vr.VerifyError, match="updater signature"):
+        vr.verify_release(manifest_path, artifacts_dir=dist, root=_REPO, require_signed=True)
+
+
+def test_signed_release_needs_a_latest_json(tmp_path: Path) -> None:
+    manifest_path, dist = _signed_release(tmp_path)
+    (dist / bm.UPDATER_FEED_FILENAME).unlink()
+
+    with pytest.raises(vr.VerifyError, match=r"latest\.json"):
+        vr.verify_release(manifest_path, artifacts_dir=dist, root=_REPO, require_signed=True)
+
+
+def test_signed_release_rejects_a_latest_json_with_the_wrong_signature(tmp_path: Path) -> None:
+    manifest_path, dist = _signed_release(tmp_path)
+    feed = json.loads((dist / bm.UPDATER_FEED_FILENAME).read_text(encoding="utf-8"))
+    feed["platforms"]["linux-x86_64"]["signature"] = "TAMPERED"
+    (dist / bm.UPDATER_FEED_FILENAME).write_text(json.dumps(feed), encoding="utf-8")
+
+    with pytest.raises(vr.VerifyError, match="signature does not match"):
+        vr.verify_release(manifest_path, artifacts_dir=dist, root=_REPO, require_signed=True)
 
 
 def test_signed_release_still_requires_the_release_channel(tmp_path: Path) -> None:
@@ -277,3 +340,23 @@ def test_signed_release_still_requires_the_release_channel(tmp_path: Path) -> No
 
     with pytest.raises(vr.VerifyError, match="channel"):
         vr.verify_release(manifest_path, artifacts_dir=dist, root=_REPO, require_signed=True)
+
+
+def test_updater_manifest_points_each_platform_at_its_tagged_artifact(tmp_path: Path) -> None:
+    feed = bm.build_updater_manifest(
+        version="0.5.1",
+        notes="- Linux auto-update",
+        signatures={"windows": "W", "linux": "L"},
+    )
+    assert feed["version"] == "0.5.1"
+    assert feed["notes"] == "- Linux auto-update"
+    win = feed["platforms"]["windows-x86_64"]
+    lin = feed["platforms"]["linux-x86_64"]
+    assert win["signature"] == "W" and lin["signature"] == "L"
+    assert win["url"].endswith("/v0.5.1/Tuck-Setup-0.5.1-x64.exe")
+    assert lin["url"].endswith("/v0.5.1/Tuck-0.5.1-x86_64.AppImage")
+
+
+def test_updater_manifest_needs_a_signature_for_every_platform() -> None:
+    with pytest.raises(bm.MetadataError, match="missing updater signature"):
+        bm.build_updater_manifest(version="0.5.1", notes="x", signatures={"windows": "W"})

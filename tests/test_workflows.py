@@ -158,7 +158,9 @@ def test_release_candidate_run_never_publishes_a_github_release() -> None:
         )
 
 
-def test_secrets_are_confined_to_the_tag_gated_publish_job() -> None:
+def test_signing_secrets_only_flow_on_a_version_tag() -> None:
+    # Every job that names a signing secret must guard it with the tag condition,
+    # so a release-candidate dispatch builds unsigned and never decrypts the key.
     jobs = _jobs(_read(RELEASE_YML))
     offenders = []
     for name, body in jobs.items():
@@ -168,7 +170,11 @@ def test_secrets_are_confined_to_the_tag_gated_publish_job() -> None:
             continue
         if "startsWith(github.ref, 'refs/tags/v')" not in body:
             offenders.append((name, sorted(refs)))
-    assert not offenders, f"secrets leaked into non-tag jobs: {offenders}"
+    assert not offenders, f"signing secrets used without a tag guard: {offenders}"
+
+
+def test_tests_workflow_never_references_a_secret() -> None:
+    assert "secrets." not in _read(TESTS_YML)
 
 
 def test_publish_job_fails_closed_without_the_updater_signing_key() -> None:
@@ -179,6 +185,24 @@ def test_publish_job_fails_closed_without_the_updater_signing_key() -> None:
     release = publish.index("softprops/action-gh-release")
     assert gate < release, "check for the signing key before creating the release"
     assert "--require-signed" in publish
+
+
+def test_build_jobs_sign_only_for_a_version_tag() -> None:
+    jobs = _jobs(_read(RELEASE_YML))
+    for name in ("build-windows", "build-linux"):
+        body = jobs[name]
+        assert "TAURI_SIGNING_PRIVATE_KEY" in body
+        assert (
+            "startsWith(github.ref, 'refs/tags/v') && secrets.TAURI_SIGNING_PRIVATE_KEY" in body
+        ), f"{name} must only receive the signing key on a version tag"
+
+
+def test_release_workflow_builds_and_ships_the_updater_feed() -> None:
+    text = _read(RELEASE_YML)
+    assert "build_metadata.py updater-manifest" in text
+    assert "latest.json" in text
+    assert "dist/Tuck-Setup-*-x64.exe.sig" in text
+    assert "dist/Tuck-*-x86_64.AppImage.sig" in text
 
 
 def test_release_notes_come_from_the_changelog() -> None:

@@ -34,5 +34,14 @@
     "publisher": "aechXIII",
     "homepage": "https://github.com/aechXIII/Tuck",
     "licenseFile": "../LICENSE"
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": ["https://github.com/aechXIII/Tuck/releases/latest/download/latest.json"],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IENENUQyQkYxMEVBMERGNwpSV1QzRGVvUXY5TFZETWxRS3dndHRQVjJzcVpwSUhlM05zaE05T2R6c0JIckZWR0MzQjcwUVp6Swo=",
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

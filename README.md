@@ -36,7 +36,7 @@ or resolution.
 
 ## Download
 
-Tuck supports Windows 10 and 11 and x86-64 Linux through an AppImage. The AppImage bundles its Python backend and FFmpeg tools. It is GUI-only: Send To integration, a public command line, automatic updates, and hardware encoding are Windows-only.
+Tuck supports Windows 10 and 11 and x86-64 Linux through an AppImage. The AppImage bundles its Python backend and FFmpeg tools. It is GUI-only: Send To integration, a public command line, and hardware encoding are Windows-only. Both platforms check for and install signed updates in the app.
 
 1. Download the latest installer from the [Releases page](https://github.com/aechXIII/Tuck/releases/latest), then run it.
 
@@ -53,12 +53,22 @@ If `winget` is unavailable, install a Windows build from the [FFmpeg download pa
 
 ### Linux AppImage
 
-Run the x86-64 AppImage directly after making it executable:
+Install for the current user (no root) with the one-liner, which also adds a
+desktop entry and can be re-run to update:
 
 ```bash
-chmod +x Tuck_*.AppImage
-./Tuck_*.AppImage
+curl -fsSL https://raw.githubusercontent.com/aechXIii/Tuck/main/scripts/install-linux.sh | sh
 ```
+
+Or run the x86-64 AppImage directly after making it executable:
+
+```bash
+chmod +x Tuck-*-x86_64.AppImage
+./Tuck-*-x86_64.AppImage
+```
+
+The app updates itself in place when the AppImage file is writable; otherwise it
+shows the release notes with a download link.
 
 The AppImage needs a desktop session with WebKitGTK 4.1. It bundles its own Python
 sidecar, FFmpeg/ffprobe, and the GStreamer plugins used for editor preview

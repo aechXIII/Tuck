@@ -71,8 +71,7 @@ export function showUpdateModal(update: UpdateCheck | Record<string, unknown>): 
   showMod(
     `<h2>Update available</h2>
     <div>
-      Version <strong id="update-version"></strong> ·
-      <span id="update-size"></span>
+      Version <strong id="update-version"></strong><span id="update-size"></span>
     </div>
     <h3>What's new</h3>
     <div class="update-notes" id="update-notes"></div>
@@ -85,7 +84,7 @@ export function showUpdateModal(update: UpdateCheck | Record<string, unknown>): 
   const size = byId("update-size");
   if (version) version.textContent = `v${String(update.version ?? "")}`;
   const sizeMb = typeof update.size_mb === "number" ? update.size_mb : 0;
-  if (size) size.textContent = `${sizeMb.toFixed(1)} MB`;
+  if (size) size.textContent = sizeMb > 0 ? ` · ${sizeMb.toFixed(1)} MB` : "";
   byId("update-later")?.addEventListener("click", closeMod);
   byId("update-install")?.addEventListener("click", () => {
     void downloadAndInstallUpdate();

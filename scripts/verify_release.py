@@ -175,6 +175,49 @@ def _check_signing(manifest: dict, *, require_signed: bool) -> None:
     )
 
 
+def _check_updater_feed(manifest: dict, version: str, artifacts_dir: Path) -> None:
+    """A signed release must ship a `.sig` per artifact and a matching latest.json."""
+
+    signatures: dict[str, str] = {}
+    for artifact in manifest["artifacts"]:
+        name = str(artifact["name"])
+        sig = artifacts_dir / f"{name}.sig"
+        _require(
+            sig.is_file() and sig.stat().st_size > 0,
+            f"signed release is missing the updater signature: {sig.name}",
+        )
+        _require(
+            artifact.get("signed") is True,
+            f"{name}: manifest does not record this artifact as signed",
+        )
+        signatures[str(artifact["platform"])] = sig.read_text(encoding="utf-8").strip()
+
+    feed_path = artifacts_dir / bm.UPDATER_FEED_FILENAME
+    _require(feed_path.is_file(), f"signed release is missing {bm.UPDATER_FEED_FILENAME}")
+    feed = json.loads(feed_path.read_text(encoding="utf-8"))
+    _require(
+        feed.get("version") == version, f"{feed_path.name}: version does not match the release"
+    )
+    _require(
+        bool(str(feed.get("notes", "")).strip()), f"{feed_path.name}: carries no release notes"
+    )
+
+    platforms = feed.get("platforms")
+    _require(isinstance(platforms, dict), f"{feed_path.name}: has no platforms map")
+    for platform, target in bm.UPDATER_TARGETS.items():
+        entry = platforms.get(target)
+        _require(isinstance(entry, dict), f"{feed_path.name}: missing platform {target}")
+        _require(
+            entry.get("signature", "").strip() == signatures.get(platform, "").strip(),
+            f"{feed_path.name}: {target} signature does not match {platform} artifact .sig",
+        )
+        expected_name = bm.artifact_name(platform, version)
+        _require(
+            str(entry.get("url", "")).endswith(f"/{expected_name}"),
+            f"{feed_path.name}: {target} url does not point at {expected_name}",
+        )
+
+
 def verify_release(
     manifest_path: Path,
     *,
@@ -195,11 +238,14 @@ def verify_release(
         f"unknown release channel: {manifest.get('channel')!r}",
     )
 
+    resolved_dir = artifacts_dir or manifest_path.parent
     version = _check_version(manifest, root)
-    _check_artifacts(manifest, version, artifacts_dir or manifest_path.parent)
+    _check_artifacts(manifest, version, resolved_dir)
     _check_immutable_inputs(manifest, root)
     _check_notices(manifest, root)
     _check_signing(manifest, require_signed=require_signed)
+    if require_signed:
+        _check_updater_feed(manifest, version, resolved_dir)
     return manifest
 
 

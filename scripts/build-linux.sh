@@ -62,7 +62,14 @@ if [[ ! -x packaging/staging/linux/app/tuck-sidecar ]]; then
 fi
 
 echo "==> Building the Tauri Linux AppImage"
-npm run tauri build -- --bundles appimage
+# emit the signed updater artifacts only when a signing key is present. a local
+# build without one still succeeds, it just skips the .sig / updater package
+tauri_updater_args=()
+if [[ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]]; then
+  echo "    signing key present -> emitting updater artifacts"
+  tauri_updater_args=(--config '{"bundle":{"createUpdaterArtifacts":true}}')
+fi
+npm run tauri build -- --bundles appimage "${tauri_updater_args[@]}"
 
 appimage="$(find src-tauri/target/release/bundle/appimage -maxdepth 1 -type f -name '*.AppImage' -print | sort | tail -n 1)"
 if [[ -z "$appimage" ]]; then
@@ -94,6 +101,13 @@ mksquashfs "$appimage_work/squashfs-root" "$appimage_work/payload.squashfs" \
 cat "$appimage_work/payload.squashfs" >> "$rebuilt_appimage"
 chmod +x "$rebuilt_appimage"
 mv "$rebuilt_appimage" "$appimage"
+
+# The Wayland strip rewrites the AppImage payload, so any signature Tauri wrote
+# during the build no longer matches. Re-sign the final bytes.
+if [[ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]]; then
+  echo "==> Re-signing the AppImage after the Wayland-client strip"
+  npm run tauri signer sign -- "$appimage"
+fi
 
 echo "==> Verifying the AppImage"
 "$python_bin" scripts/verify_package.py --platform linux --artifact "$appimage"

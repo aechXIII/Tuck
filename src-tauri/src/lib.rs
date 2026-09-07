@@ -14,9 +14,8 @@ use commands::native::{
 use commands::startup::{
     extract_startup_args, get_startup_files, handle_second_instance, StartupState,
 };
-#[cfg(windows)]
 use commands::updates::{
-    check_for_updates, download_update, get_download_progress, install_update,
+    check_for_updates, download_update, get_download_progress, install_update, UpdaterState,
 };
 use tauri::Manager;
 
@@ -93,7 +92,9 @@ pub fn run() {
         )
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(startup_state)
+        .manage(UpdaterState::default())
         .setup(|app| {
             #[cfg(windows)]
             if let Some(window) = app.get_webview_window("main") {
@@ -108,7 +109,6 @@ pub fn run() {
             Ok(())
         });
 
-    #[cfg(windows)]
     let builder = builder.invoke_handler(tauri::generate_handler![
         backend_request,
         platform_capabilities,
@@ -128,24 +128,6 @@ pub fn run() {
         download_update,
         install_update,
         get_download_progress,
-        get_startup_files
-    ]);
-    #[cfg(not(windows))]
-    let builder = builder.invoke_handler(tauri::generate_handler![
-        backend_request,
-        platform_capabilities,
-        pick_video_files,
-        pick_audio_files,
-        pick_folder,
-        pick_ffmpeg_file,
-        pick_ffprobe_file,
-        pick_import_file,
-        pick_save_file,
-        copy_text,
-        open_output_folder,
-        open_logs_folder,
-        open_config_folder,
-        close_window,
         get_startup_files
     ]);
 

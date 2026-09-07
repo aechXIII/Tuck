@@ -1,9 +1,9 @@
 name: Release
 
-# A tag push (v*) assembles a public release; the publish job is blocked unless
-# the Tauri updater signing key is configured. A manual run assembles a
-# release candidate: same build, verification, manifest, and checksums, no
-# secrets, and nothing is published.
+# A tag push (v*) assembles a public release: builds are signed with the Tauri
+# updater key and the publish job is blocked unless that key is configured. A
+# manual run assembles a release candidate: same build, verification, manifest,
+# and checksums, the signing key is never decrypted, and nothing is published.
 on:
   workflow_dispatch:
     inputs:
@@ -81,18 +81,32 @@ jobs:
         run: python scripts/build_sidecar.py --python python
 
       - name: Build the Tauri Windows bundle
-        run: npm run tauri build
+        # Secrets only reach a build for a version tag; a release candidate builds
+        # unsigned. build.ps1 / the CLI emit updater artifacts only when the key is set.
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
+        shell: bash
+        run: |
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            npm run tauri build -- --config '{"bundle":{"createUpdaterArtifacts":true}}'
+          else
+            npm run tauri build
+          fi
 
       - name: Name the installer artifact
         id: artifact
         shell: pwsh
         run: |
-          $installer = Get-ChildItem src-tauri/target/release/bundle/nsis -Filter *-setup.exe |
+          $bundle = "src-tauri/target/release/bundle/nsis"
+          $installer = Get-ChildItem $bundle -Filter *-setup.exe |
             Sort-Object LastWriteTime -Descending | Select-Object -First 1
           if (-not $installer) { throw "no NSIS installer was produced" }
           $name = python scripts/build_metadata.py artifact-name --platform windows
           New-Item -ItemType Directory -Force dist | Out-Null
           Copy-Item $installer.FullName "dist/$name"
+          $sig = "$($installer.FullName).sig"
+          if (Test-Path $sig) { Copy-Item $sig "dist/$name.sig" }
           "path=dist/$name" | Out-File -Append -Encoding ascii $env:GITHUB_OUTPUT
 
       - name: Inspect the built installer
@@ -110,6 +124,7 @@ jobs:
           --platform windows --kind nsis-installer
           --path "${{ steps.artifact.outputs.path }}"
           --verified-package --verified-smoke
+          --signature "${{ steps.artifact.outputs.path }}.sig"
           --out dist/entry-windows.json
 
       - name: Upload the Windows build
@@ -119,6 +134,7 @@ jobs:
           path: |
             dist/Tuck-Setup-*-x64.exe
             dist/Tuck-Setup-*-x64.exe.sha256
+            dist/Tuck-Setup-*-x64.exe.sig
             dist/entry-windows.json
           retention-days: 7
           if-no-files-found: error
@@ -183,6 +199,11 @@ jobs:
           workspaces: src-tauri
 
       - name: Build the AppImage
+        # Secrets only reach a build for a version tag; a release candidate builds
+        # unsigned. build-linux.sh emits and re-signs updater artifacts only when the key is set.
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
         run: ./scripts/build-linux.sh --clean
 
       - name: Name the AppImage artifact
@@ -196,6 +217,7 @@ jobs:
           name=$(python scripts/build_metadata.py artifact-name --platform linux)
           mkdir -p dist
           cp "$src" "dist/$name"
+          if [ -f "$src.sig" ]; then cp "$src.sig" "dist/$name.sig"; fi
           echo "path=dist/$name" >> "$GITHUB_OUTPUT"
 
       - name: Re-verify the renamed AppImage
@@ -213,6 +235,7 @@ jobs:
           --platform linux --kind appimage
           --path "${{ steps.artifact.outputs.path }}"
           --verified-package --verified-smoke
+          --signature "${{ steps.artifact.outputs.path }}.sig"
           --out dist/entry-linux.json
 
       - name: Upload the Linux build
@@ -222,6 +245,7 @@ jobs:
           path: |
             dist/Tuck-*-x86_64.AppImage
             dist/Tuck-*-x86_64.AppImage.sha256
+            dist/Tuck-*-x86_64.AppImage.sig
             dist/entry-linux.json
           retention-days: 7
           if-no-files-found: error
@@ -271,6 +295,25 @@ jobs:
           sha256sum Tuck-Setup-*-x64.exe Tuck-*-x86_64.AppImage > SHA256SUMS
           cat SHA256SUMS
 
+      - name: Extract the release notes
+        run: >
+          python scripts/build_metadata.py release-notes
+          --changelog CHANGELOG.md
+          --out dist/release-notes.md
+
+      - name: Generate the updater feed for a signed build
+        run: |
+          win_sig="dist/$(python scripts/build_metadata.py artifact-name --platform windows).sig"
+          lin_sig="dist/$(python scripts/build_metadata.py artifact-name --platform linux).sig"
+          if [ -f "$win_sig" ] && [ -f "$lin_sig" ]; then
+            python scripts/build_metadata.py updater-manifest \
+              --windows-sig "$win_sig" --linux-sig "$lin_sig" \
+              --notes dist/release-notes.md --out dist/latest.json
+            cat dist/latest.json
+          else
+            echo "no updater signatures present; skipping latest.json (release candidate)"
+          fi
+
       - name: Verify the assembled release
         run: >
           python scripts/verify_release.py
@@ -284,6 +327,8 @@ jobs:
           path: |
             dist/tuck-release-manifest.json
             dist/SHA256SUMS
+            dist/release-notes.md
+            dist/latest.json
             dist/THIRD_PARTY_NOTICES.md
             dist/THIRD_PARTY_NOTICES_LINUX.md
           retention-days: 7
@@ -312,29 +357,31 @@ jobs:
           path: dist
           merge-multiple: true
 
-      - name: Require the Tauri updater signing key
+      - name: Require a signed build
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           if [ -z "${TAURI_SIGNING_PRIVATE_KEY}" ]; then
             echo "::error::Public release blocked: the Tauri updater signing key is not configured."
-            echo "Generate a keypair with 'npm run tauri signer generate', then add the"
+            echo "Generate a keypair with 'npm run tauri signer generate', add the"
             echo "TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD secrets to the"
-            echo "protected 'release' environment and re-run this tag. Release candidates build"
+            echo "protected 'release' environment, and re-run this tag. Release candidates build"
             echo "unsigned artifacts without it; a production release will not ship unsigned."
             exit 1
           fi
           python - <<'PY'
           import json
           import pathlib
+          import sys
 
-          manifest_path = pathlib.Path("dist/tuck-release-manifest.json")
-          manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-          manifest["signing"]["tauri_updater"] = "enabled"
-          manifest_path.write_text(
-              json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+          manifest = json.loads(
+              pathlib.Path("dist/tuck-release-manifest.json").read_text(encoding="utf-8")
           )
+          if manifest["signing"]["tauri_updater"] != "enabled":
+              sys.exit(
+                  "the signing key is set but the build produced no updater artifacts; "
+                  "check the build-windows / build-linux jobs"
+              )
           PY
 
       - name: Verify the signed release
@@ -344,20 +391,17 @@ jobs:
           --artifacts-dir dist
           --require-signed
 
-      - name: Extract the release notes
-        run: >
-          python scripts/build_metadata.py release-notes
-          --changelog CHANGELOG.md
-          --out dist/release-notes.md
-
       - name: Create the GitHub release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             dist/Tuck-Setup-*-x64.exe
             dist/Tuck-Setup-*-x64.exe.sha256
+            dist/Tuck-Setup-*-x64.exe.sig
             dist/Tuck-*-x86_64.AppImage
             dist/Tuck-*-x86_64.AppImage.sha256
+            dist/Tuck-*-x86_64.AppImage.sig
+            dist/latest.json
             dist/SHA256SUMS
             dist/tuck-release-manifest.json
             dist/THIRD_PARTY_NOTICES.md
