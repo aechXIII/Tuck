@@ -31,25 +31,8 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
     "publisher": "aechXIII",
     "homepage": "https://github.com/aechXIII/Tuck",
-    "shortDescription": "Windows video compressor, cropper, and upscaler.",
-    "longDescription": "Tuck is a Windows desktop video editor, compressor, and upscaler with a bundled FFmpeg and a supervised Python backend.",
-    "icon": ["icons/Tuck.ico"],
-    "licenseFile": "../LICENSE",
-    "resources": {
-      "../packaging/staging/app/": "./"
-    },
-    "windows": {
-      "webviewInstallMode": {
-        "type": "skip"
-      },
-      "nsis": {
-        "installMode": "currentUser",
-        "installerHooks": "./installer-hooks.nsh",
-        "languages": ["English"]
-      }
-    }
+    "licenseFile": "../LICENSE"
   }
 }

@@ -62,24 +62,36 @@ pub async fn pick_folder(window: tauri::Window) -> Result<String, PublicBackendE
 
 #[tauri::command]
 pub async fn pick_ffmpeg_file(window: tauri::Window) -> Result<String, PublicBackendError> {
-    let file = window
-        .dialog()
-        .file()
-        .add_filter("Executable", &["exe", ""])
-        .add_filter("All files", &["*"])
-        .blocking_pick_file();
+    let file = executable_file_dialog(&window).blocking_pick_file();
     Ok(path_opt_to_string(file))
 }
 
 #[tauri::command]
 pub async fn pick_ffprobe_file(window: tauri::Window) -> Result<String, PublicBackendError> {
-    let file = window
-        .dialog()
-        .file()
-        .add_filter("Executable", &["exe", ""])
-        .add_filter("All files", &["*"])
-        .blocking_pick_file();
+    let file = executable_file_dialog(&window).blocking_pick_file();
     Ok(path_opt_to_string(file))
+}
+
+fn executable_file_dialog<R: tauri::Runtime>(
+    window: &tauri::Window<R>,
+) -> tauri_plugin_dialog::FileDialogBuilder<R> {
+    let dialog = window.dialog().file();
+    let dialog = match executable_filter_extensions() {
+        Some(extensions) => dialog.add_filter("Executable", extensions),
+        None => dialog,
+    };
+    dialog.add_filter("All files", &["*"])
+}
+
+fn executable_filter_extensions() -> Option<&'static [&'static str]> {
+    #[cfg(windows)]
+    {
+        Some(&["exe"])
+    }
+    #[cfg(not(windows))]
+    {
+        None
+    }
 }
 
 #[tauri::command]
@@ -240,21 +252,46 @@ mod tests {
     }
 
     #[test]
+    fn executable_filters_are_windows_only() {
+        #[cfg(windows)]
+        assert_eq!(executable_filter_extensions(), Some(&["exe"][..]));
+        #[cfg(not(windows))]
+        assert_eq!(executable_filter_extensions(), None);
+    }
+
+    #[test]
     fn storage_folders_use_the_sidecars_authoritative_paths() {
+        #[cfg(windows)]
         let paths = serde_json::json!({
             "config_dir": "C:\\Users\\Tuck\\config",
             "data_dir": "C:\\Users\\Tuck\\data",
             "cache_dir": "C:\\Users\\Tuck\\cache",
             "log_dir": "C:\\Users\\Tuck\\data\\logs",
         });
+        #[cfg(not(windows))]
+        let paths = serde_json::json!({
+            "config_dir": "/home/tuck/.config",
+            "data_dir": "/home/tuck/.local/share",
+            "cache_dir": "/home/tuck/.cache",
+            "log_dir": "/home/tuck/.local/share/logs",
+        });
+
+        #[cfg(windows)]
+        let expected_config = PathBuf::from("C:\\Users\\Tuck\\config");
+        #[cfg(not(windows))]
+        let expected_config = PathBuf::from("/home/tuck/.config");
+        #[cfg(windows)]
+        let expected_logs = PathBuf::from("C:\\Users\\Tuck\\data\\logs");
+        #[cfg(not(windows))]
+        let expected_logs = PathBuf::from("/home/tuck/.local/share/logs");
 
         assert_eq!(
             storage_folder(paths.clone(), StorageFolder::Config).unwrap(),
-            PathBuf::from("C:\\Users\\Tuck\\config")
+            expected_config
         );
         assert_eq!(
             storage_folder(paths, StorageFolder::Logs).unwrap(),
-            PathBuf::from("C:\\Users\\Tuck\\data\\logs")
+            expected_logs
         );
     }
 

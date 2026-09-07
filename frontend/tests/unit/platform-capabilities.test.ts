@@ -3,8 +3,11 @@ import test from "node:test";
 
 import {
   clearPlatformCache,
+  encoderForPlatform,
+  encodersForPlatform,
   shouldShowSendTo,
   shouldShowUpdater,
+  supportsHardwareEncoders,
 } from "../../src/platform/capabilities.ts";
 
 // Test Windows/Linux payload decisions without needing Tauri runtime
@@ -15,6 +18,7 @@ test("Windows capabilities expose Send To, CLI, and updater", async () => {
     sendToIntegration: true,
     publicCli: true,
     automaticUpdater: true,
+    hardwareAcceleration: true,
     packaged: false,
   };
   assert.equal(shouldShowSendTo(caps), true);
@@ -28,10 +32,14 @@ test("Linux capabilities hide Windows integrations", async () => {
     sendToIntegration: false,
     publicCli: false,
     automaticUpdater: false,
+    hardwareAcceleration: false,
     packaged: false,
   };
   assert.equal(shouldShowSendTo(caps), false);
   assert.equal(shouldShowUpdater(caps), false);
+  assert.equal(supportsHardwareEncoders(caps), false);
+  assert.deepEqual(encodersForPlatform(["libx264", "h264_nvenc", "hevc_amf"], caps), ["libx264"]);
+  assert.equal(encoderForPlatform("h264_nvenc", caps), "libx264");
 });
 
 test("fallback on invoke failure still hides integrations", async () => {
@@ -44,6 +52,7 @@ test("fallback on invoke failure still hides integrations", async () => {
     sendToIntegration: false,
     publicCli: false,
     automaticUpdater: false,
+    hardwareAcceleration: false,
     packaged: false,
   };
   assert.equal(shouldShowSendTo(fallback), false);

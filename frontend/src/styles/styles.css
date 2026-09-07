@@ -1,4 +1,7 @@
 :root {
+  /* the UI is always dark; without this WebKitGTK paints native selects,
+     option popups, and number spinners in the light system theme */
+  color-scheme: dark;
   --bg: #0d0d12;
   --panel: #101015;
   --card-bg: #191920;
@@ -45,6 +48,17 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  /* this is a desktop app, not a web page: a stray drag should never start a
+     text selection. Fields and anything marked .selectable opt back in. */
+  -webkit-user-select: none;
+  user-select: none;
+}
+input,
+textarea,
+[contenteditable="true"],
+.selectable {
+  -webkit-user-select: text;
+  user-select: text;
 }
 #tb {
   height: var(--topbar-height);
@@ -1125,6 +1139,8 @@ body.workspace-overlay .panel-heading {
   border-radius: 5px;
   background-color: #0e0e14;
   touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 .audio-source-overview {
   height: 28px;

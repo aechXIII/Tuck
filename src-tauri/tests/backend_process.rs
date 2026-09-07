@@ -179,6 +179,29 @@ async fn real_sidecar_completes_health_and_graceful_shutdown() {
 }
 
 #[tokio::test]
+async fn sidecar_receives_the_authoritative_desktop_platform() {
+    let process = BackendProcess::launch(fake_sidecar(
+        "import json, os, sys\nprint(json.dumps({'kind':'event','protocol':1,'event':'backend_ready','payload':{'backend_version':'0.4.0'}}), flush=True)\nfor line in sys.stdin:\n request = json.loads(line)\n print(json.dumps({'kind':'response','protocol':1,'id':request['id'],'ok':True,'result':{'platform': os.environ['TUCK_DESKTOP_PLATFORM']}}), flush=True)",
+    ))
+    .await
+    .expect("sidecar should start");
+
+    let expected = if cfg!(target_os = "windows") {
+        "windows"
+    } else {
+        "linux"
+    };
+    assert_eq!(
+        process
+            .request(BackendCommand::Health)
+            .await
+            .expect("health response"),
+        json!({ "platform": expected }),
+    );
+    process.shutdown().await.expect("graceful shutdown");
+}
+
+#[tokio::test]
 async fn real_sidecar_reports_its_authoritative_storage_paths() {
     let data_root = temporary_data_root("storage-paths");
     let process = BackendProcess::launch(
@@ -312,14 +335,20 @@ fn development_sidecar() -> BackendLaunchConfig {
 
 fn fake_sidecar(script: &str) -> BackendLaunchConfig {
     BackendLaunchConfig::command(
-        repository_root()
-            .join(".venv")
-            .join("Scripts")
-            .join("python.exe"),
+        development_python(),
         ["-u", "-c", script],
         repository_root(),
         temporary_data_root("fake-sidecar"),
     )
+}
+
+fn development_python() -> std::path::PathBuf {
+    let venv = repository_root().join(".venv");
+    if cfg!(windows) {
+        venv.join("Scripts").join("python.exe")
+    } else {
+        venv.join("bin").join("python")
+    }
 }
 
 fn repository_root() -> std::path::PathBuf {

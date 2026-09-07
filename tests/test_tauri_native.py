@@ -119,6 +119,20 @@ class TestInstallSendtoExplicit:
 
 
 class TestBridgeExplicitSendTo:
+    def test_sendto_module_rejects_linux(self, monkeypatch):
+        monkeypatch.setenv("TUCK_DESKTOP_PLATFORM", "linux")
+
+        with pytest.raises(OSError, match="only available on Windows"):
+            install_sendto()
+
+    def test_bridge_rejects_sendto_on_linux(self, monkeypatch):
+        from tuck.bridge import BridgeAPI
+
+        monkeypatch.setenv("TUCK_DESKTOP_PLATFORM", "linux")
+        api = BridgeAPI.__new__(BridgeAPI)
+
+        assert api.install_generic_sendto()["ok"] is False
+
     def test_bridge_install_generic_uses_explicit(self, tmp_path, monkeypatch):
         import tuck.settings as settings_mod
 

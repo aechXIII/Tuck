@@ -3,9 +3,10 @@ from __future__ import annotations
 import logging
 import re
 import threading
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from . import __version__
 from .bridge_contract import BridgeResult
@@ -20,6 +21,7 @@ from .bridge_validation import (
     parse_plan_request,
     validate_path,
 )
+from .desktop_platform import is_linux_desktop
 from .diagnostics import build_diagnostics
 from .encoding.capabilities import (
     clear_encoder_cache,
@@ -46,8 +48,13 @@ from .probe_cache import ProbeCache
 from .profile_service import ProfileService
 from .queue import get_queue
 from .settings import get_settings_manager
-from .updater import UpdateChecker, UpdateInfo
-from .updater import check_for_updates as _check_for_updates
+
+if TYPE_CHECKING:
+    from .updater import UpdateChecker, UpdateInfo
+
+    _check_for_updates: Callable[[], UpdateInfo | None]
+elif not is_linux_desktop():
+    from .updater import check_for_updates as _check_for_updates
 
 logger = logging.getLogger(__name__)
 
@@ -410,6 +417,8 @@ class BridgeAPI:
         self, profile_id: str, action: str = "start", executable_path: str | None = None
     ) -> BridgeResult:
 
+        if is_linux_desktop():
+            return {"ok": False, "error": "Send To shortcuts are only available on Windows."}
         profiles = self._settings.get_profiles()
         found = find_profile_by_id(profiles, profile_id)
         if found is None:
@@ -426,6 +435,8 @@ class BridgeAPI:
 
     def remove_profile_sendto(self, profile_id: str) -> BridgeResult:
 
+        if is_linux_desktop():
+            return {"ok": False, "error": "Send To shortcuts are only available on Windows."}
         try:
             from .sendto import uninstall_profile_shortcut
 
@@ -438,6 +449,8 @@ class BridgeAPI:
         self, profile_id: str, action: str = "start", executable_path: str | None = None
     ) -> BridgeResult:
 
+        if is_linux_desktop():
+            return {"ok": False, "error": "Send To shortcuts are only available on Windows."}
         profiles = self._settings.get_profiles()
         found = find_profile_by_id(profiles, profile_id)
         if found is None:
@@ -454,6 +467,8 @@ class BridgeAPI:
 
     def list_sendto_shortcuts(self) -> BridgeResult:
 
+        if is_linux_desktop():
+            return {"ok": False, "error": "Send To shortcuts are only available on Windows."}
         try:
             from .sendto import list_sendto_shortcuts
 
@@ -464,6 +479,8 @@ class BridgeAPI:
 
     def install_generic_sendto(self, executable_path: str | None = None) -> BridgeResult:
 
+        if is_linux_desktop():
+            return {"ok": False, "error": "Send To shortcuts are only available on Windows."}
         try:
             from .sendto import install_sendto, repair_sendto
 
@@ -476,6 +493,8 @@ class BridgeAPI:
 
     def remove_generic_sendto(self) -> BridgeResult:
 
+        if is_linux_desktop():
+            return {"ok": False, "error": "Send To shortcuts are only available on Windows."}
         try:
             from .sendto import uninstall_sendto
 
@@ -670,6 +689,8 @@ class BridgeAPI:
         return self._profile_service.update(profile_id, profile)
 
     def check_for_updates(self) -> BridgeResult:
+        if is_linux_desktop():
+            return {"available": False, "error": "Automatic updates are not supported on Linux."}
         if self._checking_updates:
             return {"available": False, "error": "Update check already in progress"}
         self._checking_updates = True
@@ -697,6 +718,8 @@ class BridgeAPI:
             self._checking_updates = False
 
     def download_update(self) -> BridgeResult:
+        if is_linux_desktop():
+            return {"ok": False, "error": "Automatic updates are not supported on Linux."}
         if not self._update_info:
             return {
                 "ok": False,
@@ -727,6 +750,8 @@ class BridgeAPI:
             return {"ok": False, "error": str(e)}
 
     def get_download_progress(self) -> BridgeResult:
+        if is_linux_desktop():
+            return {"downloading": False, "error": "Automatic updates are not supported on Linux."}
         if not self._update_checker:
             return {"downloading": False}
         try:
@@ -735,6 +760,8 @@ class BridgeAPI:
             return {"downloading": False, "error": str(e)}
 
     def install_update(self) -> BridgeResult:
+        if is_linux_desktop():
+            return {"ok": False, "error": "Automatic updates are not supported on Linux."}
         if not self._update_checker:
             return {"ok": False, "error": "No update downloaded"}
         try:

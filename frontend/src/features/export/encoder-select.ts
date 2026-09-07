@@ -21,9 +21,10 @@ function option(value: string, label: string, disabled = false): HTMLOptionEleme
 export function populateEncoderSelect(
   select: HTMLSelectElement,
   available: readonly string[],
+  includeHardwareEncoders = true,
 ): void {
   let current = select.value || "auto_compression";
-  const ids = encoderIds(available, current);
+  const ids = encoderIds(available, current, includeHardwareEncoders);
   select.replaceChildren();
   for (const id of ids) {
     const unavailable = encoderUnavailable(available, id);

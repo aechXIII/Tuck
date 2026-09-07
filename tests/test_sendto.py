@@ -1,6 +1,8 @@
 import sys
 from pathlib import Path
 
+import pytest
+
 from tuck.sendto import (
     _SHELL_LINK_HEADER,
     _TUCK_MARKER,
@@ -32,6 +34,10 @@ from tuck.sendto import (
     repair_sendto,
     uninstall_profile_shortcut,
     uninstall_sendto,
+)
+
+requires_windows_com = pytest.mark.skipif(
+    sys.platform != "win32", reason="Windows shortcut tests require pywin32 COM"
 )
 
 
@@ -84,6 +90,7 @@ class TestVerifyBatOwnership:
 
 
 class TestVerifyLnkOwnership:
+    @requires_windows_com
     def test_nonexistent_lnk(self, tmp_path, monkeypatch):
         can_create_shortcuts = False
 
@@ -103,6 +110,7 @@ class TestVerifyLnkOwnership:
         f.write_text("dummy")
         assert not _verify_lnk_ownership(f)
 
+    @requires_windows_com
     def test_invalid_header_is_rejected_before_com(self, tmp_path, monkeypatch):
         f = tmp_path / "invalid.lnk"
         f.write_text("not a Shell Link")
@@ -291,6 +299,7 @@ class TestMarkerEmbeddedOnCreation:
         assert f"REM {_TUCK_MARKER}" in content
         assert "discord-10mb" in content
 
+    @requires_windows_com
     def test_create_windows_shortcut_embeds_marker(self, tmp_path, monkeypatch):
 
         saved_desc = []
@@ -338,6 +347,7 @@ class TestMarkerEmbeddedOnCreation:
         assert "generic" in desc
         assert "Compress with Tuck" in desc
 
+    @requires_windows_com
     def test_create_windows_shortcut_profile_embeds_id(self, tmp_path, monkeypatch):
 
         saved_desc = []
@@ -757,6 +767,7 @@ class TestBatchFallback:
 
 
 class TestRepairGenericShortcuts:
+    @requires_windows_com
     def test_repairs_legacy_shortcut_into_review_and_compress_pair(self, tmp_path, monkeypatch):
         legacy_path = tmp_path / SENDTO_SHORTCUT_NAME
         legacy_path.write_bytes(_SHELL_LINK_HEADER)
@@ -790,6 +801,7 @@ class TestRepairGenericShortcuts:
         compress_path = tmp_path / SENDTO_COMPRESS_SHORTCUT_NAME
         assert "--sendto-action start" in shell.shortcuts[str(compress_path)].Arguments
 
+    @requires_windows_com
     def test_repair_rejects_foreign_counterpart_before_migrating_legacy(
         self, tmp_path, monkeypatch
     ):

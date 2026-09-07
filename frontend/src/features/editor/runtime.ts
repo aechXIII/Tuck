@@ -28,6 +28,8 @@ import {
 import { installQueue, type QueueApi } from "../queue/queue.ts";
 import { installSettings, type SettingsApi } from "../settings/settings.ts";
 import { checkUpdates, checkUpdatesFromSettings } from "./updates.ts";
+import { routeDroppedPaths } from "./drop-routing.ts";
+import { fetchPlatformCapabilities, shouldShowUpdater } from "../../platform/capabilities.ts";
 import { errorSummary, formatBytes, formatTime } from "./format.ts";
 import {
   closeActiveModal,
@@ -638,7 +640,9 @@ export function installEditorRuntime(
             } else if (payload.type === "drop") {
               overlay?.classList.remove("show");
               dropZone?.classList.remove("over");
-              if (payload.paths.length) library.addFiles(payload.paths);
+              const { videoPaths, audioPaths } = routeDroppedPaths(payload.paths);
+              if (videoPaths.length) library.addFiles(videoPaths);
+              if (audioPaths.length) audio.addAudioFiles(audioPaths, []);
             }
           });
         } catch (error) {
@@ -668,7 +672,11 @@ export function installEditorRuntime(
     } catch {
       toast("Could not load settings.", "err");
     }
-    if (session.appSettings.check_updates !== false) void checkUpdates(true);
+    if (
+      session.appSettings.check_updates !== false &&
+      shouldShowUpdater(await fetchPlatformCapabilities())
+    )
+      void checkUpdates(true);
     if (queueTimer === null) {
       queueTimer = windowRef.setInterval(() => {
         void queue.pollQueue();

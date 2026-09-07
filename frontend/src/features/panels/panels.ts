@@ -852,7 +852,6 @@ export function installPanels(host: PanelsHost): PanelsApi {
     if (!info.canSlip) return;
 
     let pointer: {
-      pointerId: number;
       mode: "overview" | "detail";
       element: HTMLElement;
       startX: number;
@@ -899,7 +898,6 @@ export function installPanels(host: PanelsHost): PanelsApi {
       const onOverviewWindow =
         mode === "overview" && overviewWindow.contains(event.target as Node);
       pointer = {
-        pointerId: event.pointerId,
         mode,
         element,
         startX: event.clientX,
@@ -920,31 +918,28 @@ export function installPanels(host: PanelsHost): PanelsApi {
       host.History?.begin(host.selPath());
       element.classList.add("dragging");
       doc.body.classList.add(pointer.cursorClass);
-      if (element.setPointerCapture) {
-        try {
-          element.setPointerCapture(event.pointerId);
-        } catch {
-          /* optional */
-        }
-      }
+      // Track the whole drag on the window and don't match pointerId: WebKitGTK
+      // gives window-level pointermove events an id that differs from the
+      // pointerdown, and setPointerCapture on these thin strips is unreliable,
+      // so anything keyed off either one silently never moves.
+      win.addEventListener("pointermove", movePointer);
+      win.addEventListener("pointerup", finishPointer);
+      win.addEventListener("pointercancel", finishPointer);
       if (mode === "overview") updateFromPointer(event.clientX);
     }
 
     function movePointer(event: PointerEvent): void {
-      if (!pointer || event.pointerId !== pointer.pointerId) return;
+      if (!pointer) return;
       event.preventDefault();
       updateFromPointer(event.clientX);
     }
 
     function finishPointer(event: PointerEvent): void {
-      if (!pointer || !info || event.pointerId !== pointer.pointerId) return;
+      if (!pointer || !info) return;
       if (event.type !== "pointercancel") updateFromPointer(event.clientX);
-      if (
-        pointer.element.releasePointerCapture &&
-        pointer.element.hasPointerCapture &&
-        pointer.element.hasPointerCapture(event.pointerId)
-      )
-        pointer.element.releasePointerCapture(event.pointerId);
+      win.removeEventListener("pointermove", movePointer);
+      win.removeEventListener("pointerup", finishPointer);
+      win.removeEventListener("pointercancel", finishPointer);
       pointer.element.classList.remove("dragging");
       pointer = null;
       doc.body.classList.remove(
@@ -960,11 +955,6 @@ export function installPanels(host: PanelsHost): PanelsApi {
     });
     detail.addEventListener("pointerdown", (event) => {
       startPointer("detail", detail, event);
-    });
-    [overview, detail].forEach((control) => {
-      control.addEventListener("pointermove", movePointer);
-      control.addEventListener("pointerup", finishPointer);
-      control.addEventListener("pointercancel", finishPointer);
     });
 
     function moveFromKeyboard(event: KeyboardEvent): void {

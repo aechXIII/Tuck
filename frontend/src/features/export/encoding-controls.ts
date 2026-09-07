@@ -26,6 +26,13 @@ import {
   populateRateControlSelect,
   populateTuneSelect,
 } from "./encoder-select.ts";
+import {
+  encoderForPlatform,
+  encodersForPlatform,
+  fetchPlatformCapabilities,
+  supportsHardwareEncoders,
+  type PlatformCapabilities,
+} from "../../platform/capabilities.ts";
 
 export interface EncodingControlsDeps {
   session: EditorSession;
@@ -101,6 +108,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
   let lastUpscale = "";
   let previewRequestId = 0;
   let profileSnapshot = "";
+  let platformCapabilities: PlatformCapabilities | null = null;
 
   const client = (): BackendClient => getBackendClient();
   const el = <T extends HTMLElement = HTMLElement>(id: string): T => {
@@ -314,6 +322,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
   }
 
   async function loadSettings(): Promise<void> {
+    platformCapabilities = await fetchPlatformCapabilities();
     const s = await legacyBackendResult(client().getSettings());
     Object.keys(session.appSettings).forEach((key) => delete session.appSettings[key]);
     Object.assign(session.appSettings, s);
@@ -321,7 +330,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     session.availEncoders.splice(
       0,
       session.availEncoders.length,
-      ...toStringArray(s.available_encoders),
+       ...encodersForPlatform(toStringArray(s.available_encoders), platformCapabilities),
     );
     session.allProfiles.splice(0, session.allProfiles.length, ...toArray(s.profiles));
     const def = typeof s.default_profile_id === "string" ? s.default_profile_id : "";
@@ -459,11 +468,14 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     input("audio-br").value = String(Math.round((num(p.audio_bitrate) || 128000) / 1000));
     input("audio-br").disabled = !!p.keep_audio;
     select("two-pass").value = p.two_pass ? "on" : "off";
-    select("preset-sel").value = typeof p.preset === "string" ? p.preset : "medium";
     const sc = typeof p.scaler === "string" ? p.scaler : "neighbor";
     select("scaler-sel").value =
       sc === "neighbor" ? "Neighbor" : sc.charAt(0).toUpperCase() + sc.slice(1);
-    select("enc-sel").value = typeof p.video_encoder === "string" ? p.video_encoder : "libx264";
+    const profileEncoder = typeof p.video_encoder === "string" ? p.video_encoder : "libx264";
+    select("enc-sel").value = platformCapabilities
+      ? encoderForPlatform(profileEncoder, platformCapabilities)
+      : profileEncoder;
+    if (!select("enc-sel").value) select("enc-sel").selectedIndex = 0;
     updateTuneOptions();
     const tune = typeof p.tune === "string" ? p.tune : "none";
     const tuneSelect = select("tune-sel");
@@ -482,10 +494,13 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
         2000,
     );
     updatePresetOptions();
-    select("preset-sel").value =
+    const preset =
       typeof p.preset === "string"
         ? p.preset
         : nativePresetForSpeed("balanced", select("enc-sel").value);
+    select("preset-sel").value = preset;
+    if (!select("preset-sel").value)
+      select("preset-sel").value = nativePresetForSpeed("balanced", select("enc-sel").value);
     syncSpeedFromPreset();
     updateRcOpts();
     const rcMap: Record<string, RateControlDisplay> = {
@@ -649,7 +664,12 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
   }
 
   function updateEncoderOptions(): void {
-    populateEncoderSelect(select("enc-sel"), availEncoders());
+    const caps = platformCapabilities;
+    populateEncoderSelect(
+      select("enc-sel"),
+      caps ? encodersForPlatform(availEncoders(), caps) : availEncoders(),
+      caps ? supportsHardwareEncoders(caps) : true,
+    );
   }
 
   function updateTuneOptions(): void {
@@ -716,7 +736,9 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
       keepAudio: input("keep-audio").checked,
       audioBitrateKbps: parseInt(input("audio-br").value, 10) || 0,
       twoPass: select("two-pass").value === "on",
-      encoder: select("enc-sel").value,
+      encoder: platformCapabilities
+        ? encoderForPlatform(select("enc-sel").value, platformCapabilities)
+        : select("enc-sel").value,
       preset: select("preset-sel").value,
       rateControl: (select("rc-sel").value as RateControlDisplay) || "CBR",
       qualityValue: parseInt(input("quality-val").value, 10) || 0,
@@ -755,6 +777,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
       segments,
       transform,
       audioPayload,
+      ...(platformCapabilities ? { platformCapabilities } : {}),
     });
   }
 
@@ -851,7 +874,8 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
             sizingMode: clip.sizingMode,
             transformIntentTouched: clip.transformIntentTouched,
           }
-        : null,
+          : null,
+      ...(platformCapabilities ? { platformCapabilities } : {}),
     });
   }
 
@@ -989,7 +1013,11 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     updateSizePresets,
     updateEncoderOptions,
     setAvailableEncoders: (encoders) => {
-      session.availEncoders.splice(0, session.availEncoders.length, ...encoders);
+      session.availEncoders.splice(
+        0,
+        session.availEncoders.length,
+        ...(platformCapabilities ? encodersForPlatform(encoders, platformCapabilities) : encoders),
+      );
       updateEncoderOptions();
     },
     snapProf,

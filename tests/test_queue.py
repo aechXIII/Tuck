@@ -1,7 +1,10 @@
+import os
 import threading
 import time
 from collections import deque
 from pathlib import Path
+
+import pytest
 
 from tuck.models import (
     AudioClip,
@@ -350,6 +353,41 @@ class TestQueueWorker:
             time.sleep(0.02)
         q.stop()
         assert counts == {"c0.mp4": 1, "c1.mp4": 1, "c2.mp4": 1}
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX terminal handling is not available")
+    def test_piped_posix_queue_processes_each_item(self, tmp_path, monkeypatch):
+        q = ProcessingQueue()
+        processed: list[str] = []
+
+        def fake_encode(plan, on_progress=None):
+            processed.append(Path(plan.source).name)
+            output = Path(plan.output)
+            output.write_bytes(b"ok")
+            return output
+
+        monkeypatch.setattr(os, "isatty", lambda _fd: False)
+        monkeypatch.setattr(q._engine, "encode", fake_encode)
+        q.start()
+        items = [
+            q.enqueue(
+                EncodePlan(
+                    source=str(tmp_path / f"clip-{index}.mp4"),
+                    output=str(tmp_path / f"out-{index}.mp4"),
+                    target_size=1024 * 1024,
+                )
+            )
+            for index in range(2)
+        ]
+        deadline = time.time() + 2
+        while (
+            any(item.state not in (QueueState.COMPLETED, QueueState.FAILED) for item in items)
+            and time.time() < deadline
+        ):
+            time.sleep(0.02)
+        q.stop()
+
+        assert processed == ["clip-0.mp4", "clip-1.mp4"]
+        assert [item.state for item in items] == [QueueState.COMPLETED, QueueState.COMPLETED]
 
     def test_cancel_running_before_encode_is_preserved(self, tmp_path, monkeypatch):
         q = ProcessingQueue()

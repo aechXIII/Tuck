@@ -14,6 +14,7 @@ from .models.encoding_policy import (
     VALID_VIDEO_ENCODER_CHOICES,
     VALID_WORKFLOWS,
     WORKFLOW_COMPRESSION,
+    validate_encoder_supported_on_desktop,
     validate_preset_for_encoder,
     validate_rate_control_matrix,
     validate_rc_method_for_encoder,
@@ -212,6 +213,8 @@ def parse_plan_request(
         transform=_parse_transform(raw),
     )
     req.validate()
+    if req.video_encoder is not None:
+        validate_encoder_supported_on_desktop(req.video_encoder)
     return req
 
 
@@ -257,6 +260,7 @@ def normalize_profile_ui_payload(data: dict[str, Any]) -> dict[str, Any]:
             raise ValueError(
                 f"video_encoder must be one of {sorted(VALID_VIDEO_ENCODER_CHOICES)}, not {ve!r}"
             )
+        validate_encoder_supported_on_desktop(ve)
 
     if "crf" in data:
         crf = data["crf"]

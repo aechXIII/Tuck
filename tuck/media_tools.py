@@ -3,6 +3,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
+from .desktop_platform import is_linux_desktop
 from .packaged import bundled_media_tool
 from .settings import get_settings_manager
 
@@ -37,9 +38,10 @@ def _find_tool(name: str, setting_name: str) -> str | None:
     if found:
         return found
 
-    for candidate in _WINDOWS_LOCATIONS[name]:
-        if candidate.is_file():
-            return str(candidate)
+    if not is_linux_desktop():
+        for candidate in _WINDOWS_LOCATIONS[name]:
+            if candidate.is_file():
+                return str(candidate)
     return None
 
 

@@ -37,15 +37,25 @@ export function isCpuEncoder(encoder: string): boolean {
   return encoder === "libx264" || encoder === "libx265" || isAutoEncoder(encoder);
 }
 
-export function encoderIds(available: readonly string[], current: string): string[] {
+export function isSoftwareEncoder(encoder: string): boolean {
+  return encoder === "libx264" || encoder === "libx265";
+}
+
+export function encoderIds(
+  available: readonly string[],
+  current: string,
+  includeHardwareEncoders = true,
+): string[] {
   const avail = available.length ? available : ALL_ENCODERS.slice(2);
-  return ALL_ENCODERS.filter(
-    (id) =>
+  return ALL_ENCODERS.filter((id) => {
+    if (!includeHardwareEncoders && !isSoftwareEncoder(id)) return false;
+    return (
       id === "auto_compression" ||
       id === "auto_fast" ||
       avail.indexOf(id) >= 0 ||
-      id === current,
-  );
+      id === current
+    );
+  });
 }
 
 export function encoderUnavailable(available: readonly string[], id: string): boolean {

@@ -100,6 +100,18 @@ pub enum BackendCommand {
 }
 
 impl BackendCommand {
+    fn is_send_to_command(&self) -> bool {
+        matches!(
+            self,
+            Self::InstallGenericSendto { .. }
+                | Self::RemoveGenericSendto
+                | Self::InstallProfileSendto { .. }
+                | Self::RemoveProfileSendto { .. }
+                | Self::RepairProfileSendto { .. }
+                | Self::ListSendtoShortcuts
+        )
+    }
+
     pub fn to_sidecar_request(&self, request_id: &str) -> Result<Value, PublicBackendError> {
         let (method, params) = match self {
             Self::Health => ("health", json!({})),
@@ -210,10 +222,74 @@ pub async fn backend_request(
     state: tauri::State<'_, BackendState>,
     command: BackendCommand,
 ) -> Result<Value, PublicBackendError> {
+    reject_unsupported_backend_command(
+        &command,
+        &crate::platform::current_capabilities().platform,
+    )?;
     if matches!(command, BackendCommand::Shutdown) {
         state.shutdown().await?;
         Ok(json!({ "status": "stopped" }))
     } else {
         state.request(command).await
+    }
+}
+
+fn reject_unsupported_backend_command(
+    command: &BackendCommand,
+    platform: &str,
+) -> Result<(), PublicBackendError> {
+    if platform == "linux" && command.is_send_to_command() {
+        return Err(PublicBackendError::new(
+            "UNSUPPORTED_OPERATION",
+            "Send To integration is not supported on Linux.",
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn linux_rejects_every_send_to_command_before_sidecar_ipc() {
+        let commands = [
+            BackendCommand::InstallGenericSendto {
+                executable_path: None,
+            },
+            BackendCommand::RemoveGenericSendto,
+            BackendCommand::InstallProfileSendto {
+                profile_id: "profile-1".into(),
+                action: None,
+                executable_path: None,
+            },
+            BackendCommand::RemoveProfileSendto {
+                profile_id: "profile-1".into(),
+            },
+            BackendCommand::RepairProfileSendto {
+                profile_id: "profile-1".into(),
+                action: None,
+                executable_path: None,
+            },
+            BackendCommand::ListSendtoShortcuts,
+        ];
+
+        for command in commands {
+            assert_eq!(
+                reject_unsupported_backend_command(&command, "linux")
+                    .expect_err("Linux must reject Send To IPC")
+                    .code,
+                "UNSUPPORTED_OPERATION"
+            );
+        }
+    }
+
+    #[test]
+    fn windows_keeps_send_to_commands_available() {
+        assert!(reject_unsupported_backend_command(
+            &BackendCommand::RemoveGenericSendto,
+            "windows"
+        )
+        .is_ok());
     }
 }

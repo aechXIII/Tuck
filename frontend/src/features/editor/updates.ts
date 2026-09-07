@@ -1,5 +1,6 @@
 import { getBackendClient } from "../../backend/client.ts";
 import type { UpdateCheck } from "../../backend/types.ts";
+import { fetchPlatformCapabilities, shouldShowUpdater } from "../../platform/capabilities.ts";
 import { legacyBackendResult } from "./backend-compat.ts";
 import { byId } from "./session.ts";
 import { closeMod, showMod, toast } from "./toast.ts";
@@ -133,6 +134,7 @@ async function downloadAndInstallUpdate(): Promise<void> {
 }
 
 export async function checkUpdates(silent: boolean): Promise<void> {
+  if (!shouldShowUpdater(await fetchPlatformCapabilities())) return;
   const api = getBackendClient();
   const r = await legacyBackendResult(api.checkForUpdates());
   if (r.error) {

@@ -20,7 +20,7 @@ use super::protocol::{parse_stdout_frame, PublicBackendError, MAX_FRAME_BYTES};
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(10);
-const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
+const PROCESS_EXIT_TIMEOUT: Duration = Duration::from_secs(5);
 const LIGHT_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const MEDIA_REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 const MAX_STDERR_BYTES: usize = 65_536;
@@ -38,10 +38,7 @@ impl BackendLaunchConfig {
         repository_root: PathBuf,
         data_root: PathBuf,
     ) -> Result<Self, PublicBackendError> {
-        let program = repository_root
-            .join(".venv")
-            .join("Scripts")
-            .join("python.exe");
+        let program = development_python_path(&repository_root);
         if !program.is_file() {
             return Err(PublicBackendError::new(
                 "BACKEND_START_FAILED",
@@ -145,7 +142,6 @@ impl BackendState {
 }
 
 pub struct BackendProcess {
-    _process_tree: Option<ProcessTreeGuard>,
     child: Mutex<Option<Child>>,
     stdin: Mutex<Option<ChildStdin>>,
     pending: PendingRequests,
@@ -155,6 +151,8 @@ pub struct BackendProcess {
     stderr: Mutex<String>,
     stderr_closed: AtomicBool,
     stderr_done: Notify,
+    // drop this after the child so Linux can kill and reap its whole process group
+    process_tree: Mutex<Option<ProcessTreeGuard>>,
 }
 
 #[derive(Clone)]
@@ -175,6 +173,7 @@ impl BackendProcess {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
+        crate::platform::configure_child_process(&mut command);
         // the frozen sidecar is a console executable; without this flag Windows
         // shows an empty console window behind the packaged GUI
         #[cfg(windows)]
@@ -189,6 +188,7 @@ impl BackendProcess {
         for (key, value) in &config.extra_env {
             command.env(key, value);
         }
+        command.env("TUCK_DESKTOP_PLATFORM", desktop_platform());
 
         let mut child = command.spawn().map_err(|_| {
             PublicBackendError::new(
@@ -196,12 +196,16 @@ impl BackendProcess {
                 "The Python backend process could not start.",
             )
         })?;
-        let process_tree = ProcessTreeGuard::attach(&child).map_err(|_| {
-            PublicBackendError::new(
-                "BACKEND_START_FAILED",
-                "The Python backend process could not be supervised.",
-            )
-        })?;
+        let process_tree = match ProcessTreeGuard::attach(&child) {
+            Ok(process_tree) => process_tree,
+            Err(_) => {
+                let _ = crate::platform::terminate_process_tree(&mut child).await;
+                return Err(PublicBackendError::new(
+                    "BACKEND_START_FAILED",
+                    "The Python backend process could not be supervised.",
+                ));
+            }
+        };
         let stdin = child.stdin.take().ok_or_else(|| {
             PublicBackendError::new(
                 "BACKEND_START_FAILED",
@@ -221,7 +225,6 @@ impl BackendProcess {
             )
         })?;
         let process = Arc::new(Self {
-            _process_tree: Some(process_tree),
             child: Mutex::new(Some(child)),
             stdin: Mutex::new(Some(stdin)),
             pending: PendingRequests::new(),
@@ -231,6 +234,7 @@ impl BackendProcess {
             stderr: Mutex::new(String::new()),
             stderr_closed: AtomicBool::new(false),
             stderr_done: Notify::new(),
+            process_tree: Mutex::new(Some(process_tree)),
         });
 
         let (ready_sender, ready_receiver) = oneshot::channel();
@@ -267,7 +271,6 @@ impl BackendProcess {
 
     pub fn unavailable(error: PublicBackendError) -> Self {
         Self {
-            _process_tree: None,
             child: Mutex::new(None),
             stdin: Mutex::new(None),
             pending: PendingRequests::new(),
@@ -277,6 +280,7 @@ impl BackendProcess {
             stderr: Mutex::new(String::new()),
             stderr_closed: AtomicBool::new(true),
             stderr_done: Notify::new(),
+            process_tree: Mutex::new(None),
         }
     }
 
@@ -321,7 +325,7 @@ impl BackendProcess {
             }
         };
         let graceful_result = if should_request_shutdown {
-            self.send_request(BackendCommand::Shutdown, SHUTDOWN_TIMEOUT, true)
+            self.send_request(BackendCommand::Shutdown, LIGHT_REQUEST_TIMEOUT, true)
                 .await
                 .map(|_| ())
         } else {
@@ -626,11 +630,12 @@ impl BackendProcess {
             let child = child_slot
                 .as_mut()
                 .expect("backend child is present after the guard");
-            tokio::time::timeout(SHUTDOWN_TIMEOUT, child.wait()).await
+            tokio::time::timeout(PROCESS_EXIT_TIMEOUT, child.wait()).await
         };
         match wait_result {
             Ok(Ok(_)) => {
                 child_slot.take();
+                self.disarm_process_tree().await;
                 Ok(())
             }
             Ok(Err(_)) => Err(PublicBackendError::new(
@@ -650,9 +655,50 @@ impl BackendProcess {
                         )
                     })?;
                 child_slot.take();
+                self.disarm_process_tree().await;
                 Ok(())
             }
         }
+    }
+
+    #[cfg(target_os = "linux")]
+    async fn disarm_process_tree(&self) {
+        if let Some(process_tree) = self.process_tree.lock().await.as_mut() {
+            process_tree.disarm();
+        }
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    async fn disarm_process_tree(&self) {
+        // windows keeps the job handle alive until BackendProcess itself drops
+        let _ = &self.process_tree;
+    }
+}
+
+fn development_python_path(repository_root: &std::path::Path) -> PathBuf {
+    let venv = repository_root.join(".venv");
+    #[cfg(windows)]
+    {
+        venv.join("Scripts").join("python.exe")
+    }
+    #[cfg(not(windows))]
+    {
+        venv.join("bin").join("python")
+    }
+}
+
+fn desktop_platform() -> &'static str {
+    #[cfg(target_os = "windows")]
+    {
+        "windows"
+    }
+    #[cfg(target_os = "linux")]
+    {
+        "linux"
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    {
+        "linux"
     }
 }
 
@@ -742,6 +788,23 @@ mod launch_config_tests {
             panic!("missing sidecar must fail");
         };
         assert_eq!(error.code, "BACKEND_START_FAILED");
+    }
+
+    #[test]
+    fn development_python_path_matches_the_target_platform() {
+        let path = development_python_path(std::path::Path::new("repository"));
+        #[cfg(windows)]
+        assert_eq!(path, PathBuf::from("repository/.venv/Scripts/python.exe"));
+        #[cfg(not(windows))]
+        assert_eq!(path, PathBuf::from("repository/.venv/bin/python"));
+    }
+
+    #[test]
+    fn desktop_platform_is_authoritative_for_the_target() {
+        #[cfg(target_os = "windows")]
+        assert_eq!(desktop_platform(), "windows");
+        #[cfg(target_os = "linux")]
+        assert_eq!(desktop_platform(), "linux");
     }
 
     #[test]

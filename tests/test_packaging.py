@@ -23,9 +23,11 @@ import tuck.packaged as packaged
 
 _REPO = Path(__file__).resolve().parent.parent
 _LOCK = _REPO / "packaging" / "ffmpeg-sources.lock.json"
+_LINUX_LOCK = _REPO / "packaging" / "ffmpeg-linux-sources.lock.json"
 _STAGING_MANIFEST = _REPO / "packaging" / "staging" / "manifest.json"
 _WEBVIEW2_LOCK = _REPO / "packaging" / "webview2-bootstrapper.lock.json"
 _VERIFY_PACKAGE = _REPO / "scripts" / "verify_package.py"
+_BUILD_LINUX = _REPO / "scripts" / "build_linux.py"
 
 
 class _Settings:
@@ -38,13 +40,21 @@ class _Settings:
 
 def _make_tool(directory: Path, name: str) -> Path:
     directory.mkdir(parents=True, exist_ok=True)
-    tool = directory / f"{name}.exe"
+    tool = directory / packaged._tool_filename(name)
     tool.write_bytes(b"MZ")
     return tool
 
 
 def _verify_package_module():
     spec = importlib.util.spec_from_file_location("verify_package_for_test", _VERIFY_PACKAGE)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _build_linux_module():
+    spec = importlib.util.spec_from_file_location("build_linux_for_test", _BUILD_LINUX)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -166,6 +176,105 @@ def test_ffmpeg_lock_is_complete_and_redistributable() -> None:
     assert len(lock["corresponding_source"]["upstream_commit"]) == 40
 
 
+def test_linux_ffmpeg_lock_completely_pins_the_source_build() -> None:
+    lock = json.loads(_LINUX_LOCK.read_text(encoding="utf-8"))
+
+    assert lock["lockfile_version"] == 2
+    assert lock["platform"] == "linux"
+    assert lock["architecture"] == "x86_64"
+    assert lock["build_platform"] == {
+        "distribution": "Ubuntu",
+        "version": "22.04",
+        "native_only": True,
+        "libc_linkage": "dynamic",
+    }
+    assert "John Van Sickle" not in _LINUX_LOCK.read_text(encoding="utf-8")
+
+    recipe = lock["recipe"]
+    recipe_path = _REPO / recipe["path"]
+    assert recipe_path.is_file()
+    assert recipe_path.stat().st_size == recipe["size_bytes"]
+    assert hashlib.sha256(recipe_path.read_bytes()).hexdigest() == recipe["sha256"]
+
+    sources = {source["name"]: source for source in lock["sources"]}
+    assert set(sources) == {"ffmpeg", "x264", "x265"}
+    for source in sources.values():
+        assert source["url"].startswith("https://")
+        assert len(source["sha256"]) == 64
+        assert source["size_bytes"] > 0
+        assert source["archive_root"]
+        assert source["license"] == {
+            "spdx": "GPL-2.0-or-later",
+            "text_path": source["license"]["text_path"],
+        }
+    assert len(sources["x265"]["revision"]) == 40
+    assert sources["x265"]["revision"] in sources["x265"]["url"]
+
+    output = lock["output"]
+    assert output["executables"] == ["ffmpeg", "ffprobe"]
+    assert {"--enable-gpl", "--enable-libx264", "--enable-libx265"} <= set(
+        output["license"]["configure_flags_required"]
+    )
+    assert "--static" in output["license"]["configure_flags_forbidden"]
+    assert output["runtime_dependency"] == "libc.so.6"
+    assert output["forbidden_runtime_dependencies"] == ["libx264", "libx265"]
+
+
+def test_linux_build_rejects_incomplete_source_provenance(tmp_path: Path, monkeypatch) -> None:
+    build_linux = _build_linux_module()
+    incomplete = json.loads(_LINUX_LOCK.read_text(encoding="utf-8"))
+    del incomplete["sources"][0]["archive_root"]
+    lock_path = tmp_path / "ffmpeg-linux-sources.lock.json"
+    lock_path.write_text(json.dumps(incomplete), encoding="utf-8")
+    monkeypatch.setattr(build_linux, "LOCK_PATH", lock_path)
+
+    with pytest.raises(build_linux.BuildError, match="provenance is incomplete"):
+        build_linux.load_lock()
+
+
+def test_linux_package_verifier_rejects_incomplete_source_provenance() -> None:
+    verify_package = _verify_package_module()
+    incomplete = json.loads(_LINUX_LOCK.read_text(encoding="utf-8"))
+    del incomplete["recipe"]["sha256"]
+
+    with pytest.raises(verify_package.VerifyError, match="recipe provenance is incomplete"):
+        verify_package._validate_linux_lock(incomplete)
+
+
+def test_linux_build_contract_has_one_sidecar_and_an_appimage_overlay() -> None:
+    build_script = (_REPO / "scripts" / "build_linux.py").read_text(encoding="utf-8")
+    shell_script = (_REPO / "scripts" / "build-linux.sh").read_text(encoding="utf-8")
+    spec = (_REPO / "scripts" / "tuck-sidecar-linux.spec").read_text(encoding="utf-8")
+    config = json.loads((_REPO / "src-tauri" / "tauri.linux.conf.json").read_text(encoding="utf-8"))
+
+    assert "ffmpeg-linux-sources.lock.json" in build_script
+    assert "ensure_source_archives" in build_script
+    assert "build_source_archive" in build_script
+    assert "validate_ffmpeg_runtime" in build_script
+    assert "THIRD_PARTY_NOTICES_LINUX.md" in build_script
+    assert "packaging" in build_script and "staging" in build_script
+    assert 'name="tuck-sidecar"' in spec
+    assert "tuck.cli" in spec and "pywin32" in spec
+    excludes = spec.split("_excludes", maxsplit=1)[1]
+    assert '"tuck.updater"' in excludes and '"packaging"' in excludes
+    assert "TuckCli" not in spec.split("_excludes", maxsplit=1)[0]
+    assert config["bundle"]["targets"] == ["appimage"]
+    assert config["bundle"]["resources"] == {"../packaging/staging/linux/app/": "./"}
+    assert all(icon.endswith(".png") for icon in config["bundle"]["icon"])
+    # preview playback needs the GStreamer plugins bundled into the AppImage
+    assert config["bundle"]["linux"]["appimage"]["bundleMediaFramework"] is True
+    assert "gst-inspect-1.0 autoaudiosink" in shell_script
+    assert "npm run tauri build -- --bundles appimage" in shell_script
+    assert "build-ffmpeg-linux.sh" not in shell_script
+    assert "tauri.linux.conf.json" not in shell_script
+    assert "verify_package.py --platform linux --artifact" in shell_script
+    assert "smoke_appimage_gui.py --artifact" in shell_script
+    assert "smoke_packaged.py --platform linux --artifact" in shell_script
+    assert "libwayland-client.so.0" in shell_script
+    assert "mksquashfs" in shell_script
+    assert "host libwayland-client" in _VERIFY_PACKAGE.read_text(encoding="utf-8")
+
+
 def test_webview2_bootstrapper_matches_its_lock() -> None:
     lock = json.loads(_WEBVIEW2_LOCK.read_text(encoding="utf-8"))
     bootstrapper = _REPO / "scripts" / lock["filename"]
@@ -176,10 +285,13 @@ def test_webview2_bootstrapper_matches_its_lock() -> None:
 
 def test_tauri_uses_the_pinned_webview2_bootstrapper_and_app_browser_policy() -> None:
     config = json.loads((_REPO / "src-tauri" / "tauri.conf.json").read_text(encoding="utf-8"))
+    windows_config = json.loads(
+        (_REPO / "src-tauri" / "tauri.windows.conf.json").read_text(encoding="utf-8")
+    )
     window = config["app"]["windows"][0]
     csp = config["app"]["security"]["csp"]
 
-    assert config["bundle"]["windows"]["webviewInstallMode"]["type"] == "skip"
+    assert windows_config["bundle"]["windows"]["webviewInstallMode"]["type"] == "skip"
     assert window["devtools"] is False
     assert window["zoomHotkeysEnabled"] is False
     assert "http://localhost:*" not in csp

@@ -12,8 +12,24 @@ import threading
 import uuid
 from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING, Protocol
 
 import platformdirs
+
+if TYPE_CHECKING:
+
+    class _FcntlModule(Protocol):
+        LOCK_EX: int
+        LOCK_UN: int
+
+        def flock(self, fd: int, operation: int) -> None: ...
+
+    fcntl: _FcntlModule | None
+else:
+    try:
+        import fcntl
+    except ImportError:
+        fcntl = None
 
 from .models import (
     BUILTIN_PROFILE_IDS,
@@ -157,7 +173,7 @@ def _get_lock_path() -> Path:
     return _config_dir() / "settings.lock"
 
 
-# uses msvcrt file locking so only one Tuck process can write settings at a time
+# keeps settings writes serialized across independent Tuck processes
 class _ProcessLock:
     def __init__(self, lock_path: Path) -> None:
         self._lock_path = lock_path
@@ -173,8 +189,10 @@ class _ProcessLock:
                 os.write(fd, b"\x00")
 
             os.lseek(fd, 0, os.SEEK_SET)
-            if msvcrt is not None:
+            if os.name == "nt" and msvcrt is not None:
                 msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
+            elif fcntl is not None:
+                fcntl.flock(fd, fcntl.LOCK_EX)
         except OSError as exc:
             os.close(fd)
             raise OSError(
@@ -190,8 +208,10 @@ class _ProcessLock:
         if self._fd is not None:
             try:
                 os.lseek(self._fd, 0, os.SEEK_SET)
-                if msvcrt is not None and getattr(self, "_fd", None) is not None:
+                if os.name == "nt" and msvcrt is not None:
                     msvcrt.locking(self._fd, msvcrt.LK_UNLCK, 1)
+                elif fcntl is not None:
+                    fcntl.flock(self._fd, fcntl.LOCK_UN)
             finally:
                 os.close(self._fd)
                 self._fd = None

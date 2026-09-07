@@ -48,3 +48,28 @@ def test_invalid_custom_paths_fall_back_to_path(tmp_path: Path, monkeypatch) -> 
 
     assert find_ffmpeg() == str(tmp_path / "path-ffmpeg.exe")
     assert find_ffprobe() == str(tmp_path / "path-ffprobe.exe")
+
+
+def test_linux_uses_plain_named_bundled_tools_without_path_lookup(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import tuck.media_tools as media_tools
+    import tuck.packaged as packaged
+
+    tools = tmp_path / "bundle"
+    tools.mkdir()
+    ffmpeg = tools / "ffmpeg"
+    ffmpeg.touch()
+    ffprobe = tools / "ffprobe"
+    ffprobe.touch()
+    monkeypatch.setenv("TUCK_DESKTOP_PLATFORM", "linux")
+    monkeypatch.setenv(packaged.TOOLS_DIR_ENV, str(tools))
+    monkeypatch.setattr(media_tools, "get_settings_manager", lambda: _Settings({}))
+    monkeypatch.setattr(
+        media_tools.shutil,
+        "which",
+        lambda name: (_ for _ in ()).throw(AssertionError(f"PATH checked for {name}")),
+    )
+
+    assert find_ffmpeg() == str(ffmpeg)
+    assert find_ffprobe() == str(ffprobe)

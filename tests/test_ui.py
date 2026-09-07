@@ -441,7 +441,9 @@ def test_web_ui_allows_manual_target_size_entry() -> None:
 def test_web_ui_checks_for_updates_on_startup_when_enabled() -> None:
     html = _web_source()
 
-    assert "if (session.appSettings.check_updates !== false) void checkUpdates(true);" in html
+    assert "session.appSettings.check_updates !== false" in html
+    assert "shouldShowUpdater(await fetchPlatformCapabilities())" in html
+    assert "void checkUpdates(true);" in html
     assert "export async function checkUpdates(silent: boolean)" in html
     assert 'if (!silent) toast("Running latest version.", "ok");' in html
 

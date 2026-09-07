@@ -4,6 +4,8 @@ import os
 import threading
 import time
 
+import pytest
+
 from tuck.engine import cleanup_cache
 from tuck.models import (
     BUILTIN_PROFILE_IDS,
@@ -650,6 +652,30 @@ class TestCacheSafety:
 
 
 class TestProcessLock:
+    @pytest.mark.skipif(os.name == "nt", reason="fcntl is only available on POSIX")
+    def test_posix_lock_uses_flock(self, tmp_path, monkeypatch):
+        import tuck.settings as settings_mod
+
+        calls: list[tuple[int, int]] = []
+
+        class Fcntl:
+            LOCK_EX = 1
+            LOCK_UN = 2
+
+            @staticmethod
+            def flock(fd: int, operation: int) -> None:
+                calls.append((fd, operation))
+
+        monkeypatch.setattr(settings_mod, "fcntl", Fcntl)
+        lock = _ProcessLock(tmp_path / "settings.lock")
+
+        lock.acquire()
+        fd = lock._fd
+        lock.release()
+
+        assert fd is not None
+        assert calls == [(fd, Fcntl.LOCK_EX), (fd, Fcntl.LOCK_UN)]
+
     def test_acquire_and_release(self, tmp_path, monkeypatch):
 
         import tuck.settings as settings_mod

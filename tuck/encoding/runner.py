@@ -27,6 +27,7 @@ from ..models import (
     WORKFLOW_UPSCALE,
     EncodePlan,
 )
+from ..models.encoding_policy import validate_encoder_supported_on_desktop
 from ..models.progress import EncodeProgress, EncodeStage
 from ..output_paths import reservation_path, resolve_output_collision
 from .capabilities import (
@@ -113,6 +114,7 @@ class FFmpegEngine:
 
     def _select_encoder_candidates(self, plan: EncodePlan) -> tuple[bool, tuple[str, ...]]:
         requested = getattr(plan, "video_encoder", "libx264") or "libx264"
+        validate_encoder_supported_on_desktop(requested)
         available = get_available_encoders()
         was_auto = requested in (ENCODER_AUTO, ENCODER_AUTO_COMPRESSION, ENCODER_AUTO_FAST)
         fastest = requested != ENCODER_AUTO_COMPRESSION

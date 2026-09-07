@@ -31,6 +31,16 @@ function form(overrides: Partial<ExportFormState> = {}): ExportFormState {
   };
 }
 
+const linuxCapabilities = {
+  platform: "linux" as const,
+  architecture: "x86_64" as const,
+  sendToIntegration: false,
+  publicCli: false,
+  automaticUpdater: false,
+  hardwareAcceleration: false,
+  packaged: false,
+};
+
 test("compression request carries target size, source resolution, and audio bitrate", () => {
   const req = buildPlanRequest(form(), { source: "C:\\a.mp4", requestId: 7 });
   assert.equal(req.workflow, "compression");
@@ -89,6 +99,18 @@ test("upscale CRF maps quality value to crf and a cpu tune passes through", () =
   assert.equal(req.tune, "grain");
 });
 
+test("Linux request replaces an imported hardware profile encoder before submission", () => {
+  const req = buildPlanRequest(
+    form({ workflow: "upscale", encoder: "h264_nvenc", preset: "p7", rateControl: "CQ" }),
+    { source: "s", platformCapabilities: linuxCapabilities },
+  );
+
+  assert.equal(req.video_encoder, "libx264");
+  assert.equal(req.preset, "medium");
+  assert.equal(req.rate_control_method, "crf");
+  assert.ok(!("cq" in req));
+});
+
 test("segments are included only when the clip is edited", () => {
   const withSegments = buildPlanRequest(form(), {
     source: "s",
@@ -119,6 +141,22 @@ test("profile payload keeps CQP when the current profile used CQP", () => {
   assert.equal(data.rate_control_method, "cqp");
   assert.equal(data.qp, 20);
   assert.equal(data.name, "My profile");
+});
+
+test("Linux profile save replaces an imported hardware encoder", () => {
+  const data = buildProfilePayload(
+    form({ workflow: "upscale", encoder: "hevc_nvenc", preset: "p7", rateControl: "CQ" }),
+    {
+      name: "Imported profile",
+      currentProfile: { rate_control_method: "cqp", qp: 19 },
+      clip: null,
+      platformCapabilities: linuxCapabilities,
+    },
+  );
+
+  assert.equal(data.video_encoder, "libx264");
+  assert.equal(data.preset, "medium");
+  assert.equal(data.rate_control_method, "crf");
 });
 
 test("profile payload writes transform intent when the clip touched it", () => {

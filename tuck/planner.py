@@ -5,6 +5,7 @@ import math
 from dataclasses import replace
 from pathlib import Path
 
+from .desktop_platform import is_linux_desktop
 from .encoding.target_size import (
     MAX_AUDIO_BITRATE,
     MIN_VIDEO_BITRATE,
@@ -335,7 +336,7 @@ def plan(
             )
     else:
         hardware = video_encoder in NVENC_ENCODERS | AMF_ENCODERS
-        if video_encoder in (ENCODER_AUTO, ENCODER_AUTO_FAST):
+        if video_encoder in (ENCODER_AUTO, ENCODER_AUTO_FAST) and not is_linux_desktop():
             hardware = True
         ts_plan = calculate_target_size_bitrates(
             target_size,

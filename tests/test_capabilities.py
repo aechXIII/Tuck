@@ -1,6 +1,8 @@
 import json
 import os
 
+import pytest
+
 from tuck.encoding.capabilities import (
     _detect_usable_encoders,
     auto_encoder_candidates,
@@ -65,6 +67,32 @@ class TestAutoEncoder:
 
 
 class TestUsableHardwareDetection:
+    def test_linux_exposes_only_cpu_encoders(self, monkeypatch):
+        monkeypatch.setenv("TUCK_DESKTOP_PLATFORM", "linux")
+        monkeypatch.setattr(
+            "tuck.encoding.capabilities._detect_available_encoders",
+            lambda _ffmpeg: frozenset({"libx264", "libx265", "h264_nvenc", "h264_amf"}),
+        )
+        monkeypatch.setattr(
+            "tuck.encoding.capabilities._hardware_encoder_works",
+            lambda *_args: (_ for _ in ()).throw(AssertionError("hardware probe ran")),
+        )
+
+        assert _detect_usable_encoders("ffmpeg") == frozenset({"libx264", "libx265"})
+        assert auto_encoder_candidates(
+            available=frozenset({"libx264", "h264_nvenc", "h264_amf"})
+        ) == ("libx264",)
+        caps = get_encoder_capabilities(available=frozenset({"libx264", "h264_nvenc"}))
+        assert caps.to_dict() == {
+            "available": ["libx264"],
+            "has_nvidia": False,
+            "has_amd": False,
+            "has_cpu": True,
+            "supports_auto": True,
+        }
+        with pytest.raises(ValueError, match="not supported on Linux"):
+            resolve_encoder("h264_nvenc", frozenset({"libx264", "h264_nvenc"}))
+
     def test_excludes_nvenc_that_cannot_initialize(self, monkeypatch):
         monkeypatch.setattr(
             "tuck.encoding.capabilities._detect_available_encoders",

@@ -1,5 +1,12 @@
 import type { CropTransform } from "../transform/crop-geometry.ts";
-import { isCpuEncoder, type RateControlDisplay, type Workflow } from "./encoder-options.ts";
+import {
+  defaultRateControl,
+  isCpuEncoder,
+  nativePresetForSpeed,
+  type RateControlDisplay,
+  type Workflow,
+} from "./encoder-options.ts";
+import { encoderForPlatform, type PlatformCapabilities } from "../../platform/capabilities.ts";
 
 /** Snapshot of every export-form control value, read once from the DOM. */
 export interface ExportFormState {
@@ -37,6 +44,8 @@ export interface PlanRequestContext {
   transform?: CropTransform | null;
   /** Audio timeline request payload merged into the request. */
   audioPayload?: Readonly<Record<string, unknown>> | null;
+  /** Restricts the request to encoders supported by the running desktop platform. */
+  platformCapabilities?: PlatformCapabilities;
 }
 
 export interface ProfilePayloadContext {
@@ -49,6 +58,8 @@ export interface ProfilePayloadContext {
     sizingMode: string;
     transformIntentTouched: boolean;
   } | null;
+  /** Restricts the saved profile to encoders supported by the running desktop platform. */
+  platformCapabilities?: PlatformCapabilities;
 }
 
 const RC_TO_METHOD: Readonly<Record<RateControlDisplay, string>> = {
@@ -64,14 +75,18 @@ export function buildPlanRequest(
   ctx: PlanRequestContext,
 ): Record<string, unknown> {
   const up = form.workflow === "upscale";
-  const rc = form.rateControl;
+  const encoder = ctx.platformCapabilities
+    ? encoderForPlatform(form.encoder, ctx.platformCapabilities)
+    : form.encoder;
+  const encoderChanged = encoder !== form.encoder;
+  const rc = encoderChanged ? defaultRateControl(form.workflow, encoder) : form.rateControl;
   const req: Record<string, unknown> = {
     source: ctx.source,
     profile_id: form.profileId,
     workflow: up ? "upscale" : "compression",
     rate_control: "target_size",
-    video_encoder: form.encoder,
-    preset: form.preset,
+    video_encoder: encoder,
+    preset: encoderChanged ? nativePresetForSpeed("balanced", encoder) : form.preset,
     rate_control_method: RC_TO_METHOD[rc] ?? "cbr",
   };
   if (ctx.requestId !== undefined) req._request_id = ctx.requestId;
@@ -98,7 +113,7 @@ export function buildPlanRequest(
     req.rate_control = "explicit_bitrate";
     req.explicit_bitrate = toInt(form.bitrateKbps) * 1000;
   }
-  if (up && (form.encoder === "libx264" || form.encoder === "libx265") && form.tune !== "none") {
+  if (up && (encoder === "libx264" || encoder === "libx265") && form.tune !== "none") {
     req.tune = form.tune;
   }
   const segments = ctx.segments ?? null;
@@ -117,9 +132,16 @@ export function buildProfilePayload(
 ): Record<string, unknown> {
   const up = form.workflow === "upscale";
   const current = ctx.currentProfile ?? {};
+  const encoder = ctx.platformCapabilities
+    ? encoderForPlatform(form.encoder, ctx.platformCapabilities)
+    : form.encoder;
+  const encoderChanged = encoder !== form.encoder;
+  const rateControl = encoderChanged
+    ? defaultRateControl(form.workflow, encoder)
+    : form.rateControl;
   let rc = up
-    ? (RC_TO_METHOD[form.rateControl] ?? "crf")
-    : isCpuEncoder(form.encoder)
+    ? (RC_TO_METHOD[rateControl] ?? "crf")
+    : isCpuEncoder(encoder)
       ? "cbr"
       : "vbr";
   const isBr = rc === "cbr" || rc === "vbr";
@@ -140,9 +162,9 @@ export function buildProfilePayload(
     audio_bitrate_kbps: toInt(form.audioBitrateKbps),
     keep_audio: form.keepAudio,
     two_pass: !up && form.twoPass,
-    preset: form.preset,
+    preset: encoderChanged ? nativePresetForSpeed("balanced", encoder) : form.preset,
     scaler: form.scaler.toLowerCase(),
-    video_encoder: form.encoder,
+    video_encoder: encoder,
     workflow: up ? "upscale" : "compression",
     rate_control_method: rc,
     cq: rc === "cq" ? quality : numberOr(current.cq, 23),
@@ -158,7 +180,7 @@ export function buildProfilePayload(
     };
   }
   if (up && isBr) data.explicit_bitrate_kbps = toInt(form.bitrateKbps);
-  if (up && isCpuEncoder(form.encoder)) data.tune = form.tune === "none" ? "" : form.tune;
+  if (up && isCpuEncoder(encoder)) data.tune = form.tune === "none" ? "" : form.tune;
   return data;
 }
 

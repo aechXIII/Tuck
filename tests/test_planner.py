@@ -33,6 +33,7 @@ from tuck.models import (
 )
 from tuck.output_paths import resolve_output_collision
 from tuck.planner import _make_even, _scale_resolution, plan
+from tuck.planner_options import resolve_plan_options
 
 
 class TestScaleResolution:
@@ -68,6 +69,16 @@ class TestScaleResolution:
         w2, h2 = _make_even(1920, 1080)
         assert w2 == 1920
         assert h2 == 1080
+
+
+def test_linux_rejects_saved_hardware_profile_when_planning(monkeypatch) -> None:
+    profile = Profile(name="Hardware", video_encoder="h264_nvenc", two_pass=False)
+    monkeypatch.setenv("TUCK_DESKTOP_PLATFORM", "linux")
+
+    with pytest.raises(ValueError, match="not supported on Linux"):
+        resolve_plan_options(profile, None)
+
+    assert profile.video_encoder == "h264_nvenc"
 
 
 class TestCropPlanning:

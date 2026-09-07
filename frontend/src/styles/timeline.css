@@ -382,7 +382,6 @@ body.tl-segment-dragging * {
 
 #sequence-ruler {
   height: 26px;
-  margin-bottom: 2px;
   border-bottom-color: #373343;
 }
 
@@ -411,7 +410,6 @@ body.tl-segment-dragging * {
 
 .seq-row {
   column-gap: 8px;
-  border-bottom: 1px solid var(--timeline-line);
 }
 
 .seq-head {
@@ -511,14 +509,19 @@ body.tl-segment-dragging * {
   transform: none;
 }
 
+/* separator between rows only, so the last row adds no trailing height and
+   WebKitGTK does not show a phantom vertical scrollbar when the tracks fit */
 .seq-row + .seq-row {
   margin-top: 0;
+  border-top: 1px solid var(--timeline-line);
 }
 
 #imported-audio-tracks:has(.seq-row) {
   margin-top: 0;
   padding-top: 0;
-  border-top: 0;
+  /* row separators are border-top now; keep one between the source group and
+     the first imported track since they sit in different containers */
+  border-top: 1px solid var(--timeline-line);
 }
 
 .tl-segment-surface {

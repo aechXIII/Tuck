@@ -15,6 +15,8 @@ import os
 import sys
 from pathlib import Path
 
+from .desktop_platform import is_linux_desktop
+
 TOOLS_DIR_ENV = "TUCK_BUNDLED_TOOLS_DIR"
 FFMPEG_ENV = "TUCK_BUNDLED_FFMPEG"
 FFPROBE_ENV = "TUCK_BUNDLED_FFPROBE"
@@ -34,7 +36,7 @@ def executable_dir() -> Path:
 
 
 def _tool_filename(name: str) -> str:
-    return f"{name}.exe" if os.name == "nt" else name
+    return name if is_linux_desktop() else f"{name}.exe" if os.name == "nt" else name
 
 
 def _explicit_tool_path(name: str) -> Path | None:

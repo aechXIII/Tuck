@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
 import { hasTauriInvoke } from "../backend/index.ts";
+import { isSoftwareEncoder } from "../features/export/encoder-options.ts";
 
 export interface PlatformCapabilities {
   platform: "windows" | "linux";
@@ -8,6 +9,7 @@ export interface PlatformCapabilities {
   sendToIntegration: boolean;
   publicCli: boolean;
   automaticUpdater: boolean;
+  hardwareAcceleration: boolean;
   packaged: boolean;
 }
 
@@ -21,6 +23,7 @@ const NON_TAURI_CAPABILITIES: PlatformCapabilities = {
   sendToIntegration: true,
   publicCli: true,
   automaticUpdater: true,
+  hardwareAcceleration: true,
   packaged: false,
 };
 
@@ -32,6 +35,7 @@ const DEGRADED_CAPABILITIES: PlatformCapabilities = {
   sendToIntegration: false,
   publicCli: false,
   automaticUpdater: false,
+  hardwareAcceleration: false,
   packaged: false,
 };
 
@@ -46,6 +50,7 @@ function isPlatformCapabilities(value: unknown): value is PlatformCapabilities {
     typeof caps.sendToIntegration === "boolean" &&
     typeof caps.publicCli === "boolean" &&
     typeof caps.automaticUpdater === "boolean" &&
+    typeof caps.hardwareAcceleration === "boolean" &&
     typeof caps.packaged === "boolean"
   );
 }
@@ -75,4 +80,21 @@ export function shouldShowSendTo(caps: PlatformCapabilities): boolean {
 
 export function shouldShowUpdater(caps: PlatformCapabilities): boolean {
   return caps.automaticUpdater;
+}
+
+export function supportsHardwareEncoders(caps: PlatformCapabilities): boolean {
+  return caps.hardwareAcceleration;
+}
+
+export function encodersForPlatform(
+  encoders: readonly string[],
+  caps: PlatformCapabilities,
+): string[] {
+  return supportsHardwareEncoders(caps)
+    ? [...encoders]
+    : encoders.filter((encoder) => isSoftwareEncoder(encoder));
+}
+
+export function encoderForPlatform(encoder: string, caps: PlatformCapabilities): string {
+  return !supportsHardwareEncoders(caps) && !isSoftwareEncoder(encoder) ? "libx264" : encoder;
 }

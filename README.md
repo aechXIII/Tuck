@@ -5,12 +5,13 @@
   Tuck
 </h1>
 
-<p align="center"><strong>Trim, compress, and upscale videos on Windows.</strong></p>
+<p align="center"><strong>Trim, compress, and upscale videos on Windows and Linux.</strong></p>
 
 <p align="center">
     <a href="https://github.com/aechXIII/Tuck/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/aechXIII/Tuck?style=flat-square&label=Release&color=7C3AED"></a>
     <a href="https://github.com/aechXIII/Tuck/releases"><img alt="Total downloads" src="https://img.shields.io/github/downloads/aechXIII/Tuck/total?style=flat-square&label=Downloads&color=7C3AED"></a>
     <img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-7C3AED?style=flat-square&logo=windows&logoColor=white">
+    <img alt="Linux x86-64 AppImage" src="https://img.shields.io/badge/Linux-x86--64%20AppImage-7C3AED?style=flat-square&logo=linux&logoColor=white">
     <a href="LICENSE"><img alt="GPL v3 license" src="https://img.shields.io/badge/License-GPL%20v3-7C3AED?style=flat-square"></a>
   <a href="https://x.com/aechxiii">
   <img alt="Follow @aechxiii on X" src="https://img.shields.io/badge/Follow-%40aechxiii-7C3AED?style=flat-square&logo=x&logoColor=white">
@@ -27,13 +28,15 @@
 >
 > If Defender still reports an older detection, open Windows Security, go to **Virus & threat protection > Protection updates**, and select **Check for updates**.
 
-Tuck is a lightweight Windows video "editor", compressor, and upscaler built around FFmpeg. Use it to quickly remove unwanted segments, add or modify audio tracks, crop or transform the video and after that - export to a desired file size or resolution.
+Tuck is a desktop video editor, compressor, and upscaler built around FFmpeg.
+Trim clips, edit audio, crop or resize videos, and export to a chosen file size
+or resolution.
 
 <img src="docs/screenshots/Tuck_GUI.png" alt="Tuck editor">
 
 ## Download
 
-Tuck supports Windows 10 and 11. The installer includes the Microsoft Edge WebView2 setup, but FFmpeg must be installed separately.
+Tuck supports Windows 10 and 11 and x86-64 Linux through an AppImage. The AppImage bundles its Python backend and FFmpeg tools. It is GUI-only: Send To integration, a public command line, automatic updates, and hardware encoding are Windows-only.
 
 1. Download the latest installer from the [Releases page](https://github.com/aechXIII/Tuck/releases/latest), then run it.
 
@@ -47,6 +50,33 @@ Tuck supports Windows 10 and 11. The installer includes the Microsoft Edge WebVi
 
 If `winget` is unavailable, install a Windows build from the [FFmpeg download page](https://ffmpeg.org/download.html). Make `ffmpeg.exe` and `ffprobe.exe` available in `PATH` or select them under
 **Settings > System & support > Advanced system settings**.
+
+### Linux AppImage
+
+Run the x86-64 AppImage directly after making it executable:
+
+```bash
+chmod +x Tuck_*.AppImage
+./Tuck_*.AppImage
+```
+
+The AppImage needs a desktop session with WebKitGTK 4.1. It bundles its own Python
+sidecar, FFmpeg/ffprobe, and the GStreamer plugins used for editor preview
+playback.
+
+- On distributions without `libfuse2` (Ubuntu 24.04 and newer, recent Fedora), run
+  it with `./Tuck_*.AppImage --appimage-extract-and-run` or install `libfuse2`.
+- Tuck forces WebKitGTK's portable renderer so it starts inside virtual machines
+  and on software OpenGL. Launch with `TUCK_WEBKIT_ACCELERATED=1 ./Tuck_*.AppImage`
+  for the full accelerated renderer, or `TUCK_WEBKIT_COMPOSITING=1 ./Tuck_*.AppImage`
+  to keep accelerated compositing (needed for `<video>` on some drivers) while
+  still avoiding the virtual-machine renderer crash.
+
+Build the AppImage natively on Ubuntu 22.04 with a desktop session available for the
+smoke test. It uses the bundled Python sidecar and FFmpeg/ffprobe, not system Python
+or FFmpeg. The build compiles FFmpeg from locked FFmpeg, x264, and x265 sources; the
+AppImage includes those exact source archives and the build recipe under
+`ffmpeg/source`.
 
 ## Features
 
@@ -87,7 +117,7 @@ include the report in a [GitHub issue](https://github.com/aechXIII/Tuck/issues).
 
 ## Build from source
 
-Running Tuck from source requires Windows, Python 3.10 or newer, and FFmpeg:
+Running Tuck from source requires Windows or Linux, Python 3.10 or newer, and FFmpeg:
 
 ```powershell
 .\scripts\setup.ps1
@@ -104,6 +134,12 @@ Building the installer also requires [Inno Setup 6](https://jrsoftware.org/isdl.
 
 ```powershell
 .\scripts\build.ps1 -Clean -Installer
+```
+
+Build the x86-64 Linux AppImage natively on Ubuntu 22.04 with Python, Node.js, Rust, Tauri's Linux build dependencies, CMake, NASM, pkg-config, and a C/C++ compiler installed:
+
+```bash
+./scripts/build-linux.sh --clean
 ```
 
 ## License

@@ -1,0 +1,95 @@
+{
+  "lockfile_version": 2,
+  "purpose": "Reproducible source inputs for the GPL-enabled FFmpeg and ffprobe bundled in the Linux x86_64 AppImage. The builder accepts only these archives, verifies their bytes before extraction, and preserves them with the reviewed recipe in the package.",
+  "platform": "linux",
+  "architecture": "x86_64",
+  "build_platform": {
+    "distribution": "Ubuntu",
+    "version": "22.04",
+    "native_only": true,
+    "libc_linkage": "dynamic"
+  },
+  "recipe": {
+    "path": "packaging/build-ffmpeg-linux.sh",
+    "sha256": "630a1a57a3d937a1cbfa702b355319e8e06219a713f91369d225c433ec38188b",
+    "size_bytes": 1899,
+    "description": "Build x264 and x265 as static libraries, then link them into dynamically libc-linked FFmpeg and ffprobe."
+  },
+  "sources": [
+    {
+      "name": "ffmpeg",
+      "version": "7.1.1",
+      "filename": "ffmpeg-7.1.1.tar.xz",
+      "url": "https://ffmpeg.org/releases/ffmpeg-7.1.1.tar.xz",
+      "size_bytes": 11019500,
+      "sha256": "733984395e0dbbe5c046abda2dc49a5544e7e0e1e2366bba849222ae9e3a03b1",
+      "archive_root": "ffmpeg-7.1.1",
+      "license": {
+        "spdx": "GPL-2.0-or-later",
+        "text_path": "COPYING.GPLv2"
+      }
+    },
+    {
+      "name": "x264",
+      "version": "snapshot-20191217-2245-stable",
+      "filename": "x264-snapshot-20191217-2245-stable.tar.bz2",
+      "url": "https://download.videolan.org/pub/videolan/x264/snapshots/x264-snapshot-20191217-2245-stable.tar.bz2",
+      "size_bytes": 770169,
+      "sha256": "b2495c8f2930167d470994b1ce02b0f4bfb24b3317ba36ba7f112e9809264160",
+      "archive_root": "x264-snapshot-20191217-2245-stable",
+      "license": {
+        "spdx": "GPL-2.0-or-later",
+        "text_path": "COPYING"
+      }
+    },
+    {
+      "name": "x265",
+      "version": "3.6",
+      "revision": "aa7f602f7592eddb9d87749be7466da005b556ee",
+      "filename": "x265-aa7f602f7592.tar.gz",
+      "url": "https://bitbucket.org/multicoreware/x265_git/get/aa7f602f7592eddb9d87749be7466da005b556ee.tar.gz",
+      "size_bytes": 1656575,
+      "sha256": "206329b9599c78d06969a1b7b7bb939f7c99a459ab283b2e93f76854bd34ca7b",
+      "archive_root": "multicoreware-x265_git-aa7f602f7592",
+      "license": {
+        "spdx": "GPL-2.0-or-later",
+        "text_path": "COPYING"
+      }
+    }
+  ],
+  "output": {
+    "license": {
+      "spdx": "GPL-2.0-or-later",
+      "configure_flags_required": [
+        "--enable-gpl",
+        "--enable-libx264",
+        "--enable-libx265",
+        "--enable-static",
+        "--disable-shared"
+      ],
+      "configure_flags_forbidden": [
+        "--enable-nonfree",
+        "--static"
+      ]
+    },
+    "executables": [
+      "ffmpeg",
+      "ffprobe"
+    ],
+    "required_encoders": [
+      "libx264",
+      "libx265"
+    ],
+    "required_filters": [
+      "amix",
+      "concat",
+      "crop",
+      "scale"
+    ],
+    "runtime_dependency": "libc.so.6",
+    "forbidden_runtime_dependencies": [
+      "libx264",
+      "libx265"
+    ]
+  }
+}

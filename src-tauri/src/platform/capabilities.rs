@@ -10,6 +10,8 @@ pub struct PlatformCapabilities {
     pub public_cli: bool,
     #[serde(rename = "automaticUpdater")]
     pub automatic_updater: bool,
+    #[serde(rename = "hardwareAcceleration")]
+    pub hardware_acceleration: bool,
     pub packaged: bool,
 }
 
@@ -19,10 +21,10 @@ pub fn is_packaged() -> bool {
 }
 
 pub fn capabilities_for_target(platform: &str, packaged: bool) -> PlatformCapabilities {
-    let (send_to, public_cli, updater) = match platform {
-        "windows" => (true, true, true),
-        "linux" => (false, false, false),
-        _ => (false, false, false),
+    let (send_to, public_cli, updater, hardware_acceleration) = match platform {
+        "windows" => (true, true, true, true),
+        "linux" => (false, false, false, false),
+        _ => (false, false, false, false),
     };
     PlatformCapabilities {
         platform: platform.to_owned(),
@@ -30,6 +32,7 @@ pub fn capabilities_for_target(platform: &str, packaged: bool) -> PlatformCapabi
         send_to_integration: send_to,
         public_cli,
         automatic_updater: updater,
+        hardware_acceleration,
         packaged,
     }
 }
@@ -55,6 +58,7 @@ mod tests {
         assert!(caps.send_to_integration);
         assert!(caps.public_cli);
         assert!(caps.automatic_updater);
+        assert!(caps.hardware_acceleration);
         assert!(!caps.packaged);
     }
 
@@ -66,6 +70,7 @@ mod tests {
         assert!(!caps.send_to_integration);
         assert!(!caps.public_cli);
         assert!(!caps.automatic_updater);
+        assert!(!caps.hardware_acceleration);
     }
 
     #[test]

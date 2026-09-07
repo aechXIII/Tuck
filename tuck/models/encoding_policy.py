@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from ..desktop_platform import is_linux_desktop
+
 RES_MODE_SOURCE = "source"
 RES_MODE_LIMIT = "limit"
 RES_MODE_CUSTOM = "custom"
@@ -44,6 +46,15 @@ VALID_VIDEO_ENCODER_CHOICES: frozenset[str] = VALID_VIDEO_ENCODERS | AUTO_ENCODE
 CPU_ENCODERS: frozenset[str] = frozenset({"libx264", "libx265"})
 NVENC_ENCODERS: frozenset[str] = frozenset({"h264_nvenc", "hevc_nvenc"})
 AMF_ENCODERS: frozenset[str] = frozenset({"h264_amf", "hevc_amf"})
+
+
+def validate_encoder_supported_on_desktop(video_encoder: str) -> None:
+    if is_linux_desktop() and video_encoder in NVENC_ENCODERS | AMF_ENCODERS:
+        raise ValueError(
+            f"Hardware encoder '{video_encoder}' is not supported on Linux. "
+            "Choose libx264, libx265, or Auto."
+        )
+
 
 X264_TUNES: frozenset[str] = frozenset(
     {"", "film", "animation", "grain", "stillimage", "psnr", "ssim", "fastdecode", "zerolatency"}

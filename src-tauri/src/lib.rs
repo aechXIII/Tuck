@@ -14,6 +14,7 @@ use commands::native::{
 use commands::startup::{
     extract_startup_args, get_startup_files, handle_second_instance, StartupState,
 };
+#[cfg(windows)]
 use commands::updates::{
     check_for_updates, download_update, get_download_progress, install_update,
 };
@@ -45,17 +46,39 @@ fn resolve_backend_config(
             "The application resource directory could not be resolved.",
         )
     })?;
-    let sidecar = resource_dir.join("tuck-sidecar.exe");
-    let ffmpeg = resource_dir.join("ffmpeg").join("ffmpeg.exe");
-    let ffprobe = resource_dir.join("ffmpeg").join("ffprobe.exe");
+    let (sidecar, ffmpeg, ffprobe) = packaged_resource_paths(&resource_dir);
     BackendLaunchConfig::packaged(sidecar, resource_dir, Some(ffmpeg), Some(ffprobe))
 }
 
+fn packaged_resource_paths(
+    resource_dir: &std::path::Path,
+) -> (std::path::PathBuf, std::path::PathBuf, std::path::PathBuf) {
+    #[cfg(windows)]
+    {
+        (
+            resource_dir.join("tuck-sidecar.exe"),
+            resource_dir.join("ffmpeg").join("ffmpeg.exe"),
+            resource_dir.join("ffmpeg").join("ffprobe.exe"),
+        )
+    }
+    #[cfg(not(windows))]
+    {
+        (
+            resource_dir.join("tuck-sidecar"),
+            resource_dir.join("ffmpeg").join("ffmpeg"),
+            resource_dir.join("ffmpeg").join("ffprobe"),
+        )
+    }
+}
+
 pub fn run() {
+    // must happen before the WebView starts so child WebKit processes inherit it
+    platform::prepare_runtime_environment();
+
     let startup_files = extract_startup_args();
     let startup_state = StartupState::new(startup_files);
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         // This plugin must be registered first so a second process forwards
         // arguments to the already-running shell before other plugins start.
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
@@ -72,8 +95,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(startup_state)
         .setup(|app| {
+            #[cfg(windows)]
             if let Some(window) = app.get_webview_window("main") {
-                #[cfg(windows)]
                 window.with_webview(platform::configure_webview)?;
             }
             let state = match resolve_backend_config(&app.handle().clone()) {
@@ -83,28 +106,50 @@ pub fn run() {
             };
             app.manage(state);
             Ok(())
-        })
-        .invoke_handler(tauri::generate_handler![
-            backend_request,
-            platform_capabilities,
-            pick_video_files,
-            pick_audio_files,
-            pick_folder,
-            pick_ffmpeg_file,
-            pick_ffprobe_file,
-            pick_import_file,
-            pick_save_file,
-            copy_text,
-            open_output_folder,
-            open_logs_folder,
-            open_config_folder,
-            close_window,
-            check_for_updates,
-            download_update,
-            install_update,
-            get_download_progress,
-            get_startup_files
-        ])
+        });
+
+    #[cfg(windows)]
+    let builder = builder.invoke_handler(tauri::generate_handler![
+        backend_request,
+        platform_capabilities,
+        pick_video_files,
+        pick_audio_files,
+        pick_folder,
+        pick_ffmpeg_file,
+        pick_ffprobe_file,
+        pick_import_file,
+        pick_save_file,
+        copy_text,
+        open_output_folder,
+        open_logs_folder,
+        open_config_folder,
+        close_window,
+        check_for_updates,
+        download_update,
+        install_update,
+        get_download_progress,
+        get_startup_files
+    ]);
+    #[cfg(not(windows))]
+    let builder = builder.invoke_handler(tauri::generate_handler![
+        backend_request,
+        platform_capabilities,
+        pick_video_files,
+        pick_audio_files,
+        pick_folder,
+        pick_ffmpeg_file,
+        pick_ffprobe_file,
+        pick_import_file,
+        pick_save_file,
+        copy_text,
+        open_output_folder,
+        open_logs_folder,
+        open_config_folder,
+        close_window,
+        get_startup_files
+    ]);
+
+    builder
         .on_window_event(move |window, event| {
             if matches!(event, tauri::WindowEvent::Destroyed) {
                 if let Some(state) = window.try_state::<BackendState>() {
@@ -121,7 +166,7 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::allows_app_navigation;
+    use super::{allows_app_navigation, packaged_resource_paths};
 
     #[test]
     fn navigation_policy_allows_only_tuck_origins() {
@@ -137,5 +182,35 @@ mod tests {
         assert!(!allows_app_navigation(
             &"file:///C:/secret.txt".parse().unwrap()
         ));
+    }
+
+    #[test]
+    fn packaged_resource_names_match_the_target_platform() {
+        let resource_dir = std::path::Path::new("resources");
+        let (sidecar, ffmpeg, ffprobe) = packaged_resource_paths(resource_dir);
+        #[cfg(windows)]
+        {
+            assert_eq!(
+                sidecar,
+                std::path::PathBuf::from("resources/tuck-sidecar.exe")
+            );
+            assert_eq!(
+                ffmpeg,
+                std::path::PathBuf::from("resources/ffmpeg/ffmpeg.exe")
+            );
+            assert_eq!(
+                ffprobe,
+                std::path::PathBuf::from("resources/ffmpeg/ffprobe.exe")
+            );
+        }
+        #[cfg(not(windows))]
+        {
+            assert_eq!(sidecar, std::path::PathBuf::from("resources/tuck-sidecar"));
+            assert_eq!(ffmpeg, std::path::PathBuf::from("resources/ffmpeg/ffmpeg"));
+            assert_eq!(
+                ffprobe,
+                std::path::PathBuf::from("resources/ffmpeg/ffprobe")
+            );
+        }
     }
 }

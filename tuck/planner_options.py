@@ -7,6 +7,7 @@ from .models.encoding_policy import (
     RCM_CBR,
     native_preset_for_encoder,
     normalize_legacy_rc_matrix,
+    validate_encoder_supported_on_desktop,
     validate_rate_control_matrix,
     validate_rc_method_for_encoder,
     validate_tune_for_encoder,
@@ -106,6 +107,7 @@ def resolve_plan_options(profile: Profile, request: PlanRequest | None) -> PlanO
         if request.qp is not None:
             qp = request.qp
 
+    validate_encoder_supported_on_desktop(video_encoder)
     preset = native_preset_for_encoder(preset, video_encoder)
     validate_tune_for_encoder(tune, video_encoder)
     validate_rc_method_for_encoder(rate_control_method, video_encoder)

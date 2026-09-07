@@ -289,7 +289,7 @@ class ProcessingQueue:
             self._pending.remove(item_id)
 
     def _check_terminal(self) -> None:
-        if os.name != "posix":
+        if os.name != "posix" or not os.isatty(0):
             return
         try:
             os.tcgetpgrp(0)

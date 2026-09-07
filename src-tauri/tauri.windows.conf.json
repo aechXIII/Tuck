@@ -1,0 +1,22 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "targets": ["nsis"],
+    "shortDescription": "Windows video compressor, cropper, and upscaler.",
+    "longDescription": "Tuck is a Windows desktop video editor, compressor, and upscaler with a bundled FFmpeg and a supervised Python backend.",
+    "icon": ["icons/Tuck.ico"],
+    "resources": {
+      "../packaging/staging/app/": "./"
+    },
+    "windows": {
+      "webviewInstallMode": {
+        "type": "skip"
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "installerHooks": "./installer-hooks.nsh",
+        "languages": ["English"]
+      }
+    }
+  }
+}

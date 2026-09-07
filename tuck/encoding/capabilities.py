@@ -9,6 +9,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from ..desktop_platform import is_linux_desktop
 from ..media_tools import find_ffmpeg
 from ..models import (
     ENCODER_AUTO,
@@ -20,6 +21,7 @@ from ..models.encoding_policy import (
     CPU_ENCODERS,
     NVENC_ENCODERS,
     VALID_VIDEO_ENCODERS,
+    validate_encoder_supported_on_desktop,
 )
 
 logger = logging.getLogger(__name__)
@@ -126,6 +128,8 @@ def _hardware_encoder_works(ffmpeg_path: str, encoder: str) -> bool:
 
 def _detect_usable_encoders(ffmpeg_path: str) -> frozenset[str]:
     compiled = _detect_available_encoders(ffmpeg_path)
+    if is_linux_desktop():
+        return frozenset(compiled & CPU_ENCODERS)
     usable = set(compiled - (NVENC_ENCODERS | AMF_ENCODERS))
     usable.update(
         encoder
@@ -181,10 +185,10 @@ def _save_cached_encoders(ffmpeg_path: str, encoders: frozenset[str]) -> None:
 def get_available_encoders(*, refresh: bool = False) -> frozenset[str]:
     global _encoder_cache
     if _encoder_cache is not None and not refresh:
-        return _encoder_cache
+        return _desktop_supported_encoders(_encoder_cache)
     with _encoder_cache_lock:
         if _encoder_cache is not None and not refresh:
-            return _encoder_cache
+            return _desktop_supported_encoders(_encoder_cache)
         ffmpeg_path = find_ffmpeg()
         if not ffmpeg_path:
             _encoder_cache = frozenset()
@@ -194,9 +198,9 @@ def get_available_encoders(*, refresh: bool = False) -> frozenset[str]:
         cache_days = int(get_settings_manager().get_setting("encoder_cache_days", 7) or 0)
         cached = None if refresh else _load_cached_encoders(ffmpeg_path, cache_days)
         if cached is not None:
-            _encoder_cache = cached
+            _encoder_cache = _desktop_supported_encoders(cached)
             return _encoder_cache
-        _encoder_cache = _detect_usable_encoders(ffmpeg_path)
+        _encoder_cache = _desktop_supported_encoders(_detect_usable_encoders(ffmpeg_path))
         if cache_days > 0:
             _save_cached_encoders(ffmpeg_path, _encoder_cache)
         return _encoder_cache
@@ -216,7 +220,9 @@ def clear_encoder_cache(*, delete_disk: bool = False) -> None:
 def get_encoder_capabilities(
     available: frozenset[str] | None = None,
 ) -> EncoderCapabilities:
-    encs = available if available is not None else get_available_encoders()
+    encs = _desktop_supported_encoders(
+        available if available is not None else get_available_encoders()
+    )
     return EncoderCapabilities(
         available=encs,
         has_nvidia=bool(encs & NVENC_ENCODERS),
@@ -231,7 +237,8 @@ def auto_encoder_candidates(
     *,
     fastest: bool = True,
 ) -> tuple[str, ...]:
-    encs = available if available is not None else get_available_encoders()
+    detected = available if available is not None else get_available_encoders()
+    encs = _desktop_supported_encoders(detected)
     hevc = preferred_codec.lower() in ("hevc", "h265", "x265")
     if fastest:
         order = (
@@ -260,6 +267,7 @@ def resolve_encoder(
     requested: str,
     available: frozenset[str] | None = None,
 ) -> tuple[str, bool]:
+    validate_encoder_supported_on_desktop(requested)
     encs = available if available is not None else get_available_encoders()
     if not requested or requested in (ENCODER_AUTO, ENCODER_AUTO_FAST, ENCODER_AUTO_COMPRESSION):
         return (
@@ -273,6 +281,10 @@ def resolve_encoder(
 
 def is_hardware_encoder(encoder: str) -> bool:
     return encoder in NVENC_ENCODERS or encoder in AMF_ENCODERS
+
+
+def _desktop_supported_encoders(encoders: frozenset[str]) -> frozenset[str]:
+    return frozenset(encoders & CPU_ENCODERS) if is_linux_desktop() else encoders
 
 
 def is_hardware_init_failure(stderr: str) -> bool:

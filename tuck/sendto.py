@@ -5,6 +5,8 @@ import os
 import sys
 from pathlib import Path
 
+from .desktop_platform import is_linux_desktop
+
 logger = logging.getLogger(__name__)
 
 SENDTO_SHORTCUT_NAME = "Tuck.lnk"
@@ -21,6 +23,11 @@ _SHELL_LINK_HEADER = (
 
 ACTION_START = "start"
 ACTION_REVIEW = "review"
+
+
+def _require_sendto_support() -> None:
+    if is_linux_desktop():
+        raise OSError("Send To shortcuts are only available on Windows.")
 
 
 def _sendto_dir() -> Path:
@@ -178,6 +185,7 @@ def _ensure_generic_destinations_available() -> None:
 
 
 def install_sendto(executable_path: str | Path | None = None) -> Path:
+    _require_sendto_support()
     review_target = _get_target_path(executable_path, ACTION_REVIEW)
     start_target = _get_target_path(executable_path, ACTION_START)
     if not review_target or not start_target:
@@ -232,6 +240,7 @@ def install_profile_shortcut(
     action: str = ACTION_START,
     executable_path: str | Path | None = None,
 ) -> Path:
+    _require_sendto_support()
     target = _get_target_path(executable_path, action)
     if not target:
         raise RuntimeError("Cannot determine Tuck executable path")
@@ -263,6 +272,7 @@ def install_profile_shortcut(
 
 
 def uninstall_sendto() -> None:
+    _require_sendto_support()
     sendto = _sendto_dir()
     for name in (
         SENDTO_SHORTCUT_NAME,
@@ -277,6 +287,7 @@ def uninstall_sendto() -> None:
 
 
 def uninstall_profile_shortcut(profile_id: str) -> bool:
+    _require_sendto_support()
     removed = False
     shortcut_path = _get_profile_shortcut_path(profile_id)
     if shortcut_path.exists() and _is_tuck_shortcut(shortcut_path):
@@ -292,6 +303,7 @@ def uninstall_profile_shortcut(profile_id: str) -> bool:
 
 
 def remove_all_profile_shortcuts() -> int:
+    _require_sendto_support()
     sendto = _sendto_dir()
     count = 0
     for entry in sendto.iterdir():
@@ -306,6 +318,7 @@ def remove_all_profile_shortcuts() -> int:
 
 
 def repair_sendto(executable_path: str | Path | None = None) -> bool:
+    _require_sendto_support()
     if not _can_create_shortcuts():
         logger.debug("pywin32 COM not available; cannot repair .lnk shortcuts")
         return False
@@ -372,6 +385,7 @@ def repair_profile_shortcut(
     action: str = ACTION_START,
     executable_path: str | Path | None = None,
 ) -> bool:
+    _require_sendto_support()
     shortcut_path = _get_profile_shortcut_path(profile_id)
     batch_path = _get_profile_batch_path(profile_id)
 
@@ -432,6 +446,7 @@ def repair_profile_shortcut(
 
 
 def list_sendto_shortcuts() -> list[dict[str, str]]:
+    _require_sendto_support()
     result: list[dict[str, str]] = []
     generic_entries: list[tuple[Path, bool]] = []
     sendto = _sendto_dir()

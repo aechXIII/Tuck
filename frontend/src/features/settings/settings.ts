@@ -23,7 +23,15 @@ import {
   type ProfileListEntry,
 } from "../profiles/profile-list.ts";
 import { legacyBackendResult } from "../editor/backend-compat.ts";
-import { fetchPlatformCapabilities } from "../../platform/capabilities.ts";
+import {
+  encoderForPlatform,
+  encodersForPlatform,
+  fetchPlatformCapabilities,
+  shouldShowSendTo,
+  shouldShowUpdater,
+  supportsHardwareEncoders,
+  type PlatformCapabilities,
+} from "../../platform/capabilities.ts";
 import { confirmToast, toast } from "../editor/toast.ts";
 import type { EditorSession } from "../editor/session.ts";
 
@@ -69,6 +77,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
   let snapshot = "";
   let settingsDirty = false;
   let settingsReturnFocus: Element | null = null;
+  let editorCapabilities: PlatformCapabilities | null = null;
 
   function valueOr<T>(value: T | undefined | null, fallback: T): T {
     return value === undefined || value === null ? fallback : value;
@@ -110,6 +119,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     page: string,
     content: string,
     actions: { html?: string; split?: boolean; plain?: boolean },
+    caps: PlatformCapabilities,
   ): void {
     const actionBar = el("settings-actions");
     const opening = !document.body.classList.contains("settings-open");
@@ -126,13 +136,8 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         <span class="settings-action-spacer"></span>
         ${actions.html}`
       : "";
-    // Hide explorer integration on Linux where Send To is unavailable
-    void fetchPlatformCapabilities().then((caps) => {
-      const explorerNav = byId("settings-nav-explorer");
-      if (explorerNav) explorerNav.style.display = caps.sendToIntegration ? "" : "none";
-      const updaterBtn = document.querySelector<HTMLElement>("[data-settings-click=\"check-updates\"]");
-      if (updaterBtn) updaterBtn.style.display = caps.automaticUpdater ? "" : "none";
-    });
+    const explorerNav = byId("settings-nav-explorer");
+    if (explorerNav) explorerNav.hidden = !shouldShowSendTo(caps);
     for (const name of ["general", "output", "profiles", "explorer", "system"]) {
       const button = byId(`settings-nav-${name}`);
       if (!button) continue;
@@ -603,6 +608,10 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     let quality = parseInt(input("pe-quality").value, 10);
     if (!Number.isFinite(quality)) quality = 23;
     if (original.rate_control_method === "cqp" && rcDisplay === "CQ") rc = "cqp";
+    const selectedEncoder = select("pe-enc").value;
+    const encoder = editorCapabilities
+      ? encoderForPlatform(selectedEncoder, editorCapabilities)
+      : selectedEncoder;
     const data: SettingsRecord = {
       name: input("pe-name").value.trim() || "Profile",
       target_size_mb: peInt("pe-size", 50),
@@ -617,10 +626,10 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       audio_bitrate_kbps: peInt("pe-audio", 0),
       keep_audio: input("pe-audio-source").checked,
       two_pass:
-        twoPassEligible(task, select("pe-enc").value) && select("pe-two-pass").value === "on",
+        twoPassEligible(task, encoder) && select("pe-two-pass").value === "on",
       preset: select("pe-preset").value,
       scaler: select("pe-scaler").value.toLowerCase(),
-      video_encoder: select("pe-enc").value,
+      video_encoder: encoder,
       workflow: task,
       rate_control_method: rc,
       rate_control:
@@ -632,7 +641,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       qp: rc === "cqp" ? quality : valueOr(original.qp as number, 23),
       tune:
         task === "upscale" &&
-        isCpuEncoder(select("pe-enc").value) &&
+        isCpuEncoder(encoder) &&
         select("pe-tune").value !== "none"
           ? select("pe-tune").value
           : "",
@@ -649,8 +658,13 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     return data;
   }
 
-  async function hydrateEditor(): Promise<void> {
-    populateEncoderSelect(select("pe-enc"), session.availEncoders);
+  async function hydrateEditor(caps: PlatformCapabilities): Promise<void> {
+    editorCapabilities = caps;
+    populateEncoderSelect(
+      select("pe-enc"),
+      encodersForPlatform(session.availEncoders, caps),
+      supportsHardwareEncoders(caps),
+    );
     let p: ProfileListEntry | undefined;
     if (settingsProfileId) {
       const profiles = (await legacyBackendResult(client().getProfilesJson())) as unknown as
@@ -681,11 +695,17 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     select("pe-aspect").value = intent ? String(intent.crop_aspect || "free") : "free";
     select("pe-sizing").value = intent ? String(intent.sizing_mode || "fit") : "fit";
     select("pe-rotation").value = String(intent ? intent.rotation || 0 : 0);
-    select("pe-enc").value = p ? String(valueOr(p.video_encoder as string, "libx264")) : "libx264";
+    select("pe-enc").value = encoderForPlatform(
+      p ? String(valueOr(p.video_encoder as string, "libx264")) : "libx264",
+      caps,
+    );
+    if (!select("pe-enc").value) select("pe-enc").selectedIndex = 0;
     peEncoderChanged();
     select("pe-preset").value = p
       ? String(valueOr(p.preset as string, nativePresetForSpeed("balanced", select("pe-enc").value)))
       : nativePresetForSpeed("balanced", select("pe-enc").value);
+    if (!select("pe-preset").value)
+      select("pe-preset").value = nativePresetForSpeed("balanced", select("pe-enc").value);
     pePresetChanged();
     select("pe-two-pass").value = p && p.two_pass ? "on" : "off";
     input("pe-quality").value = String(
@@ -706,7 +726,9 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       cbr: "CBR",
       vbr: "VBR",
     };
-    select("pe-rc").value = rcMap[String(p ? p.rate_control_method : "cbr")] ?? "CRF";
+    const rateControl = rcMap[String(p ? p.rate_control_method : "cbr")] ?? "CRF";
+    if (Array.from(select("pe-rc").options).some((option) => option.value === rateControl))
+      select("pe-rc").value = rateControl;
     peVisibility();
     editorSnapshot = JSON.stringify(pePayload());
   }
@@ -771,7 +793,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         ffmpegPath: el("set-ffmpeg").dataset.path || "",
         ffprobePath: el("set-ffprobe").dataset.path || "",
         encoderCacheDays: select("set-encoder-cache-days").value,
-        checkUpdates: input("set-check-updates").checked,
+        checkUpdates: byId<HTMLInputElement>("set-check-updates")?.checked ?? false,
       };
     return {};
   }
@@ -921,12 +943,22 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
   </div>`;
   }
 
-  function systemStatusHtml(s: SettingsRecord): string {
+  function systemStatusHtml(s: SettingsRecord, caps: PlatformCapabilities): string {
     const ffmpegReady = !!s.ffmpeg_available;
     const ffprobeReady = !!s.ffprobe_available;
     const ffmpegPath = esc(s.ffmpeg_path || s.detected_ffmpeg_path || "Automatic detection");
     const ffprobePath = esc(s.ffprobe_path || s.detected_ffprobe_path || "Automatic detection");
-    const encoders = esc(encoderDisplaySummary(toStringArray(s.available_encoders)));
+    const encoders = esc(encoderDisplaySummary(encodersForPlatform(toStringArray(s.available_encoders), caps)));
+    const webViewStatus =
+      caps.platform === "windows"
+        ? `<div class="settings-status-row">
+        <div>WebView2</div>
+        <div class="settings-status-value">
+          <span class="status-good">Ready</span> · Edge runtime
+        </div>
+        <div class="settings-status-actions"></div>
+      </div>`
+        : "";
     return `<div class="settings-card">
     <div class="settings-card-title">System status</div>
     <div class="settings-status-table" aria-label="System readiness">
@@ -961,18 +993,13 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
           <button type="button" class="btn2" data-settings-click="refresh-encoders">Rescan</button>
         </div>
       </div>
-      <div class="settings-status-row">
-        <div>WebView2</div>
-        <div class="settings-status-value">
-          <span class="status-good">Ready</span> · Edge runtime
-        </div>
-        <div class="settings-status-actions"></div>
-      </div>
+      ${webViewStatus}
     </div>
   </div>`;
   }
 
-  function systemUpdatesHtml(s: SettingsRecord): string {
+  function systemUpdatesHtml(s: SettingsRecord, caps: PlatformCapabilities): string {
+    if (!shouldShowUpdater(caps)) return "";
     const updateStatus = s.last_update_check
       ? `Last checked: ${esc(s.last_update_check)}`
       : "Not checked yet.";
@@ -1050,8 +1077,13 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
   </details>`;
   }
 
-  function systemSettingsHtml(s: SettingsRecord): string {
-    return systemStatusHtml(s) + systemUpdatesHtml(s) + systemSupportHtml() + systemAdvancedHtml(s);
+  function systemSettingsHtml(s: SettingsRecord, caps: PlatformCapabilities): string {
+    return (
+      systemStatusHtml(s, caps) +
+      systemUpdatesHtml(s, caps) +
+      systemSupportHtml() +
+      systemAdvancedHtml(s)
+    );
   }
 
   function toggle(): void {
@@ -1063,15 +1095,22 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     settingsPage = page || settingsPage;
     settingsView = view === "editor" ? "editor" : "page";
     if (profileId !== undefined) settingsProfileId = profileId;
+    const caps = await fetchPlatformCapabilities();
+    if (!shouldShowSendTo(caps) && settingsPage === "explorer") settingsPage = "general";
     const s = (await legacyBackendResult(client().getSettings())) as SettingsRecord;
     const profiles = (Array.isArray(s.profiles) ? s.profiles : []) as ProfileListEntry[];
     if (settingsPage === "profiles" && settingsView === "editor") {
-      settingsShell("profiles", profileEditorHtml(), {
-        html:
-          settingButton("Cancel", "back-profiles") +
-          settingButton("Save profile", "save-profile", true),
-      });
-      await hydrateEditor();
+      settingsShell(
+        "profiles",
+        profileEditorHtml(),
+        {
+          html:
+            settingButton("Cancel", "back-profiles") +
+            settingButton("Save profile", "save-profile", true),
+        },
+        caps,
+      );
+      await hydrateEditor(caps);
       return;
     }
     let content = "";
@@ -1095,15 +1134,15 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       content = explorerSettingsHtml();
       actions = { html: settingButton("+ Add shortcut", "add-shortcut", true) };
     } else {
-      content = systemSettingsHtml(s);
+      content = systemSettingsHtml(s, caps);
       actions = { html: settingButton("Save changes", "save-system", true, true) };
     }
-    settingsShell(settingsPage, content, actions);
+    settingsShell(settingsPage, content, actions, caps);
     settingsDirty = false;
     if (settingsPage === "general") select("set-dp").value = String(s.default_profile_id || "");
     if (settingsPage === "output") updateExampleOutput();
     if (settingsPage === "profiles") await refreshProfileManagerList(settingsFilter);
-    if (settingsPage === "explorer") await refreshShortcutList();
+    if (settingsPage === "explorer" && shouldShowSendTo(caps)) await refreshShortcutList();
     if (settingsPage === "system")
       select("set-encoder-cache-days").value = String(s.encoder_cache_days || 0);
     if (["general", "output", "system"].indexOf(settingsPage) >= 0) captureSettingsSnapshot();
@@ -1239,12 +1278,14 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
   }
 
   async function saveSystemSettings(): Promise<void> {
-    await persistSettings({
+    const data: SettingsRecord = {
       ffmpeg_path: el("set-ffmpeg").dataset.path || "",
       ffprobe_path: el("set-ffprobe").dataset.path || "",
       encoder_cache_days: parseInt(select("set-encoder-cache-days").value, 10),
-      check_updates: input("set-check-updates").checked,
-    });
+    };
+    const checkUpdates = byId<HTMLInputElement>("set-check-updates");
+    if (checkUpdates) data.check_updates = checkUpdates.checked;
+    await persistSettings(data);
   }
 
   async function refreshEncoders(): Promise<void> {
@@ -1351,12 +1392,14 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
   }
 
   async function addShortcutFlow(): Promise<void> {
+    const caps = await fetchPlatformCapabilities();
+    if (!shouldShowSendTo(caps)) return;
     const profiles = (await legacyBackendResult(client().getProfilesJson())) as unknown as
       | ProfileListEntry[]
       | { ok: false };
     const content = `${settingsTitle("Add shortcut", "open-explorer")}
     <div id="profile-shortcut-choices" style="display:flex;flex-direction:column;gap:6px"></div>`;
-    settingsShell("explorer", content, { html: "" });
+    settingsShell("explorer", content, { html: "" }, caps);
     const choices = el("profile-shortcut-choices");
     renderShortcutChoices(document, choices, Array.isArray(profiles) ? profiles : [], {
       summarize: profileSummary,

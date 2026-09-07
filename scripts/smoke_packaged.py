@@ -1,6 +1,8 @@
 """Exercise the packaged Tuck backend end to end.
 
     python scripts/smoke_packaged.py --staging
+    python scripts/smoke_packaged.py --platform linux --staging
+    python scripts/smoke_packaged.py --platform linux --artifact <AppImage>
     python scripts/smoke_packaged.py --app-root <dir containing tuck-sidecar.exe>
 
 Runs against the frozen sidecar and the *bundled* ffmpeg/ffprobe only. Each
@@ -11,7 +13,7 @@ scenario uses its own sidecar and a temporary settings root:
    output;
 2. fresh sidecar: enqueue a slow encode, cancel it mid-run, assert no final
    output is published;
-3. after shutdown, assert no tuck-sidecar.exe / ffmpeg.exe processes linger.
+3. after shutdown, assert no sidecar or FFmpeg processes linger.
 
 Bounded waits, fixed fixtures, no sleeps to paper over races. Exit code is
 non-zero on any failure.
@@ -23,6 +25,7 @@ import argparse
 import json
 import os
 import queue as queuelib
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -32,6 +35,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 STAGING_APP = ROOT / "packaging" / "staging" / "app"
+LINUX_STAGING_APP = ROOT / "packaging" / "staging" / "linux" / "app"
 
 
 class SmokeError(RuntimeError):
@@ -43,9 +47,10 @@ class Sidecar:
     so responses are matched to requests regardless of arrival order or rate.
     """
 
-    def __init__(self, app_root: Path) -> None:
+    def __init__(self, app_root: Path, platform_name: str) -> None:
         self.app_root = app_root
-        self.exe = app_root / "tuck-sidecar.exe"
+        self.platform_name = platform_name
+        self.exe = app_root / ("tuck-sidecar" if platform_name == "linux" else "tuck-sidecar.exe")
         self.proc: subprocess.Popen[str] | None = None
         self._seq = 0
         self._pending: dict[str, queuelib.Queue] = {}
@@ -73,6 +78,8 @@ class Sidecar:
 
     def start(self, data_root: Path) -> dict:
         env = dict(os.environ, TUCK_SIDECAR_DATA_ROOT=str(data_root))
+        if self.platform_name == "linux":
+            env["TUCK_DESKTOP_PLATFORM"] = "linux"
         self.proc = subprocess.Popen(
             [str(self.exe), "--protocol", "1"],
             stdin=subprocess.PIPE,
@@ -139,7 +146,12 @@ class Sidecar:
                 self.proc.wait(timeout=5)
 
 
-def _running(image: str) -> list[str]:
+def _running(image: str, platform_name: str) -> list[str]:
+    if platform_name == "linux":
+        result = subprocess.run(
+            ["ps", "-eo", "pid=,comm="], capture_output=True, text=True, check=True
+        )
+        return [row for row in result.stdout.splitlines() if row.split()[-1:] == [image]]
     out = subprocess.run(
         ["tasklist", "/FO", "CSV", "/NH", "/FI", f"IMAGENAME eq {image}"],
         capture_output=True,
@@ -148,8 +160,15 @@ def _running(image: str) -> list[str]:
     return [row for row in out.splitlines() if image.lower() in row.lower()]
 
 
-def _make_fixture(app_root: Path, dest: Path, *, duration: int = 3, size: str = "640x480") -> None:
-    ffmpeg = app_root / "ffmpeg" / "ffmpeg.exe"
+def _make_fixture(
+    app_root: Path,
+    platform_name: str,
+    dest: Path,
+    *,
+    duration: int = 3,
+    size: str = "640x480",
+) -> None:
+    ffmpeg = app_root / "ffmpeg" / ("ffmpeg" if platform_name == "linux" else "ffmpeg.exe")
     # a high-entropy source (mandelbrot + grain) so compressed size scales with
     # bitrate; a flat testsrc compresses to a fixed tiny size and can stall the
     # size-target rate-control loop
@@ -168,14 +187,14 @@ def _queue_item(car: Sidecar, item_id: str) -> dict:
     return next((i for i in items if i.get("id") == item_id), {})
 
 
-def _encode_scenario(app_root: Path, work: Path) -> None:
+def _encode_scenario(app_root: Path, platform_name: str, work: Path) -> None:
     fixture = work / "fixture.mp4"
-    car = Sidecar(app_root)
+    car = Sidecar(app_root, platform_name)
     ready = car.start(work / "data-encode")
     print(f"  backend_ready {ready['payload'].get('backend_version')}")
     car.call("health")
     print("  health ok")
-    _make_fixture(app_root, fixture)
+    _make_fixture(app_root, platform_name, fixture)
     print(f"  fixture {fixture.stat().st_size} bytes")
 
     probe = car.call("probe_file", {"path": str(fixture)}, timeout=120)
@@ -208,14 +227,15 @@ def _encode_scenario(app_root: Path, work: Path) -> None:
     car.shutdown()
 
 
-def _cancel_scenario(app_root: Path, work: Path) -> set[str]:
+def _cancel_scenario(app_root: Path, platform_name: str, work: Path) -> set[str]:
     """Returns the ffmpeg PIDs seen before shutdown, for the caller's cleanup check."""
     long_src = work / "long.mp4"
-    _make_fixture(app_root, long_src, duration=6, size="854x480")
-    car = Sidecar(app_root)
+    _make_fixture(app_root, platform_name, long_src, duration=6, size="854x480")
+    car = Sidecar(app_root, platform_name)
     car.start(work / "data-cancel")
 
-    ffmpeg_before = set(_running("ffmpeg.exe"))
+    ffmpeg_name = "ffmpeg" if platform_name == "linux" else "ffmpeg.exe"
+    ffmpeg_before = set(_running(ffmpeg_name, platform_name))
     request = {"source": str(long_src)}  # default veryslow preset -> slow enough to catch
     enq = car.call("enqueue_with_options", {"request": request}, timeout=120)
     item_id = enq.get("item_id")
@@ -244,46 +264,86 @@ def _cancel_scenario(app_root: Path, work: Path) -> set[str]:
     return ffmpeg_before
 
 
-def run(app_root: Path) -> None:
-    if not (app_root / "tuck-sidecar.exe").is_file():
-        raise SmokeError(f"tuck-sidecar.exe not found in {app_root}")
+def run(app_root: Path, platform_name: str) -> None:
+    sidecar_name = "tuck-sidecar" if platform_name == "linux" else "tuck-sidecar.exe"
+    if not (app_root / sidecar_name).is_file():
+        raise SmokeError(f"{sidecar_name} not found in {app_root}")
 
     work = Path(tempfile.mkdtemp(prefix="tuck-smoke-"))
 
     print("[1/3] encode a fixture to completion")
-    _encode_scenario(app_root, work)
+    _encode_scenario(app_root, platform_name, work)
 
     print("[2/3] cancel a running encode")
-    ffmpeg_before = _cancel_scenario(app_root, work)
+    ffmpeg_before = _cancel_scenario(app_root, platform_name, work)
 
     print("[3/3] process cleanup after shutdown")
     time.sleep(1.0)
-    lingering_sidecar = _running("tuck-sidecar.exe")
-    lingering_ffmpeg = set(_running("ffmpeg.exe")) - ffmpeg_before
+    lingering_sidecar = _running(sidecar_name, platform_name)
+    ffmpeg_name = "ffmpeg" if platform_name == "linux" else "ffmpeg.exe"
+    lingering_ffmpeg = set(_running(ffmpeg_name, platform_name)) - ffmpeg_before
     if lingering_sidecar:
-        raise SmokeError(f"tuck-sidecar.exe still running after shutdown: {lingering_sidecar}")
+        raise SmokeError(f"{sidecar_name} still running after shutdown: {lingering_sidecar}")
     if lingering_ffmpeg:
-        raise SmokeError(f"ffmpeg.exe spawned by the encode is still running: {lingering_ffmpeg}")
-    print("  ok: no lingering tuck-sidecar.exe / ffmpeg.exe")
+        raise SmokeError(
+            f"{ffmpeg_name} spawned by the encode is still running: {lingering_ffmpeg}"
+        )
+    print(f"  ok: no lingering {sidecar_name} / {ffmpeg_name}")
     print("\nSMOKE OK")
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--platform", default="windows", choices=["windows", "linux"])
     parser.add_argument("--staging", action="store_true")
     parser.add_argument("--app-root", type=Path)
+    parser.add_argument("--artifact", type=Path)
     args = parser.parse_args()
 
-    app_root = STAGING_APP if args.staging else args.app_root
-    if not app_root:
-        parser.error("pass --staging or --app-root")
+    if sum(bool(value) for value in (args.staging, args.app_root, args.artifact)) != 1:
+        parser.error("pass exactly one of --staging, --app-root, or --artifact")
+
+    cleanup: Path | None = None
+    if args.staging:
+        app_root = LINUX_STAGING_APP if args.platform == "linux" else STAGING_APP
+    elif args.app_root:
+        app_root = args.app_root
+    else:
+        if args.platform != "linux":
+            parser.error("--artifact is only supported for Linux AppImages")
+        assert args.artifact is not None
+        artifact = args.artifact.resolve()
+        if not artifact.is_file():
+            parser.error(f"artifact not found: {artifact}")
+        cleanup = Path(tempfile.mkdtemp(prefix="tuck-smoke-appimage-"))
+        result = subprocess.run(
+            [str(artifact), "--appimage-extract"],
+            cwd=cleanup,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            cleanup.rmdir()
+            parser.error(f"could not extract {artifact}: {result.stdout}\n{result.stderr}")
+        extracted = cleanup / "squashfs-root"
+        if not extracted.is_dir():
+            shutil.rmtree(cleanup, ignore_errors=True)
+            parser.error("AppImage extraction did not produce squashfs-root")
+        sidecar = next(extracted.rglob("tuck-sidecar"), None)
+        if sidecar is None:
+            shutil.rmtree(cleanup, ignore_errors=True)
+            parser.error("AppImage does not contain tuck-sidecar")
+        app_root = sidecar.parent
 
     try:
-        run(Path(app_root))
+        run(Path(app_root), args.platform)
         return 0
     except (SmokeError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
         print(f"\nSMOKE FAILED: {exc}", file=sys.stderr)
         return 1
+    finally:
+        if cleanup is not None:
+            shutil.rmtree(cleanup, ignore_errors=True)
 
 
 if __name__ == "__main__":
