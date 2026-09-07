@@ -8,6 +8,34 @@ pub trait Opener: Send + Sync {
 
 pub struct SystemOpener;
 
+/// Ordered folder openers tried on Linux. `xdg-open` is the norm. The rest cover
+/// minimal window-manager setups that ship a file manager but no `xdg-utils`.
+#[cfg(target_os = "linux")]
+const LINUX_FOLDER_OPENERS: &[&str] = &[
+    "xdg-open", "gio", "nautilus", "dolphin", "nemo", "thunar", "pcmanfm", "caja",
+];
+
+#[cfg(target_os = "linux")]
+fn spawn_first_available(path: &Path, programs: &[&str]) -> std::io::Result<()> {
+    let mut last_error: Option<std::io::Error> = None;
+    for program in programs {
+        let mut command = std::process::Command::new(program);
+        if *program == "gio" {
+            command.arg("open");
+        }
+        match command.arg(path).spawn() {
+            Ok(_) => return Ok(()),
+            Err(error) => last_error = Some(error),
+        }
+    }
+    Err(last_error.unwrap_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "no file manager is available to open the folder",
+        )
+    }))
+}
+
 impl Opener for SystemOpener {
     fn open(&self, path: &Path) -> std::io::Result<()> {
         #[cfg(target_os = "windows")]
@@ -19,10 +47,7 @@ impl Opener for SystemOpener {
         }
         #[cfg(target_os = "linux")]
         {
-            std::process::Command::new("xdg-open")
-                .arg(path)
-                .spawn()
-                .map(|_| ())
+            spawn_first_available(path, LINUX_FOLDER_OPENERS)
         }
         #[cfg(not(any(target_os = "windows", target_os = "linux")))]
         {
@@ -216,5 +241,28 @@ mod tests {
         assert!(result.is_ok());
         assert_eq!(mock.called.lock().unwrap()[0], dir);
         let _ = std::fs::remove_dir(&dir);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_folder_openers_try_xdg_open_first() {
+        assert_eq!(LINUX_FOLDER_OPENERS.first(), Some(&"xdg-open"));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn spawn_first_available_falls_through_a_missing_program() {
+        // `true` exists on every POSIX system, so the bogus name before it must be skipped
+        spawn_first_available(&std::env::temp_dir(), &["tuck-no-such-opener-xyz", "true"])
+            .expect("should fall through to `true`");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn spawn_first_available_reports_when_nothing_is_installed() {
+        let error =
+            spawn_first_available(&std::env::temp_dir(), &["tuck-no-such-a", "tuck-no-such-b"])
+                .unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
     }
 }

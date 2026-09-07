@@ -19,6 +19,10 @@ use tokio::process::{Child, Command};
 ///   `/usr/lib` then fail to load with `undefined symbol` errors and can take
 ///   the web process down with them, so an AppImage run uses only the GIO
 ///   modules it bundled.
+/// - `GTK_THEME`: WebKitGTK paints native `<select>` popups, option lists, and
+///   number spinners with the system GTK theme. Tuck's UI is always dark, so on
+///   a session with no dark GTK theme configured those controls render light and
+///   unreadable. Default to `Adwaita:dark`. Set `GTK_THEME` yourself to override.
 ///
 /// Each value is only set when the user has not already chosen one. Because
 /// WebKitGTK treats any value of its `WEBKIT_DISABLE_*` variables (even `0`) as
@@ -36,6 +40,7 @@ pub fn prepare_runtime_environment() {
     if let Some(modules) = bundled_gio_module_dir(std::env::var_os("APPDIR").map(PathBuf::from)) {
         set_default_env("GIO_MODULE_DIR", modules);
     }
+    set_default_env("GTK_THEME", "Adwaita:dark");
 }
 
 fn webkit_env_defaults(
