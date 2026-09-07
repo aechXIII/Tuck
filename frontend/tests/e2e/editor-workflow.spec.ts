@@ -244,3 +244,52 @@ test("keyboard shortcuts, compact drawers, and audio import stay usable at 960 b
   }));
   expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth);
 });
+
+test("the audio source range picker sizes its window to the selection and stays draggable", async ({
+  page,
+}) => {
+  const errors = collectPageErrors(page);
+  await page.setViewportSize({ width: 1240, height: 800 });
+  await installFakeBackend(page, editorFixture());
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Add videos" }).click();
+  await expect(page.locator(".c2").getByText("Morning clip.mp4", { exact: true })).toBeVisible();
+
+  await page.locator("#insp-tab-audio").click();
+  await page.locator("#lib-tab-audio").click();
+  await page.locator("#btn-add-audio").click();
+  await expect(page.locator("#audio-lib-list")).toContainText("Score – café.wav");
+
+  const rangeHost = page.locator("#audio-clip-range");
+  await expect(rangeHost).not.toHaveClass(/hid/);
+  // millisecond precision only appears when AudioEditing.formatSourceTime is wired
+  await expect(rangeHost).toContainText("0:00.000–0:12.000 / 0:20.000");
+
+  // 12s clip inside a 20s source: the overview window is ~60% of the strip, not
+  // a collapsed sliver. Regressed once when panels lost its AudioEditing wiring.
+  const ratio = await page.evaluate(() => {
+    const strip = document.querySelector<HTMLElement>("#audio-clip-range .audio-source-overview");
+    const win = document.querySelector<HTMLElement>(
+      "#audio-clip-range .audio-source-overview-window",
+    );
+    if (!strip || !win) return 0;
+    return win.getBoundingClientRect().width / strip.getBoundingClientRect().width;
+  });
+  expect(ratio).toBeGreaterThan(0.4);
+  expect(ratio).toBeLessThan(0.85);
+
+  // the detail strip only wires pointer drag when AudioEditing is present
+  const detail = page.locator("#audio-clip-range .audio-source-detail");
+  const box = await detail.boundingBox();
+  if (!box) throw new Error("detail strip has no box");
+  // drag the waveform left to move the in-point later into the source
+  await page.mouse.move(box.x + box.width * 0.7, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.2, box.y + box.height / 2, { steps: 10 });
+  await page.mouse.up();
+  await expect(rangeHost).not.toContainText("0:00.000–0:12.000 / 0:20.000");
+  await expect(rangeHost).toContainText("/ 0:20.000");
+
+  expect(errors).toEqual([]);
+});

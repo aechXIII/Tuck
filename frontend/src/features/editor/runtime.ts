@@ -7,6 +7,13 @@ import {
 } from "../../ui/delegated-events.ts";
 import * as InspectorUi from "../panels/inspector-ui.ts";
 import { installAudioTimeline } from "../audio/audio-timeline.ts";
+import {
+  formatSourceTime,
+  sourceRangeDetailDragValue,
+  sourceRangeDetailState,
+  sourceRangeKeyboardValue,
+  sourceRangePointerValue,
+} from "../audio/audio-core.ts";
 import { installHistory, type HistoryApi } from "../history/history.ts";
 import * as ClipDetails from "../library/clip-details.ts";
 import { createLibrary, type LibraryApi } from "../library/library.ts";
@@ -264,6 +271,15 @@ export function installEditorRuntime(
         return panelAudioRange();
       },
       resetSelectedSource: audio.resetSelectedSource,
+    },
+    // pure source-range math the audio Inspector's Overview/Detail picker needs;
+    // without it renderAudioClipRange bails before sizing the window or wiring drag
+    AudioEditing: {
+      formatSourceTime,
+      sourceRangeDetailState,
+      sourceRangeDetailDragValue,
+      sourceRangePointerValue,
+      sourceRangeKeyboardValue,
     },
     History: history,
   });
