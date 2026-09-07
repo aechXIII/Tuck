@@ -1,0 +1,7 @@
+# Keep text as LF on every platform. The build recipes and lock files run on
+# Linux and their byte size and hash are pinned in the packaging locks and the
+# release manifest, so a CRLF checkout on Windows breaks the build and its
+# verification. Windows batch files are the exception.
+* text=auto eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf

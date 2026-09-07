@@ -81,7 +81,10 @@ def run(artifact: Path) -> None:
         )
         launched: set[int] = set()
         ready = False
-        deadline = time.monotonic() + 20
+        # WebKitGTK's first paint under Xvfb with software GL is slow on a CI
+        # runner, so allow well past a local cold start.
+        window_deadline_s = 90
+        deadline = time.monotonic() + window_deadline_s
         try:
             while time.monotonic() < deadline:
                 if process.poll() is not None:
@@ -96,7 +99,9 @@ def run(artifact: Path) -> None:
                     break
                 time.sleep(0.2)
             if not ready:
-                raise GuiSmokeError("The AppImage did not show the Tuck window within 20 seconds.")
+                raise GuiSmokeError(
+                    f"The AppImage did not show the Tuck window within {window_deadline_s} seconds."
+                )
         finally:
             if process.poll() is None:
                 os.killpg(process.pid, signal.SIGTERM)

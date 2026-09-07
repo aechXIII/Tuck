@@ -58,7 +58,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
 
       - name: Install frontend dependencies
@@ -164,14 +164,15 @@ jobs:
             build-essential nasm cmake pkg-config \
             squashfs-tools xvfb x11-utils \
             gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
-            gstreamer1.0-plugins-bad gstreamer1.0-libav libgstreamer1.0-dev \
+            gstreamer1.0-plugins-bad gstreamer1.0-libav \
             ffmpeg
 
-      - name: Lint and type-check
+      - name: Lint
+        # pyright runs on the Windows job only: tuck/ has Windows-only modules
+        # (ctypes.windll, subprocess.CREATE_NO_WINDOW) it cannot resolve on Linux.
         run: |
           ruff format --check tuck/ tests/ scripts/
           ruff check tuck/ tests/ scripts/
-          pyright tuck/
 
       - name: Python tests
         run: pytest -m "not slow"
@@ -179,7 +180,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
 
       - name: Install frontend dependencies

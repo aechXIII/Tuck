@@ -31,6 +31,7 @@ import sys
 import tempfile
 import threading
 import time
+from collections import deque
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -57,6 +58,10 @@ class Sidecar:
         self._lock = threading.Lock()
         self._ready: queuelib.Queue = queuelib.Queue()
         self._reader: threading.Thread | None = None
+        # A full stderr pipe blocks the sidecar mid-encode, so it must be drained.
+        # Keep the tail for diagnostics when a scenario fails.
+        self._stderr_tail: deque[str] = deque(maxlen=200)
+        self._stderr_reader: threading.Thread | None = None
 
     def _read_stdout(self) -> None:
         assert self.proc and self.proc.stdout
@@ -76,6 +81,14 @@ class Sidecar:
                 if box is not None:
                     box.put(frame)
 
+    def _read_stderr(self) -> None:
+        assert self.proc and self.proc.stderr
+        for line in self.proc.stderr:
+            self._stderr_tail.append(line.rstrip())
+
+    def stderr_tail(self, lines: int = 40) -> str:
+        return "\n".join(list(self._stderr_tail)[-lines:])
+
     def start(self, data_root: Path) -> dict:
         env = dict(os.environ, TUCK_SIDECAR_DATA_ROOT=str(data_root))
         if self.platform_name == "linux":
@@ -91,6 +104,8 @@ class Sidecar:
         )
         self._reader = threading.Thread(target=self._read_stdout, daemon=True)
         self._reader.start()
+        self._stderr_reader = threading.Thread(target=self._read_stderr, daemon=True)
+        self._stderr_reader.start()
         try:
             frame = self._ready.get(timeout=15)
         except queuelib.Empty:
@@ -194,24 +209,26 @@ def _encode_scenario(app_root: Path, platform_name: str, work: Path) -> None:
     print(f"  backend_ready {ready['payload'].get('backend_version')}")
     car.call("health")
     print("  health ok")
-    _make_fixture(app_root, platform_name, fixture)
+    # 6 s of 720p high-entropy video carries well over 2 MB of information, so the
+    # size-target rate control is bitrate-constrained (its normal case). A tiny
+    # clip whose natural size sits far below the target makes the planner keep
+    # raising the bitrate across its bounded retries, which is slow on a CI runner.
+    _make_fixture(app_root, platform_name, fixture, duration=6, size="1280x720")
     print(f"  fixture {fixture.stat().st_size} bytes")
 
     probe = car.call("probe_file", {"path": str(fixture)}, timeout=120)
     data = probe.get("data", probe)
-    if int(data.get("width", 0)) != 640 or int(data.get("height", 0)) != 480:
+    if int(data.get("width", 0)) != 1280 or int(data.get("height", 0)) != 720:
         raise SmokeError(f"probe returned unexpected dimensions: {data}")
     print(f"  probe {data.get('width')}x{data.get('height')} {data.get('duration')}s")
 
-    # a reachable target keeps the size-target retry loop from spinning on a
-    # synthetic clip; still a real two-pass rate-controlled encode
     request = {"source": str(fixture), "preset": "ultrafast", "target_size_bytes": 2 * 1024 * 1024}
     enq = car.call("enqueue_with_options", {"request": request}, timeout=120)
     item_id = enq.get("item_id")
     if not item_id:
         raise SmokeError(f"enqueue returned no item id: {enq}")
 
-    deadline = time.monotonic() + 240
+    deadline = time.monotonic() + 600
     state = ""
     while time.monotonic() < deadline:
         state = _queue_item(car, item_id).get("state", "")
@@ -219,7 +236,11 @@ def _encode_scenario(app_root: Path, platform_name: str, work: Path) -> None:
             break
         time.sleep(2.0)
     if state != "completed":
-        raise SmokeError(f"encode did not complete (last state {state!r})")
+        tail = car.stderr_tail()
+        raise SmokeError(
+            f"encode did not complete (last state {state!r})"
+            + (f"\n--- sidecar stderr tail ---\n{tail}" if tail else "")
+        )
     result_path = _queue_item(car, item_id).get("result_path")
     if not result_path or not Path(result_path).is_file():
         raise SmokeError(f"no output file was published on completion: {result_path!r}")

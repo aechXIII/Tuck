@@ -55,6 +55,9 @@ jobs:
         run: ruff check tuck/ tests/ scripts/
 
       - name: Pyright
+        # tuck/ has Windows-only modules (ctypes.windll, subprocess.CREATE_NO_WINDOW);
+        # pyright can only resolve them on a Windows host. The Linux side is the Tauri/Rust tree.
+        if: runner.os == 'Windows'
         run: pyright tuck/
 
       - name: Pytest
@@ -80,7 +83,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
 
       - name: Install dependencies
@@ -112,7 +115,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
 
       - name: Install frontend dependencies

@@ -5,10 +5,17 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import sys
 import uuid
 from pathlib import Path
 
 import pytest
+
+# The script and these assertions are Windows-installer behavior. The Ubuntu CI
+# runner ships pwsh, so a `which pwsh` guard is not enough to keep it off Linux.
+pytestmark = pytest.mark.skipif(
+    sys.platform != "win32", reason="tuck-path.ps1 is Windows-installer only"
+)
 
 _SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "tuck-path.ps1"
 

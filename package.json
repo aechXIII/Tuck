@@ -9,7 +9,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test frontend/tests/unit/**/*.test.ts tests/frontend/**/*.test.js",
+    "test": "tsx --test \"frontend/tests/unit/**/*.test.ts\" \"tests/frontend/**/*.test.js\"",
     "test:e2e": "playwright test",
     "tauri": "tauri"
   },
