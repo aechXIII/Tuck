@@ -1326,7 +1326,7 @@ class TestHardwareFallback:
 
 
 class TestTargetSizeRetries:
-    def test_undershoot_retries_in_runner(self, engine, tmp_path):
+    def test_undershoot_retries_then_stops_when_the_output_stops_growing(self, engine, tmp_path):
         output = tmp_path / "output.mp4"
         plan = EncodePlan(
             source="source.mp4",
@@ -1342,14 +1342,37 @@ class TestTargetSizeRetries:
         def encode_once(*_args, **_kwargs):
             nonlocal calls
             calls += 1
+            # a content-limited source: raising the bitrate does not add bytes
             output.write_bytes(b"x" * 4_000_000)
             return output
 
         engine._encode_single_pass = encode_once
         result = engine._encode_with_retry("ffmpeg", plan, Path(plan.source), output, 10.0, None)
         assert result == output
-        assert calls == 3
-        assert plan.video_bitrate > 1_000_000
+        assert plan.video_bitrate > 1_000_000, "the first undershoot must raise the bitrate"
+        assert calls == 2, "stop after the retry that did not grow the output, not at the limit"
+
+    def test_undershoot_uses_every_retry_while_the_output_keeps_growing(self, engine, tmp_path):
+        output = tmp_path / "output.mp4"
+        plan = EncodePlan(
+            source="source.mp4",
+            output=str(output),
+            video_bitrate=1_000_000,
+            audio_bitrate=0,
+            two_pass=False,
+            target_size=10_000_000,
+            rate_control_method=RCM_CBR,
+        )
+        sizes = iter([2_000_000, 4_000_000, 7_000_000])
+
+        def encode_once(*_args, **_kwargs):
+            output.write_bytes(b"x" * next(sizes))
+            return output
+
+        engine._encode_single_pass = encode_once
+        engine._encode_with_retry("ffmpeg", plan, Path(plan.source), output, 10.0, None)
+        with pytest.raises(StopIteration):
+            next(sizes)  # all three attempts were used
 
     def test_target_size_retry_preserves_crop(self, engine, tmp_path):
         output = tmp_path / "output.mp4"
@@ -1375,7 +1398,7 @@ class TestTargetSizeRetries:
 
         engine._encode_with_retry("ffmpeg", plan, Path(plan.source), output, 10.0, None)
 
-        assert seen == [crop, crop, crop]
+        assert seen == [crop, crop], "the crop must survive the retry"
 
 
 def test_two_pass_uses_identical_crop_filter_in_both_passes(

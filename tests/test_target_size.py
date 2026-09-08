@@ -4,6 +4,7 @@ from tuck.encoding.target_size import (
     MIN_VIDEO_BITRATE,
     calculate_target_size_bitrates,
     decide_retry,
+    is_content_limited,
 )
 
 
@@ -85,3 +86,17 @@ class TestRetryPolicy:
         final = decide_retry(10_000_001, 10_000_000, d.new_video_bitrate, attempt=1, max_attempts=3)
         assert final.should_retry
         assert final.new_video_bitrate < d.new_video_bitrate
+
+
+class TestContentLimited:
+    def test_barely_grown_under_target_output_is_content_limited(self):
+        # a synthetic clip: raising the bitrate moved the output 200_000 -> 205_000
+        assert is_content_limited(200_000, 205_000, target_size=2_000_000)
+
+    def test_output_that_grew_with_more_bitrate_is_not_content_limited(self):
+        assert not is_content_limited(1_000_000, 1_400_000, target_size=2_000_000)
+
+    def test_output_at_or_over_target_is_never_content_limited(self):
+        # over target must keep going through the overshoot retry path
+        assert not is_content_limited(2_000_000, 2_100_000, target_size=2_000_000)
+        assert not is_content_limited(1_900_000, 2_000_001, target_size=2_000_000)

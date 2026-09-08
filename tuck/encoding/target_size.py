@@ -12,6 +12,22 @@ OVERSHOOT_RETRY_FACTOR = 0.90
 UNDERSHOOT_RATIO = 0.75
 UNDERSHOOT_BOOST_FACTOR = 1.08
 HARDWARE_SAFETY_EXTRA = 0.02
+# growth below this between a retry and the one before it means more bitrate is
+# not producing more bytes: the source is content-limited and further retries
+# only cost a full re-encode each
+CONTENT_LIMITED_GROWTH = 1.05
+
+
+def is_content_limited(
+    previous_size: int,
+    actual_size: int,
+    target_size: int,
+    *,
+    growth_threshold: float = CONTENT_LIMITED_GROWTH,
+) -> bool:
+    """The last bitrate-raising retry barely grew an already-under-target output."""
+
+    return actual_size <= target_size and actual_size <= previous_size * growth_threshold
 
 
 @dataclass(frozen=True)

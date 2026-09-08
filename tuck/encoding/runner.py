@@ -38,7 +38,7 @@ from .capabilities import (
 )
 from .command import build_base_cmd
 from .progress import ProgressTracker
-from .target_size import DEFAULT_MAX_RETRIES, decide_retry
+from .target_size import DEFAULT_MAX_RETRIES, decide_retry, is_content_limited
 
 logger = logging.getLogger(__name__)
 
@@ -444,6 +444,7 @@ class FFmpegEngine:
 
         max_attempts = 1 if is_upscale or is_explicit else DEFAULT_MAX_RETRIES + 1
         attempt = 0
+        previous_size: int | None = None
 
         while attempt < max_attempts:
             if attempt > 0:
@@ -470,6 +471,21 @@ class FFmpegEngine:
             if is_explicit:
                 return self._finalize_explicit(result, plan, actual_size)
 
+            # A source that cannot fill the size budget will not get closer with
+            # more bitrate. Once a bitrate-raising retry barely grows the output,
+            # stop: an under-target file is already the requested result, and
+            # further retries only burn a full re-encode each.
+            if previous_size is not None and is_content_limited(
+                previous_size, actual_size, plan.target_size
+            ):
+                logger.info(
+                    "Output size %s is content-limited (grew %.1f%% on more bitrate); accepting",
+                    format_size(actual_size),
+                    (actual_size / max(previous_size, 1) - 1.0) * 100.0,
+                )
+                return self._finalize_within_target(result, plan, actual_size, max_attempts)
+
+            previous_size = actual_size
             if self._apply_retry_decision(plan, output, actual_size, attempt, max_attempts):
                 attempt += 1
                 continue
@@ -650,7 +666,9 @@ class FFmpegEngine:
         with self._lock:
             proc = subprocess.Popen(
                 cmd,
-                stdout=subprocess.PIPE,
+                # progress and diagnostics come from stderr; ffmpeg's stdout is
+                # unused, and an unread stdout pipe deadlocks a verbose encode
+                stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
                 text=True,
                 creationflags=creationflags,

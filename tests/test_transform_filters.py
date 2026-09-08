@@ -221,5 +221,6 @@ def test_target_size_retries_preserve_the_complete_transform(tmp_path):
 
     engine._encode_single_pass = encode_once
     engine._encode_with_retry("ffmpeg", plan, Path(plan.source), output, 10.0, None)
-    assert len(seen) == 3
-    assert seen == [transform] * 3
+    # one retry happens on the undershoot, then the content-limited output stops it
+    assert len(seen) == 2
+    assert seen == [transform] * 2
