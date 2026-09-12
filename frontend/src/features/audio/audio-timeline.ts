@@ -1266,22 +1266,27 @@ export function installAudioTimeline(host: AudioTimelineHost) {
     if (!clip) return;
     const generation = nextWaveformGeneration(path);
     const clipPath = clip.path;
+    // normalization and undo can replace state while the request is pending
+    // resolve the live target by track id before storing the waveform
+    const trackId = isTimelineModel(target) ? null : target.id;
     try {
       let result = await getBackendClient().getWaveform(path);
       if (currentWaveformGeneration(path) !== generation) return;
       if (selectedVideo() !== clip || clip.path !== clipPath) return;
       if (!result.ok || !clip.audioTimeline) return;
-      if (isTimelineModel(target)) {
-        target.sourceWaveformUrl = result.value.url;
-        target.sourceWaveformToken = result.value.token ?? "";
-        target.sourceWaveformLoading = false;
+      if (trackId === null) {
+        clip.audioTimeline.sourceWaveformUrl = result.value.url;
+        clip.audioTimeline.sourceWaveformToken = result.value.token ?? "";
+        clip.audioTimeline.sourceWaveformLoading = false;
       } else {
-        target.waveformUrl = result.value.url;
-        target.waveformToken = result.value.token ?? "";
+        const liveTrack = clip.audioTimeline.tracks.find((t) => t.id === trackId);
+        if (!liveTrack) return;
+        liveTrack.waveformUrl = result.value.url;
+        liveTrack.waveformToken = result.value.token ?? "";
       }
       if (selectedVideo() === clip) render();
     } catch (err) {
-      if (isTimelineModel(target)) target.sourceWaveformLoading = false;
+      if (trackId === null && clip.audioTimeline) clip.audioTimeline.sourceWaveformLoading = false;
     }
   }
 
