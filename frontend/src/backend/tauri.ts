@@ -514,7 +514,7 @@ class TauriTransport implements TauriBackendClient {
       await this.#invoke("open_output_folder", { path });
       return { ok: true, value: {} };
     } catch (error) {
-      return this.#finish(isBackendError(error) ? { ok: false, error } : backendFailure("TAURI_INVOKE_FAILED", errorMessage(error, "Could not open output folder"), { method: "openOutputFolder" }));
+      return this.#finish(isBackendError(error) ? { ok: false, error } : backendFailure("TAURI_INVOKE_FAILED", errorMessage(error, "Could not show the export in its folder"), { method: "openOutputFolder" }));
     }
   }
 

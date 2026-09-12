@@ -146,8 +146,11 @@ pub async fn copy_text(app: tauri::AppHandle, text: String) -> Result<(), Public
 
 #[tauri::command]
 pub async fn open_output_folder(path: String) -> Result<(), PublicBackendError> {
-    let opener = SystemOpener;
-    open_with_validation(&path, &opener)
+    tauri::async_runtime::spawn_blocking(move || open_with_validation(&path, &SystemOpener))
+        .await
+        .map_err(|_| {
+            PublicBackendError::new("INTERNAL_ERROR", "Could not show the export in its folder.")
+        })?
 }
 
 #[tauri::command]

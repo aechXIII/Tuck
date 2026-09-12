@@ -17,6 +17,24 @@ test.beforeEach(async ({ page }) => {
   await page.getByRole("button", { name: "Settings", exact: true }).click();
 });
 
+test("show-export preference saves through the existing settings key", async ({ page }, testInfo) => {
+  const option = page.getByRole("checkbox", { name: /Show the last export in its folder/ });
+  await page.getByText("Show the last export in its folder", { exact: true }).click();
+  await expect(option).toBeChecked();
+  for (const width of [1240, 960]) {
+    await page.setViewportSize({ width, height: width === 960 ? 640 : 800 });
+    const label = page.getByText("Show the last export in its folder", { exact: true });
+    await label.scrollIntoViewIfNeeded();
+    await expect(label).toBeInViewport();
+    await page.screenshot({ path: testInfo.outputPath(`show-export-${width}.png`) });
+  }
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect.poll(() => page.evaluate(() =>
+    window.__tuckFakeBackendCalls?.filter((call) => call.method === "saveSettings")
+      .some((call) => (call.args[0] as Record<string, unknown>).open_output_folder_after_queue === true),
+  )).toBe(true);
+});
+
 test("the default profile picker only offers profiles that can be saved", async ({ page }) => {
   const picker = page.getByLabel("Default profile", { exact: true });
   await expect(picker).toHaveValue("everyday");

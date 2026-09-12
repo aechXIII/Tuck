@@ -160,9 +160,9 @@ export function installQueue(deps: QueueDeps): QueueApi {
     if (!path) return;
     try {
       const r = await legacyBackendResult(client().openOutputFolder(path));
-      if (!r.ok) toast(r.error ?? "Could not open folder.", "err");
+      if (!r.ok) toast(r.error ?? "Could not show the export in its folder.", "err");
     } catch {
-      toast("Could not open folder.", "err");
+      toast("Could not show the export in its folder.", "err");
     }
   }
 

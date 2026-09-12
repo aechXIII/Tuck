@@ -132,7 +132,7 @@ function appendStatus<T extends ClipCardElement>(
   );
   if (hasOpen) {
     row.appendChild(
-      createActionButton(documentRef, "open-result", "Open folder", "c-act link"),
+      createActionButton(documentRef, "open-result", "Show", "c-act link"),
     );
   }
   if (hasCancel) {

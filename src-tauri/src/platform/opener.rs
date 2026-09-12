@@ -4,6 +4,7 @@ use crate::backend::protocol::PublicBackendError;
 
 pub trait Opener: Send + Sync {
     fn open(&self, path: &Path) -> std::io::Result<()>;
+    fn reveal(&self, path: &Path) -> std::io::Result<()>;
 }
 
 pub struct SystemOpener;
@@ -37,6 +38,53 @@ fn spawn_first_available(path: &Path, programs: &[&str]) -> std::io::Result<()> 
 }
 
 impl Opener for SystemOpener {
+    fn reveal(&self, path: &Path) -> std::io::Result<()> {
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+
+            // keep Explorer's switch separate from the quoted file path
+            std::process::Command::new("explorer.exe")
+                .raw_arg("/select,")
+                .arg(path)
+                .spawn()
+                .map(|_| ())
+        }
+        #[cfg(target_os = "linux")]
+        {
+            let uri = tauri::Url::from_file_path(path).map_err(|_| {
+                std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid file path")
+            })?;
+            // commas delimit dbus-send arrays, so escape them inside the file URI
+            let reply = std::process::Command::new("dbus-send")
+                .args([
+                    "--session",
+                    "--dest=org.freedesktop.FileManager1",
+                    "--print-reply",
+                    "--reply-timeout=5000",
+                    "/org/freedesktop/FileManager1",
+                    "org.freedesktop.FileManager1.ShowItems",
+                ])
+                .arg(format!("array:string:{}", uri.as_str().replace(',', "%2C")))
+                .arg("string:")
+                .output();
+            if matches!(reply, Ok(output) if output.status.success()) {
+                return Ok(());
+            }
+            // minimal desktops may not expose the file-selection interface
+            self.open(path.parent().ok_or_else(|| {
+                std::io::Error::new(std::io::ErrorKind::InvalidInput, "path has no parent")
+            })?)
+        }
+        #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+        {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "unsupported platform",
+            ))
+        }
+    }
+
     fn open(&self, path: &Path) -> std::io::Result<()> {
         #[cfg(target_os = "windows")]
         {
@@ -93,38 +141,23 @@ pub fn validate_path_for_open(path_str: &str) -> Result<PathBuf, PublicBackendEr
     Ok(path)
 }
 
-pub fn validate_output_path_and_get_folder(path_str: &str) -> Result<PathBuf, PublicBackendError> {
-    let path = validate_path_for_open(path_str)?;
-    // For open_output_folder, path is a file path; we need its parent folder
-    // If path itself is a directory, open it directly if exists
-    if path.is_dir() {
-        return Ok(path);
-    }
-    if let Some(parent) = path.parent() {
-        if parent.exists() || parent == Path::new("") {
-            // If file parent exists, open the parent
-            // If path is just a file name with no parent, treat as invalid
-            if parent.as_os_str().is_empty() {
-                return Err(PublicBackendError::new(
-                    "INVALID_PATH",
-                    "Path has no parent directory.",
-                ));
-            }
-            return Ok(parent.to_path_buf());
-        }
-    }
-    Err(PublicBackendError::new(
-        "INVALID_PATH",
-        "Cannot determine parent folder for path.",
-    ))
-}
-
 pub fn open_with_validation(path_str: &str, opener: &dyn Opener) -> Result<(), PublicBackendError> {
-    let folder = validate_output_path_and_get_folder(path_str)?;
-    opener.open(&folder).map_err(|_| {
+    let path = validate_path_for_open(path_str)?;
+    if !path.exists() {
+        return Err(PublicBackendError::new(
+            "INVALID_PATH",
+            "The export could not be found. It may have been moved or deleted.",
+        ));
+    }
+    let result = if path.is_dir() {
+        opener.open(&path)
+    } else {
+        opener.reveal(&path)
+    };
+    result.map_err(|_| {
         PublicBackendError::new(
             "UNSUPPORTED_OPERATION",
-            "Could not open folder with system opener.",
+            "Could not show the export in its folder.",
         )
     })
 }
@@ -154,6 +187,7 @@ mod tests {
 
     struct MockOpener {
         pub called: std::sync::Mutex<Vec<PathBuf>>,
+        pub revealed: std::sync::Mutex<Vec<PathBuf>>,
         pub should_fail: bool,
     }
 
@@ -161,12 +195,22 @@ mod tests {
         fn new(should_fail: bool) -> Self {
             Self {
                 called: std::sync::Mutex::new(Vec::new()),
+                revealed: std::sync::Mutex::new(Vec::new()),
                 should_fail,
             }
         }
     }
 
     impl Opener for MockOpener {
+        fn reveal(&self, path: &Path) -> std::io::Result<()> {
+            self.revealed.lock().unwrap().push(path.to_path_buf());
+            if self.should_fail {
+                Err(std::io::Error::other("mock failure"))
+            } else {
+                Ok(())
+            }
+        }
+
         fn open(&self, path: &Path) -> std::io::Result<()> {
             self.called.lock().unwrap().push(path.to_path_buf());
             if self.should_fail {
@@ -178,7 +222,7 @@ mod tests {
     }
 
     #[test]
-    fn valid_output_path_opens_parent_folder() {
+    fn valid_output_path_reveals_file() {
         let dir = std::env::temp_dir().join("tuck_opener_valid");
         let _ = std::fs::create_dir_all(&dir);
         let file = dir.join("output.mp4");
@@ -186,10 +230,20 @@ mod tests {
         let mock = MockOpener::new(false);
         let result = open_with_validation(&file.to_string_lossy(), &mock);
         assert!(result.is_ok());
-        assert_eq!(mock.called.lock().unwrap().len(), 1);
-        assert_eq!(mock.called.lock().unwrap()[0], dir);
+        assert!(mock.called.lock().unwrap().is_empty());
+        assert_eq!(*mock.revealed.lock().unwrap(), vec![file.clone()]);
         let _ = std::fs::remove_file(&file);
         let _ = std::fs::remove_dir(&dir);
+    }
+
+    #[test]
+    fn missing_output_is_rejected_before_opener() {
+        let file = std::env::temp_dir().join("tuck-missing-output-12345.mp4");
+        let mock = MockOpener::new(false);
+        let result = open_with_validation(&file.to_string_lossy(), &mock);
+        assert_eq!(result.unwrap_err().code, "INVALID_PATH");
+        assert!(mock.called.lock().unwrap().is_empty());
+        assert!(mock.revealed.lock().unwrap().is_empty());
     }
 
     #[test]

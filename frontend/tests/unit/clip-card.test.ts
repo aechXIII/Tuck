@@ -104,6 +104,7 @@ test("clip cards keep backend data inert and delegate exact action values", () =
   assert.ok(descendants(card).some((element) => element.className === "c-error"));
   const open = action(card, "open-result");
   assert.ok(open);
+  assert.equal(open.textContent, "Show");
   assert.equal(open.attributes.onclick, undefined);
   const click = card.listeners.click?.[0];
   assert.ok(click);

@@ -879,8 +879,8 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         <input id="set-open-output-folder" type="checkbox" ${openOutput} data-settings-change="mark-dirty">
         <span class="chk-box" aria-hidden="true"></span>
         <span class="settings-option-copy">
-          <strong>Open the output folder</strong>
-          <small>Opens the folder containing the last successful export.</small>
+          <strong>Show the last export in its folder</strong>
+          <small>Selects the last successful export in your file manager.</small>
         </span>
       </label>
       <label class="chk settings-option">

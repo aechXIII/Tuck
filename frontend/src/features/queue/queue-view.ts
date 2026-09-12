@@ -36,7 +36,7 @@ export interface QueueViewState {
   readonly fname: string;
   /** Non-empty when a batch just finished and the toast should fire. */
   readonly finishedToast: { readonly message: string; readonly kind: "ok" | "err" } | null;
-  /** Result path to open when the "open folder after queue" setting is on. */
+  /** Result path to reveal when the automatic show-export setting is on. */
   readonly outputToOpen: string;
 }
 

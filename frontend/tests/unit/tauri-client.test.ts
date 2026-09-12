@@ -94,6 +94,19 @@ test("Tauri transport routes probeAudioFile through backend_request", async () =
   ]);
 });
 
+test("show export passes the full path to the native opener and preserves errors", async () => {
+  const path = "C:\\Exports\\holiday, final.mp4";
+  const calls: Array<{ command: string; args: Record<string, unknown> }> = [];
+  const failure = { code: "INVALID_PATH", message: "The export could not be found.", details: {} };
+  const client = createTauriBackendClient(async (command, args) => {
+    calls.push({ command, args });
+    if (calls.length > 1) throw failure;
+  });
+  assert.equal((await client.openOutputFolder(path)).ok, true);
+  assert.deepEqual(calls, [{ command: "open_output_folder", args: { path } }]);
+  assert.deepEqual(await client.openOutputFolder(path), { ok: false, error: failure });
+});
+
 test("Tauri runtime detection requires the injected invoke function", () => {
   assert.equal(hasTauriInvoke(undefined), false);
   assert.equal(hasTauriInvoke({}), false);
