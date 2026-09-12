@@ -305,12 +305,12 @@ export function installPlayer(host: PlayerHost): PlayerApi {
 
   function onPlay(): void {
     const btn = byId("btn-play");
-    if (btn) btn.textContent = "\u23f8";
+    if (btn) btn.classList.add("playing");
   }
 
   function onPause(): void {
     const btn = byId("btn-play");
-    if (btn) btn.textContent = "\u25b6";
+    if (btn) btn.classList.remove("playing");
   }
 
   function onDurationOrMeta(): void {

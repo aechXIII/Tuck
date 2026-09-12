@@ -5,8 +5,8 @@
   flex-direction: column;
   justify-content: center;
   gap: 2px;
-  margin-inline: -12px;
-  padding: 6px 12px;
+  margin-inline: 0;
+  padding: 6px 0;
   background: var(--panel);
 }
 .inspector-summary-title {
@@ -82,14 +82,16 @@
 
 .audio-master-row {
   min-height: 34px;
-  margin-inline: -12px;
-  padding: 4px 12px;
+  margin-inline: 0;
+  padding: 4px 0;
   border-bottom: 0;
   background: var(--panel);
 }
 
 .insp-tabs {
   gap: 0;
+  padding-block: 6px;
+  border-bottom: 0;
 }
 .insp-tab {
   gap: 0;
@@ -100,7 +102,7 @@
 }
 
 #right-scroll {
-  padding: 0 12px 12px;
+  padding: 0 calc(var(--panel-inset) - var(--panel-scrollbar)) var(--panel-inset);
 }
 #insp-edit,
 #insp-audio,
@@ -109,7 +111,7 @@
   gap: 0;
 }
 .inspector-content {
-  min-height: 100%;
+  min-height: 0;
 }
 .inspector-summary {
   min-height: 34px;
@@ -118,8 +120,8 @@
   align-items: center;
   justify-content: flex-start;
   gap: 8px;
-  margin-inline: -12px;
-  padding: 0 12px;
+  margin-inline: 0;
+  padding: 0;
 }
 .inspector-summary-title {
   flex: 0 1 auto;
@@ -132,7 +134,7 @@
   color: var(--dim);
   font: 400 10px var(--mono);
 }
-#video-inspector-content > .gr:first-of-type {
+#video-inspector-content > .gr:not(#clip-details-card) {
   padding: 0;
 }
 .inspector-label-row {

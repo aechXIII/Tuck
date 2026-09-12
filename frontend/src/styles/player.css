@@ -198,3 +198,11 @@
   border: none;
   cursor: pointer;
 }
+
+#btn-play .pause-icon,
+#btn-play.playing .play-icon {
+  display: none;
+}
+#btn-play.playing .pause-icon {
+  display: block;
+}

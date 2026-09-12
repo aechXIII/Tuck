@@ -44,7 +44,7 @@
 }
 
 #left-hdr {
-  padding: 8px 8px 14px;
+  padding: 8px var(--panel-inset) 14px;
 }
 .lib-add-row {
   min-height: 30px;
@@ -69,7 +69,12 @@
   border-radius: 6px;
 }
 #clips {
-  padding: 2px 8px 10px;
+  padding: 2px calc(var(--panel-inset) - var(--panel-scrollbar)) 10px;
+  scrollbar-gutter: stable both-edges;
+  scrollbar-width: auto;
+}
+#clips::-webkit-scrollbar {
+  width: var(--panel-scrollbar);
 }
 .lib-group + .lib-group {
   margin-top: 12px;
@@ -111,7 +116,9 @@
   background: var(--raised-2);
 }
 .clip .c2 {
-  padding: 0 62px 0 0;
+  min-width: 0;
+  padding: 0;
+  flex: 1;
   color: var(--text);
   font-size: 11.5px;
   font-weight: 600;
@@ -129,9 +136,7 @@
 }
 /* projected output size — the planner's estimate for this clip, once it has one */
 .clip .c-proj {
-  position: absolute;
-  top: 8px;
-  right: 30px;
+  flex: 0 0 auto;
   font-family: var(--mono);
   font-size: 9.5px;
   font-weight: 500;
@@ -234,4 +239,11 @@
 }
 #library-summary-size {
   font-family: var(--mono);
+}
+
+.c-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding-right: 20px;
 }

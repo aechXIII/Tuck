@@ -127,3 +127,18 @@ test("discard confirmation text stays readable in normal and hover states", asyn
     expect(contrast, hover ? "hover contrast" : "normal contrast").toBeGreaterThanOrEqual(4.5);
   }
 });
+
+
+test("Settings selects have inset arrows and room for their text", async ({ page }) => {
+  const styles = await page.locator(".settings-dialog select").evaluateAll(elements => elements.map(el => {
+    const c = getComputedStyle(el);
+    return { appearance: c.appearance, position: c.backgroundPosition, padding: c.paddingRight, image: c.backgroundImage };
+  }));
+  expect(styles.length).toBeGreaterThan(0);
+  for (const style of styles) {
+    expect(style.appearance).toBe("none");
+    expect(style.position).toContain("10px");
+    expect(style.padding).toBe("30px");
+    expect(style.image).not.toBe("none");
+  }
+});

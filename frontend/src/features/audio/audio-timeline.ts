@@ -1639,12 +1639,14 @@ export function installAudioTimeline(host: AudioTimelineHost) {
     },
     removeTrack: function(trackId: string) {
       let clip = selectedVideo();
-      let state = ensureState(clip);
       let track = findTrack(trackId, clip);
-      if (!state || !track) return;
+      if (!clip || !track) return;
       confirm("Remove audio track “" + track.name + "”?", function () {
         host.History?.begin?.(session.selPath);
         let selected = findSelected(clip);
+        // lookups normalize the model, so mutate the current state after them
+        const state = ensureState(clip);
+        if (!state) return;
         releaseToken(track.mediaToken);
         releaseToken(track.waveformToken);
         const element = previewElements[track.id];

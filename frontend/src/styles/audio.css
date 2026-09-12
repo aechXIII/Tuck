@@ -260,11 +260,11 @@ body.timeline-resizing * {
   content: "";
   position: absolute;
   top: 50%;
-  width: 6px;
-  height: calc(100% - 10px);
+  width: 5px;
+  height: calc(100% - 8px);
   min-height: 10px;
   max-height: 28px;
-  border: 1px solid color-mix(in srgb, var(--segment-color, var(--accent-light)) 62%, white);
+  border: 0;
   background: var(--text);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
   transform: translateY(-50%);
@@ -274,12 +274,12 @@ body.timeline-resizing * {
     box-shadow 0.1s ease;
 }
 .clip-edge.start::before {
-  left: 3px;
-  border-radius: 3px 1px 1px 3px;
+  left: 4px;
+  border-radius: 3px;
 }
 .clip-edge.end::before {
-  right: 3px;
-  border-radius: 1px 3px 3px 1px;
+  right: 4px;
+  border-radius: 3px;
 }
 .clip-edge:hover,
 .clip-edge:focus-visible,
@@ -289,7 +289,7 @@ body.timeline-resizing * {
 .clip-edge:hover::before,
 .clip-edge:focus-visible::before,
 .clip-edge.dragging::before {
-  width: 8px;
+  width: 5px;
   background: var(--text);
   box-shadow:
     0 0 0 1px color-mix(in srgb, var(--segment-color, var(--accent)) 48%, white),

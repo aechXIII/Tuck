@@ -25,8 +25,10 @@ test("automatic timeline height fits the default tracks and grows for imported a
   assert.equal(layout.timelineAutoHeight(4, 640), 274);
 });
 
-test("track changes preserve a manual timeline height until Fit tracks is used", () => {
-  assert.equal(layout.timelineHeightForTrackCount(200, 3, 900), null);
+test("track changes fit added and removed tracks while unchanged tracks preserve manual height", () => {
+  assert.equal(layout.timelineHeightForTrackCount(200, 3, 900, 2), 232);
+  assert.equal(layout.timelineHeightForTrackCount(300, 2, 900, 3), 190);
+  assert.equal(layout.timelineHeightForTrackCount(200, 3, 900, 3), null);
   assert.equal(layout.timelineHeightForTrackCount(0, 3, 900), 232);
 });
 

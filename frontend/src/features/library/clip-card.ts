@@ -255,7 +255,9 @@ export function createClipCard<T extends ClipCardElement>(
   card.appendChild(drag);
 
   const main = createElement(documentRef, "div", "c1");
-  main.appendChild(createElement(documentRef, "div", "c2", name));
+  const titleRow = createElement(documentRef, "div", "c-title-row");
+  titleRow.appendChild(createElement(documentRef, "div", "c2", name));
+  main.appendChild(titleRow);
   const metadata = createElement(documentRef, "div", "c3");
   const metadataText = createElement(documentRef, "span", "c-meta");
   if (model.meta && model.meta.error) {
@@ -302,7 +304,7 @@ export function createClipCard<T extends ClipCardElement>(
         ? "Projected output is over the target size"
         : "Projected output size",
     );
-    card.appendChild(projected);
+    titleRow.appendChild(projected);
   }
   if (model.queueState === "pending") {
     const queued = createActionButton(

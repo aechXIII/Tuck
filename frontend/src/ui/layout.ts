@@ -5,7 +5,10 @@ export function timelineAutoHeight(trackCount: unknown, viewportHeight: unknown)
 export function clampTimelineHeight(value:unknown, viewportHeight:unknown, trackCount?:unknown):number { const bounds=timelineHeightBounds(viewportHeight); const height=Number(value); return !Number.isFinite(height)||height<=0?timelineAutoHeight(trackCount,viewportHeight):Math.max(bounds.min,Math.min(bounds.max,Math.round(height))); }
 export function normalizeTimelineHeightSetting(value:unknown, viewportHeight:unknown):number { const bounds=timelineHeightBounds(viewportHeight),height=Number(value); return !Number.isFinite(height)||height<bounds.min?0:Math.round(height); }
 export function initialTimelineHeightSetting(settings: Readonly<Record<string, unknown>> | null | undefined):unknown { return settings?.timeline_height ?? 0; }
-export function timelineHeightForTrackCount(setting:unknown,trackCount:unknown,viewportHeight:unknown):number|null{return normalizeTimelineHeightSetting(setting,viewportHeight)!==0?null:timelineAutoHeight(trackCount,viewportHeight);}
+export function timelineHeightForTrackCount(setting: unknown, trackCount: unknown, viewportHeight: unknown, previousTrackCount: unknown = trackCount): number | null {
+  if (trackCount === previousTrackCount && normalizeTimelineHeightSetting(setting, viewportHeight) !== 0) return null;
+  return timelineAutoHeight(trackCount, viewportHeight);
+}
 export function timelineHeightForKey(current:unknown,key:string,largeStep:boolean,viewportHeight:unknown):number|null{const bounds=timelineHeightBounds(viewportHeight);if(key==="Home")return bounds.min;if(key==="End")return bounds.max;const direction=key==="ArrowUp"?1:key==="ArrowDown"?-1:0;return direction?clampTimelineHeight(Number(current)+direction*(largeStep?32:10),viewportHeight):null;}
 export function workspaceMode(viewportWidth:unknown):"docked"|"overlay"{let width=Number(viewportWidth);if(!Number.isFinite(width))width=WORKSPACE_DOCKED_MIN_WIDTH;return width>=WORKSPACE_DOCKED_MIN_WIDTH?"docked":"overlay";}
 export function initialWorkspacePanels(viewportWidth:unknown):{libraryOpen:boolean;inspectorOpen:boolean}{const open=workspaceMode(viewportWidth)==="docked";return{libraryOpen:open,inspectorOpen:open};}

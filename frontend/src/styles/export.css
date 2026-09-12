@@ -151,7 +151,7 @@
 }
 
 #insp-export {
-  min-height: 100%;
+  min-height: 0;
 }
 #profile-card {
   padding: 12px 0 0;
@@ -199,10 +199,11 @@
 /* Task — first thing in the panel, styled like the Transform/Audio/Export strip
    so it reads as a mode picker and scales to a third option later. */
 #task-wf {
-  min-height: 30px;
-  margin: 0 0 4px;
-  padding: 3px;
-  gap: 3px;
+  flex-shrink: 0;
+  min-height: 32px;
+  margin: 8px 0 0;
+  padding: 4px;
+  gap: 4px;
   border-radius: var(--r-ctl);
 }
 #task-wf button {
@@ -340,6 +341,7 @@
   font: 400 9px var(--mono);
 }
 .adjust-panel-body {
+  position: relative;
   padding: 2px 0 11px 18px;
   border-top: 0;
   background: transparent;
@@ -394,9 +396,9 @@
 }
 .export-native-video-controls.show-resolution #res-cust {
   display: grid !important;
-  grid-template-columns: 72px 1fr 1fr;
+  grid-template-columns: 80px minmax(0, 1fr) minmax(0, 1fr);
   align-items: center;
-  gap: 6px;
+  gap: 10px;
   margin-top: 7px;
 }
 .export-native-video-controls.show-resolution #res-cust input {
@@ -408,9 +410,9 @@
 }
 .export-native-video-controls.show-scaler #scaler-row {
   display: grid !important;
-  grid-template-columns: 72px 1fr;
+  grid-template-columns: 80px minmax(0, 1fr);
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   margin-top: 7px;
 }
 .export-native-video-controls.show-scaler #scaler-row select {
@@ -430,7 +432,7 @@
   grid-template-columns: 1fr auto;
   align-items: center;
   gap: 8px;
-  margin: 7px 0 4px 80px;
+  margin: 7px 0 4px 90px;
 }
 .export-native-video-controls.show-fps #fps-badge {
   display: inline !important;
@@ -439,16 +441,18 @@
 }
 .export-native-video-controls.show-fps #fps-slider {
   display: block !important;
-  width: calc(100% - 80px);
-  margin-left: 80px;
+  width: calc(100% - 90px);
+  margin-left: 90px;
 }
 #right-foot {
-  padding: 10px 12px;
+  padding: var(--panel-inset);
   gap: 0;
   border-top: 0;
 }
 #right-foot > .btn1 {
   min-height: 36px;
+  /* balance the separate 32px menu area when centering the label */
+  padding-inline: 46px 14px;
   border-radius: 6px 0 0 6px;
   background: var(--action);
   color: var(--on-accent);
@@ -481,4 +485,26 @@
   stroke-width: 1.8;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+
+.adjust-panel[open] > .adjust-panel-body::before {
+  content: "";
+  position: absolute;
+  inset: 2px auto 12px 2px;
+  width: 1px;
+  background: var(--hair);
+  pointer-events: none;
+}
+
+#right select,
+.settings-dialog select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='m3 4.5 3 3 3-3' fill='none' stroke='%23aaa9b0' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 12px;
+}
+#right select[id],
+.settings-dialog select {
+  padding-right: 30px;
 }

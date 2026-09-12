@@ -231,7 +231,8 @@
               aria-keyshortcuts="Space"
               data-tip="Play / pause (Space)"
             >
-              ▶
+              <svg class="play-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M5 2.5 13 8 5 13.5Z"/></svg>
+              <svg class="pause-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3h4v10H3zM9 3h4v10H9z"/></svg>
             </button>
             <button
               type="button"
@@ -314,7 +315,6 @@
             </svg>
           </button>
         </div>
-        <div id="right-scroll">
         <div id="insp-tabs" class="insp-tabs" role="group" aria-label="Inspector section">
           <button type="button" id="insp-tab-edit" class="insp-tab" aria-pressed="false" data-action-click="inspector-tab" data-action-value="edit">
             <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 1v9.5a1 1 0 0 0 1 1H15"></path><path d="M11.5 15V5.5a1 1 0 0 0-1-1H1"></path></svg>
@@ -329,6 +329,7 @@
             Export
           </button>
         </div>
+        <div id="right-scroll">
           <div id="insp-edit" class="hid">
           <div id="video-inspector-empty" class="inspector-empty">
             <strong>Select a video</strong>

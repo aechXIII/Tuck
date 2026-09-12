@@ -1097,14 +1097,19 @@ function applyTimelineHeight(value: number) {
 
 function syncTimelineTrackCount(importedCount: number) {
   let count = Math.max(0, Math.round(Number(importedCount) || 0));
+  const previousTrackCount = timelineTrackCount;
   timelineTrackCount = 2 + count;
   if (!TuckLayout) return;
   let height = TuckLayout.timelineHeightForTrackCount(
     timelineHeightSetting,
     timelineTrackCount,
     windowRef.innerHeight,
+    previousTrackCount,
   );
-  if (height != null) applyTimelineHeight(height);
+  if (height != null) {
+    if (previousTrackCount !== timelineTrackCount) timelineHeightSetting = 0;
+    applyTimelineHeight(height);
+  }
 }
 
 function saveTimelineHeight(value: number) {

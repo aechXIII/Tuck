@@ -555,7 +555,7 @@ export function createLibrary(host: LibraryHost): LibraryApi {
     const vid = byId("vid");
     if (vid) vid.style.display = "block";
     const play = byId("btn-play");
-    if (play) play.textContent = "▶";
+    if (play) play.classList.remove("playing");
     const clip = session.clips[path];
     if (!clip) return;
     host.audio?.selectVideo?.(clip);

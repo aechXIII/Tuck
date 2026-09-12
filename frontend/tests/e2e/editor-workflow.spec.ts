@@ -451,3 +451,181 @@ test("the audio source range picker sizes its window to the selection and stays 
 
   expect(errors).toEqual([]);
 });
+
+test("track additions and removals resize a manually sized timeline", async ({ page }) => {
+  await page.setViewportSize({ width: 1240, height: 800 });
+  await installFakeBackend(page, editorFixture());
+  await page.goto("/");
+  await page.getByRole("button", { name: "Add videos" }).click();
+  const separator = page.getByRole("separator", { name: "Resize timeline" });
+  await separator.focus();
+  await page.keyboard.press("Home");
+  await expect(separator).toHaveAttribute("aria-valuenow", "170");
+  await page.getByRole("button", { name: "Add audio", exact: true }).click();
+  await expect(separator).toHaveAttribute("aria-valuenow", "232");
+  await page.locator("#imported-audio-tracks .seq-track-remove").click();
+  await page.locator("#confirm-accept").click();
+  await expect(separator).toHaveAttribute("aria-valuenow", "190");
+});
+
+test("Inspector content aligns with tabs and footer without empty scrolling", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1240, height: 800 });
+  await installFakeBackend(page, editorFixture());
+  await page.goto("/");
+  await page.getByRole("button", { name: "Add videos" }).click();
+  const libraryEdges = await page.evaluate(() => {
+    const rect = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
+    return { card: rect(".clip").left, tab: rect("#lib-tab-media").left, add: rect("#btn-add").left };
+  });
+  expect(libraryEdges.card).toBeCloseTo(libraryEdges.tab, 0);
+  expect(libraryEdges.add).toBeCloseTo(libraryEdges.tab, 0);
+  for (const width of [1240, 960]) {
+    await page.setViewportSize({ width, height: width === 960 ? 640 : 800 });
+    if (width === 960) await page.getByRole("button", { name: "Inspector", exact: true }).click();
+    await page.locator("#insp-tab-edit").click();
+    const transform = await page.evaluate(() => {
+      const scroll = document.querySelector<HTMLElement>("#right-scroll")!;
+      const details = document.querySelector("#clip-details-card")!.getBoundingClientRect();
+      return { overflow: scroll.scrollHeight - scroll.clientHeight, bottomGap: scroll.getBoundingClientRect().bottom - details.bottom };
+    });
+    expect(transform.overflow).toBeLessThanOrEqual(1);
+    expect(transform.bottomGap).toBeCloseTo(12, 0);
+    await page.screenshot({ path: testInfo.outputPath(`transform-${width}.png`) });
+    await page.locator("#insp-tab-audio").click();
+    expect(await page.locator("#right-scroll").evaluate(el => el.scrollHeight - el.clientHeight)).toBeLessThanOrEqual(1);
+    await page.locator("#insp-tab-export").click();
+    const edges = await page.evaluate(() => {
+      const rect = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
+      return { tab: rect("#insp-tab-export").right, field: rect(".profile-select-row").right, footer: rect(".export-actions").right, start: rect("#insp-tab-edit").left, contentStart: rect("#profile-card").left };
+    });
+    expect(edges.tab).toBeCloseTo(edges.field, 0);
+    expect(edges.footer).toBeCloseTo(edges.field, 0);
+    expect(edges.start).toBeCloseTo(edges.contentStart, 0);
+    await page.screenshot({ path: testInfo.outputPath(`export-${width}.png`) });
+  }
+});
+
+test("export controls have balanced insets and timeline text shares a baseline", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1240, height: 800 });
+  await installFakeBackend(page, editorFixture());
+  await page.goto("/");
+  await page.getByRole("button", { name: "Add videos" }).click();
+  const geometry = await page.evaluate(() => {
+    const rect = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
+    const tabs = rect("#insp-tabs"), tab = rect("#insp-tab-export");
+    const modes = rect("#task-wf"), first = rect("#wf-c"), last = rect("#wf-u");
+    const footer = rect("#right-foot"), button = rect("#btn-one"), actions = rect(".export-actions");
+    return {
+      tabInsets: { top: tab.top-tabs.top, bottom: tabs.bottom-tab.bottom },
+      rowGap: modes.top-tabs.bottom,
+      modeInsets: [first.top-modes.top,modes.bottom-first.bottom,first.left-modes.left,modes.right-last.right],
+      footerInsets: [button.top-footer.top,footer.bottom-button.bottom,button.left-footer.left,footer.right-actions.right],
+    };
+  });
+  expect(geometry.tabInsets.top).toBeCloseTo(geometry.tabInsets.bottom, 0);
+  expect(geometry.rowGap).toBeGreaterThanOrEqual(8);
+  for (const inset of geometry.modeInsets) expect(inset).toBeCloseTo(4, 0);
+  for (const inset of geometry.footerInsets) expect(inset).toBeCloseTo(12, 0);
+  const baselines = await page.evaluate(() => {
+    const selectors = ['.timeline-tool-group[aria-label="Segment actions"] .timeline-tool-label', '#btn-seq-split .timeline-command-label', '.timeline-tool-group[aria-label="Audio actions"] .timeline-tool-label', '#audio-add .timeline-command-label'];
+    return selectors.map(selector => {
+      const marker = document.createElement("span");
+      marker.style.cssText = "display:inline-block;width:0;height:0;padding:0;margin:0;vertical-align:baseline";
+      document.querySelector(selector)!.append(marker);
+      const baseline = marker.getBoundingClientRect().top;
+      marker.remove();
+      return baseline;
+    });
+  });
+  const firstBaseline = baselines[0];
+  if (firstBaseline === undefined) throw new Error("Timeline labels are missing");
+  for (const baseline of baselines) expect(baseline).toBeCloseTo(firstBaseline, 0);
+  await page.screenshot({ path: testInfo.outputPath("balanced-controls.png") });
+});
+
+
+test("preview icons retain their geometry through playback events", async ({ page }) => {
+  await installFakeBackend(page, editorFixture());
+  await page.goto("/");
+  await page.getByRole("button", { name: "Add videos" }).click();
+  await expect(page.locator("#btn-play .play-icon")).toBeVisible();
+  await expect(page.locator("#btn-play .pause-icon")).toBeHidden();
+  await page.locator("#vid").dispatchEvent("play");
+  await expect(page.locator("#btn-play .pause-icon")).toBeVisible();
+  await expect(page.locator("#btn-play .play-icon")).toBeHidden();
+  await page.locator("#vid").dispatchEvent("pause");
+  await expect(page.locator("#btn-play .play-icon")).toBeVisible();
+});
+
+test("custom export fields share edges and selected clips have matching handles", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1240, height: 800 });
+  await installFakeBackend(page, editorFixture());
+  await page.goto("/");
+  await page.getByRole("button", { name: "Add videos" }).click();
+  await page.locator("#export-res-select").selectOption({ label: "Custom…" });
+  const geometry = await page.evaluate(() => {
+    const rect = (s: string) => document.querySelector(s)!.getBoundingClientRect();
+    const select = document.querySelector("#export-res-select")!;
+    return {
+      starts: [rect("#export-res-select").left, rect("#res-cust input").left, rect("#scaler-row select").left],
+      ends: [rect("#export-res-select").right, rect("#res-cust input:last-child").right, rect("#scaler-row select").right],
+      arrow: getComputedStyle(select).backgroundPosition,
+      selection: getComputedStyle(document.querySelector(".tl-segment.active .tl-segment-surface")!).boxShadow,
+      handles: [".tl-segment.active .clip-edge.start", ".seq-audio-clip .clip-edge.start"].map(s => {
+        const c = getComputedStyle(document.querySelector(s)!, "::before");
+        return [c.width, c.borderRadius, c.left, c.backgroundColor];
+      }),
+    };
+  });
+  for (const x of geometry.starts) expect(x).toBeCloseTo(geometry.starts[0]!, 0);
+  for (const x of geometry.ends) expect(x).toBeCloseTo(geometry.ends[0]!, 0);
+  expect(geometry.arrow).toContain("10px");
+  expect(geometry.selection).toContain("inset");
+  expect(geometry.handles[0]).toEqual(geometry.handles[1]);
+  await page.screenshot({ path: testInfo.outputPath("aligned-fields-and-handles.png") });
+});
+
+
+test("export label centers across the split button and toolbar dividers are centered", async ({ page }) => {
+  await page.setViewportSize({ width: 1240, height: 800 });
+  await installFakeBackend(page, editorFixture());
+  await page.goto("/");
+  await page.getByRole("button", { name: "Add videos" }).click();
+  for (const mode of ["#wf-c", "#wf-u"]) {
+    await page.locator(mode).click();
+    const geometry = await page.evaluate(() => {
+      const button = document.querySelector("#btn-one")!;
+      const range = document.createRange();
+      range.selectNodeContents(button);
+      const text = range.getBoundingClientRect();
+      const start = button.getBoundingClientRect();
+      const end = document.querySelector(".export-actions")!.getBoundingClientRect();
+      const group = document.querySelector('.timeline-tool-group[aria-label="Audio actions"]')!;
+      const divider = getComputedStyle(group, "::before");
+      return {
+        textCenter: (text.left + text.right) / 2,
+        buttonCenter: (start.left + end.right) / 2,
+        dividerTop: parseFloat(divider.top),
+        groupHeight: group.getBoundingClientRect().height,
+        dividerHeight: divider.height,
+      };
+    });
+    expect(geometry.textCenter).toBeCloseTo(geometry.buttonCenter, 0);
+    expect(geometry.dividerTop).toBeCloseTo(geometry.groupHeight / 2, 0);
+    expect(geometry.dividerHeight).toBe("16px");
+  }
+});
+
+
+test("Audio cards and headings share the Inspector edges", async ({ page }) => {
+  await installFakeBackend(page, editorFixture());
+  await page.goto("/");
+  await page.getByRole("button", { name: "Add videos" }).click();
+  await page.locator("#insp-tab-audio").click();
+  const edges = await page.evaluate(() => ["#audio-master-card", ".audio-section-heading", "#audio-track-mixer"].map(s => {
+    const r = document.querySelector(s)!.getBoundingClientRect();
+    return [r.left, r.right];
+  }));
+  expect(edges[1]).toEqual(edges[0]);
+  expect(edges[2]).toEqual(edges[0]);
+});
