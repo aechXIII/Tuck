@@ -28,6 +28,7 @@ export type CloseModal = () => void;
 
 let prepareModalBoxImpl: PrepareModalBox = defaultPrepareModalBox;
 let closeModImpl: CloseModal = defaultCloseMod;
+let confirmReturnFocus: HTMLElement | null = null;
 
 export function configureModalHandlers(options: {
   prepareModalBox?: PrepareModalBox;
@@ -63,6 +64,8 @@ export function prepareModalBox(className: string): HTMLElement {
 
 export function closeMod(): void {
   closeModImpl();
+  if (confirmReturnFocus?.isConnected) confirmReturnFocus.focus();
+  confirmReturnFocus = null;
 }
 
 export function showMod(html: string): void {
@@ -150,6 +153,7 @@ function dismissToast(id: string): void {
 }
 
 export function confirmToast(msg: string, cb: () => void): void {
+  confirmReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   const lower = msg.toLowerCase();
   const discard = lower.includes("discard");
   const remove =
@@ -176,6 +180,9 @@ export function confirmToast(msg: string, cb: () => void): void {
   const cancelLabel = discard ? "Keep editing" : "Go back";
   pendingConfirm = cb;
   const box = prepareModalBox("mod-box confirm-dialog");
+  box.setAttribute("role", "dialog");
+  box.setAttribute("aria-modal", "true");
+  box.setAttribute("aria-labelledby", "confirm-title");
   box.innerHTML = `<h2 id="confirm-title"></h2>
     <p class="confirm-copy" id="confirm-copy"></p>
     <div class="confirm-actions">
@@ -198,6 +205,7 @@ export function confirmToast(msg: string, cb: () => void): void {
     acceptButton.addEventListener("click", acceptConfirm);
   }
   byId("mod-overlay")?.classList.add("open");
+  cancelButton?.focus();
 }
 
 function acceptConfirm(): void {

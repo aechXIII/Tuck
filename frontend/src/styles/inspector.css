@@ -7,12 +7,12 @@
   gap: 2px;
   margin-inline: -12px;
   padding: 6px 12px;
-  background: #16161c;
+  background: var(--panel);
 }
 .inspector-summary-title {
   min-width: 0;
   overflow: hidden;
-  color: #efedf4;
+  color: var(--text);
   font-size: 11px;
   font-weight: 700;
   text-overflow: ellipsis;
@@ -20,12 +20,11 @@
 }
 .inspector-summary-detail {
   overflow: hidden;
-  color: #8d8a9a;
+  color: var(--dim);
   font: 500 10px/1.25 var(--mono);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.export-summary-heading,
 .inspector-label-row {
   display: flex;
   align-items: center;
@@ -38,7 +37,7 @@
   height: 6px;
   flex: 0 0 6px;
   border-radius: 50%;
-  background: #e0b356;
+  background: var(--warn);
 }
 .export-modified-dot.show {
   display: block;
@@ -55,14 +54,14 @@
 .inspector-text-action {
   border: 0;
   background: transparent;
-  color: #9b98a8;
+  color: var(--dim);
   cursor: pointer;
   font: 600 10px var(--font);
   white-space: nowrap;
 }
 .inspector-reset:hover,
 .inspector-text-action:hover {
-  color: #fff;
+  color: var(--text);
 }
 .inspector-reset:focus-visible,
 .inspector-text-action:focus-visible {
@@ -71,14 +70,14 @@
 }
 #right .grt,
 #right .stitle {
-  color: #d8d6e0;
+  color: var(--text);
 }
 #right select,
 #right input[type="text"],
 #right input[type="number"] {
   border: 0;
   border-radius: 4px;
-  background: #1e1e26;
+  background: var(--raised);
 }
 
 .audio-master-row {
@@ -86,7 +85,7 @@
   margin-inline: -12px;
   padding: 4px 12px;
   border-bottom: 0;
-  background: #16161c;
+  background: var(--panel);
 }
 
 .insp-tabs {
@@ -124,36 +123,17 @@
 }
 .inspector-summary-title {
   flex: 0 1 auto;
-  color: #f2f0f8;
+  color: var(--text);
   font-size: 11.5px;
   font-weight: 600;
 }
 .inspector-summary-detail {
   min-width: 0;
-  color: #8e8c9b;
+  color: var(--dim);
   font: 400 10px var(--mono);
 }
-.export-summary-heading {
-  display: contents;
-}
-.export-summary .inspector-summary-title {
-  flex-shrink: 0;
-  font: 600 12.5px var(--mono);
-}
-.export-summary .inspector-summary-detail {
-  flex: 1;
-}
-.export-modified-dot {
-  margin-left: auto;
-}
 #video-inspector-content > .gr:first-of-type {
-  padding: 12px 0 16px;
-}
-#video-inspector-content > .video-summary + .gr {
-  padding: 12px 0 16px;
-}
-#video-inspector-content > .video-summary + .gr .inspector-label-row {
-  margin-bottom: 9px;
+  padding: 0;
 }
 .inspector-label-row {
   margin-bottom: 9px;
@@ -163,11 +143,11 @@
 #profile-card .grt,
 .adjust-title,
 .audio-section-heading {
-  color: #8e8c9b !important;
-  font-size: 9.5px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  color: var(--dim) !important;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
 }
 #transform-fields {
   display: flex;
@@ -185,7 +165,7 @@
 #transform-fields .enc-field > label {
   flex: 0 0 58px;
   padding-top: 0;
-  color: #a5a3b1;
+  color: var(--muted);
   font-size: 11.5px;
 }
 #transform-fields .enc-field:first-child > label {
@@ -206,36 +186,36 @@
   padding: 0 4px;
   border: 0;
   border-radius: 5px;
-  background: #1e1e26;
-  color: #8e8c9b;
+  background: var(--raised);
+  color: var(--dim);
   font-size: 10.5px;
   font-weight: 600;
 }
 #transform-fields .transform-segment button:hover {
-  background: #292832;
-  color: #d8d5e2;
+  background: var(--raised-2);
+  color: var(--text);
 }
 #transform-fields .transform-segment button.on {
-  background: #34313f;
-  color: #f2f0f8;
+  background: var(--raised-2);
+  color: var(--text);
 }
 #transform-fields .transform-segment button:focus-visible {
-  outline: 2px solid #c4b5fd;
+  outline: 2px solid var(--accent-light);
   outline-offset: -2px;
-  box-shadow: inset 0 0 0 1px #101015;
+  box-shadow: inset 0 0 0 1px var(--panel);
 }
 #transform-fields .transform-segment.grid-3 button {
   height: 26px;
   border-radius: 5px;
-  background: #1e1e26;
+  background: var(--raised);
   font-size: 10.5px;
 }
 #transform-fields .transform-segment.grid-3 button:hover {
-  background: #292832;
+  background: var(--raised-2);
 }
 #transform-fields .transform-segment.grid-3 button.on {
-  background: #34313f;
-  color: #f2f0f8;
+  background: var(--raised-2);
+  color: var(--text);
 }
 #transform-fields .transform-segment.grid-3 {
   gap: 4px;
@@ -258,9 +238,9 @@
   font-size: 11px;
 }
 .cd-k {
-  color: #8e8c9b;
+  color: var(--dim);
 }
 .cd-v {
-  color: #c8c6d2;
+  color: var(--muted);
   font-family: var(--mono);
 }

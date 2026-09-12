@@ -194,7 +194,7 @@ def test_web_ui_contains_complete_transform_controls() -> None:
     assert 'id="transform-fields"' in html
     assert 'id="video-inspector-empty"' in video_panel
     assert 'id="video-inspector-content"' in video_panel
-    assert "Video" in html.split('id="insp-tabs"', 1)[1].split('id="right-scroll"', 1)[0]
+    assert "Transform" in html.split('id="insp-tabs"', 1)[1].split('id="right-scroll"', 1)[0]
     assert 'aria-label="Video transform controls"' in html
     assert 'class="transform-controls seq-toolbar"' in html
     assert 'role="toolbar"' in html
@@ -311,9 +311,17 @@ def test_audio_controls_use_consistent_nle_track_vocabulary() -> None:
     panels_js = _asset("panels.js")
     timeline_styles = _asset("timeline.css")
 
-    assert '<span class="seq-track-code" aria-hidden="true">V1</span>' in html
-    assert '<span class="seq-track-code" aria-hidden="true">A1</span>' in html
-    assert 'class="seq-track-mute"' in html
+    for header_id, label in (("video-track-head", "Video"), ("source-audio-head", "Source audio")):
+        header = re.search(rf'<div\b[^>]*id="{header_id}"[^>]*>.*?</div>', html, re.DOTALL)
+        assert header is not None
+        assert f">{label}</span>" in header.group(0)
+        assert 'class="seq-track-icon" aria-hidden="true"' in header.group(0)
+    mute = re.search(r'<button\b[^>]*id="source-audio-label"[^>]*>', html)
+    assert mute is not None
+    assert 'type="button"' in mute.group(0)
+    assert 'aria-label="Mute source audio"' in mute.group(0)
+    assert 'aria-pressed="false"' in mute.group(0)
+    assert "disabled" in mute.group(0)
     assert 'class="timeline-tool-group"' in html
     assert 'id="audio-master-toggle"' in html
     assert 'role="switch"' in html
@@ -391,7 +399,7 @@ def test_settings_save_state_is_wired_into_the_ui() -> None:
 
 def test_profile_management_is_visible_without_opening_an_overflow_menu() -> None:
     html = _asset("index.html")
-    profile_card = html.split('id="profile-card"', 1)[1].split('id="task-wf"', 1)[0]
+    profile_card = html.split('id="profile-card"', 1)[1].split('id="sz-grp"', 1)[0]
     profile_header = profile_card.split('class="profile-select-row"', 1)[0]
     profile_options = profile_card.split('<details class="profile-options">', 1)[1]
 
@@ -432,7 +440,7 @@ def test_web_ui_allows_manual_target_size_entry() -> None:
     assert 'type="number"' in html
     assert 'min="2"' in html
     assert "#sz-badge {" in html
-    assert "color: #c4b5fd;" in html
+    assert "color: var(--text) !important;" in html
     assert "function onBadgeSize(value: string)" in html
     assert 'input("sz-slider").max = String(Math.max(500, size))' in html
     assert "if (!size || size < 2)" in html

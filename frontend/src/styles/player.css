@@ -2,7 +2,7 @@
   flex: 1 1 0;
   height: 100%;
   min-height: 0;
-  background: #0a0a0e;
+  background: var(--sink);
   display: flex;
   flex-direction: column;
   min-width: 320px;
@@ -17,7 +17,7 @@
   gap: 10px;
 }
 #empty h2 {
-  color: #666;
+  color: var(--dim);
   font-size: 18px;
   font-weight: 600;
 }
@@ -34,7 +34,7 @@
 }
 #player-bar {
   display: none;
-  background: #0f0f17;
+  background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 0 0 8px 8px;
   flex-shrink: 0;
@@ -45,6 +45,7 @@
 #player-bar.on {
   display: flex;
 }
+
 #stage-controls {
   flex-shrink: 0;
   display: flex;
@@ -56,7 +57,7 @@
 .pbtn {
   background: transparent;
   border: none;
-  color: #cfcfe0;
+  color: var(--muted);
   border-radius: 50%;
   width: 26px;
   height: 26px;
@@ -70,8 +71,8 @@
   padding: 0;
 }
 .pbtn:hover {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+  background: var(--raised);
 }
 .pbtn:focus-visible {
   outline: 2px solid var(--accent-light);
@@ -86,15 +87,15 @@
 #btn-play {
   width: 30px;
   height: 30px;
-  background: var(--accent);
-  color: #fff;
+  background: var(--action);
+  color: var(--on-accent);
   font-size: 11px;
 }
 #btn-play:hover {
-  background: #8b5cf6;
+  background: var(--action-hover);
 }
 #ptime {
-  color: #cfcfe0;
+  color: var(--muted);
   font-size: 11px;
   font-family: var(--mono);
   white-space: nowrap;
@@ -180,7 +181,7 @@
   border-radius: 50%;
   background: var(--accent-light);
   border: none;
-  box-shadow: 0 0 0 2px rgba(167, 139, 250, 0.2);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-light) 20%, transparent);
   cursor: pointer;
 }
 #vbar::-moz-range-track {

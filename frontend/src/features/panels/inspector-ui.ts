@@ -95,7 +95,7 @@ export function exportSummary(state: InspectorExportState): {
 }
 
 export function sizePresets(): number[] {
-  return [10, 50, 500];
+  return [20, 50, 200, 500];
 }
 
 export function resolutionChoices(

@@ -480,6 +480,12 @@ export function createLibrary(host: LibraryHost): LibraryApi {
       if (!statusLabel && clip._queueState === "failed") statusLabel = "Failed";
       if (!statusLabel && clip._queueState === "cancelled") statusLabel = "Cancelled";
       if (!statusLabel && clip.error) statusLabel = "Could not read details";
+      const plan = clip.planData as Record<string, unknown> | null | undefined;
+      const est = plan ? Number(plan.estimated_size_mb) : NaN;
+      const planTarget = plan ? Number(plan.target_size_mb) : NaN;
+      const isUpscale = plan?.workflow === "upscale";
+      const projectedMb =
+        !isUpscale && Number.isFinite(est) && est > 0 ? est : undefined;
       return {
         path,
         name: clip.name,
@@ -493,6 +499,12 @@ export function createLibrary(host: LibraryHost): LibraryApi {
         fileSize: clip._fileSize || 0,
         meta: metaStr(clip),
         badge: clipStateBadge(path) ?? null,
+        projectedMb,
+        overBudget:
+          projectedMb != null &&
+          Number.isFinite(planTarget) &&
+          planTarget > 0 &&
+          projectedMb > planTarget + 0.1,
       };
     });
     const groups = groupClipModels(models);

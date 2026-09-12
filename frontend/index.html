@@ -5,6 +5,7 @@
     <title>Tuck</title>
   </head>
   <body>
+    <div id="editor-shell">
     <div id="tb">
       <button
         type="button"
@@ -313,327 +314,292 @@
             </svg>
           </button>
         </div>
+        <div id="right-scroll">
         <div id="insp-tabs" class="insp-tabs" role="group" aria-label="Inspector section">
-          <button
-            type="button"
-            id="insp-tab-edit"
-            class="insp-tab"
-            aria-pressed="false"
-            data-action-click="inspector-tab"
-            data-action-value="edit"
-          >
-            <svg viewBox="0 0 16 16" aria-hidden="true">
-              <path d="M4.5 1v9.5a1 1 0 0 0 1 1H15"></path>
-              <path d="M11.5 15V5.5a1 1 0 0 0-1-1H1"></path>
-            </svg>
-            Video
+          <button type="button" id="insp-tab-edit" class="insp-tab" aria-pressed="false" data-action-click="inspector-tab" data-action-value="edit">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 1v9.5a1 1 0 0 0 1 1H15"></path><path d="M11.5 15V5.5a1 1 0 0 0-1-1H1"></path></svg>
+            Transform
           </button>
-          <button
-            type="button"
-            id="insp-tab-audio"
-            class="insp-tab"
-            aria-pressed="false"
-            data-action-click="inspector-tab"
-            data-action-value="audio"
-          >
-            <svg viewBox="0 0 16 16" aria-hidden="true">
-              <path d="M1.5 6h2.3l3.4-3v10l-3.4-3H1.5z"></path>
-              <path d="M11 5.3a3 3 0 0 1 0 5.4M13.1 3.3a6 6 0 0 1 0 9.4"></path>
-            </svg>
+          <button type="button" id="insp-tab-audio" class="insp-tab" aria-pressed="false" data-action-click="inspector-tab" data-action-value="audio">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 6h2.3l3.4-3v10l-3.4-3H1.5z"></path><path d="M11 5.3a3 3 0 0 1 0 5.4M13.1 3.3a6 6 0 0 1 0 9.4"></path></svg>
             Audio
           </button>
-          <button
-            type="button"
-            id="insp-tab-export"
-            class="insp-tab on"
-            aria-pressed="true"
-            data-action-click="inspector-tab"
-            data-action-value="export"
-          >
-            <svg viewBox="0 0 16 16" aria-hidden="true">
-              <path d="M8 1.5v7.8M5.2 6.7 8 9.5l2.8-2.8"></path>
-              <path d="M2.5 11v1.7a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V11"></path>
-            </svg>
+          <button type="button" id="insp-tab-export" class="insp-tab on" aria-pressed="true" data-action-click="inspector-tab" data-action-value="export">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v7.8M5.2 6.7 8 9.5l2.8-2.8"></path><path d="M2.5 11v1.7a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V11"></path></svg>
             Export
           </button>
         </div>
-        <div id="right-scroll">
           <div id="insp-edit" class="hid">
-            <div id="video-inspector-empty" class="inspector-empty">
-              <strong>Select a video</strong>
-              <span>Choose a video from the Library to crop, rotate, flip, or resize it.</span>
+          <div id="video-inspector-empty" class="inspector-empty">
+            <strong>Select a video</strong>
+            <span>Choose a video from the Library to crop, rotate, flip, or resize it.</span>
+          </div>
+          <div id="video-inspector-content" class="inspector-content hid">
+            <div class="inspector-summary video-summary">
+              <div id="video-selection-name" class="inspector-summary-title"></div>
+              <div id="video-selection-meta" class="inspector-summary-detail"></div>
             </div>
-            <div id="video-inspector-content" class="inspector-content hid">
-              <div class="inspector-summary video-summary">
-                <div id="video-selection-name" class="inspector-summary-title"></div>
-                <div id="video-selection-meta" class="inspector-summary-detail"></div>
+            <div class="gr">
+              <div class="inspector-label-row">
+                <div class="grt">Transform</div>
+                <button
+                  type="button"
+                  class="inspector-reset"
+                  data-action-click="transform-reset-all"
+                >Reset all</button>
               </div>
-              <div class="gr">
-                <div class="inspector-label-row">
-                  <div class="grt">Transform</div>
+              <div id="transform-fields" role="toolbar" aria-label="Video transform controls">
+              <div class="enc-field">
+                <label>Crop</label>
+                <div
+                  class="transform-segment grid-3"
+                  role="group"
+                  aria-label="Crop aspect ratio"
+                >
                   <button
                     type="button"
-                    class="inspector-reset"
-                    data-action-click="transform-reset-all"
-                  >Reset all</button>
-                </div>
-                <div id="transform-fields" role="toolbar" aria-label="Video transform controls">
-                <div class="enc-field">
-                  <label>Crop</label>
-                  <div
-                    class="transform-segment grid-3"
-                    role="group"
-                    aria-label="Crop aspect ratio"
+                    class="on"
+                    data-aspect="off"
+                    aria-pressed="true"
+                    data-action-click="transform-crop-aspect"
                   >
-                    <button
-                      type="button"
-                      class="on"
-                      data-aspect="off"
-                      aria-pressed="true"
-                      data-action-click="transform-crop-aspect"
-                    >
-                      Off</button
-                    ><button
-                      type="button"
-                      data-aspect="free"
-                      aria-pressed="false"
-                      data-action-click="transform-crop-aspect"
-                    >
-                      Free</button
-                    ><button
-                      type="button"
-                      data-aspect="16:9"
-                      aria-pressed="false"
-                      data-action-click="transform-crop-aspect"
-                    >
-                      16:9</button
-                    ><button
-                      type="button"
-                      data-aspect="9:16"
-                      aria-pressed="false"
-                      data-action-click="transform-crop-aspect"
-                    >
-                      9:16</button
-                    ><button
-                      type="button"
-                      data-aspect="1:1"
-                      aria-pressed="false"
-                      data-action-click="transform-crop-aspect"
-                    >
-                      1:1</button
-                    ><button
-                      type="button"
-                      data-aspect="4:3"
-                      aria-pressed="false"
-                      data-action-click="transform-crop-aspect"
-                    >
-                      4:3
-                    </button>
-                  </div>
-                </div>
-                <div class="enc-field">
-                  <label>Rotate</label>
-                  <div
-                    class="transform-segment"
-                    role="group"
-                    aria-label="Video rotation"
+                    Off</button
+                  ><button
+                    type="button"
+                    data-aspect="free"
+                    aria-pressed="false"
+                    data-action-click="transform-crop-aspect"
                   >
-                    <button
-                      type="button"
-                      class="icon on"
-                      data-rotation="0"
-                      aria-pressed="true"
-                      data-action-click="transform-rotation"
-                      data-tip="No rotation"
-                      aria-label="No rotation"
-                    >
-                      <svg viewBox="0 0 24 24">
-                        <rect x="4" y="4" width="16" height="16" rx="2"></rect>
-                      </svg>
-                    </button>
-                    <button
-                      type="button"
-                      class="icon"
-                      data-rotation="270"
-                      aria-pressed="false"
-                      data-action-click="transform-rotation"
-                      data-tip="Rotate 90° counterclockwise"
-                      aria-label="Rotate 90° counterclockwise"
-                    >
-                      <svg viewBox="0 0 24 24">
-                        <polyline points="1 4 1 10 7 10"></polyline>
-                        <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
-                      </svg>
-                    </button>
-                    <button
-                      type="button"
-                      class="icon"
-                      data-rotation="90"
-                      aria-pressed="false"
-                      data-action-click="transform-rotation"
-                      data-tip="Rotate 90° clockwise"
-                      aria-label="Rotate 90° clockwise"
-                    >
-                      <svg viewBox="0 0 24 24">
-                        <polyline points="23 4 23 10 17 10"></polyline>
-                        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
-                      </svg>
-                    </button>
-                    <button
-                      type="button"
-                      class="icon"
-                      data-rotation="180"
-                      aria-pressed="false"
-                      data-action-click="transform-rotation"
-                      data-tip="Rotate 180°"
-                      aria-label="Rotate 180°"
-                    >
-                      <svg viewBox="0 0 24 24">
-                        <polyline points="23 4 23 10 17 10"></polyline>
-                        <polyline points="1 20 1 14 7 14"></polyline>
-                        <path
-                          d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"
-                        ></path>
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-                <div class="enc-field">
-                  <label>Flip</label>
-                  <div
-                    class="transform-segment"
-                    role="group"
-                    aria-label="Video flip"
+                    Free</button
+                  ><button
+                    type="button"
+                    data-aspect="16:9"
+                    aria-pressed="false"
+                    data-action-click="transform-crop-aspect"
                   >
-                    <button
-                      type="button"
-                      class="icon labeled"
-                      id="flip-horizontal"
-                      aria-pressed="false"
-                      data-action-click="transform-flip"
-                      data-action-value="horizontal"
-                      data-tip="Flip horizontal"
-                      aria-label="Flip horizontal"
-                    >
-                      <svg viewBox="0 0 24 24">
-                        <line
-                          x1="12"
-                          y1="3"
-                          x2="12"
-                          y2="21"
-                          stroke-dasharray="3 3"
-                        ></line>
-                        <polyline points="7 8 3 12 7 16"></polyline>
-                        <polyline points="17 8 21 12 17 16"></polyline>
-                      </svg>
-                      <span>Horizontal</span>
-                    </button>
-                    <button
-                      type="button"
-                      class="icon labeled"
-                      id="flip-vertical"
-                      aria-pressed="false"
-                      data-action-click="transform-flip"
-                      data-action-value="vertical"
-                      data-tip="Flip vertical"
-                      aria-label="Flip vertical"
-                    >
-                      <svg viewBox="0 0 24 24">
-                        <line
-                          x1="3"
-                          y1="12"
-                          x2="21"
-                          y2="12"
-                          stroke-dasharray="3 3"
-                        ></line>
-                        <polyline points="8 7 12 3 16 7"></polyline>
-                        <polyline points="8 17 12 21 16 17"></polyline>
-                      </svg>
-                      <span>Vertical</span>
-                    </button>
-                  </div>
-                </div>
-                <div class="enc-field">
-                  <label>Sizing</label>
-                  <div
-                    class="transform-segment"
-                    role="group"
-                    aria-label="Output sizing mode"
+                    16:9</button
+                  ><button
+                    type="button"
+                    data-aspect="9:16"
+                    aria-pressed="false"
+                    data-action-click="transform-crop-aspect"
                   >
-                    <button
-                      type="button"
-                      data-sizing="fit"
-                      class="on"
-                      aria-pressed="true"
-                      data-action-click="transform-sizing"
-                      data-tip="Show the entire video without stretching it."
-                    >
-                      Fit</button
-                    ><button
-                      type="button"
-                      data-sizing="fill"
-                      aria-pressed="false"
-                      data-action-click="transform-sizing"
-                      data-tip="Fill the frame. Some edges may be cropped."
-                    >
-                      Fill</button
-                    ><button
-                      type="button"
-                      data-sizing="stretch"
-                      aria-pressed="false"
-                      data-action-click="transform-sizing"
-                      data-tip="Fill the frame by stretching the video."
-                    >
-                      Stretch
-                    </button>
-                  </div>
+                    9:16</button
+                  ><button
+                    type="button"
+                    data-aspect="1:1"
+                    aria-pressed="false"
+                    data-action-click="transform-crop-aspect"
+                  >
+                    1:1</button
+                  ><button
+                    type="button"
+                    data-aspect="4:3"
+                    aria-pressed="false"
+                    data-action-click="transform-crop-aspect"
+                  >
+                    4:3
+                  </button>
                 </div>
               </div>
+              <div class="enc-field">
+                <label>Rotate</label>
+                <div
+                  class="transform-segment"
+                  role="group"
+                  aria-label="Video rotation"
+                >
+                  <button
+                    type="button"
+                    class="icon on"
+                    data-rotation="0"
+                    aria-pressed="true"
+                    data-action-click="transform-rotation"
+                    data-tip="No rotation"
+                    aria-label="No rotation"
+                  >
+                    <svg viewBox="0 0 24 24">
+                      <rect x="4" y="4" width="16" height="16" rx="2"></rect>
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    class="icon"
+                    data-rotation="270"
+                    aria-pressed="false"
+                    data-action-click="transform-rotation"
+                    data-tip="Rotate 90° counterclockwise"
+                    aria-label="Rotate 90° counterclockwise"
+                  >
+                    <svg viewBox="0 0 24 24">
+                      <polyline points="1 4 1 10 7 10"></polyline>
+                      <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    class="icon"
+                    data-rotation="90"
+                    aria-pressed="false"
+                    data-action-click="transform-rotation"
+                    data-tip="Rotate 90° clockwise"
+                    aria-label="Rotate 90° clockwise"
+                  >
+                    <svg viewBox="0 0 24 24">
+                      <polyline points="23 4 23 10 17 10"></polyline>
+                      <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    class="icon"
+                    data-rotation="180"
+                    aria-pressed="false"
+                    data-action-click="transform-rotation"
+                    data-tip="Rotate 180°"
+                    aria-label="Rotate 180°"
+                  >
+                    <svg viewBox="0 0 24 24">
+                      <polyline points="23 4 23 10 17 10"></polyline>
+                      <polyline points="1 20 1 14 7 14"></polyline>
+                      <path
+                        d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"
+                      ></path>
+                    </svg>
+                  </button>
+                </div>
               </div>
+              <div class="enc-field">
+                <label>Flip</label>
+                <div
+                  class="transform-segment"
+                  role="group"
+                  aria-label="Video flip"
+                >
+                  <button
+                    type="button"
+                    class="icon labeled"
+                    id="flip-horizontal"
+                    aria-pressed="false"
+                    data-action-click="transform-flip"
+                    data-action-value="horizontal"
+                    data-tip="Flip horizontal"
+                    aria-label="Flip horizontal"
+                  >
+                    <svg viewBox="0 0 24 24">
+                      <line
+                        x1="12"
+                        y1="3"
+                        x2="12"
+                        y2="21"
+                        stroke-dasharray="3 3"
+                      ></line>
+                      <polyline points="7 8 3 12 7 16"></polyline>
+                      <polyline points="17 8 21 12 17 16"></polyline>
+                    </svg>
+                    <span>Horizontal</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="icon labeled"
+                    id="flip-vertical"
+                    aria-pressed="false"
+                    data-action-click="transform-flip"
+                    data-action-value="vertical"
+                    data-tip="Flip vertical"
+                    aria-label="Flip vertical"
+                  >
+                    <svg viewBox="0 0 24 24">
+                      <line
+                        x1="3"
+                        y1="12"
+                        x2="21"
+                        y2="12"
+                        stroke-dasharray="3 3"
+                      ></line>
+                      <polyline points="8 7 12 3 16 7"></polyline>
+                      <polyline points="8 17 12 21 16 17"></polyline>
+                    </svg>
+                    <span>Vertical</span>
+                  </button>
+                </div>
+              </div>
+              <div class="enc-field">
+                <label>Sizing</label>
+                <div
+                  class="transform-segment"
+                  role="group"
+                  aria-label="Output sizing mode"
+                >
+                  <button
+                    type="button"
+                    data-sizing="fit"
+                    class="on"
+                    aria-pressed="true"
+                    data-action-click="transform-sizing"
+                    data-tip="Show the entire video without stretching it."
+                  >
+                    Fit</button
+                  ><button
+                    type="button"
+                    data-sizing="fill"
+                    aria-pressed="false"
+                    data-action-click="transform-sizing"
+                    data-tip="Fill the frame. Some edges may be cropped."
+                  >
+                    Fill</button
+                  ><button
+                    type="button"
+                    data-sizing="stretch"
+                    aria-pressed="false"
+                    data-action-click="transform-sizing"
+                    data-tip="Fill the frame by stretching the video."
+                  >
+                    Stretch
+                  </button>
+                </div>
+              </div>
+            </div>
+            </div>
               <div class="gr" id="clip-details-card">
                 <div class="grt">Source file</div>
                 <div id="clip-details-body"></div>
               </div>
-            </div>
+          </div>
           </div>
           <div id="insp-audio" class="hid">
             <div class="audio-master-row" id="audio-master-card">
               <span class="audio-master-title">Output audio</span>
-              <button
-                type="button"
-                id="audio-master-toggle"
-                class="audio-master-toggle on"
-                role="switch"
-                aria-checked="true"
-                aria-label="Include audio in export"
-                data-action-click="audio-toggle-master"
-              >
+              <button type="button" id="audio-master-toggle" class="audio-master-toggle on" role="switch" aria-checked="true" aria-label="Include audio in export" data-action-click="audio-toggle-master">
                 <span>Include in export</span>
-                <span class="audio-toggle-track" aria-hidden="true"
-                  ><span class="audio-toggle-thumb"></span
-                ></span>
+                <span class="audio-toggle-track" aria-hidden="true"><span class="audio-toggle-thumb"></span></span>
               </button>
             </div>
             <div class="audio-section-heading">
               <span class="audio-section-title">Tracks <span id="audio-track-count">0</span></span>
-              <button
-                type="button"
-                class="audio-track-add"
-                data-action-click="browse-audio"
-              ><span aria-hidden="true">+</span> Add</button>
+              <button type="button" class="audio-track-add" data-action-click="browse-audio"><span aria-hidden="true">+</span> Add</button>
             </div>
             <div id="audio-track-mixer"></div>
             <div id="audio-clip-range" class="hid"></div>
           </div>
           <div id="insp-export">
-            <div class="inspector-summary export-summary">
-              <div class="export-summary-heading">
-                <span id="export-summary-title" class="inspector-summary-title">10 MB</span>
-                <span id="export-summary-modified" class="export-modified-dot" aria-label="Modified settings"></span>
-              </div>
-              <div id="export-summary-detail" class="inspector-summary-detail">
-                1920×1080 · 30 fps · H.264 · AAC 128k
-              </div>
+            <div id="task-wf" role="group" aria-label="Task selector">
+              <button
+                class="on"
+                id="wf-c"
+                data-action-click="encoding-workflow"
+                data-action-value="0"
+                aria-pressed="true"
+              >
+                Compress</button
+              ><button
+                id="wf-u"
+                data-action-click="encoding-workflow"
+                data-action-value="1"
+                aria-pressed="false"
+              >
+                Upscale
+              </button>
             </div>
             <div class="gr" id="profile-card">
               <div class="inspector-label-row">
@@ -694,28 +660,24 @@
                 </div>
               </details>
             </div>
-            <div id="task-wf" role="group" aria-label="Task selector">
-              <button
-                class="on"
-                id="wf-c"
-                data-action-click="encoding-workflow"
-                data-action-value="0"
-                aria-pressed="true"
-              >
-                Compress</button
-              ><button
-                id="wf-u"
-                data-action-click="encoding-workflow"
-                data-action-value="1"
-                aria-pressed="false"
-              >
-                Upscale
-              </button>
-            </div>
             <div class="gr" id="sz-grp">
-              <div class="grt">
-                <span>Size</span
-                ><span style="float: right"
+              <div class="sz-head">
+                <span class="sz-cap">Target size</span>
+                <span
+                  id="export-summary-modified"
+                  class="export-modified-dot"
+                  aria-label="Modified settings"
+                ></span>
+              </div>
+              <div class="sz-fig">
+                <span id="export-summary-title" class="sz-est">10 MB</span>
+              </div>
+              <div id="export-summary-detail" class="sz-detail">
+                1920×1080 · 30 fps · H.264 · AAC 128k
+              </div>
+              <div class="sz-target">
+                <label for="sz-badge" class="sz-target-label">Target</label>
+                <span class="sz-badge-wrap"
                   ><input
                     class="badge"
                     id="sz-badge"
@@ -727,6 +689,7 @@
                     aria-label="Target size in megabytes"
                   /><span class="badge" id="sz-unit">MB</span></span
                 >
+                <div class="pset" id="sz-presets"></div>
               </div>
               <input
                 type="range"
@@ -740,8 +703,6 @@
                 aria-valuemin="1"
                 aria-valuemax="500"
               />
-              <div class="pset" id="sz-presets"></div>
-              <span class="help-tip" id="calc-br">Calculated bitrate: --</span>
             </div>
             <div class="stitle adjust-title">Adjust</div>
             <details class="adjust-panel" open>
@@ -1214,7 +1175,12 @@
           <div class="seq-group" id="source-group">
             <div class="seq-row video" id="video-track">
               <div class="seq-head" id="video-track-head">
-                <span class="seq-track-code" aria-hidden="true">V1</span>
+                <span class="seq-track-icon" aria-hidden="true">
+                  <svg viewBox="0 0 16 16">
+                    <rect x="1.5" y="3.5" width="9" height="9" rx="2"></rect>
+                    <path d="m10.5 6 4-2v8l-4-2"></path>
+                  </svg>
+                </span>
                 <span class="seq-track-name" title="Video">Video</span>
               </div>
               <div
@@ -1235,7 +1201,11 @@
             </div>
             <div class="seq-row audio" id="source-audio-track">
               <div class="seq-head" id="source-audio-head">
-                <span class="seq-track-code" aria-hidden="true">A1</span>
+                <span class="seq-track-icon" aria-hidden="true">
+                  <svg viewBox="0 0 16 16">
+                    <path d="M2 6v4M5 3v10M8 5v6M11 2v12M14 6v4"></path>
+                  </svg>
+                </span>
                 <span class="seq-track-name" title="Source audio">Source audio</span>
                 <button
                   type="button"
@@ -1246,6 +1216,7 @@
                   data-tip="Mute source audio"
                   aria-label="Mute source audio"
                   aria-pressed="false"
+                  disabled
                 >
                   <svg viewBox="0 0 16 16" aria-hidden="true">
                     <path d="M1.5 6h2.3l3.4-3v10l-3.4-3H1.5z"></path>
@@ -1335,6 +1306,7 @@
         </button>
       </div>
     </div>
+    </div>
     <div
       class="settings-workspace"
       id="settings-workspace"
@@ -1346,72 +1318,78 @@
         aria-modal="true"
         aria-label="Settings"
       >
-        <header class="settings-topbar">
-          <span class="settings-wordmark">Tuck</span
-          ><span class="settings-top-title">Settings</span
-          ><button
+        <button
+            type="button"
             id="settings-close"
             class="mbtn"
             data-settings-click="close"
             aria-label="Close settings"
-            title="Close"
+            title="Close settings (Esc)"
           >
-            ✕
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
           </button>
-        </header>
         <nav class="settings-sidebar" aria-label="Settings sections">
+          <h1 class="settings-heading">Settings</h1>
           <div class="settings-tabs">
             <div class="settings-nav-group">
               <div class="settings-nav-label">Preferences</div>
               <button
+                type="button"
                 id="settings-nav-general"
                 data-settings-click="navigate"
                 data-settings-value="general"
               >
-                General
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 3-.5 2-2 .9-1.9-.6-2 3.4L4 10.2v2.6L2.6 14l2 3.4 1.9-.5 2 .9.5 2.2h4l.5-2.2 2-.9 1.9.5 2-3.4-1.4-1.2v-2.6l1.4-1.5-2-3.4-1.9.6-2-.9L13 3Z" /><circle cx="11" cy="11.5" r="3" /></svg>
+                <span>General</span>
               </button>
               <button
+                type="button"
                 id="settings-nav-output"
                 data-settings-click="navigate"
                 data-settings-value="output"
               >
-                Output &amp; naming
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M4 15v5h16v-5" /></svg>
+                <span>Output &amp; naming</span>
               </button>
-            </div>
-            <div class="settings-nav-group">
-              <div class="settings-nav-label">Library</div>
               <button
+                type="button"
                 id="settings-nav-profiles"
                 data-settings-click="navigate"
                 data-settings-value="profiles"
               >
-                Profiles
+                <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2" /><path d="M9 8h6M9 12h6M9 16h3" /></svg>
+                <span>Profiles</span>
               </button>
             </div>
-            <div class="settings-nav-group">
+            <div class="settings-nav-group" id="settings-integrations">
               <div class="settings-nav-label">Integrations</div>
               <button
+                type="button"
                 id="settings-nav-explorer"
                 data-settings-click="navigate"
                 data-settings-value="explorer"
               >
-                Windows integration
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h7l2 2h9v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2ZM3 7V5a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v2" /></svg>
+                <span>File Explorer</span>
               </button>
             </div>
             <div class="settings-nav-group">
               <div class="settings-nav-label">Support</div>
               <button
+                type="button"
                 id="settings-nav-system"
                 data-settings-click="navigate"
                 data-settings-value="system"
               >
-                System &amp; support
+                <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="13" rx="2" /><path d="M8 21h8m-4-5v5m-5-11h3l2-3 2 5 2-2h2" /></svg>
+                <span>System &amp; support</span>
               </button>
             </div>
           </div>
         </nav>
         <section class="settings-main">
-          <main class="settings-page" id="settings-page">
+          <header class="settings-content-header" id="settings-content-header"></header>
+          <main class="settings-page" id="settings-page" aria-labelledby="settings-page-title">
             <div class="settings-page-inner"></div>
           </main>
           <footer class="settings-actions" id="settings-actions"></footer>

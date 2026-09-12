@@ -165,7 +165,7 @@ body.crop-dragging * {
 .transform-segment {
   display: flex;
   gap: 1px;
-  background: #1e1e26;
+  background: var(--raised);
 }
 .transform-segment.grid-3 {
   display: grid;
@@ -187,17 +187,17 @@ body.crop-dragging * {
   font: 600 10px var(--font);
 }
 .transform-segment button:hover {
-  background: rgba(255, 255, 255, 0.035);
-  color: #fff;
+  background: var(--raised);
+  color: var(--text);
 }
 .transform-segment button.on {
-  background: var(--accent);
-  color: #fff;
+  background: var(--raised-2);
+  color: var(--text);
 }
 .transform-segment button:focus-visible {
   outline: 0;
-  background: rgba(167, 139, 250, 0.1);
-  color: #f5f3ff;
+  background: var(--raised);
+  color: var(--text);
 }
 .transform-segment button.icon {
   padding: 0;
@@ -230,15 +230,15 @@ body.crop-dragging * {
   border-radius: 4px;
   background: transparent;
   border: 0;
-  color: #b4b4c4;
+  color: var(--muted);
   cursor: pointer;
   font-size: 12px;
   line-height: 1;
   padding: 0;
 }
 .dock-zoom-btn:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: #fff;
+  background: var(--raised);
+  color: var(--text);
 }
 .dock-zoom-btn:focus-visible {
   outline: 2px solid var(--accent-light);
@@ -281,12 +281,12 @@ body.crop-dragging * {
   cursor: pointer;
 }
 .dock-toggle:hover:not(.on) {
-  background: rgba(255, 255, 255, 0.04);
-  color: #d4d4dc;
+  background: var(--raised);
+  color: var(--text);
 }
 .dock-toggle.on {
   background: transparent;
-  color: #e9d5ff;
+  color: var(--text);
   border-bottom-color: var(--accent-light);
 }
 .dock-toggle:focus-visible {
@@ -299,7 +299,7 @@ body.crop-dragging * {
   border-radius: 4px;
   background: transparent;
   border: 0;
-  color: #b4b4c4;
+  color: var(--muted);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -317,8 +317,8 @@ body.crop-dragging * {
   fill: none;
 }
 .dock-text-btn:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: #fff;
+  background: var(--raised);
+  color: var(--text);
 }
 .dock-text-btn:focus-visible {
   outline: 2px solid var(--accent-light);
@@ -329,7 +329,7 @@ body.crop-dragging * {
   position: fixed;
   z-index: 1000;
   max-width: calc(100vw - 16px);
-  background: #1c1c26;
+  background: var(--raised);
   border: 1px solid var(--border2);
   color: var(--text);
   font: 500 11px var(--font);

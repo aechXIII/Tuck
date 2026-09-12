@@ -139,16 +139,16 @@ let _segmentPointerX = 0;
 let _segmentClickTime = 0;
 let _SEGMENT_DRAG_THRESHOLD = 5;
 let _SEGMENT_COLORS = [
-  "#6D28D9",
-  "#A855F7",
-  "#8B5CF6",
-  "#C084FC",
-  "#7E22CE",
-  "#9333EA",
+  "#3f3a58",
+  "#35344a",
+  "#3f3d56",
+  "#2e2c3c",
+  "#4a4560",
+  "#322f42",
 ];
 
  function segmentColor(index: number) {
-   return _SEGMENT_COLORS[index % _SEGMENT_COLORS.length] ?? _SEGMENT_COLORS[0] ?? "#6D28D9";
+   return _SEGMENT_COLORS[index % _SEGMENT_COLORS.length] ?? _SEGMENT_COLORS[0] ?? "#3f3a58";
  }
 
 function formatSelectedDuration(seconds: number) {

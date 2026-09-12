@@ -453,6 +453,8 @@ export function installAudioTimeline(host: AudioTimelineHost) {
     );
     let sourceLabel = byId("source-audio-label");
     if (sourceLabel) {
+      if (hasAudio && state.enabled) sourceLabel.removeAttribute("disabled");
+      else sourceLabel.setAttribute("disabled", "");
       sourceLabel.classList.toggle("muted", state.sourceMuted);
       sourceLabel.dataset.tip = state.sourceMuted ? "Unmute source audio" : "Mute source audio";
       sourceLabel.setAttribute("aria-pressed", state.sourceMuted ? "true" : "false");
@@ -498,7 +500,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
     if (segment.muted) block.dataset.tip = "Source audio muted for this segment";
     block.dataset.audioKind = "source";
     block.dataset.segmentIndex = String(index);
-    block.style.setProperty("--segment-color", host.segmentColor?.(index) ?? "#6D28D9");
+    block.style.setProperty("--segment-color", host.segmentColor?.(index) ?? "#3f3a58");
     block.style.setProperty(
       "--clip-fill",
       TimelineCore.clipFill("source", selected, !!segment.muted),
@@ -547,11 +549,12 @@ export function installAudioTimeline(host: AudioTimelineHost) {
 
     let head = documentRef.createElement("div");
     head.className = "seq-head";
-    let codeEl = documentRef.createElement("span");
-    codeEl.className = "seq-track-code";
-    codeEl.textContent = "A" + (index + 2);
-    codeEl.setAttribute("aria-hidden", "true");
-    head.appendChild(codeEl);
+    let iconEl = documentRef.createElement("span");
+    iconEl.className = "seq-track-icon";
+    iconEl.setAttribute("aria-hidden", "true");
+    iconEl.innerHTML =
+      '<svg viewBox="0 0 16 16"><path d="M2 6v4M5 3v10M8 5v6M11 2v12M14 6v4"></path></svg>';
+    head.appendChild(iconEl);
 
     let nameEl = documentRef.createElement("span");
     nameEl.className = "seq-track-name";
@@ -713,6 +716,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
     if (!editor) return;
     if (!clip || !clip.probed) {
       editor.classList.add("disabled");
+      byId("source-audio-label")?.setAttribute("disabled", "");
       let emptyLane = byId("source-audio-lane");
       if (emptyLane) emptyLane.replaceChildren();
       let tracks = byId("imported-audio-tracks");
@@ -735,9 +739,13 @@ export function installAudioTimeline(host: AudioTimelineHost) {
     renderSourceTrack(clip, state, total);
     let tracks = byId("imported-audio-tracks");
     if (!tracks) return;
+    const focusedMute = documentRef.activeElement?.closest(".seq-track-mute");
+    const focusedTrackId = focusedMute?.closest<HTMLElement>(".seq-row.imported")?.dataset.trackId;
     tracks.replaceChildren();
     state.tracks.forEach(function(track: AudioTrackState, index: number) {
-      tracks.appendChild(renderImportedTrack(track, total, index));
+      const row = renderImportedTrack(track, total, index);
+      tracks.appendChild(row);
+      if (track.id === focusedTrackId) row.querySelector<HTMLButtonElement>(".seq-track-mute")?.focus();
     });
     if (typeof host.syncTimelineTrackCount === "function")
       host.syncTimelineTrackCount(state.tracks.length);

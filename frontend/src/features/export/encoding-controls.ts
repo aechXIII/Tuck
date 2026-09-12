@@ -4,7 +4,6 @@ import * as InspectorUi from "../panels/inspector-ui.ts";
 import { cropForAspect, isFullCrop, type CropTransform } from "../transform/crop-geometry.ts";
 import { SegmentEditing } from "../timeline/segments.ts";
 import { legacyBackendResult } from "../editor/backend-compat.ts";
-import { formatTime } from "../editor/format.ts";
 import { closeMod, showMod, toast } from "../editor/toast.ts";
 import type { EditorClip } from "../editor/types.ts";
 import type { EditorSession } from "../editor/session.ts";
@@ -45,6 +44,7 @@ export interface EncodingControlsDeps {
   orderedClipKeys: () => string[];
   audioRequestPayload: (clip: EditorClip) => Record<string, unknown>;
   pollQueue: () => void | Promise<void>;
+  renderClips?: () => void;
 }
 
 export interface EncodingControlsApi {
@@ -107,6 +107,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
   let lastComp = "";
   let lastUpscale = "";
   let previewRequestId = 0;
+  let previewSettingsKey = "";
   let profileSnapshot = "";
   let platformCapabilities: PlatformCapabilities | null = null;
 
@@ -531,6 +532,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     input("sz-slider").max = String(Math.max(500, size));
     input("sz-slider").setAttribute("aria-valuenow", String(size));
     updateSizePresets(size);
+    el("export-summary-title").textContent = size + " MB";
     void reqPreview();
     updateDirty();
   }
@@ -550,7 +552,8 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     container.replaceChildren();
     for (const mb of InspectorUi.sizePresets()) {
       const button = document.createElement("button");
-      button.textContent = `${mb} MB`;
+      button.textContent = String(mb);
+      button.setAttribute("aria-label", `${mb} MB`);
       if (mb === value) button.classList.add("on");
       button.addEventListener("click", () => {
         input("sz-slider").value = String(mb);
@@ -785,6 +788,15 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     const path = session.selPath;
     const clip = path ? session.clips[path] : undefined;
     if (!clip || !clip.probed) return;
+    const settingsKey = JSON.stringify(buildPlanRequest(readForm(), { source: "" }));
+    if (settingsKey !== previewSettingsKey) {
+      // export controls apply to every video, including plans still being calculated
+      for (const video of Object.values(session.clips)) {
+        video.planData = null;
+        delete video._previewRequestId;
+      }
+      previewSettingsKey = settingsKey;
+    }
     const requestId = (previewRequestId += 1);
     clip._previewRequestId = requestId;
     clip.planData = null;
@@ -802,14 +814,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
       ) {
         clip.planData = data;
         if (session.selPath !== path) return;
-        el("calc-br").textContent =
-          wf === 0
-            ? `Calculated bitrate: ${String(data.video_bitrate_kbps)} kbps · ${String(
-                data.segment_count,
-              )}${data.segment_count === 1 ? " segment · " : " segments · "}${formatTime(
-                Number(data.selected_duration),
-              )} selected`
-            : "";
+        deps.renderClips?.();
         deps.paintCropOverlay();
       }
     } catch {

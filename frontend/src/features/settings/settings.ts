@@ -89,7 +89,10 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
 
   function trapSettingsFocus(event: KeyboardEvent): void {
     if (event.key !== "Tab" || !document.body.classList.contains("settings-open")) return;
-    const dialog = document.querySelector<HTMLElement>(".settings-dialog");
+    // a confirmation above settings owns focus until it is dismissed
+    const dialog = byId("mod-overlay")?.classList.contains("open")
+      ? byId("mod-box")
+      : document.querySelector<HTMLElement>(".settings-dialog");
     if (!dialog) return;
     const focusable = Array.from(
       dialog.querySelectorAll<HTMLElement>(
@@ -123,21 +126,38 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
   ): void {
     const actionBar = el("settings-actions");
     const opening = !document.body.classList.contains("settings-open");
-    if (opening) settingsReturnFocus = document.activeElement;
+    const previousFocus = document.activeElement;
+    if (opening) {
+      settingsReturnFocus = document.activeElement;
+      // keep modal focus separate from the editor's responsive drawer state
+      el("editor-shell").inert = true;
+    }
     document.body.classList.add("settings-open");
+    const titles: Record<string, string> = {
+      general: "General",
+      output: "Output & naming",
+      profiles: "Profiles",
+      explorer: "File Explorer",
+      system: "System & support",
+    };
+    const heading = settingsView === "editor"
+      ? settingsTitle(settingsProfileId ? "Edit profile" : "New profile", "back-profiles")
+      : settingsTitle(titles[page] || "General");
+    el("settings-content-header").innerHTML = heading;
     el("settings-page").innerHTML = `<div class="settings-page-inner">${content}</div>`;
+    el("settings-page").scrollTop = 0;
     actionBar.className = `settings-actions ${actions.split ? "split" : ""}`;
     actionBar.innerHTML = actions.html
       ? actions.plain
         ? actions.html
-        : `<span class="settings-unsaved" id="settings-unsaved">
+        : `<span class="settings-unsaved" id="settings-unsaved" role="status">
           Unsaved changes
         </span>
         <span class="settings-action-spacer"></span>
         ${actions.html}`
       : "";
-    const explorerNav = byId("settings-nav-explorer");
-    if (explorerNav) explorerNav.hidden = !shouldShowSendTo(caps);
+    const integrations = byId("settings-integrations");
+    if (integrations) integrations.hidden = !shouldShowSendTo(caps);
     for (const name of ["general", "output", "profiles", "explorer", "system"]) {
       const button = byId(`settings-nav-${name}`);
       if (!button) continue;
@@ -146,8 +166,9 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       button.setAttribute("aria-current", active ? "page" : "false");
     }
     if (opening) {
-      const closeButton = byId("settings-close");
-      if (closeButton) requestAnimationFrame(() => closeButton.focus());
+      byId(`settings-nav-${page}`)?.focus();
+    } else if (previousFocus && !previousFocus.isConnected && settingsView !== "editor") {
+      el("settings-page-title").focus();
     }
   }
 
@@ -166,13 +187,13 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
 
   function settingsTitle(title: string, action?: string): string {
     const backButton = action
-      ? `<button type="button" class="settings-title-back" aria-label="Back" data-settings-click="${action}">
-        ←
+      ? `<button type="button" class="settings-title-back" aria-label="Back to profiles" data-settings-click="${action}">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 5-7 7 7 7M5 12h14" /></svg>
       </button>`
       : "";
     return `<div class="settings-title-row">
     ${backButton}
-    <h3 class="settings-title">${esc(title)}</h3>
+    <h2 class="settings-title" id="settings-page-title" tabindex="-1">${esc(title)}</h2>
   </div>`;
   }
 
@@ -218,7 +239,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       | { ok: false };
     const rows = Array.isArray(profiles) ? profiles : [];
     for (const key of ["all", "compression", "upscale"]) {
-      byId(`pm-${key}`)?.classList.toggle("on", key === settingsFilter);
+      byId(`pm-${key}`)?.setAttribute("aria-pressed", String(key === settingsFilter));
     }
     const visible = rows.filter(
       (p) => !(settingsFilter !== "all" && (p.workflow || "compression") !== settingsFilter),
@@ -307,7 +328,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
 
   function profileEditorVideoHtml(): string {
     return `<div class="settings-sec full" id="pe-size-sec">
-    <h3>Target Size</h3>
+    <h3>Target size</h3>
     <div class="sl-row">
       <input id="pe-size-range" type="range" min="2" max="500" value="50" data-settings-input="profile-size">
       <input id="pe-size" type="number" min="2" value="50" aria-label="Target size in MB" data-settings-input="profile-size">
@@ -326,7 +347,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       <span>Use source resolution</span>
       <label class="chk">
         <input id="pe-source-res" type="checkbox" data-settings-change="profile-visibility">
-        <span class="chk-box"></span>
+        <span class="chk-box" aria-hidden="true"></span>
         <span>Source</span>
       </label>
     </div>
@@ -347,12 +368,12 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     </div>
   </div>
   <div class="settings-sec full">
-    <h3>Frame Rate</h3>
+    <h3>Frame rate</h3>
     <div class="info-row">
       <span>Use source frame rate</span>
       <label class="chk">
         <input id="pe-source-fps" type="checkbox" data-settings-change="profile-visibility">
-        <span class="chk-box"></span>
+        <span class="chk-box" aria-hidden="true"></span>
         <span>Source</span>
       </label>
     </div>
@@ -371,7 +392,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       <span>Apply transform settings from this profile</span>
       <label class="chk">
         <input id="pe-transform-enabled" type="checkbox" data-settings-change="profile-visibility">
-        <span class="chk-box"></span>
+        <span class="chk-box" aria-hidden="true"></span>
         <span>Enabled</span>
       </label>
     </div>
@@ -415,7 +436,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       <span>Keep source audio</span>
       <label class="chk">
         <input id="pe-audio-source" type="checkbox" data-settings-change="profile-visibility">
-        <span class="chk-box"></span>
+        <span class="chk-box" aria-hidden="true"></span>
         <span>Source</span>
       </label>
     </div>
@@ -481,9 +502,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
   }
 
   function profileEditorHtml(): string {
-    const title = settingsProfileId ? "Edit profile" : "New profile";
-    return `${settingsTitle(title, "back-profiles")}
-    <div class="settings-grid">
+    return `<div class="settings-grid">
       ${profileEditorTaskHtml()}
       ${profileEditorVideoHtml()}
       ${profileEditorTransformHtml()}
@@ -820,7 +839,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     const inspectorOptions = (
       [
         ["last", "Last used"],
-        ["video", "Video"],
+        ["video", "Transform"],
         ["audio", "Audio"],
         ["export", "Export"],
       ] as const
@@ -831,8 +850,8 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       })
       .join("");
     return `<div class="settings-card">
-    <div class="settings-card-title">Task defaults</div>
-    <div class="settings-card-copy">Used for settings not included in the selected profile.</div>
+    <h3 class="settings-card-title">Task defaults</h3>
+    <p class="settings-card-copy">Use these when a profile does not specify a setting.</p>
     <div class="settings-grid">
       <div class="settings-field">
         <label for="set-dp">Default profile</label>
@@ -845,7 +864,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     </div>
   </div>
   <div class="settings-card">
-    <div class="settings-card-title">Inspector</div>
+    <h3 class="settings-card-title">Inspector</h3>
     <div class="settings-grid">
       <div class="settings-field full">
         <label for="set-inspector-start">Open on launch</label>
@@ -854,23 +873,22 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     </div>
   </div>
   <div class="settings-card">
-    <div class="settings-card-title">Queue completion</div>
-    <div class="settings-card-copy">Choose what happens after the last queued job finishes.</div>
+    <h3 class="settings-card-title">When the queue finishes</h3>
     <div class="settings-option-list">
       <label class="chk settings-option">
         <input id="set-open-output-folder" type="checkbox" ${openOutput} data-settings-change="mark-dirty">
-        <span class="chk-box"></span>
+        <span class="chk-box" aria-hidden="true"></span>
         <span class="settings-option-copy">
-          <strong>Open output folder when queue finishes</strong>
+          <strong>Open the output folder</strong>
           <small>Opens the folder containing the last successful export.</small>
         </span>
       </label>
       <label class="chk settings-option">
         <input id="set-auto-clear" type="checkbox" ${autoClear} data-settings-change="mark-dirty">
-        <span class="chk-box"></span>
+        <span class="chk-box" aria-hidden="true"></span>
         <span class="settings-option-copy">
           <strong>Clear completed jobs automatically</strong>
-          <small>Failed and cancelled jobs remain available for inspection or retry.</small>
+          <small>Keep failed and cancelled jobs so you can retry them.</small>
         </span>
       </label>
     </div>
@@ -883,10 +901,10 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     const compressionSuffix = esc(s.compression_suffix || "_tucked_{size}");
     const upscaleSuffix = esc(s.upscale_suffix || "_upscaled_{width}x{height}");
     return `<div class="settings-card">
-    <div class="settings-card-title">Output location</div>
+    <h3 class="settings-card-title">Output folder</h3>
     <div class="settings-card-copy">Save beside each source file, or choose one folder for every completed export.</div>
-    <div class="row">
-      <div id="set-od" class="settings-readonly" style="flex:1" data-path="${outputDir}">${outputLabel}</div>
+    <div class="settings-output-location">
+      <div id="set-od" class="settings-readonly selectable" data-path="${outputDir}">${outputLabel}</div>
       <button type="button" class="btn2" data-settings-click="browse-output">Browse…</button>
       <button type="button" class="btn2" data-settings-click="clear-output">Use source folder</button>
     </div>
@@ -923,10 +941,10 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
 
   function profilesSettingsHtml(): string {
     return `<div class="settings-profile-filterbar">
-    <div class="ft profile-filters" role="group" aria-label="Filter profiles">
-      <button type="button" id="pm-all" class="on" data-settings-click="filter-profiles" data-settings-value="all">All</button>
-      <button type="button" id="pm-compression" data-settings-click="filter-profiles" data-settings-value="compression">Compress</button>
-      <button type="button" id="pm-upscale" data-settings-click="filter-profiles" data-settings-value="upscale">Upscale</button>
+    <div class="profile-filters" role="group" aria-label="Filter profiles">
+      <button type="button" id="pm-all" aria-pressed="true" data-settings-click="filter-profiles" data-settings-value="all">All</button>
+      <button type="button" id="pm-compression" aria-pressed="false" data-settings-click="filter-profiles" data-settings-value="compression">Compress</button>
+      <button type="button" id="pm-upscale" aria-pressed="false" data-settings-click="filter-profiles" data-settings-value="upscale">Upscale</button>
     </div>
   </div>
   <div id="pm-list" class="settings-list"></div>`;
@@ -934,7 +952,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
 
   function explorerSettingsHtml(): string {
     return `<div class="settings-card">
-    <div class="settings-card-title">Windows Send to shortcuts</div>
+    <h3 class="settings-card-title">Send to shortcuts</h3>
     <div class="settings-card-copy">
       Open videos in Tuck from File Explorer.
       If a shortcut stops working, you can repair it here.
@@ -960,7 +978,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       </div>`
         : "";
     return `<div class="settings-card">
-    <div class="settings-card-title">System status</div>
+    <h3 class="settings-card-title">System status</h3>
     <div class="settings-status-table" aria-label="System readiness">
       <div class="settings-status-row">
         <div>FFmpeg</div>
@@ -1005,7 +1023,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       : "Not checked yet.";
     const checkUpdates = s.check_updates ? "checked" : "";
     return `<div class="settings-card">
-    <div class="settings-card-title">Updates</div>
+    <h3 class="settings-card-title">Updates</h3>
     <div class="settings-list-row">
       <div class="settings-list-main">
         <strong>Tuck ${esc(s.version || "")}</strong>
@@ -1015,7 +1033,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     </div>
     <label class="chk" style="margin-top:12px">
       <input id="set-check-updates" type="checkbox" ${checkUpdates} data-settings-change="mark-dirty">
-      <span class="chk-box"></span>
+      <span class="chk-box" aria-hidden="true"></span>
       <span>Check automatically at startup</span>
     </label>
   </div>`;
@@ -1023,7 +1041,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
 
   function systemSupportHtml(): string {
     return `<div class="settings-card">
-    <div class="settings-card-title">Support</div>
+    <h3 class="settings-card-title">Support</h3>
     <div class="settings-card-copy">
       Copy a diagnostic report with app versions, encoder status, and recent errors.
       Personal folder paths are removed.
@@ -1111,6 +1129,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         caps,
       );
       await hydrateEditor(caps);
+      input("pe-name").focus();
       return;
     }
     let content = "";
@@ -1128,11 +1147,11 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         html:
           settingButton("Import", "import-profiles") +
           '<span class="settings-action-spacer"></span>' +
-          settingButton("+ New profile", "new-profile", true),
+          settingButton("New profile", "new-profile", true),
       };
     } else if (settingsPage === "explorer") {
       content = explorerSettingsHtml();
-      actions = { html: settingButton("+ Add shortcut", "add-shortcut", true) };
+      actions = { html: settingButton("Add shortcut", "add-shortcut", true) };
     } else {
       content = systemSettingsHtml(s, caps);
       actions = { html: settingButton("Save changes", "save-system", true, true) };
@@ -1149,7 +1168,12 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
   }
 
   function navigateSettings(page: string): void {
-    if (settingsView === "editor") return backToProfiles();
+    if (settingsView === "editor") {
+      if (editorDirty()) {
+        confirmToast("Discard unsaved profile changes?", () => void open(page));
+      } else void open(page);
+      return;
+    }
     if (settingsDirty)
       confirmToast("Discard unsaved settings?", () => {
         settingsDirty = false;
@@ -1159,7 +1183,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
   }
 
   function close(): void {
-    if (settingsView === "editor")
+    if (settingsView === "editor" && editorDirty())
       return confirmToast("Discard unsaved profile changes?", () => {
         settingsView = "page";
         settingsProfileId = "";
@@ -1175,6 +1199,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
 
   function closeSettingsWorkspace(): void {
     document.body.classList.remove("settings-open");
+    el("editor-shell").inert = false;
     if (
       settingsReturnFocus &&
       settingsReturnFocus.isConnected &&
@@ -1413,14 +1438,14 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
   async function installGenericShortcut(): Promise<void> {
     const r = await legacyBackendResult(client().installGenericSendto());
     if (r.ok) toast("Explorer shortcuts installed.", "ok");
-    else toast(r.error ?? "Failed", "err");
+    else toast(r.error ?? "Could not add the Explorer shortcuts.", "err");
     void open("explorer");
   }
 
   async function installProfileShortcut(pid: string, name: string): Promise<void> {
     const r = await legacyBackendResult(client().installProfileSendto(pid, "start"));
     if (r.ok) toast(`Added "${name}" to Explorer.`, "ok");
-    else toast(r.error ?? "Failed", "err");
+    else toast(r.error ?? "Could not add the profile shortcut.", "err");
     void open("explorer");
   }
 
@@ -1434,7 +1459,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
             : client().removeProfileSendto(data.profile_id || data.name || ""),
         ).then((r) => {
           if (r.ok) toast("Shortcut removed.", "ok");
-          else toast(r.error ?? "Failed", "err");
+          else toast(r.error ?? "Could not remove the shortcut.", "err");
           void refreshShortcutList();
         });
       },
@@ -1449,7 +1474,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
             client().repairProfileSendto(data.profile_id || data.name || ""),
           );
     if (r.ok) toast("Shortcut repaired.", "ok");
-    else toast(r.error ?? "Failed", "err");
+    else toast(r.error ?? "Could not repair the shortcut.", "err");
     void refreshShortcutList();
   }
 

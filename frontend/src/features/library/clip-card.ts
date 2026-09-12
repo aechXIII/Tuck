@@ -39,6 +39,8 @@ export interface ClipCardModel {
   fileSize?: number | undefined;
   meta?: { text?: unknown; error?: boolean | undefined } | null | undefined;
   badge?: ClipBadge | null | undefined;
+  projectedMb?: number | undefined;
+  overBudget?: boolean | undefined;
 }
 
 export interface ClipCardCallbacks {
@@ -280,6 +282,28 @@ export function createClipCard<T extends ClipCardElement>(
   }
   appendStatus(documentRef, main, model);
   card.appendChild(main);
+  const encodingState =
+    model.queueState === "running" || model.queueState === "processing";
+  if (
+    model.projectedMb != null &&
+    Number.isFinite(model.projectedMb) &&
+    !encodingState &&
+    model.queueState !== "pending"
+  ) {
+    const projected = createElement(
+      documentRef,
+      "span",
+      "c-proj" + (model.overBudget ? " over" : ""),
+      "→ " + (model.projectedMb as number).toFixed(1) + " MB",
+    );
+    projected.setAttribute(
+      "title",
+      model.overBudget
+        ? "Projected output is over the target size"
+        : "Projected output size",
+    );
+    card.appendChild(projected);
+  }
   if (model.queueState === "pending") {
     const queued = createActionButton(
       documentRef,

@@ -47,6 +47,42 @@ function collectPageErrors(page: Page): string[] {
   return errors;
 }
 
+async function textContrast(page: Page, textSelector: string, fillSelector: string): Promise<number> {
+  return page.locator(textSelector).first().evaluate((textEl, fillSel) => {
+    const fillEl = document.querySelector(fillSel);
+    if (!(fillEl instanceof HTMLElement)) return 0;
+    const canvas = document.createElement("canvas");
+    canvas.width = 1;
+    canvas.height = 1;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return 0;
+    const sample = (color: string): [number, number, number] => {
+      ctx.clearRect(0, 0, 1, 1);
+      ctx.fillStyle = color;
+      ctx.fillRect(0, 0, 1, 1);
+      const data = ctx.getImageData(0, 0, 1, 1).data;
+      return [data[0] ?? 0, data[1] ?? 0, data[2] ?? 0];
+    };
+    const toLinear = (channel: number): number => {
+      const value = channel / 255;
+      return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+    };
+    const luminance = ([r, g, b]: [number, number, number]): number =>
+      0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
+    const bg = sample(getComputedStyle(fillEl).backgroundColor);
+    ctx.clearRect(0, 0, 1, 1);
+    ctx.fillStyle = `rgb(${bg[0]} ${bg[1]} ${bg[2]})`;
+    ctx.fillRect(0, 0, 1, 1);
+    ctx.fillStyle = getComputedStyle(textEl).color;
+    ctx.fillRect(0, 0, 1, 1);
+    const fgData = ctx.getImageData(0, 0, 1, 1).data;
+    const fg: [number, number, number] = [fgData[0] ?? 0, fgData[1] ?? 0, fgData[2] ?? 0];
+    const high = Math.max(luminance(fg), luminance(bg));
+    const low = Math.min(luminance(fg), luminance(bg));
+    return (high + 0.05) / (low + 0.05);
+  }, fillSelector);
+}
+
 test("adding a video probes, renders the filename as text, and enables preview controls", async ({
   page,
 }) => {
@@ -62,6 +98,127 @@ test("adding a video probes, renders the filename as text, and enables preview c
   await expect(page.getByRole("button", { name: "Play/Pause" })).toBeEnabled();
   await expect(page.locator("#empty")).toBeHidden();
   expect(errors).toEqual([]);
+});
+
+test("selected segment and library card text stays readable on the accent fill", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1240, height: 800 });
+  await installFakeBackend(page, editorFixture());
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Add videos" }).click();
+  await expect(page.locator(".tl-segment.active .tl-segment-label")).toBeVisible();
+
+  expect(
+    await textContrast(
+      page,
+      ".tl-segment.active .tl-segment-label",
+      "#video-track.selected .tl-segment.active .tl-segment-surface",
+    ),
+  ).toBeGreaterThanOrEqual(4.5);
+  expect(
+    await textContrast(
+      page,
+      ".tl-segment.active .tl-segment-range",
+      "#video-track.selected .tl-segment.active .tl-segment-surface",
+    ),
+  ).toBeGreaterThanOrEqual(4.5);
+  expect(await textContrast(page, ".clip.sel .c2", ".clip.sel")).toBeGreaterThanOrEqual(4.5);
+  expect(await textContrast(page, ".clip.sel .c-meta", ".clip.sel")).toBeGreaterThanOrEqual(4.5);
+
+  await page.locator("#stage-scrub").fill("400");
+  await page.getByRole("button", { name: "Split at playhead" }).click();
+  await expect(page.locator(".tl-segment")).toHaveCount(2);
+  expect(
+    await textContrast(
+      page,
+      ".tl-segment.active .tl-segment-label",
+      "#video-track.selected .tl-segment.active .tl-segment-surface",
+    ),
+  ).toBeGreaterThanOrEqual(4.5);
+  expect(
+    await textContrast(
+      page,
+      ".tl-segment:not(.active) .tl-segment-label",
+      ".tl-segment:not(.active) .tl-segment-surface",
+    ),
+  ).toBeGreaterThanOrEqual(4.5);
+  await page.locator(".tl-segment:not(.active)").hover();
+  await page.locator(".tl-segment:not(.active) .tl-segment-surface").evaluate(async (el) => {
+    await Promise.all(el.getAnimations().map((animation) => animation.finished));
+  });
+  expect(
+    await textContrast(page, ".tl-segment:not(.active) .tl-segment-range", ".tl-segment:not(.active) .tl-segment-surface"),
+  ).toBeGreaterThanOrEqual(4.5);
+});
+
+test("primary actions and timeline labels retain contrast in normal and hover states", async ({ page }) => {
+  await installFakeBackend(page, editorFixture());
+  await page.goto("/");
+  await page.getByRole("button", { name: "Add videos" }).click();
+  for (const selector of ["#btn-one", "#btn-play", ".export-actions > summary"]) {
+    expect(await textContrast(page, selector, selector), selector).toBeGreaterThanOrEqual(4.5);
+    await page.locator(selector).hover();
+    await page.locator(selector).evaluate(async (el) => {
+      await Promise.all(el.getAnimations().map((animation) => animation.finished));
+    });
+    expect(await textContrast(page, selector, selector), `${selector} hover`).toBeGreaterThanOrEqual(4.5);
+  }
+  expect(await textContrast(page, ".seq-tick span", "#audio-editor")).toBeGreaterThanOrEqual(4.5);
+  expect(await textContrast(page, "#source-audio-head .seq-track-name", "#audio-editor")).toBeGreaterThanOrEqual(4.5);
+  await page.getByRole("button", { name: "Add audio", exact: true }).click();
+  await expect(page.locator(".seq-audio-clip.imported")).toBeVisible();
+  expect(await textContrast(page, ".audio-clip-label", ".seq-audio-clip.imported")).toBeGreaterThanOrEqual(4.5);
+  await page.locator(".seq-audio-clip.imported").hover();
+  expect(await textContrast(page, ".audio-clip-label", ".seq-audio-clip.imported")).toBeGreaterThanOrEqual(4.5);
+});
+
+test("track header controls stay readable and usable at desktop and compact sizes", async ({ page }) => {
+  await installFakeBackend(page, editorFixture());
+  await page.goto("/");
+  await page.getByRole("button", { name: "Add videos" }).click();
+  await expect(page.locator("#video-track-head .seq-track-name")).toHaveText("Video");
+  await expect(page.locator("#source-audio-head .seq-track-name")).toHaveText("Source audio");
+  for (const width of [1240, 960]) {
+    await page.setViewportSize({ width, height: 640 });
+    const header = await page.locator("#source-audio-head").boundingBox();
+    const lane = await page.locator("#source-audio-lane").boundingBox();
+    expect(lane!.x).toBeGreaterThan(header!.x + header!.width);
+    expect(Math.abs(lane!.y + lane!.height / 2 - header!.y - header!.height / 2)).toBeLessThan(1);
+    const name = page.locator("#source-audio-head .seq-track-name");
+    expect(await name.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+    const mute = page.getByRole("button", { name: "Mute source audio", exact: true });
+    await expect(mute).toHaveAttribute("aria-pressed", "false");
+    const bounds = await mute.boundingBox();
+    expect(bounds?.width).toBeGreaterThanOrEqual(28);
+    expect(bounds?.height).toBeGreaterThanOrEqual(28);
+    await mute.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("button", { name: "Unmute source audio", exact: true })).toBeFocused();
+    await expect(page.getByRole("button", { name: "Unmute source audio", exact: true })).toHaveAttribute("aria-pressed", "true");
+    expect(await textContrast(page, "#source-audio-head .seq-track-name", "#audio-editor")).toBeGreaterThanOrEqual(4.5);
+    await page.keyboard.press("Enter");
+  }
+  await page.getByRole("button", { name: "Add audio", exact: true }).click();
+  await page.getByRole("button", { name: "Fit timeline height to tracks" }).click();
+  const importedMute = page.locator("#imported-audio-tracks .seq-track-mute");
+  await importedMute.focus();
+  await page.keyboard.press("Enter");
+  await expect(importedMute).toBeFocused();
+  await expect(importedMute).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("Enter");
+  await expect(importedMute).toBeFocused();
+  await expect(importedMute).toHaveAttribute("aria-pressed", "false");
+});
+
+test("source audio without an audio stream has a disabled mute control", async ({ page }) => {
+  const fixture = editorFixture();
+  fixture.responses.probeFile = { ok: true, data: probeData({ has_audio: false }) };
+  await installFakeBackend(page, fixture);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Add videos" }).click();
+  await expect(page.getByRole("button", { name: "Mute source audio", exact: true })).toBeDisabled();
 });
 
 test("queue progress becomes visible after compressing the selected video", async ({ page }) => {
@@ -281,6 +438,7 @@ test("the audio source range picker sizes its window to the selection and stays 
 
   // the detail strip only wires pointer drag when AudioEditing is present
   const detail = page.locator("#audio-clip-range .audio-source-detail");
+  await detail.scrollIntoViewIfNeeded();
   const box = await detail.boundingBox();
   if (!box) throw new Error("detail strip has no box");
   // drag the waveform left to move the in-point later into the source

@@ -29,7 +29,7 @@
   gap: 24px;
 }
 .kbs-dialog-header h2 {
-  color: #eeeef6;
+  color: var(--text);
   font-size: 16px;
   line-height: 1.25;
   letter-spacing: -0.01em;
@@ -96,8 +96,8 @@
   height: var(--unit);
   flex: none;
   border-radius: 4px;
-  background: #242433;
-  color: #c9c9d6;
+  background: var(--raised-2);
+  color: var(--muted);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -111,8 +111,8 @@
     color 0.15s ease;
 }
 .kbs-key.lit {
-  background: var(--accent);
-  color: #fff;
+  background: var(--action);
+  color: var(--on-accent);
 }
 .kbs-search {
   display: flex;
@@ -125,7 +125,7 @@
   transition: border-color 0.15s ease-out;
 }
 .kbs-search:focus-within {
-  border-color: #62548a;
+  border-color: var(--accent);
 }
 .kbs-search svg {
   flex: none;
@@ -178,7 +178,7 @@
   stroke-width: 1.5;
 }
 .kbs-clear:hover {
-  background: #242433;
+  background: var(--raised-2);
   color: var(--text);
 }
 .kbs-clear:focus-visible {

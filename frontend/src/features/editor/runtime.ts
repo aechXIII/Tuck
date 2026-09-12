@@ -164,7 +164,7 @@ export function installEditorRuntime(
     syncTimelineTrackCount: (count) => timeline?.syncTimelineTrackCount(count),
     renderAudioMixerList: () => panels?.renderAudioMixerList(),
     renderAudioLibraryPanel: () => panels?.renderAudioLibraryPanel(),
-    segmentColor: (index) => timeline?.segmentColor(index) ?? "#6D28D9",
+    segmentColor: (index) => timeline?.segmentColor(index) ?? "#3f3a58",
     snapCandidateTime: (time, candidates, pixelsPerSecond) =>
       timeline?.snapCandidateTime(time, candidates, pixelsPerSecond) ?? time,
     applyTrimStart: (seconds, snap) => timeline?.applyTrimStart(seconds, snap) ?? null,
@@ -344,6 +344,7 @@ export function installEditorRuntime(
     audioRequestPayload: (clip) =>
       audio.requestPayload(clip) as Record<string, unknown>,
     pollQueue: () => queue.pollQueue(),
+    renderClips: () => library.renderClips(),
   });
 
   settings = installSettings({

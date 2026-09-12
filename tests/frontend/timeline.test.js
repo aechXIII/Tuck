@@ -70,15 +70,15 @@ test("source-audio mute does not change video segment presentation", () => {
   });
 });
 
-test("timeline preserves each video segment shade until it is selected", () => {
-  assert.equal(timeline.clipFill("video", true, false, "#A855F7"), "#6D28D9");
+test("timeline shares theme fills while preserving custom segment colors", () => {
+  assert.equal(timeline.clipFill("video", true, false, "#A855F7"), "var(--seg-fill-active)");
   assert.equal(timeline.clipFill("video", false, false, "#A855F7"), "#A855F7");
   assert.equal(timeline.clipFill("video", false, false, "#6D28D9"), "#6D28D9");
-  assert.equal(timeline.clipFill("source", true, false), "#4C3A86");
-  assert.equal(timeline.clipFill("imported", true, false), "#115E56");
+  assert.equal(timeline.clipFill("source", true, false), "var(--audio-clip-fill)");
+  assert.equal(timeline.clipFill("imported", true, false), "var(--audio-clip-fill)");
   assert.equal(timeline.clipFill("imported", false, false, "#B45309"), "#B45309");
-  assert.equal(timeline.clipFill("video", true, true), "#22222B");
-  assert.equal(timeline.clipFill("imported", false, true), "#22222B");
+  assert.equal(timeline.clipFill("video", true, true), "var(--raised)");
+  assert.equal(timeline.clipFill("imported", false, true), "var(--raised)");
   assert.equal(timeline.videoSegmentSelected(2, 2, true), true);
   assert.equal(timeline.videoSegmentSelected(2, 2, false), false);
 });

@@ -8,14 +8,14 @@
   align-items: center;
   justify-content: space-between;
   padding: 0 2px 4px;
-  color: #8f8d9d;
+  color: var(--dim);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 .lib-section-heading span:last-child {
-  color: #706e7d;
+  color: var(--dim);
   font-family: var(--mono);
   letter-spacing: 0;
 }
@@ -27,8 +27,8 @@
   justify-content: space-between;
   padding: 0 10px;
   border-top: 1px solid var(--border);
-  background: #16161c;
-  color: #7f7d8d;
+  background: var(--panel);
+  color: var(--dim);
   font: 600 10px var(--mono);
 }
 .c-progress {
@@ -78,7 +78,7 @@
   min-height: 0;
   justify-content: flex-start;
   padding: 5px 4px 7px;
-  color: #8e8c9b;
+  color: var(--dim);
   font-size: 9.5px;
   letter-spacing: 0.1em;
 }
@@ -90,58 +90,101 @@
   transition: background 120ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 .clip:hover {
-  background: #191920;
+  background: var(--raised);
 }
 .clip.sel:hover,
 .clip[data-queue-state="running"]:hover,
 .clip[data-queue-state="processing"]:hover {
-  background: var(--accent);
+  background: var(--raised-2);
 }
 .clip[data-queue-state="pending"]:hover {
-  background: #202027;
+  background: var(--raised-2);
 }
 .clip[data-queue-state="pending"] {
   min-height: 50px;
   padding-right: 76px;
-  background: #191920;
+  background: var(--raised);
 }
 .clip[data-queue-state="running"],
 .clip[data-queue-state="processing"] {
   padding: 8px 10px 9px;
-  background: var(--accent);
+  background: var(--raised-2);
 }
 .clip .c2 {
-  padding: 0;
-  color: #d8d6e0;
+  padding: 0 62px 0 0;
+  color: var(--text);
   font-size: 11.5px;
   font-weight: 600;
 }
+.clip.sel .c2,
+.clip[data-queue-state="running"] .c2,
+.clip[data-queue-state="processing"] .c2 {
+  color: var(--text);
+}
 .clip .c3 {
   margin-top: 2px;
-  color: #8e8c9b;
+  color: var(--muted);
   font-size: 10px;
   line-height: 1.25;
 }
+/* projected output size — the planner's estimate for this clip, once it has one */
+.clip .c-proj {
+  position: absolute;
+  top: 8px;
+  right: 30px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 500;
+  color: var(--good);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.clip .c-proj.over {
+  color: var(--danger);
+}
+.clip.sel .c-proj,
+.clip[data-queue-state="running"] .c-proj,
+.clip[data-queue-state="processing"] .c-proj {
+  color: var(--text);
+}
+.clip.sel .c-proj.over,
+.clip[data-queue-state="running"] .c-proj.over,
+.clip[data-queue-state="processing"] .c-proj.over {
+  color: var(--danger);
+}
 .clip.sel .c3,
-.clip.sel .c-meta {
-  color: #d9c9ff;
+.clip.sel .c-meta,
+.clip[data-queue-state="running"] .c3,
+.clip[data-queue-state="running"] .c-meta,
+.clip[data-queue-state="processing"] .c3,
+.clip[data-queue-state="processing"] .c-meta {
+  color: var(--muted);
 }
 .clip .c-progress {
   margin-top: 7px;
-  background: #5b26b8;
+  background: rgb(255 255 255 / 0.18);
+}
+.clip[data-queue-state="running"] .c-progress-fill,
+.clip[data-queue-state="processing"] .c-progress-fill {
+  background: var(--accent);
 }
 .clip .c-status-row {
   margin-top: 6px;
   padding: 0;
 }
 .clip .c-status {
-  color: #e6dbff;
+  color: var(--muted);
   font-size: 10px;
+}
+.clip.sel .c-status,
+.clip[data-queue-state="running"] .c-status,
+.clip[data-queue-state="processing"] .c-status {
+  color: var(--text);
 }
 .clip.sel .c-act {
   height: 20px;
   padding: 0 7px;
-  background: #5b26b8;
+  background: rgb(0 0 0 / 0.28);
   font-size: 10px;
 }
 .clip > .c-st {
@@ -166,27 +209,27 @@
   transform: translateY(-50%);
   border: 0;
   border-radius: 3px;
-  background: #22222b;
-  color: #8e8c9b;
+  background: var(--raised);
+  color: var(--dim);
   cursor: pointer;
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.05em;
 }
 .c-queue-badge:hover {
-  background: #2b2a38;
-  color: #d8d6e0;
+  background: var(--raised-2);
+  color: var(--text);
 }
 .c-queue-badge:focus-visible {
-  outline: 2px solid #a78bfa;
+  outline: 2px solid var(--accent-light);
   outline-offset: 2px;
 }
 #library-summary {
   min-height: 38px;
   flex-basis: 38px;
   padding: 8px 12px 10px;
-  background: #101015;
-  color: #8e8c9b;
+  background: var(--panel);
+  color: var(--dim);
   font: 400 10px var(--font);
 }
 #library-summary-size {

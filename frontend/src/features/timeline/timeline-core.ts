@@ -125,10 +125,10 @@ export function clipFill(
   muted: boolean,
   segmentColor?: string | null,
 ): string {
-  if (muted) return "#22222B";
-  if (kind === "source") return "#4C3A86";
-  if (kind === "imported") return segmentColor || "#115E56";
-  return selected ? "#6D28D9" : segmentColor || "#6D28D9";
+  if (muted) return "var(--raised)";
+  if (kind === "source") return "var(--audio-clip-fill)";
+  if (kind === "imported") return segmentColor || "var(--audio-clip-fill)";
+  return selected ? "var(--seg-fill-active)" : segmentColor || "var(--seg-fill)";
 }
 
 export function videoSegmentSelected(

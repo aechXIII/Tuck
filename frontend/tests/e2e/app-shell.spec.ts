@@ -91,7 +91,7 @@ test("missing desktop backend is a visible startup error", async ({ page }) => {
 
   await expect(page.getByRole("alert")).toContainText("Desktop backend unavailable");
   await expect(page.getByRole("alert")).toContainText("reopen Tuck");
-  await expect(page.locator("#tb")).toHaveAttribute("inert", "");
+  await expect(page.locator("#editor-shell")).toHaveAttribute("inert", "");
 
   await page.evaluate(() => {
     const host = window as Window & { pywebview?: { api: object } };
@@ -101,7 +101,7 @@ test("missing desktop backend is a visible startup error", async ({ page }) => {
     );
   });
   await expect(page.getByRole("alert")).toHaveCount(0);
-  await expect(page.locator("#tb")).not.toHaveAttribute("inert", "");
+  await expect(page.locator("#editor-shell")).not.toHaveAttribute("inert", "");
 });
 
 test("rejected file selection is visible, recoverable, and rendered as text", async ({
@@ -194,10 +194,10 @@ test("settings save errors remain visible and leave recovery enabled", async ({
 
   await page.getByRole("button", { name: "Settings" }).click();
   const openOutput = page.getByRole("checkbox", {
-    name: "Open output folder when queue finishes",
+    name: "Open the output folder",
   });
   await page
-    .getByText("Open output folder when queue finishes", { exact: true })
+    .getByText("Open the output folder", { exact: true })
     .click();
   await expect(openOutput).toBeChecked();
   const save = page

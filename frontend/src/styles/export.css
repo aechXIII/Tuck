@@ -1,10 +1,10 @@
 /* Export summary, profile, adjustment, and action refinements. */
 .adjust-title {
   padding-top: 8px;
-  color: #8f8d9d !important;
+  color: var(--dim) !important;
 }
 .adjust-panel {
-  background: #191920;
+  background: var(--panel);
 }
 .adjust-panel + .adjust-panel {
   margin-top: -6px;
@@ -16,7 +16,7 @@
   justify-content: space-between;
   gap: 8px;
   padding: 0 10px;
-  color: #d8d6e0;
+  color: var(--text);
   cursor: pointer;
   font-size: 11px;
   font-weight: 650;
@@ -27,7 +27,7 @@
 }
 .adjust-panel > summary::before {
   content: "›";
-  color: #777485;
+  color: var(--dim);
 }
 .adjust-panel[open] > summary::before {
   transform: rotate(90deg);
@@ -38,7 +38,7 @@
 .adjust-panel > summary > span:last-child {
   min-width: 0;
   overflow: hidden;
-  color: #777485;
+  color: var(--dim);
   font: 500 9px var(--mono);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -68,8 +68,8 @@
   align-items: center;
   justify-content: center;
   border-radius: 4px;
-  background: #2b2a38;
-  color: #d8d6e0;
+  background: var(--raised-2);
+  color: var(--text);
   cursor: pointer;
   font-weight: 700;
   letter-spacing: 1px;
@@ -89,7 +89,7 @@
   z-index: 10;
   width: 190px;
   padding: 4px;
-  background: #202029;
+  background: var(--raised);
   box-shadow: 0 8px 24px rgb(0 0 0 / 0.42);
 }
 .export-actions-menu .btn2 {
@@ -108,7 +108,7 @@
   min-height: 30px;
   margin-bottom: 0;
   border: 0;
-  background: #1e1e26;
+  background: var(--raised);
 }
 #task-wf button {
   padding-block: 7px;
@@ -116,8 +116,8 @@
 }
 #task-wf button.on {
   border: 0;
-  background: #34313f;
-  color: #fff;
+  background: var(--raised-2);
+  color: var(--text);
 }
 #profile-card {
   padding-top: 4px;
@@ -142,12 +142,12 @@
 }
 .pset button {
   border: 0;
-  background: #1e1e26;
+  background: var(--raised);
 }
 .pset button.on {
   border: 0;
-  background: var(--accent);
-  color: #fff;
+  background: var(--raised-2);
+  color: var(--text);
 }
 
 #insp-export {
@@ -179,8 +179,8 @@
   justify-content: center;
   border: 0;
   border-radius: 5px;
-  background: #1e1e26;
-  color: #8e8c9b;
+  background: var(--raised);
+  color: var(--dim);
   cursor: pointer;
 }
 .profile-reset-button svg {
@@ -196,12 +196,14 @@
 #profile-card .profile-options {
   display: none;
 }
+/* Task — first thing in the panel, styled like the Transform/Audio/Export strip
+   so it reads as a mode picker and scales to a third option later. */
 #task-wf {
   min-height: 30px;
-  margin-top: 16px;
+  margin: 0 0 4px;
   padding: 3px;
   gap: 3px;
-  border-radius: 6px;
+  border-radius: var(--r-ctl);
 }
 #task-wf button {
   height: 24px;
@@ -209,101 +211,180 @@
   border-radius: 4px;
   font-size: 11px;
 }
+
+/* Size: the target you chose is the panel's headline number — Tuck can't
+   promise the exact output size, so this shows only what you actually set,
+   next to the detail line and the target control, in one lifted inset block. */
 #sz-grp {
-  margin-top: 16px;
-  padding: 0;
+  margin-top: 14px;
+  padding: 13px 13px 12px;
+  border: 1px solid var(--hair);
+  border-radius: var(--r-surf);
+  background: var(--sink);
 }
-#sz-grp > .grt {
-  min-height: 26px;
-  margin-bottom: 9px;
-  color: #8e8c9b;
-  font-size: 9.5px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+#sz-grp .sz-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+#sz-grp .sz-cap {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--dim);
+}
+#sz-grp .export-modified-dot {
+  margin-left: auto;
+}
+#sz-grp .sz-fig {
+  display: flex;
+  align-items: baseline;
+  margin-top: 7px;
+}
+#sz-grp .sz-est {
+  font: 600 27px/1 var(--mono);
+  letter-spacing: -0.02em;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+#sz-grp .sz-detail {
+  margin-top: 6px;
+  font: 400 9.5px/1.4 var(--mono);
+  color: var(--dim);
+}
+#sz-grp .sz-target {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 11px;
+  padding-top: 11px;
+  border-top: 1px solid var(--hair);
+}
+#sz-grp .sz-target-label {
+  font-size: 10.5px;
+  color: var(--dim);
+}
+#sz-grp .sz-badge-wrap {
+  display: inline-flex;
+  align-items: baseline;
+  height: 25px;
+  padding: 0 8px;
+  border-radius: var(--r-ctl);
+  background: var(--raised);
 }
 #sz-badge {
-  width: 52px !important;
-  height: 26px;
-  padding: 0 7px !important;
+  width: 34px !important;
+  height: 25px;
+  padding: 0 !important;
   border: 0;
-  border-radius: 5px !important;
-  color: #f2f0f8 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: var(--text) !important;
   font: 600 11.5px var(--mono) !important;
   text-align: right;
 }
 #sz-unit {
-  padding: 0 0 0 6px;
-  color: #8e8c9b;
-  font: 400 10.5px var(--font);
+  padding: 0 0 0 4px;
+  color: var(--dim);
+  font: 400 9px var(--font);
+}
+#sz-grp .pset {
+  margin: 0 0 0 auto;
+  gap: 4px;
+}
+#sz-grp .pset button {
+  height: 24px;
+  padding: 0 8px;
+  border-radius: var(--r-ctl);
+  background: var(--raised);
+  font: 500 10.5px var(--mono);
+  color: var(--dim);
+}
+#sz-grp .pset button.on {
+  background: var(--raised-2);
+  color: var(--text);
 }
 #sz-slider {
-  height: 18px;
+  height: 16px;
+  margin-top: 9px;
 }
 #sz-slider::-webkit-slider-runnable-track {
   height: 4px;
-  background: #2a2a33;
-}
-.pset {
-  gap: 4px;
-  margin-top: 9px;
-}
-.pset button {
-  height: 28px;
-  border-radius: 5px;
-  font-size: 11px;
-}
-#calc-br {
-  display: block;
-  margin-top: 7px;
-  color: #8e8c9b;
-  font-size: 10px;
+  background: var(--raised-2);
 }
 .adjust-title {
   margin: 16px 0 8px;
   padding: 0;
 }
+/* Adjust — collapsible groups separated by hairlines, no card. Open group's
+   body hangs indented under its name; every field is a label + a quiet pill. */
 .adjust-panel {
-  border-radius: 6px;
-  overflow: hidden;
+  border-radius: 0;
+  overflow: visible;
 }
 .adjust-panel + .adjust-panel {
-  margin-top: 3px;
+  margin-top: 0;
 }
 .adjust-panel > summary {
-  min-height: 34px;
-  height: 34px;
-  padding: 0 10px;
-  font-size: 11.5px;
+  min-height: 32px;
+  height: 32px;
+  padding: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.adjust-panel[open] > summary {
+  color: var(--text);
 }
 .adjust-panel > summary > span:last-child {
-  color: #8e8c9b;
-  font: 400 10.5px var(--mono);
+  color: var(--dim);
+  font: 400 9px var(--mono);
 }
 .adjust-panel-body {
-  padding: 1px 10px 11px;
+  padding: 2px 0 11px 18px;
   border-top: 0;
+  background: transparent;
+}
+/* "Audio in export" toggle relocated from the retired Audio tab into this group */
+.adjust-panel-body .audio-master-row {
+  min-height: 0;
+  margin: 0 0 9px;
+  padding: 0 0 9px;
+  border-bottom: 1px solid var(--hair);
+  background: transparent;
+}
+.adjust-panel-body .audio-master-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
 }
 .export-video-facades {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 .export-setting-line {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 .export-setting-line label {
-  flex: 0 0 72px;
-  color: #a5a3b1;
-  font-size: 11.5px;
+  flex: 0 0 80px;
+  color: var(--dim);
+  font-size: 10.5px;
 }
-.export-setting-line select {
+/* every input inside a group body is the same quiet raised pill */
+.adjust-panel-body select,
+.adjust-panel-body input[type="number"],
+.adjust-panel-body input[type="text"] {
+  flex: 1;
   min-width: 0;
   height: 26px;
-  padding: 0 6px;
-  border-radius: 5px;
-  font-size: 11.5px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--r-ctl);
+  background: var(--raised);
+  color: var(--text);
+  font-size: 10.5px;
 }
 .export-native-video-controls {
   display: block;
@@ -341,7 +422,7 @@
 }
 .export-custom-label,
 .export-custom-fps-label {
-  color: #a5a3b1;
+  color: var(--muted);
   font-size: 11.5px;
 }
 .export-native-video-controls.show-fps .export-custom-fps-row {
@@ -353,7 +434,7 @@
 }
 .export-native-video-controls.show-fps #fps-badge {
   display: inline !important;
-  color: #f2f0f8;
+  color: var(--text);
   font: 600 10.5px var(--mono);
 }
 .export-native-video-controls.show-fps #fps-slider {
@@ -369,10 +450,14 @@
 #right-foot > .btn1 {
   min-height: 36px;
   border-radius: 6px 0 0 6px;
-  background: var(--accent);
-  color: #fff;
+  background: var(--action);
+  color: var(--on-accent);
   font-size: 12.5px;
   font-weight: 700;
+}
+#right-foot > .btn1:disabled {
+  background: var(--raised);
+  color: var(--dim);
 }
 .export-actions {
   flex-basis: 32px;
@@ -380,8 +465,13 @@
 .export-actions > summary {
   width: 32px;
   border-radius: 0 6px 6px 0;
-  background: var(--accent);
-  color: #fff;
+  background: var(--action);
+  color: var(--on-accent);
+}
+#right-foot > .btn1:hover:not(:disabled),
+.export-actions > summary:hover,
+.export-actions[open] > summary {
+  background: var(--action-hover);
 }
 .export-actions > summary svg {
   width: 11px;

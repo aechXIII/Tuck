@@ -43,7 +43,7 @@ body.tl-segment-dragging * {
   overflow: visible;
   border: 0;
   background: transparent;
-  color: #fff;
+  color: var(--text);
   cursor: grab;
   z-index: 1;
 }
@@ -54,9 +54,9 @@ body.tl-segment-dragging * {
   align-items: center;
   gap: 8px;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--segment-color) 58%, #d8d4e4);
+  border: 1px solid color-mix(in srgb, var(--segment-color) 58%, var(--muted));
   border-radius: 6px;
-  background: color-mix(in srgb, var(--segment-color) 38%, #17151f);
+  background: color-mix(in srgb, var(--segment-color) 38%, var(--sink));
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.06),
     0 1px 2px rgba(0, 0, 0, 0.25);
@@ -68,12 +68,12 @@ body.tl-segment-dragging * {
     opacity 0.12s ease;
 }
 .tl-segment:hover .tl-segment-surface {
-  background: color-mix(in srgb, var(--segment-color) 46%, #17151f);
+  background: color-mix(in srgb, var(--segment-color) 46%, var(--sink));
   opacity: 1;
 }
 #video-track.selected .tl-segment.active .tl-segment-surface {
   border-color: color-mix(in srgb, var(--segment-color) 56%, white);
-  background: color-mix(in srgb, var(--segment-color) 52%, #17151f);
+  background: color-mix(in srgb, var(--segment-color) 52%, var(--sink));
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.1),
     0 0 0 1px color-mix(in srgb, var(--segment-color) 22%, transparent),
@@ -102,7 +102,7 @@ body.tl-segment-dragging * {
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 4px;
   background: rgba(10, 9, 15, 0.46);
-  color: #f5f3ff;
+  color: var(--text);
   font: 700 9px var(--mono);
   letter-spacing: 0.02em;
   margin-left: 24px;
@@ -122,7 +122,7 @@ body.tl-segment-dragging * {
   display: block;
   max-width: 100%;
   font: 700 11px/14px var(--font);
-  color: #fbfaff;
+  color: var(--text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -132,7 +132,7 @@ body.tl-segment-dragging * {
   display: block;
   max-width: 100%;
   overflow: hidden;
-  color: #d8d4e4;
+  color: var(--on-seg-muted);
   font: 600 9px/12px var(--mono);
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -160,7 +160,7 @@ body.tl-segment-dragging * {
   border-radius: 4px;
   background: rgba(20, 19, 29, 0.96);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
-  color: #c8c5d4;
+  color: var(--muted);
   font: 600 9px var(--mono);
   line-height: 14px;
   white-space: nowrap;
@@ -192,7 +192,7 @@ body.tl-segment-dragging * {
   margin-top: -7px;
   margin-left: -7px;
   border-radius: 50%;
-  background: #fff;
+  background: var(--text);
   border: 2px solid var(--segment-color, var(--accent-light));
   cursor: ew-resize;
   z-index: 4;
@@ -203,23 +203,23 @@ body.tl-segment-dragging * {
 }
 .tl-handle:hover,
 .tl-handle:focus-visible {
-  background: #ede9fe;
+  background: var(--text);
   outline: none;
   transform: scale(1.12);
 }
 .tl-handle.dragging {
-  background: #c4b5fd;
+  background: var(--accent-light);
   z-index: 5;
   transform: scale(1.15);
   cursor: ew-resize !important;
 }
 #audio-editor {
   --timeline-head-width: 180px;
-  --timeline-surface: #0c0c13;
-  --timeline-line: #262532;
-  --timeline-purple: #a78bfa;
+  --timeline-surface: var(--bg);
+  --timeline-line: var(--border);
+  --timeline-purple: var(--accent-light);
   background: var(--timeline-surface);
-  border-top-color: #2b2938;
+  border-top-color: var(--border);
   gap: 4px;
   padding: 8px 16px 10px;
 }
@@ -242,7 +242,7 @@ body.tl-segment-dragging * {
 
 .timeline-tool-label {
   margin-right: 1px;
-  color: #777485;
+  color: var(--dim);
   font-size: 9px;
   letter-spacing: 0.09em;
 }
@@ -254,7 +254,7 @@ body.tl-segment-dragging * {
   border: 0;
   border-radius: 4px;
   background: transparent;
-  color: #b9b6c5;
+  color: var(--muted);
 }
 
 .timeline-tool-group .dock-text-btn {
@@ -279,8 +279,8 @@ body.tl-segment-dragging * {
 .timeline-tool-group .dock-text-btn:hover:not(:disabled),
 .timeline-tool-group .dock-toggle:hover:not(:disabled),
 .dock-fit-btn:hover:not(:disabled) {
-  background: #1a1923;
-  color: #f3f0fa;
+  background: var(--raised);
+  color: var(--text);
 }
 
 .timeline-tool-group .dock-text-btn:focus-visible,
@@ -292,11 +292,11 @@ body.tl-segment-dragging * {
 
 #btn-segment-add:not(:disabled),
 #btn-seq-split:not(:disabled) {
-  color: #d7cef5;
+  color: var(--accent-light);
 }
 
 #btn-segment-remove:not(:disabled):hover {
-  color: #f0a6ad;
+  color: var(--danger);
 }
 
 #btn-snap-toggle {
@@ -310,7 +310,7 @@ body.tl-segment-dragging * {
 
 #btn-snap-toggle.on {
   background: transparent;
-  color: #ded4ff;
+  color: var(--accent-light);
   box-shadow: none;
 }
 
@@ -321,7 +321,7 @@ body.tl-segment-dragging * {
   height: 12px;
   padding: 2px;
   border-radius: 999px;
-  background: #45414f;
+  background: var(--border2);
   box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.08);
   transition: background 160ms ease;
 }
@@ -330,13 +330,13 @@ body.tl-segment-dragging * {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #f7f5ff;
+  background: var(--text);
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.42);
   transition: transform 160ms ease;
 }
 
 #btn-snap-toggle.on .timeline-switch {
-  background: #8b5cf6;
+  background: var(--accent);
 }
 
 #btn-snap-toggle.on .timeline-switch-thumb {
@@ -370,34 +370,34 @@ body.tl-segment-dragging * {
 
 .tl-time-readout {
   min-width: 82px;
-  color: #d5d1df;
+  color: var(--muted);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
 
 #sequence-frame {
-  scrollbar-color: #4a4659 #12121a;
+  scrollbar-color: var(--border2) var(--sink);
   scrollbar-width: thin;
 }
 
 #sequence-ruler {
   height: 26px;
-  border-bottom-color: #373343;
+  border-bottom-color: var(--border);
 }
 
 .seq-tick {
-  background: #55515f;
+  background: var(--border2);
 }
 
 .seq-tick.major {
-  background: #8a8496;
+  background: var(--dim);
 }
 
 .seq-tick span {
   top: 2px;
   left: 5px;
   transform: none;
-  color: #a9a4b3;
+  color: var(--muted);
   font-size: 10px;
   font-variant-numeric: tabular-nums;
 }
@@ -413,34 +413,46 @@ body.tl-segment-dragging * {
 }
 
 .seq-head {
-  grid-template-columns: 24px minmax(0, 1fr) 22px 22px;
-  column-gap: 4px;
-  padding-inline: 0 2px;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) 28px 28px;
+  align-items: center;
+  column-gap: 6px;
+  min-width: 0;
+  padding: 0 10px 0 2px;
   border-right: 1px solid var(--timeline-line);
 }
 
 .seq-row.video .seq-head {
-  grid-template-columns: 24px minmax(0, 1fr);
+  grid-template-columns: 16px minmax(0, 1fr);
 }
 
 #source-audio-track .seq-head {
-  grid-template-columns: 24px minmax(0, 1fr) 22px;
+  grid-template-columns: 16px minmax(0, 1fr) 28px;
 }
 
-.seq-track-code {
-  width: 24px;
-  height: 16px;
-  border-color: color-mix(in srgb, var(--segment-color, #898494) 46%, #2d2b38);
-  background: #111019;
-  color: color-mix(in srgb, var(--segment-color, #aaa7ba) 72%, #e4e1e8);
-  font-size: 9px;
-  font-weight: 650;
+.seq-track-icon {
+  grid-column: 1;
+  display: flex;
+  align-items: center;
+  color: var(--muted);
+}
+
+.seq-row.selected .seq-track-icon {
+  color: var(--accent-light);
 }
 
 .seq-track-name {
-  color: #dedbe6;
-  font-weight: 400;
-  font-size: 11px;
+  grid-column: 2;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font: 500 12px/1.4 var(--font);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.seq-row.muted .seq-track-name {
+  color: var(--muted);
 }
 
 .seq-track-mute,
@@ -448,28 +460,55 @@ body.tl-segment-dragging * {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 20px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--r-chip);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
 }
 
+.seq-track-mute {
+  grid-column: 3;
+}
+
+.seq-track-remove {
+  grid-column: 4;
+}
+
+.seq-track-icon svg,
 .seq-track-mute svg,
 .seq-track-remove svg {
-  width: 13px;
-  height: 13px;
+  width: 16px;
+  height: 16px;
   fill: none;
   stroke: currentColor;
   stroke-linecap: round;
   stroke-linejoin: round;
-  stroke-width: 1.45;
+  stroke-width: 1.5;
 }
 
-.seq-track-mute:hover,
+.seq-track-mute:hover:not(:disabled),
 .seq-track-remove:hover {
-  border-color: transparent;
-  background: #1d1c27;
+  background: var(--raised);
+  color: var(--text);
+}
+
+.seq-track-remove:hover {
+  color: var(--danger);
+}
+
+.seq-track-mute:focus-visible,
+.seq-track-remove:focus-visible {
+  outline: 2px solid var(--accent-light);
+  outline-offset: 1px;
+}
+
+.seq-track-mute:disabled {
+  cursor: default;
 }
 
 .seq-track-mute[aria-pressed="false"] .track-mute-cross {
@@ -482,9 +521,8 @@ body.tl-segment-dragging * {
 
 .seq-track-mute[aria-pressed="true"],
 .seq-track-mute.muted {
-  border-color: transparent;
-  background: #2b171d;
-  color: #f29aa4;
+  background: var(--raised-2);
+  color: var(--danger);
 }
 
 .seq-row.video .seq-head {
@@ -526,21 +564,21 @@ body.tl-segment-dragging * {
 
 .tl-segment-surface {
   border-radius: 5px;
-  border-color: color-mix(in srgb, var(--segment-color) 68%, #c9c2d9);
-  background: color-mix(in srgb, var(--segment-color) 41%, #17141f);
+  border-color: color-mix(in srgb, var(--segment-color) 68%, var(--muted));
+  background: color-mix(in srgb, var(--segment-color) 41%, var(--sink));
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.08);
 }
 
 .tl-segment:hover .tl-segment-surface {
-  background: color-mix(in srgb, var(--segment-color) 48%, #17141f);
+  background: color-mix(in srgb, var(--segment-color) 48%, var(--sink));
 }
 
 #video-track.selected .tl-segment.active .tl-segment-surface {
-  border-color: #d8c8ff;
-  background: color-mix(in srgb, var(--segment-color) 35%, #17141f);
+  border-color: var(--accent-light);
+  background: color-mix(in srgb, var(--segment-color) 35%, var(--sink));
   box-shadow:
     inset 0 1px 0 rgb(255 255 255 / 0.12),
-    0 0 0 1px rgb(167 139 250 / 0.55),
+    0 0 0 1px color-mix(in srgb, var(--accent-light) 55%, transparent),
     0 3px 9px rgb(0 0 0 / 0.34);
 }
 
@@ -564,7 +602,7 @@ body.tl-segment-dragging * {
 }
 
 .tl-segment-range {
-  color: #ded8e8;
+  color: var(--on-seg-muted);
   font-size: 9px;
   font-weight: 400;
   line-height: 12px;
@@ -577,7 +615,7 @@ body.tl-segment-dragging * {
   margin-top: -14px;
   border: 0;
   border-radius: 3px;
-  background: #f7f2ff;
+  background: var(--text);
   box-shadow: 0 1px 4px rgb(0 0 0 / 0.55);
 }
 
@@ -600,11 +638,11 @@ body.tl-segment-dragging * {
   min-width: 54px;
   padding: 4px 6px;
   transform: translateX(-50%);
-  border: 1px solid #514764;
+  border: 1px solid var(--hair-2);
   border-radius: 4px;
-  background: #2c233f;
+  background: var(--sel);
   box-shadow: 0 4px 12px rgb(0 0 0 / 0.36);
-  color: #f1ecff;
+  color: var(--text);
   font: 650 10px/1 var(--mono);
   font-variant-numeric: tabular-nums;
   text-align: center;
@@ -614,7 +652,7 @@ body.tl-segment-dragging * {
 .audio-lane::before {
   height: 6px;
   margin-top: -3px;
-  background: #2a2936;
+  background: var(--raised);
 }
 
 .audio-clip-label {
@@ -629,7 +667,7 @@ body.tl-segment-dragging * {
 .seq-audio-clip.imported .audio-clip-label {
   position: absolute;
   top: 50%;
-  right: 28px;
+  max-width: calc(100% - 56px);
   left: 28px;
   transform: translateY(-50%);
 }
@@ -641,7 +679,7 @@ body.tl-segment-dragging * {
 .seq-audio-clip,
 .audio-clip {
   border-radius: 4px;
-  background-color: color-mix(in srgb, var(--segment-color, var(--accent)) 28%, #1f1e29);
+  background-color: color-mix(in srgb, var(--segment-color, var(--accent)) 28%, var(--sink));
 }
 
 .tl-segment.joins-previous .tl-segment-surface::before,
@@ -652,12 +690,12 @@ body.tl-segment-dragging * {
   z-index: 4;
   inset: 0 auto 0 0;
   width: 1px;
-  background: var(--timeline-cut-seam, #0d0d11);
+  background: var(--timeline-cut-seam, var(--bg));
   pointer-events: none;
 }
 
 #timeline-resizer::after {
-  background: #2a2835;
+  background: var(--border);
 }
 
 @media (max-width: 1100px) {
@@ -679,28 +717,6 @@ body.tl-segment-dragging * {
   #audio-editor {
     --timeline-head-width: 108px;
     padding-inline: 8px;
-  }
-
-  .seq-head {
-    grid-template-columns: 24px minmax(0, 1fr) 22px 22px;
-    padding-right: 0;
-  }
-
-  .seq-row.video .seq-head {
-    grid-template-columns: 24px minmax(0, 1fr);
-  }
-
-  #source-audio-track .seq-head {
-    grid-template-columns: 24px minmax(0, 1fr) 22px;
-  }
-
-  .seq-track-code {
-    width: 24px;
-  }
-
-  .seq-track-mute,
-  .seq-track-remove {
-    width: 22px;
   }
 
   #timeline-row.seq-toolbar {
@@ -758,47 +774,58 @@ body.tl-segment-dragging * {
   overflow: visible;
   clip: auto;
   border-width: 2px;
-  background: #ede9fe;
+  background: var(--text);
   outline: 2px solid var(--accent-light);
   outline-offset: 2px;
 }
 
-/* Timeline palette contract; geometry and controls stay unchanged. */
+/* shared palette for timeline surfaces */
 #audio-editor {
-  --timeline-surface: #0d0d11;
-  --timeline-line: #1e1e24;
-  --timeline-purple: #6d28d9;
-  --timeline-cut-seam: #0d0d11;
-  background: #0d0d11;
-  border-top-color: #1e1e24;
+  --timeline-surface: var(--bg);
+  --timeline-line: var(--border);
+  --timeline-purple: var(--accent);
+  --timeline-cut-seam: var(--bg);
+  background: var(--bg);
+  border-top-color: var(--border);
 }
 #timeline-row.seq-toolbar,
 .seq-row,
 .seq-head,
 .timeline-tool-group:not(:first-child) {
-  border-color: #1e1e24;
+  border-color: var(--border);
 }
 #sequence-ruler {
-  border-bottom-color: #1e1e24;
+  border-bottom-color: var(--border);
 }
 .seq-tick,
 .seq-tick.major {
-  background: #33313d;
+  background: var(--border2);
 }
 .seq-tick span {
-  color: #8d8a9a;
+  color: var(--dim);
 }
+/* solid segments — one confident fill, no border, no tinted overlay.
+   base = a neutral violet-grey; active = a lifted dusty fill, not the action violet. */
 .tl-segment-surface {
   border: 0;
-  background: color-mix(in srgb, var(--clip-fill, #6d28d9) 48%, #17151f);
+  background: var(--seg-fill, #35344a);
   box-shadow: none;
   opacity: 1;
 }
 .tl-segment:hover .tl-segment-surface {
-  background: color-mix(in srgb, var(--clip-fill, #6d28d9) 62%, #17151f);
+  background: var(--seg-fill-hover, #3f3d56);
 }
 #video-track.selected .tl-segment.active .tl-segment-surface {
-  background: var(--clip-fill, #6d28d9);
+  background: var(--clip-fill, var(--seg-fill-active));
+  box-shadow: 0 2px 6px rgb(8 4 20 / 0.4);
+}
+#video-track.selected .tl-segment.active,
+#video-track.selected .tl-segment.active .tl-segment-label,
+#video-track.selected .tl-segment.active .tl-segment-badge {
+  color: var(--text);
+}
+#video-track.selected .tl-segment.active .tl-segment-range {
+  color: var(--on-seg-muted);
 }
 .tl-segment-badge {
   border: 0;
@@ -806,11 +833,8 @@ body.tl-segment-dragging * {
   box-shadow: none;
 }
 .seq-audio-clip,
-.audio-clip,
-#source-audio-track.selected .seq-audio-clip.selected,
-.seq-audio-clip.imported.selected,
-.audio-clip.selected {
-  background-color: color-mix(in srgb, var(--clip-fill, #4c3a86) 58%, #17151f);
+.audio-clip {
+  background-color: var(--audio-clip-fill);
   border: 0;
   box-shadow: none;
   filter: none;
@@ -821,7 +845,7 @@ body.tl-segment-dragging * {
 #source-audio-track.selected .seq-audio-clip.selected,
 .seq-audio-clip.imported.selected,
 .audio-clip.selected {
-  background-color: color-mix(in srgb, var(--clip-fill, #4c3a86) 72%, #17151f);
+  background-color: var(--audio-clip-fill-hover);
 }
 .audio-waveform {
   z-index: 0;
@@ -836,29 +860,31 @@ body.tl-segment-dragging * {
 #source-audio-track.muted .seq-audio-clip,
 #source-audio-track.muted .seq-audio-clip.selected,
 .seq-row.audio.imported.muted .seq-audio-clip {
-  background-color: #22222b;
+  background-color: var(--raised);
   border: 0;
   box-shadow: none;
   filter: none;
   opacity: 1;
 }
 #seq-playhead {
+  width: 2px;
   background: var(--timeline-playhead);
   box-shadow:
-    0 0 0 1px #17131f,
-    0 0 5px rgb(196 181 253 / 0.34);
+    0 0 0 1px rgb(0 0 0 / 0.5),
+    0 0 6px rgb(196 169 255 / 0.4);
 }
 #seq-playhead::before {
   background: var(--timeline-playhead);
   box-shadow:
-    0 0 0 1px #17131f,
+    0 0 0 1px rgb(0 0 0 / 0.5),
     0 1px 3px rgb(0 0 0 / 0.66);
 }
 #seq-playhead-time {
-  border-color: #514764;
-  background: #2c233f;
+  border: 1px solid var(--hair-2);
+  background: var(--raised-2);
+  color: var(--text);
   box-shadow: 0 4px 12px rgb(0 0 0 / 0.36);
 }
 #timeline-resizer::after {
-  background: #1e1e24;
+  background: var(--border);
 }

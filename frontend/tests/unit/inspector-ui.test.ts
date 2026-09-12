@@ -47,7 +47,7 @@ test("export summaries describe copy, disabled audio, and encoder speed honestly
 });
 
 test("size presets keep only the three approved quick decisions", () => {
-  assert.deepEqual(inspectorUi.sizePresets(), [10, 50, 500]);
+  assert.deepEqual(inspectorUi.sizePresets(), [20, 50, 200, 500]);
 });
 
 test("export video facades preserve source and common output decisions", () => {

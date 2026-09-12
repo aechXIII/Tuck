@@ -1,7 +1,7 @@
 #qbar {
   height: 30px;
   min-height: 30px;
-  background: #0f0f18;
+  background: var(--panel);
   border-top: 1px solid var(--border);
   display: flex;
   align-items: center;
@@ -46,7 +46,7 @@
   overflow: hidden;
 }
 #qprog::-webkit-progress-bar {
-  background: #1a1a30;
+  background: var(--sink);
   border-radius: 3px;
 }
 #qprog::-webkit-progress-value {
@@ -54,7 +54,7 @@
   border-radius: 3px;
 }
 #qeta {
-  color: #7a7a8c;
+  color: var(--dim);
   font-size: 11px;
   font-family: var(--mono);
   min-width: 70px;
@@ -62,7 +62,7 @@
   flex-shrink: 0;
 }
 #qfname {
-  color: #7a7a8c;
+  color: var(--dim);
   font-size: 11px;
   font-family: var(--mono);
   max-width: 200px;
@@ -74,7 +74,7 @@
 #btn-stop-after,
 #btn-clear,
 #btn-cancel {
-  color: #7a7a8c;
+  color: var(--dim);
   font-size: 11px;
   font-family: var(--mono);
 }
@@ -94,19 +94,19 @@
   font-family: var(--font);
 }
 .qbtn:hover:not(:disabled) {
-  background: #1a1a2a;
-  color: #fff;
+  background: var(--raised);
+  color: var(--text);
 }
 .qbtn:focus-visible {
   outline: 2px solid var(--accent-light);
   outline-offset: -1px;
 }
 .qbtn:disabled {
-  color: #4f4f60;
+  color: var(--dim);
   background: transparent;
   cursor: default;
 }
 .qbtn.danger:hover:not(:disabled) {
   color: var(--danger);
-  background: #2a1520;
+  background: color-mix(in srgb, var(--danger) 18%, var(--sink));
 }

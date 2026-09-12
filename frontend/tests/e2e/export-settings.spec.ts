@@ -100,6 +100,92 @@ test("a rejected enqueue surfaces the backend error without an unhandled failure
   expect(errors).toEqual([]);
 });
 
+test("shared export changes clear outdated Library size estimates", async ({ page }) => {
+  const fixture = exportFixture();
+  fixture.responses.pickFiles = { ok: true, files: [VIDEO, "C:\\media\\Clip two.mp4"] };
+  fixture.holdMethods = ["createPlan"];
+  await page.setViewportSize({ width: 1240, height: 800 });
+  await installFakeBackend(page, fixture);
+  let released = 0;
+  async function finishPlans(): Promise<void> {
+    await expect.poll(async () => (await calls(page, "createPlan")).length).toBeGreaterThan(released);
+    const pending = await calls(page, "createPlan");
+    await page.evaluate((requests) => {
+      const release = (window as Window & {
+        __tuckReleaseHeld?: (method: string, value: unknown) => void;
+      }).__tuckReleaseHeld;
+      if (!release) throw new Error("The plan fixture is not installed");
+      for (const call of requests) {
+        const request = call.args[0] as Record<string, unknown>;
+        release("createPlan", {
+          ok: true,
+          _request_id: request._request_id,
+          data: {
+            workflow: "compression", video_bitrate_kbps: 1200,
+            segment_count: 1, selected_duration: 12,
+            target_size_mb: request.target_size_bytes === 52_428_800 ? 50 : 10,
+            estimated_size_mb: request.target_size_bytes === 52_428_800 ? 48 : 9.5,
+          },
+        });
+      }
+    }, pending.slice(released));
+    released = pending.length;
+  }
+  await page.goto("/");
+  await addVideo(page);
+  const first = page.locator(".clip").filter({ hasText: "Clip one.mp4" });
+  const second = page.locator(".clip").filter({ hasText: "Clip two.mp4" });
+  await first.click();
+  await finishPlans();
+  await expect(first.locator(".c-proj")).toHaveText("→ 9.5 MB");
+  await second.click();
+  await finishPlans();
+  await expect(second.locator(".c-proj")).toHaveText("→ 9.5 MB");
+  await expect(first.locator(".c-proj")).toBeVisible();
+  await page.locator("#sz-badge").fill("50");
+  await page.locator("#sz-badge").dispatchEvent("change");
+  await finishPlans();
+  await expect(second.locator(".c-proj")).toHaveText("→ 48.0 MB");
+  await expect(first.locator(".c-proj")).toHaveCount(0);
+  await first.click();
+  await finishPlans();
+  await expect(first.locator(".c-proj")).toHaveText("→ 48.0 MB");
+});
+
+test("the size panel shows only the chosen target, never a fabricated estimate", async ({
+  page,
+}) => {
+  const fixture = exportFixture();
+  // the real backend's estimate can land anywhere relative to the target
+  // (it's a bitrate budget, not a measured result) — the panel must never
+  // present that number as if it were the actual output size
+  fixture.responses.createPlan = {
+    ok: true,
+    data: {
+      video_bitrate_kbps: 6000,
+      estimated_size_mb: 340,
+      target_size_mb: 10,
+      segment_count: 1,
+      selected_duration: 12,
+    },
+  };
+  await page.setViewportSize({ width: 1240, height: 800 });
+  await installFakeBackend(page, fixture);
+  await page.goto("/");
+  await expect(page.locator("#export-summary-title")).toHaveText("10 MB");
+
+  await addVideo(page);
+  await expect(page.locator("#sz-of")).toHaveCount(0);
+  await expect(page.locator("#sz-meter")).toHaveCount(0);
+  await expect(page.locator("#calc-br")).toHaveCount(0);
+  // the plan response's wildly different estimate must never overwrite this
+  await expect(page.locator("#export-summary-title")).toHaveText("10 MB");
+
+  await page.locator("#sz-badge").fill("50");
+  await page.locator("#sz-badge").dispatchEvent("change");
+  await expect(page.locator("#export-summary-title")).toHaveText("50 MB");
+});
+
 test("a running job drives the queue bar count, progress, eta, and controls", async ({ page }) => {
   const fixture = exportFixture();
   fixture.queueStateAfterEnqueue = {
