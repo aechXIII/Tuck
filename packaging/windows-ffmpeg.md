@@ -2,8 +2,8 @@
 
 Windows FFmpeg and ffprobe are cross-compiled on Ubuntu 22.04 using MinGW-w64.
 The application, Python sidecar, and installer are still built on Windows.
-WSL Ubuntu 22.04 is supported for local media-tool builds. Keep temporary build files
-on the Linux filesystem for speed; the output can live in the Windows checkout.
+You can also build the media tools locally with Ubuntu 22.04 in WSL. Keep temporary
+build files on the Linux filesystem for speed; the output can live in the Windows checkout.
 The work directory retains extracted sources, compiler output, and configure logs
 for inspection. It can be removed after verification.
 
@@ -35,8 +35,8 @@ The release workflow performs the same cross-build in a separate Ubuntu job,
 then transfers its artifacts to the Windows job. It publishes the source archive
 beside the installer and checks its contents again immediately before publishing.
 Licenses and a build manifest are included in the installer. The source archive
-is a separate download. GPU encoder presence is checked automatically, but actual NVENC and AMF
-encoding still require suitable hardware and drivers.
+is a separate download. The build checks that NVENC and AMF encoders are included.
+Testing them requires suitable hardware and drivers.
 
 To rebuild from a downloaded source archive without Tuck's source tree:
 

@@ -1,4 +1,0 @@
-packaging>=23.0
-rich>=13.7
-platformdirs>=4.0
-pywin32>=306; sys_platform == "win32"

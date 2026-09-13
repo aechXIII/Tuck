@@ -65,10 +65,6 @@ def validate_video_paths(paths: Sequence[object]) -> tuple[list[str], list[str]]
     return _validate_media_paths(paths, VIDEO_EXTENSIONS)
 
 
-def validate_audio_paths(paths: Sequence[object]) -> tuple[list[str], list[str]]:
-    return _validate_media_paths(paths, AUDIO_EXTENSIONS)
-
-
 def _opt_str(raw: dict[str, Any], key: str) -> str | None:
     if key in raw:
         val = raw[key]

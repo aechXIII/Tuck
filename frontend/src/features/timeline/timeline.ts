@@ -63,15 +63,6 @@ function isHtmlElement(value: EventTarget | null): value is HTMLElement {
   );
 }
 
-function isElement(value: EventTarget | null): value is Element {
-  return (
-    value !== null &&
-    typeof value === "object" &&
-    "closest" in value &&
-    typeof value.closest === "function"
-  );
-}
-
 function isVideoElement(value: HTMLElement | null): value is HTMLVideoElement {
   return (
     value !== null &&

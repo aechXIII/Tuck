@@ -31,9 +31,9 @@ notice is not legal advice.
 
 ## Microsoft Edge WebView2 Runtime
 
-The installer runs the Microsoft-provided Evergreen bootstrapper
+If WebView2 is missing, the installer runs the Microsoft-provided Evergreen bootstrapper
 `MicrosoftEdgeWebView2Setup.exe` (SHA-256 in
-`packaging/webview2-bootstrapper.lock.json`) to install or update the WebView2
+`packaging/webview2-bootstrapper.lock.json`) to install the WebView2
 Runtime. It is redistributed under the Microsoft Edge WebView2 Runtime
 distribution terms, <https://developer.microsoft.com/microsoft-edge/webview2/>.
 The runtime is a Microsoft component and is not part of Tuck's source.

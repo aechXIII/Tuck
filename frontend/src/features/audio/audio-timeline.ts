@@ -149,10 +149,6 @@ function isInputElement(value: HTMLElement | null): value is HTMLInputElement {
   return value !== null && "value" in value;
 }
 
-function isButtonElement(value: HTMLElement | null): value is HTMLButtonElement {
-  return value !== null && "disabled" in value && "type" in value;
-}
-
 function arrayItem<T>(items: readonly T[], index: number): T | null {
   return items[index] ?? null;
 }
@@ -184,7 +180,6 @@ export function installAudioTimeline(host: AudioTimelineHost) {
   const windowRef = host.windowRef ?? window;
   const notify = host.toast ?? toast;
   const confirm = host.confirmToast ?? confirmToast;
-  const backend = null;
 
   let selectedClipId: string | null = null;
   let selectedTrackId = "source";
