@@ -26,6 +26,7 @@ need() {
 }
 need curl
 need sha256sum
+need python3
 
 case "$(uname -m)" in
   x86_64 | amd64) ;;
@@ -41,8 +42,8 @@ trap 'rm -rf "$tmp"' EXIT
 
 echo "Finding the latest Tuck release"
 curl -fsSL "$FEED" -o "$tmp/latest.json"
-url="$(sed -n 's/.*"linux-x86_64"[^}]*"url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$tmp/latest.json")"
-version="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$tmp/latest.json" | head -n 1)"
+url="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["platforms"]["linux-x86_64"]["url"])' "$tmp/latest.json")"
+version="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["version"])' "$tmp/latest.json")"
 [ -n "$url" ] || {
   echo "could not read the Linux download URL from latest.json" >&2
   echo "the release may still be publishing, so try again shortly" >&2
@@ -65,11 +66,11 @@ echo "Verifying checksum"
 mkdir -p "$APP_DIR" "$BIN_DIR" "$DATA_HOME/applications" "$DATA_HOME/icons/hicolor/128x128/apps"
 install -m 0755 "$tmp/$appimage_name" "$APP_DIR/Tuck.AppImage"
 
-# run the AppImage directly, falling back to extract-and-run where libfuse2 is absent
+# preserve runtime errors and forward options such as --appimage-extract-and-run
 cat > "$BIN_DIR/tuck" <<EOF
 #!/usr/bin/env sh
 APPIMAGE="$APP_DIR/Tuck.AppImage"
-exec "\$APPIMAGE" "\$@" 2>/dev/null || exec "\$APPIMAGE" --appimage-extract-and-run "\$@"
+exec "\$APPIMAGE" "\$@"
 EOF
 chmod 0755 "$BIN_DIR/tuck"
 
