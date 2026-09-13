@@ -445,7 +445,7 @@
   margin-left: 90px;
 }
 #right-foot {
-  padding: var(--panel-inset);
+  padding: var(--panel-inset) var(--inspector-content-inset);
   gap: 0;
   border-top: 0;
 }
@@ -507,7 +507,7 @@
 #right select,
 .settings-dialog select {
   appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='m3 4.5 3 3 3-3' fill='none' stroke='%23aaa9b0' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-image: url("../assets/select-chevron.svg?no-inline");
   background-repeat: no-repeat;
   background-position: right 10px center;
   background-size: 12px;

@@ -69,8 +69,8 @@
   border-radius: 6px;
 }
 #clips {
-  padding: 2px calc(var(--panel-inset) - var(--panel-scrollbar)) 10px;
-  scrollbar-gutter: stable both-edges;
+  padding: 2px var(--panel-inset) 10px;
+  scrollbar-gutter: auto;
   scrollbar-width: auto;
 }
 #clips::-webkit-scrollbar {

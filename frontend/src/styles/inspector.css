@@ -90,6 +90,7 @@
 
 .insp-tabs {
   gap: 0;
+  padding-inline: var(--inspector-content-inset);
   padding-block: 6px;
   border-bottom: 0;
 }
@@ -102,7 +103,7 @@
 }
 
 #right-scroll {
-  padding: 0 calc(var(--panel-inset) - var(--panel-scrollbar)) var(--panel-inset);
+  padding: 0 var(--panel-inset) var(--panel-inset);
 }
 #insp-edit,
 #insp-audio,
@@ -245,4 +246,14 @@
 .cd-v {
   color: var(--muted);
   font-family: var(--mono);
+}
+
+#clips {
+  padding-left: max(0px, calc(var(--panel-inset) - var(--scroll-gutter-left, 0px)));
+  padding-right: max(0px, calc(var(--panel-inset) - var(--scroll-gutter-right, 0px)));
+}
+
+#right-scroll {
+  padding-left: max(0px, calc(var(--inspector-content-inset) - var(--scroll-gutter-left, 0px)));
+  padding-right: max(0px, calc(var(--inspector-content-inset) - var(--scroll-gutter-right, 0px)));
 }

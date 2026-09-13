@@ -1,3 +1,4 @@
+import { installPanelScrollSpacing } from "../../ui/panel-scroll-spacing.ts";
 import { getBackendClient, hasBackendClient } from "../../backend/client.ts";
 import { hasTauriInvoke } from "../../backend/index.ts";
 import type { BackendClient } from "../../backend/types.ts";
@@ -85,6 +86,7 @@ function launchData(value: unknown): LaunchData {
 export function installEditorRuntime(
   windowRef: Window & typeof globalThis = window,
 ): EditorRuntime {
+  installPanelScrollSpacing(windowRef.document);
   const session = createEditorSession();
   let started = false;
   let shellReady = false;

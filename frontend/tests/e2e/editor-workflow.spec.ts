@@ -494,13 +494,15 @@ test("Inspector content aligns with tabs and footer without empty scrolling", as
     await page.locator("#insp-tab-audio").click();
     expect(await page.locator("#right-scroll").evaluate(el => el.scrollHeight - el.clientHeight)).toBeLessThanOrEqual(1);
     await page.locator("#insp-tab-export").click();
-    const edges = await page.evaluate(() => {
-      const rect = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
-      return { tab: rect("#insp-tab-export").right, field: rect(".profile-select-row").right, footer: rect(".export-actions").right, start: rect("#insp-tab-edit").left, contentStart: rect("#profile-card").left };
-    });
-    expect(edges.tab).toBeCloseTo(edges.field, 0);
-    expect(edges.footer).toBeCloseTo(edges.field, 0);
-    expect(edges.start).toBeCloseTo(edges.contentStart, 0);
+    await expect(async () => {
+      const edges = await page.evaluate(() => {
+        const rect = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
+        return { tab: rect("#insp-tab-export").right, field: rect(".profile-select-row").right, footer: rect(".export-actions").right, start: rect("#insp-tab-edit").left, contentStart: rect("#profile-card").left };
+      });
+      expect(edges.tab).toBeCloseTo(edges.field, 0);
+      expect(edges.footer).toBeCloseTo(edges.field, 0);
+      expect(edges.start).toBeCloseTo(edges.contentStart, 0);
+    }).toPass({ timeout: 3000 });
     await page.screenshot({ path: testInfo.outputPath(`export-${width}.png`) });
   }
 });
@@ -525,7 +527,7 @@ test("export controls have balanced insets and timeline text shares a baseline",
   expect(geometry.tabInsets.top).toBeCloseTo(geometry.tabInsets.bottom, 0);
   expect(geometry.rowGap).toBeGreaterThanOrEqual(8);
   for (const inset of geometry.modeInsets) expect(inset).toBeCloseTo(4, 0);
-  for (const inset of geometry.footerInsets) expect(inset).toBeCloseTo(12, 0);
+  for (const [index, inset] of geometry.footerInsets.entries()) expect(inset).toBeCloseTo(index < 2 ? 12 : 22, 0);
   const baselines = await page.evaluate(() => {
     const selectors = ['.timeline-tool-group[aria-label="Segment actions"] .timeline-tool-label', '#btn-seq-split .timeline-command-label', '.timeline-tool-group[aria-label="Audio actions"] .timeline-tool-label', '#audio-add .timeline-command-label'];
     return selectors.map(selector => {
@@ -628,4 +630,50 @@ test("Audio cards and headings share the Inspector edges", async ({ page }) => {
   }));
   expect(edges[1]).toEqual(edges[0]);
   expect(edges[2]).toEqual(edges[0]);
+});
+
+
+test("panel edges stay aligned when scrollbars reserve no space", async ({ page }) => {
+  await page.setViewportSize({ width: 1240, height: 800 });
+  await installFakeBackend(page, editorFixture());
+  await page.goto("/");
+  await page.addStyleTag({ content: "#right-scroll, #clips { scrollbar-gutter: auto; scrollbar-width: none; } #right-scroll::-webkit-scrollbar, #clips::-webkit-scrollbar { width: 0; }" });
+  await page.getByRole("button", { name: "Add videos" }).click();
+  await expect.poll(() => page.evaluate(() => {
+    const rect = (s: string) => document.querySelector(s)!.getBoundingClientRect();
+    return Math.abs(rect("#profile-card").left - rect("#insp-tab-edit").left)
+      + Math.abs(rect("#profile-card").right - rect(".export-actions").right)
+      + Math.abs(rect(".clip").left - rect("#btn-add").left);
+  })).toBeLessThan(1);
+});
+
+
+test("Inspector reserves scrollbar space without moving its controls", async ({ page }) => {
+  await page.setViewportSize({ width: 1240, height: 900 });
+  await installFakeBackend(page, editorFixture());
+  await page.goto("/");
+  await page.getByRole("button", { name: "Add videos" }).click();
+  const measure = () => page.evaluate(() => {
+    const field = document.querySelector("#profile-card")!.getBoundingClientRect();
+    const scroll = document.querySelector<HTMLElement>("#right-scroll")!;
+    return { left: field.left, right: field.right, overflow: scroll.scrollHeight > scroll.clientHeight };
+  });
+  await expect.poll(async () => (await measure()).overflow).toBe(false);
+  const before = await measure();
+  await page.setViewportSize({ width: 1240, height: 640 });
+  await expect.poll(async () => (await measure()).overflow).toBe(true);
+  await expect.poll(async () => {
+    const after = await measure();
+    return Math.abs(after.left - before.left) + Math.abs(after.right - before.right);
+  }).toBeLessThan(1);
+  const gap = await page.evaluate(() => {
+    const scroll = document.querySelector<HTMLElement>("#right-scroll")!;
+    return parseFloat(getComputedStyle(scroll).paddingRight);
+  });
+  expect(gap).toBeGreaterThanOrEqual(12);
+  await page.setViewportSize({ width: 1240, height: 900 });
+  await expect.poll(async () => {
+    const after = await measure();
+    return Math.abs(after.left - before.left) + Math.abs(after.right - before.right);
+  }).toBeLessThan(1);
 });
