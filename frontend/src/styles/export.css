@@ -477,6 +477,14 @@
 .export-actions[open] > summary {
   background: var(--action-hover);
 }
+#right-foot > .btn1:disabled + .export-actions > summary {
+  background: var(--raised);
+  color: var(--text);
+}
+#right-foot > .btn1:disabled + .export-actions > summary:hover,
+#right-foot > .btn1:disabled + .export-actions[open] > summary {
+  background: var(--raised-2);
+}
 .export-actions > summary svg {
   width: 11px;
   height: 11px;
