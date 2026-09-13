@@ -17,7 +17,23 @@ use commands::startup::{
 use commands::updates::{
     check_for_updates, download_update, get_download_progress, install_update, UpdaterState,
 };
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use tauri::Manager;
+
+async fn finish_window_close(
+    closing: &AtomicBool,
+    shutdown: impl std::future::Future<Output = ()>,
+    close: impl FnOnce(),
+) {
+    if closing.swap(true, Ordering::AcqRel) {
+        return;
+    }
+    shutdown.await;
+    close();
+}
 
 fn allows_app_navigation(url: &tauri::Url) -> bool {
     url.scheme() == "tauri"
@@ -131,15 +147,36 @@ pub fn run() {
         get_startup_files
     ]);
 
+    let closing = Arc::new(AtomicBool::new(false));
     builder
         .on_window_event(move |window, event| {
-            if matches!(event, tauri::WindowEvent::Destroyed) {
-                if let Some(state) = window.try_state::<BackendState>() {
-                    let state = state.inner().clone();
-                    tauri::async_runtime::spawn(async move {
-                        let _ = state.shutdown().await;
-                    });
-                }
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                // keep the shell alive until its backend has released the installed files
+                api.prevent_close();
+                let state = window
+                    .try_state::<BackendState>()
+                    .map(|state| state.inner().clone());
+                let window = window.clone();
+                let closing = closing.clone();
+                tauri::async_runtime::spawn(async move {
+                    finish_window_close(
+                        &closing,
+                        async {
+                            if let Some(state) = state {
+                                if let Err(error) = state.shutdown().await {
+                                    eprintln!("could not shut down the backend: {error}");
+                                }
+                            }
+                        },
+                        || {
+                            if let Err(error) = window.destroy() {
+                                closing.store(false, Ordering::Release);
+                                eprintln!("could not close the window: {error}");
+                            }
+                        },
+                    )
+                    .await;
+                });
             }
         })
         .run(tauri::generate_context!())
@@ -149,6 +186,49 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::{allows_app_navigation, packaged_resource_paths};
+
+    #[tokio::test]
+    async fn window_close_waits_for_backend_and_ignores_repeated_requests() {
+        use std::sync::{
+            atomic::{AtomicBool, Ordering},
+            Arc,
+        };
+        let closing = Arc::new(AtomicBool::new(false));
+        let closed = Arc::new(AtomicBool::new(false));
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let (finish_tx, finish_rx) = tokio::sync::oneshot::channel();
+        let first_closing = closing.clone();
+        let first_closed = closed.clone();
+        let first = tokio::spawn(async move {
+            super::finish_window_close(
+                &first_closing,
+                async {
+                    started_tx.send(()).unwrap();
+                    finish_rx.await.unwrap();
+                },
+                || {
+                    first_closed.store(true, Ordering::Release);
+                },
+            )
+            .await;
+        });
+        started_rx.await.unwrap();
+        assert!(!closed.load(Ordering::Acquire));
+        super::finish_window_close(
+            &closing,
+            async {
+                panic!("duplicate shutdown");
+            },
+            || {
+                panic!("duplicate close must not bypass shutdown");
+            },
+        )
+        .await;
+        assert!(!closed.load(Ordering::Acquire));
+        finish_tx.send(()).unwrap();
+        first.await.unwrap();
+        assert!(closed.load(Ordering::Acquire));
+    }
 
     #[test]
     fn navigation_policy_allows_only_tuck_origins() {
