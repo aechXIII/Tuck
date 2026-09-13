@@ -407,6 +407,12 @@ jobs:
           --artifacts-dir dist
           --require-signed
 
+      - name: Verify packages against the app's updater public key
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y minisign
+          python scripts/verify_updater_signatures.py --artifacts-dir dist
+
       - name: Require matching Windows corresponding sources
         run: python scripts/windows_ffmpeg.py --verify-source dist/Tuck-FFmpeg-Windows-Sources.tar.xz
 
