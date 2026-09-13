@@ -22,7 +22,7 @@ def main() -> int:
             return run_sendto_console(files, profile_id=profile_id)
         # "review" Send To shortcuts target the Tauri executable, not TuckCli.exe
         print(
-            "Tuck: this Send To action opens the Tuck editor; use the Tuck shortcut.",
+            "Tuck: this Send To action opens the editor. Use the Tuck shortcut.",
             file=sys.stderr,
         )
         return 2

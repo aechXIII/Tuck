@@ -1,12 +1,6 @@
 export { getBackendClient, hasBackendClient, setBackendClient } from "./client.ts";
 export { createFakeBackendClient } from "./fake.ts";
 export {
-  createPywebviewClient,
-  createPywebviewClientFromWindow,
-  hasPywebviewApi,
-  PYWEBVIEW_READY_EVENT,
-} from "./pywebview.ts";
-export {
   createTauriBackendClient,
   createTauriBackendClientFromWindow,
   hasTauriInvoke,

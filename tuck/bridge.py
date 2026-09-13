@@ -1,12 +1,9 @@
 from __future__ import annotations
 
 import logging
-import re
 import threading
-from collections.abc import Callable
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from . import __version__
 from .bridge_contract import BridgeResult
@@ -49,16 +46,7 @@ from .profile_service import ProfileService
 from .queue import get_queue
 from .settings import get_settings_manager
 
-if TYPE_CHECKING:
-    from .updater import UpdateChecker, UpdateInfo
-
-    _check_for_updates: Callable[[], UpdateInfo | None]
-elif not is_linux_desktop():
-    from .updater import check_for_updates as _check_for_updates
-
 logger = logging.getLogger(__name__)
-
-_SHA256_RE = re.compile(r"^[a-fA-F0-9]{64}$")
 
 
 class BridgeAPI:
@@ -66,12 +54,9 @@ class BridgeAPI:
         self._settings = get_settings_manager()
         self._profile_service = ProfileService(self._settings)
         self._queue = get_queue()
-        self._update_checker: UpdateChecker | None = None
-        self._update_info: UpdateInfo | None = None
         self._ipc_files: list[str] = []
         self._ipc_lock = threading.Lock()
         self._ipc_metadata: dict[str, str] = {}
-        self._checking_updates: bool = False
 
         self._probe_cache = ProbeCache(lambda path: probe_video(path))
         self._audio_probe_cache = ProbeCache(lambda path: probe_audio(path))
@@ -687,88 +672,6 @@ class BridgeAPI:
 
     def update_profile(self, profile_id: str, profile: object) -> BridgeResult:
         return self._profile_service.update(profile_id, profile)
-
-    def check_for_updates(self) -> BridgeResult:
-        if is_linux_desktop():
-            return {"available": False, "error": "Automatic updates are not supported on Linux."}
-        if self._checking_updates:
-            return {"available": False, "error": "Update check already in progress"}
-        self._checking_updates = True
-        try:
-            info = _check_for_updates()
-            self._settings.set_setting("last_update_check", datetime.now(timezone.utc).isoformat())
-            self._settings.save()
-            if info:
-                self._update_info = info
-                if info.checksum and not _SHA256_RE.match(info.checksum):
-                    logger.warning("Invalid checksum from release: %s", info.checksum)
-                    info.checksum = ""
-                return {
-                    "available": True,
-                    "version": str(info.version),
-                    "notes": info.notes,
-                    "size": info.file_size,
-                    "size_mb": round(info.file_size / (1024 * 1024), 2) if info.file_size else 0,
-                }
-
-            return {"available": False}
-        except Exception as e:
-            return {"available": False, "error": str(e)}
-        finally:
-            self._checking_updates = False
-
-    def download_update(self) -> BridgeResult:
-        if is_linux_desktop():
-            return {"ok": False, "error": "Automatic updates are not supported on Linux."}
-        if not self._update_info:
-            return {
-                "ok": False,
-                "error": "No update has been checked. Call check_for_updates first.",
-            }
-
-        info = self._update_info
-        if not info.download_url:
-            return {"ok": False, "error": "No download URL available for update"}
-        if not info.checksum:
-            return {"ok": False, "error": "No checksum available for update; refusing to download"}
-
-        if not _SHA256_RE.match(info.checksum):
-            return {
-                "ok": False,
-                "error": (
-                    f"Invalid checksum format: {info.checksum[:20]}... ; must be 64 hex characters"
-                ),
-            }
-
-        try:
-            from .updater import UpdateChecker
-
-            self._update_checker = UpdateChecker(info.download_url, info.checksum)
-            self._update_checker.start()
-            return {"ok": True}
-        except Exception as e:
-            return {"ok": False, "error": str(e)}
-
-    def get_download_progress(self) -> BridgeResult:
-        if is_linux_desktop():
-            return {"downloading": False, "error": "Automatic updates are not supported on Linux."}
-        if not self._update_checker:
-            return {"downloading": False}
-        try:
-            return self._update_checker.get_progress()
-        except Exception as e:
-            return {"downloading": False, "error": str(e)}
-
-    def install_update(self) -> BridgeResult:
-        if is_linux_desktop():
-            return {"ok": False, "error": "Automatic updates are not supported on Linux."}
-        if not self._update_checker:
-            return {"ok": False, "error": "No update downloaded"}
-        try:
-            result = self._update_checker.install()
-            return {"ok": True, "path": str(result)}
-        except Exception as e:
-            return {"ok": False, "error": str(e)}
 
     def open_output_folder(self, path: str) -> BridgeResult:
         import subprocess

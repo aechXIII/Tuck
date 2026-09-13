@@ -81,6 +81,11 @@ def _get_target_path(
             if candidate.is_file():
                 return str(candidate)
         return str(Path(sys.executable))
+    if action == ACTION_REVIEW:
+        raise RuntimeError(
+            "Opening videos from Send To requires the Tuck desktop app. "
+            "Install it, then add the shortcuts in Settings > File Explorer."
+        )
     return sys.executable
 
 
@@ -89,7 +94,7 @@ def _get_args(for_profile: str | None = None, action: str = ACTION_START) -> lis
         action = ACTION_START
 
     prefix: list[str] = []
-    if not getattr(sys, "frozen", False):
+    if not getattr(sys, "frozen", False) and action != ACTION_REVIEW:
         prefix = ["-m", "tuck"]
 
     mid: list[str] = []
@@ -334,6 +339,14 @@ def repair_sendto(executable_path: str | Path | None = None) -> bool:
         return False
     _ensure_generic_destinations_available()
 
+    # resolve before COM handling so an unsupported editor target is reported
+    try:
+        targets = {
+            action: _get_target_path(executable_path, action) for _, action, _ in shortcut_specs
+        }
+    except (ValueError, TypeError):
+        return False
+
     try:
         import pythoncom
         from win32com.client import Dispatch
@@ -344,10 +357,7 @@ def repair_sendto(executable_path: str | Path | None = None) -> bool:
         try:
             shell = Dispatch("WScript.Shell")
             for shortcut_path, action, description in shortcut_specs:
-                try:
-                    target = _get_target_path(executable_path, action)
-                except (ValueError, TypeError):
-                    return repaired
+                target = targets[action]
                 if not target:
                     return repaired
                 expected_args = " ".join(_get_args(action=action))

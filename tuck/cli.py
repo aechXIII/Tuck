@@ -80,7 +80,6 @@ def main(argv: list[str] | None = None) -> int:
         "upscale": _cmd_process,
         "profiles": _cmd_profiles,
         "settings": _cmd_settings,
-        "gui": _cmd_gui,
         "sendto": _cmd_sendto,
     }
     handler = handlers.get(args.command)
@@ -149,8 +148,6 @@ def _build_parser() -> argparse.ArgumentParser:
     p_set_sub = p_set.add_subparsers(dest="settings_cmd")
     p_set_sub.add_parser("show", help="Show current settings")
     p_set_sub.add_parser("reset", help="Reset to defaults")
-
-    sub.add_parser("gui", help="Launch the graphical interface")
 
     p_st = sub.add_parser("sendto", help="Manage Send To shortcuts")
     p_st_sub = p_st.add_subparsers(dest="sendto_cmd")
@@ -622,12 +619,6 @@ def _cmd_settings(args) -> int:
         table.add_row("Cache directory", str(mgr.cache_dir))
         console.print(table)
         return 0
-
-
-def _cmd_gui(args) -> int:
-    from .app import run_gui
-
-    return run_gui()
 
 
 def _cmd_sendto(args) -> int:

@@ -240,7 +240,6 @@ def test_workflows_do_not_cache_generated_release_artifacts() -> None:
 def test_release_metadata_versions_match_and_have_changelog_notes() -> None:
     pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
     package = Path("tuck/__init__.py").read_text(encoding="utf-8")
-    installer = Path("scripts/installer.iss").read_text(encoding="utf-8")
     npm = Path("package.json").read_text(encoding="utf-8")
     cargo = Path("src-tauri/Cargo.toml").read_text(encoding="utf-8")
     tauri_conf = Path("src-tauri/tauri.conf.json").read_text(encoding="utf-8")
@@ -252,7 +251,6 @@ def test_release_metadata_versions_match_and_have_changelog_notes() -> None:
             r'^current_version = "([^"]+)"$', pyproject, re.MULTILINE
         ),
         "tuck.__version__": re.search(r'^__version__ = "([^"]+)"$', package, re.MULTILINE),
-        "installer.iss": re.search(r'^#define MyAppVersion "([^"]+)"$', installer, re.MULTILINE),
         "package.json": re.search(r'"version": "([^"]+)"', npm),
         "Cargo.toml": re.search(r'^version = "([^"]+)"$', cargo, re.MULTILINE),
         "tauri.conf.json": re.search(r'"version": "([^"]+)"', tauri_conf),
@@ -270,7 +268,6 @@ def test_sidecar_spec_is_gui_free_and_two_console_exes() -> None:
     assert 'exe_cli = _exe(pyz_cli, a_cli, "TuckCli")' in spec
     assert '"sidecar_entry.py"' in spec and '"cli_entry.py"' in spec
     assert '"webview"' in spec and '"pythonnet"' in spec and '"clr"' in spec
-    assert "tuck.web_ui" in spec
     assert "frontend" not in spec
 
 

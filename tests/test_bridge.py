@@ -986,22 +986,6 @@ class TestBridgePlanRequest:
                 {"source": str(test_file), "video_encoder": "h264_nvenc"}
             )
 
-    def test_linux_desktop_rejects_updater_operations(self, tmp_path, monkeypatch):
-        import tuck.settings as settings_mod
-
-        monkeypatch.setenv("TUCK_DESKTOP_PLATFORM", "linux")
-        monkeypatch.setattr(settings_mod, "_config_dir", lambda: tmp_path)
-        monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
-        monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
-
-        api = BridgeAPI()
-        assert api.check_for_updates()["error"] == "Automatic updates are not supported on Linux."
-        assert api.download_update()["error"] == "Automatic updates are not supported on Linux."
-        assert (
-            api.get_download_progress()["error"] == "Automatic updates are not supported on Linux."
-        )
-        assert api.install_update()["error"] == "Automatic updates are not supported on Linux."
-
     def test_parse_plan_request_video_encoder_invalid(self, tmp_path, monkeypatch):
         """Invalid video_encoder is rejected."""
         import tuck.settings as settings_mod

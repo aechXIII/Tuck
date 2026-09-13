@@ -92,16 +92,6 @@ test("missing desktop backend is a visible startup error", async ({ page }) => {
   await expect(page.getByRole("alert")).toContainText("Desktop backend unavailable");
   await expect(page.getByRole("alert")).toContainText("reopen Tuck");
   await expect(page.locator("#editor-shell")).toHaveAttribute("inert", "");
-
-  await page.evaluate(() => {
-    const host = window as Window & { pywebview?: { api: object } };
-    host.pywebview = { api: {} };
-    window.dispatchEvent(
-      new CustomEvent(["pywebview", "ready"].join("")),
-    );
-  });
-  await expect(page.getByRole("alert")).toHaveCount(0);
-  await expect(page.locator("#editor-shell")).not.toHaveAttribute("inert", "");
 });
 
 test("rejected file selection is visible, recoverable, and rendered as text", async ({

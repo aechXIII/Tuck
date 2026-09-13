@@ -36,7 +36,7 @@ or resolution.
 
 ## Download
 
-Tuck supports Windows 10 and 11 and x86-64 Linux through an AppImage. The AppImage bundles its Python backend and FFmpeg tools. It is GUI-only: Send To integration, a public command line, and hardware encoding are Windows-only. Both platforms check for and install signed updates in the app.
+Tuck supports Windows 10 and 11 and x86-64 Linux through an AppImage. The AppImage bundles its Python backend and FFmpeg tools. It is GUI-only: Send To integration, a public command line, and hardware encoding are Windows-only. Both platforms install signed updates from inside the app.
 
 1. Download the latest installer from the [Releases page](https://github.com/aechXIII/Tuck/releases/latest), then run it.
 
@@ -67,7 +67,7 @@ chmod +x Tuck-*-x86_64.AppImage
 ./Tuck-*-x86_64.AppImage
 ```
 
-The app updates itself in place when the AppImage file is writable; otherwise it
+When the AppImage file is writable the app updates in place. When it is not, it
 shows the release notes with a download link.
 
 The AppImage needs a desktop session with WebKitGTK 4.1. It bundles its own Python
@@ -84,7 +84,7 @@ playback.
 
 Build the AppImage natively on Ubuntu 22.04 with a desktop session available for the
 smoke test. It uses the bundled Python sidecar and FFmpeg/ffprobe, not system Python
-or FFmpeg. The build compiles FFmpeg from locked FFmpeg, x264, and x265 sources; the
+or FFmpeg. The build compiles FFmpeg from locked FFmpeg, x264, and x265 sources. The
 AppImage includes those exact source archives and the build recipe under
 `ffmpeg/source`.
 
@@ -127,23 +127,18 @@ include the report in a [GitHub issue](https://github.com/aechXIII/Tuck/issues).
 
 ## Build from source
 
-Running Tuck from source requires Windows or Linux, Python 3.10 or newer, and FFmpeg:
+Running Tuck from source needs Windows or Linux, Python 3.10 or newer, Node.js, Rust, and FFmpeg:
 
 ```powershell
 .\scripts\setup.ps1
+npm ci
 .\scripts\run.ps1
 ```
 
-Create a packaged build with:
+Build the packaged app and Windows installer with:
 
 ```powershell
 .\scripts\build.ps1 -Clean
-```
-
-Building the installer also requires [Inno Setup 6](https://jrsoftware.org/isdl.php):
-
-```powershell
-.\scripts\build.ps1 -Clean -Installer
 ```
 
 Build the x86-64 Linux AppImage natively on Ubuntu 22.04 with Python, Node.js, Rust, Tauri's Linux build dependencies, CMake, NASM, pkg-config, and a C/C++ compiler installed:

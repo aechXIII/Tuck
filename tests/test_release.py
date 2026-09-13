@@ -43,15 +43,11 @@ def test_project_version_reports_drift_with_every_offending_file(tmp_path: Path)
     root = tmp_path
     (root / "tuck").mkdir()
     (root / "src-tauri").mkdir()
-    (root / "scripts").mkdir()
-    (root / "tuck" / "__init__.py").write_text('__version__ = "0.4.0"\n', encoding="utf-8")
-    (root / "pyproject.toml").write_text('version = "0.4.0"\n', encoding="utf-8")
+    (root / "tuck" / "__init__.py").write_text('__version__ = "0.5.0"\n', encoding="utf-8")
+    (root / "pyproject.toml").write_text('version = "0.5.0"\n', encoding="utf-8")
     (root / "package.json").write_text('{"version": "9.9.9"}\n', encoding="utf-8")
-    (root / "src-tauri" / "Cargo.toml").write_text('version = "0.4.0"\n', encoding="utf-8")
-    (root / "src-tauri" / "tauri.conf.json").write_text('{"version": "0.4.0"}\n', encoding="utf-8")
-    (root / "scripts" / "installer.iss").write_text(
-        '#define MyAppVersion "0.4.0"\n', encoding="utf-8"
-    )
+    (root / "src-tauri" / "Cargo.toml").write_text('version = "0.5.0"\n', encoding="utf-8")
+    (root / "src-tauri" / "tauri.conf.json").write_text('{"version": "0.5.0"}\n', encoding="utf-8")
 
     with pytest.raises(bm.MetadataError, match="version drift"):
         bm.project_version(root)

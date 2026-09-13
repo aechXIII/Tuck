@@ -3,12 +3,10 @@ import test from "node:test";
 
 import { backendUnavailableMessage, hasDesktopBackend } from "../../src/desktop-status.ts";
 
-test("desktop backend detection requires an API object", () => {
+test("desktop backend detection requires the Tauri invoke bridge", () => {
   assert.equal(hasDesktopBackend(undefined), false);
   assert.equal(hasDesktopBackend({}), false);
-  assert.equal(hasDesktopBackend({ pywebview: {} }), false);
-  assert.equal(hasDesktopBackend({ pywebview: { api: null } }), false);
-  assert.equal(hasDesktopBackend({ pywebview: { api: {} } }), true);
+  assert.equal(hasDesktopBackend({ __TAURI_INTERNALS__: {} }), false);
   assert.equal(
     hasDesktopBackend({ __TAURI_INTERNALS__: { invoke: () => undefined } }),
     true,

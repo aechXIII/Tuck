@@ -256,7 +256,7 @@ def test_linux_build_contract_has_one_sidecar_and_an_appimage_overlay() -> None:
     assert 'name="tuck-sidecar"' in spec
     assert "tuck.cli" in spec and "pywin32" in spec
     excludes = spec.split("_excludes", maxsplit=1)[1]
-    assert '"tuck.updater"' in excludes and '"packaging"' in excludes
+    assert '"tuck.app"' in excludes and '"packaging"' in excludes
     assert "TuckCli" not in spec.split("_excludes", maxsplit=1)[0]
     assert config["bundle"]["targets"] == ["appimage"]
     assert config["bundle"]["resources"] == {"../packaging/staging/linux/app/": "./"}

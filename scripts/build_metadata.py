@@ -42,14 +42,13 @@ UPDATER_FEED_FILENAME = "latest.json"
 CHANNELS = ("release-candidate", "release")
 
 # Authoritative version declarations. Every one of these must carry the same
-# version string; update them together before releasing.
+# string, or the release is blocked.
 VERSION_SOURCES: dict[str, str] = {
     "tuck/__init__.py": r'^__version__ = "([^"]+)"$',
     "pyproject.toml": r'^version = "([^"]+)"$',
     "package.json": r'"version": "([^"]+)"',
     "src-tauri/Cargo.toml": r'^version = "([^"]+)"$',
     "src-tauri/tauri.conf.json": r'"version": "([^"]+)"',
-    "scripts/installer.iss": r'^#define MyAppVersion "([^"]+)"$',
 }
 
 # Immutable native-tool inputs. Their bytes are pinned by a lock file and every

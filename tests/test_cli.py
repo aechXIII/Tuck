@@ -4,6 +4,61 @@ from tuck.cli import main as cli_main
 from tuck.models import EncodePlan, EncodeProgress
 
 
+class TestSendToDispatch:
+    def test_source_install_rejects_editor_shortcuts_without_changing_existing_files(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        monkeypatch.setattr("sys.frozen", False, raising=False)
+        monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
+        monkeypatch.setattr("tuck.sendto._can_create_shortcuts", lambda: False)
+        existing = tmp_path / "Tuck.bat"
+        contents = "@echo off\nREM TUCK_OWNER_V1\npython -m tuck --sendto-files %*\n"
+        existing.write_text(contents, encoding="utf-8")
+
+        assert cli_main(["sendto", "install"]) == 1
+        assert "desktop app" in capsys.readouterr().err
+        assert existing.read_text(encoding="utf-8") == contents
+        assert list(tmp_path.iterdir()) == [existing]
+
+    def test_old_review_shortcut_reports_failure(self, monkeypatch, capsys):
+        from tuck import app
+
+        monkeypatch.setattr(
+            "sys.argv", ["tuck", "--sendto-action", "review", "--sendto-files", "clip.mp4"]
+        )
+        monkeypatch.setattr(app, "_ensure_console", lambda: None)
+
+        assert app.main() == 1
+        assert "desktop app" in capsys.readouterr().err
+
+    def test_compression_shortcut_preserves_files_profile_and_exit_status(self, monkeypatch):
+        from tuck import app
+
+        requests = []
+
+        def encode(files, profile_id=None):
+            requests.append((files, profile_id))
+            return 7
+
+        monkeypatch.setattr(app, "run_sendto_console", encode)
+        monkeypatch.setattr(
+            "sys.argv",
+            [
+                "tuck",
+                "--profile-id",
+                "discord-50mb",
+                "--sendto-action",
+                "start",
+                "--sendto-files",
+                "clip one.mp4",
+                "clip two.mp4",
+            ],
+        )
+
+        assert app.main() == 7
+        assert requests == [(["clip one.mp4", "clip two.mp4"], "discord-50mb")]
+
+
 class TestCLISingleInstanceBypass:
     def test_cli_commands_bypass_single_instance(self):
 

@@ -122,31 +122,14 @@ def run_sendto_console(
     return code
 
 
-def run_gui(
-    files: list[str] | None = None,
-    sendto_profile_id: str | None = None,
-    sendto_action: str | None = None,
-) -> int:
-    from .bridge import BridgeAPI
-
-    api = BridgeAPI()
-
-    try:
-        api.start_background_services()
-        from .web_ui import run_web_gui
-
-        return run_web_gui(
-            bridge_api=api,
-            files=files,
-            sendto_profile_id=sendto_profile_id,
-            sendto_action=sendto_action,
-        )
-    finally:
-        api.stop_background_services()
+# the editor is its own desktop app now, so this entry point covers the
+# command line and Send To only
+_DESKTOP_APP_HINT = (
+    'Open Tuck from your applications to use the editor. Run "tuck --help" for the command line.'
+)
 
 
 def main() -> int:
-
     if _is_cli_invocation(sys.argv):
         _ensure_console()
 
@@ -156,77 +139,31 @@ def main() -> int:
 
     if _is_sendto_invocation(sys.argv):
         files, profile_id, action = _parse_sendto_args(sys.argv)
-
-        action = action or "start"
-        if action == "start":
+        if (action or "start") == "start":
             logger.info(
                 "Send To start: %d file arg(s), profile=%s",
                 len(files),
                 profile_id or "(default)",
             )
             return run_sendto_console(files, profile_id=profile_id)
-
-    from .instance import get_single_instance
-
-    si = get_single_instance()
-    if not si.acquire():
-        if len(sys.argv) > 1:
-            forwarded = si.forward_to_primary(sys.argv[1:])
-            if forwarded:
-                logger.info("Arguments forwarded to primary instance; exiting")
-                return 0
-        print("Tuck is already running.", file=sys.stderr)
+        _ensure_console()
+        print(
+            "Could not open the selected videos from this shortcut. "
+            "Install the Tuck desktop app, then repair the shortcuts "
+            "in Settings > File Explorer.",
+            file=sys.stderr,
+        )
         return 1
 
-    try:
-        from .settings import get_settings_manager
+    if len(sys.argv) <= 1 or sys.argv[1] == "gui":
+        print(_DESKTOP_APP_HINT)
+        return 0
 
-        mgr = get_settings_manager()
-        log_file = mgr.log_dir / "tuck.log"
-        logging.basicConfig(
-            level=logging.INFO,
-            format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-            handlers=[
-                logging.FileHandler(log_file, encoding="utf-8"),
-                logging.StreamHandler(),
-            ],
-        )
+    _ensure_console()
 
-        if _is_sendto_invocation(sys.argv):
-            files, profile_id, action = _parse_sendto_args(sys.argv)
-            valid_files = [f for f in files if Path(f).is_file()]
-            logger.info(
-                "Send To review: %d files, profile=%s",
-                len(valid_files),
-                profile_id,
-            )
-            return run_gui(
-                files=valid_files or None,
-                sendto_profile_id=profile_id,
-                sendto_action=action or "review",
-            )
+    from .cli import main as cli_main
 
-        if len(sys.argv) <= 1:
-            logger.info("Starting Tuck GUI")
-            return run_gui()
-
-        if sys.argv[1] == "gui":
-            gui_files = None
-            try:
-                idx = sys.argv.index("--files")
-                gui_files = sys.argv[idx + 1 :]
-            except ValueError:
-                pass
-            logger.info("Starting Tuck GUI with files: %s", gui_files)
-            return run_gui(gui_files)
-
-        from .cli import main as cli_main
-
-        return cli_main(sys.argv[1:])
-
-    finally:
-        si.release()
+    return cli_main(sys.argv[1:])
 
 
 if __name__ == "__main__":

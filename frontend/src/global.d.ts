@@ -5,7 +5,6 @@ declare global {
     __tuckFakeBackendCalls?: BackendCall[];
     attachBackendClient?: (client: BackendClient) => void;
     initApp?: (data: unknown) => void;
-    pywebview?: { api?: unknown };
     tuckBackendClient?: BackendClient;
   }
 }

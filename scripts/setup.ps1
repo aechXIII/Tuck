@@ -29,6 +29,6 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "OK: .venv is ready." -ForegroundColor Green
-Write-Host "  Run:   .\scripts\run.ps1             (GUI)" -ForegroundColor White
-Write-Host "  Build: .\scripts\build.ps1           (PyInstaller)" -ForegroundColor White
-Write-Host "  Build: .\scripts\build.ps1 -Installer (PyInstaller + Inno Setup)" -ForegroundColor White
+Write-Host "  Next:  npm ci                       (frontend dependencies)" -ForegroundColor White
+Write-Host "  Run:   .\scripts\run.ps1             (Tauri development app)" -ForegroundColor White
+Write-Host "  Build: .\scripts\build.ps1           (Windows app and NSIS installer)" -ForegroundColor White

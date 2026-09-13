@@ -13,10 +13,9 @@ export interface PlatformCapabilities {
   packaged: boolean;
 }
 
-// Outside a Tauri webview (browser preview, Playwright, the pywebview shell) the
-// native layer cannot be queried. Assume the full Windows desktop surface so
-// capability gating never hides controls except in a real Tauri build that
-// reports a reduced platform.
+// Outside a Tauri webview (browser preview, Playwright) the native layer cannot
+// be queried. Assume the full Windows desktop surface so capability gating never
+// hides controls except in a real Tauri build that reports a reduced platform.
 const NON_TAURI_CAPABILITIES: PlatformCapabilities = {
   platform: "windows",
   architecture: "x86_64",

@@ -1,7 +1,5 @@
 import {
-  createPywebviewClientFromWindow,
   createTauriBackendClientFromWindow,
-  PYWEBVIEW_READY_EVENT,
   setBackendClient,
 } from "./backend/index.ts";
 import { invoke } from "@tauri-apps/api/core";
@@ -143,13 +141,8 @@ function installDesktopBackend(): boolean {
     return true;
   }
   const tauriClient = createTauriBackendClientFromWindow(window);
-  if (tauriClient) {
-    startTauriBackend(tauriClient);
-    return true;
-  }
-  const client = createPywebviewClientFromWindow(window);
-  if (!client) return false;
-  attachDesktopBackend(client);
+  if (!tauriClient) return false;
+  startTauriBackend(tauriClient);
   return true;
 }
 
@@ -165,10 +158,6 @@ function bootstrapFrontend(): void {
   editorRuntime = installEditorRuntime(window);
   window.initApp = (data: unknown): void => editorRuntime?.initApp(data);
   window.attachBackendClient = attachDesktopBackend;
-
-  window.addEventListener(PYWEBVIEW_READY_EVENT, installDesktopBackend, {
-    once: true,
-  });
 
   editorRuntime.start();
 

@@ -1,7 +1,7 @@
-import { hasPywebviewApi, hasTauriInvoke } from "./backend/index.ts";
+import { hasTauriInvoke } from "./backend/index.ts";
 
 export function hasDesktopBackend(host: unknown): boolean {
-  return hasPywebviewApi(host) || hasTauriInvoke(host);
+  return hasTauriInvoke(host);
 }
 
 export function backendUnavailableMessage(reason?: string): string {
@@ -12,5 +12,5 @@ export function backendUnavailableMessage(reason?: string): string {
       : `${normalizedReason}.`;
     return `Tuck could not connect to its desktop backend: ${sentence} Close and reopen Tuck.`;
   }
-  return "Tuck could not connect to its desktop backend. Close and reopen Tuck. Developers should run npm run build before launching the Python app.";
+  return "Tuck could not connect to its desktop backend. Close and reopen Tuck. Developers should start the desktop app with npm run tauri dev.";
 }

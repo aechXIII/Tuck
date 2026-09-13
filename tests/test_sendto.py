@@ -555,6 +555,7 @@ class TestGetArgs:
         monkeypatch.setattr("sys.frozen", False, raising=False)
         args = _get_args(for_profile="discord-10mb", action="review")
         assert "review" in args
+        assert "-m" not in args
 
     def test_get_args_frozen_generic(self, monkeypatch):
         monkeypatch.setattr("sys.frozen", True, raising=False)
@@ -576,10 +577,20 @@ class TestGetArgs:
 
 
 class TestGetTargetPath:
-    def test_get_target_path_returns_string(self):
-        result = _get_target_path()
-        assert isinstance(result, str)
-        assert len(result) > 0
+    def test_source_compression_uses_python(self, monkeypatch):
+        monkeypatch.setattr("sys.frozen", False, raising=False)
+        assert _get_target_path(action=ACTION_START) == sys.executable
+
+    def test_source_review_requires_desktop_app(self, monkeypatch):
+        monkeypatch.setattr("sys.frozen", False, raising=False)
+        with pytest.raises(RuntimeError, match="desktop app"):
+            _get_target_path(action=ACTION_REVIEW)
+
+    def test_source_review_accepts_explicit_desktop_target(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("sys.frozen", False, raising=False)
+        desktop = tmp_path / "Tuck.exe"
+        desktop.touch()
+        assert _get_target_path(desktop, ACTION_REVIEW) == str(desktop)
 
     def test_get_target_path_frozen(self, monkeypatch):
         monkeypatch.setattr("sys.frozen", True, raising=False)
@@ -645,6 +656,16 @@ class TestGenericShortcutPath:
 
 
 class TestBatchFallback:
+    def test_source_profile_review_does_not_create_shortcut(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("sys.frozen", False, raising=False)
+        monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
+        monkeypatch.setattr("tuck.sendto._can_create_shortcuts", lambda: False)
+
+        with pytest.raises(RuntimeError, match="desktop app"):
+            install_profile_shortcut("review-profile", "Review profile", action=ACTION_REVIEW)
+
+        assert list(tmp_path.iterdir()) == []
+
     def test_write_batch_file_creates_file(self, tmp_path):
         batch_path = tmp_path / "Tuck.bat"
         _write_batch_file(batch_path, r"C:\Tuck\Tuck.exe", ["--sendto-files"])
@@ -767,6 +788,19 @@ class TestBatchFallback:
 
 
 class TestRepairGenericShortcuts:
+    def test_source_review_repair_reports_unsupported_target(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("sys.frozen", False, raising=False)
+        monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
+        monkeypatch.setattr("tuck.sendto._can_create_shortcuts", lambda: True)
+        monkeypatch.setattr("tuck.sendto._is_tuck_shortcut", lambda path: True)
+        shortcut = tmp_path / SENDTO_SHORTCUT_NAME
+        shortcut.write_bytes(_SHELL_LINK_HEADER)
+
+        with pytest.raises(RuntimeError, match="desktop app"):
+            repair_sendto()
+
+        assert shortcut.read_bytes() == _SHELL_LINK_HEADER
+
     @requires_windows_com
     def test_repairs_legacy_shortcut_into_review_and_compress_pair(self, tmp_path, monkeypatch):
         legacy_path = tmp_path / SENDTO_SHORTCUT_NAME

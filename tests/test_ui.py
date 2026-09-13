@@ -68,18 +68,11 @@ def test_web_ui_is_packaged_source_asset() -> None:
     assets = re.findall(r'<(?:link|script)\b[^>]*(?:href|src)="([^"]+)"', html)
     assert assets
     for asset in assets:
-        path = (
-            WEB_DIR / asset.removeprefix("/legacy/")
-            if asset.startswith("/legacy/")
-            else FRONTEND_DIR / asset
-        )
-        assert path.is_file()
+        assert (FRONTEND_DIR / asset).is_file()
     assert "window.pywebview" not in app_js
     main_ts = (FRONTEND_DIR / "src" / "main.ts").read_text(encoding="utf-8")
     assert "window.attachBackendClient = attachDesktopBackend" in main_ts
-    assert "pywebviewready" in (FRONTEND_DIR / "src" / "backend" / "pywebview.ts").read_text(
-        encoding="utf-8"
-    )
+    assert "createTauriBackendClientFromWindow" in main_ts
 
 
 def test_workspace_surface_styles_load_in_owner_order() -> None:
@@ -478,14 +471,7 @@ def test_update_download_starts_the_installer_without_a_second_prompt() -> None:
     assert "Update downloaded. Install now?" not in html
 
 
-def test_installer_exposes_tuck_command_on_path() -> None:
-    installer = Path("scripts/installer.iss").read_text(encoding="utf-8")
+def test_cli_wrapper_dispatches_to_the_packaged_executable() -> None:
     wrapper = Path("scripts/tuck.cmd").read_text(encoding="utf-8")
 
-    assert "ChangesEnvironment=yes" in installer
-    assert "procedure AddTuckToPath;" in installer
-    assert "procedure RemoveTuckFromPath;" in installer
-    assert 'Source: "tuck.cmd"; DestDir: "{app}"' in installer
     assert '"%~dp0TuckCli.exe" %*' in wrapper
-    assert "CloseApplications=yes" in installer
-    assert "CloseApplicationsFilter=Tuck.exe,TuckCli.exe" in installer

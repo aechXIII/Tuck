@@ -27,7 +27,6 @@ dependencies = [
     "platformdirs>=4.0",
     "rich>=13.7",
     "packaging>=23.0",
-    "pywebview==6.2.1",
     "pywin32>=306; sys_platform == 'win32'",
 ]
 
@@ -51,9 +50,6 @@ Repository = "https://github.com/aechXIII/Tuck"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["tuck*"]
-
-[tool.setuptools.package-data]
-tuck = ["web/*"]
 
 [tool.ruff]
 target-version = "py310"
@@ -117,11 +113,6 @@ replace = "version = \"{new_version}\""
 filename = "tuck/__init__.py"
 search = "__version__ = \"{current_version}\""
 replace = "__version__ = \"{new_version}\""
-
-[[tool.bumpversion.files]]
-filename = "scripts/installer.iss"
-search = "#define MyAppVersion \"{current_version}\""
-replace = "#define MyAppVersion \"{new_version}\""
 
 [[tool.bumpversion.files]]
 filename = "package.json"

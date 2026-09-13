@@ -7,8 +7,8 @@ Produces two console executables that share one ``_internal`` payload:
 
 Each executable has its own single-entry ``Analysis``; ``MERGE`` deduplicates
 their shared dependencies into one ``_internal`` folder. No GUI shell is bundled
-(Tauri owns the migrated window), so ``webview`` / ``pythonnet`` / ``clr`` /
-``tuck.web_ui`` are excluded. Runtime dependencies come from the hash-pinned
+(Tauri owns the migrated window), so ``webview`` / ``pythonnet`` / ``clr`` are
+excluded. Runtime dependencies come from the hash-pinned
 ``packaging/sidecar-constraints.txt``; ffmpeg/ffprobe are staged separately by
 ``scripts/build_sidecar.py``.
 """
@@ -60,7 +60,6 @@ _hiddenimports = [
     "tuck.diagnostics",
     "tuck.engine",
     "tuck.formatting",
-    "tuck.instance",
     "tuck.media_server",
     "tuck.media_tools",
     "tuck.models",
@@ -84,7 +83,6 @@ _hiddenimports = [
     "tuck.sidecar.protocol",
     "tuck.sidecar.server",
     "tuck.sidecar_entry",
-    "tuck.updater",
     "tuck.encoding",
     "tuck.encoding.capabilities",
     "tuck.encoding.command",
@@ -107,7 +105,6 @@ _excludes = [
     "pythonnet",
     "webview",
     "tkinter",
-    "tuck.web_ui",
     "unittest",
     "pytest",
     "setuptools",

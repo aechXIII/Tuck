@@ -49,6 +49,33 @@ export async function installFakeBackend(
       let hasEnqueuedWork = false;
       const clone = (value: unknown): unknown =>
         value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+      // the editor talks to a typed BackendClient that returns
+      // { ok: true, value } | { ok: false, error: { code, message, details } }.
+      // fixtures still describe responses in the old bridge shape: a bare payload
+      // for success, or { ok: false, error: "message" } for a failure. translate
+      // here so specs stay terse and the fake needs no separate adapter module.
+      const toResult = (raw: unknown): unknown => {
+        if (raw !== null && typeof raw === "object" && "ok" in raw) {
+          const record = raw as Record<string, unknown>;
+          if (record.ok === false) {
+            const message =
+              typeof record.error === "string" && record.error
+                ? record.error
+                : "Desktop backend call failed";
+            const code =
+              typeof record.code === "string" ? record.code : "BACKEND_REJECTED";
+            const details =
+              record.details !== null && typeof record.details === "object"
+                ? (record.details as Record<string, unknown>)
+                : {};
+            return { ok: false, error: { code, message, details } };
+          }
+          const value: Record<string, unknown> = { ...record };
+          delete value.ok;
+          return { ok: true, value };
+        }
+        return { ok: true, value: raw };
+      };
       const respond = async (
         method: keyof BackendClient,
         args: readonly unknown[],
@@ -64,7 +91,7 @@ export async function installFakeBackend(
             queue.push(resolve);
             held.set(method, queue);
           });
-          if (released !== undefined) return clone(released);
+          if (released !== undefined) return toResult(clone(released));
         }
         if (method === "enqueueWithOptions" || method === "enqueueBatch") {
           hasEnqueuedWork = true;
@@ -74,11 +101,11 @@ export async function installFakeBackend(
           hasEnqueuedWork &&
           queueStateAfterEnqueue !== undefined
         ) {
-          return clone(queueStateAfterEnqueue);
+          return toResult(clone(queueStateAfterEnqueue));
         }
         const sequence = responseSequences?.[method];
-        if (sequence?.length) return clone(sequence.shift());
-        return clone(responses[method] ?? { ok: true });
+        if (sequence?.length) return toResult(clone(sequence.shift()));
+        return toResult(clone(responses[method] ?? { ok: true }));
       };
       (
         window as Window & {
@@ -148,7 +175,9 @@ export async function installFakeBackend(
         pickSaveFile: (defaultName = "profiles.json") => respond("pickSaveFile", [defaultName]),
       };
       window.__tuckFakeBackendCalls = calls;
-      window.pywebview = { api };
+      // the app takes window.tuckBackendClient as a ready BackendClient before it
+      // looks for the Tauri bridge, which is exactly what this fake provides
+      window.tuckBackendClient = api as unknown as BackendClient;
       window.addEventListener(
         "load",
         () => {

@@ -41,7 +41,7 @@ test("Tauri transport keeps unavailable native operations explicit", async () =>
     ok: true,
     value: { files: [] },
   });
-  // IPC methods are pywebview-specific and remain unavailable in Tauri
+  // the IPC file-forwarding methods are not part of the Tauri shell
   assert.deepEqual(await client.getIpcFiles(), {
     ok: false,
     error: {
