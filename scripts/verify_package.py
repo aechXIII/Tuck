@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import queue
@@ -40,6 +41,12 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+_windows_spec = importlib.util.spec_from_file_location(
+    "windows_ffmpeg", ROOT / "scripts/windows_ffmpeg.py"
+)
+assert _windows_spec is not None and _windows_spec.loader is not None
+windows_ffmpeg = importlib.util.module_from_spec(_windows_spec)
+_windows_spec.loader.exec_module(windows_ffmpeg)
 STAGING_APP = ROOT / "packaging" / "staging" / "app"
 MANIFEST = ROOT / "packaging" / "staging" / "manifest.json"
 LOCK = ROOT / "packaging" / "ffmpeg-sources.lock.json"
@@ -321,8 +328,15 @@ def inspect_tree(app_root: Path, manifest: dict, lock_path: Path) -> None:
         }
         tool_names = ("ffmpeg", "ffprobe")
     else:
-        by_name = {m["install_as"]: m for m in lock["members"]}
-        tool_names = ("ffmpeg", "ffprobe") if "ffmpeg" in by_name else ("ffmpeg.exe", "ffprobe.exe")
+        try:
+            windows_manifest = windows_ffmpeg.verify_tools(
+                app_root / "ffmpeg",
+                windows_ffmpeg.BUILD / windows_ffmpeg.SOURCE_BUNDLE,
+            )
+        except windows_ffmpeg.BuildError as exc:
+            raise VerifyError(str(exc)) from exc
+        by_name = windows_manifest["files"]
+        tool_names = ("ffmpeg.exe", "ffprobe.exe")
     for name in tool_names:
         if name not in by_name:
             raise VerifyError(f"missing staged output hash for {name}")
@@ -339,7 +353,7 @@ def inspect_tree(app_root: Path, manifest: dict, lock_path: Path) -> None:
     if manifest.get("platform") == "linux":
         print("  ok: bundled ffmpeg/ffprobe match their recorded output hashes")
     else:
-        print("  ok: bundled ffmpeg/ffprobe match the lock file")
+        print("  ok: Windows tools, corresponding sources, and runtime capabilities verified")
 
     if manifest.get("platform") == "linux":
         _validate_linux_source_archive(app_root, manifest, lock)

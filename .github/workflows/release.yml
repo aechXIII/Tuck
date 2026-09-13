@@ -24,8 +24,12 @@ env:
   RELEASE_CHANNEL: ${{ github.event_name == 'workflow_dispatch' && inputs.channel || 'release' }}
 
 jobs:
+  windows-ffmpeg:
+    uses: ./.github/workflows/windows-ffmpeg.yml
+
   build-windows:
     name: Build Windows (native)
+    needs: windows-ffmpeg
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -77,6 +81,12 @@ jobs:
         with:
           workspaces: src-tauri
 
+      - name: Download source-built Windows media tools
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-ffmpeg-source-build
+          path: build/windows-ffmpeg
+
       - name: Build the Python sidecar and bundled media tools
         run: python scripts/build_sidecar.py --python python
 
@@ -105,6 +115,7 @@ jobs:
           $name = python scripts/build_metadata.py artifact-name --platform windows
           New-Item -ItemType Directory -Force dist | Out-Null
           Copy-Item $installer.FullName "dist/$name"
+          Copy-Item "build/windows-ffmpeg/Tuck-FFmpeg-Windows-Sources.tar.xz" dist/
           $sig = "$($installer.FullName).sig"
           if (Test-Path $sig) { Copy-Item $sig "dist/$name.sig" }
           "path=dist/$name" | Out-File -Append -Encoding ascii $env:GITHUB_OUTPUT
@@ -136,6 +147,7 @@ jobs:
             dist/Tuck-Setup-*-x64.exe.sha256
             dist/Tuck-Setup-*-x64.exe.sig
             dist/entry-windows.json
+            dist/Tuck-FFmpeg-Windows-Sources.tar.xz
           retention-days: 7
           if-no-files-found: error
 
@@ -293,7 +305,7 @@ jobs:
       - name: Write the combined checksum list
         working-directory: dist
         run: |
-          sha256sum Tuck-Setup-*-x64.exe Tuck-*-x86_64.AppImage > SHA256SUMS
+          sha256sum Tuck-Setup-*-x64.exe Tuck-*-x86_64.AppImage Tuck-FFmpeg-Windows-Sources.tar.xz > SHA256SUMS
           cat SHA256SUMS
 
       - name: Extract the release notes
@@ -320,6 +332,9 @@ jobs:
           python scripts/verify_release.py
           --manifest dist/tuck-release-manifest.json
           --artifacts-dir dist
+
+      - name: Verify Windows corresponding sources
+        run: python scripts/windows_ffmpeg.py --verify-source dist/Tuck-FFmpeg-Windows-Sources.tar.xz
 
       - name: Upload the release metadata
         uses: actions/upload-artifact@v4
@@ -392,6 +407,9 @@ jobs:
           --artifacts-dir dist
           --require-signed
 
+      - name: Require matching Windows corresponding sources
+        run: python scripts/windows_ffmpeg.py --verify-source dist/Tuck-FFmpeg-Windows-Sources.tar.xz
+
       - name: Create the GitHub release
         uses: softprops/action-gh-release@v2
         with:
@@ -407,6 +425,7 @@ jobs:
             dist/tuck-release-manifest.json
             dist/THIRD_PARTY_NOTICES.md
             dist/THIRD_PARTY_NOTICES_LINUX.md
+            dist/Tuck-FFmpeg-Windows-Sources.tar.xz
           body_path: dist/release-notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

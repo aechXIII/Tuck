@@ -6,24 +6,28 @@ components below.
 
 ## FFmpeg and ffprobe
 
-Tuck bundles FFmpeg and ffprobe from gyan.dev's 64-bit static
-`ffmpeg-7.1.1-full_build` release. It enables GPL and version 3 components,
-without the nonfree build option. The tools use GPL-3.0; their license text
-is installed at `ffmpeg/FFmpeg-LICENSE.txt`.
+Tuck builds `ffmpeg.exe` and `ffprobe.exe` from pinned sources with MinGW-w64.
+The tools statically link FFmpeg 7.1.1, x264, x265 3.6, dav1d 1.5.1, and
+zlib 1.3.1. NVIDIA codec headers 12.2.72.0 and AMD AMF headers 1.4.35 enable
+hardware encoding through the user's installed GPU drivers.
 
-The download URL, build options, file sizes, and SHA-256 hashes are recorded
-in `packaging/ffmpeg-sources.lock.json`. The builder checks these hashes before
-packaging either executable.
+FFmpeg, x264, and x265 are licensed under GPL-2.0-or-later; dav1d uses
+BSD-2-Clause, zlib uses the zlib license, and the GPU headers use MIT licenses.
+The build enables GPL components and does not enable nonfree components.
+License texts are installed under `ffmpeg/`, including the MinGW-w64 and GCC
+runtime notices in `Toolchain-LICENSE.txt`. GCC runtime components carry the
+GCC Runtime Library Exception.
 
-FFmpeg 7.1.1 source is available at
-<https://ffmpeg.org/releases/ffmpeg-7.1.1.tar.xz>. This covers FFmpeg itself;
-matching source for the external libraries and the build instructions must
-also accompany releases that distribute these binaries. Source requests can
-be made through Tuck's GitHub repository for at least three years after
-distribution.
+Each release includes `Tuck-FFmpeg-Windows-Sources.tar.xz` as a separate
+download alongside the installer. It contains the exact upstream archives,
+source lock, and build recipe. The installed `ffmpeg/build-manifest.json`
+records its SHA-256, the source lock hash, and the built files' hashes.
+`ffmpeg/build-environment.txt` records the compiler and build-tool versions.
+Source archive URLs and hashes are pinned in `packaging/ffmpeg-sources.lock.json`.
 
-**Patents.** FFmpeg and its codecs, including H.264, H.265, and AAC, may be
-covered by third-party patents. FFmpeg upstream grants no patent license.
+**Patents.** FFmpeg and its codecs (including H.264, H.265, and AAC) may be
+covered by third-party patents. FFmpeg upstream grants no patent license. This
+notice is not legal advice.
 
 ## Microsoft Edge WebView2 Runtime
 

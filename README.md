@@ -135,7 +135,8 @@ npm ci
 .\scripts\run.ps1
 ```
 
-Build the packaged app and Windows installer with:
+First [build the Windows media tools](packaging/windows-ffmpeg.md) from pinned
+sources using Ubuntu 22.04 or WSL. Then build the Windows installer:
 
 ```powershell
 .\scripts\build.ps1 -Clean

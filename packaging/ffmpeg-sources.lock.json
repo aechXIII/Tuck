@@ -1,66 +1,197 @@
 {
-  "lockfile_version": 1,
-  "purpose": "Pinned Windows FFmpeg and ffprobe binaries. The builder verifies the archive and every bundled file against these hashes before packaging.",
-  "generated_utc": "2026-09-03",
-  "approved_by": "repository owner (aechXIII), 2026-09-03",
+  "lockfile_version": 2,
   "platform": "windows",
   "architecture": "x86_64",
-  "distribution": {
-    "provider": "gyan.dev",
-    "provider_url": "https://www.gyan.dev/ffmpeg/builds/",
-    "build_name": "ffmpeg-7.1.1-full_build",
-    "ffmpeg_version": "7.1.1",
-    "provider_version_string": "7.1.1-full_build-www.gyan.dev",
-    "build_type": "64-bit static (shared=no); single self-contained .exe per tool, no DLL payload",
-    "released": "2025-03-10"
+  "build_platform": {
+    "distribution": "Ubuntu",
+    "version": "22.04",
+    "toolchain": "MinGW-w64 POSIX"
   },
-  "license": {
-    "spdx": "GPL-3.0-only",
-    "classification": "GPL v3 (configure flags: --enable-gpl --enable-version3). NOT built with --enable-nonfree, so redistribution is permitted. Compatible with Tuck's own GPL-3.0-only license and with the GPL codecs it relies on (libx264, libx265).",
-    "configure_flags": "--enable-gpl --enable-version3 --enable-static --disable-w32threads --disable-autodetect --enable-fontconfig --enable-iconv --enable-gnutls --enable-lcms2 --enable-libxml2 --enable-gmp --enable-bzlib --enable-lzma --enable-libsnappy --enable-zlib --enable-librist --enable-libsrt --enable-libssh --enable-libzmq --enable-avisynth --enable-libbluray --enable-libcaca --enable-libdvdnav --enable-libdvdread --enable-sdl2 --enable-libaribb24 --enable-libaribcaption --enable-libdav1d --enable-libdavs2 --enable-libopenjpeg --enable-libquirc --enable-libuavs3d --enable-libxevd --enable-libzvbi --enable-libqrencode --enable-librav1e --enable-libsvtav1 --enable-libvvenc --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxavs2 --enable-libxeve --enable-libxvid --enable-libaom --enable-libjxl --enable-libvpx --enable-mediafoundation --enable-libass --enable-frei0r --enable-libfreetype --enable-libfribidi --enable-libharfbuzz --enable-liblensfun --enable-libvidstab --enable-libvmaf --enable-libzimg --enable-amf --enable-cuda-llvm --enable-cuvid --enable-dxva2 --enable-d3d11va --enable-d3d12va --enable-ffnvcodec --enable-libvpl --enable-nvdec --enable-nvenc --enable-vaapi --enable-libshaderc --enable-vulkan --enable-libplacebo --enable-opencl --enable-libcdio --enable-libgme --enable-libmodplug --enable-libopenmpt --enable-libopencore-amrwb --enable-libmp3lame --enable-libshine --enable-libtheora --enable-libtwolame --enable-libvo-amrwbenc --enable-libcodec2 --enable-libilbc --enable-libgsm --enable-liblc3 --enable-libopencore-amrnb --enable-libopus --enable-libspeex --enable-libvorbis --enable-ladspa --enable-libbs2b --enable-libflite --enable-libmysofa --enable-librubberband --enable-libsoxr --enable-chromaprint",
-    "patent_notice": "FFmpeg upstream grants no patent license. H.264, H.265, and AAC may be covered by third-party patents."
+  "recipe": {
+    "path": "packaging/build-ffmpeg-windows.sh",
+    "size_bytes": 4639,
+    "sha256": "7b1c9ae08e96150c09d69a48ab766cad418f53edb2a86f4a779d24615301861b"
   },
-  "archive": {
-    "filename": "ffmpeg-7.1.1-full_build.zip",
-    "url": "https://github.com/GyanD/codexffmpeg/releases/download/7.1.1/ffmpeg-7.1.1-full_build.zip",
-    "size_bytes": 177650503,
-    "sha256": "d760e1b3574402ed18b4865851f87d87e73965a982e6453212df8621fed1c508"
-  },
-  "members": [
+  "sources": [
     {
-      "archive_path": "ffmpeg-7.1.1-full_build/bin/ffmpeg.exe",
-      "install_as": "ffmpeg.exe",
-      "role": "encoder",
-      "size_bytes": 148234240,
-      "sha256": "b1383f5d07470d503edecdaee4bddc5891e986e916a698299b357f79cfe445fd"
+      "name": "ffmpeg",
+      "version": "7.1.1",
+      "filename": "ffmpeg-7.1.1.tar.xz",
+      "url": "https://ffmpeg.org/releases/ffmpeg-7.1.1.tar.xz",
+      "size_bytes": 11019500,
+      "sha256": "733984395e0dbbe5c046abda2dc49a5544e7e0e1e2366bba849222ae9e3a03b1",
+      "archive_root": "ffmpeg-7.1.1",
+      "license": {
+        "spdx": "GPL-2.0-or-later",
+        "text_path": "COPYING.GPLv2"
+      }
     },
     {
-      "archive_path": "ffmpeg-7.1.1-full_build/bin/ffprobe.exe",
-      "install_as": "ffprobe.exe",
-      "role": "prober",
-      "size_bytes": 148097536,
-      "sha256": "012bddded3cbc5204055210d7ff4f0b3f7521bca441a694939856d01909f5756"
+      "name": "x264",
+      "version": "snapshot-20191217-2245-stable",
+      "filename": "x264-snapshot-20191217-2245-stable.tar.bz2",
+      "url": "https://download.videolan.org/pub/videolan/x264/snapshots/x264-snapshot-20191217-2245-stable.tar.bz2",
+      "size_bytes": 770169,
+      "sha256": "b2495c8f2930167d470994b1ce02b0f4bfb24b3317ba36ba7f112e9809264160",
+      "archive_root": "x264-snapshot-20191217-2245-stable",
+      "license": {
+        "spdx": "GPL-2.0-or-later",
+        "text_path": "COPYING"
+      }
     },
     {
-      "archive_path": "ffmpeg-7.1.1-full_build/LICENSE",
-      "install_as": "FFmpeg-LICENSE.txt",
-      "role": "notice",
-      "size_bytes": 35147,
-      "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
+      "name": "x265",
+      "version": "3.6",
+      "revision": "aa7f602f7592eddb9d87749be7466da005b556ee",
+      "filename": "x265-aa7f602f7592.tar.gz",
+      "url": "https://bitbucket.org/multicoreware/x265_git/get/aa7f602f7592eddb9d87749be7466da005b556ee.tar.gz",
+      "size_bytes": 1656575,
+      "sha256": "206329b9599c78d06969a1b7b7bb939f7c99a459ab283b2e93f76854bd34ca7b",
+      "archive_root": "multicoreware-x265_git-aa7f602f7592",
+      "license": {
+        "spdx": "GPL-2.0-or-later",
+        "text_path": "COPYING"
+      }
     },
     {
-      "archive_path": "ffmpeg-7.1.1-full_build/README.txt",
-      "install_as": "FFmpeg-README.txt",
-      "role": "notice",
-      "size_bytes": 43770,
-      "sha256": "d694901bad3d99b2f3748e983b8bdaa8cf594e35e128cb872e07ed11d0cfd344"
+      "name": "nv-codec-headers",
+      "version": "12.2.72.0",
+      "revision": "c69278340ab1d5559c7d7bf0edf615dc33ddbba7",
+      "filename": "nv-codec-headers-c69278340ab1d5559c7d7bf0edf615dc33ddbba7.tar.gz",
+      "url": "https://codeload.github.com/FFmpeg/nv-codec-headers/tar.gz/c69278340ab1d5559c7d7bf0edf615dc33ddbba7",
+      "archive_root": "nv-codec-headers-c69278340ab1d5559c7d7bf0edf615dc33ddbba7",
+      "size_bytes": 80959,
+      "sha256": "0d06ccc7410671e8ea075f29abb7c1f6c793574d8c768dc1bc96b142797b6628",
+      "license": {
+        "spdx": "MIT",
+        "text_path": "include/ffnvcodec/nvEncodeAPI.h"
+      }
+    },
+    {
+      "name": "amf",
+      "version": "1.4.35",
+      "revision": "ba07d1b3c7c7ee0d846125cffc1d6d78a020c45a",
+      "filename": "amf-ba07d1b3c7c7ee0d846125cffc1d6d78a020c45a.tar.gz",
+      "url": "https://codeload.github.com/GPUOpen-LibrariesAndSDKs/AMF/tar.gz/ba07d1b3c7c7ee0d846125cffc1d6d78a020c45a",
+      "archive_root": "AMF-ba07d1b3c7c7ee0d846125cffc1d6d78a020c45a",
+      "size_bytes": 179087861,
+      "sha256": "5c088ae8e8ad374a2c92be1c9751162e458a87c73bfa465d1bc9fa20675ca4e5",
+      "license": {
+        "spdx": "MIT",
+        "text_path": "LICENSE.txt"
+      }
+    },
+    {
+      "name": "zlib",
+      "version": "1.3.1",
+      "revision": "",
+      "filename": "zlib-1.3.1.tar.gz",
+      "url": "https://zlib.net/fossils/zlib-1.3.1.tar.gz",
+      "archive_root": "zlib-1.3.1",
+      "size_bytes": 1512791,
+      "sha256": "9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23",
+      "license": {
+        "spdx": "Zlib",
+        "text_path": "LICENSE"
+      }
+    },
+    {
+      "name": "dav1d",
+      "version": "1.5.1",
+      "revision": "",
+      "filename": "dav1d-1.5.1.tar.xz",
+      "url": "https://download.videolan.org/pub/videolan/dav1d/1.5.1/dav1d-1.5.1.tar.xz",
+      "archive_root": "dav1d-1.5.1",
+      "size_bytes": 1020760,
+      "sha256": "401813f1f89fa8fd4295805aa5284d9aed9bc7fc1fdbe554af4292f64cbabe21",
+      "license": {
+        "spdx": "BSD-2-Clause",
+        "text_path": "COPYING"
+      }
     }
   ],
-  "corresponding_source": {
-    "obligation": "Distribute matching FFmpeg and external-library sources with the build instructions alongside releases that bundle these binaries.",
-    "ffmpeg_release_tarball_url": "https://ffmpeg.org/releases/ffmpeg-7.1.1.tar.xz",
-    "upstream_commit": "db69d06eeeab4f46da15030a80d539efb4503ca8",
-    "upstream_commit_url": "https://github.com/FFmpeg/FFmpeg/commit/db69d06eeeab4f46da15030a80d539efb4503ca8",
-    "note": "The FFmpeg tarball covers FFmpeg itself. Obtain the matching external-library sources and build instructions from the binary provider before redistribution."
+  "output": {
+    "license": "GPL-2.0-or-later",
+    "executables": [
+      "ffmpeg.exe",
+      "ffprobe.exe"
+    ],
+    "encoders": [
+      "libx264",
+      "libx265",
+      "h264_nvenc",
+      "hevc_nvenc",
+      "h264_amf",
+      "hevc_amf",
+      "aac"
+    ],
+    "decoders": [
+      "h264",
+      "hevc",
+      "vp8",
+      "vp9",
+      "libdav1d",
+      "aac",
+      "mp3",
+      "opus",
+      "vorbis",
+      "png"
+    ],
+    "filters": [
+      "amix",
+      "concat",
+      "crop",
+      "scale",
+      "aresample",
+      "atrim",
+      "asetpts",
+      "aloop",
+      "volume",
+      "afade",
+      "adelay",
+      "apad",
+      "trim",
+      "setpts",
+      "transpose",
+      "hflip",
+      "vflip",
+      "setsar",
+      "fps"
+    ],
+    "configure_flags_required": [
+      "--enable-gpl",
+      "--disable-autodetect",
+      "--enable-libx264",
+      "--enable-libx265",
+      "--enable-libdav1d",
+      "--enable-zlib",
+      "--enable-amf",
+      "--enable-ffnvcodec",
+      "--enable-nvenc",
+      "--enable-static",
+      "--disable-shared"
+    ],
+    "system_dlls": [
+      "advapi32.dll",
+      "avicap32.dll",
+      "avrt.dll",
+      "bcrypt.dll",
+      "crypt32.dll",
+      "d3d11.dll",
+      "dxgi.dll",
+      "gdi32.dll",
+      "kernel32.dll",
+      "msvcrt.dll",
+      "ole32.dll",
+      "oleaut32.dll",
+      "psapi.dll",
+      "secur32.dll",
+      "shell32.dll",
+      "shlwapi.dll",
+      "user32.dll",
+      "vfw32.dll",
+      "winmm.dll",
+      "ws2_32.dll"
+    ]
   }
 }

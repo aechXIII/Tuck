@@ -153,27 +153,11 @@ def test_path_discovery_is_last_resort(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_ffmpeg_lock_is_complete_and_redistributable() -> None:
-    lock = json.loads(_LOCK.read_text(encoding="utf-8"))
-
-    assert lock["lockfile_version"] == 1
-    assert lock["license"]["spdx"] == "GPL-3.0-only"
-    assert "--enable-nonfree" not in lock["license"]["configure_flags"]
-    assert "--enable-gpl" in lock["license"]["configure_flags"]
-
-    archive = lock["archive"]
-    assert archive["url"].startswith("https://github.com/GyanD/codexffmpeg/releases/download/")
-    assert len(archive["sha256"]) == 64
-    assert archive["size_bytes"] > 0
-
-    installed = {member["install_as"]: member for member in lock["members"]}
-    assert {"ffmpeg.exe", "ffprobe.exe"} <= set(installed)
-    for member in lock["members"]:
-        assert len(member["sha256"]) == 64
-        assert member["size_bytes"] > 0
-    assert "ffplay.exe" not in installed
-
-    assert lock["corresponding_source"]["ffmpeg_release_tarball_url"].endswith(".tar.xz")
-    assert len(lock["corresponding_source"]["upstream_commit"]) == 40
+    module = _verify_package_module().windows_ffmpeg
+    lock = module.load_lock()
+    assert lock["output"]["license"] == "GPL-2.0-or-later"
+    assert "--enable-gpl" in lock["output"]["configure_flags_required"]
+    assert lock["output"]["executables"] == ["ffmpeg.exe", "ffprobe.exe"]
 
 
 def test_linux_ffmpeg_lock_completely_pins_the_source_build() -> None:

@@ -1,0 +1,37 @@
+name: Windows FFmpeg sources
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install the cross-compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-mingw-w64-x86-64-posix g++-mingw-w64-x86-64-posix \
+            cmake make nasm pkg-config meson ninja-build
+      - name: Cache verified source downloads
+        uses: actions/cache@v4
+        with:
+          path: build/toolcache/ffmpeg-windows-sources
+          key: windows-ffmpeg-sources-${{ hashFiles('packaging/ffmpeg-sources.lock.json') }}
+      - name: Build Windows media tools and corresponding sources
+        run: python scripts/windows_ffmpeg.py --work "$RUNNER_TEMP/windows-ffmpeg"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-ffmpeg-source-build
+          path: |
+            build/windows-ffmpeg/tools/
+            build/windows-ffmpeg/Tuck-FFmpeg-Windows-Sources.tar.xz
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 7

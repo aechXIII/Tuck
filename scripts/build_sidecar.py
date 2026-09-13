@@ -6,8 +6,8 @@ Run from the repository root on the native target platform:
 
 Steps, in order, each failing the build on any mismatch:
 
-1. Verify ``packaging/ffmpeg-sources.lock.json`` and download **only** the
-   archive it names. Every SHA-256 (archive + extracted members) is checked.
+1. Verify the Windows source build against ``packaging/ffmpeg-sources.lock.json``.
+   Run ``scripts/windows_ffmpeg.py`` on Ubuntu 22.04 before building the sidecar.
 2. Stage ``ffmpeg.exe`` / ``ffprobe.exe`` and their notices.
 3. Create an isolated build environment from the hash-pinned
    ``packaging/sidecar-constraints.txt`` plus ``packaging/build-requirements.txt``.
@@ -26,12 +26,11 @@ import os
 import shutil
 import subprocess
 import sys
-import zipfile
 from pathlib import Path
-from urllib.request import urlopen
+
+import windows_ffmpeg
 
 ROOT = Path(__file__).resolve().parent.parent
-LOCK_PATH = ROOT / "packaging" / "ffmpeg-sources.lock.json"
 CONSTRAINTS = ROOT / "packaging" / "sidecar-constraints.txt"
 BUILD_REQUIREMENTS = ROOT / "packaging" / "build-requirements.txt"
 SPEC = ROOT / "scripts" / "tuck-sidecar.spec"
@@ -41,7 +40,6 @@ LICENSE = ROOT / "LICENSE"
 WEBVIEW2_LOCK = ROOT / "packaging" / "webview2-bootstrapper.lock.json"
 WEBVIEW2_BOOTSTRAPPER = ROOT / "scripts" / "MicrosoftEdgeWebView2Setup.exe"
 
-CACHE_DIR = ROOT / "build" / "toolcache"
 BUILD_VENV = ROOT / "build" / "sidecar-venv"
 STAGING = ROOT / "packaging" / "staging"
 STAGING_APP = STAGING / "app"
@@ -65,79 +63,15 @@ def _require(condition: bool, message: str) -> None:
         raise BuildError(message)
 
 
-def load_lock() -> dict:
-    _require(LOCK_PATH.is_file(), f"Missing FFmpeg lock file: {LOCK_PATH}")
-    lock = json.loads(LOCK_PATH.read_text(encoding="utf-8"))
-    _require(lock.get("lockfile_version") == 1, "Unsupported ffmpeg lock file version")
-    flags = lock["license"]["configure_flags"]
-    _require("--enable-gpl" in flags, "FFmpeg lock is not a GPL build")
-    _require(
-        "--enable-nonfree" not in flags, "FFmpeg lock is --enable-nonfree; not redistributable"
+def stage_ffmpeg() -> list[dict]:
+    tools = windows_ffmpeg.BUILD / "tools"
+    manifest = windows_ffmpeg.verify_tools(
+        tools, windows_ffmpeg.BUILD / windows_ffmpeg.SOURCE_BUNDLE
     )
-    return lock
-
-
-def ensure_archive(lock: dict) -> Path:
-    archive = lock["archive"]
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    target = CACHE_DIR / archive["filename"]
-    if target.is_file() and _sha256(target) == archive["sha256"]:
-        print(f"  cached  {target.name}")
-        return target
-    if target.exists():
-        target.unlink()
-    print(f"  fetch   {archive['url']}")
-    with urlopen(archive["url"]) as response, target.open("wb") as out:
-        shutil.copyfileobj(response, out)
-    actual = _sha256(target)
-    _require(
-        actual == archive["sha256"],
-        f"Archive SHA-256 mismatch for {target.name}\n"
-        f"  expected {archive['sha256']}\n  got      {actual}",
-    )
-    actual_size = target.stat().st_size
-    _require(
-        actual_size == archive["size_bytes"],
-        f"Archive size mismatch: expected {archive['size_bytes']}, got {actual_size}",
-    )
-    print(f"  ok      {target.name} ({actual_size} bytes)")
-    return target
-
-
-def stage_ffmpeg(lock: dict, archive_path: Path) -> list[dict]:
     if STAGING_FFMPEG.exists():
         shutil.rmtree(STAGING_FFMPEG)
-    STAGING_FFMPEG.mkdir(parents=True)
-    staged: list[dict] = []
-    with zipfile.ZipFile(archive_path) as zf:
-        names = set(zf.namelist())
-        for member in lock["members"]:
-            arc = member["archive_path"]
-            _require(arc in names, f"Lock member not present in archive: {arc}")
-            data = zf.read(arc)
-            actual = hashlib.sha256(data).hexdigest()
-            _require(
-                actual == member["sha256"],
-                f"Member SHA-256 mismatch for {arc}\n"
-                f"  expected {member['sha256']}\n  got      {actual}",
-            )
-            _require(
-                len(data) == member["size_bytes"],
-                f"Member size mismatch for {arc}: expected {member['size_bytes']}, got {len(data)}",
-            )
-            out = STAGING_FFMPEG / member["install_as"]
-            out.write_bytes(data)
-            staged.append(
-                {
-                    "file": f"ffmpeg/{member['install_as']}",
-                    "sha256": actual,
-                    "size_bytes": len(data),
-                }
-            )
-            print(f"  stage   ffmpeg/{member['install_as']}")
-    installed = {item["file"].split("/")[-1] for item in staged}
-    _require({"ffmpeg.exe", "ffprobe.exe"} <= installed, "ffmpeg.exe / ffprobe.exe not staged")
-    return staged
+    shutil.copytree(tools, STAGING_FFMPEG)
+    return [{"file": f"ffmpeg/{name}", **record} for name, record in manifest["files"].items()]
 
 
 def _venv_python(venv: Path) -> Path:
@@ -256,7 +190,8 @@ def assemble_app(dist: Path, staged_ffmpeg: list[dict]) -> dict:
             "_internal",
             "ffmpeg/ffmpeg.exe",
             "ffmpeg/ffprobe.exe",
-            "ffmpeg/FFmpeg-LICENSE.txt",
+            "ffmpeg/ffmpeg-LICENSE.txt",
+            "ffmpeg/build-manifest.json",
             "tuck.cmd",
             "tuck-path.ps1",
             "LICENSE",
@@ -291,7 +226,7 @@ def main() -> int:
     parser.add_argument(
         "--skip-pyinstaller",
         action="store_true",
-        help="Only fetch/verify/stage the media tools (no frozen build).",
+        help="Only verify/stage the source-built media tools (no frozen build).",
     )
     parser.add_argument(
         "--assemble-only",
@@ -306,11 +241,10 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        print("[1/5] verify ffmpeg lock")
-        lock = load_lock()
-        print("[2/5] fetch + stage media tools")
-        archive = ensure_archive(lock)
-        staged = stage_ffmpeg(lock, archive)
+        print("[1/5] verify Windows FFmpeg source build")
+        windows_ffmpeg.load_lock()
+        print("[2/5] verify + stage media tools")
+        staged = stage_ffmpeg()
         if args.skip_pyinstaller:
             print("done (media tools only)")
             return 0
@@ -350,7 +284,7 @@ def main() -> int:
         assemble_app(dist, staged)
         print(f"\nOK  staging tree at {STAGING_APP}")
         return 0
-    except (BuildError, subprocess.CalledProcessError) as exc:
+    except (BuildError, windows_ffmpeg.BuildError, subprocess.CalledProcessError) as exc:
         print(f"\nBUILD FAILED: {exc}", file=sys.stderr)
         return 1
 
