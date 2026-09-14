@@ -649,8 +649,6 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     const open = section.classList.contains("hid");
     section.classList.toggle("hid", !open);
     el("adv-toggle").setAttribute("aria-expanded", String(open));
-    const arrow = el("adv-toggle").querySelector(".advanced-arrow");
-    if (arrow) arrow.textContent = open ? "⌃" : "⌄";
   }
 
   function onEncChange(): void {

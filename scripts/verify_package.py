@@ -51,7 +51,7 @@ STAGING_APP = ROOT / "packaging" / "staging" / "app"
 MANIFEST = ROOT / "packaging" / "staging" / "manifest.json"
 LOCK = ROOT / "packaging" / "ffmpeg-sources.lock.json"
 WEBVIEW2_LOCK = ROOT / "packaging" / "webview2-bootstrapper.lock.json"
-EXPECTED_VERSION = "0.5.0"
+EXPECTED_VERSION = "0.5.1"
 
 
 class VerifyError(RuntimeError):

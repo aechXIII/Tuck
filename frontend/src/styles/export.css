@@ -500,6 +500,19 @@
   pointer-events: none;
 }
 
+#adv-toggle {
+  padding-right: 10px;
+  align-items: center;
+}
+#adv-toggle .advanced-arrow {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 12px;
+}
+#adv-toggle[aria-expanded="true"] .advanced-arrow {
+  transform: rotate(180deg);
+}
+
 #right select,
 .settings-dialog select {
   appearance: none;
