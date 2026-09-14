@@ -211,18 +211,24 @@ async fn real_sidecar_reports_its_authoritative_storage_paths() {
     .await
     .expect("real sidecar starts");
 
-    assert_eq!(
-        process
-            .request(BackendCommand::GetStoragePaths)
-            .await
-            .expect("storage path response"),
-        json!({
-            "config_dir": data_root.join("config").to_string_lossy(),
-            "data_dir": data_root.join("data").to_string_lossy(),
-            "cache_dir": data_root.join("cache").to_string_lossy(),
-            "log_dir": data_root.join("data").join("logs").to_string_lossy(),
-        }),
-    );
+    let paths = process
+        .request(BackendCommand::GetStoragePaths)
+        .await
+        .expect("storage path response");
+    for (key, relative) in [
+        ("config_dir", "config"),
+        ("data_dir", "data"),
+        ("cache_dir", "cache"),
+        ("log_dir", "data/logs"),
+    ] {
+        let reported = paths[key].as_str().expect("storage path is a string");
+        // Windows temporary paths can use short names that Python resolves
+        assert_eq!(
+            std::fs::canonicalize(reported).expect("reported directory exists"),
+            std::fs::canonicalize(data_root.join(relative)).expect("expected directory exists"),
+            "{key}",
+        );
+    }
 
     process.shutdown().await.expect("graceful shutdown");
     let _ = std::fs::remove_dir_all(data_root);
