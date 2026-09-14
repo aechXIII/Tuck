@@ -47,6 +47,8 @@ class ProgressTracker:
         self._last_percent = 0.0
         self._last_time = 0.0
         self._last_speed: float | None = None
+        self._record_time: float | None = None
+        self._record_speed: float | None = None
 
     def set_pass(self, pass_number: int) -> None:
         self.pass_number = max(1, int(pass_number))
@@ -56,6 +58,23 @@ class ProgressTracker:
             self.stage = EncodeStage.ENCODING
 
     def update_from_line(self, line: str) -> EncodeProgress | None:
+        key, _, value = line.strip().partition("=")
+        if key == "out_time_us":
+            try:
+                self._record_time = int(value) / 1_000_000
+            except ValueError:
+                self._record_time = None
+            return None
+        if key == "speed":
+            self._record_speed = parse_ffmpeg_speed(line)
+            return None
+        if key in ("out_time", "out_time_ms"):
+            return None
+        if key == "progress" and value in ("continue", "end"):
+            current, speed = self._record_time, self._record_speed
+            self._record_time = None
+            self._record_speed = None
+            return self.update(current, speed=speed) if current is not None else None
         current = parse_ffmpeg_time(line)
         if current is None:
             return None

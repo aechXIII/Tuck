@@ -56,6 +56,7 @@ export function installQueue(deps: QueueDeps): QueueApi {
   const queueActiveItemIds: Record<string, true> = {};
   const retryInFlight: Record<string, true> = {};
   let queueView: QueueViewState = emptyQueueView();
+  let pollingQueue = false;
 
   function mapQueueItems(items: readonly QueueItem[]): void {
     const map: Record<string, QueueItem> = {};
@@ -96,9 +97,12 @@ export function installQueue(deps: QueueDeps): QueueApi {
   }
 
   async function pollQueue(): Promise<void> {
+    if (pollingQueue) return;
+    pollingQueue = true;
     try {
       const state = await legacyBackendResult(client().getQueueState());
-      const items = (Array.isArray(state.items) ? state.items : []) as QueueItem[];
+      if (!state.ok || !Array.isArray(state.items)) return;
+      const items = state.items as QueueItem[];
       mapQueueItems(items);
       if (!deps.isReordering()) deps.renderClips();
 
@@ -130,6 +134,8 @@ export function installQueue(deps: QueueDeps): QueueApi {
       text("qfname", queueView.fname);
     } catch {
       /* polling errors are transient */
+    } finally {
+      pollingQueue = false;
     }
   }
 

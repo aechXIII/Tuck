@@ -1905,3 +1905,30 @@ class TestTrimFlags:
         assert output_info.duration == pytest.approx(1.3, abs=0.2)
         assert output_info.has_audio
         assert any(getattr(item, "duration", 0) == pytest.approx(1.3) for item in progress)
+
+
+def test_encode_reports_progress_before_ffmpeg_exits(engine, real_video_path, tmp_path):
+    from tuck.media_tools import find_ffmpeg
+
+    ffmpeg = find_ffmpeg()
+    assert ffmpeg is not None
+    plan = EncodePlan(
+        source=str(real_video_path),
+        output=str(tmp_path / "live-progress.mp4"),
+        preset="ultrafast",
+        two_pass=False,
+    )
+    cmd = build_base_cmd(ffmpeg, plan, real_video_path)
+    cmd.insert(cmd.index("-i"), "-re")
+    updates = []
+
+    def collect(progress):
+        if 0 < progress.percent < 100:
+            assert engine._process is not None
+            assert engine._process.poll() is None
+            updates.append(progress)
+
+    engine._run_pass([*cmd, plan.output], 3, collect, pass_num=1)
+    assert len(updates) >= 2
+    assert updates[-1].percent > updates[0].percent
+    assert all(progress.eta_seconds is not None for progress in updates)

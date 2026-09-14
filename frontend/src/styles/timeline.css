@@ -443,10 +443,6 @@ body.tl-segment-dragging * {
   grid-template-columns: 16px minmax(0, 1fr);
 }
 
-#source-audio-track .seq-head {
-  grid-template-columns: 16px minmax(0, 1fr) 28px;
-}
-
 .seq-track-icon {
   grid-column: 1;
   display: flex;
@@ -694,7 +690,7 @@ body.tl-segment-dragging * {
 
 @media (max-width: 1100px) {
   #audio-editor {
-    --timeline-head-width: 148px;
+    --timeline-head-width: 180px;
     padding-inline: 12px;
   }
 

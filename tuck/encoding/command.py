@@ -115,7 +115,8 @@ def build_base_cmd(
     *,
     include_audio: bool = True,
 ) -> list[str]:
-    cmd = [ffmpeg, "-hide_banner", "-loglevel", "info", "-stats"]
+    # explicit progress records are flushed independently of console status output
+    cmd = [ffmpeg, "-hide_banner", "-loglevel", "info", "-nostats", "-progress", "pipe:2"]
 
     segments = plan.effective_segments
     single_segment = len(segments) == 1

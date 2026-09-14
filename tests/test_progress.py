@@ -76,3 +76,38 @@ class TestProgressTracker:
         t.update(80.0)
         p = t.update(10.0)
         assert p.percent == 80.0
+
+
+def test_progress_records_update_time_speed_and_eta_together():
+    tracker = ProgressTracker(20, total_passes=2)
+    for line in (
+        "frame=300",
+        "out_time_us=10000000",
+        "out_time_ms=10000000",
+        "out_time=00:00:10.000000",
+        "speed=2.0x",
+    ):
+        assert tracker.update_from_line(line) is None
+    progress = tracker.update_from_line("progress=continue")
+    assert progress is not None
+    assert progress.percent == 25
+    assert progress.speed == 2
+    assert progress.eta_seconds == 15
+    tracker.set_pass(2)
+    tracker.update_from_line("out_time_us=20000000")
+    tracker.update_from_line("speed=1.0x")
+    progress = tracker.update_from_line("progress=end")
+    assert progress is not None
+    assert progress.percent == 100
+    assert progress.eta_seconds == 0
+
+
+def test_progress_records_ignore_missing_and_invalid_timestamps():
+    tracker = ProgressTracker(20)
+    for value in ("N/A", "invalid", "inf"):
+        assert tracker.update_from_line(f"out_time_us={value}") is None
+        assert tracker.update_from_line("progress=continue") is None
+    tracker.update_from_line("out_time_us=-1000")
+    progress = tracker.update_from_line("progress=continue")
+    assert progress is not None
+    assert progress.percent == 0

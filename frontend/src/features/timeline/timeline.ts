@@ -1081,6 +1081,19 @@ function applyTimelineHeight(value: number) {
     timelineTrackCount,
   );
   editor.style.height = height + "px";
+  if (value <= 0) {
+    const frame = byId("sequence-frame");
+    const stack = byId("sequence-stack");
+    if (frame && stack && frame.clientHeight > 0) {
+      // include the rendered ruler, row separators, and zoom scrollbar in auto fit
+      height = TuckLayout.clampTimelineHeight(
+        height + stack.scrollHeight - frame.clientHeight,
+        windowRef.innerHeight,
+        timelineTrackCount,
+      );
+      editor.style.height = height + "px";
+    }
+  }
   updateTimelineResizeA11y(height);
   refreshAfterTimelineResize();
   return height;
@@ -1099,7 +1112,7 @@ function syncTimelineTrackCount(importedCount: number) {
   );
   if (height != null) {
     if (previousTrackCount !== timelineTrackCount) timelineHeightSetting = 0;
-    applyTimelineHeight(height);
+    applyTimelineHeight(timelineHeightSetting);
   }
 }
 

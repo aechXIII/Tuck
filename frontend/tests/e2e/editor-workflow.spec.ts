@@ -462,10 +462,14 @@ test("track additions and removals resize a manually sized timeline", async ({ p
   await page.keyboard.press("Home");
   await expect(separator).toHaveAttribute("aria-valuenow", "170");
   await page.getByRole("button", { name: "Add audio", exact: true }).click();
-  await expect(separator).toHaveAttribute("aria-valuenow", "232");
+  const expandedHeight = Number(await separator.getAttribute("aria-valuenow"));
+  expect(expandedHeight).toBeGreaterThan(170);
+  const overflow = () => page.locator("#sequence-frame").evaluate(el => el.scrollHeight - el.clientHeight);
+  await expect.poll(overflow).toBeLessThanOrEqual(1);
   await page.locator("#imported-audio-tracks .seq-track-remove").click();
   await page.locator("#confirm-accept").click();
-  await expect(separator).toHaveAttribute("aria-valuenow", "190");
+  await expect.poll(async () => Number(await separator.getAttribute("aria-valuenow"))).toBeLessThan(expandedHeight);
+  await expect.poll(overflow).toBeLessThanOrEqual(1);
 });
 
 test("Inspector content aligns with tabs and footer without empty scrolling", async ({ page }, testInfo) => {
