@@ -1,6 +1,7 @@
 import array
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -1932,3 +1933,26 @@ def test_encode_reports_progress_before_ffmpeg_exits(engine, real_video_path, tm
     assert len(updates) >= 2
     assert updates[-1].percent > updates[0].percent
     assert all(progress.eta_seconds is not None for progress in updates)
+
+
+def test_encoder_process_does_not_read_sidecar_requests():
+    script = """
+import sys
+from tuck.encoding.runner import FFmpegEngine
+engine = FFmpegEngine()
+child = engine._spawn_ffmpeg(
+    [sys.executable, "-c", "import sys; sys.stderr.write(repr(sys.stdin.read()))"], 0
+)
+_, child_input = child.communicate(timeout=10)
+print(child_input)
+print(repr(sys.stdin.read()))
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        input="sidecar request\n",
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=True,
+    )
+    assert result.stdout.splitlines() == ["''", "'sidecar request\\n'"]

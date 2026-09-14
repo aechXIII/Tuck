@@ -17,14 +17,75 @@ const LINUX_FOLDER_OPENERS: &[&str] = &[
 ];
 
 #[cfg(target_os = "linux")]
+fn host_command(program: &str) -> std::process::Command {
+    let mut command = std::process::Command::new(program);
+    if let Some(appdir) = std::env::var_os("APPDIR") {
+        clean_host_environment(&mut command, Path::new(&appdir), std::env::vars_os());
+    }
+    command
+}
+
+#[cfg(target_os = "linux")]
+fn clean_host_environment(
+    command: &mut std::process::Command,
+    appdir: &Path,
+    environment: impl IntoIterator<Item = (std::ffi::OsString, std::ffi::OsString)>,
+) {
+    // host programs must not load the AppImage's older libraries and plugins
+    for (key, value) in environment {
+        if !matches!(
+            key.to_str(),
+            Some(
+                "PATH"
+                    | "LD_LIBRARY_PATH"
+                    | "LD_PRELOAD"
+                    | "XDG_DATA_DIRS"
+                    | "GTK_PATH"
+                    | "GIO_EXTRA_MODULES"
+                    | "GIO_MODULE_DIR"
+                    | "GTK_DATA_PREFIX"
+                    | "GTK_EXE_PREFIX"
+                    | "GSETTINGS_SCHEMA_DIR"
+                    | "GTK_IM_MODULE_FILE"
+                    | "GDK_PIXBUF_MODULE_FILE"
+            )
+        ) {
+            continue;
+        }
+        let paths: Vec<_> = std::env::split_paths(&value).collect();
+        let retained: Vec<_> = paths
+            .iter()
+            .filter(|path| !path.starts_with(appdir))
+            .collect();
+        if retained.len() == paths.len() {
+            continue;
+        }
+        if retained.is_empty() {
+            command.env_remove(key);
+        } else if let Ok(value) = std::env::join_paths(retained) {
+            command.env(key, value);
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
 fn spawn_first_available(path: &Path, programs: &[&str]) -> std::io::Result<()> {
     let mut last_error: Option<std::io::Error> = None;
     for program in programs {
-        let mut command = std::process::Command::new(program);
+        let mut command = host_command(program);
         if *program == "gio" {
             command.arg("open");
         }
-        match command.arg(path).spawn() {
+        command.arg(path);
+        if matches!(*program, "xdg-open" | "gio") {
+            match command.status() {
+                Ok(status) if status.success() => return Ok(()),
+                Ok(_) => last_error = Some(std::io::Error::other("folder opener failed")),
+                Err(error) => last_error = Some(error),
+            }
+            continue;
+        }
+        match command.spawn() {
             Ok(_) => return Ok(()),
             Err(error) => last_error = Some(error),
         }
@@ -56,7 +117,7 @@ impl Opener for SystemOpener {
                 std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid file path")
             })?;
             // commas delimit dbus-send arrays, so escape them inside the file URI
-            let reply = std::process::Command::new("dbus-send")
+            let reply = host_command("dbus-send")
                 .args([
                     "--session",
                     "--dest=org.freedesktop.FileManager1",
@@ -295,6 +356,35 @@ mod tests {
         assert!(result.is_ok());
         assert_eq!(mock.called.lock().unwrap()[0], dir);
         let _ = std::fs::remove_dir(&dir);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn external_commands_use_host_libraries_and_keep_session_settings() {
+        use std::ffi::OsString;
+        let mut command = std::process::Command::new("/usr/bin/env");
+        command.env_clear();
+        let environment = [
+            ("LD_LIBRARY_PATH", "/tmp/Tuck/usr/lib:/opt/host/lib"),
+            ("PATH", "/tmp/Tuck/usr/bin:/usr/bin"),
+            ("GIO_MODULE_DIR", "/tmp/Tuck/usr/lib/gio/modules"),
+            ("XDG_DATA_DIRS", "/tmp/Tuck/usr/share:/usr/share"),
+            ("DBUS_SESSION_BUS_ADDRESS", "unix:path=/run/user/1000/bus"),
+            ("DISPLAY", ":1"),
+        ]
+        .map(|(key, value)| (OsString::from(key), OsString::from(value)));
+        command.envs(environment.clone());
+        clean_host_environment(&mut command, Path::new("/tmp/Tuck"), environment);
+        let output = command.output().unwrap();
+        assert!(output.status.success());
+        let output = String::from_utf8(output.stdout).unwrap();
+        assert!(!output.contains("/tmp/Tuck"));
+        assert!(output.contains("LD_LIBRARY_PATH=/opt/host/lib\n"));
+        assert!(output.contains("PATH=/usr/bin\n"));
+        assert!(output.contains("XDG_DATA_DIRS=/usr/share\n"));
+        assert!(output.contains("DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus\n"));
+        assert!(output.contains("DISPLAY=:1\n"));
+        assert!(!output.contains("GIO_MODULE_DIR="));
     }
 
     #[cfg(target_os = "linux")]

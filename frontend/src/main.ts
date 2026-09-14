@@ -155,6 +155,14 @@ function waitForDesktopBackend(): void {
 }
 
 function bootstrapFrontend(): void {
+  document.addEventListener("contextmenu", (event) => {
+    const target = event.target;
+    if (target instanceof HTMLElement && (
+      target.isContentEditable ||
+      target.closest('textarea, input:not([type]), input[type="text"], input[type="number"], input[type="search"], input[type="url"], input[type="email"], input[type="password"], input[type="tel"]')
+    )) return;
+    event.preventDefault();
+  });
   editorRuntime = installEditorRuntime(window);
   window.initApp = (data: unknown): void => editorRuntime?.initApp(data);
   window.attachBackendClient = attachDesktopBackend;

@@ -238,55 +238,51 @@
 }
 #sz-grp .sz-fig {
   display: flex;
-  align-items: baseline;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
   margin-top: 7px;
 }
 #sz-grp .sz-est {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
   font: 600 27px/1 var(--mono);
   letter-spacing: -0.02em;
   color: var(--text);
   font-variant-numeric: tabular-nums;
 }
 #sz-grp .sz-detail {
-  margin-top: 6px;
+  margin-top: 8px;
   font: 400 9.5px/1.4 var(--mono);
   color: var(--dim);
 }
-#sz-grp .sz-target {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 11px;
-  padding-top: 11px;
-  border-top: 1px solid var(--hair);
+#sz-grp #sz-badge {
+  width: 2ch;
+  min-width: 2ch;
+  max-width: 8ch;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+  appearance: textfield;
+  cursor: text;
 }
-#sz-grp .sz-target-label {
-  font-size: 10.5px;
-  color: var(--dim);
-}
-#sz-grp .sz-badge-wrap {
-  display: inline-flex;
-  align-items: baseline;
-  height: 25px;
-  padding: 0 8px;
-  border-radius: var(--r-ctl);
+#sz-grp #sz-badge:hover {
   background: var(--raised);
 }
-#sz-badge {
-  width: 34px !important;
-  height: 25px;
-  padding: 0 !important;
-  border: 0;
-  border-radius: 0 !important;
-  background: transparent !important;
-  color: var(--text) !important;
-  font: 600 11.5px var(--mono) !important;
-  text-align: right;
+#sz-grp #sz-badge:focus-visible {
+  outline: 2px solid var(--accent-light);
+  outline-offset: 2px;
 }
 #sz-unit {
-  padding: 0 0 0 4px;
-  color: var(--dim);
-  font: 400 9px var(--font);
+  color: inherit;
+  font: inherit;
 }
 #sz-grp .pset {
   margin: 0 0 0 auto;
@@ -294,7 +290,7 @@
 }
 #sz-grp .pset button {
   height: 24px;
-  padding: 0 8px;
+  padding: 0 6px;
   border-radius: var(--r-ctl);
   background: var(--raised);
   font: 500 10.5px var(--mono);

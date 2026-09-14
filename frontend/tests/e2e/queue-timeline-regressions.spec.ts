@@ -9,7 +9,7 @@ test.beforeEach(async ({ page }) => {
     { ok: true, files: ["C:\\media\\music.wav"] },
     { ok: true, files: ["C:\\media\\voice.wav"] },
   ] };
-  fixture.responses.probeFile = { ok: true, data: { duration: 12, file_size: 1048576, width: 1920, height: 1080, fps: 30, has_audio: true } };
+  fixture.responses.probeFile = { ok: true, data: { path: "/mnt/exchange/clip.mp4", duration: 12, file_size: 1048576, width: 1920, height: 1080, fps: 30, has_audio: true } };
   fixture.responses.probeAudioFile = { ok: true, data: { duration: 20, channels: 2, sample_rate: 48000 } };
   fixture.responses.getMediaUrl = { ok: true, url: "", token: "" };
   fixture.responses.getThumbnail = { ok: true, thumbnail: "" };
@@ -26,9 +26,9 @@ test("queue errors preserve the last successful queue display", async ({ page })
     (window as Window & { __tuckReleaseHeld?: (method: string, value: unknown) => void }).__tuckReleaseHeld?.("getQueueState", response);
   }, value);
   await expect.poll(() => page.evaluate(() => window.__tuckFakeBackendCalls?.filter(c => c.method === "getQueueState").length ?? 0)).toBeGreaterThan(0);
+  const count = await page.evaluate(() => window.__tuckFakeBackendCalls?.filter(c => c.method === "getQueueState").length ?? 0);
   await release({ ok: true, items: [{ id: "done", state: "completed", progress: 100 }] });
   await expect(page.locator("#qbar")).toBeVisible();
-  const count = await page.evaluate(() => window.__tuckFakeBackendCalls?.filter(c => c.method === "getQueueState").length ?? 0);
   await expect.poll(() => page.evaluate(() => window.__tuckFakeBackendCalls?.filter(c => c.method === "getQueueState").length ?? 0)).toBeGreaterThan(count);
   await release({ ok: false, error: "Temporary backend error" });
   await page.screenshot({ path: "build/queue-error-after.png" });
@@ -81,4 +81,38 @@ test("running queue snapshots update progress and ETA throughout an export", asy
   }
   await expect(page.locator("#qeta")).toHaveText("ETA 00:05");
   await page.screenshot({ path: "build/queue-progress.png" });
+});
+
+test("Library matches queue items to the resolved probe path", async ({ page }) => {
+  for (const [index, state] of ["running", "completed"].entries()) {
+    await expect.poll(() => page.evaluate(() => window.__tuckFakeBackendCalls?.filter(c => c.method === "getQueueState").length ?? 0)).toBeGreaterThan(index);
+    await page.evaluate((state) => {
+      (window as Window & { __tuckReleaseHeld?: (method: string, value: unknown) => void }).__tuckReleaseHeld?.("getQueueState", {
+        ok: true, items: [{ id: "resolved", source_path: "/mnt/exchange/clip.mp4", state, progress: state === "running" ? 35 : 100, result_path: "/mnt/exchange/export.mp4", status_text: state === "running" ? "Encoding" : "Completed" }],
+      });
+    }, state);
+    await expect(page.locator("#clips")).toContainText(state === "running" ? "Encoding" : "Completed");
+  }
+  await expect(page.locator("#clips").getByRole("button", { name: "Show", exact: true })).toBeVisible();
+});
+
+test("hovered completed cards survive unchanged queue polls", async ({ page }) => {
+  for (let index = 0; index < 4; index++) {
+    await expect.poll(() => page.evaluate(() => window.__tuckFakeBackendCalls?.filter(c => c.method === "getQueueState").length ?? 0)).toBeGreaterThan(index);
+    await page.evaluate(() => {
+      (window as Window & { __tuckReleaseHeld?: (method: string, value: unknown) => void }).__tuckReleaseHeld?.("getQueueState", {
+        ok: true, items: [{ id: "finished", source_path: "/mnt/exchange/clip.mp4", state: "completed", progress: 100, result_path: "/mnt/exchange/export.mp4" }],
+      });
+    });
+    const show = page.locator("#clips").getByRole("button", { name: "Show", exact: true });
+    await expect(show).toBeVisible();
+    if (index === 0) {
+      await show.hover();
+      await show.focus();
+      await show.evaluate(el => el.setAttribute("data-retained-node", "true"));
+    } else {
+      await expect(show).toHaveAttribute("data-retained-node", "true");
+      await expect(show).toBeFocused();
+    }
+  }
 });

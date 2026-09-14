@@ -69,7 +69,8 @@ export function installQueue(deps: QueueDeps): QueueApi {
     for (const path of Object.keys(session.clips)) {
       const clip = session.clips[path];
       if (!clip) continue;
-      const item = map[path];
+      const resolvedPath = clip.probeData?.path;
+      const item = map[path] ?? (typeof resolvedPath === "string" ? map[resolvedPath] : undefined);
       if (item) {
         const previousState = clip._queueState;
         clip._queueState = item.state ?? "";

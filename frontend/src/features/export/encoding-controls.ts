@@ -215,7 +215,10 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
       speed,
       modified: el("mod-badge").classList.contains("show"),
     });
-    el("export-summary-title").textContent = summary.title;
+    if (document.activeElement !== input("sz-badge")) {
+      input("sz-badge").value = input("sz-slider").value;
+      resizeSizeInput();
+    }
     el("export-summary-detail").textContent = summary.detail;
     el("export-summary-modified").classList.toggle("show", summary.modified);
     el("export-audio-summary").textContent = InspectorUi.audioSummary({
@@ -530,9 +533,11 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     if (!size || size < 2) return;
     input("sz-badge").value = String(size);
     input("sz-slider").max = String(Math.max(500, size));
+    input("sz-slider").value = String(size);
     input("sz-slider").setAttribute("aria-valuenow", String(size));
+    input("sz-slider").setAttribute("aria-valuemax", input("sz-slider").max);
     updateSizePresets(size);
-    el("export-summary-title").textContent = size + " MB";
+    resizeSizeInput();
     void reqPreview();
     updateDirty();
   }
@@ -541,9 +546,9 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     const size = parseInt(value, 10);
     if (!size || size < 2) {
       input("sz-badge").value = input("sz-slider").value;
+      resizeSizeInput();
       return;
     }
-    input("sz-slider").value = String(size);
     onSize(String(size));
   }
 
@@ -554,6 +559,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
       const button = document.createElement("button");
       button.textContent = String(mb);
       button.setAttribute("aria-label", `${mb} MB`);
+      button.setAttribute("aria-pressed", String(mb === value));
       if (mb === value) button.classList.add("on");
       button.addEventListener("click", () => {
         input("sz-slider").value = String(mb);
@@ -999,6 +1005,25 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     snapProf();
     toast("Settings reset to profile.", "ok");
   }
+
+  function resizeSizeInput(): void {
+    input("sz-badge").style.width = `${Math.max(2, input("sz-badge").value.length)}ch`;
+  }
+
+  const sizeInput = input("sz-badge");
+  sizeInput.addEventListener("focus", () => sizeInput.select());
+  sizeInput.addEventListener("input", resizeSizeInput);
+  sizeInput.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      sizeInput.value = input("sz-slider").value;
+      resizeSizeInput();
+      sizeInput.blur();
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      sizeInput.blur();
+    }
+  });
 
   return {
     workflow: () => wf,

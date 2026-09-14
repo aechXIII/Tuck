@@ -111,3 +111,9 @@ def test_progress_records_ignore_missing_and_invalid_timestamps():
     progress = tracker.update_from_line("progress=continue")
     assert progress is not None
     assert progress.percent == 0
+
+
+def test_second_pass_starts_halfway_before_ffmpeg_reports_progress():
+    tracker = ProgressTracker(10, total_passes=2)
+    tracker.set_pass(2)
+    assert tracker.snapshot().percent == 50

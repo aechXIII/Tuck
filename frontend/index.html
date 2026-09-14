@@ -671,25 +671,12 @@
                 ></span>
               </div>
               <div class="sz-fig">
-                <span id="export-summary-title" class="sz-est">10 MB</span>
-              </div>
-              <div id="export-summary-detail" class="sz-detail">
-                1920×1080 · 30 fps · H.264 · AAC 128k
-              </div>
-              <div class="sz-target">
-                <label for="sz-badge" class="sz-target-label">Target</label>
-                <span class="sz-badge-wrap"
-                  ><input
-                    class="badge"
-                    id="sz-badge"
-                    type="number"
-                    min="2"
-                    step="1"
-                    value="10"
+                <span class="sz-est">
+                  <input id="sz-badge" type="number" min="2" step="1" value="10"
                     data-action-change="encoding-badge-size"
-                    aria-label="Target size in megabytes"
-                  /><span class="badge" id="sz-unit">MB</span></span
-                >
+                    aria-label="Target size in megabytes" />
+                  <span id="sz-unit">MB</span>
+                </span>
                 <div class="pset" id="sz-presets"></div>
               </div>
               <input
@@ -701,9 +688,12 @@
                 data-action-input="encoding-target-size"
                 aria-label="Target size in megabytes"
                 aria-valuenow="10"
-                aria-valuemin="1"
+                aria-valuemin="2"
                 aria-valuemax="500"
               />
+              <div id="export-summary-detail" class="sz-detail">
+                1920&times;1080 &middot; 30 fps &middot; H.264 &middot; AAC 128k
+              </div>
             </div>
             <div class="stitle adjust-title">Adjust</div>
             <details class="adjust-panel" open>

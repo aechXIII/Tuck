@@ -172,18 +172,18 @@ test("the size panel shows only the chosen target, never a fabricated estimate",
   await page.setViewportSize({ width: 1240, height: 800 });
   await installFakeBackend(page, fixture);
   await page.goto("/");
-  await expect(page.locator("#export-summary-title")).toHaveText("10 MB");
+  await expect(page.locator("#sz-badge")).toHaveValue("10");
 
   await addVideo(page);
   await expect(page.locator("#sz-of")).toHaveCount(0);
   await expect(page.locator("#sz-meter")).toHaveCount(0);
   await expect(page.locator("#calc-br")).toHaveCount(0);
   // the plan response's wildly different estimate must never overwrite this
-  await expect(page.locator("#export-summary-title")).toHaveText("10 MB");
+  await expect(page.locator("#sz-badge")).toHaveValue("10");
 
   await page.locator("#sz-badge").fill("50");
   await page.locator("#sz-badge").dispatchEvent("change");
-  await expect(page.locator("#export-summary-title")).toHaveText("50 MB");
+  await expect(page.locator("#sz-badge")).toHaveValue("50");
 });
 
 test("a running job drives the queue bar count, progress, eta, and controls", async ({ page }) => {
@@ -355,4 +355,59 @@ test("the editor still renders when settings fail to load at startup", async ({ 
   await page.getByRole("button", { name: "Settings" }).click();
   await expect(page.getByRole("dialog", { name: "Settings" })).toBeVisible();
   expect(errors).toEqual([]);
+});
+
+test("target size edits inline and stays in sync with presets and slider", async ({ page }) => {
+  await page.setViewportSize({ width: 1240, height: 800 });
+  await installFakeBackend(page, exportFixture());
+  await page.goto("/");
+  await addVideo(page);
+  const size = page.locator("#sz-badge");
+  expect(await size.evaluate(el => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(24);
+  await size.fill("75");
+  await size.press("Enter");
+  await expect(page.locator("#sz-slider")).toHaveValue("75");
+  await size.fill("99");
+  await size.press("Escape");
+  await expect(size).toHaveValue("75");
+  await size.fill("1200");
+  await size.press("Tab");
+  await expect(page.locator("#sz-slider")).toHaveValue("1200");
+  await page.locator("#sz-presets").getByRole("button", { name: "200 MB", exact: true }).click();
+  await expect(size).toHaveValue("200");
+  await size.fill("1");
+  await size.press("Enter");
+  await expect(size).toHaveValue("200");
+});
+
+test("Inspector content keeps its right edge aligned while resizing", async ({ page }) => {
+  await page.setViewportSize({ width: 1240, height: 800 });
+  await installFakeBackend(page, exportFixture());
+  await page.goto("/");
+  await addVideo(page);
+  const edge = async (selector: string) => page.locator(selector).evaluate(el => el.getBoundingClientRect().right);
+  expect(Math.abs(await edge("#sz-grp") - await edge("#panel-toggle-inspector"))).toBeLessThanOrEqual(1);
+  await page.setViewportSize({ width: 960, height: 640 });
+  await expect(page.locator("#panel-toggle-inspector")).toHaveAttribute("aria-expanded", "false");
+  await page.locator("#panel-toggle-inspector").click();
+  await page.locator("#insp-tab-export").click();
+  for (const height of [640, 700, 780, 900, 1100, 780, 640]) {
+    await page.setViewportSize({ width: 960, height });
+    if (await page.locator("#panel-toggle-inspector").getAttribute("aria-expanded") === "false") {
+      await page.locator("#panel-toggle-inspector").click();
+    }
+    await page.evaluate(async () => {
+      await Promise.all(document.getAnimations().filter(a => a.effect?.getComputedTiming().iterations !== Infinity).map(a => a.finished.catch(() => {})));
+    });
+    const widths = await page.locator("#right-scroll").evaluate(async el => {
+      const values: number[] = [];
+      for (let i = 0; i < 12; i++) {
+        await new Promise(requestAnimationFrame);
+        values.push(el.clientWidth);
+      }
+      return values;
+    });
+    expect(new Set(widths.slice(4)).size).toBe(1);
+    expect(Math.abs(await edge("#sz-grp") - await edge("#panel-toggle-inspector"))).toBeLessThanOrEqual(1);
+  }
 });

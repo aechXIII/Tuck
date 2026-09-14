@@ -187,8 +187,11 @@ async fn open_storage_folder(
 ) -> Result<(), PublicBackendError> {
     let paths = state.request(BackendCommand::GetStoragePaths).await?;
     let path = storage_folder(paths, folder)?;
-    let opener = SystemOpener;
-    open_app_folder_with_validation(&path, &opener)
+    tauri::async_runtime::spawn_blocking(move || {
+        open_app_folder_with_validation(&path, &SystemOpener)
+    })
+    .await
+    .map_err(|_| PublicBackendError::new("INTERNAL_ERROR", "Could not open folder."))?
 }
 
 fn storage_folder(value: Value, folder: StorageFolder) -> Result<PathBuf, PublicBackendError> {

@@ -531,7 +531,7 @@ test("export controls have balanced insets and timeline text shares a baseline",
   expect(geometry.tabInsets.top).toBeCloseTo(geometry.tabInsets.bottom, 0);
   expect(geometry.rowGap).toBeGreaterThanOrEqual(8);
   for (const inset of geometry.modeInsets) expect(inset).toBeCloseTo(4, 0);
-  for (const [index, inset] of geometry.footerInsets.entries()) expect(inset).toBeCloseTo(index < 2 ? 12 : 22, 0);
+  for (const inset of geometry.footerInsets) expect(inset).toBeCloseTo(12, 0);
   const baselines = await page.evaluate(() => {
     const selectors = ['.timeline-tool-group[aria-label="Segment actions"] .timeline-tool-label', '#btn-seq-split .timeline-command-label', '.timeline-tool-group[aria-label="Audio actions"] .timeline-tool-label', '#audio-add .timeline-command-label'];
     return selectors.map(selector => {
@@ -548,7 +548,6 @@ test("export controls have balanced insets and timeline text shares a baseline",
   for (const baseline of baselines) expect(baseline).toBeCloseTo(firstBaseline, 0);
   await page.screenshot({ path: testInfo.outputPath("balanced-controls.png") });
 });
-
 
 test("preview icons retain their geometry through playback events", async ({ page }) => {
   await installFakeBackend(page, editorFixture());
@@ -591,7 +590,6 @@ test("custom export fields share edges and selected clips have matching handles"
   await page.screenshot({ path: testInfo.outputPath("aligned-fields-and-handles.png") });
 });
 
-
 test("export label centers across the split button and toolbar dividers are centered", async ({ page }) => {
   await page.setViewportSize({ width: 1240, height: 800 });
   await installFakeBackend(page, editorFixture());
@@ -622,7 +620,6 @@ test("export label centers across the split button and toolbar dividers are cent
   }
 });
 
-
 test("Audio cards and headings share the Inspector edges", async ({ page }) => {
   await installFakeBackend(page, editorFixture());
   await page.goto("/");
@@ -635,7 +632,6 @@ test("Audio cards and headings share the Inspector edges", async ({ page }) => {
   expect(edges[1]).toEqual(edges[0]);
   expect(edges[2]).toEqual(edges[0]);
 });
-
 
 test("panel edges stay aligned when scrollbars reserve no space", async ({ page }) => {
   await page.setViewportSize({ width: 1240, height: 800 });
@@ -650,7 +646,6 @@ test("panel edges stay aligned when scrollbars reserve no space", async ({ page 
       + Math.abs(rect(".clip").left - rect("#btn-add").left);
   })).toBeLessThan(1);
 });
-
 
 test("Inspector reserves scrollbar space without moving its controls", async ({ page }) => {
   await page.setViewportSize({ width: 1240, height: 900 });
@@ -672,7 +667,7 @@ test("Inspector reserves scrollbar space without moving its controls", async ({ 
   }).toBeLessThan(1);
   const gap = await page.evaluate(() => {
     const scroll = document.querySelector<HTMLElement>("#right-scroll")!;
-    return parseFloat(getComputedStyle(scroll).paddingRight);
+    return parseFloat(getComputedStyle(scroll).paddingRight) + scroll.offsetWidth - scroll.clientWidth;
   });
   expect(gap).toBeGreaterThanOrEqual(12);
   await page.setViewportSize({ width: 1240, height: 900 });
@@ -680,4 +675,13 @@ test("Inspector reserves scrollbar space without moving its controls", async ({ 
     const after = await measure();
     return Math.abs(after.left - before.left) + Math.abs(after.right - before.right);
   }).toBeLessThan(1);
+});
+
+test("editor suppresses browser context menus but keeps text editing menus", async ({ page }) => {
+  await installFakeBackend(page, editorFixture());
+  await page.goto("/");
+  const cancelled = await page.locator("#clips").evaluate(el => !el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })));
+  expect(cancelled).toBe(true);
+  const editingAllowed = await page.locator("#sz-badge").evaluate(el => el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })));
+  expect(editingAllowed).toBe(true);
 });

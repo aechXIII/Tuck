@@ -455,16 +455,19 @@ export function createLibrary(host: LibraryHost): LibraryApi {
     container.appendChild(div as unknown as Node);
   }
 
+  let renderedClipModels: string | null = null;
+
   function renderClips(): void {
     if (clipReorder.active) return;
     const keys = orderedClipKeys();
     const cdiv = byId("clips");
     const el = byId("drop-z");
     if (!cdiv || !el) return;
-    cdiv.replaceChildren(el);
     const removeAll = byId("btn-rmall");
     if (removeAll) removeAll.style.display = keys.length ? "block" : "none";
     if (!keys.length) {
+      renderedClipModels = null;
+      cdiv.replaceChildren(el);
       el.classList.add("show");
       updateLibrarySummary([]);
       host.updateActionButtons?.();
@@ -507,6 +510,14 @@ export function createLibrary(host: LibraryHost): LibraryApi {
           projectedMb > planTarget + 0.1,
       };
     });
+    const nextModels = JSON.stringify(models);
+    // keep hover transitions and keyboard focus intact when polling changes nothing
+    if (nextModels === renderedClipModels) {
+      host.updateActionButtons?.();
+      return;
+    }
+    renderedClipModels = nextModels;
+    cdiv.replaceChildren(el);
     const groups = groupClipModels(models);
     for (const group of groups) {
       const section = documentRef.createElement("section");

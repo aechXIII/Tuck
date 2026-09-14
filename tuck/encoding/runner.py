@@ -666,6 +666,8 @@ class FFmpegEngine:
         with self._lock:
             proc = subprocess.Popen(
                 cmd,
+                # only the sidecar may read requests from its stdin pipe
+                stdin=subprocess.DEVNULL,
                 # progress and diagnostics come from stderr; ffmpeg's stdout is
                 # unused, and an unread stdout pipe deadlocks a verbose encode
                 stdout=subprocess.DEVNULL,

@@ -720,7 +720,7 @@ body.workspace-overlay .panel-heading {
   overflow-anchor: none;
   padding: 0 12px 12px;
   scrollbar-width: auto;
-  scrollbar-gutter: auto;
+  scrollbar-gutter: stable;
 }
 #right-scroll::-webkit-scrollbar {
   width: var(--panel-scrollbar);
@@ -1356,23 +1356,10 @@ select {
   font-size: 14px;
   font-family: var(--mono);
 }
-#sz-badge {
-  width: 48px;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  color: var(--text);
-  text-align: right;
-}
 #sz-badge::-webkit-inner-spin-button,
 #sz-badge::-webkit-outer-spin-button {
   -webkit-appearance: none;
   margin: 0;
-}
-#sz-badge:focus {
-  outline: 0;
-  border-bottom: 1px solid var(--accent);
 }
 #sz-unit {
   margin-left: 3px;
@@ -2226,7 +2213,7 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
   --inspector-width: 344px;
   --panel-inset: 12px;
   --panel-scrollbar: 10px;
-  --inspector-content-inset: calc(var(--panel-inset) + var(--panel-scrollbar));
+  --inspector-content-inset: var(--panel-inset);
 }
 .panel-heading {
   display: none !important;

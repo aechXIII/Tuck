@@ -54,6 +54,8 @@ class ProgressTracker:
         self.pass_number = max(1, int(pass_number))
         if self.total_passes > 1:
             self.stage = EncodeStage.PASS_1 if self.pass_number == 1 else EncodeStage.PASS_2
+            if self.pass_number > 1:
+                self._last_percent = max(self._last_percent, 50.0)
         else:
             self.stage = EncodeStage.ENCODING
 
