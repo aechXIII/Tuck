@@ -21,43 +21,33 @@
 
 ---
 
-> [!NOTE]
-> **Microsoft Defender false positive resolved**
->
-> Microsoft reviewed Tuck 0.3.2 and the 0.3.3 release candidate and removed the false-positive cloud detection. Both files are classified as not malware.
->
-> If Defender still reports an older detection, open Windows Security, go to **Virus & threat protection > Protection updates**, and select **Check for updates**.
-
-Tuck is a desktop video editor, compressor, and upscaler built around FFmpeg.
-Trim clips, edit audio, crop or resize videos, and export to a chosen file size
-or resolution.
+Tuck is a simple video editor for Windows and Linux, built around FFmpeg.
+Trim clips, edit audio, crop or resize videos, and export to a file size or
+resolution you choose.
 
 <img src="docs/screenshots/Tuck_GUI.png" alt="Tuck editor">
 
 ## Download
 
-Tuck supports Windows 10 and 11 and x86-64 Linux through an AppImage. The AppImage bundles its Python backend and FFmpeg tools. It is GUI-only: Send To integration, a public command line, and hardware encoding are Windows-only. Both platforms install signed updates from inside the app.
+Tuck supports Windows 10 and 11 and x86-64 Linux. Both packages include FFmpeg and
+ffprobe and support signed updates from inside the app.
 
-1. Download the latest installer from the [Releases page](https://github.com/aechXIII/Tuck/releases/latest), then run it.
+Linux uses software encoding. Hardware encoding, File Explorer's **Send To** menu,
+and the command-line tools are available on Windows only.
 
-2. Install FFmpeg and FFprobe:
+### Windows
 
-   ```powershell
-   winget install --exact --id Gyan.FFmpeg
-   ```
+Download the Windows installer from the [Releases page](https://github.com/aechXIII/Tuck/releases/latest), run it, and open Tuck. FFmpeg and ffprobe are included; no separate installation is needed. Setup installs the WebView2 Runtime if it is missing, which requires an internet connection.
 
-3. Restart Tuck.
-
-If `winget` is unavailable, install a Windows build from the [FFmpeg download page](https://ffmpeg.org/download.html). Make `ffmpeg.exe` and `ffprobe.exe` available in `PATH` or select them under
-**Settings > System & support > Advanced system settings**.
+To use your own FFmpeg tools, select them in **Settings > System & support**.
 
 ### Linux AppImage
 
-Install for the current user (no root) with the one-liner, which also adds a
-desktop entry and can be re-run to update:
+Install Tuck and add it to the application menu with this command. It requires
+`curl`, `python3`, and `sha256sum`. No `sudo` needed. Run it again to update:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/aechXIii/Tuck/main/scripts/install-linux.sh | sh
+curl -fsSL https://raw.githubusercontent.com/aechXIII/Tuck/main/scripts/install-linux.sh | sh
 ```
 
 Or run the x86-64 AppImage directly after making it executable:
@@ -70,23 +60,17 @@ chmod +x Tuck-*-x86_64.AppImage
 When the AppImage file is writable the app updates in place. When it is not, it
 shows the release notes with a download link.
 
-The AppImage needs a desktop session with WebKitGTK 4.1. It bundles its own Python
-sidecar, FFmpeg/ffprobe, and the GStreamer plugins used for editor preview
-playback.
+The AppImage needs a Linux desktop session. It includes WebKitGTK, Python,
+FFmpeg/ffprobe, and the plugins used for video previews.
 
-- On distributions without `libfuse2` (Ubuntu 24.04 and newer, recent Fedora), run
-  it with `./Tuck_*.AppImage --appimage-extract-and-run` or install `libfuse2`.
-- Tuck forces WebKitGTK's portable renderer so it starts inside virtual machines
-  and on software OpenGL. Launch with `TUCK_WEBKIT_ACCELERATED=1 ./Tuck_*.AppImage`
-  for the full accelerated renderer, or `TUCK_WEBKIT_COMPOSITING=1 ./Tuck_*.AppImage`
-  to keep accelerated compositing (needed for `<video>` on some drivers) while
-  still avoiding the virtual-machine renderer crash.
-
-Build the AppImage natively on Ubuntu 22.04 with a desktop session available for the
-smoke test. It uses the bundled Python sidecar and FFmpeg/ffprobe, not system Python
-or FFmpeg. The build compiles FFmpeg from locked FFmpeg, x264, and x265 sources. The
-AppImage includes those exact source archives and the build recipe under
-`ffmpeg/source`.
+- If the AppImage reports that FUSE is missing, run
+  it with `./Tuck-*-x86_64.AppImage --appimage-extract-and-run` (or
+  `tuck --appimage-extract-and-run` after using the installer script).
+- If video previews stay blank, try launching with
+  `TUCK_WEBKIT_COMPOSITING=1 ./Tuck-*-x86_64.AppImage`.
+- Hardware-accelerated display is off by default for compatibility with virtual
+  machines. To enable it, launch with
+  `TUCK_WEBKIT_ACCELERATED=1 ./Tuck-*-x86_64.AppImage`.
 
 ## Features
 
@@ -95,8 +79,8 @@ AppImage includes those exact source archives and the build recipe under
 - **Crop and resize:** Crop directly in the preview, rotate in 90-degree steps, flip the
   picture horizontally or vertically, and choose **Fit**, **Fill**, or **Stretch** for the
   output frame.
-- **Compression and upscaling:** Compress to a chosen file-size limit, or upscale to 1440p, 4K, or a custom resolution. Built-in profiles cover [Discord's](https://support.discord.com/hc/en-us/articles/25444343291031-File-Attachments-FAQ) 20 MB, 50 MB, and 500 MB upload limits.
-- **Encoding queue:** Encode with FFmpeg using software or supported NVIDIA and AMD hardware. Queue multiple videos, reorder pending exports, cancel a pending or running export, and retry failed or cancelled exports.
+- **Compression and upscaling:** Compress to a chosen file-size limit, or upscale to 1440p, 4K, or a custom resolution. Choose a target-size preset of 20, 50, 200, or 500 MB, or enter your own limit.
+- **Encoding queue:** Queue multiple videos, reorder pending exports, cancel a pending or running export, and retry failed or cancelled exports. Use software encoding on either platform or supported NVIDIA and AMD hardware on Windows.
 - **Profiles and Windows integration:** Save reusable profiles, import or export profiles, drag videos into Tuck, and add Tuck or a specific profile to File Explorer's **Send To** menu.
 
 ## Use
@@ -105,7 +89,7 @@ AppImage includes those exact source archives and the build recipe under
 2. Make any timeline, audio, crop, or sizing changes.
 3. Choose **Compress** or **Upscale**, select a profile, and start the export.
 
-## Command line
+## Command line (Windows)
 
 The installer adds `tuck` to `PATH`. Open a new terminal after installing Tuck.
 
@@ -127,7 +111,13 @@ include the report in a [GitHub issue](https://github.com/aechXIII/Tuck/issues).
 
 ## Build from source
 
-Running Tuck from source needs Windows or Linux, Python 3.10 or newer, Node.js, Rust, and FFmpeg:
+Development needs Python 3.10 or newer, Node.js 20.19+ on the 20.x line or 22.12
+and newer, Rust, and FFmpeg/ffprobe. Windows also needs the MSVC build tools and
+WebView2; Linux needs the Tauri/WebKitGTK 4.1 development dependencies.
+
+### Windows
+
+Set up Python, install frontend dependencies, and start the editor:
 
 ```powershell
 .\scripts\setup.ps1
@@ -139,14 +129,32 @@ First [build the Windows media tools](packaging/windows-ffmpeg.md) from pinned
 sources using Ubuntu 22.04 or WSL. Then build the Windows installer:
 
 ```powershell
-.\scripts\build.ps1 -Clean
+.\scripts\build.ps1
 ```
 
-Build the x86-64 Linux AppImage natively on Ubuntu 22.04 with Python, Node.js, Rust, Tauri's Linux build dependencies, CMake, NASM, pkg-config, and a C/C++ compiler installed:
+### Linux
+
+Set up Python and frontend dependencies, then start the editor:
 
 ```bash
-./scripts/build-linux.sh --clean
+python3 -m venv .venv
+.venv/bin/python -m pip install -e '.[dev]'
+npm ci
+npm run tauri dev
 ```
+
+Build the x86-64 AppImage on Ubuntu 22.04. In addition to the development
+dependencies, install CMake, NASM, pkg-config, a C/C++ compiler, Xvfb, squashfs-tools,
+and the GStreamer tools and base/good/bad/libav plugins. The build script checks
+for required tools and runs the packaged smoke test.
+
+```bash
+./scripts/build-linux.sh
+```
+
+The Linux build compiles FFmpeg, x264, and x265 from pinned sources and includes
+the source archives and build recipe in the AppImage under `ffmpeg/source`.
+Windows releases provide a separate FFmpeg source archive alongside the installer.
 
 ## License
 

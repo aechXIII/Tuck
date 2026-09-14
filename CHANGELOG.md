@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.5.0] - 2026-09-14
+
+### Added
+
+- Linux support (AppImage)
+- Linux installer script
+
+### Changed
+
+- Updated editor layout
+- Bundled FFmpeg and ffprobe on Windows
+- Signed in-app updates on Windows and Linux
+- Estimated output sizes in Library
+- Updated quick size presets: 20, 50, 200, and 500 MB
+- Show exported files in their folder
+
+### Fixed
+
+- Repeated encoding when the output was already below the size limit
+- Editor freezing when changing export settings after an encode
+- Audio waveforms disappearing after edits or undo
+
 ## [0.4.0] - 2026-08-27
 
 ### Added
