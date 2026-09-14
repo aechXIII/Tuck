@@ -103,6 +103,9 @@ jobs:
 
   rust:
     name: Rust (${{ matrix.os }})
+    env:
+      # source tests use the development sidecar, not packaged resources
+      TAURI_CONFIG: '{"bundle":{"resources":[]}}'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false

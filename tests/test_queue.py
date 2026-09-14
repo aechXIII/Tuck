@@ -393,14 +393,14 @@ class TestQueueWorker:
         q = ProcessingQueue()
         entered = threading.Event()
         release = threading.Event()
-        original_reset = q._engine.reset_cancel
+        from tuck.queue import resolve_output_collision
 
-        def delayed_reset():
+        def delayed_output_path(path):
             entered.set()
-            release.wait(timeout=2)
-            original_reset()
+            assert release.wait(timeout=5)
+            return resolve_output_collision(path)
 
-        monkeypatch.setattr(q._engine, "reset_cancel", delayed_reset)
+        monkeypatch.setattr("tuck.queue.resolve_output_collision", delayed_output_path)
 
         def fake_encode(_plan, on_progress=None):
             if q._engine._cancel_event.is_set():

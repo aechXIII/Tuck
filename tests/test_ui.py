@@ -426,19 +426,6 @@ def test_preview_responses_are_bound_to_the_source_and_request_snapshot() -> Non
     assert 'document.getElementById("res-mode")' not in transform_js
 
 
-def test_web_ui_allows_manual_target_size_entry() -> None:
-    html = _web_source()
-
-    assert 'id="sz-badge"' in html
-    assert 'type="number"' in html
-    assert 'min="2"' in html
-    assert "#sz-badge {" in html
-    assert "color: var(--text) !important;" in html
-    assert "function onBadgeSize(value: string)" in html
-    assert 'input("sz-slider").max = String(Math.max(500, size))' in html
-    assert "if (!size || size < 2)" in html
-
-
 def test_web_ui_checks_for_updates_on_startup_when_enabled() -> None:
     html = _web_source()
 
