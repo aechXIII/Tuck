@@ -25,7 +25,8 @@ def video_info_dict(info: VideoInfo) -> dict[str, Any]:
         "coded_height": info.coded_height or info.height,
         "display_rotation": info.display_rotation,
         "resolution": info.resolution_str,
-        "fps": round(info.fps, 2),
+        "fps": round(info.fps, 3),
+        "variable_frame_rate": info.variable_frame_rate,
         "video_codec": info.video_codec,
         "audio_codec": info.audio_codec,
         "audio_channels": info.audio_channels,
@@ -68,6 +69,7 @@ def profile_ui_dict(
         "fps_mode": profile.fps_mode,
         "max_fps": profile.max_fps,
         "custom_fps": profile.custom_fps,
+        "frame_blending": profile.frame_blending.to_dict(),
         "rate_control": profile.rate_control,
         "explicit_bitrate_kbps": (
             round(profile.explicit_bitrate / 1000) if profile.explicit_bitrate else 0
@@ -118,6 +120,7 @@ def plan_preview_dict(plan: EncodePlan) -> dict[str, Any]:
         "target_width": plan.target_width,
         "target_height": plan.target_height,
         "target_fps": round(plan.target_fps, 2),
+        "frame_blending": plan.frame_blending.to_dict(),
         "video_bitrate_kbps": round(plan.video_bitrate / 1000),
         "audio_bitrate_kbps": round(plan.audio_bitrate / 1000),
         "copy_audio": plan.copy_audio,

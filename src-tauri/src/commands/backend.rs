@@ -292,4 +292,33 @@ mod tests {
         )
         .is_ok());
     }
+
+    #[test]
+    fn frame_blending_settings_reach_the_sidecar_unchanged() {
+        let request = json!({
+            "source": "clip.mp4",
+            "custom_fps": 29.97,
+            "frame_blending": {
+                "enabled": true,
+                "amount": 1.5,
+                "curve": "gaussian",
+                "sigma": 0.25,
+                "custom_weights": [1.0, 2.0, 1.0],
+                "linear_light": true
+            }
+        });
+        for command in [
+            BackendCommand::CreatePlan {
+                request: request.clone(),
+            },
+            BackendCommand::EnqueueWithOptions {
+                request: request.clone(),
+            },
+        ] {
+            let envelope = command
+                .to_sidecar_request("blend-1")
+                .expect("valid request");
+            assert_eq!(envelope["params"]["request"], request);
+        }
+    }
 }

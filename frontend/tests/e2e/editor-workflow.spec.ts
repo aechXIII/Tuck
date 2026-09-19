@@ -568,12 +568,13 @@ test("custom export fields share edges and selected clips have matching handles"
   await page.goto("/");
   await page.getByRole("button", { name: "Add videos" }).click();
   await page.locator("#export-res-select").selectOption({ label: "Custom…" });
+  await expect(page.getByLabel("Scaler algorithm")).toBeVisible();
   const geometry = await page.evaluate(() => {
     const rect = (s: string) => document.querySelector(s)!.getBoundingClientRect();
     const select = document.querySelector("#export-res-select")!;
     return {
       starts: [rect("#export-res-select").left, rect("#res-cust input").left, rect("#scaler-row select").left],
-      ends: [rect("#export-res-select").right, rect("#res-cust input:last-child").right, rect("#scaler-row select").right],
+      ends: [rect("#export-res-select").right, rect("#res-h").right, rect("#scaler-row select").right],
       arrow: getComputedStyle(select).backgroundPosition,
       selection: getComputedStyle(document.querySelector(".tl-segment.active .tl-segment-surface")!).boxShadow,
       handles: [".tl-segment.active .clip-edge.start", ".seq-audio-clip .clip-edge.start"].map(s => {
@@ -648,7 +649,7 @@ test("panel edges stay aligned when scrollbars reserve no space", async ({ page 
 });
 
 test("Inspector reserves scrollbar space without moving its controls", async ({ page }) => {
-  await page.setViewportSize({ width: 1240, height: 900 });
+  await page.setViewportSize({ width: 1240, height: 1100 });
   await installFakeBackend(page, editorFixture());
   await page.goto("/");
   await page.getByRole("button", { name: "Add videos" }).click();
@@ -670,7 +671,7 @@ test("Inspector reserves scrollbar space without moving its controls", async ({ 
     return parseFloat(getComputedStyle(scroll).paddingRight) + scroll.offsetWidth - scroll.clientWidth;
   });
   expect(gap).toBeGreaterThanOrEqual(12);
-  await page.setViewportSize({ width: 1240, height: 900 });
+  await page.setViewportSize({ width: 1240, height: 1100 });
   await expect.poll(async () => {
     const after = await measure();
     return Math.abs(after.left - before.left) + Math.abs(after.right - before.right);

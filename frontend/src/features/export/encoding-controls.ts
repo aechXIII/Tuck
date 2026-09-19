@@ -1,3 +1,4 @@
+import { installFrameBlending } from "./frame-blending.ts";
 import type { BackendClient } from "../../backend/types.ts";
 import { allProbesReady, isProbeReady } from "../../state/probe.ts";
 import * as InspectorUi from "../panels/inspector-ui.ts";
@@ -75,11 +76,9 @@ export interface EncodingControlsApi {
   onSize: (value: string) => void;
   onBadgeSize: (value: string) => void;
   onFpsSlider: (value: string) => void;
-  onUseSourceResolution: () => void;
   onResolutionGeometryChanged: () => void;
   onExportResolutionChoice: (value: string) => void;
   onExportFrameRateChoice: (value: string) => void;
-  onUseSourceFps: () => void;
   onKeepAudio: () => void;
   onEncChange: () => void;
   onSpeedChange: () => void;
@@ -123,6 +122,14 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
   const availEncoders = (): string[] => session.availEncoders;
   const appSettings = (): Record<string, unknown> => session.appSettings;
 
+  const blending = installFrameBlending(el("frame-blending-panel"), () => {
+    reqPreviewAndDirty();
+    updateActionButtons();
+  }, () => {
+    const source = Number(session.clips[session.selPath ?? ""]?.probeData?.fps) || 0;
+    return { source, output: input("use-source-fps").checked ? source : Math.min(source, Number(input("fps-val").value)) };
+  });
+
   function workflowName(): "compression" | "upscale" {
     return wf === 1 ? "upscale" : "compression";
   }
@@ -145,7 +152,6 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     el("sz-grp").classList.toggle("hid", up);
     input("two-pass").disabled = up;
     el("two-pass-wrap").classList.toggle("hid", up);
-    el("res-source-wrap").classList.toggle("hid", up);
     if (up) {
       select("two-pass").value = "off";
       input("use-source-res").checked = false;
@@ -190,14 +196,15 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     const one = el<HTMLButtonElement>("btn-one");
     const all = el<HTMLButtonElement>("btn-all");
     one.textContent = up ? "Upscale selected" : "Compress selected";
-    one.disabled = !selReady;
+    one.disabled = !selReady || !blending.valid() || !videoSettingsValid();
     all.textContent = (up ? "Upscale all" : "Compress all") + (count ? ` (${count})` : "");
-    all.disabled = !allReady;
+    all.disabled = !allReady || !blending.valid() || !videoSettingsValid();
     all.style.background = up ? "#2a2a3e" : "";
     syncExportSummary();
   }
 
   function syncExportSummary(): void {
+    blending.sync();
     const keepAudio = input("keep-audio").checked;
     const audioBitrateKbps = input("audio-br").value;
     const speed = select("speed-sel").value;
@@ -261,7 +268,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     return {
       width: data && data.width ? data.width : Number(input("res-w").value) || 1920,
       height: data && data.height ? data.height : Number(input("res-h").value) || 1080,
-      fps: data && data.fps ? Math.round(data.fps) : Number(input("fps-val").value) || 30,
+      fps: data && data.fps ? data.fps : Number(input("fps-val").value) || 30,
     };
   }
 
@@ -291,10 +298,8 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
         ? customFps
         : "custom";
     }
-    const nativeControls = el("export-native-video-controls");
-    nativeControls.classList.toggle("show-resolution", resolution.value === "custom");
-    nativeControls.classList.toggle("show-scaler", resolution.value !== "source");
-    nativeControls.classList.toggle("show-fps", frameRate.value === "custom");
+    el("res-cust").hidden = resolution.value !== "custom";
+    el("video-custom-fps").hidden = frameRate.value !== "custom";
     el("export-video-summary").textContent =
       resolution.value === "source" && frameRate.value === "source" ? "Source" : "Adjusted";
   }
@@ -311,7 +316,9 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     }
     if (isSource) syncResolutionToClip(true);
     onResMode();
+    updateActionButtons();
     syncExportVideoFacades();
+    if (value === "custom") { input("res-w").focus(); input("res-w").select(); }
   }
 
   function onExportFrameRateChoice(value: string): void {
@@ -320,9 +327,11 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     input("use-source-fps").checked = isSource;
     if (isSource) syncFpsToClip(true);
     else if (value !== "custom") onFpsSlider(value);
+    updateActionButtons();
     void reqPreview();
     updateDirty();
     syncExportVideoFacades();
+    if (value === "custom") { input("fps-slider").focus(); input("fps-slider").select(); }
   }
 
   async function loadSettings(): Promise<void> {
@@ -444,6 +453,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     for (const path of Object.keys(session.clips)) {
       applyProfileTransformToClip(p, session.clips[path], !!forceTransform);
     }
+    blending.apply(p.frame_blending);
     const sizeMb = Math.round((num(p.target_size_bytes) || 0) / (1024 * 1024));
     input("sz-slider").value = String(sizeMb);
     input("sz-badge").value = String(sizeMb);
@@ -456,17 +466,16 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     onResMode();
     const useSourceFps = p.fps_mode !== "custom";
     input("use-source-fps").checked = useSourceFps;
-    let fpsVal = Math.round(num(p.custom_fps) || num(p.max_fps) || 30);
+    let fpsVal = (num(p.custom_fps) || num(p.max_fps) || 30);
     const selClip = session.selPath ? session.clips[session.selPath] : undefined;
     const clipMax =
       selClip && selClip.probed
-        ? Math.round(num(selClip.probeData?.fps) || fpsVal)
+        ? (num(selClip.probeData?.fps) || fpsVal)
         : fpsVal;
     input("fps-slider").max = String(clipMax);
     if (fpsVal > clipMax) fpsVal = clipMax;
     input("fps-slider").value = String(fpsVal);
     input("fps-val").value = String(fpsVal);
-    el("fps-badge").textContent = `${fpsVal} fps`;
     onUseSourceFps();
     input("keep-audio").checked = !!p.keep_audio;
     input("audio-br").value = String(Math.round((num(p.audio_bitrate) || 128000) / 1000));
@@ -569,24 +578,32 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     }
   }
 
-  function onUseSourceResolution(): void {
-    el("export-res-select").dataset.explicitCustom = "";
-    input("res-mode").value = input("use-source-res").checked ? "source" : "custom";
-    if (input("use-source-res").checked) syncResolutionToClip(true);
-    onResMode();
+  function videoSettingsValid(): boolean {
+    let error = "";
+    if (!input("use-source-res").checked && (!input("res-w").validity.valid || !input("res-h").validity.valid)) {
+      error = "Enter a width and height of at least 2 pixels.";
+    } else if (!input("use-source-fps").checked && !input("fps-slider").validity.valid) {
+      error = `Enter an FPS from 0.1 to ${input("fps-slider").max || selectedSourceVideo().fps}.`;
+    }
+    el("video-error").textContent = error;
+    el("video-error").hidden = !error;
+    return !error;
   }
 
   function onResMode(): void {
     const isSource = input("res-mode").value === "source";
-    input("res-w").disabled = isSource;
-    input("res-h").disabled = isSource;
-    el("scaler-row").classList.toggle("hid", isSource);
+    select("scaler-sel").disabled = isSource;
     deps.paintCropOverlay();
     void reqPreview();
     updateDirty();
   }
 
   function onResolutionGeometryChanged(): void {
+    input("use-source-res").checked = false;
+    input("res-mode").value = "custom";
+    select("scaler-sel").disabled = false;
+    el("export-res-select").dataset.explicitCustom = "1";
+    updateActionButtons();
     deps.paintCropOverlay();
     void reqPreview();
     updateDirty();
@@ -610,9 +627,10 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
   }
 
   function onFpsSlider(value: string): void {
+    input("use-source-fps").checked = false;
     input("fps-val").value = value;
-    el("fps-badge").textContent = `${value} fps`;
-    input("fps-slider").setAttribute("aria-valuenow", value);
+    input("fps-slider").value = value;
+    updateActionButtons();
     void reqPreview();
     updateDirty();
   }
@@ -621,16 +639,15 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     const path = session.selPath;
     const clip = path ? session.clips[path] : undefined;
     if (!clip || !clip.probed || !clip.probeData) return;
-    const native = Math.round(Number(clip.probeData.fps)) || 30;
+    const native = Number(clip.probeData.fps) || 30;
     input("fps-slider").max = String(native);
     let cur =
       forceSourceValue || input("use-source-fps").checked
         ? native
-        : parseInt(input("fps-val").value, 10) || native;
+        : Number(input("fps-val").value) || native;
     if (cur > native) cur = native;
     input("fps-slider").value = String(cur);
     input("fps-val").value = String(cur);
-    el("fps-badge").textContent = `${cur} fps`;
   }
 
   function onKeepAudio(): void {
@@ -739,7 +756,8 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
       customHeight: parseInt(input("res-h").value, 10) || 0,
       scaler: select("scaler-sel").value,
       useSourceFps: input("use-source-fps").checked,
-      customFps: parseInt(input("fps-val").value, 10) || 0,
+      customFps: Number(input("fps-val").value),
+      frameBlending: blending.read(),
       keepAudio: input("keep-audio").checked,
       audioBitrateKbps: parseInt(input("audio-br").value, 10) || 0,
       twoPass: select("two-pass").value === "on",
@@ -792,6 +810,11 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     const path = session.selPath;
     const clip = path ? session.clips[path] : undefined;
     if (!clip || !clip.probed) return;
+    if (!videoSettingsValid()) {
+      clip.planData = null;
+      delete clip._previewRequestId;
+      return;
+    }
     const settingsKey = JSON.stringify(buildPlanRequest(readForm(), { source: "" }));
     if (settingsKey !== previewSettingsKey) {
       // export controls apply to every video, including plans still being calculated
@@ -809,6 +832,9 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     try {
       const r = await legacyBackendResult(client().createPlan(req as never));
       const data = r.data as Record<string, unknown> | undefined;
+      if (session.selPath === path && clip._previewRequestId === requestId) {
+        blending.setBackendError(r.ok ? "" : r.error ?? "Could not prepare these settings.");
+      }
       if (
         r.ok &&
         data &&
@@ -832,6 +858,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
   }
 
   async function compressOne(): Promise<void> {
+    if (!blending.reportValidity() || !videoSettingsValid()) return;
     const path = session.selPath;
     if (!path) {
       toast("Select a clip first.", "err");
@@ -849,6 +876,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
   }
 
   async function compressAll(): Promise<void> {
+    if (!blending.reportValidity() || !videoSettingsValid()) return;
     const keys = deps.orderedClipKeys();
     if (!keys.length) {
       toast("Add clips first.", "err");
@@ -889,6 +917,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
   }
 
   async function saveProfileChanges(): Promise<void> {
+    if (!blending.reportValidity() || !videoSettingsValid()) return;
     const pid = select("prof-sel").value;
     if (!pid) {
       toast("Select a profile.", "err");
@@ -937,6 +966,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
   }
 
   async function doSaveAs(): Promise<void> {
+    if (!blending.reportValidity() || !videoSettingsValid()) return;
     const name = (byId<HTMLInputElement>("sp-name")?.value ?? "").trim();
     if (!name) {
       toast("Enter a name.", "err");
@@ -959,6 +989,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     const checked = (id: string): boolean => byId<HTMLInputElement>(id)?.checked ?? false;
     return {
       pid: value("prof-sel"),
+      blending: JSON.stringify(blending.read()),
       size: value("sz-slider"),
       rm: value("res-mode"),
       rw: value("res-w"),
@@ -1058,11 +1089,9 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     onSize,
     onBadgeSize,
     onFpsSlider,
-    onUseSourceResolution,
     onResolutionGeometryChanged,
     onExportResolutionChoice,
     onExportFrameRateChoice,
-    onUseSourceFps,
     onKeepAudio,
     onEncChange,
     onSpeedChange,

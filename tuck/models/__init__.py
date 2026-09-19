@@ -131,6 +131,7 @@ from .encoding_policy import (
 from .encoding_policy import (
     validate_rate_control_matrix as validate_rate_control_matrix,
 )
+from .frame_blending import FrameBlending
 from .progress import EncodeProgress as EncodeProgress
 from .progress import EncodeStage as EncodeStage
 from .transforms import (
@@ -243,6 +244,13 @@ class VideoInfo:
     coded_width: int = 0
     coded_height: int = 0
     display_rotation: int = 0
+    variable_frame_rate: bool | None = None
+    sample_aspect_ratio: str = "1:1"
+    pixel_format: str = ""
+    color_transfer: str = "unknown"
+    color_space: str = "unknown"
+    color_primaries: str = "unknown"
+    color_range: str = "unknown"
 
     @property
     def resolution_str(self) -> str:
@@ -617,6 +625,7 @@ class PlanRequest:
 
     fps_mode: str | None = None
     custom_fps: float | None = None
+    frame_blending: FrameBlending | None = None
 
     rate_control: str | None = None
     explicit_bitrate: int | None = None
@@ -651,6 +660,8 @@ class PlanRequest:
     def validate(self) -> None:
         if self.resolution_mode is not None and self.resolution_mode not in VALID_RES_MODES:
             raise ValueError(f"Invalid resolution_mode: {self.resolution_mode!r}")
+        if self.frame_blending is not None and not isinstance(self.frame_blending, FrameBlending):
+            raise ValueError("frame_blending must be FrameBlending settings")
         if self.fps_mode is not None and self.fps_mode not in VALID_FPS_MODES:
             raise ValueError(f"Invalid fps_mode: {self.fps_mode!r}")
         if self.rate_control is not None and self.rate_control not in VALID_RC_MODES:
@@ -791,6 +802,7 @@ class EncodePlan:
     target_width: int = 0
     target_height: int = 0
     target_fps: float = 0.0
+    frame_blending: FrameBlending = field(default_factory=FrameBlending)
     video_bitrate: int = 0
     original_video_bitrate: int = 0
     resolution_mode: str = RES_MODE_SOURCE
@@ -875,6 +887,7 @@ class EncodePlan:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> EncodePlan:
         data = dict(data)
+        data["frame_blending"] = FrameBlending.from_dict(data.get("frame_blending", {}))
         info = data.pop("source_info", None)
         transform_data = data.pop("transform", None)
         segments_data = data.pop("segments", None)
@@ -969,6 +982,7 @@ class Profile:
     fps_mode: str = FPS_MODE_SOURCE
     max_fps: float = 30.0
     custom_fps: float = 30.0
+    frame_blending: FrameBlending = field(default_factory=FrameBlending)
 
     rate_control: str = RC_TARGET_SIZE
     explicit_bitrate: int = 0
@@ -1000,6 +1014,8 @@ class Profile:
     _ID_RE: ClassVar = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 
     def __post_init__(self) -> None:
+        if not isinstance(self.frame_blending, FrameBlending):
+            raise ValueError("frame_blending must be FrameBlending settings")
         if self.profile_id is None:
             self.profile_id = uuid.uuid4().hex[:12]
         elif not self.profile_id:
@@ -1027,6 +1043,7 @@ class Profile:
             "fps_mode": self.fps_mode,
             "max_fps": self.max_fps,
             "custom_fps": self.custom_fps,
+            "frame_blending": self.frame_blending.to_dict(),
             "rate_control": self.rate_control,
             "explicit_bitrate": self.explicit_bitrate,
             "scaler": self.scaler,
@@ -1096,6 +1113,7 @@ class Profile:
             fps_mode=merged.get("fps_mode", FPS_MODE_SOURCE),
             max_fps=merged.get("max_fps", 30.0),
             custom_fps=merged.get("custom_fps", 30.0),
+            frame_blending=FrameBlending.from_dict(merged.get("frame_blending", {})),
             rate_control=merged.get("rate_control", RC_TARGET_SIZE),
             explicit_bitrate=merged.get("explicit_bitrate", 0),
             scaler=merged.get("scaler", SCALER_NEIGHBOR),
@@ -1320,6 +1338,7 @@ _PROFILE_KNOWN = frozenset(
         "fps_mode",
         "max_fps",
         "custom_fps",
+        "frame_blending",
         "rate_control",
         "explicit_bitrate",
         "audio_bitrate",

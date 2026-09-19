@@ -205,7 +205,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         : "Source resolution";
     const fps =
       p.fps_mode === "custom"
-        ? `${Math.round(num(p.custom_fps) || num(p.max_fps) || 30)} FPS`
+        ? `${(num(p.custom_fps) || num(p.max_fps) || 30)} FPS`
         : "Source FPS";
     const audio = p.keep_audio
       ? "Keep audio"
@@ -378,8 +378,8 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       </label>
     </div>
     <div id="pe-fps-row" class="sl-row">
-      <input id="pe-fps-range" type="range" min="1" max="240" value="30" data-settings-input="profile-fps">
-      <input id="pe-fps" type="number" min="1" max="240" value="30" aria-label="Custom frame rate" data-settings-input="profile-fps">
+      <input id="pe-fps-range" type="range" step="0.001" min="0.1" max="240" value="30" data-settings-input="profile-fps">
+      <input id="pe-fps" type="number" step="any" min="0.1" max="240" value="30" aria-label="Custom frame rate" data-settings-input="profile-fps">
       <span>fps</span>
     </div>
   </div>`;
@@ -533,7 +533,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
   }
 
   function peSetFps(value: string | number): void {
-    const n = Math.max(1, Math.min(240, parseFloat(String(value)) || 30));
+    const n = Math.max(0.1, Math.min(240, parseFloat(String(value)) || 30));
     input("pe-fps").value = String(n);
     input("pe-fps-range").value = String(n);
   }
@@ -693,7 +693,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     }
     editorOriginal = (p as SettingsRecord | undefined) ?? {};
     const scaler = p ? String(p.scaler) : String(appSettings().default_scaler || "neighbor");
-    const fps = p ? Math.round(valueOr(num(p.custom_fps), valueOr(num(p.max_fps), 30))) : 30;
+    const fps = p ? (valueOr(num(p.custom_fps), valueOr(num(p.max_fps), 30))) : 30;
     input("pe-name").value = p ? p.name ?? "" : "";
     peSetSize(
       p ? Math.round(valueOr(num(p.target_size_bytes), 50 * 1024 * 1024) / (1024 * 1024)) : 50,

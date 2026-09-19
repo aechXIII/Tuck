@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+from fractions import Fraction
 from pathlib import Path
 
 from ..models import (
@@ -29,10 +31,20 @@ def fmt_ffmpeg_time(seconds: float) -> str:
     return f"{seconds:.3f}"
 
 
-def _segment_atrim(graph_parts: list[str], segment: Segment, label: str) -> None:
+def _segment_atrim(
+    graph_parts: list[str], segment: Segment, label: str, *, preserve_offset: bool = False
+) -> None:
     start = fmt_ffmpeg_time(segment.start)
     end = fmt_ffmpeg_time(segment.end)
-    graph_parts.append(f"[0:a]atrim=start={start}:end={end},asetpts=PTS-STARTPTS[{label}]")
+    if preserve_offset:
+        duration = fmt_ffmpeg_time(segment.duration)
+        graph_parts.append(
+            f"[0:a]atrim=start={start}:end={end},asetpts=PTS-{start}/TB,"
+            f"aresample=async=1:first_pts=0,apad=whole_dur={duration},"
+            f"atrim=duration={duration}[{label}]"
+        )
+    else:
+        graph_parts.append(f"[0:a]atrim=start={start}:end={end},asetpts=PTS-STARTPTS[{label}]")
 
 
 def _imported_clip_filters(
@@ -114,6 +126,7 @@ def build_base_cmd(
     source: Path,
     *,
     include_audio: bool = True,
+    prepared_video: Path | None = None,
 ) -> list[str]:
     # explicit progress records are flushed independently of console status output
     cmd = [ffmpeg, "-hide_banner", "-loglevel", "info", "-nostats", "-progress", "pipe:2"]
@@ -147,7 +160,12 @@ def build_base_cmd(
     )
     audio_filters_required = bool(imported_clips) or bool(
         source_audio_active
-        and (len(segments) > 1 or abs(plan.source_audio_gain_db) > 1e-9 or audio_independent)
+        and (
+            len(segments) > 1
+            or abs(plan.source_audio_gain_db) > 1e-9
+            or audio_independent
+            or prepared_video is not None
+        )
     )
     timeline_audio_edits = bool(
         plan.audio_enabled
@@ -157,7 +175,7 @@ def build_base_cmd(
             or (source_audio_active and audio_independent)
         )
     )
-    filtered_timeline = len(segments) > 1 or timeline_audio_edits
+    filtered_timeline = len(segments) > 1 or timeline_audio_edits or prepared_video is not None
 
     if not filtered_timeline and single_segment and trim_start > 0.001:
         cmd += ["-ss", fmt_ffmpeg_time(trim_start)]
@@ -166,6 +184,9 @@ def build_base_cmd(
     for track, clip in imported_clips:
         cmd += ["-i", clip.source]
         imported_inputs.append((len(imported_inputs) + 1, track, clip))
+
+    if prepared_video is not None:
+        cmd += ["-i", str(prepared_video)]
 
     if not filtered_timeline and (
         single_segment
@@ -182,57 +203,95 @@ def build_base_cmd(
         cmd += ["-t", fmt_ffmpeg_time(trim_duration)]
 
     filtered_audio = False
-    video_filters = build_plan_video_filters(plan)
+    video_filters = build_plan_video_filters(
+        plan if prepared_video is None else replace(plan, apply_fps_filter=False)
+    )
     if filtered_timeline:
         graph_parts: list[str] = []
-        video_inputs: list[str] = []
-        combined_source_concat = bool(
-            source_audio_active
-            and len(segments) > 1
-            and not imported_inputs
-            and abs(plan.source_audio_gain_db) <= 1e-9
-            and not audio_independent
-        )
-        source_audio_inputs: list[str] = []
-        for index, segment in enumerate(segments):
-            start = fmt_ffmpeg_time(segment.start)
-            end = fmt_ffmpeg_time(segment.end)
-            graph_parts.append(f"[0:v]trim=start={start}:end={end},setpts=PTS-STARTPTS[v{index}]")
-            video_inputs.append(f"[v{index}]")
-            if combined_source_concat:
-                _segment_atrim(graph_parts, segment, f"a{index}")
-                source_audio_inputs.append(f"[a{index}]")
-
-        if not video_inputs:
-            graph_parts.append("[0:v]setpts=PTS-STARTPTS[v0]")
-            video_inputs.append("[v0]")
-
-        if len(segments) > 1:
-            video_concat_output = "vcat" if video_filters else "vout"
-            if combined_source_concat:
-                concat_inputs = "".join(
-                    video_inputs[index] + source_audio_inputs[index]
-                    for index in range(len(video_inputs))
-                )
-                graph_parts.append(
-                    concat_inputs + f"concat=n={len(segments)}:v=1:a=1[{video_concat_output}][aout]"
-                )
-                filtered_audio = True
-            else:
-                graph_parts.append(
-                    "".join(video_inputs)
-                    + f"concat=n={len(segments)}:v=1:a=0[{video_concat_output}]"
-                )
-            if video_filters:
-                graph_parts.append(
-                    f"[{video_concat_output}]{join_video_filters(video_filters)}[vout]"
-                )
+        combined_source_concat = False
+        if prepared_video is not None:
+            info = plan.source_info
+            ratio = info.sample_aspect_ratio if info else "1:1"
+            sar = (
+                Fraction(ratio.replace(":", "/"))
+                if ratio not in {"N/A", "0:1", "", "unknown"}
+                else Fraction(1)
+            )
+            if not Fraction(1, 1_000_000) <= sar <= 1_000_000:
+                raise ValueError("Frame blending requires a supported positive sample aspect ratio")
+            if info and info.display_rotation in {90, 270}:
+                sar = 1 / sar
+            video_filters.insert(0, f"setsar={sar.numerator}/{sar.denominator}:max=1000000")
+            matrix = (
+                "bt709" if plan.source_info and plan.source_info.color_space == "bt709" else "bt601"
+            )
+            video_filters.append(f"scale=out_color_matrix={matrix}:out_range=tv")
+            info = plan.source_info
+            if info is not None:
+                tags = [
+                    f"colorspace={'bt709' if matrix == 'bt709' else 'smpte170m'}",
+                    "range=limited",
+                ]
+                if info.color_transfer not in {"unknown", "unspecified", ""}:
+                    tags.append(f"color_trc={info.color_transfer}")
+                if info.color_primaries not in {"unknown", "unspecified", ""}:
+                    tags.append(f"color_primaries={info.color_primaries}")
+                video_filters.append("setparams=" + ":".join(tags))
+            video_chain = join_video_filters(video_filters)
+            graph_parts.append(f"[{len(imported_inputs) + 1}:v]{video_chain}[vout]")
+            cmd += ["-t", fmt_ffmpeg_time(plan.effective_duration)]
         else:
-            source_label = "v0"
-            if video_filters:
-                graph_parts.append(f"[{source_label}]{join_video_filters(video_filters)}[vout]")
+            video_inputs: list[str] = []
+            combined_source_concat = bool(
+                source_audio_active
+                and len(segments) > 1
+                and not imported_inputs
+                and abs(plan.source_audio_gain_db) <= 1e-9
+                and not audio_independent
+            )
+            source_audio_inputs: list[str] = []
+            for index, segment in enumerate(segments):
+                start = fmt_ffmpeg_time(segment.start)
+                end = fmt_ffmpeg_time(segment.end)
+                graph_parts.append(
+                    f"[0:v]trim=start={start}:end={end},setpts=PTS-STARTPTS[v{index}]"
+                )
+                video_inputs.append(f"[v{index}]")
+                if combined_source_concat:
+                    _segment_atrim(graph_parts, segment, f"a{index}")
+                    source_audio_inputs.append(f"[a{index}]")
+
+            if not video_inputs:
+                graph_parts.append("[0:v]setpts=PTS-STARTPTS[v0]")
+                video_inputs.append("[v0]")
+
+            if len(segments) > 1:
+                video_concat_output = "vcat" if video_filters else "vout"
+                if combined_source_concat:
+                    concat_inputs = "".join(
+                        video_inputs[index] + source_audio_inputs[index]
+                        for index in range(len(video_inputs))
+                    )
+                    graph_parts.append(
+                        concat_inputs
+                        + f"concat=n={len(segments)}:v=1:a=1[{video_concat_output}][aout]"
+                    )
+                    filtered_audio = True
+                else:
+                    graph_parts.append(
+                        "".join(video_inputs)
+                        + f"concat=n={len(segments)}:v=1:a=0[{video_concat_output}]"
+                    )
+                if video_filters:
+                    graph_parts.append(
+                        f"[{video_concat_output}]{join_video_filters(video_filters)}[vout]"
+                    )
             else:
-                graph_parts.append(f"[{source_label}]null[vout]")
+                source_label = "v0"
+                if video_filters:
+                    graph_parts.append(f"[{source_label}]{join_video_filters(video_filters)}[vout]")
+                else:
+                    graph_parts.append(f"[{source_label}]null[vout]")
 
         mix_inputs: list[str] = []
         output_duration = fmt_ffmpeg_time(plan.effective_duration)
@@ -244,6 +303,10 @@ def build_base_cmd(
                         f"end={fmt_ffmpeg_time(piece.source_end)}",
                         "asetpts=PTS-STARTPTS",
                     ]
+                    if prepared_video is not None:
+                        # retain silence before delayed source audio on the shared video clock
+                        filters[-1] = f"asetpts=PTS-{fmt_ffmpeg_time(piece.source_start)}/TB"
+                        filters.append("aresample=async=1:first_pts=0")
                     if abs(plan.source_audio_gain_db) > 1e-9:
                         filters.append(f"volume={plan.source_audio_gain_db:.2f}dB")
                     filters.extend(
@@ -260,7 +323,12 @@ def build_base_cmd(
             else:
                 source_audio_inputs: list[str] = []
                 for index, segment in enumerate(segments):
-                    _segment_atrim(graph_parts, segment, f"sa{index}")
+                    _segment_atrim(
+                        graph_parts,
+                        segment,
+                        f"sa{index}",
+                        preserve_offset=prepared_video is not None,
+                    )
                     source_audio_inputs.append(f"[sa{index}]")
                 if not source_audio_inputs:
                     graph_parts.append("[0:a]asetpts=PTS-STARTPTS[sa0]")

@@ -74,7 +74,7 @@ export function exportSummary(state: InspectorExportState): {
 } {
   const width = Math.max(0, Math.round(Number(state.width) || 0));
   const height = Math.max(0, Math.round(Number(state.height) || 0));
-  const fps = Math.max(0, Math.round(Number(state.fps) || 0));
+  const fps = Math.max(0, Number(Number(state.fps || 0).toFixed(3)));
   return {
     title:
       state.workflow === "upscale"
@@ -104,10 +104,15 @@ export function resolutionChoices(
 ): ChoiceOption[] {
   const width = Math.max(0, Math.round(Number(sourceWidth) || 0));
   const height = Math.max(0, Math.round(Number(sourceHeight) || 0));
+  const shortSide = Math.min(width, height) || 1080;
+  const presets = [480, 720, 1080, 1440, 2160].map(size => {
+    const w = Math.max(2, Math.round(width * size / shortSide / 2) * 2);
+    const h = Math.max(2, Math.round(height * size / shortSide / 2) * 2);
+    return {value: `${w}x${h}`, label: `${w} × ${h}`};
+  });
   return [
-    { value: "source", label: "Source · " + width + "×" + height },
-    { value: "1920x1080", label: "1080p" },
-    { value: "2560x1440", label: "1440p" },
+    { value: "source", label: `Source · ${width} × ${height}` },
+    ...presets,
     { value: "custom", label: "Custom…" },
   ];
 }
@@ -127,11 +132,10 @@ export function resolutionDecision(value: string | null | undefined): Resolution
 }
 
 export function frameRateChoices(sourceFps: number): ChoiceOption[] {
-  const fps = Math.max(1, Math.round(Number(sourceFps) || 30));
+  const fps = Math.max(0.1, Math.round((Number(sourceFps) || 30) * 1000) / 1000);
   return [
-    { value: "source", label: "Source · " + fps + " fps" },
-    { value: "30", label: "30 fps" },
-    { value: "24", label: "24 fps" },
+    { value: "source", label: `Source · ${fps} FPS` },
+    ...[24, 30, 60, 120].map(value => ({value: String(value), label: `${value} FPS`})),
     { value: "custom", label: "Custom…" },
   ];
 }

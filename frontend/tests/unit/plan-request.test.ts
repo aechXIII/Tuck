@@ -176,3 +176,17 @@ test("profile payload omits transform intent when nothing touched it", () => {
   const data = buildProfilePayload(form(), { name: "P", currentProfile: null, clip: null });
   assert.ok(!("transform_intent" in data));
 });
+
+test("frame blending survives request and profile snapshots in both workflows", () => {
+  const frameBlending = {enabled:true,amount:1.5,curve:"gaussian",sigma:.3,peak:.5,power:1,
+    custom_weights:[1,2,1],linear_light:true};
+  for (const workflow of ["compression", "upscale"] as const) {
+    const values = form({workflow, frameBlending, useSourceFps:false, customFps:29.97});
+    const req = buildPlanRequest(values, {source:"s"});
+    assert.deepEqual(req.frame_blending, frameBlending);
+    assert.equal(req.custom_fps, 29.97);
+    const profile = buildProfilePayload(values, {name:"Blend", currentProfile:null, clip:null});
+    assert.deepEqual(profile.frame_blending, frameBlending);
+    assert.equal(profile.custom_fps, 29.97);
+  }
+});

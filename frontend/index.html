@@ -696,94 +696,63 @@
               </div>
             </div>
             <div class="stitle adjust-title">Adjust</div>
-            <details class="adjust-panel" open>
+            <details class="adjust-panel" id="export-video-panel" open>
               <summary><span>Video</span><span id="export-video-summary">Source</span></summary>
-              <div class="adjust-panel-body">
-                <div class="export-video-facades">
-                  <div class="export-setting-line">
-                    <label for="export-res-select">Resolution</label>
-                    <select
-                      id="export-res-select"
-                      data-action-change="encoding-resolution-facade"
-                      aria-label="Output resolution"
-                    ></select>
-                  </div>
-                  <div class="export-setting-line">
-                    <label for="export-fps-select">Frame rate</label>
-                    <select
-                      id="export-fps-select"
-                      data-action-change="encoding-frame-rate-facade"
-                      aria-label="Output frame rate"
-                    ></select>
+              <div class="adjust-panel-body export-video-body">
+                <div class="video-control-group">
+                  <label for="export-res-select">Resolution</label>
+                  <select id="export-res-select" data-action-change="encoding-resolution-facade" aria-label="Output resolution"></select>
+                  <div id="res-cust" class="video-dimensions" hidden>
+                    <label for="res-w">Width<input type="number" id="res-w" min="2" step="1" value="1920" aria-label="Custom width" data-action-input="encoding-resolution" required /></label>
+                    <span aria-hidden="true">×</span>
+                    <label for="res-h">Height<input type="number" id="res-h" min="2" step="1" value="1080" aria-label="Custom height" data-action-input="encoding-resolution" required /></label>
                   </div>
                 </div>
-                <div class="export-native-video-controls" id="export-native-video-controls">
-                  <label id="res-source-wrap">
-                    <input
-                      type="checkbox"
-                      id="use-source-res"
-                      checked
-                      data-action-change="encoding-source-resolution"
-                    />Source resolution
-                  </label>
-                  <input type="hidden" id="res-mode" value="source" />
-                  <div id="res-cust">
-                    <span class="export-custom-label">Custom</span>
-                    <input
-                      type="number"
-                      id="res-w"
-                      value="1920"
-                      aria-label="Custom width"
-                      data-action-change="encoding-resolution"
-                    />
-                    <input
-                      type="number"
-                      id="res-h"
-                      value="1080"
-                      aria-label="Custom height"
-                      data-action-change="encoding-resolution"
-                    />
+                <div class="video-control-group">
+                  <label for="export-fps-select">Frame rate</label>
+                  <div class="video-fps-controls">
+                    <select id="export-fps-select" data-action-change="encoding-frame-rate-facade" aria-label="Output frame rate"></select>
+                    <label id="video-custom-fps" class="video-fps-value" hidden><input type="number" id="fps-slider" step="any" min="0.1" value="30" data-action-input="encoding-frame-rate" aria-label="Target frame rate" required /><span>FPS</span></label>
                   </div>
-                  <div id="scaler-row">
-                    <label class="export-custom-label" for="scaler-sel">Scaler</label>
-                    <select
-                      id="scaler-sel"
-                      data-action-change="encoding-preview-dirty"
-                      aria-label="Scaler algorithm"
-                    >
-                      <option>Bilinear</option>
-                      <option>Bicubic</option>
-                      <option>Lanczos</option>
-                      <option>Point</option>
-                      <option selected>Neighbor</option>
+                </div>
+                  <div id="scaler-row" class="video-control-group">
+                    <label for="scaler-sel">Scaling</label>
+                    <select id="scaler-sel" data-action-change="encoding-preview-dirty" aria-label="Scaler algorithm">
+                      <option>Bilinear</option><option>Bicubic</option><option>Lanczos</option><option>Point</option><option selected>Neighbor</option>
                     </select>
                   </div>
-                  <label>
-                    <input
-                      type="checkbox"
-                      id="use-source-fps"
-                      checked
-                      data-action-change="encoding-source-fps"
-                    />Source frame rate
-                  </label>
-                  <div class="export-custom-fps-row">
-                    <label class="export-custom-fps-label" for="fps-slider">Custom fps</label>
-                    <span id="fps-badge">30 fps</span>
-                  </div>
-                  <input
-                    type="range"
-                    id="fps-slider"
-                    min="1"
-                    max="240"
-                    value="30"
-                    data-action-input="encoding-frame-rate"
-                    aria-label="Target frame rate"
-                    aria-valuenow="30"
-                    aria-valuemin="1"
-                    aria-valuemax="240"
-                  />
-                  <input type="hidden" id="fps-val" value="30" />
-                </div>
+                <p id="video-error" class="blend-error" role="alert" hidden></p>
+                <input type="checkbox" id="use-source-res" checked hidden />
+                <input type="hidden" id="res-mode" value="source" />
+                <input type="checkbox" id="use-source-fps" checked hidden />
+                <input type="hidden" id="fps-val" value="30" />
+              </div>
+            </details>
+            <details class="adjust-panel" id="frame-blending-panel">
+              <summary><span>Frame Blending</span><span id="blend-summary">Off</span></summary>
+              <div class="adjust-panel-body blend-body">
+                <label class="blend-check" for="blend-enabled"><input type="checkbox" id="blend-enabled" />Enable frame blending</label>
+                <fieldset id="blend-options" aria-label="Frame blending settings" disabled>
+                  <div class="export-setting-line"><label for="blend-amount">Blur amount</label><input type="number" id="blend-amount" min="0" max="4" step="any" value="1" required /></div>
+                  <div class="export-setting-line"><label for="blend-curve">Weighting</label><select id="blend-curve"><option value="equal">Equal</option><option value="vegas">Vegas</option><option value="gaussian">Gaussian</option><option value="triangular">Triangular</option><option value="ascending">Ascending</option><option value="descending">Descending</option></select></div>
+                  <figure class="blend-preview">
+                    <svg id="blend-chart" viewBox="0 0 256 48" preserveAspectRatio="none" role="img" aria-label="Weight preview, earlier to later"></svg>
+                    <figcaption><span>Earlier</span><span>Weight preview</span><span>Later</span></figcaption>
+                  </figure>
+                  <details class="blend-advanced">
+                    <summary>Advanced settings</summary>
+                    <div class="export-setting-line blend-curve-setting" hidden><label for="blend-sigma">Gaussian width</label><input type="number" id="blend-sigma" min="0.05" max="1" step="any" value="0.25" required title="Width relative to the exposure window: 0.05&ndash;1" /></div>
+                    <div class="export-setting-line blend-curve-setting" hidden><label for="blend-peak">Triangle peak</label><input type="number" id="blend-peak" min="0.05" max="0.95" step="any" value="0.5" required title="Peak position from earlier to later: 0.05&ndash;0.95" /></div>
+                    <div class="export-setting-line blend-curve-setting" hidden><label for="blend-power">Curve power</label><input type="number" id="blend-power" min="0.1" max="8" step="any" value="1" required title="Higher values emphasize the favored end: 0.1&ndash;8" /></div>
+                    <label class="blend-label" for="blend-weights">Custom weights <span>Optional</span></label>
+                    <input type="text" id="blend-weights" placeholder="e.g. 1, 2, 3, 2, 1" aria-describedby="blend-weights-help blend-error" />
+                    <p class="blend-help" id="blend-weights-help">Earlier to later. Up to 64 numbers, from 0 to 1000. Replaces weighting.</p>
+                    <label class="blend-check" for="blend-linear"><input type="checkbox" id="blend-linear" />Blend in linear light</label>
+                    <p class="blend-help">Brighter trails. Slower processing.</p>
+                  </details>
+
+                  <p id="blend-error" class="blend-error" role="alert" hidden></p>
+                </fieldset>
               </div>
             </details>
             <details class="adjust-panel">

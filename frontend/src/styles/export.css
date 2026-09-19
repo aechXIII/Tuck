@@ -355,11 +355,6 @@
   font-weight: 600;
   color: var(--muted);
 }
-.export-video-facades {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
 .export-setting-line {
   display: flex;
   align-items: center;
@@ -384,62 +379,20 @@
   color: var(--text);
   font-size: 10.5px;
 }
-.export-native-video-controls {
-  display: block;
-}
-.export-native-video-controls > * {
-  display: none !important;
-}
-.export-native-video-controls.show-resolution #res-cust {
-  display: grid !important;
-  grid-template-columns: 80px minmax(0, 1fr) minmax(0, 1fr);
-  align-items: center;
-  gap: 10px;
-  margin-top: 7px;
-}
-.export-native-video-controls.show-resolution #res-cust input {
-  min-width: 0;
-  height: 26px;
-  padding: 0 6px;
-  border-radius: 5px;
-  font-size: 11px;
-}
-.export-native-video-controls.show-scaler #scaler-row {
-  display: grid !important;
-  grid-template-columns: 80px minmax(0, 1fr);
-  align-items: center;
-  gap: 10px;
-  margin-top: 7px;
-}
-.export-native-video-controls.show-scaler #scaler-row select {
-  min-width: 0;
-  height: 26px;
-  padding: 0 6px;
-  border-radius: 5px;
-  font-size: 11px;
-}
-.export-custom-label,
-.export-custom-fps-label {
-  color: var(--muted);
-  font-size: 11.5px;
-}
-.export-native-video-controls.show-fps .export-custom-fps-row {
-  display: grid !important;
-  grid-template-columns: 1fr auto;
-  align-items: center;
-  gap: 8px;
-  margin: 7px 0 4px 90px;
-}
-.export-native-video-controls.show-fps #fps-badge {
-  display: inline !important;
-  color: var(--text);
-  font: 600 10.5px var(--mono);
-}
-.export-native-video-controls.show-fps #fps-slider {
-  display: block !important;
-  width: calc(100% - 90px);
-  margin-left: 90px;
-}
+.export-video-body { display: grid; gap: 8px; }
+.video-control-group { display: grid; grid-template-columns: 80px minmax(0, 1fr); gap: 8px 10px; align-items: center; min-width: 0; }
+.video-control-group > label { color: var(--text); font-size: 11px; }
+.video-control-group > select { width: 100%; }
+.video-dimensions { grid-column: 2; display: grid; grid-template-columns: minmax(0, 1fr) 12px minmax(0, 1fr); gap: 7px; align-items: end; }
+.video-dimensions label { display: grid; gap: 5px; font-size: 10px; color: var(--muted); min-width: 0; }
+.video-dimensions input { width: 100%; box-sizing: border-box; }
+.video-dimensions > span { align-self: end; line-height: 30px; color: var(--muted); text-align: center; }
+.video-fps-controls { display: grid; gap: 8px; min-width: 0; }
+.video-fps-value { display: flex; align-items: center; min-width: 0; background: var(--raised); border-radius: var(--r-ctl); padding-right: 8px; color: var(--muted); font-size: 10px; }
+.video-fps-value input { width: 100%; }
+.export-video-body :is(input[type="number"], select) { height: 28px; min-width: 0; }
+.export-video-body :is(input, select, summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.export-video-body [hidden] { display: none; }
 #right-foot {
   padding: var(--panel-inset) var(--inspector-content-inset);
   gap: 0;
@@ -525,3 +478,52 @@
 .settings-dialog select {
   padding-right: 30px;
 }
+
+.blend-body fieldset {
+  border: 0;
+  padding: 0;
+  margin: 12px 0 0;
+  min-width: 0;
+}
+.blend-body [hidden] { display: none; }
+.blend-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-size: 11px;
+  min-height: 26px;
+  cursor: pointer;
+}
+.blend-check input { accent-color: var(--accent); }
+.blend-help {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.55;
+  margin: 8px 0 12px;
+}
+.blend-advanced > summary {
+  color: var(--text);
+  font-size: 11px;
+  cursor: pointer;
+  padding-block: 5px;
+}
+.blend-advanced[open] > summary { margin-bottom: 8px; }
+.blend-curve-setting { margin-bottom: 12px; }
+.blend-label { display: block; color: var(--text); font-size: 11px; margin-bottom: 6px; }
+.blend-label span { color: var(--muted); margin-left: 6px; }
+#blend-weights { width: 100%; box-sizing: border-box; }
+.blend-error { color: var(--red); font-size: 11px; line-height: 1.5; }
+.blend-body :is(input, select, summary):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.blend-preview { margin: 12px 0 0; }
+#blend-chart { display: block; width: 100%; height: 48px; fill: var(--accent); }
+#blend-chart[data-disabled="true"] { fill: var(--muted); opacity: .4; }
+.blend-preview figcaption { display: flex; justify-content: space-between; color: var(--muted); font-size: 10px; margin-top: 4px; }
+.blend-body fieldset:disabled :is(input, select) { color: var(--muted); cursor: not-allowed; }
+.blend-body fieldset:disabled .blend-check { cursor: default; }
+
+#blend-options > .export-setting-line + .export-setting-line { margin-top: 10px; }

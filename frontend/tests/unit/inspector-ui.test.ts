@@ -51,24 +51,20 @@ test("size presets keep only the three approved quick decisions", () => {
 });
 
 test("export video facades preserve source and common output decisions", () => {
-  assert.deepEqual(inspectorUi.resolutionChoices(2560, 1440), [
-    { value: "source", label: "Source · 2560×1440" },
-    { value: "1920x1080", label: "1080p" },
-    { value: "2560x1440", label: "1440p" },
-    { value: "custom", label: "Custom…" },
-  ]);
+  const landscape = inspectorUi.resolutionChoices(2560, 1440);
+  assert.ok(landscape.some(option => option.value === "1280x720"));
+  assert.ok(landscape.some(option => option.value === "3840x2160"));
+  assert.equal(landscape[0]?.value, "source");
+  assert.ok(inspectorUi.resolutionChoices(1080, 1920).some(option => option.value === "720x1280"));
+  assert.ok(inspectorUi.resolutionChoices(3440, 1440).some(option => option.value === "2580x1080"));
   assert.deepEqual(inspectorUi.resolutionDecision("1920x1080"), {
     mode: "custom",
     width: 1920,
     height: 1080,
   });
   assert.deepEqual(inspectorUi.resolutionDecision("source"), { mode: "source" });
-  assert.deepEqual(inspectorUi.frameRateChoices(60), [
-    { value: "source", label: "Source · 60 fps" },
-    { value: "30", label: "30 fps" },
-    { value: "24", label: "24 fps" },
-    { value: "custom", label: "Custom…" },
-  ]);
+  const fps = inspectorUi.frameRateChoices(60);
+  assert.deepEqual(fps.map(option => option.value), ["source", "24", "30", "60", "120", "custom"]);
 });
 
 test("upscale summary describes the output without inventing a target size", () => {

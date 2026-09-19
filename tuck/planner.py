@@ -262,6 +262,16 @@ def plan(
     else:
         raise ValueError(f"Unknown fps_mode: {fps_mode!r}")
 
+    blending = (
+        request.frame_blending
+        if request and request.frame_blending is not None
+        else profile.frame_blending
+    )
+    if blending.enabled:
+        from .encoding.frame_blending import validate_blending_source
+
+        validate_blending_source(blending, info, target_fps)
+
     if target_fps <= 0:
         raise ValueError("Target FPS is zero")
 
@@ -281,7 +291,12 @@ def plan(
     )
     audio_filters_required = imported_audio or (
         source_audio
-        and (len(segments) > 1 or abs(source_audio_gain_db) > 1e-9 or audio_independent)
+        and (
+            len(segments) > 1
+            or abs(source_audio_gain_db) > 1e-9
+            or audio_independent
+            or blending.enabled
+        )
     )
 
     copy_audio = False
@@ -357,6 +372,7 @@ def plan(
         target_width=target_w,
         target_height=target_h,
         target_fps=target_fps,
+        frame_blending=blending,
         video_bitrate=video_br,
         original_video_bitrate=video_br,
         resolution_mode=res_mode,

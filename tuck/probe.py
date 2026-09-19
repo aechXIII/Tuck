@@ -173,7 +173,20 @@ def probe(source: str | Path) -> VideoInfo:
         audio_stream
     )
 
+    nominal_fps = _fps_from_ratio(str(video_stream.get("r_frame_rate", "")))
+    average_fps = _fps_from_ratio(str(video_stream.get("avg_frame_rate", "")))
+    variable_frame_rate = (
+        True if nominal_fps and average_fps and abs(nominal_fps - average_fps) > 0.001 else None
+    )
+
     return VideoInfo(
+        variable_frame_rate=variable_frame_rate,
+        sample_aspect_ratio=video_stream.get("sample_aspect_ratio", "1:1"),
+        pixel_format=video_stream.get("pix_fmt", ""),
+        color_transfer=video_stream.get("color_transfer", "unknown"),
+        color_space=video_stream.get("color_space", "unknown"),
+        color_primaries=video_stream.get("color_primaries", "unknown"),
+        color_range=video_stream.get("color_range", "unknown"),
         path=str(source),
         duration=duration,
         width=width,

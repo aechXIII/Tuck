@@ -506,6 +506,7 @@ export function installEditorRuntime(
         },
       },
       input: {
+        "encoding-resolution": () => encoding.onResolutionGeometryChanged(),
         "player-scrub": (target) => player.onStageScrub((target as HTMLInputElement).value),
         "player-volume": (target) => player.setVol((target as HTMLInputElement).value),
         "encoding-target-size": (target) =>
@@ -519,12 +520,9 @@ export function installEditorRuntime(
         "encoding-profile": () => encoding.onProfileChange(),
         "encoding-badge-size": (target) =>
           encoding.onBadgeSize((target as HTMLInputElement).value),
-        "encoding-source-resolution": () => encoding.onUseSourceResolution(),
-        "encoding-resolution": () => encoding.onResolutionGeometryChanged(),
         "encoding-resolution-facade": (target) =>
           encoding.onExportResolutionChoice((target as HTMLSelectElement).value),
         "encoding-preview-dirty": () => encoding.reqPreviewAndDirty(),
-        "encoding-source-fps": () => encoding.onUseSourceFps(),
         "encoding-frame-rate-facade": (target) =>
           encoding.onExportFrameRateChoice((target as HTMLSelectElement).value),
         "encoding-keep-audio": () => encoding.onKeepAudio(),

@@ -1,3 +1,4 @@
+import type { FrameBlendingSettings } from "./frame-blending.ts";
 import type { CropTransform } from "../transform/crop-geometry.ts";
 import {
   defaultRateControl,
@@ -19,6 +20,7 @@ export interface ExportFormState {
   scaler: string;
   useSourceFps: boolean;
   customFps: number;
+  frameBlending?: FrameBlendingSettings;
   keepAudio: boolean;
   audioBitrateKbps: number;
   twoPass: boolean;
@@ -102,8 +104,9 @@ export function buildPlanRequest(
   if (form.useSourceFps) req.fps_mode = "source";
   else {
     req.fps_mode = "custom";
-    req.custom_fps = toInt(form.customFps);
+    req.custom_fps = form.customFps;
   }
+  if (form.frameBlending) req.frame_blending = form.frameBlending;
   req.keep_audio = form.keepAudio;
   if (!form.keepAudio) req.audio_bitrate = toInt(form.audioBitrateKbps) * 1000;
   req.two_pass = !up && form.twoPass;
@@ -156,8 +159,8 @@ export function buildProfilePayload(
     max_width: toInt(form.customWidth),
     max_height: toInt(form.customHeight),
     fps_mode: form.useSourceFps ? "source" : "custom",
-    custom_fps: toInt(form.customFps),
-    max_fps: toInt(form.customFps),
+    custom_fps: form.customFps,
+    max_fps: form.customFps,
     rate_control: up && isBr ? "explicit_bitrate" : "target_size",
     audio_bitrate_kbps: toInt(form.audioBitrateKbps),
     keep_audio: form.keepAudio,
@@ -171,6 +174,7 @@ export function buildProfilePayload(
     qp: rc === "cqp" ? quality : numberOr(current.qp, 23),
     crf: rc === "crf" ? quality : numberOr(current.crf, 23),
   };
+  if (form.frameBlending) data.frame_blending = form.frameBlending;
   const clip = ctx.clip;
   if (current.transform_intent || (clip && clip.transformIntentTouched)) {
     data.transform_intent = {

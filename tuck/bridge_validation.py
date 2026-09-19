@@ -20,6 +20,7 @@ from .models.encoding_policy import (
     validate_rc_method_for_encoder,
     validate_tune_for_encoder,
 )
+from .models.frame_blending import FrameBlending
 
 VIDEO_EXTENSIONS = frozenset({".mp4", ".mkv", ".webm", ".mov", ".avi", ".wmv", ".flv", ".m4v"})
 AUDIO_EXTENSIONS = frozenset(
@@ -184,6 +185,9 @@ def parse_plan_request(
         custom_height=_opt_int(raw, "custom_height"),
         fps_mode=_opt_str(raw, "fps_mode"),
         custom_fps=_opt_float(raw, "custom_fps"),
+        frame_blending=(
+            FrameBlending.from_dict(raw["frame_blending"]) if "frame_blending" in raw else None
+        ),
         rate_control=_opt_str(raw, "rate_control"),
         explicit_bitrate=_opt_int(raw, "explicit_bitrate"),
         audio_bitrate=_opt_int(raw, "audio_bitrate"),

@@ -5,6 +5,7 @@ import copy
 import logging
 import os
 import subprocess
+import tempfile
 import threading
 import time
 from collections.abc import Callable
@@ -37,6 +38,9 @@ from .capabilities import (
     is_hardware_init_failure,
 )
 from .command import build_base_cmd
+
+# load native array libraries before sidecar workers block on Windows stdio
+from .frame_blending import prepare_blended_video
 from .progress import ProgressTracker
 from .target_size import DEFAULT_MAX_RETRIES, decide_retry, is_content_limited
 
@@ -103,6 +107,7 @@ class FFmpegEngine:
         self._lock = threading.Lock()
         self._last_stderr: str = ""
         self._resolved_encoder: str = ""
+        self._prepared_video: Path | None = None
 
     @property
     def last_stderr(self) -> str:
@@ -259,15 +264,36 @@ class FFmpegEngine:
         if total_duration <= 0 and plan.source_info is not None:
             total_duration = float(plan.source_info.duration or 0)
 
-        if self._cancel_event.is_set():
-            raise EncodeCancelled("Encoding cancelled by user")
-
         if not plan.original_video_bitrate:
             plan.original_video_bitrate = plan.video_bitrate
 
         tmp_output = output.parent / f".tmp_{output.stem}_{os.getpid()}.mp4"
 
+        blend_directory: tempfile.TemporaryDirectory | None = None
         try:
+            if self._cancel_event.is_set():
+                raise EncodeCancelled("Encoding cancelled by user")
+            if plan.frame_blending.enabled:
+                blend_directory = tempfile.TemporaryDirectory(
+                    prefix=".tuck-blend-", dir=output.parent
+                )
+                self._prepared_video = Path(blend_directory.name) / "video.nut"
+
+                def check_cancel() -> None:
+                    if self._cancel_event.is_set():
+                        raise EncodeCancelled("Encoding cancelled by user")
+
+                def blend_progress(fraction: float) -> None:
+                    _emit(
+                        on_progress,
+                        EncodeProgress(
+                            percent=0.0,
+                            stage=EncodeStage.PREPARING,
+                            message=f"Blending source frames ({fraction:.0%})",
+                        ),
+                    )
+
+                prepare_blended_video(plan, self._prepared_video, check_cancel, blend_progress)
             result = self._run_candidates(
                 candidates,
                 was_auto,
@@ -300,6 +326,10 @@ class FFmpegEngine:
         except Exception as exc:
             self._abort_encode(tmp_output, reservation, on_progress, EncodeStage.FAILED, str(exc))
             raise
+        finally:
+            self._prepared_video = None
+            if blend_directory is not None:
+                blend_directory.cleanup()
 
     def _abort_encode(
         self,
@@ -559,7 +589,9 @@ class FFmpegEngine:
 
         try:
             pass1_cmd = [
-                *build_base_cmd(ffmpeg, plan, source, include_audio=False),
+                *build_base_cmd(
+                    ffmpeg, plan, source, include_audio=False, prepared_video=self._prepared_video
+                ),
                 "-pass",
                 "1",
                 "-passlogfile",
@@ -584,7 +616,7 @@ class FFmpegEngine:
                 raise EncodeCancelled("Encoding cancelled by user")
 
             pass2_cmd = [
-                *build_base_cmd(ffmpeg, plan, source),
+                *build_base_cmd(ffmpeg, plan, source, prepared_video=self._prepared_video),
                 "-pass",
                 "2",
                 "-passlogfile",
@@ -623,7 +655,7 @@ class FFmpegEngine:
         max_retries: int | None = None,
     ) -> Path:
         cmd = [
-            *build_base_cmd(ffmpeg, plan, source),
+            *build_base_cmd(ffmpeg, plan, source, prepared_video=self._prepared_video),
             str(output),
         ]
 
