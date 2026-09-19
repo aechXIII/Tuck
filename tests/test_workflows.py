@@ -72,6 +72,13 @@ def test_linux_runners_install_ffmpeg_for_the_test_suite() -> None:
     assert "apt-get install -y ffmpeg" in _read(TESTS_YML)
 
 
+def test_frontend_job_installs_ffmpeg_before_rendered_tests() -> None:
+    frontend = _jobs(_read(TESTS_YML))["frontend"]
+    assert "choco install ffmpeg --yes --no-progress" in frontend
+    assert "apt-get install -y ffmpeg" in frontend
+    assert frontend.index("ffmpeg -version") < frontend.index("npm run test:e2e")
+
+
 # --- test coverage across both supported OSes -------------------------------
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import io
 import json
 from pathlib import Path
 
@@ -52,6 +53,29 @@ def test_changed_recipe_is_rejected(tmp_path):
     recipe.write_text("exit 0\n")
     with pytest.raises(module.BuildError, match=r"SHA-256|size"):
         module.verify_file(recipe, lock["recipe"])
+
+
+def test_download_retries_a_truncated_response(tmp_path, monkeypatch):
+    module = builder()
+    content = b"verified source archive"
+    record = {
+        "filename": "source.tar.gz",
+        "url": "https://example.test/source.tar.gz",
+        "size_bytes": len(content),
+        "sha256": hashlib.sha256(content).hexdigest(),
+    }
+    responses = iter((io.BytesIO(content[:-1]), io.BytesIO(content)))
+    calls = 0
+
+    def open_source(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        return next(responses)
+
+    monkeypatch.setattr(module, "urlopen", open_source)
+
+    assert module.download(record, tmp_path).read_bytes() == content
+    assert calls == 2
 
 
 def test_unsafe_source_member_is_rejected(tmp_path):

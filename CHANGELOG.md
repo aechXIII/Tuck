@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.5.2] - 2026-09-19
+
+### Added
+
+- Frame blending
+- Color LUT support
+
+### Changed
+
+- Updated resolution and frame rate controls
+- Replaced checkboxes with toggles
+
+### Fixed
+
+- Clips dropping in the wrong position in Library
+- Preview freezing when scrubbing through videos
+- Incorrect rotation in some videos
+
 ## [0.5.1] - 2026-09-14
 
 - Fixed an arrow

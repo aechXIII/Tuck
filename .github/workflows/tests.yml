@@ -89,6 +89,19 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install FFmpeg (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          choco install ffmpeg --yes --no-progress
+          ffmpeg -version
+
+      - name: Install FFmpeg (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          ffmpeg -version
+
       - name: Typecheck
         run: npm run typecheck
 

@@ -21,6 +21,7 @@ LOCK_PATH = ROOT / "packaging/ffmpeg-sources.lock.json"
 BUILD = ROOT / "build/windows-ffmpeg"
 SOURCE_BUNDLE = "Tuck-FFmpeg-Windows-Sources.tar.xz"
 REQUIRED_SOURCES = {"ffmpeg", "x264", "x265", "nv-codec-headers", "amf", "zlib", "dav1d"}
+DOWNLOAD_ATTEMPTS = 3
 
 
 class BuildError(RuntimeError):
@@ -90,13 +91,23 @@ def download(record: dict, cache: Path) -> Path:
     print(f"Downloading {record['filename']}", flush=True)
     temporary = target.with_suffix(target.suffix + ".tmp")
     try:
-        with urlopen(record["url"], timeout=120) as response, temporary.open("wb") as output:
-            shutil.copyfileobj(response, output)
-        verify_file(temporary, record)
-        temporary.replace(target)
+        for attempt in range(DOWNLOAD_ATTEMPTS):
+            try:
+                with (
+                    urlopen(record["url"], timeout=120) as response,
+                    temporary.open("wb") as output,
+                ):
+                    shutil.copyfileobj(response, output)
+                verify_file(temporary, record)
+                temporary.replace(target)
+                return target
+            except (BuildError, OSError):
+                temporary.unlink(missing_ok=True)
+                if attempt + 1 == DOWNLOAD_ATTEMPTS:
+                    raise
+                print(f"Retrying {record['filename']}", flush=True)
     finally:
         temporary.unlink(missing_ok=True)
-    return target
 
 
 def extract_source(path: Path, root: str, destination: Path) -> None:
