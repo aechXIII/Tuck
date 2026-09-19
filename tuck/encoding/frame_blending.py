@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import time
 from collections import deque
 from collections.abc import Callable, Generator, Iterator
 from fractions import Fraction
@@ -45,6 +46,8 @@ SUPPORTED_TRANSFERS = frozenset(
 def validate_blending_source(settings: FrameBlending, info: VideoInfo, fps: float) -> None:
     if not settings.enabled:
         return
+    if math.isfinite(fps) and fps > 240:
+        raise ValueError("Frame blending supports up to 240 FPS. Choose a lower output frame rate.")
     if not math.isfinite(fps) or not 0.1 <= fps <= 240:
         raise ValueError("Frame blending requires an output frame rate between 0.1 and 240 FPS")
     if settings.curve == "vegas" and not settings.custom_weights:
@@ -154,7 +157,8 @@ def _source_frames(
                     dtype=np.uint8,
                 )
             if info.display_rotation:
-                pixels = np.ascontiguousarray(np.rot90(pixels, -(info.display_rotation // 90)))
+                # display matrix angles are counterclockwise, matching FFmpeg autorotation
+                pixels = np.ascontiguousarray(np.rot90(pixels, info.display_rotation // 90))
             if pixels.shape[:2] != (info.height, info.width):
                 raise ValueError("Frame blending does not support changing video dimensions")
             previous = timestamp
@@ -290,6 +294,7 @@ def prepare_blended_video(
         stream.pix_fmt = "bgr0"
         stream.time_base = 1 / fps
         stream.codec_context.thread_count = 2
+        last_progress = time.monotonic()
         for index, pixels in enumerate(blended_frames(plan, check_cancel)):
             frame = av.VideoFrame.from_ndarray(pixels, format="rgb24")
             frame.pts, frame.time_base = index, 1 / fps
@@ -299,11 +304,15 @@ def prepare_blended_video(
                 raise ValueError(
                     "Frame blending temporary video exceeds 16 GiB; export a shorter selection"
                 )
-            if index % max(1, round(float(fps))) == 0:
-                progress(min(1, float(index / fps) / plan.effective_duration))
+            now = time.monotonic()
+            fraction = float((index + 1) / fps) / plan.effective_duration
+            if fraction < 1 and (index == 0 or now - last_progress >= 0.25):
+                progress(fraction)
+                last_progress = now
         for packet in stream.encode():
             output.mux(packet)
     if destination.stat().st_size > MAX_TEMP_BYTES:
         raise ValueError(
             "Frame blending temporary video exceeds 16 GiB; export a shorter selection"
         )
+    progress(1.0)

@@ -1,0 +1,55 @@
+import {expect, test} from "@playwright/test";
+import {healthyBackendFixture, installFakeBackend} from "../fixtures/fake-backend";
+
+for (const width of [1240, 960]) {
+  test(`export effects match Video controls at ${width}`, async ({page}) => {
+    await page.setViewportSize({width,height:width === 960 ? 640 : 800});
+    await page.emulateMedia({reducedMotion:"reduce"});
+    await installFakeBackend(page, healthyBackendFixture());
+    await page.goto("/");
+    if (width === 960) await page.getByRole("button",{name:"Inspector",exact:true}).click();
+    await page.locator("#frame-blending-panel > summary").click();
+    await page.getByLabel("Enable frame blending",{exact:true}).check();
+    await page.getByLabel("Weighting",{exact:true}).selectOption("gaussian");
+    await page.getByText("Advanced settings",{exact:true}).click();
+    await page.locator("#lut-panel > summary").click();
+    await page.locator(".adjust-panel > summary").filter({has: page.locator("#export-audio-summary")}).click();
+    const metrics = await page.evaluate(() => {
+      const measure = (selector: string) => {
+        const element = document.querySelector<HTMLElement>(selector)!;
+        const style = getComputedStyle(element);
+        const bounds = element.getBoundingClientRect();
+        return {left:bounds.left,right:bounds.right,height:bounds.height,radius:style.borderRadius,font:style.fontFamily,size:style.fontSize,color:style.color};
+      };
+      return {
+        label:measure('label[for="export-res-select"]'),
+        labels:['blend-amount','blend-curve','blend-sigma','lut-strength'].map(id=>measure(`label[for="${id}"]`)),
+        input:measure('#export-fps-select'),
+        inputs:['blend-fps-select','blend-amount','blend-curve','blend-sigma'].map(id=>measure(`#${id}`)),
+        checks:['blend-enabled','blend-linear','lut-enabled'].map(id=>measure(`#${id}`)),
+        picker:measure('#lut-name'),
+        pickerRow:measure('.lut-file-row'),
+        audio:measure('#audio-br'),
+      };
+    });
+    for (const label of metrics.labels) {
+      expect(label.left).toBeCloseTo(metrics.label.left, 0);
+      expect([label.font,label.size,label.color]).toEqual([metrics.label.font,metrics.label.size,metrics.label.color]);
+    }
+    for (const input of metrics.inputs) {
+      expect(input.left).toBeCloseTo(metrics.input.left, 0);
+      expect([input.height,input.font,input.size]).toEqual([metrics.input.height,metrics.input.font,metrics.input.size]);
+    }
+    for (const checkbox of metrics.checks) expect(checkbox.left).toBeCloseTo(metrics.label.left, 0);
+    await page.locator('#frame-blending-panel > summary').click();
+    await page.locator('#audio-br').scrollIntoViewIfNeeded();
+    await page.screenshot({path:`frontend/.scratch/lut-audio-alignment-${width}.png`});
+    expect(metrics.pickerRow.left).toBeCloseTo(metrics.audio.left, 0);
+    expect(metrics.pickerRow.right).toBeCloseTo(metrics.audio.right, 0);
+    expect(metrics.pickerRow.radius).toEqual(metrics.audio.radius);
+    expect(metrics.picker.height).toEqual(metrics.audio.height);
+    await page.locator('#frame-blending-panel').screenshot({path:`frontend/.scratch/effects-alignment-blend-${width}.png`});
+    await page.locator('#lut-panel').screenshot({path:`frontend/.scratch/effects-alignment-lut-${width}.png`});
+    await page.screenshot({path:`frontend/.scratch/effects-alignment-full-${width}.png`});
+  });
+}

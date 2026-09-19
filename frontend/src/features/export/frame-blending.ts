@@ -93,7 +93,7 @@ export function installFrameBlending(
       ? "Use up to 64 weights, each from 0 to 1000."
       : weights.length && !weights.some(w => w > 0) ? "Include at least one positive weight." : "";
     field("weights").setCustomValidity(error);
-    const invalid = value.enabled && !Array.from(options.querySelectorAll<HTMLInputElement>("input"))
+    const invalid = value.enabled && !Array.from(options.querySelectorAll<HTMLInputElement>("input:not([data-shared-fps])"))
       .every(node => node.validity.valid);
     const errorNode = root.querySelector<HTMLElement>("#blend-error")!;
     errorNode.textContent = invalid ? error || "Use a value within the displayed range." : value.enabled ? backendError : "";
@@ -127,7 +127,7 @@ export function installFrameBlending(
     sync();
   }
   const valid = (): boolean => !field("enabled").checked ||
-    Array.from(options.querySelectorAll<HTMLInputElement>("input")).every(node => node.validity.valid);
+    Array.from(options.querySelectorAll<HTMLInputElement>("input:not([data-shared-fps])")).every(node => node.validity.valid);
   const reportValidity = (): boolean => {
     if (valid()) return true;
     (root as HTMLDetailsElement).open = true;
@@ -138,10 +138,11 @@ export function installFrameBlending(
   };
   let previous = "";
   const onEdit = () => {
-    backendError = "";
-    sync();
     const signature = JSON.stringify(read());
-    if (signature !== previous) { previous = signature; changed(); }
+    const edited = signature !== previous;
+    if (edited) { previous = signature; backendError = ""; }
+    sync();
+    if (edited) changed();
   };
   root.addEventListener("input", onEdit);
   root.addEventListener("change", onEdit);

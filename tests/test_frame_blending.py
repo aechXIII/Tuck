@@ -253,7 +253,27 @@ def test_full_encode_audio_duration_and_pixels(timestamped_source, two_pass, mon
         return original(*args, **kwargs)
 
     monkeypatch.setattr(runner, "build_base_cmd", capture)
-    result = FFmpegEngine().encode(plan)
+    progress = []
+    prepare = runner.prepare_blended_video
+
+    def capture_preparation(*args):
+        assert progress[-1].status_text() == "Blending frames (0%)"
+        assert progress[-1].current_time == 0
+        return prepare(*args)
+
+    monkeypatch.setattr(runner, "prepare_blended_video", capture_preparation)
+    result = FFmpegEngine().encode(plan, progress.append)
+    blending = [event for event in progress if event.message.startswith("Blending frames")]
+    assert blending[-1].status_text() == "Blending frames (100%)"
+    assert blending[-1].current_time == blending[-1].duration == plan.effective_duration
+    assert all(event.percent == 0 for event in blending)
+    assert [event.current_time for event in blending] == sorted(
+        event.current_time for event in blending
+    )
+    last_blending = progress.index(blending[-1])
+    assert progress[last_blending + 1].stage.value in {"encoding", "pass_1"}
+    assert all(event.stage.value != "preparing" for event in progress[last_blending + 1 :])
+    assert progress[-1].percent == 100
     assert len(commands) >= 2
     assert len(set(commands)) == 1
     with av.open(str(result)) as container:
@@ -350,19 +370,24 @@ def test_variable_frame_timestamps_determine_contributions(tmp_path):
 
 
 @pytest.mark.ffmpeg
-def test_display_rotation_matches_ffmpeg(timestamped_source, tmp_path):
+@pytest.mark.parametrize("rotation", [90, 180, 270])
+def test_display_rotation_matches_ffmpeg(skip_if_no_ffmpeg, tmp_path, rotation):
     import subprocess
 
     import numpy as np
 
     from tuck.encoding.frame_blending import _source_frames
+    from tuck.media_tools import find_ffmpeg
     from tuck.probe import probe
+
+    ffmpeg = find_ffmpeg()
+    assert ffmpeg is not None
 
     source = tmp_path / "pattern.mp4"
     rotated = tmp_path / "rotated.mp4"
     subprocess.run(
         [
-            "ffmpeg",
+            ffmpeg,
             "-v",
             "error",
             "-f",
@@ -378,25 +403,44 @@ def test_display_rotation_matches_ffmpeg(timestamped_source, tmp_path):
         check=True,
         capture_output=True,
     )
-    subprocess.run(
+    tagged = subprocess.run(
         [
-            "ffmpeg",
+            ffmpeg,
             "-v",
             "error",
+            "-display_rotation",
+            str(rotation),
             "-i",
             str(source),
             "-c",
             "copy",
-            "-metadata:s:v:0",
-            "rotate=90",
             str(rotated),
         ],
-        check=True,
         capture_output=True,
     )
+    if tagged.returncode != 0:
+        assert b"Unrecognized option 'display_rotation'" in tagged.stderr, tagged.stderr.decode()
+        subprocess.run(
+            [
+                ffmpeg,
+                "-v",
+                "error",
+                "-i",
+                str(source),
+                "-c",
+                "copy",
+                "-metadata:s:v:0",
+                f"rotate={rotation}",
+                str(rotated),
+            ],
+            check=True,
+            capture_output=True,
+        )
+    info = probe(rotated)
+    assert info.display_rotation == rotation
     expected = subprocess.run(
         [
-            "ffmpeg",
+            ffmpeg,
             "-v",
             "error",
             "-i",
@@ -412,7 +456,7 @@ def test_display_rotation_matches_ffmpeg(timestamped_source, tmp_path):
         check=True,
         capture_output=True,
     ).stdout
-    decoded = list(_source_frames(rotated, probe(rotated), lambda: None))
+    decoded = list(_source_frames(rotated, info, lambda: None))
     actual = decoded[0][1]
     assert np.array_equal(actual.ravel(), np.frombuffer(expected, dtype=np.uint8))
 
@@ -665,9 +709,11 @@ def test_profile_settings_survive_save_reload_and_partial_edit(tmp_path, monkeyp
     from tuck.bridge import BridgeAPI
     from tuck.models import Profile
 
+    monkeypatch.setattr(settings, "_settings_manager", None)
     for name in ("_config_dir", "_data_dir", "_cache_dir"):
         monkeypatch.setattr(settings, name, lambda: tmp_path)
     api = BridgeAPI()
+    api._settings.load()
     profile = Profile(name="Blend", profile_id="blend")
     api._settings.set_profiles([profile])
     payload = {"enabled": True, "amount": 1.23, "curve": "gaussian", "sigma": 0.27}

@@ -720,6 +720,8 @@ impl BackendCommand {
     fn timeout(&self) -> Duration {
         match self {
             Self::Health
+            | Self::ListLuts
+            | Self::ClearLutHistory
             | Self::GetQueueState
             | Self::CancelItem { .. }
             | Self::CancelAllItems
@@ -746,7 +748,8 @@ impl BackendCommand {
             | Self::RepairProfileSendto { .. }
             | Self::ListSendtoShortcuts
             | Self::Shutdown => LIGHT_REQUEST_TIMEOUT,
-            Self::ProbeFile { .. }
+            Self::LoadLut { .. }
+            | Self::ProbeFile { .. }
             | Self::ProbeAudioFile { .. }
             | Self::GetWaveform { .. }
             | Self::GetThumbnail { .. }

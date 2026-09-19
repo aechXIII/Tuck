@@ -52,7 +52,7 @@ class EncodeProgress:
     def status_text(self) -> str:
         stage = self.stage
         if stage == EncodeStage.PREPARING:
-            return "Preparing"
+            return self.message or "Preparing"
         if stage == EncodeStage.PROBING:
             return "Probing"
         if stage == EncodeStage.PASS_1:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import replace
+from pathlib import Path
 
 from ..models import (
     SIZING_MODE_STRETCH,
@@ -133,7 +134,7 @@ def build_plan_video_filters(plan: EncodePlan) -> list[str]:
         source_width = plan.target_width
     if source_height <= 0:
         source_height = plan.target_height
-    return build_video_filters(
+    filters = build_video_filters(
         transform=plan.transform,
         source_width=source_width,
         source_height=source_height,
@@ -142,3 +143,13 @@ def build_plan_video_filters(plan: EncodePlan) -> list[str]:
         scaler=plan.scaler,
         frame_rate=plan.target_fps if plan.apply_fps_filter else 0.0,
     )
+
+    if plan.lut.enabled and plan.lut.strength > 0:
+        if not plan.lut_filter_path:
+            raise ValueError("LUT snapshot is missing. Create the export again")
+        # FFmpeg parses option escaping after filter graph escaping
+        path = Path(plan.lut_filter_path).as_posix()
+        path = "".join("\\" + char if char in "\\':" else char for char in path)
+        path = "".join("\\" + char if char in "\\'[],;" else char for char in path)
+        filters.append(f"lut3d=file={path}:interp=trilinear")
+    return filters

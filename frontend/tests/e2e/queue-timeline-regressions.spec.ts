@@ -83,6 +83,19 @@ test("running queue snapshots update progress and ETA throughout an export", asy
   await page.screenshot({ path: "build/queue-progress.png" });
 });
 
+test("blending preparation shows its progress in the queue and Library", async ({ page }) => {
+  await expect.poll(() => page.evaluate(() => window.__tuckFakeBackendCalls?.filter(c => c.method === "getQueueState").length ?? 0)).toBeGreaterThan(0);
+  await page.evaluate(() => {
+    (window as Window & { __tuckReleaseHeld?: (method: string, value: unknown) => void }).__tuckReleaseHeld?.("getQueueState", {
+      ok: true,
+      items: [{ id: "blending", source: "clip.mp4", source_path: "/mnt/exchange/clip.mp4", state: "running", progress: 0, status_text: "Blending frames (37%)" }],
+    });
+  });
+  await expect(page.locator("#qbar")).toContainText("Blending frames (37%)");
+  await expect(page.locator("#clips")).toContainText("Blending frames (37%)");
+  await expect(page.locator("#qprog")).toHaveAttribute("value", "0");
+});
+
 test("Library matches queue items to the resolved probe path", async ({ page }) => {
   for (const [index, state] of ["running", "completed"].entries()) {
     await expect.poll(() => page.evaluate(() => window.__tuckFakeBackendCalls?.filter(c => c.method === "getQueueState").length ?? 0)).toBeGreaterThan(index);

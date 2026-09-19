@@ -7,6 +7,11 @@ use crate::backend::{BackendState, PublicBackendError};
 #[serde(tag = "command", content = "payload", rename_all = "snake_case")]
 pub enum BackendCommand {
     Health,
+    ListLuts,
+    ClearLutHistory,
+    LoadLut {
+        path: String,
+    },
     ProbeFile {
         path: String,
     },
@@ -114,6 +119,9 @@ impl BackendCommand {
 
     pub fn to_sidecar_request(&self, request_id: &str) -> Result<Value, PublicBackendError> {
         let (method, params) = match self {
+            Self::ListLuts => ("list_luts", json!({})),
+            Self::ClearLutHistory => ("clear_lut_history", json!({})),
+            Self::LoadLut { path } => ("load_lut", json!({ "path": path })),
             Self::Health => ("health", json!({})),
             Self::ProbeFile { path } => ("probe_file", json!({ "path": path })),
             Self::ProbeAudioFile { path } => ("probe_audio_file", json!({ "path": path })),
@@ -291,6 +299,16 @@ mod tests {
             "windows"
         )
         .is_ok());
+    }
+
+    #[test]
+    fn lut_import_is_allowlisted_and_preserves_the_path() {
+        let command: BackendCommand =
+            serde_json::from_value(json!({"command":"load_lut","payload":{"path":"look.cube"}}))
+                .unwrap();
+        let request = command.to_sidecar_request("lut-test").unwrap();
+        assert_eq!(request["method"], "load_lut");
+        assert_eq!(request["params"]["path"], "look.cube");
     }
 
     #[test]

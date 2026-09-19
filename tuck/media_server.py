@@ -167,6 +167,8 @@ class _TokenRequestHandler(http.server.BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(file_size))
             self.send_header("Accept-Ranges", "bytes")
             self.send_header("Cache-Control", "no-store")
+            # possession of the unguessable media token authorizes anonymous preview reads
+            self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             with open(file_path, "rb") as f:
                 while True:
@@ -202,6 +204,8 @@ class _TokenRequestHandler(http.server.BaseHTTPRequestHandler):
             self.send_header("Content-Range", f"bytes {start}-{end}/{file_size}")
             self.send_header("Accept-Ranges", "bytes")
             self.send_header("Cache-Control", "no-store")
+            # possession of the unguessable media token authorizes anonymous preview reads
+            self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
 
             with open(file_path, "rb") as f:

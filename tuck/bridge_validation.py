@@ -6,7 +6,14 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from .models import MIN_TARGET_SIZE_BYTES, AudioTrack, PlanRequest, Segment, VideoTransform
+from .models import (
+    MIN_TARGET_SIZE_BYTES,
+    AudioTrack,
+    PlanRequest,
+    PlanValidationError,
+    Segment,
+    VideoTransform,
+)
 from .models.encoding_policy import (
     RC_TARGET_SIZE,
     VALID_RC_METHODS,
@@ -21,6 +28,7 @@ from .models.encoding_policy import (
     validate_tune_for_encoder,
 )
 from .models.frame_blending import FrameBlending
+from .models.lut import LutSettings
 
 VIDEO_EXTENSIONS = frozenset({".mp4", ".mkv", ".webm", ".mov", ".avi", ".wmv", ".flv", ".m4v"})
 AUDIO_EXTENSIONS = frozenset(
@@ -176,6 +184,16 @@ def parse_plan_request(
         raise ValueError("source must be a non-empty string")
     source = validate_path_fn(source)
 
+    try:
+        lut = LutSettings.from_dict(raw["lut"]) if "lut" in raw else None
+    except ValueError as exc:
+        raise PlanValidationError("lut", str(exc)) from exc
+    try:
+        blending = (
+            FrameBlending.from_dict(raw["frame_blending"]) if "frame_blending" in raw else None
+        )
+    except ValueError as exc:
+        raise PlanValidationError("frame_blending", str(exc)) from exc
     req = PlanRequest(
         source=source,
         profile_id=_opt_str(raw, "profile_id") or "",
@@ -185,9 +203,8 @@ def parse_plan_request(
         custom_height=_opt_int(raw, "custom_height"),
         fps_mode=_opt_str(raw, "fps_mode"),
         custom_fps=_opt_float(raw, "custom_fps"),
-        frame_blending=(
-            FrameBlending.from_dict(raw["frame_blending"]) if "frame_blending" in raw else None
-        ),
+        lut=lut,
+        frame_blending=blending,
         rate_control=_opt_str(raw, "rate_control"),
         explicit_bitrate=_opt_int(raw, "explicit_bitrate"),
         audio_bitrate=_opt_int(raw, "audio_bitrate"),

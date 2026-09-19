@@ -190,3 +190,14 @@ test("frame blending survives request and profile snapshots in both workflows", 
     assert.equal(profile.custom_fps, 29.97);
   }
 });
+
+
+test("LUT settings survive both workflow requests and profile persistence", () => {
+  const lut = {enabled:true,path:"managed.cube",name:"Warm",strength:.35};
+  for (const workflow of ["compression", "upscale"] as const) {
+    const state = form({workflow,lut});
+    assert.deepEqual(buildPlanRequest(state, {source:"s"}).lut, lut);
+    assert.deepEqual(buildProfilePayload(state, {name:"Look",currentProfile:null,clip:null}).lut, lut);
+  }
+  assert.equal(buildPlanRequest(form(), {source:"s"}).lut, undefined);
+});

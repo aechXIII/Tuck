@@ -257,19 +257,20 @@ def probe_audio(source: str | Path) -> AudioInfo:
 
 
 def _parse_display_rotation(video_stream: dict) -> int:
-    values: list[Any] = []
+    values: list[tuple[Any, int]] = []
     side_data = video_stream.get("side_data_list", [])
     if isinstance(side_data, list):
-        values.extend(item.get("rotation") for item in side_data if isinstance(item, dict))
+        values.extend((item.get("rotation"), 1) for item in side_data if isinstance(item, dict))
     tags = video_stream.get("tags", {})
     if isinstance(tags, dict):
-        values.append(tags.get("rotate"))
+        # legacy rotate tags use the opposite sign to display matrix angles
+        values.append((tags.get("rotate"), -1))
 
-    for value in values:
+    for value, direction in values:
         if value is None:
             continue
         try:
-            rotation = float(value)
+            rotation = float(value) * direction
         except (TypeError, ValueError):
             logger.warning("Could not parse display rotation from ffprobe: %r", value)
             continue

@@ -52,4 +52,12 @@ tools and are not distributed.
 `mdurl` (MIT), `Pygments` (BSD-2-Clause), `packaging` (Apache-2.0 OR
 BSD-2-Clause), and `pywin32` (PSF-2.0).
 
+Frame blending and LUT processing also use PyAV 16.1.0 and NumPy 2.2.6
+(both BSD-3-Clause). Their license texts are included under `_internal/licenses/av/`
+and `_internal/licenses/numpy/`. The NumPy wheel's license includes its bundled
+numerical libraries. PyAV's wheel includes FFmpeg shared libraries in addition
+to Tuck's separately bundled command-line tools; its build sources and dependency
+recipes are available at <https://github.com/PyAV-Org/PyAV> and
+<https://github.com/PyAV-Org/pyav-ffmpeg>.
+
 Each component's full license text is available in its own source repository.

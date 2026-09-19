@@ -1,3 +1,4 @@
+import type { LutSettings } from "./lut-controls.ts";
 import type { FrameBlendingSettings } from "./frame-blending.ts";
 import type { CropTransform } from "../transform/crop-geometry.ts";
 import {
@@ -21,6 +22,7 @@ export interface ExportFormState {
   useSourceFps: boolean;
   customFps: number;
   frameBlending?: FrameBlendingSettings;
+  lut?: LutSettings;
   keepAudio: boolean;
   audioBitrateKbps: number;
   twoPass: boolean;
@@ -107,6 +109,7 @@ export function buildPlanRequest(
     req.custom_fps = form.customFps;
   }
   if (form.frameBlending) req.frame_blending = form.frameBlending;
+  if (form.lut) req.lut = {...form.lut};
   req.keep_audio = form.keepAudio;
   if (!form.keepAudio) req.audio_bitrate = toInt(form.audioBitrateKbps) * 1000;
   req.two_pass = !up && form.twoPass;
@@ -175,6 +178,7 @@ export function buildProfilePayload(
     crf: rc === "crf" ? quality : numberOr(current.crf, 23),
   };
   if (form.frameBlending) data.frame_blending = form.frameBlending;
+  if (form.lut) data.lut = {...form.lut};
   const clip = ctx.clip;
   if (current.transform_intent || (clip && clip.transformIntentTouched)) {
     data.transform_intent = {

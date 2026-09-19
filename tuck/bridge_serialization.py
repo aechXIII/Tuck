@@ -69,6 +69,7 @@ def profile_ui_dict(
         "fps_mode": profile.fps_mode,
         "max_fps": profile.max_fps,
         "custom_fps": profile.custom_fps,
+        "lut": profile.lut.to_dict(),
         "frame_blending": profile.frame_blending.to_dict(),
         "rate_control": profile.rate_control,
         "explicit_bitrate_kbps": (
@@ -120,6 +121,7 @@ def plan_preview_dict(plan: EncodePlan) -> dict[str, Any]:
         "target_width": plan.target_width,
         "target_height": plan.target_height,
         "target_fps": round(plan.target_fps, 2),
+        "lut": plan.lut.to_dict(),
         "frame_blending": plan.frame_blending.to_dict(),
         "video_bitrate_kbps": round(plan.video_bitrate / 1000),
         "audio_bitrate_kbps": round(plan.audio_bitrate / 1000),

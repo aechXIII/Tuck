@@ -33,6 +33,7 @@ from .models import (
     AudioInfo,
     EncodePlan,
     PlanRequest,
+    PlanValidationError,
     Profile,
     VideoInfo,
     find_profile_by_id,
@@ -121,6 +122,55 @@ class BridgeAPI:
             self._ipc_metadata.clear()
             return result
 
+    def clear_lut_history(self) -> BridgeResult:
+        from .lut import clear_lut_history
+
+        try:
+            clear_lut_history(self._settings.data_dir / "luts")
+            return {"ok": True, "cleared": True}
+        except (OSError, ValueError) as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def list_luts(self) -> BridgeResult:
+        from .lut import list_luts
+
+        try:
+            return {
+                "ok": True,
+                "luts": list_luts(
+                    self._settings.data_dir / "luts",
+                    (profile.lut for profile in self._settings.get_profiles()),
+                ),
+            }
+        except (OSError, ValueError) as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def load_lut(self, path: str) -> BridgeResult:
+        from .lut import import_lut
+
+        try:
+            source = Path(self._validate_path(path))
+            saved_name = next(
+                (
+                    profile.lut.name
+                    for profile in self._settings.get_profiles()
+                    if profile.lut.path and Path(profile.lut.path).resolve() == source.resolve()
+                ),
+                "",
+            )
+            imported = import_lut(source, self._settings.data_dir / "luts", saved_name=saved_name)
+            token = self._media_server.register_file(str(imported.table_path))
+            return {
+                "ok": True,
+                "path": str(imported.path),
+                "name": imported.name,
+                "size": imported.size,
+                "table_url": self._media_server.get_url(token),
+                "token": token,
+            }
+        except (OSError, ValueError) as exc:
+            return {"ok": False, "error": str(exc)}
+
     def get_media_url(self, path: str) -> BridgeResult:
 
         try:
@@ -206,6 +256,8 @@ class BridgeAPI:
 
         try:
             req = self._parse_plan_request(raw)
+        except PlanValidationError as e:
+            return {"ok": False, "error": str(e), "field": e.field, "_request_id": req_id}
         except (ValueError, TypeError, FileNotFoundError) as e:
             return {"ok": False, "error": str(e), "_request_id": req_id}
 
@@ -225,6 +277,8 @@ class BridgeAPI:
                 "data": plan_preview_dict(p),
             }
 
+        except PlanValidationError as e:
+            return {"ok": False, "error": str(e), "field": e.field, "_request_id": req_id}
         except Exception as e:
             return {"ok": False, "error": str(e), "_request_id": req_id}
 

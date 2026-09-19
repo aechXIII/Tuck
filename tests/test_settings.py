@@ -24,11 +24,11 @@ from tuck.models import (
     Profile,
 )
 from tuck.settings import (
+    ProcessLock,
     SettingsManager,
     _atomic_write,
     _get_lock_path,
     _map_old_default_name,
-    _ProcessLock,
     profiles_path,
     settings_path,
 )
@@ -667,7 +667,7 @@ class TestProcessLock:
                 calls.append((fd, operation))
 
         monkeypatch.setattr(settings_mod, "fcntl", Fcntl)
-        lock = _ProcessLock(tmp_path / "settings.lock")
+        lock = ProcessLock(tmp_path / "settings.lock")
 
         lock.acquire()
         fd = lock._fd
@@ -682,7 +682,7 @@ class TestProcessLock:
 
         monkeypatch.setattr(settings_mod, "_config_dir", lambda: tmp_path)
         lock_path = _get_lock_path()
-        lock = _ProcessLock(lock_path)
+        lock = ProcessLock(lock_path)
         lock.acquire()
         assert lock._fd is not None
         lock.release()
@@ -694,7 +694,7 @@ class TestProcessLock:
 
         monkeypatch.setattr(settings_mod, "_config_dir", lambda: tmp_path)
         lock_path = _get_lock_path()
-        with _ProcessLock(lock_path) as lock:
+        with ProcessLock(lock_path) as lock:
             assert lock._fd is not None
         assert lock._fd is None
 
@@ -704,7 +704,7 @@ class TestProcessLock:
 
         monkeypatch.setattr(settings_mod, "_config_dir", lambda: tmp_path)
         lock_path = _get_lock_path()
-        lock = _ProcessLock(lock_path)
+        lock = ProcessLock(lock_path)
         lock.acquire()
         lock.release()
         lock.release()  # should be a no-op
@@ -719,7 +719,7 @@ class TestProcessLock:
         results = []
 
         def holder():
-            with _ProcessLock(lock_path):
+            with ProcessLock(lock_path):
                 results.append("holder-acquired")
                 time.sleep(0.3)
                 results.append("holder-releasing")
@@ -727,7 +727,7 @@ class TestProcessLock:
 
         def waiter():
             time.sleep(0.05)  # ensure holder acquires first
-            with _ProcessLock(lock_path):
+            with ProcessLock(lock_path):
                 results.append("waiter-acquired")
             results.append("waiter-released")
 
@@ -753,7 +753,7 @@ class TestProcessLock:
         monkeypatch.setattr(settings_mod, "_config_dir", lambda: tmp_path)
         lock_path = _get_lock_path()
         assert not lock_path.exists()
-        with _ProcessLock(lock_path):
+        with ProcessLock(lock_path):
             assert lock_path.exists()
 
     def test_lock_does_not_leak_fd(self, tmp_path, monkeypatch):
@@ -762,7 +762,7 @@ class TestProcessLock:
 
         monkeypatch.setattr(settings_mod, "_config_dir", lambda: tmp_path)
         lock_path = _get_lock_path()
-        lock = _ProcessLock(lock_path)
+        lock = ProcessLock(lock_path)
         lock.acquire()
         fd = lock._fd
         assert fd is not None

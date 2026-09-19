@@ -188,6 +188,8 @@ def assemble_app(dist: Path, staged_ffmpeg: list[dict]) -> dict:
             "tuck-sidecar.exe",
             "TuckCli.exe",
             "_internal",
+            "_internal/licenses/av/LICENSE.txt",
+            "_internal/licenses/numpy/LICENSE.txt",
             "ffmpeg/ffmpeg.exe",
             "ffmpeg/ffprobe.exe",
             "ffmpeg/ffmpeg-LICENSE.txt",

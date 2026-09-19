@@ -45,8 +45,14 @@ def test_parse_display_rotation_normalizes_quarter_turns(value, expected) -> Non
     assert _parse_display_rotation(stream) == expected
 
 
-def test_parse_display_rotation_supports_legacy_rotate_tag() -> None:
-    assert _parse_display_rotation({"tags": {"rotate": "90"}}) == 90
+@pytest.mark.parametrize(("tag", "expected"), [("90", 270), ("270", 90), ("-90", 90), ("180", 180)])
+def test_parse_display_rotation_supports_legacy_rotate_tag(tag, expected) -> None:
+    assert _parse_display_rotation({"tags": {"rotate": tag}}) == expected
+
+
+def test_display_matrix_takes_precedence_over_legacy_tag() -> None:
+    stream = {"side_data_list": [{"rotation": 90}], "tags": {"rotate": "270"}}
+    assert _parse_display_rotation(stream) == 90
 
 
 def test_parse_display_rotation_preserves_non_quarter_angles() -> None:

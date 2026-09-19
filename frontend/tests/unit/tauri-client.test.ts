@@ -116,3 +116,52 @@ test("Tauri runtime detection requires the injected invoke function", () => {
     true,
   );
 });
+
+
+test("LUT import uses a native picker and a validated sidecar response", async () => {
+  const calls: unknown[] = [];
+  const payload = {path:"managed.cube", name:"Warm.cube", size:2, table_url:"http://127.0.0.1:4321/token/table", token:"token"};
+  const client = createTauriBackendClient(async (command, args) => {
+    calls.push({command,args});
+    return command === "pick_lut_file" ? "Warm.cube" : payload;
+  });
+  assert.deepEqual(await client.pickLutFile(), {ok:true,value:{path:"Warm.cube"}});
+  assert.deepEqual(await client.loadLut("Warm.cube"), {ok:true,value:payload});
+  assert.deepEqual(calls[1], {command:"backend_request",args:{command:{command:"load_lut",payload:{path:"Warm.cube"}}}});
+  for (const invalid of [{...payload,size:1000}, {...payload,table_url:"https://outside.test/table"}, {...payload,size:2.5}]) {
+    const bad = createTauriBackendClient(async () => invalid);
+    assert.equal((await bad.loadLut("test.cube")).ok, false);
+  }
+  const failure = createTauriBackendClient(async () => ({ok:false,error:"Unsupported LUT format. Export a .cube file."}));
+  const result = await failure.loadLut("bad.lut");
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.match(result.error.message, /cube/);
+});
+
+
+test("saved LUTs are typed and planning error fields survive the native boundary", async () => {
+  const library = {luts:[{path:"managed.cube",name:"Warm"}]};
+  const calls: unknown[] = [];
+  const client = createTauriBackendClient(async (command,args) => { calls.push({command,args}); return library; });
+  assert.deepEqual(await client.listLuts(), {ok:true,value:library});
+  assert.deepEqual(calls[0], {command:"backend_request",args:{command:{command:"list_luts"}}});
+  const malformed = createTauriBackendClient(async () => ({luts:[{path:123,name:"bad"}]}));
+  assert.equal((await malformed.listLuts()).ok,false);
+  const rejected = createTauriBackendClient(async () => { throw {code:"VALIDATION_ERROR",message:"Choose a lower output frame rate.",details:{field:"frame_blending"}}; });
+  const result = await rejected.createPlan({source:"s"});
+  assert.equal(result.ok,false);
+  if (!result.ok) assert.equal(result.error.details.field,"frame_blending");
+});
+
+test("clear LUT history validates success and preserves backend failures", async () => {
+  const calls: unknown[] = [];
+  const client = createTauriBackendClient(async (command,args) => { calls.push({command,args}); return {cleared:true}; });
+  assert.deepEqual(await client.clearLutHistory(), {ok:true,value:{cleared:true}});
+  assert.deepEqual(calls, [{command:"backend_request",args:{command:{command:"clear_lut_history"}}}]);
+  for (const payload of [{}, {cleared:false}, {cleared:"true"}]) {
+    assert.equal((await createTauriBackendClient(async () => payload).clearLutHistory()).ok, false);
+  }
+  const failed = await createTauriBackendClient(async () => ({ok:false,error:"Could not save LUT history."})).clearLutHistory();
+  assert.equal(failed.ok,false);
+  if (!failed.ok) assert.match(failed.error.message, /save LUT history/);
+});

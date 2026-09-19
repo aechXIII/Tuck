@@ -13,9 +13,16 @@ excluded. Runtime dependencies come from the hash-pinned
 ``scripts/build_sidecar.py``.
 """
 
+from importlib.metadata import distribution
 from pathlib import Path
 
 _root = Path(SPECPATH).parent.resolve()
+_dependency_licenses = [
+    (str(distribution(name).locate_file(path)), f"licenses/{name}")
+    for name in ("av", "numpy")
+    for path in distribution(name).files or ()
+    if path.name == "LICENSE.txt" and ".dist-info/" in str(path)
+]
 
 for _entry in ("tuck/sidecar_entry.py", "tuck/cli_entry.py"):
     if not (_root / _entry).is_file():
@@ -119,7 +126,7 @@ def _analysis(entry: str, datas):
         [str(_root / "tuck" / entry)],
         pathex=[str(_root)],
         binaries=list(_pywin32_binaries),
-        datas=datas,
+        datas=[*datas, *_dependency_licenses],
         hiddenimports=_hiddenimports,
         hookspath=[],
         hooksconfig={},

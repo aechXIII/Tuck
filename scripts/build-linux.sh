@@ -69,7 +69,10 @@ if [[ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]]; then
   echo "    signing key present -> emitting updater artifacts"
   tauri_updater_args=(--config '{"bundle":{"createUpdaterArtifacts":true}}')
 fi
-npm run tauri build -- --bundles appimage "${tauri_updater_args[@]}"
+# linuxdeploy scans frozen libraries outside PyInstaller's loader, so it needs
+# the same directory to resolve the hashed native libraries bundled by PyAV
+LD_LIBRARY_PATH="$root/packaging/staging/linux/app/_internal${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+  npm run tauri build -- --bundles appimage "${tauri_updater_args[@]}"
 
 appimage="$(find src-tauri/target/release/bundle/appimage -maxdepth 1 -type f -name '*.AppImage' -print | sort | tail -n 1)"
 if [[ -z "$appimage" ]]; then

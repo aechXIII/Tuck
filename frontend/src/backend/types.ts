@@ -84,7 +84,31 @@ export interface SendToShortcuts extends JsonObject {
   readonly shortcuts: readonly JsonObject[];
 }
 
+export interface LutEntry extends JsonObject {
+  readonly path: string;
+  readonly name: string;
+}
+
+export interface LutLibraryPayload extends JsonObject {
+  readonly luts: readonly LutEntry[];
+}
+
+export interface LutHistoryClearedPayload extends JsonObject {
+  readonly cleared: true;
+}
+
+export interface LutPayload extends JsonObject {
+  readonly path: string;
+  readonly name: string;
+  readonly size: number;
+  readonly table_url: string;
+  readonly token: string;
+}
+
 export interface DomainBackendClient {
+  clearLutHistory(): Promise<BackendResult<LutHistoryClearedPayload>>;
+  listLuts(): Promise<BackendResult<LutLibraryPayload>>;
+  loadLut(path: string): Promise<BackendResult<LutPayload>>;
   probeFile(path: string): Promise<BackendResult<DataPayload>>;
   probeAudioFile(path: string): Promise<BackendResult<DataPayload>>;
   getWaveform(path: string): Promise<BackendResult<UrlPayload>>;
@@ -132,6 +156,7 @@ export interface DomainBackendClient {
 
 export interface NativeBackendClient {
   closeWindow(): Promise<BackendResult<EmptyPayload>>;
+  pickLutFile(): Promise<BackendResult<PathSelection>>;
   pickFiles(): Promise<BackendResult<FileSelection>>;
   pickAudioFiles(): Promise<BackendResult<FileSelection>>;
   pickFolder(): Promise<BackendResult<PathSelection>>;

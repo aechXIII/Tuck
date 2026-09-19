@@ -18,6 +18,14 @@ from tuck.models import (
 from tuck.profile_service import pick_surviving_default
 
 
+@pytest.fixture(autouse=True)
+def isolated_settings(tmp_path, monkeypatch):
+    import tuck.settings as settings
+
+    monkeypatch.setattr(settings, "_settings_manager", None)
+    monkeypatch.setattr(settings, "_storage_root", tmp_path)
+
+
 def test_parse_plan_request_accepts_segments_and_rejects_legacy_mix(tmp_path):
     source = tmp_path / "source.mp4"
     source.write_bytes(b"source")

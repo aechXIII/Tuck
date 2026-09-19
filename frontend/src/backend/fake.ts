@@ -74,6 +74,22 @@ class DeterministicFakeBackend implements BackendClient {
     );
   }
 
+  listLuts() {
+    return this.#record("listLuts", [], this.#responses.listLuts ?? success({luts:[]}));
+  }
+
+  clearLutHistory() {
+    return this.#record("clearLutHistory", [], this.#responses.clearLutHistory ?? success({cleared:true as const}));
+  }
+
+  loadLut(path: string) {
+    return this.#record("loadLut", [path], this.#responses.loadLut ?? success({path, name:"LUT", size:2, table_url:"http://127.0.0.1:1/token/table", token:"token"}));
+  }
+
+  pickLutFile() {
+    return this.#record("pickLutFile", [], this.#responses.pickLutFile ?? success({path:""}));
+  }
+
   getMediaUrl(path: string) {
     return this.#record(
       "getMediaUrl",

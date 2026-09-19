@@ -289,10 +289,13 @@ class FFmpegEngine:
                         EncodeProgress(
                             percent=0.0,
                             stage=EncodeStage.PREPARING,
-                            message=f"Blending source frames ({fraction:.0%})",
+                            current_time=fraction * total_duration,
+                            duration=total_duration,
+                            message=f"Blending frames ({int(fraction * 100)}%)",
                         ),
                     )
 
+                blend_progress(0.0)
                 prepare_blended_video(plan, self._prepared_video, check_cancel, blend_progress)
             result = self._run_candidates(
                 candidates,

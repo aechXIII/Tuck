@@ -12,6 +12,9 @@ import type {
   EmptyPayload,
   EncoderPayload,
   FileSelection,
+  LutPayload,
+  LutLibraryPayload,
+  LutHistoryClearedPayload,
   JsonObject,
   JsonValue,
   PathSelection,
@@ -38,6 +41,9 @@ export interface TauriBackendClient extends BackendClient {
 }
 
 type TauriBackendCommand =
+  | { command: "clear_lut_history" }
+  | { command: "list_luts" }
+  | { command: "load_lut"; payload: { path: string } }
   | { command: "health" }
   | { command: "probe_file"; payload: { path: string } }
   | { command: "probe_audio_file"; payload: { path: string } }
@@ -73,6 +79,18 @@ type TauriBackendCommand =
   | { command: "repair_profile_sendto"; payload: { profile_id: string; action?: string; executable_path?: string } }
   | { command: "list_sendto_shortcuts" }
   | { command: "shutdown" };
+
+function isLutLibraryPayload(value: unknown): value is LutLibraryPayload {
+  return isJsonObject(value) && Array.isArray(value.luts) && value.luts.every(entry =>
+    isJsonObject(entry) && typeof entry.path === "string" && typeof entry.name === "string");
+}
+
+function isLutPayload(value: unknown): value is LutPayload {
+  return isJsonObject(value) && typeof value.path === "string" && typeof value.name === "string"
+    && typeof value.size === "number" && Number.isInteger(value.size) && value.size >= 2 && value.size <= 65
+    && typeof value.token === "string" && typeof value.table_url === "string"
+    && /^http:\/\/127\.0\.0\.1:\d+\/[a-zA-Z0-9_-]+\//.test(value.table_url);
+}
 
 type Guard<T> = (value: unknown) => value is T;
 
@@ -282,6 +300,30 @@ class TauriTransport implements TauriBackendClient {
       { command: "get_thumbnail", payload: { path } },
       isThumbnailPayload,
     );
+  }
+
+  listLuts(): Promise<BackendResult<LutLibraryPayload>> {
+    return this.#request("listLuts", {command:"list_luts"}, isLutLibraryPayload);
+  }
+
+  clearLutHistory(): Promise<BackendResult<LutHistoryClearedPayload>> {
+    return this.#request("clearLutHistory", {command:"clear_lut_history"},
+      (value: unknown): value is LutHistoryClearedPayload => isJsonObject(value) && value.cleared === true);
+  }
+
+  loadLut(path: string): Promise<BackendResult<LutPayload>> {
+    return this.#request("loadLut", {command: "load_lut", payload: {path}}, isLutPayload);
+  }
+
+  async pickLutFile(): Promise<BackendResult<PathSelection>> {
+    try {
+      const path = await this.#invoke("pick_lut_file", {});
+      if (typeof path !== "string") return backendFailure("INVALID_RESPONSE", "Could not read the selected LUT file.");
+      return {ok: true, value: {path}};
+    } catch (error) {
+      if (isBackendError(error)) return {ok:false, error};
+      return backendFailure("TAURI_INVOKE_FAILED", errorMessage(error, "Could not select a LUT file."));
+    }
   }
 
   getMediaUrl(path: string): Promise<BackendResult<UrlPayload>> {

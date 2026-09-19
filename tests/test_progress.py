@@ -117,3 +117,10 @@ def test_second_pass_starts_halfway_before_ffmpeg_reports_progress():
     tracker = ProgressTracker(10, total_passes=2)
     tracker.set_pass(2)
     assert tracker.snapshot().percent == 50
+
+
+def test_preparing_status_preserves_specific_work_message():
+    progress = EncodeProgress(stage=EncodeStage.PREPARING, message="Blending frames (25%)")
+    assert progress.status_text() == "Blending frames (25%)"
+    assert progress.to_dict()["status_text"] == "Blending frames (25%)"
+    assert EncodeProgress(stage=EncodeStage.PREPARING).status_text() == "Preparing"

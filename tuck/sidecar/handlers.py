@@ -4,7 +4,7 @@ import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from .protocol import Request, Response
+from .protocol import JsonValue, Request, Response
 
 if TYPE_CHECKING:
     from ..bridge import BridgeAPI
@@ -67,11 +67,15 @@ def _normalize_result(request: Request, value: object) -> Response:
                 message = value.get("error")
                 if not isinstance(message, str) or not message:
                     message = "The backend could not complete the request."
+                field = value.get("field")
+                details: dict[str, JsonValue] = {"method": request.method}
+                if field in ("lut", "frame_blending"):
+                    details["field"] = field
                 return Response.failure(
                     request.request_id,
                     code=_error_code(request.method, message),
                     message=message,
-                    details={"method": request.method},
+                    details=details,
                 )
             if value["ok"] is not True:
                 return Response.failure(
@@ -339,7 +343,24 @@ def _list_sendto_shortcuts(api: BridgeAPI, params: dict[str, object]) -> object:
     return api.list_sendto_shortcuts()
 
 
+def _clear_lut_history(api: BridgeAPI, params: dict[str, object]) -> object:
+    _empty(params)
+    return api.clear_lut_history()
+
+
+def _list_luts(api: BridgeAPI, params: dict[str, object]) -> object:
+    _empty(params)
+    return api.list_luts()
+
+
+def _load_lut(api: BridgeAPI, params: dict[str, object]) -> object:
+    return api.load_lut(_string(params, "path"))
+
+
 _HANDLERS: dict[str, Handler] = {
+    "load_lut": _load_lut,
+    "list_luts": _list_luts,
+    "clear_lut_history": _clear_lut_history,
     "probe_file": _probe_file,
     "probe_audio_file": _probe_audio_file,
     "get_waveform": _get_waveform,

@@ -55,6 +55,16 @@ pub async fn pick_audio_files(window: tauri::Window) -> Result<Vec<String>, Publ
 }
 
 #[tauri::command]
+pub async fn pick_lut_file(window: tauri::Window) -> Result<String, PublicBackendError> {
+    let file = window
+        .dialog()
+        .file()
+        .add_filter("LUT files", &["cube", "lut"])
+        .blocking_pick_file();
+    Ok(path_opt_to_string(file))
+}
+
+#[tauri::command]
 pub async fn pick_folder(window: tauri::Window) -> Result<String, PublicBackendError> {
     let folder = window.dialog().file().blocking_pick_folder();
     Ok(path_opt_to_string(folder))

@@ -8,7 +8,7 @@ import uuid
 from dataclasses import dataclass, field, fields
 from enum import Enum
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Literal
 
 from .encoding_policy import (
     AMF_ENCODERS as AMF_ENCODERS,
@@ -132,6 +132,7 @@ from .encoding_policy import (
     validate_rate_control_matrix as validate_rate_control_matrix,
 )
 from .frame_blending import FrameBlending
+from .lut import LutSettings
 from .progress import EncodeProgress as EncodeProgress
 from .progress import EncodeStage as EncodeStage
 from .transforms import (
@@ -612,6 +613,12 @@ def validate_segments(
         previous = segment
 
 
+class PlanValidationError(ValueError):
+    def __init__(self, field: Literal["lut", "frame_blending"], message: str) -> None:
+        super().__init__(message)
+        self.field = field
+
+
 @dataclass
 class PlanRequest:
     source: str = ""
@@ -625,6 +632,7 @@ class PlanRequest:
 
     fps_mode: str | None = None
     custom_fps: float | None = None
+    lut: LutSettings | None = None
     frame_blending: FrameBlending | None = None
 
     rate_control: str | None = None
@@ -660,6 +668,8 @@ class PlanRequest:
     def validate(self) -> None:
         if self.resolution_mode is not None and self.resolution_mode not in VALID_RES_MODES:
             raise ValueError(f"Invalid resolution_mode: {self.resolution_mode!r}")
+        if self.lut is not None and not isinstance(self.lut, LutSettings):
+            raise ValueError("lut must be LUT settings")
         if self.frame_blending is not None and not isinstance(self.frame_blending, FrameBlending):
             raise ValueError("frame_blending must be FrameBlending settings")
         if self.fps_mode is not None and self.fps_mode not in VALID_FPS_MODES:
@@ -802,6 +812,7 @@ class EncodePlan:
     target_width: int = 0
     target_height: int = 0
     target_fps: float = 0.0
+    lut: LutSettings = field(default_factory=LutSettings)
     frame_blending: FrameBlending = field(default_factory=FrameBlending)
     video_bitrate: int = 0
     original_video_bitrate: int = 0
@@ -828,6 +839,7 @@ class EncodePlan:
     estimated_size: int = 0
     target_size: int = 0
     explicit_bitrate: int = 0
+    lut_filter_path: str = ""
     source_info: VideoInfo | None = None
     profile_id: str = ""
     workflow: str = WORKFLOW_COMPRESSION
@@ -887,6 +899,7 @@ class EncodePlan:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> EncodePlan:
         data = dict(data)
+        data["lut"] = LutSettings.from_dict(data.get("lut", {}))
         data["frame_blending"] = FrameBlending.from_dict(data.get("frame_blending", {}))
         info = data.pop("source_info", None)
         transform_data = data.pop("transform", None)
@@ -982,6 +995,7 @@ class Profile:
     fps_mode: str = FPS_MODE_SOURCE
     max_fps: float = 30.0
     custom_fps: float = 30.0
+    lut: LutSettings = field(default_factory=LutSettings)
     frame_blending: FrameBlending = field(default_factory=FrameBlending)
 
     rate_control: str = RC_TARGET_SIZE
@@ -1014,6 +1028,8 @@ class Profile:
     _ID_RE: ClassVar = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 
     def __post_init__(self) -> None:
+        if not isinstance(self.lut, LutSettings):
+            raise ValueError("lut must be LUT settings")
         if not isinstance(self.frame_blending, FrameBlending):
             raise ValueError("frame_blending must be FrameBlending settings")
         if self.profile_id is None:
@@ -1043,6 +1059,7 @@ class Profile:
             "fps_mode": self.fps_mode,
             "max_fps": self.max_fps,
             "custom_fps": self.custom_fps,
+            "lut": self.lut.to_dict(),
             "frame_blending": self.frame_blending.to_dict(),
             "rate_control": self.rate_control,
             "explicit_bitrate": self.explicit_bitrate,
@@ -1113,6 +1130,7 @@ class Profile:
             fps_mode=merged.get("fps_mode", FPS_MODE_SOURCE),
             max_fps=merged.get("max_fps", 30.0),
             custom_fps=merged.get("custom_fps", 30.0),
+            lut=LutSettings.from_dict(merged.get("lut", {})),
             frame_blending=FrameBlending.from_dict(merged.get("frame_blending", {})),
             rate_control=merged.get("rate_control", RC_TARGET_SIZE),
             explicit_bitrate=merged.get("explicit_bitrate", 0),
@@ -1338,6 +1356,7 @@ _PROFILE_KNOWN = frozenset(
         "fps_mode",
         "max_fps",
         "custom_fps",
+        "lut",
         "frame_blending",
         "rate_control",
         "explicit_bitrate",

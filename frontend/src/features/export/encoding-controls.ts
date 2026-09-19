@@ -1,3 +1,4 @@
+import { installLutControls } from "./lut-controls.ts";
 import { installFrameBlending } from "./frame-blending.ts";
 import type { BackendClient } from "../../backend/types.ts";
 import { allProbesReady, isProbeReady } from "../../state/probe.ts";
@@ -130,6 +131,12 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     return { source, output: input("use-source-fps").checked ? source : Math.min(source, Number(input("fps-val").value)) };
   });
 
+  const lut = installLutControls(el("lut-panel"), el<HTMLVideoElement>("vid"), client, (planChanged = true) => {
+    if (planChanged) reqPreviewAndDirty();
+    else updateDirty();
+    updateActionButtons();
+  });
+
   function workflowName(): "compression" | "upscale" {
     return wf === 1 ? "upscale" : "compression";
   }
@@ -196,9 +203,9 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     const one = el<HTMLButtonElement>("btn-one");
     const all = el<HTMLButtonElement>("btn-all");
     one.textContent = up ? "Upscale selected" : "Compress selected";
-    one.disabled = !selReady || !blending.valid() || !videoSettingsValid();
+    one.disabled = !selReady || !blending.valid() || !lut.valid() || !videoSettingsValid();
     all.textContent = (up ? "Upscale all" : "Compress all") + (count ? ` (${count})` : "");
-    all.disabled = !allReady || !blending.valid() || !videoSettingsValid();
+    all.disabled = !allReady || !blending.valid() || !lut.valid() || !videoSettingsValid();
     all.style.background = up ? "#2a2a3e" : "";
     syncExportSummary();
   }
@@ -300,6 +307,12 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     }
     el("res-cust").hidden = resolution.value !== "custom";
     el("video-custom-fps").hidden = frameRate.value !== "custom";
+    const blendFps = select("blend-fps-select");
+    replaceInspectorOptions(blendFps, InspectorUi.frameRateChoices(source.fps));
+    blendFps.value = frameRate.value;
+    input("blend-fps-input").value = input("fps-slider").value;
+    input("blend-fps-input").max = input("fps-slider").max;
+    el("blend-custom-fps").hidden = frameRate.value !== "custom";
     el("export-video-summary").textContent =
       resolution.value === "source" && frameRate.value === "source" ? "Source" : "Adjusted";
   }
@@ -334,9 +347,18 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     if (value === "custom") { input("fps-slider").focus(); input("fps-slider").select(); }
   }
 
+  select("blend-fps-select").addEventListener("change", () => {
+    onExportFrameRateChoice(select("blend-fps-select").value);
+    if (select("blend-fps-select").value === "custom") {
+      input("blend-fps-input").focus(); input("blend-fps-input").select();
+    } else select("blend-fps-select").focus();
+  });
+  input("blend-fps-input").addEventListener("input", () => onFpsSlider(input("blend-fps-input").value));
+
   async function loadSettings(): Promise<void> {
     platformCapabilities = await fetchPlatformCapabilities();
     const s = await legacyBackendResult(client().getSettings());
+    void lut.refreshLibrary();
     Object.keys(session.appSettings).forEach((key) => delete session.appSettings[key]);
     Object.assign(session.appSettings, s);
     deps.restoreTimelineHeight(s.timeline_height);
@@ -454,6 +476,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
       applyProfileTransformToClip(p, session.clips[path], !!forceTransform);
     }
     blending.apply(p.frame_blending);
+    lut.apply(p.lut);
     const sizeMb = Math.round((num(p.target_size_bytes) || 0) / (1024 * 1024));
     input("sz-slider").value = String(sizeMb);
     input("sz-badge").value = String(sizeMb);
@@ -758,6 +781,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
       useSourceFps: input("use-source-fps").checked,
       customFps: Number(input("fps-val").value),
       frameBlending: blending.read(),
+      lut: lut.read(),
       keepAudio: input("keep-audio").checked,
       audioBitrateKbps: parseInt(input("audio-br").value, 10) || 0,
       twoPass: select("two-pass").value === "on",
@@ -810,7 +834,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     const path = session.selPath;
     const clip = path ? session.clips[path] : undefined;
     if (!clip || !clip.probed) return;
-    if (!videoSettingsValid()) {
+    if (!videoSettingsValid() || !lut.valid()) {
       clip.planData = null;
       delete clip._previewRequestId;
       return;
@@ -833,7 +857,13 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
       const r = await legacyBackendResult(client().createPlan(req as never));
       const data = r.data as Record<string, unknown> | undefined;
       if (session.selPath === path && clip._previewRequestId === requestId) {
-        blending.setBackendError(r.ok ? "" : r.error ?? "Could not prepare these settings.");
+        const message = r.ok ? "" : r.error ?? "Could not prepare these settings.";
+        const field = r.details?.field;
+        lut.setBackendError(field === "lut" ? message : "");
+        blending.setBackendError(field === "frame_blending" ? message : "");
+        const generalError = el("export-plan-error");
+        generalError.textContent = field === "lut" || field === "frame_blending" ? "" : message;
+        generalError.hidden = !generalError.textContent;
       }
       if (
         r.ok &&
@@ -858,7 +888,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
   }
 
   async function compressOne(): Promise<void> {
-    if (!blending.reportValidity() || !videoSettingsValid()) return;
+    if (!lut.valid() || !blending.reportValidity() || !videoSettingsValid()) return;
     const path = session.selPath;
     if (!path) {
       toast("Select a clip first.", "err");
@@ -876,7 +906,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
   }
 
   async function compressAll(): Promise<void> {
-    if (!blending.reportValidity() || !videoSettingsValid()) return;
+    if (!lut.valid() || !blending.reportValidity() || !videoSettingsValid()) return;
     const keys = deps.orderedClipKeys();
     if (!keys.length) {
       toast("Add clips first.", "err");
@@ -917,7 +947,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
   }
 
   async function saveProfileChanges(): Promise<void> {
-    if (!blending.reportValidity() || !videoSettingsValid()) return;
+    if (!lut.valid() || !blending.reportValidity() || !videoSettingsValid()) return;
     const pid = select("prof-sel").value;
     if (!pid) {
       toast("Select a profile.", "err");
@@ -966,7 +996,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
   }
 
   async function doSaveAs(): Promise<void> {
-    if (!blending.reportValidity() || !videoSettingsValid()) return;
+    if (!lut.valid() || !blending.reportValidity() || !videoSettingsValid()) return;
     const name = (byId<HTMLInputElement>("sp-name")?.value ?? "").trim();
     if (!name) {
       toast("Enter a name.", "err");
@@ -990,6 +1020,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     return {
       pid: value("prof-sel"),
       blending: JSON.stringify(blending.read()),
+      lut: JSON.stringify(lut.read()),
       size: value("sz-slider"),
       rm: value("res-mode"),
       rw: value("res-w"),

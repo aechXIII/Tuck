@@ -27,6 +27,7 @@ from .models import (
     EncodePlan,
     OutputGeometry,
     PlanRequest,
+    PlanValidationError,
     Profile,
     Segment,
     VideoInfo,
@@ -262,6 +263,14 @@ def plan(
     else:
         raise ValueError(f"Unknown fps_mode: {fps_mode!r}")
 
+    from .lut import snapshot_lut
+
+    lut = request.lut if request and request.lut is not None else profile.lut
+    try:
+        lut_filter_path = snapshot_lut(lut, info)
+    except (ValueError, OSError) as exc:
+        raise PlanValidationError("lut", str(exc)) from exc
+
     blending = (
         request.frame_blending
         if request and request.frame_blending is not None
@@ -270,7 +279,10 @@ def plan(
     if blending.enabled:
         from .encoding.frame_blending import validate_blending_source
 
-        validate_blending_source(blending, info, target_fps)
+        try:
+            validate_blending_source(blending, info, target_fps)
+        except (ValueError, OSError) as exc:
+            raise PlanValidationError("frame_blending", str(exc)) from exc
 
     if target_fps <= 0:
         raise ValueError("Target FPS is zero")
@@ -372,6 +384,8 @@ def plan(
         target_width=target_w,
         target_height=target_h,
         target_fps=target_fps,
+        lut=lut,
+        lut_filter_path=lut_filter_path,
         frame_blending=blending,
         video_bitrate=video_br,
         original_video_bitrate=video_br,

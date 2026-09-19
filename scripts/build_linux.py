@@ -512,6 +512,8 @@ def assemble_app(
             "ffmpeg/source/ffmpeg-source.tar.xz",
             "LICENSE",
             "THIRD_PARTY_NOTICES.md",
+            "_internal/licenses/av/LICENSE.txt",
+            "_internal/licenses/numpy/LICENSE.txt",
         ],
         "denied_substrings": [
             "pythoncom",

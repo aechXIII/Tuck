@@ -5,9 +5,16 @@ desktop window; this payload intentionally includes no Python CLI, pywin32, or
 Windows Explorer integration.
 """
 
+from importlib.metadata import distribution
 from pathlib import Path
 
 _root = Path(SPECPATH).parent.resolve()
+_dependency_licenses = [
+    (str(distribution(name).locate_file(path)), f"licenses/{name}")
+    for name in ("av", "numpy")
+    for path in distribution(name).files or ()
+    if path.name == "LICENSE.txt" and ".dist-info/" in str(path)
+]
 _entry = _root / "tuck" / "sidecar_entry.py"
 if not _entry.is_file():
     raise FileNotFoundError(f"Entry point not found: {_entry}")
@@ -82,7 +89,7 @@ a = Analysis(
     [str(_entry)],
     pathex=[str(_root)],
     binaries=[],
-    datas=[],
+    datas=_dependency_licenses,
     hiddenimports=_hiddenimports,
     hookspath=[],
     hooksconfig={},

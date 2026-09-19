@@ -186,7 +186,7 @@
         </div>
         <div id="stage">
           <div id="media-viewport">
-            <video id="vid" aria-label="Video preview"></video>
+            <video crossorigin="anonymous" id="vid" aria-label="Video preview"></video>
           </div>
           <div id="crop-ui" aria-label="Video crop overlay">
             <div class="crop-dim" id="crop-dim-top"></div>
@@ -696,6 +696,7 @@
               </div>
             </div>
             <div class="stitle adjust-title">Adjust</div>
+            <p id="export-plan-error" class="blend-error" role="alert" hidden></p>
             <details class="adjust-panel" id="export-video-panel" open>
               <summary><span>Video</span><span id="export-video-summary">Source</span></summary>
               <div class="adjust-panel-body export-video-body">
@@ -733,6 +734,10 @@
               <div class="adjust-panel-body blend-body">
                 <label class="blend-check" for="blend-enabled"><input type="checkbox" id="blend-enabled" />Enable frame blending</label>
                 <fieldset id="blend-options" aria-label="Frame blending settings" disabled>
+                  <div class="export-setting-line blend-fps-row"><label for="blend-fps-select">Output FPS</label><div class="video-fps-controls">
+                    <select id="blend-fps-select" aria-label="Frame blending output frame rate"></select>
+                    <label id="blend-custom-fps" class="video-fps-value" hidden><input type="number" id="blend-fps-input" min="0.1" step="any" value="30" aria-label="Frame blending custom frame rate" data-shared-fps required /><span>FPS</span></label>
+                  </div></div>
                   <div class="export-setting-line"><label for="blend-amount">Blur amount</label><input type="number" id="blend-amount" min="0" max="4" step="any" value="1" required /></div>
                   <div class="export-setting-line"><label for="blend-curve">Weighting</label><select id="blend-curve"><option value="equal">Equal</option><option value="vegas">Vegas</option><option value="gaussian">Gaussian</option><option value="triangular">Triangular</option><option value="ascending">Ascending</option><option value="descending">Descending</option></select></div>
                   <figure class="blend-preview">
@@ -753,6 +758,33 @@
 
                   <p id="blend-error" class="blend-error" role="alert" hidden></p>
                 </fieldset>
+              </div>
+            </details>
+            <details class="adjust-panel" id="lut-panel">
+              <summary><span>Color LUT</span><span id="lut-summary">Off</span></summary>
+              <div class="adjust-panel-body lut-body">
+                <label class="blend-check" for="lut-enabled"><input type="checkbox" id="lut-enabled" disabled />Enable LUT</label>
+                <div class="lut-file-row">
+                  <button type="button" id="lut-name" class="lut-picker-trigger" aria-label="Select LUT" aria-haspopup="dialog" aria-expanded="false" aria-controls="lut-picker-popup"><span id="lut-current-name">Select LUT</span></button>
+                  <div id="lut-picker-popup" class="lut-picker-popup" popover="auto" role="dialog" aria-label="Saved LUTs">
+                    <div class="lut-picker-head"><div class="lut-search-row">
+                      <svg width="14" height="14" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5" stroke="currentColor" stroke-width="1.5"/><path d="m13 13 4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                      <input id="lut-search" type="search" role="combobox" aria-label="Search saved LUTs" placeholder="Find a LUT…" aria-autocomplete="list" aria-expanded="true" aria-controls="lut-options" autocomplete="off" />
+                    </div></div>
+                    <div id="lut-options" class="lut-options" role="listbox" aria-label="Saved LUTs"></div>
+                    <p id="lut-empty" class="lut-picker-message" hidden>No saved LUTs.</p>
+                    <div class="lut-picker-footer"><button type="button" id="lut-clear-history" title="Clear saved choices. Your current LUT and files are kept.">Clear history</button></div>
+                    <p id="lut-history-status" class="lut-picker-message" role="status" hidden></p>
+                  </div>
+                  <button type="button" id="lut-import" class="btn2">Import</button>
+                </div>
+                <div class="export-setting-line lut-strength-row">
+                  <label for="lut-strength">Strength</label>
+                  <input type="range" id="lut-strength" min="0" max="100" step="1" value="100" disabled />
+                  <output id="lut-strength-value" for="lut-strength">100%</output>
+                </div>
+                <p id="lut-error" class="blend-error" role="alert" hidden></p>
+                <p id="lut-status" class="lut-status" role="status" hidden></p>
               </div>
             </details>
             <details class="adjust-panel">

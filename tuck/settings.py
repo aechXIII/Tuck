@@ -174,7 +174,7 @@ def _get_lock_path() -> Path:
 
 
 # keeps settings writes serialized across independent Tuck processes
-class _ProcessLock:
+class ProcessLock:
     def __init__(self, lock_path: Path) -> None:
         self._lock_path = lock_path
         self._fd: int | None = None
@@ -216,7 +216,7 @@ class _ProcessLock:
                 os.close(self._fd)
                 self._fd = None
 
-    def __enter__(self) -> _ProcessLock:
+    def __enter__(self) -> ProcessLock:
         self.acquire()
         return self
 
@@ -267,7 +267,7 @@ class SettingsManager:
                 return
 
             lock_path = _get_lock_path()
-            with _ProcessLock(lock_path):
+            with ProcessLock(lock_path):
                 sp = settings_path()
                 pp = profiles_path()
 
