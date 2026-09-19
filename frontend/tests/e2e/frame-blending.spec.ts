@@ -27,6 +27,11 @@ for (const size of [{width:1240,height:800}, {width:960,height:640}]) {
     await expect(page.getByLabel("Blur amount")).toBeDisabled();
     await panel.screenshot({path:`frontend/.scratch/blend-disabled-${size.width}.png`});
     await page.getByLabel("Enable frame blending").check();
+    await page.getByLabel("Blur amount").focus();
+    await page.keyboard.press("ArrowUp");
+    await expect(page.getByLabel("Blur amount")).toHaveValue("1.01");
+    await page.keyboard.press("ArrowDown");
+    await expect(page.getByLabel("Blur amount")).toHaveValue("1");
     await page.getByLabel("Blur amount").fill("1.23");
     await expect(page.getByRole("button", {name:"Compress selected", exact:true})).toBeEnabled();
     await page.getByLabel("Blur amount").fill("1");

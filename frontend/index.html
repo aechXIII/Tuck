@@ -738,7 +738,7 @@
                     <select id="blend-fps-select" aria-label="Frame blending output frame rate"></select>
                     <label id="blend-custom-fps" class="video-fps-value" hidden><input type="number" id="blend-fps-input" min="0.1" step="any" value="30" aria-label="Frame blending custom frame rate" data-shared-fps required /><span>FPS</span></label>
                   </div></div>
-                  <div class="export-setting-line"><label for="blend-amount">Blur amount</label><input type="number" id="blend-amount" min="0" max="4" step="any" value="1" required /></div>
+                  <div class="export-setting-line"><label for="blend-amount">Blur amount</label><input type="number" id="blend-amount" min="0" max="4" step="0.01" value="1" required /></div>
                   <div class="export-setting-line"><label for="blend-curve">Weighting</label><select id="blend-curve"><option value="equal">Equal</option><option value="vegas">Vegas</option><option value="gaussian">Gaussian</option><option value="triangular">Triangular</option><option value="ascending">Ascending</option><option value="descending">Descending</option></select></div>
                   <figure class="blend-preview">
                     <svg id="blend-chart" viewBox="0 0 256 48" preserveAspectRatio="none" role="img" aria-label="Weight preview, earlier to later"></svg>
