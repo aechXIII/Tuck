@@ -74,6 +74,12 @@ export function createLutPreview(
     canvas.hidden = true;
     canvas.style.display = "none";
     stopFrames();
+    scheduleFrame();
+  }
+
+  function retainFrame(): void {
+    stopFrames();
+    scheduleFrame();
   }
 
   function clear(): void {
@@ -99,7 +105,8 @@ export function createLutPreview(
   }
 
   function initialize(): WebGL2RenderingContext {
-    gl ??= canvas.getContext("webgl2", { alpha: false, antialias: false, depth: false });
+    // paused previews must survive compositor paints without another video frame
+    gl ??= canvas.getContext("webgl2", { alpha: false, antialias: false, depth: false, preserveDrawingBuffer: true });
     if (!gl || gl.isContextLost()) throw new Error("WebGL2 is unavailable");
     if (program) return gl;
     const context = gl;
@@ -162,7 +169,7 @@ export function createLutPreview(
   }
 
   function draw(): void {
-    if (!active || disposed || !gl || gl.isContextLost() || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || !video.videoWidth) return;
+    if (!active || disposed || !gl || gl.isContextLost() || video.seeking || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || !video.videoWidth) return;
     try {
       syncGeometry();
       gl.activeTexture(gl.TEXTURE0);
@@ -178,16 +185,21 @@ export function createLutPreview(
   }
 
   function scheduleFrame(): void {
-    if (!active || disposed || video.paused || video.ended || frameCallback !== null || animationCallback !== null) return;
-    if (typeof video.requestVideoFrameCallback === "function") {
-      frameCallback = video.requestVideoFrameCallback(() => {
-        frameCallback = null;
+    if (!active || disposed) return;
+    if (!video.paused && !video.ended) {
+      // software compositors can expose video callbacks without delivering them
+      if (frameCallback !== null) video.cancelVideoFrameCallback(frameCallback);
+      frameCallback = null;
+      if (animationCallback !== null) return;
+      animationCallback = requestAnimationFrame(() => {
+        animationCallback = null;
         draw();
         scheduleFrame();
       });
-    } else {
-      animationCallback = requestAnimationFrame(() => {
-        animationCallback = null;
+    } else if (frameCallback === null && typeof video.requestVideoFrameCallback === "function") {
+      // paused seeks and clip loads can present a frame after their media events
+      frameCallback = video.requestVideoFrameCallback(() => {
+        frameCallback = null;
         draw();
         scheduleFrame();
       });
@@ -195,7 +207,15 @@ export function createLutPreview(
   }
 
   function refresh(): void { draw(); scheduleFrame(); }
-  function pause(): void { stopFrames(); draw(); }
+  function pause(): void {
+    if (animationCallback !== null) cancelAnimationFrame(animationCallback);
+    animationCallback = null;
+    refresh();
+  }
+  function emptied(): void {
+    if (video.getAttribute("src") || video.srcObject) retainFrame();
+    else hideFrame();
+  }
   function contextLost(event: Event): void {
     event.preventDefault();
     release();
@@ -208,7 +228,9 @@ export function createLutPreview(
   mutations.observe(video, { attributes: true, attributeFilter: ["style", "class", "hidden"] });
   for (const event of ["loadeddata", "seeked", "playing", "resize"]) video.addEventListener(event, refresh);
   for (const event of ["pause", "ended"]) video.addEventListener(event, pause);
-  for (const event of ["loadstart", "emptied"]) video.addEventListener(event, hideFrame);
+  video.addEventListener("loadstart", retainFrame);
+  video.addEventListener("emptied", emptied);
+  video.addEventListener("error", hideFrame);
   canvas.addEventListener("webglcontextlost", contextLost);
 
   return {
@@ -251,7 +273,9 @@ export function createLutPreview(
       mutations.disconnect();
       for (const event of ["loadeddata", "seeked", "playing", "resize"]) video.removeEventListener(event, refresh);
       for (const event of ["pause", "ended"]) video.removeEventListener(event, pause);
-      for (const event of ["loadstart", "emptied"]) video.removeEventListener(event, hideFrame);
+      video.removeEventListener("loadstart", retainFrame);
+      video.removeEventListener("emptied", emptied);
+      video.removeEventListener("error", hideFrame);
       canvas.removeEventListener("webglcontextlost", contextLost);
       release();
       canvas.remove();

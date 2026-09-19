@@ -95,7 +95,7 @@ export function installPlayer(host: PlayerHost): PlayerApi {
   let seekWanted: number | null = null;
   let seekBusy = false;
   let seekRaf = 0;
-  let seekSafety = 0;
+  let cancelActiveSeek: (() => void) | null = null;
   let disposed = false;
 
   function byId<T extends HTMLElement = HTMLElement>(id: string): T | null {
@@ -216,7 +216,7 @@ export function installPlayer(host: PlayerHost): PlayerApi {
   function seekPreview(sec: number): void {
     const v = byId<HTMLVideoElement>("vid");
     const full = host.videoDuration();
-    if (!v || !full || !Number.isFinite(full) || !Number.isFinite(sec)) return;
+    if (disposed || !v || !full || !Number.isFinite(full) || !Number.isFinite(sec)) return;
     const clamped = Math.max(0, Math.min(full, sec));
     host.setPlayheadUI(clamped, full);
     if (!v.paused) {
@@ -237,32 +237,35 @@ export function installPlayer(host: PlayerHost): PlayerApi {
 
   function flushVideoSeek(): void {
     const v = byId<HTMLVideoElement>("vid");
-    if (!v || seekWanted == null || seekBusy) return;
+    if (disposed || !v || seekWanted == null || seekBusy) return;
     const sec = seekWanted;
     seekWanted = null;
     if (Math.abs((v.currentTime || 0) - sec) < 0.002) return;
     seekBusy = true;
-    let finished = false;
-    const done = (): void => {
-      if (finished) return;
-      finished = true;
+    const cleanup = (): void => {
       v.removeEventListener("seeked", done);
-      v.removeEventListener("error", done);
-      if (seekSafety) {
-        clock.clearTimeout(seekSafety);
-        seekSafety = 0;
-      }
+      cancelActiveSeek = null;
       seekBusy = false;
+    };
+    const done = (): void => {
+      cleanup();
       if (seekWanted != null) flushVideoSeek();
     };
+    cancelActiveSeek = cleanup;
     v.addEventListener("seeked", done);
-    v.addEventListener("error", done);
-    seekSafety = clock.setTimeout(done, 180);
+    // restarting an unfinished seek can starve slow decoders while scrubbing
     try {
       v.currentTime = sec;
     } catch {
       done();
     }
+  }
+
+  function resetSeek(): void {
+    seekWanted = null;
+    cancelActiveSeek?.();
+    if (seekRaf) clock.cancelAnimationFrame(seekRaf);
+    seekRaf = 0;
   }
 
   function updateMuteIcon(): void {
@@ -320,6 +323,8 @@ export function installPlayer(host: PlayerHost): PlayerApi {
 
   const vid = byId<HTMLVideoElement>("vid");
   if (vid) {
+    vid.addEventListener("emptied", resetSeek);
+    vid.addEventListener("error", resetSeek);
     vid.addEventListener("play", onPlay);
     vid.addEventListener("pause", onPause);
     vid.addEventListener("timeupdate", updateTime);
@@ -352,6 +357,8 @@ export function installPlayer(host: PlayerHost): PlayerApi {
       if (disposed) return;
       disposed = true;
       if (vid) {
+        vid.removeEventListener("emptied", resetSeek);
+        vid.removeEventListener("error", resetSeek);
         vid.removeEventListener("play", onPlay);
         vid.removeEventListener("pause", onPause);
         vid.removeEventListener("timeupdate", updateTime);
@@ -359,14 +366,7 @@ export function installPlayer(host: PlayerHost): PlayerApi {
         vid.removeEventListener("loadedmetadata", onDurationOrMeta);
         vid.removeEventListener("ended", loopPlayback);
       }
-      if (seekRaf) {
-        clock.cancelAnimationFrame(seekRaf);
-        seekRaf = 0;
-      }
-      if (seekSafety) {
-        clock.clearTimeout(seekSafety);
-        seekSafety = 0;
-      }
+      resetSeek();
       if (active === api) active = null;
     },
   };

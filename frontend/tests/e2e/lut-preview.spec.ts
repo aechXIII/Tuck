@@ -47,7 +47,16 @@ test("LUT preview transforms real video pixels and restores the source", async (
     const half = pixel(true);
     await video.play();
     const playingFrame = new Promise<number[]>(resolve => {
-      video.requestVideoFrameCallback(() => resolve(pixel(true)));
+      const gl = canvas.getContext("webgl2")!;
+      const draw = gl.drawArrays.bind(gl);
+      gl.drawArrays = (...args) => {
+        draw(...args);
+        const rendered = pixel(true);
+        if (rendered.every(value => Math.abs(value - 128) <= 4)) {
+          gl.drawArrays = draw;
+          resolve(rendered);
+        }
+      };
     });
     paint.fillStyle = "rgb(64,128,192)";
     paint.fillRect(0, 0, 16, 8);
@@ -60,7 +69,7 @@ test("LUT preview transforms real video pixels and restores the source", async (
     await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
     const geometry = [canvas.style.transform, canvas.style.width];
     video.dispatchEvent(new Event("loadstart"));
-    const hiddenOnLoad = getComputedStyle(canvas).display === "none";
+    const retainedOnLoad = getComputedStyle(canvas).display !== "none";
     video.dispatchEvent(new Event("loadeddata"));
     const restoredOnLoad = getComputedStyle(canvas).display !== "none";
     preview.clear();
@@ -70,7 +79,7 @@ test("LUT preview transforms real video pixels and restores the source", async (
     preview.dispose();
     const disposed = !canvas.isConnected;
     for (const track of stream.getTracks()) track.stop();
-    return { full, bottom, half, live, visible, geometry, hiddenOnLoad, restoredOnLoad, cleared, zero, disposed, errors };
+    return { full, bottom, half, live, visible, geometry, retainedOnLoad, restoredOnLoad, cleared, zero, disposed, errors };
   }, moduleSource);
   expect(result.errors).toEqual([]);
   for (const [actual, expected] of [[result.full, [192, 64, 128]], [result.bottom, [64, 192, 32]], [result.half, [160, 64, 160]], [result.live, [128, 128, 128]]] as const) {
@@ -78,7 +87,7 @@ test("LUT preview transforms real video pixels and restores the source", async (
   }
   expect(result.visible).toBe(true);
   expect(result.geometry).toEqual(["matrix(0, 1, -1, 0, 80, 0)", "80px"]);
-  expect(result.hiddenOnLoad).toBe(true);
+  expect(result.retainedOnLoad).toBe(true);
   expect(result.restoredOnLoad).toBe(true);
   expect(result.cleared).toBe(true);
   expect(result.zero).toBe(true);
@@ -219,4 +228,54 @@ test("LUT preview reports invalid tables without covering the video", async ({ p
   }, moduleSource);
   expect(result.errors).toEqual(["LUT preview data is invalid. Import the LUT again."]);
   expect(result.hidden).toBe(true);
+});
+
+test("paused LUT previews consume late frame notifications and stop after disposal", async ({page}) => {
+  await page.setContent('<video muted style="width:80px;height:40px"></video>');
+  const result = await page.evaluate(async source => {
+    const {createLutPreview} = await import(URL.createObjectURL(new Blob([source], {type:"text/javascript"})));
+    const video = document.querySelector("video")!;
+    const input = document.createElement("canvas");
+    input.width = 80; input.height = 40;
+    input.getContext("2d")!.fillRect(0,0,80,40);
+    const stream = input.captureStream(0);
+    video.srcObject = stream;
+    await video.play(); video.pause();
+    // deliver compositor notifications independently of media events
+    const pending = new Map<number, VideoFrameRequestCallback>();
+    let sequence = 0;
+    video.requestVideoFrameCallback = callback => { pending.set(++sequence, callback); return sequence; };
+    video.cancelVideoFrameCallback = id => { pending.delete(id); };
+    const errors: string[] = [];
+    const preview = createLutPreview(video, (error: string) => errors.push(error));
+    preview.set(new Float32Array(24).fill(1),2,1);
+    const canvas = document.querySelector<HTMLCanvasElement>("[data-lut-preview]")!;
+    const gl = canvas.getContext("webgl2")!;
+    let draws = 0;
+    const draw = gl.drawArrays.bind(gl);
+    gl.drawArrays = (...args) => { draws++; draw(...args); };
+    video.dispatchEvent(new Event("pause"));
+    const listeningWhilePaused = pending.size;
+    const beforeFrame = draws;
+    const callback = pending.values().next().value;
+    pending.clear();
+    callback?.(performance.now(), {mediaTime:0, presentedFrames:1, expectedDisplayTime:0, presentationTime:0, width:80, height:40, processingDuration:0});
+    const repainted = draws > beforeFrame;
+    await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    const retainedPixel = new Uint8Array(4);
+    gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, retainedPixel);
+    const retained = retainedPixel[0];
+    video.dispatchEvent(new Event("loadstart"));
+    const listeningAfterSourceChange = pending.size;
+    preview.dispose();
+    const pendingAfterDispose = pending.size;
+    for (const track of stream.getTracks()) track.stop();
+    return {retained,listeningWhilePaused,repainted,listeningAfterSourceChange,pendingAfterDispose,errors};
+  }, moduleSource);
+  expect(result.errors).toEqual([]);
+  expect(result.listeningWhilePaused).toBe(1);
+  expect(result.repainted).toBe(true);
+  expect(result.retained).toBe(255);
+  expect(result.listeningAfterSourceChange).toBe(1);
+  expect(result.pendingAfterDispose).toBe(0);
 });
