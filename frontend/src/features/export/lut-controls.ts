@@ -44,12 +44,17 @@ export function installLutControls(root: HTMLElement, video: HTMLVideoElement,
   function sync(): void {
     const selected = busy ? library.find(entry => entry.path === pendingPath) ?? settings : settings;
     picker.sync(library, {path:selected.path, name:selected.name}, busy, clearing);
+    const hasSelection = !!settings.path;
+    root.querySelector<HTMLElement>("#lut-adjustments")!.hidden = !hasSelection;
+    root.querySelector<HTMLElement>("#lut-apply-help")!.textContent = settings.enabled
+      ? "Applies to the preview and export."
+      : "Off in preview and export.";
     enabled.checked = settings.enabled;
     enabled.disabled = busy || !settings.path;
     strength.disabled = busy || !settings.enabled || !table;
     strength.value = String(Math.round(settings.strength * 100));
     root.querySelector<HTMLOutputElement>("#lut-strength-value")!.value = `${strength.value}%`;
-    root.querySelector<HTMLElement>("#lut-summary")!.textContent = settings.enabled ? `${strength.value}%` : "Off";
+    root.querySelector<HTMLElement>("#lut-summary")!.textContent = busy ? "Loading…" : !hasSelection ? "Not selected" : settings.enabled ? `${strength.value}%` : "Off";
     importButton.disabled = busy || clearing;
     importButton.textContent = "Import";
     status.textContent = busy ? "Loading LUT…" : "";
@@ -134,7 +139,13 @@ export function installLutControls(root: HTMLElement, video: HTMLVideoElement,
   function selectLut(path: string): void {
     if (busy || clearing) return;
     const selected = library.find(entry => entry.path === path);
-    if (selected && selected.path === settings.path && table) return;
+    if (selected && selected.path === settings.path && table) {
+      if (!settings.enabled) {
+        settings.enabled = true;
+        sync(); changed();
+      }
+      return;
+    }
     if (selected) void load(selected.path, {...settings,...selected,enabled:true}, false);
     else if (!path) {
       generation += 1;

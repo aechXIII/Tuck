@@ -5,7 +5,11 @@ for (const width of [1240, 960]) {
   test(`export effects match Video controls at ${width}`, async ({page}) => {
     await page.setViewportSize({width,height:width === 960 ? 640 : 800});
     await page.emulateMedia({reducedMotion:"reduce"});
-    await installFakeBackend(page, healthyBackendFixture());
+    const fixture = healthyBackendFixture();
+    fixture.responses.pickLutFile = {path:"C:/looks/Warm.cube"};
+    fixture.responses.loadLut = {path:"C:/looks/Warm.cube",name:"Warm",size:2,table_url:"https://lut.test/table",token:"lut"};
+    await page.route("https://lut.test/table", route => route.fulfill({body:Buffer.from(new Float32Array(24).buffer),headers:{"Access-Control-Allow-Origin":"*"}}));
+    await installFakeBackend(page, fixture);
     await page.goto("/");
     if (width === 960) await page.getByRole("button",{name:"Inspector",exact:true}).click();
     await page.locator("#frame-blending-panel > summary").click();
@@ -13,6 +17,8 @@ for (const width of [1240, 960]) {
     await page.getByLabel("Weighting",{exact:true}).selectOption("gaussian");
     await page.getByText("Advanced settings",{exact:true}).click();
     await page.locator("#lut-panel > summary").click();
+    await page.locator("#lut-import").click();
+    await expect(page.getByRole("switch", {name:"Apply LUT",exact:true})).toBeChecked();
     await page.locator(".adjust-panel > summary").filter({has: page.locator("#export-audio-summary")}).click();
     const metrics = await page.evaluate(() => {
       const measure = (selector: string) => {

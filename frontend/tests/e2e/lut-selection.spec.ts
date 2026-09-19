@@ -29,10 +29,10 @@ for (const width of [1240, 960]) {
     await page.getByRole("button",{name:"Add videos"}).click();
     if(width===960) await page.getByRole("button",{name:"Inspector",exact:true}).click();
     await page.locator("#lut-panel > summary").click();
-    const select = page.getByRole("button",{name:/^Select LUT/});
+    const select = page.getByRole("button",{name:/^LUT /});
     await select.click();
-    await expect(page.locator("#lut-options").getByRole("option")).toHaveCount(3);
-    const firstOption = await page.locator("#lut-options").getByRole("option").nth(1).elementHandle();
+    await expect(page.locator("#lut-options").getByRole("option")).toHaveCount(2);
+    const firstOption = await page.locator("#lut-options").getByRole("option").nth(0).elementHandle();
     await page.keyboard.press("Escape");
     await page.evaluate(async () => {
       const source = document.createElement("canvas"); source.width=128;source.height=72;
@@ -45,7 +45,7 @@ for (const width of [1240, 960]) {
       await page.locator("#lut-options").getByRole("option",{name:entries[index]!.name,exact:true}).click();
       await expect(select).toBeEnabled();
       await expect(select).toHaveText(entries[index]!.name);
-      expect(await page.locator("#lut-options [role=option]").allTextContents()).toEqual(["None","Invert","Swap"]);
+      expect(await page.locator("#lut-options [role=option]").allTextContents()).toEqual(["Invert","Swap"]);
       expect(await firstOption!.evaluate(node=>node.isConnected)).toBe(true);
       await expect(page.locator("[data-lut-preview]")).toHaveCount(1);
       const pixel = await page.evaluate(() => {
@@ -66,7 +66,7 @@ for (const width of [1240, 960]) {
     await expect(page.locator("[data-lut-preview]")).toBeVisible();
     await expect(select).toBeFocused();
     await select.click();
-    await page.locator("#lut-options").getByRole("option",{name:"None",exact:true}).click();
+    await page.getByRole("button",{name:"Remove LUT",exact:true}).click();
     await expect(page.locator("[data-lut-preview]")).toBeHidden();
     expect(errors).toEqual([]);
   });

@@ -8,6 +8,7 @@ export function createLutPicker(root: HTMLElement, select: (path: string) => voi
   const list = root.querySelector<HTMLElement>("#lut-options")!;
   const empty = root.querySelector<HTMLElement>("#lut-empty")!;
   const clear = root.querySelector<HTMLButtonElement>("#lut-clear-history")!;
+  const remove = root.querySelector<HTMLButtonElement>("#lut-remove")!;
   const feedback = root.querySelector<HTMLElement>("#lut-history-status")!;
   const importButton = root.querySelector<HTMLButtonElement>("#lut-import")!;
   const row = trigger.parentElement!;
@@ -109,6 +110,11 @@ export function createLutPicker(root: HTMLElement, select: (path: string) => voi
     close(true);
     select(option.dataset.path ?? "");
   });
+  remove.addEventListener("click", () => {
+    if (locked) return;
+    close(true);
+    select("");
+  });
   clear.addEventListener("click", () => { search.focus(); clearHistory(); });
   window.addEventListener("resize", () => close());
   root.ownerDocument.addEventListener("scroll", event => {
@@ -118,9 +124,10 @@ export function createLutPicker(root: HTMLElement, select: (path: string) => voi
   return {
     sync(entries: readonly LutEntry[], selected: LutEntry, busy: boolean, clearing: boolean): void {
       selectedPath = selected.path;
+      remove.hidden = !selected.path;
+      remove.disabled = busy || clearing;
       locked = busy || clearing;
-      current.textContent = selected.name || "Select LUT";
-      trigger.setAttribute("aria-label", selected.name ? `Select LUT: ${selected.name}` : "Select LUT");
+      current.textContent = selected.name || "No LUT selected";
       trigger.title = selected.name;
       if (busy && root.ownerDocument.activeElement === trigger) returnAfterLoad = true;
       trigger.disabled = busy || clearing;
@@ -128,7 +135,7 @@ export function createLutPicker(root: HTMLElement, select: (path: string) => voi
       clear.disabled = busy || clearing || entries.length === 0;
       clear.textContent = clearing ? "Clearing…" : "Clear history";
       historyCount = entries.length;
-      const choices = [{path:"", name:"None"}, ...entries];
+      const choices = entries;
       const paths = new Set(choices.map(entry => entry.path));
       for (const [path, option] of options) if (!paths.has(path)) { option.remove(); options.delete(path); }
       choices.forEach((entry, index) => {

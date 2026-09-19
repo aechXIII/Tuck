@@ -23,7 +23,7 @@ for (const width of [1240, 960]) {
     await expect(linear).toBeChecked();
     await page.screenshot({ path: testInfo.outputPath(`effects-${width}.png`) });
     await page.locator("#lut-panel > summary").click();
-    await expect(page.getByRole("switch", { name: "Enable LUT", exact: true })).toBeDisabled();
+    await expect(page.locator("#lut-adjustments")).toBeHidden();
     await page.getByRole("button", { name: "Settings", exact: true }).click();
     await page.screenshot({ path: testInfo.outputPath(`settings-${width}.png`) });
     await page.getByRole("button", { name: "Profiles", exact: true }).click();

@@ -27,12 +27,12 @@ for (const width of [1240, 960]) {
     const panel = page.locator("#lut-panel");
     await panel.locator(":scope > summary").focus();
     await page.keyboard.press("Enter");
-    await expect(page.getByLabel("Enable LUT", {exact:true})).toBeDisabled();
-    await expect(page.getByLabel("Strength", {exact:true})).toBeDisabled();
+    await expect(page.getByLabel("Apply LUT", {exact:true})).toBeHidden();
+    await expect(page.getByLabel("Strength", {exact:true})).toBeHidden();
     await panel.screenshot({path:`frontend/.scratch/lut-empty-${width}.png`});
     await panel.getByRole("button", {name:"Import",exact:true}).click();
     await expect(page.locator("#lut-current-name")).toHaveText("Warm.cube");
-    await expect(page.getByLabel("Enable LUT", {exact:true})).toBeChecked();
+    await expect(page.getByLabel("Apply LUT", {exact:true})).toBeChecked();
     const strength = page.getByLabel("Strength", {exact:true});
     await strength.focus();
     await page.keyboard.press("Home");
@@ -67,7 +67,7 @@ for (const width of [1240, 960]) {
     await expect(page.locator("#lut-error")).toContainText("Export a .cube");
     await expect(page.locator("#lut-current-name")).toHaveText("Warm.cube");
     await page.getByRole("button", {name:"Upscale",exact:true}).click();
-    await page.getByLabel("Enable LUT", {exact:true}).uncheck();
+    await page.getByLabel("Apply LUT", {exact:true}).uncheck();
     await expect(strength).toBeDisabled();
     await page.getByRole("button", {name:"Upscale selected",exact:true}).click();
     const disabled = await page.evaluate(() => window.__tuckFakeBackendCalls?.filter(c=>c.method==="enqueueWithOptions").at(-1)?.args[0]);
@@ -88,7 +88,7 @@ test("saved LUT profiles reload and old profiles disable the effect", async ({pa
   await installFakeBackend(page,fixture);
   await page.goto("/");
   await page.locator("#lut-panel > summary").click();
-  await expect(page.getByLabel("Enable LUT",{exact:true})).not.toBeChecked();
+  await expect(page.getByLabel("Apply LUT",{exact:true})).not.toBeChecked();
   await page.locator("#prof-sel").selectOption("look");
   await expect(page.getByLabel("Strength",{exact:true})).toBeEnabled();
   await expect(page.locator("#lut-current-name")).toHaveText("Saved look");
@@ -98,9 +98,9 @@ test("saved LUT profiles reload and old profiles disable the effect", async ({pa
   const update = await page.evaluate(() => window.__tuckFakeBackendCalls?.find(c=>c.method==="updateProfile")?.args[1]);
   expect(update).toMatchObject({lut:{...lut,strength:.55}});
   await page.locator("#prof-sel").selectOption("old");
-  await expect(page.getByLabel("Enable LUT",{exact:true})).not.toBeChecked();
+  await expect(page.getByLabel("Apply LUT",{exact:true})).not.toBeChecked();
   await expect(page.getByLabel("Strength",{exact:true})).toBeDisabled();
-  await expect(page.locator("#lut-current-name")).toHaveText("Select LUT");
+  await expect(page.locator("#lut-current-name")).toHaveText("No LUT selected");
 });
 
 
@@ -121,9 +121,9 @@ test("blending errors leave the LUT preview enabled and FPS controls stay synchr
   await page.getByRole("button",{name:"Add videos"}).click();
   await page.getByRole("button",{name:"Inspector",exact:true}).click();
   await page.locator("#lut-panel > summary").click();
-  await page.getByRole("button",{name:/^Select LUT/}).click();
+  await page.getByRole("button",{name:/^LUT /}).click();
   await page.locator("#lut-options").getByRole("option",{name:"Saved look",exact:true}).click();
-  await expect(page.getByLabel("Enable LUT",{exact:true})).toBeChecked();
+  await expect(page.getByLabel("Apply LUT",{exact:true})).toBeChecked();
   await expect(page.getByLabel("Strength",{exact:true})).toBeEnabled();
   await page.evaluate(async () => {
     const source = document.createElement("canvas"); source.width=128; source.height=72;
@@ -137,7 +137,7 @@ test("blending errors leave the LUT preview enabled and FPS controls stay synchr
   await expect(page.locator("#blend-error")).toContainText("240 FPS");
   await expect(page.locator("#lut-error")).toBeHidden();
   await expect(page.locator("[data-lut-preview]")).toBeVisible();
-  await expect(page.getByLabel("Enable LUT",{exact:true})).toBeChecked();
+  await expect(page.getByLabel("Apply LUT",{exact:true})).toBeChecked();
   const blendFps = page.getByLabel("Frame blending output frame rate",{exact:true});
   const videoFps = page.getByLabel("Output frame rate",{exact:true});
   await blendFps.selectOption("60");
@@ -159,6 +159,6 @@ test("blending errors leave the LUT preview enabled and FPS controls stay synchr
   await page.reload();
   await page.getByRole("button",{name:"Inspector",exact:true}).click();
   await page.locator("#lut-panel > summary").click();
-  await page.getByRole("button",{name:/^Select LUT/}).click();
-  await expect(page.locator("#lut-options").getByRole("option")).toHaveCount(3);
+  await page.getByRole("button",{name:/^LUT /}).click();
+  await expect(page.locator("#lut-options").getByRole("option")).toHaveCount(2);
 });

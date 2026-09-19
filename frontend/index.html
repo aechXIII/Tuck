@@ -761,27 +761,33 @@
               </div>
             </details>
             <details class="adjust-panel" id="lut-panel">
-              <summary><span>Color LUT</span><span id="lut-summary">Off</span></summary>
+              <summary><span>Color LUT</span><span id="lut-summary">Not selected</span></summary>
               <div class="adjust-panel-body lut-body">
-                <label class="toggle-row export-toggle" for="lut-enabled"><span>Enable LUT</span><input type="checkbox" role="switch" id="lut-enabled" disabled /><span class="toggle-track" aria-hidden="true"></span></label>
-                <div class="lut-file-row">
-                  <button type="button" id="lut-name" class="lut-picker-trigger" aria-label="Select LUT" aria-haspopup="dialog" aria-expanded="false" aria-controls="lut-picker-popup"><span id="lut-current-name">Select LUT</span></button>
-                  <div id="lut-picker-popup" class="lut-picker-popup" popover="auto" role="dialog" aria-label="Saved LUTs">
-                    <div class="lut-picker-head"><div class="lut-search-row">
-                      <svg width="14" height="14" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5" stroke="currentColor" stroke-width="1.5"/><path d="m13 13 4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-                      <input id="lut-search" type="search" role="combobox" aria-label="Search saved LUTs" placeholder="Find a LUT…" aria-autocomplete="list" aria-expanded="true" aria-controls="lut-options" autocomplete="off" />
-                    </div></div>
-                    <div id="lut-options" class="lut-options" role="listbox" aria-label="Saved LUTs"></div>
-                    <p id="lut-empty" class="lut-picker-message" hidden>No saved LUTs.</p>
-                    <div class="lut-picker-footer"><button type="button" id="lut-clear-history" title="Clear saved choices. Your current LUT and files are kept.">Clear history</button></div>
-                    <p id="lut-history-status" class="lut-picker-message" role="status" hidden></p>
+                <div class="enc-field">
+                  <label id="lut-field-label" for="lut-name">LUT</label>
+                  <div class="lut-file-row">
+                    <button type="button" id="lut-name" class="lut-picker-trigger" aria-labelledby="lut-field-label lut-current-name" aria-haspopup="dialog" aria-expanded="false" aria-controls="lut-picker-popup"><span id="lut-current-name">No LUT selected</span></button>
+                    <div id="lut-picker-popup" class="lut-picker-popup" popover="auto" role="dialog" aria-label="Saved LUTs">
+                      <div class="lut-picker-head"><div class="lut-search-row">
+                        <svg width="14" height="14" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5" stroke="currentColor" stroke-width="1.5"/><path d="m13 13 4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                        <input id="lut-search" type="search" role="combobox" aria-label="Search saved LUTs" placeholder="Find a LUT…" aria-autocomplete="list" aria-expanded="true" aria-controls="lut-options" autocomplete="off" />
+                      </div></div>
+                      <div id="lut-options" class="lut-options" role="listbox" aria-label="Saved LUTs"></div>
+                      <p id="lut-empty" class="lut-picker-message" hidden>No saved LUTs.</p>
+                      <div class="lut-picker-footer"><button type="button" id="lut-remove" hidden>Remove LUT</button><button type="button" id="lut-clear-history" title="Clear saved choices. Your current LUT and files are kept.">Clear history</button></div>
+                      <p id="lut-history-status" class="lut-picker-message" role="status" hidden></p>
+                    </div>
+                    <button type="button" id="lut-import" class="btn2">Import</button>
                   </div>
-                  <button type="button" id="lut-import" class="btn2">Import</button>
                 </div>
-                <div class="export-setting-line lut-strength-row">
-                  <label for="lut-strength">Strength</label>
-                  <input type="range" id="lut-strength" min="0" max="100" step="1" value="100" disabled />
-                  <output id="lut-strength-value" for="lut-strength">100%</output>
+                <div id="lut-adjustments" class="lut-adjustments" hidden>
+                  <label class="toggle-row export-toggle" for="lut-enabled"><span>Apply LUT</span><input type="checkbox" role="switch" id="lut-enabled" aria-describedby="lut-apply-help" disabled /><span class="toggle-track" aria-hidden="true"></span></label>
+                  <p id="lut-apply-help" class="lut-help">Applies to the preview and export.</p>
+                  <div class="export-setting-line lut-strength-row">
+                    <label for="lut-strength">Strength</label>
+                    <input type="range" id="lut-strength" min="0" max="100" step="1" value="100" disabled />
+                    <output id="lut-strength-value" for="lut-strength">100%</output>
+                  </div>
                 </div>
                 <p id="lut-error" class="blend-error" role="alert" hidden></p>
                 <p id="lut-status" class="lut-status" role="status" hidden></p>
