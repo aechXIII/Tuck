@@ -63,6 +63,7 @@ export function prepareModalBox(className: string): HTMLElement {
 }
 
 export function closeMod(): void {
+  byId("mod-box")?.removeAttribute("aria-describedby");
   closeModImpl();
   if (confirmReturnFocus?.isConnected) confirmReturnFocus.focus();
   confirmReturnFocus = null;
@@ -152,7 +153,11 @@ function dismissToast(id: string): void {
   }, 140);
 }
 
-export function confirmToast(msg: string, cb: () => void): void {
+export function confirmToast(msg: string, cb: () => void, options: {
+  title: string;
+  confirmLabel: string;
+  cancelLabel: string;
+} | null = null): void {
   confirmReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   const lower = msg.toLowerCase();
   const discard = lower.includes("discard");
@@ -183,6 +188,7 @@ export function confirmToast(msg: string, cb: () => void): void {
   box.setAttribute("role", "dialog");
   box.setAttribute("aria-modal", "true");
   box.setAttribute("aria-labelledby", "confirm-title");
+  box.setAttribute("aria-describedby", "confirm-copy");
   box.innerHTML = `<h2 id="confirm-title"></h2>
     <p class="confirm-copy" id="confirm-copy"></p>
     <div class="confirm-actions">
@@ -191,17 +197,17 @@ export function confirmToast(msg: string, cb: () => void): void {
     </div>`;
   const titleEl = byId("confirm-title");
   const copyEl = byId("confirm-copy");
-  if (titleEl) titleEl.textContent = title;
+  if (titleEl) titleEl.textContent = options?.title ?? title;
   if (copyEl) copyEl.textContent = msg;
   const cancelButton = byId("confirm-cancel");
   const acceptButton = byId("confirm-accept");
   if (cancelButton) {
-    cancelButton.textContent = cancelLabel;
+    cancelButton.textContent = options?.cancelLabel ?? cancelLabel;
     cancelButton.addEventListener("click", closeMod);
   }
   if (acceptButton) {
-    acceptButton.textContent = confirmLabel;
-    acceptButton.classList.toggle("danger", discard || remove);
+    acceptButton.textContent = options?.confirmLabel ?? confirmLabel;
+    acceptButton.classList.toggle("danger", !options && (discard || remove));
     acceptButton.addEventListener("click", acceptConfirm);
   }
   byId("mod-overlay")?.classList.add("open");

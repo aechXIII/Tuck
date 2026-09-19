@@ -33,6 +33,7 @@ import {
   type PlatformCapabilities,
 } from "../../platform/capabilities.ts";
 import { confirmToast, toast } from "../editor/toast.ts";
+import { lutSettings } from "../export/lut-controls.ts";
 import type { EditorSession } from "../editor/session.ts";
 
 const esc = escapeHtml;
@@ -252,7 +253,18 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     });
     bindProfileActions(list, (action, profileId, name) => {
       if (action === "edit") void editProfile(profileId);
-      else if (action === "export") void exportProfile(profileId);
+      else if (action === "export") {
+        const profile = rows.find(row => row.profile_id === profileId);
+        const lut = lutSettings(profile?.lut);
+        if (lut.path) {
+          const selection = lut.name ? `“${lut.name}”` : "a color LUT";
+          confirmToast(
+            `This profile references ${selection}. To use it on another computer, import that LUT separately and select it in the profile.`,
+            () => void exportProfile(profileId),
+            {title: "LUT file isn’t included", confirmLabel: "Export profile", cancelLabel: "Cancel"},
+          );
+        } else void exportProfile(profileId);
+      }
       else if (action === "duplicate") void duplicateProfile(profileId);
       else if (action === "delete") deleteProfile(profileId, name);
     });

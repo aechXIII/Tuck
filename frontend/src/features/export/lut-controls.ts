@@ -35,10 +35,16 @@ export function installLutControls(root: HTMLElement, video: HTMLVideoElement,
   let error = "";
   let backendError = "";
   let previewError = "";
+  let profileLoadFailed = false;
   const picker = createLutPicker(root, selectLut, () => { void clearHistory(); });
   const preview = createLutPreview(video, message => { previewError = message; showError(); });
   function showError(): void {
-    errorNode.textContent = error || (settings.enabled ? backendError || previewError : "");
+    const recovery = settings.enabled
+      ? "Import the LUT, or turn off “Apply LUT” to export with the remaining profile settings."
+      : "The LUT is off. You can export with the remaining profile settings, or import the LUT to use it again.";
+    errorNode.textContent = profileLoadFailed && error
+      ? `This profile’s LUT could not be loaded. ${error} ${recovery}`
+      : error || (settings.enabled ? backendError || previewError : "");
     errorNode.hidden = !errorNode.textContent;
   }
   function sync(): void {
@@ -67,7 +73,7 @@ export function installLutControls(root: HTMLElement, video: HTMLVideoElement,
     else preview.clear();
     showError();
   }
-  async function load(path: string, requested: LutSettings, imported: boolean): Promise<void> {
+  async function load(path: string, requested: LutSettings, imported: boolean, fromProfile = false): Promise<void> {
     const request = ++generation;
     download?.abort();
     const controller = new AbortController();
@@ -100,8 +106,13 @@ export function installLutControls(root: HTMLElement, video: HTMLVideoElement,
       library = [...entries.values()];
       previewError = "";
       backendError = "";
+      profileLoadFailed = false;
     } catch (reason) {
-      if (request === generation) error = reason instanceof Error ? reason.message : "Could not load the LUT. Try importing it again.";
+      if (request === generation) {
+        error = reason instanceof Error ? reason.message : "Could not load the LUT. Try importing it again.";
+        profileLoadFailed ||= fromProfile;
+        if (profileLoadFailed) (root as HTMLDetailsElement).open = true;
+      }
     } finally {
       if (token) void client().releaseMediaToken(token);
       if (request === generation) { busy = false; pendingPath = ""; sync(); changed(); }
@@ -153,6 +164,7 @@ export function installLutControls(root: HTMLElement, video: HTMLVideoElement,
       settings = lutSettings(null);
       table = null;
       error = backendError = previewError = "";
+      profileLoadFailed = false;
       sync(); changed();
     }
   }
@@ -187,8 +199,9 @@ export function installLutControls(root: HTMLElement, video: HTMLVideoElement,
       busy = false;
       pendingPath = "";
       error = backendError = previewError = "";
+      profileLoadFailed = false;
       sync();
-      if (settings.path) void load(settings.path, settings, false);
+      if (settings.path) void load(settings.path, settings, false, true);
     },
     setBackendError(message: string): void { backendError = message; sync(); },
   };

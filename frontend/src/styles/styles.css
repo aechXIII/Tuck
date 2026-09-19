@@ -1659,6 +1659,7 @@ label.toggle-row {
   text-transform: none;
 }
 .confirm-copy {
+  overflow-wrap: anywhere;
   color: var(--muted);
   font-size: 12px;
   line-height: 1.5;
