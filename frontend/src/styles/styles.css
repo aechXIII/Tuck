@@ -431,7 +431,7 @@ body.workspace-overlay .panel-heading {
 #clips {
   flex: 1;
   overflow-y: auto;
-  padding: 0 8px 8px;
+  padding: 3px 8px 8px;
 }
 .clip {
   position: relative;
@@ -607,9 +607,21 @@ body.workspace-overlay .panel-heading {
   opacity: 0.6;
   border-color: var(--accent);
 }
-.clip.drop-target {
-  background: var(--raised-2);
-  box-shadow: inset 3px 0 0 var(--accent);
+.clip[data-drop-position]::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--accent-light);
+  pointer-events: none;
+}
+.clip[data-drop-position="before"]::after {
+  top: -3px;
+}
+.clip[data-drop-position="after"]::after {
+  bottom: -3px;
 }
 .clip .c-drag {
   position: absolute;

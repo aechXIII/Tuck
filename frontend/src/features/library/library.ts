@@ -85,6 +85,7 @@ interface ClipReorderState {
   moved: boolean;
   fromPath: string | null;
   overPath: string | null;
+  position: "before" | "after";
   startX: number;
   startY: number;
   el: HTMLElement | null;
@@ -105,6 +106,7 @@ export function createLibrary(host: LibraryHost): LibraryApi {
     moved: false,
     fromPath: null,
     overPath: null,
+    position: "before",
     startX: 0,
     startY: 0,
     el: null,
@@ -298,8 +300,8 @@ export function createLibrary(host: LibraryHost): LibraryApi {
   }
 
   function clearDropTargets(): void {
-    const nodes = byId("clips")?.querySelectorAll(".drop-target") ?? [];
-    for (const node of nodes) node.classList.remove("drop-target");
+    const nodes = byId("clips")?.querySelectorAll<HTMLElement>("[data-drop-position]") ?? [];
+    for (const node of nodes) delete node.dataset.dropPosition;
   }
 
   function beginClipReorder(
@@ -351,14 +353,16 @@ export function createLibrary(host: LibraryHost): LibraryApi {
       card.dataset.clipPath &&
       card.dataset.clipPath !== clipReorder.fromPath
     ) {
-      card.classList.add("drop-target");
+      const bounds = card.getBoundingClientRect();
+      clipReorder.position = event.clientY < bounds.top + bounds.height / 2 ? "before" : "after";
+      card.dataset.dropPosition = clipReorder.position;
       clipReorder.overPath = card.dataset.clipPath;
     } else {
       clipReorder.overPath = null;
     }
   }
 
-  async function onClipReorderEnd(): Promise<void> {
+  async function onClipReorderEnd(event: Event): Promise<void> {
     if (!clipReorder.active) return;
     windowRef.removeEventListener("pointermove", onClipReorderMove, true);
     windowRef.removeEventListener("pointerup", onClipReorderEnd, true);
@@ -381,7 +385,7 @@ export function createLibrary(host: LibraryHost): LibraryApi {
     clipReorder.overPath = null;
     clipReorder.el = null;
     clipReorder.pointerId = null;
-    if (!moved || !fromPath || !overPath || fromPath === overPath) {
+    if (event.type === "pointercancel" || !moved || !fromPath || !overPath || fromPath === overPath) {
       clipReorder.moved = false;
       renderClips();
       return;
@@ -395,7 +399,8 @@ export function createLibrary(host: LibraryHost): LibraryApi {
       return;
     }
     order.splice(fromIdx, 1);
-    order.splice(toIdx, 0, fromPath);
+    const insertion = order.indexOf(overPath) + (clipReorder.position === "after" ? 1 : 0);
+    order.splice(insertion, 0, fromPath);
     session.clipOrder = order;
     clipReorder.moved = false;
     renderClips();
