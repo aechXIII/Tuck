@@ -340,11 +340,11 @@ body.settings-open .settings-workspace {
   flex-direction: column;
   gap: 14px;
 }
-.settings-option {
-  align-items: flex-start !important;
+label.settings-option {
+  align-items: flex-start;
 }
-.settings-option .chk-box {
-  margin-top: 2px;
+.settings-option .toggle-track {
+  margin-top: 1px;
 }
 .settings-option-copy {
   display: flex;
@@ -629,17 +629,6 @@ body.settings-open .settings-workspace {
   font-size: 13px;
   border-color: #73727a;
 }
-.settings-dialog label.chk .chk-box {
-  border-color: #77767e;
-}
-.settings-dialog label.chk:hover .chk-box {
-  border-color: var(--accent-light);
-}
-.settings-dialog label.chk input:checked + .chk-box {
-  background: var(--action);
-  border-color: var(--accent-light);
-}
-.settings-dialog .chk input:focus-visible + .chk-box,
 .settings-dialog summary:focus-visible,
 .settings-token:focus-visible {
   outline: 2px solid var(--accent-light);

@@ -183,7 +183,7 @@ test("settings save errors remain visible and leave recovery enabled", async ({
   await page.goto("/");
 
   await page.getByRole("button", { name: "Settings" }).click();
-  const openOutput = page.getByRole("checkbox", {
+  const openOutput = page.getByRole("switch", {
     name: "Show the last export in its folder",
   });
   await page

@@ -18,7 +18,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("show-export preference saves through the existing settings key", async ({ page }, testInfo) => {
-  const option = page.getByRole("checkbox", { name: /Show the last export in its folder/ });
+  const option = page.getByRole("switch", { name: /Show the last export in its folder/ });
   await page.getByText("Show the last export in its folder", { exact: true }).click();
   await expect(option).toBeChecked();
   for (const width of [1240, 960]) {

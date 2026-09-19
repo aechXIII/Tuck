@@ -344,11 +344,10 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
   <div class="settings-sec full">
     <h3>Resolution</h3>
     <div class="info-row" id="pe-source-res-row">
-      <span>Use source resolution</span>
-      <label class="chk">
-        <input id="pe-source-res" type="checkbox" data-settings-change="profile-visibility">
-        <span class="chk-box" aria-hidden="true"></span>
-        <span>Source</span>
+      <label class="toggle-row">
+        <span>Use source resolution</span>
+        <input id="pe-source-res" type="checkbox" role="switch" data-settings-change="profile-visibility">
+        <span class="toggle-track" aria-hidden="true"></span>
       </label>
     </div>
     <div class="row" id="pe-dim">
@@ -370,11 +369,10 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
   <div class="settings-sec full">
     <h3>Frame rate</h3>
     <div class="info-row">
-      <span>Use source frame rate</span>
-      <label class="chk">
-        <input id="pe-source-fps" type="checkbox" data-settings-change="profile-visibility">
-        <span class="chk-box" aria-hidden="true"></span>
-        <span>Source</span>
+      <label class="toggle-row">
+        <span>Use source frame rate</span>
+        <input id="pe-source-fps" type="checkbox" role="switch" data-settings-change="profile-visibility">
+        <span class="toggle-track" aria-hidden="true"></span>
       </label>
     </div>
     <div id="pe-fps-row" class="sl-row">
@@ -389,11 +387,10 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     return `<div class="settings-sec full">
     <h3>Transform defaults</h3>
     <div class="info-row">
-      <span>Apply transform settings from this profile</span>
-      <label class="chk">
-        <input id="pe-transform-enabled" type="checkbox" data-settings-change="profile-visibility">
-        <span class="chk-box" aria-hidden="true"></span>
-        <span>Enabled</span>
+      <label class="toggle-row">
+        <span>Apply transform settings from this profile</span>
+        <input id="pe-transform-enabled" type="checkbox" role="switch" data-settings-change="profile-visibility">
+        <span class="toggle-track" aria-hidden="true"></span>
       </label>
     </div>
     <div id="pe-transform-fields">
@@ -433,11 +430,10 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     return `<div class="settings-sec full">
     <h3>Audio</h3>
     <div class="info-row">
-      <span>Keep source audio</span>
-      <label class="chk">
-        <input id="pe-audio-source" type="checkbox" data-settings-change="profile-visibility">
-        <span class="chk-box" aria-hidden="true"></span>
-        <span>Source</span>
+      <label class="toggle-row">
+        <span>Keep source audio</span>
+        <input id="pe-audio-source" type="checkbox" role="switch" data-settings-change="profile-visibility">
+        <span class="toggle-track" aria-hidden="true"></span>
       </label>
     </div>
     <div class="settings-field">
@@ -875,17 +871,17 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
   <div class="settings-card">
     <h3 class="settings-card-title">When the queue finishes</h3>
     <div class="settings-option-list">
-      <label class="chk settings-option">
-        <input id="set-open-output-folder" type="checkbox" ${openOutput} data-settings-change="mark-dirty">
-        <span class="chk-box" aria-hidden="true"></span>
+      <label class="toggle-row settings-option">
+        <input id="set-open-output-folder" type="checkbox" role="switch" ${openOutput} data-settings-change="mark-dirty">
+        <span class="toggle-track" aria-hidden="true"></span>
         <span class="settings-option-copy">
           <strong>Show the last export in its folder</strong>
           <small>Selects the last successful export in your file manager.</small>
         </span>
       </label>
-      <label class="chk settings-option">
-        <input id="set-auto-clear" type="checkbox" ${autoClear} data-settings-change="mark-dirty">
-        <span class="chk-box" aria-hidden="true"></span>
+      <label class="toggle-row settings-option">
+        <input id="set-auto-clear" type="checkbox" role="switch" ${autoClear} data-settings-change="mark-dirty">
+        <span class="toggle-track" aria-hidden="true"></span>
         <span class="settings-option-copy">
           <strong>Clear completed jobs automatically</strong>
           <small>Keep failed and cancelled jobs so you can retry them.</small>
@@ -1031,9 +1027,9 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       </div>
       <button type="button" class="btn2" data-settings-click="check-updates">Check now</button>
     </div>
-    <label class="chk" style="margin-top:12px">
-      <input id="set-check-updates" type="checkbox" ${checkUpdates} data-settings-change="mark-dirty">
-      <span class="chk-box" aria-hidden="true"></span>
+    <label class="toggle-row" style="margin-top:12px">
+      <input id="set-check-updates" type="checkbox" role="switch" ${checkUpdates} data-settings-change="mark-dirty">
+      <span class="toggle-track" aria-hidden="true"></span>
       <span>Check automatically at startup</span>
     </label>
   </div>`;

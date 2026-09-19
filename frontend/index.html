@@ -732,7 +732,7 @@
             <details class="adjust-panel" id="frame-blending-panel">
               <summary><span>Frame Blending</span><span id="blend-summary">Off</span></summary>
               <div class="adjust-panel-body blend-body">
-                <label class="blend-check" for="blend-enabled"><input type="checkbox" id="blend-enabled" />Enable frame blending</label>
+                <label class="toggle-row export-toggle" for="blend-enabled"><span>Enable frame blending</span><input type="checkbox" role="switch" id="blend-enabled" /><span class="toggle-track" aria-hidden="true"></span></label>
                 <fieldset id="blend-options" aria-label="Frame blending settings" disabled>
                   <div class="export-setting-line blend-fps-row"><label for="blend-fps-select">Output FPS</label><div class="video-fps-controls">
                     <select id="blend-fps-select" aria-label="Frame blending output frame rate"></select>
@@ -752,7 +752,7 @@
                     <label class="blend-label" for="blend-weights">Custom weights <span>Optional</span></label>
                     <input type="text" id="blend-weights" placeholder="e.g. 1, 2, 3, 2, 1" aria-describedby="blend-weights-help blend-error" />
                     <p class="blend-help" id="blend-weights-help">Earlier to later. Up to 64 numbers, from 0 to 1000. Replaces weighting.</p>
-                    <label class="blend-check" for="blend-linear"><input type="checkbox" id="blend-linear" />Blend in linear light</label>
+                    <label class="toggle-row export-toggle" for="blend-linear"><span>Blend in linear light</span><input type="checkbox" role="switch" id="blend-linear" /><span class="toggle-track" aria-hidden="true"></span></label>
                     <p class="blend-help">Brighter trails. Slower processing.</p>
                   </details>
 
@@ -763,7 +763,7 @@
             <details class="adjust-panel" id="lut-panel">
               <summary><span>Color LUT</span><span id="lut-summary">Off</span></summary>
               <div class="adjust-panel-body lut-body">
-                <label class="blend-check" for="lut-enabled"><input type="checkbox" id="lut-enabled" disabled />Enable LUT</label>
+                <label class="toggle-row export-toggle" for="lut-enabled"><span>Enable LUT</span><input type="checkbox" role="switch" id="lut-enabled" disabled /><span class="toggle-track" aria-hidden="true"></span></label>
                 <div class="lut-file-row">
                   <button type="button" id="lut-name" class="lut-picker-trigger" aria-label="Select LUT" aria-haspopup="dialog" aria-expanded="false" aria-controls="lut-picker-popup"><span id="lut-current-name">Select LUT</span></button>
                   <div id="lut-picker-popup" class="lut-picker-popup" popover="auto" role="dialog" aria-label="Saved LUTs">
@@ -792,13 +792,12 @@
               <div class="adjust-panel-body">
             <div class="gr">
               <div class="info-row">
-                <span class="grt" style="margin: 0">Audio encoding</span
-                ><label class="chk" style="font-size: 11px"
+                <label class="toggle-row export-toggle"
                   ><input
-                    type="checkbox"
+                    type="checkbox" role="switch"
                     id="keep-audio"
                     data-action-change="encoding-keep-audio"
-                  /><span class="chk-box"></span><span>Copy when possible</span></label
+                  /><span class="toggle-track" aria-hidden="true"></span><span>Copy when possible</span></label
                 >
               </div>
               <div class="enc-field">

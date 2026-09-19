@@ -26,7 +26,7 @@ for (const width of [1240, 960]) {
         labels:['blend-amount','blend-curve','blend-sigma','lut-strength'].map(id=>measure(`label[for="${id}"]`)),
         input:measure('#export-fps-select'),
         inputs:['blend-fps-select','blend-amount','blend-curve','blend-sigma'].map(id=>measure(`#${id}`)),
-        checks:['blend-enabled','blend-linear','lut-enabled'].map(id=>measure(`#${id}`)),
+        checks:['blend-enabled','blend-linear','lut-enabled'].map(id=>measure(`#${id} + .toggle-track`)),
         picker:measure('#lut-name'),
         pickerRow:measure('.lut-file-row'),
         audio:measure('#audio-br'),
@@ -40,7 +40,7 @@ for (const width of [1240, 960]) {
       expect(input.left).toBeCloseTo(metrics.input.left, 0);
       expect([input.height,input.font,input.size]).toEqual([metrics.input.height,metrics.input.font,metrics.input.size]);
     }
-    for (const checkbox of metrics.checks) expect(checkbox.left).toBeCloseTo(metrics.label.left, 0);
+    for (const toggle of metrics.checks) expect(toggle.right).toBeCloseTo(metrics.input.right, 0);
     await page.locator('#frame-blending-panel > summary').click();
     await page.locator('#audio-br').scrollIntoViewIfNeeded();
     await page.screenshot({path:`frontend/.scratch/lut-audio-alignment-${width}.png`});

@@ -486,16 +486,11 @@
   min-width: 0;
 }
 .blend-body [hidden] { display: none; }
-.blend-check {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+label.export-toggle {
   color: var(--text);
   font-size: 11px;
-  min-height: 26px;
-  cursor: pointer;
+  font-weight: 400;
 }
-.blend-check input { flex: 0 0 13px; width: 13px; height: 13px; margin: 0; accent-color: var(--accent); }
 .blend-help {
   color: var(--muted);
   font-size: 11px;
@@ -531,7 +526,6 @@
 #blend-chart[data-disabled="true"] { fill: var(--muted); opacity: .4; }
 .blend-preview figcaption { display: flex; justify-content: space-between; color: var(--muted); font-size: 10px; margin-top: 4px; }
 .blend-body fieldset:disabled :is(input, select) { color: var(--muted); cursor: not-allowed; }
-.blend-body fieldset:disabled .blend-check { cursor: default; }
 
 #blend-options > .export-setting-line + .export-setting-line { margin-top: 8px; }
 .blend-body .export-setting-line > label,
