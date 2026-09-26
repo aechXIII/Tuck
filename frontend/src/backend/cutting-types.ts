@@ -26,6 +26,9 @@ export interface CutIssue extends JsonObject {
   readonly message: string;
   readonly field: string | null;
 }
+export interface CutEnqueueRequest extends CutPlanRequest {
+  readonly plan_fingerprint: string;
+}
 export interface CutSegment extends JsonObject {
   readonly requested: CutRange;
   readonly resolved: CutRange;

@@ -15,20 +15,31 @@ from .analysis import (
     MAX_PACKET_BYTES,
     MAX_PACKETS,
     CutAnalysisError,
+    CutRequestWork,
     analyze_source,
     source_identity,
 )
-from .planner import plan_cut
+from .planner import CutPlanChanged, plan_cut
 
 
 def check_cut_cancel(cancel: Event) -> None:
+    if isinstance(cancel, CutRequestWork):
+        cancel.check()
     if cancel.is_set():
         raise CutAnalysisError("cut_cancelled", "Cutting was cancelled.")
 
 
 def validate_cut_source(plan: CutPlan, cancel: Event) -> None:
     check_cut_cancel(cancel)
-    if source_identity(Path(plan.identity.path), cancel) != plan.identity:
+    try:
+        identity = source_identity(Path(plan.identity.path), cancel)
+    except CutAnalysisError:
+        raise
+    except (OSError, ValueError) as exc:
+        raise CutAnalysisError(
+            "source_changed", "The video is no longer available. Add it again before exporting."
+        ) from exc
+    if identity != plan.identity:
         raise CutAnalysisError("source_changed", "The video changed. Read its keyframes again.")
 
 
@@ -45,7 +56,8 @@ def prepare_cut(plan: CutPlan, cancel: Event, ffprobe: str | None) -> CutAnalysi
     if analysis.issues:
         raise CutAnalysisError(analysis.issues[0].code, analysis.issues[0].message)
     rebuilt = plan_cut(
-        CutRequest(
+        plan.request
+        or CutRequest(
             str(source),
             tuple(s.requested for s in plan.segments),
             "keyframes",
@@ -63,8 +75,18 @@ def prepare_cut(plan: CutPlan, cancel: Event, ffprobe: str | None) -> CutAnalysi
         or rebuilt.segments != plan.segments
         or rebuilt.exported_duration != plan.exported_duration
     ):
-        raise CutAnalysisError("plan_changed", "The cut boundaries changed. Review the cuts again.")
+        raise CutPlanChanged(rebuilt)
     return analysis
+
+
+def rebuild_cut_plan(plan: CutPlan, cancel: Event, *, ffprobe: str | None = None) -> CutPlan:
+    analysis = prepare_cut(plan, cancel, ffprobe)
+    if plan.request is None:
+        raise CutAnalysisError("plan_changed", "Review the cut plan before retrying.")
+    rebuilt = plan_cut(plan.request, analysis)
+    if rebuilt.fingerprint != plan.fingerprint:
+        raise CutPlanChanged(rebuilt)
+    return rebuilt
 
 
 def selected_packets(

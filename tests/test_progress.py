@@ -18,6 +18,15 @@ class TestParseFFmpegProgress:
 
 
 class TestEncodeProgressModel:
+    def test_cut_stage_labels_and_indeterminate_progress(self):
+        assert (
+            EncodeProgress(stage=EncodeStage.ENCODING_EDGES).status_text() == "Encoding cut edges"
+        )
+        assert EncodeProgress(stage=EncodeStage.VERIFYING).status_text() == "Checking output"
+        assert EncodeProgress(stage=EncodeStage.JOINING, indeterminate=True).to_dict()[
+            "indeterminate"
+        ]
+
     def test_status_pass(self):
         p = EncodeProgress(stage=EncodeStage.PASS_1, pass_number=1, total_passes=2)
         assert p.status_text() == "Pass 1 of 2"

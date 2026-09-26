@@ -373,7 +373,9 @@ class TauriTransport implements TauriBackendClient {
     return this.#request(
       "enqueueWithOptions",
       { command: "enqueue_with_options", payload: { request } },
-      isJsonObject,
+      request.operation === "cut"
+        ? (value): value is JsonObject => isJsonObject(value) && typeof value.item_id === "string" && value.item_id.length > 0
+        : isJsonObject,
     );
   }
 

@@ -730,7 +730,6 @@ impl BackendCommand {
             | Self::CancelAllItems
             | Self::ClearCompleted
             | Self::MoveItem { .. }
-            | Self::RetryItem { .. }
             | Self::StopAfterCurrent
             | Self::GetDiagnostics { .. }
             | Self::GetStoragePaths
@@ -760,6 +759,7 @@ impl BackendCommand {
             | Self::ReleaseMediaToken { .. }
             | Self::CreatePlan { .. }
             | Self::EnqueueWithOptions { .. }
+            | Self::RetryItem { .. }
             | Self::EnqueueBatch { .. } => MEDIA_REQUEST_TIMEOUT,
         }
     }
@@ -769,6 +769,17 @@ impl BackendCommand {
 mod launch_config_tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn retry_allows_time_for_cut_reanalysis() {
+        assert_eq!(
+            BackendCommand::RetryItem {
+                item_id: "cut".into()
+            }
+            .timeout(),
+            MEDIA_REQUEST_TIMEOUT
+        );
+    }
 
     fn temp_dir(name: &str) -> PathBuf {
         let dir =

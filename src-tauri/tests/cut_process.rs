@@ -19,7 +19,7 @@ fn cut_commands_are_allowlisted_and_keep_work_ids() {
 }
 
 #[tokio::test]
-async fn cut_analysis_and_planning_cross_the_real_sidecar() {
+async fn cut_analysis_planning_and_export_cross_the_real_sidecar() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap()
@@ -91,7 +91,59 @@ async fn cut_analysis_and_planning_cross_the_real_sidecar() {
         )
         .await
         .unwrap();
+    let request = json!({"operation":"cut","source":source,"segments":[{"start":{"ticks":"0","time_base_num":1,"time_base_den":1},"end":{"ticks":"2","time_base_num":1,"time_base_den":1}}]});
+    let preview = process
+        .request(BackendCommand::CreatePlan {
+            request: request.clone(),
+        })
+        .await
+        .unwrap();
+    let mut export = request;
+    export["plan_fingerprint"] = json!("0".repeat(64));
+    let stale = process
+        .request(BackendCommand::EnqueueWithOptions {
+            request: export.clone(),
+        })
+        .await
+        .unwrap_err();
+    assert_eq!(stale.code, "PLAN_CHANGED", "{stale:?}");
+    assert_eq!(stale.details["current_plan"], preview["data"]);
+    assert_eq!(
+        process
+            .request(BackendCommand::GetQueueState)
+            .await
+            .unwrap()["items"],
+        json!([])
+    );
+    export["plan_fingerprint"] = preview["data"]["fingerprint"].clone();
+    let queued = process
+        .request(BackendCommand::EnqueueWithOptions { request: export })
+        .await
+        .unwrap();
+    let finished = tokio::time::timeout(std::time::Duration::from_secs(30), async {
+        loop {
+            let state = process
+                .request(BackendCommand::GetQueueState)
+                .await
+                .unwrap();
+            let item = &state["items"][0];
+            if matches!(
+                item["state"].as_str(),
+                Some("completed" | "failed" | "cancelled")
+            ) {
+                break item.clone();
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .unwrap();
     process.shutdown().await.unwrap();
+    assert_eq!(finished["id"], queued["item_id"]);
+    assert_eq!(finished["state"], "completed", "{finished}");
+    assert_eq!(finished["operation"], "cut");
+    assert_eq!(finished["precision"], "keyframes");
+    assert!(PathBuf::from(finished["result_path"].as_str().unwrap()).is_file());
     assert_eq!(ready["status"], "ready");
     assert_eq!(ready["analysis"]["issues"], json!([]));
     let plan = plan.unwrap();

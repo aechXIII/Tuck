@@ -10,6 +10,7 @@ class EncodeStage(Enum):
     ENCODING = "encoding"
     COPYING = "copying"
     JOINING = "joining"
+    ENCODING_EDGES = "encoding_edges"
     PASS_1 = "pass_1"
     PASS_2 = "pass_2"
     RETRYING = "retrying"
@@ -32,10 +33,12 @@ class EncodeProgress:
     retry_number: int | None = None
     max_retries: int | None = None
     message: str = ""
+    indeterminate: bool = False
 
     def to_dict(self) -> dict:
         return {
             "percent": round(float(self.percent), 1),
+            "indeterminate": self.indeterminate,
             "stage": self.stage.value,
             "current_time": round(float(self.current_time), 3),
             "duration": round(float(self.duration), 3),
@@ -71,7 +74,9 @@ class EncodeProgress:
                 parts.append(self.message)
             return " · ".join(parts)
         if stage == EncodeStage.VERIFYING:
-            return self.message or "Verifying output"
+            return self.message or "Checking output"
+        if stage == EncodeStage.ENCODING_EDGES:
+            return "Encoding cut edges"
         if stage == EncodeStage.COMPLETED:
             return "Completed"
         if stage == EncodeStage.FAILED:

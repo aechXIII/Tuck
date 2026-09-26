@@ -17,6 +17,7 @@ from ..models.cutting import (
     CutSegment,
     MediaTime,
 )
+from .analysis import CutAnalysisError
 
 EDIT_NAMES = {
     "crop": "Crop",
@@ -31,6 +32,29 @@ EDIT_NAMES = {
     "added_audio": "Added audio",
     "muted_segments": "Muted audio segments",
 }
+
+
+class CutPlanChanged(CutAnalysisError):
+    def __init__(self, current_plan: CutPlan) -> None:
+        super().__init__(
+            "plan_changed", "The cut plan changed. Review the current cuts before exporting."
+        )
+        self.current_plan = current_plan
+
+
+def parse_cut_export(raw: object) -> tuple[CutRequest, str]:
+    if not isinstance(raw, dict):
+        raise ValueError("Expected a cut request object")
+    fingerprint = raw.get("plan_fingerprint")
+    if (
+        not isinstance(fingerprint, str)
+        or len(fingerprint) != 64
+        or any(c not in "0123456789abcdef" for c in fingerprint)
+    ):
+        raise ValueError("Review the cut plan before exporting.")
+    return parse_cut_request(
+        {key: value for key, value in raw.items() if key != "plan_fingerprint"}
+    ), fingerprint
 
 
 def parse_cut_request(raw: object) -> CutRequest:
@@ -247,4 +271,5 @@ def plan_cut(request: CutRequest, analysis: CutAnalysis) -> CutPlan:
         False,
         analysis.exact_reason,
         fingerprint,
+        request=request,
     )

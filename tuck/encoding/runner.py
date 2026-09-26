@@ -12,6 +12,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from ..cutting.analysis import CutAnalysisError
+from ..cutting.runner import CutRunner
 from ..formatting import format_size
 from ..media_tools import find_ffmpeg
 from ..models import (
@@ -28,6 +30,7 @@ from ..models import (
     WORKFLOW_UPSCALE,
     EncodePlan,
 )
+from ..models.cutting import CutPlan
 from ..models.encoding_policy import validate_encoder_supported_on_desktop
 from ..models.progress import EncodeProgress, EncodeStage
 from .capabilities import (
@@ -108,6 +111,7 @@ class FFmpegEngine:
         self._last_stderr: str = ""
         self._resolved_encoder: str = ""
         self._prepared_video: Path | None = None
+        self._cut_runner = CutRunner()
 
     @property
     def last_stderr(self) -> str:
@@ -194,9 +198,18 @@ class FFmpegEngine:
 
     def encode(
         self,
-        plan: EncodePlan,
+        plan: EncodePlan | CutPlan,
         on_progress: ProgressCallback | None = None,
     ) -> Path:
+        if isinstance(plan, CutPlan):
+            self._last_stderr = ""
+            self._resolved_encoder = ""
+            try:
+                return self._cut_runner.run(plan, on_progress)
+            except CutAnalysisError as exc:
+                if exc.code in {"cut_cancelled", "analysis_cancelled"}:
+                    raise EncodeCancelled("Cutting cancelled by user") from exc
+                raise
         plan = copy.deepcopy(plan)
         ffmpeg_path = find_ffmpeg()
         if not ffmpeg_path:
@@ -484,9 +497,11 @@ class FFmpegEngine:
 
     def reset_cancel(self) -> None:
         self._cancel_event.clear()
+        self._cut_runner.reset_cancel()
 
     def cancel(self) -> None:
         self._cancel_event.set()
+        self._cut_runner.cancel()
         with self._lock:
             proc = self._process
             if proc and proc.poll() is None:

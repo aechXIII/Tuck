@@ -12,6 +12,7 @@ from .models import (
     VideoInfo,
     calculate_transform_geometry,
 )
+from .models.cutting import CutPlan
 
 
 def video_info_dict(info: VideoInfo) -> dict[str, Any]:
@@ -170,6 +171,40 @@ def plan_preview_dict(plan: EncodePlan) -> dict[str, Any]:
 
 def queue_item_dict(item: QueueItem) -> dict[str, Any]:
     plan = item.plan
+    if isinstance(plan, CutPlan):
+        progress = item.progress_info.to_dict() if item.progress_info else None
+        duration = float(plan.exported_duration.seconds)
+        return {
+            "id": item.id,
+            "operation": "cut",
+            "precision": plan.precision,
+            "container": plan.container,
+            "exported_duration": plan.exported_duration.to_dict(),
+            "source": Path(plan.source).name,
+            "source_path": plan.source,
+            "output": Path(item.result_path or plan.output_path).name,
+            "state": item.state.value,
+            "progress": round(item.progress, 1),
+            "progress_info": progress,
+            "status_text": item.status_text or (progress["status_text"] if progress else ""),
+            "duration": duration,
+            "selected_duration": duration,
+            "segments": [
+                {"start": float(s.resolved.start.seconds), "end": float(s.resolved.end.seconds)}
+                for s in plan.segments
+            ],
+            "segment_count": len(plan.segments),
+            "include_audio": plan.include_audio,
+            "error": item.error,
+            "error_detail": item.error_detail,
+            "error_code": item.error_code,
+            "result_path": item.result_path,
+            "result_size": item.result_size,
+            "result_size_mb": round(item.result_size / (1024 * 1024), 2) if item.result_size else 0,
+            "added_at": item.added_at,
+            "started_at": item.started_at,
+            "finished_at": item.finished_at,
+        }
     duration = float(plan.effective_duration or 0.0) if plan is not None else 0.0
     if duration <= 0 and plan is not None and plan.source_info is not None:
         duration = float(plan.source_info.duration or 0.0)
@@ -180,6 +215,7 @@ def queue_item_dict(item: QueueItem) -> dict[str, Any]:
     segments = plan.effective_segments if plan is not None else []
     return {
         "id": item.id,
+        "operation": "encode",
         "source": Path(plan.source).name if plan else "",
         "source_path": plan.source if plan else "",
         "output": Path(plan.output).name if plan else "",

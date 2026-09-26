@@ -10,6 +10,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, ClassVar, Literal
 
+from .cutting import CutPlan
 from .encoding_policy import (
     AMF_ENCODERS as AMF_ENCODERS,
 )
@@ -1161,13 +1162,14 @@ class Profile:
 @dataclass
 class QueueItem:
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
-    plan: EncodePlan | None = None
+    plan: EncodePlan | CutPlan | None = None
     state: QueueState = QueueState.PENDING
     progress: float = 0.0
     progress_info: EncodeProgress | None = None
     status_text: str = ""
     error: str = ""
     error_detail: str = ""
+    error_code: str = ""
     result_path: str = ""
     result_size: int = 0
     added_at: str = ""

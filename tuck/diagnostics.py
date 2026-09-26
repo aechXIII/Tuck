@@ -12,6 +12,7 @@ from . import __version__
 from .encoding.capabilities import get_encoder_capabilities
 from .media_tools import find_ffmpeg
 from .models import EncodePlan
+from .models.cutting import CutPlan
 from .probe import is_ffprobe_available
 
 _QUOTED_PATH_RE = re.compile(r"""(?i)(["'])(?:[a-z]:[\\/]|\\\\)[^"']*\1""")
@@ -53,7 +54,7 @@ def _fmt_mb(num_bytes: int | float) -> str:
 
 def build_diagnostics(
     *,
-    plan: EncodePlan | None = None,
+    plan: EncodePlan | CutPlan | None = None,
     error: str = "",
     stderr: str = "",
     selected_encoder: str = "",
@@ -104,7 +105,19 @@ def build_diagnostics(
             lines.append(f"selected encoder: {selected_encoder}")
         if resolved_encoder:
             lines.append(f"effective encoder: {resolved_encoder}")
-        if plan is not None:
+        if isinstance(plan, CutPlan):
+            lines.extend(
+                [
+                    "operation: cut",
+                    f"source: {sanitize_path(plan.source)}",
+                    f"output: {sanitize_path(plan.output)}",
+                    f"precision: {plan.precision}",
+                    f"container: {plan.container}",
+                    f"segments: {len(plan.segments)}",
+                    f"selected duration: {float(plan.exported_duration.seconds):.3f}s",
+                ]
+            )
+        elif plan is not None:
             lines.append(f"source: {sanitize_path(plan.source)}")
             lines.append(f"output: {sanitize_path(plan.output)}")
             lines.append(f"target size: {plan.target_size} bytes ({_fmt_mb(plan.target_size)})")

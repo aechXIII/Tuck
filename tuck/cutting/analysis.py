@@ -12,6 +12,7 @@ from collections.abc import Callable
 from fractions import Fraction
 from pathlib import Path
 from threading import Event
+from time import monotonic
 
 import av
 from av.error import FFmpegError
@@ -42,7 +43,25 @@ class CutAnalysisError(ValueError):
         self.code = code
 
 
+class CutRequestWork(Event):
+    def __init__(self) -> None:
+        super().__init__()
+        # leave time to return a refusal before the native 120-second timeout
+        self.deadline = monotonic() + 90
+
+    def check(self) -> None:
+        if monotonic() >= self.deadline:
+            raise CutAnalysisError(
+                "cut_timed_out",
+                "Preparing the cut took too long. Read its keyframes again and retry.",
+            )
+        if self.is_set():
+            raise CutAnalysisError("analysis_cancelled", "Cut preparation was cancelled.")
+
+
 def check_cancel(cancel: Event) -> None:
+    if isinstance(cancel, CutRequestWork):
+        cancel.check()
     if cancel.is_set():
         raise CutAnalysisError("analysis_cancelled", "Keyframe analysis was cancelled.")
 

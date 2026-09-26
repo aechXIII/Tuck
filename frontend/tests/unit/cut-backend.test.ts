@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createTauriBackendClient } from "../../src/backend/tauri.ts";
-import type { CutPlanPreview } from "../../src/backend/cutting-types.ts";
+import type { CutEnqueueRequest, CutPlanPreview } from "../../src/backend/cutting-types.ts";
 
 const zero = {ticks:"0",time_base_num:1,time_base_den:90000};
 const pending = {work_id:"scan-1",status:"pending",progress:null,coverage_end:zero,keyframes:[],issue:null,analysis:null};
@@ -49,4 +49,16 @@ test("typed cut previews retain ticks above JavaScript's integer precision", asy
   assert.ok(result.ok);
   assert.equal(result.value.data.segments[0]?.requested.end.ticks,end.ticks);
   assert.equal(result.value._request_id,4);
+});
+test("cut enqueue validates success and preserves stale-plan error details", async () => {
+  const request: CutEnqueueRequest = {operation: "cut", source: "clip.mp4", segments: [{start: zero, end: zero}], plan_fingerprint: "a".repeat(64)};
+  const calls: unknown[] = [];
+  const client = createTauriBackendClient(async (_command, args) => {calls.push(args); return {item_id: "cut-1"};});
+  assert.deepEqual(await client.enqueueWithOptions(request), {ok: true, value: {item_id: "cut-1"}});
+  assert.deepEqual(calls, [{command: {command: "enqueue_with_options", payload: {request}}}]);
+  for (const value of [{}, {item_id: 3}]) {
+    assert.equal((await createTauriBackendClient(async () => value).enqueueWithOptions(request)).ok, false);
+  }
+  const error = {code: "PLAN_CHANGED", message: "Review the current cuts.", details: {field: "cut", current_plan: {fingerprint: "b".repeat(64)}}};
+  assert.deepEqual(await createTauriBackendClient(async () => {throw error;}).enqueueWithOptions(request), {ok: false, error});
 });

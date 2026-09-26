@@ -9,7 +9,15 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from threading import Condition, Event, Thread
 
-from ..models.cutting import AnalysisProgress, CutAnalysis, CutIssue, MediaTime, SourceIdentity
+from ..models.cutting import (
+    AnalysisProgress,
+    CutAnalysis,
+    CutIssue,
+    CutPlan,
+    CutRequest,
+    MediaTime,
+    SourceIdentity,
+)
 from .analysis import (
     CutAnalysisError,
     ProgressCallback,
@@ -17,6 +25,7 @@ from .analysis import (
     analyze_source,
     source_identity,
 )
+from .planner import CutPlanChanged, plan_cut
 
 Scanner = Callable[[Path, Event, ProgressCallback], CutAnalysis]
 logger = logging.getLogger(__name__)
@@ -109,6 +118,17 @@ class CutAnalysisService:
         raise CutAnalysisError(
             "analysis_required", "Read this video's keyframes before planning a cut."
         )
+
+    def plan_for_export(self, request: CutRequest, fingerprint: str, cancel: Event) -> CutPlan:
+        analysis = self.result(Path(request.source))
+        if source_identity(Path(request.source), cancel) != analysis.identity:
+            raise CutAnalysisError("source_changed", "The video changed. Read its keyframes again.")
+        current = plan_cut(request, analysis)
+        if current.fingerprint != fingerprint:
+            raise CutPlanChanged(current)
+        if current.issues:
+            raise CutAnalysisError(current.issues[0].code, current.issues[0].message)
+        return current
 
     def cancel(self, work_id: str) -> bool:
         with self._condition:

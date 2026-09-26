@@ -5,6 +5,7 @@ import threading
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import TextIO
 
+from ..cutting.analysis import CutRequestWork
 from .handlers import dispatch
 from .lifecycle import BackendLifecycle
 from .protocol import (
@@ -29,6 +30,8 @@ def run_server(
     write_lock = threading.Lock()
     executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="tuck-sidecar")
     seen_ids: set[str] = set()
+    request_work: set[CutRequestWork] = set()
+    work_lock = threading.Lock()
 
     def write_response(response: Response) -> None:
         with write_lock:
@@ -40,7 +43,7 @@ def run_server(
             stdout.write(encode_event(event) + "\n")
             stdout.flush()
 
-    def complete(future: Future[Response], request_id: str) -> None:
+    def complete(future: Future[Response], request_id: str, work: CutRequestWork) -> None:
         try:
             write_response(future.result())
         except Exception:
@@ -52,6 +55,14 @@ def run_server(
                     message="The backend could not complete the request.",
                 )
             )
+        finally:
+            with work_lock:
+                request_work.discard(work)
+
+    def cancel_requests() -> None:
+        with work_lock:
+            for work in request_work:
+                work.set()
 
     try:
         api = lifecycle.start()
@@ -86,14 +97,21 @@ def run_server(
                         )
                     )
                     continue
+                cancel_requests()
                 executor.shutdown(wait=True)
                 lifecycle.shutdown()
                 write_response(Response.success(request.request_id, {"status": "stopped"}))
                 return 0
-            future = executor.submit(dispatch, api, request)
+            work = CutRequestWork()
+            with work_lock:
+                request_work.add(work)
+            future = executor.submit(dispatch, api, request, work)
             future.add_done_callback(
-                lambda completed, request_id=request.request_id: complete(completed, request_id)
+                lambda completed, request_id=request.request_id, work=work: complete(
+                    completed, request_id, work
+                )
             )
+        cancel_requests()
         executor.shutdown(wait=True)
         lifecycle.shutdown()
         return 0
@@ -115,4 +133,5 @@ def run_server(
         lifecycle.shutdown()
         return 1
     finally:
+        cancel_requests()
         executor.shutdown(wait=False, cancel_futures=True)

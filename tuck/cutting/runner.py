@@ -45,6 +45,8 @@ class CutRunner:
                         current_time=current,
                         duration=duration,
                         message=message,
+                        indeterminate=stage
+                        in {EncodeStage.PREPARING, EncodeStage.JOINING, EncodeStage.VERIFYING},
                     )
                 )
             if stage != EncodeStage.COMPLETED:

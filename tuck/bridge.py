@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__
-from .bridge_contract import BridgeResult
+from .bridge_contract import BridgeResult, JsonValue
 from .bridge_serialization import (
     audio_info_dict,
     plan_preview_dict,
@@ -18,8 +18,8 @@ from .bridge_validation import (
     parse_plan_request,
     validate_path,
 )
-from .cutting.analysis import CutAnalysisError
-from .cutting.planner import parse_cut_request, plan_cut
+from .cutting.analysis import CutAnalysisError, CutRequestWork
+from .cutting.planner import CutPlanChanged, parse_cut_export, parse_cut_request, plan_cut
 from .cutting.serialization import analysis_snapshot_dict, cut_plan_preview_dict
 from .cutting.service import CutAnalysisService
 from .desktop_platform import is_linux_desktop
@@ -321,10 +321,15 @@ class BridgeAPI:
         except Exception as e:
             return {"ok": False, "error": str(e), "_request_id": req_id}
 
-    def enqueue_with_options(self, request: object) -> BridgeResult:
+    def enqueue_with_options(
+        self, request: object, *, work: CutRequestWork | None = None
+    ) -> BridgeResult:
         if not isinstance(request, dict):
             return {"ok": False, "error": "Expected request object"}
         raw = request
+
+        if raw.get("operation") == "cut":
+            return self._enqueue_cut(raw, work or CutRequestWork())
 
         try:
             req = self._parse_plan_request(raw)
@@ -342,20 +347,57 @@ class BridgeAPI:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
-    def enqueue_batch(self, requests: object) -> BridgeResult:
+    def _enqueue_cut(self, raw: object, work: CutRequestWork) -> dict[str, JsonValue]:
+        try:
+            work.check()
+            request, fingerprint = parse_cut_export(raw)
+            cut = self._cut_analysis.plan_for_export(request, fingerprint, work)
+            item = self._queue.enqueue(cut, work=work)
+            return {"ok": True, "item_id": item.id}
+        except CutPlanChanged as exc:
+            return {
+                "ok": False,
+                "error": str(exc),
+                "code": exc.code,
+                "field": "cut",
+                "current_plan": cut_plan_preview_dict(exc.current_plan),
+            }
+        except (CutAnalysisError, OSError, ValueError) as exc:
+            return {
+                "ok": False,
+                "error": str(exc),
+                "code": exc.code if isinstance(exc, CutAnalysisError) else "invalid_cut_request",
+                "field": "cut",
+            }
+
+    def enqueue_batch(
+        self, requests: object, *, work: CutRequestWork | None = None
+    ) -> BridgeResult:
         if not isinstance(requests, list) or not requests:
             return {"ok": False, "error": "No requests provided"}
         raw = requests
+        work = work or CutRequestWork()
 
-        planning_options = self._planning_options()
+        planning_options = None
         enqueued: list[str] = []
         errors: list[str] = []
+        rejections: list[JsonValue] = []
 
         for idx, entry in enumerate(raw):
             if not isinstance(entry, dict):
                 errors.append(f"Request {idx}: expected JSON object")
                 continue
+            if entry.get("operation") == "cut":
+                response = self._enqueue_cut(entry, work)
+                item_id = response.get("item_id")
+                if response["ok"] and isinstance(item_id, str):
+                    enqueued.append(item_id)
+                else:
+                    errors.append(str(response["error"]))
+                    rejections.append({"index": idx, **response})
+                continue
             try:
+                work.check()
                 req = self._parse_plan_request(entry)
             except (ValueError, TypeError, FileNotFoundError) as e:
                 src = entry.get("source", f"request {idx}")
@@ -368,20 +410,28 @@ class BridgeAPI:
                 continue
 
             try:
+                if planning_options is None:
+                    planning_options = self._planning_options()
                 enc_plan = self._build_plan(req, profile, planning_options)
-                item = self._queue.enqueue(enc_plan)
+                item = self._queue.enqueue(enc_plan, work=work)
                 enqueued.append(item.id)
             except Exception as e:
                 errors.append(f"{Path(req.source).name}: {e}")
 
         if not enqueued:
-            return {"ok": False, "error": "No files could be enqueued", "errors": errors}
+            return {
+                "ok": False,
+                "error": "No files could be enqueued",
+                "errors": errors,
+                "rejections": rejections,
+            }
 
         return {
             "ok": True,
             "enqueued": enqueued,
             "errors": errors,
             "count": len(enqueued),
+            "rejections": rejections,
         }
 
     def cancel_item(self, item_id: str) -> BridgeResult:
@@ -401,8 +451,19 @@ class BridgeAPI:
         ok = self._queue.move_item(str(item_id), new_index)
         return {"ok": ok}
 
-    def retry_item(self, item_id: str) -> BridgeResult:
-        item = self._queue.retry(str(item_id))
+    def retry_item(self, item_id: str, *, work: CutRequestWork | None = None) -> BridgeResult:
+        try:
+            item = self._queue.retry(str(item_id), work=work)
+        except CutPlanChanged as exc:
+            return {
+                "ok": False,
+                "error": str(exc),
+                "code": exc.code,
+                "field": "cut",
+                "current_plan": cut_plan_preview_dict(exc.current_plan),
+            }
+        except CutAnalysisError as exc:
+            return {"ok": False, "error": str(exc), "code": exc.code, "field": "cut"}
         if item is None:
             return {"ok": False, "error": "Only failed or cancelled items can be retried"}
 

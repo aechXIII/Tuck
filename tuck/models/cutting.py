@@ -150,3 +150,12 @@ class CutPlan:
     exact_reason: str
     fingerprint: str
     container: str = "mp4"
+    request: CutRequest | None = None
+
+    @property
+    def source(self) -> str:
+        return self.identity.path
+
+    @property
+    def output(self) -> str:
+        return self.output_path
