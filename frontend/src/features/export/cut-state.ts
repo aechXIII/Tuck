@@ -47,8 +47,23 @@ export function cutTime(seconds: number): string {
   return minutes >= 60 ? `${Math.floor(minutes/60)}:${String(minutes%60).padStart(2,"0")}:${secondsText}${fraction}` : `${minutes}:${secondsText}${fraction}`;
 }
 
-export function cutSegmentStatus(segment: CutSegment): string {
-  if (segment.start_kind === "collapsed") return "Too short: no keyframe inside";
+// seconds of video an Exact plan encodes for this segment
+export function encodedSeconds(segment: CutSegment, precision: "keyframes" | "exact"): number {
+  if (precision !== "exact" || segment.start_kind === "collapsed") return 0;
+  const start = mediaSeconds(segment.resolved.start), end = mediaSeconds(segment.resolved.end);
+  if (!segment.copied) return end - start;
+  return mediaSeconds(segment.copied.start) - start + end - mediaSeconds(segment.copied.end);
+}
+
+export function cutSegmentStatus(segment: CutSegment, precision: "keyframes" | "exact" = "keyframes"): string {
+  if (segment.start_kind === "collapsed") {
+    return precision === "exact" ? "Too short: under one frame" : "Too short: no keyframe inside";
+  }
+  if (precision === "exact") {
+    const encoded = encodedSeconds(segment, precision);
+    if (!segment.copied) return "This segment is re-encoded";
+    if (encoded > 0) return `Exact · ${Number(encoded.toFixed(3))} s re-encoded`;
+  }
   const delta = mediaSeconds(segment.resolved.start) - mediaSeconds(segment.requested.start);
   const start = segment.start_kind === "moved"
     ? `Starts ${Number(delta.toFixed(3))} s later, at ${cutTime(mediaSeconds(segment.resolved.start))}`

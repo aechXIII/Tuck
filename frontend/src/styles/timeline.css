@@ -829,6 +829,12 @@ body.tl-segment-dragging * {
   width: 2px;
   background: var(--warn);
 }
+.tl-sliver.exact {
+  background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--accent-light) 42%, transparent) 0 3px, transparent 3px 7px);
+}
+.tl-sliver.exact::after {
+  background: var(--accent-light);
+}
 .tl-segment.has-sliver .tl-segment-surface {
   padding-left: var(--sliver, 0px);
 }
@@ -859,6 +865,10 @@ body.tl-segment-dragging * {
   stroke-width: 1.6;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+.edge-chip.exact {
+  border-color: color-mix(in srgb, var(--accent-light) 50%, transparent);
+  color: var(--accent-light);
 }
 .edge-chip:hover {
   background: rgba(28, 26, 38, 0.98);

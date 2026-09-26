@@ -96,8 +96,6 @@ class CutAnalysis:
     max_pts_dts_lag: MediaTime
     issues: tuple[CutIssue, ...]
     version: str
-    exact_available: bool = False
-    exact_reason: str = "Exact cutting is not available in this build."
 
 
 @dataclass(frozen=True)
@@ -134,6 +132,9 @@ class CutSegment:
     audio_source: CutRange | None = None
     audio_output: CutRange | None = None
     audio_packet_count: int = 0
+    # Exact plans only: the part copied between the encoded edges, or None when the whole
+    # segment is encoded. Keyframe plans copy all of `resolved`.
+    copied: CutRange | None = None
 
 
 @dataclass(frozen=True)

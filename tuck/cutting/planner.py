@@ -18,6 +18,7 @@ from ..models.cutting import (
     MediaTime,
 )
 from .analysis import CutAnalysisError
+from .exact import exact_media_reason
 
 EDIT_NAMES = {
     "crop": "Crop",
@@ -142,8 +143,12 @@ def parse_cut_request(raw: object) -> CutRequest:
     )
 
 
-def plan_cut(request: CutRequest, analysis: CutAnalysis) -> CutPlan:
+def plan_cut(request: CutRequest, analysis: CutAnalysis, *, exact_encoder: bool = False) -> CutPlan:
     issues = list(analysis.issues)
+    exact_reason = exact_media_reason(analysis) or (
+        "" if exact_encoder else "Exact needs FFmpeg with the libx264 encoder."
+    )
+    exact = request.precision == "exact"
     if request.source != analysis.identity.path:
         issues.insert(
             0, CutIssue("source_changed", "The cut analysis belongs to a different video.")
@@ -157,9 +162,10 @@ def plan_cut(request: CutRequest, analysis: CutAnalysis) -> CutPlan:
                 "edits",
             )
         )
-    if request.precision == "exact":
-        issues.append(CutIssue("exact_unavailable", analysis.exact_reason, "precision"))
+    if exact and exact_reason:
+        issues.append(CutIssue("exact_unavailable", exact_reason, "precision"))
     keys = [t.seconds for t in analysis.keyframes]
+    step = analysis.frame_duration.seconds
     ends = [t.seconds for t in analysis.safe_ends]
     segments = []
     elapsed = Fraction(0)
@@ -173,13 +179,20 @@ def plan_cut(request: CutRequest, analysis: CutAnalysis) -> CutPlan:
             issues.append(
                 CutIssue("invalid_range", "A kept segment extends beyond the video.", "segments")
             )
+        if exact:
+            # Exact keeps every frame that starts inside the requested range
+            start = math.ceil(start / step) * step
+            end = min(math.floor(end / step) * step, analysis.duration.seconds)
         left = bisect_left(keys, start)
         right = bisect_right(ends, end) - 1
-        if left == len(keys) or right < 0 or keys[left] >= ends[right]:
+        copyable = left < len(keys) and right >= 0 and keys[left] < ends[right]
+        if (exact and end <= start) or (not exact and not copyable):
             issues.append(
                 CutIssue(
                     "segment_collapsed",
-                    "A segment has no copyable frames. "
+                    "A segment is shorter than one frame. Widen it or remove it."
+                    if exact
+                    else "A segment has no copyable frames. "
                     "Widen it, remove it, or use Exact when available.",
                     "segments",
                 )
@@ -188,9 +201,26 @@ def plan_cut(request: CutRequest, analysis: CutAnalysis) -> CutPlan:
                 CutSegment(requested, CutRange(requested.start, requested.start), "collapsed", 0)
             )
             continue
-        first, last = keys[left], ends[right]
-        kind = "at_start" if start == first == 0 else "keyframe" if start == first else "moved"
-        moved = math.ceil((end - last) / analysis.frame_duration.seconds)
+        copied = None
+        if exact:
+            first, last = start, end
+            if copyable:
+                copied = CutRange(
+                    MediaTime.from_seconds(keys[left]), MediaTime.from_seconds(ends[right])
+                )
+            copy_start = keys[left] if copyable else None
+            kind = (
+                "at_start"
+                if start == copy_start == 0
+                else "keyframe"
+                if start == copy_start
+                else "exact"
+            )
+            moved = 0
+        else:
+            first, last = keys[left], ends[right]
+            kind = "at_start" if start == first == 0 else "keyframe" if start == first else "moved"
+            moved = math.ceil((end - last) / step)
         audio_source = audio_output = None
         count = 0
         if request.include_audio and packets:
@@ -244,6 +274,7 @@ def plan_cut(request: CutRequest, analysis: CutAnalysis) -> CutPlan:
                 audio_source,
                 audio_output,
                 count,
+                copied,
             )
         )
         elapsed += last - first
@@ -254,7 +285,7 @@ def plan_cut(request: CutRequest, analysis: CutAnalysis) -> CutPlan:
         "identity": asdict(analysis.identity),
         "segments": [asdict(s) for s in segments],
         "version": analysis.version,
-        "planner": 1,
+        "planner": 2,
     }
     fingerprint = sha256(
         json.dumps(fingerprint_data, sort_keys=True, separators=(",", ":")).encode()
@@ -268,8 +299,8 @@ def plan_cut(request: CutRequest, analysis: CutAnalysis) -> CutPlan:
         MediaTime.from_seconds(elapsed),
         estimate,
         tuple(issues),
-        False,
-        analysis.exact_reason,
+        not exact_reason,
+        exact_reason,
         fingerprint,
         request=request,
     )

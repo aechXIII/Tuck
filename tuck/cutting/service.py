@@ -25,6 +25,7 @@ from .analysis import (
     analyze_source,
     source_identity,
 )
+from .exact import exact_encoder_available
 from .planner import CutPlanChanged, plan_cut
 
 Scanner = Callable[[Path, Event, ProgressCallback], CutAnalysis]
@@ -123,7 +124,7 @@ class CutAnalysisService:
         analysis = self.result(Path(request.source))
         if source_identity(Path(request.source), cancel) != analysis.identity:
             raise CutAnalysisError("source_changed", "The video changed. Read its keyframes again.")
-        current = plan_cut(request, analysis)
+        current = plan_cut(request, analysis, exact_encoder=exact_encoder_available())
         if current.fingerprint != fingerprint:
             raise CutPlanChanged(current)
         if current.issues:

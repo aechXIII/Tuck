@@ -10,10 +10,10 @@ const plan: CutPlanPreview = {
   output_path:"C:/videos/Morning ride_cut.mp4",exported_duration:time(11.9),estimated_bytes:13000000,
   fingerprint:"a".repeat(64),issues:[],exact_available:false,exact_reason:"Exact cutting is not available yet.",
   source_identity:{path:source,size:15000000,mtime_ns:"1",signature:"b".repeat(64)},
-  segments:[{requested:{start:time(0),end:time(12)},resolved:{start:time(0),end:time(11.9)},start_kind:"at_start",end_frames_moved:3,audio_source:null,audio_output:null,audio_packet_count:0}],
+  segments:[{requested:{start:time(0),end:time(12)},resolved:{start:time(0),end:time(11.9)},start_kind:"at_start",end_frames_moved:3,audio_source:null,audio_output:null,audio_packet_count:0,copied:null}],
 };
 
-async function setup(page: Page, options: {pending?:boolean; collapsed?:boolean; moved?:boolean; shortMoved?:boolean; files?:string[]; startupCut?:boolean; holdAnalysis?:boolean; holdExportPlan?:boolean; rejectExport?:boolean; scanning?:boolean} = {}) {
+async function setup(page: Page, options: {pending?:boolean; collapsed?:boolean; moved?:boolean; shortMoved?:boolean; files?:string[]; startupCut?:boolean; holdAnalysis?:boolean; holdExportPlan?:boolean; rejectExport?:boolean; scanning?:boolean; exact?:boolean} = {}) {
   const fixture = healthyBackendFixture();
   fixture.startup.files = options.files ?? [source];
   fixture.responses.probeFile = {data:{duration:12,width:1920,height:1080,fps:30,has_audio:true,video_codec:"h264",audio_codec:"aac",file_size:15000000}};
@@ -36,7 +36,7 @@ async function setup(page: Page, options: {pending?:boolean; collapsed?:boolean;
   if (options.rejectExport) fixture.responses.enqueueWithOptions = {ok:false,error:"The video changed. Check the cut points.",code:"SOURCE_CHANGED"};
   if (options.startupCut) fixture.responses.getSettings = {...fixture.responses.getSettings as object,last_task:"cut"};
   await installFakeBackend(page,fixture);
-  await page.addInitScript(({planJson,collapsed,moved,holdExportPlan}) => {
+  await page.addInitScript(({planJson,collapsed,moved,holdExportPlan,exact}) => {
     const plan = JSON.parse(planJson) as CutPlanPreview;
     const backend = window.tuckBackendClient!;
     const create = backend.createPlan.bind(backend);
@@ -55,12 +55,21 @@ async function setup(page: Page, options: {pending?:boolean; collapsed?:boolean;
       const issues = Array.isArray(request.edits) && request.edits.length && !request.without_edits
         ? [{code:"incompatible_edit",field:"edits",message:"Crop need re-encoding. Choose Compress or export without these edits."}] : [];
       if (collapsed) issues.push({code:"segment_collapsed",field:"segments",message:"A segment has no copyable frames."});
+      if (exact) {
+        const precise = request.precision === "exact";
+        const tenth = (value: number) => ({ticks:String(value),time_base_num:1,time_base_den:10});
+        return {ok:true,value:{data:{...plan,precision:precise ? "exact" : "keyframes",exact_available:true,exact_reason:"",issues,
+          source_identity:{...plan.source_identity,path:String(request.source)},include_audio:request.include_audio === true,
+          segments:plan.segments.map(segment => precise
+            ? {...segment,resolved:{start:tenth(0),end:tenth(120)},start_kind:"exact",end_frames_moved:0,copied:{start:tenth(40),end:tenth(119)}}
+            : segment)}}};
+      }
       return {ok:true,value:{data:{...plan,source_identity:{...plan.source_identity,path:String(request.source)},include_audio:request.include_audio === true,issues,
         segments:collapsed ? plan.segments.map(segment => ({...segment,start_kind:"collapsed"}))
           : moved ? plan.segments.map(segment => ({...segment,start_kind:"moved",resolved:{...segment.resolved,start:{ticks:"40",time_base_num:1,time_base_den:10}}})) : plan.segments}}};
     }
     backend.createPlan = createPlan;
-  },{planJson:JSON.stringify(options.shortMoved ? {...plan,exported_duration:{ticks:"1",time_base_num:1,time_base_den:30},segments:plan.segments.map(segment=>({...segment,requested:{start:time(0),end:analysis.analysis.duration},resolved:{start:time(4),end:analysis.analysis.duration},start_kind:"moved",end_frames_moved:0}))} : plan),collapsed:options.collapsed,moved:options.moved,holdExportPlan:options.holdExportPlan});
+  },{planJson:JSON.stringify(options.shortMoved ? {...plan,exported_duration:{ticks:"1",time_base_num:1,time_base_den:30},segments:plan.segments.map(segment=>({...segment,requested:{start:time(0),end:analysis.analysis.duration},resolved:{start:time(4),end:analysis.analysis.duration},start_kind:"moved",end_frames_moved:0}))} : plan),collapsed:options.collapsed,moved:options.moved,holdExportPlan:options.holdExportPlan,exact:options.exact});
   await page.goto("/");
   if (options.files?.length === 0) return;
   // timeline keyboard edits require decoded media metadata as well as probe data
@@ -420,3 +429,68 @@ test("dragging a start snaps to keyframes and shows the neighbouring guides", as
   await expect(page.locator("#tl-in")).not.toHaveAttribute("aria-valuenow","4");
   await expect(page.locator("#tl-in")).not.toHaveAttribute("aria-valuenow","8");
 });
+
+test("Exact is chosen by pointer or keyboard and shows what is re-encoded", async ({page}) => {
+  await setup(page,{exact:true});
+  await page.locator("#wf-l").click();
+  await expect(page.locator("#btn-one")).toBeEnabled();
+  const exact = page.getByRole("radio",{name:/Exact/});
+  const keyframes = page.getByRole("radio",{name:"On keyframes"});
+  await expect(exact).toBeEnabled();
+  await expect(page.locator("#cut-exact-note")).toBeHidden();
+  await keyframes.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(exact).toHaveAttribute("aria-checked","true");
+  await expect(exact).toBeFocused();
+  await expect(exact).toHaveAttribute("tabindex","0");
+  await expect(keyframes).toHaveAttribute("tabindex","-1");
+  await expect(page.getByRole("heading",{name:"Cut at the chosen frames"})).toBeVisible();
+  await expect(page.locator("#cut-lede-text")).toHaveText("Re-encodes video near cuts; copies the rest. Audio is copied.");
+  await expect(page.locator("#precision-note")).toHaveText("Re-encodes near cuts; copies the rest. Audio stays packet-accurate.");
+  await expect(page.locator("#cut-list .cut-status")).toHaveText("Exact · 4.1 s re-encoded");
+  await expect(page.locator("#cut-list .cut-status")).toHaveClass(/exact/);
+  await expect(page.locator(".tl-sliver.exact")).toHaveCount(1);
+  await expect(page.locator(".edge-chip.exact")).toHaveText("4.0 s re-encoded");
+  await expect(page.locator(".edge-chip.exact")).toHaveAccessibleName("Segment 1. Starts exactly at 0:00.000. 4.0 s near the start is re-encoded");
+  await expect(page.locator("#snap-all")).toBeHidden();
+  const plans = await page.evaluate(() => window.__tuckFakeBackendCalls?.filter(call => call.method === "createPlan").map(call => (call.args[0] as {precision?:string}).precision));
+  expect(plans?.at(-1)).toBe("exact");
+  await page.locator("#btn-one").click();
+  await expect.poll(() => page.evaluate(() => window.__tuckFakeBackendCalls?.filter(call => call.method === "enqueueWithOptions").length)).toBe(1);
+  const request = await page.evaluate(() => window.__tuckFakeBackendCalls?.find(call => call.method === "enqueueWithOptions")?.args[0]);
+  expect(request).toMatchObject({operation:"cut",precision:"exact"});
+  await page.keyboard.press("Home");
+  await keyframes.click();
+  await expect(keyframes).toHaveAttribute("aria-checked","true");
+  await expect(page.locator(".tl-sliver.exact")).toHaveCount(0);
+  await expect(page.getByRole("heading",{name:"Cut without re-encoding"})).toBeVisible();
+});
+
+test("Exact stays disabled with the reason when this video cannot use it", async ({page}) => {
+  await setup(page);
+  await page.locator("#wf-l").click();
+  await expect(page.locator("#btn-one")).toBeEnabled();
+  await expect(page.getByRole("radio",{name:/Exact/})).toBeDisabled();
+  await expect(page.locator("#cut-exact-note")).toHaveText("Exact cutting is not available yet.");
+  await page.getByRole("radio",{name:"On keyframes"}).focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(page.getByRole("radio",{name:"On keyframes"})).toHaveAttribute("aria-checked","true");
+});
+
+for (const width of [1440,960]) {
+  test(`Exact fits the Inspector and timeline at ${width}`, async ({page}) => {
+    await page.setViewportSize({width,height:width === 960 ? 640 : 900});
+    await setup(page,{exact:true});
+    if (width === 960) await page.getByRole("button",{name:"Inspector",exact:true}).click();
+    await page.locator("#wf-l").click();
+    await page.getByRole("radio",{name:/Exact/}).click();
+    await expect(page.locator(".edge-chip.exact")).toBeVisible();
+    await expect(page.locator("#btn-one")).toBeEnabled();
+    const layout = await page.evaluate(() => {
+      const rect = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
+      return {inspector:rect("#right").bottom,timeline:rect("#audio-editor").top,row:rect("#cut-list .cut-status"),panel:rect("#insp-cut")};
+    });
+    expect(layout.inspector).toBeLessThanOrEqual(layout.timeline);
+    expect(layout.row.right).toBeLessThanOrEqual(layout.panel.right + 1);
+  });
+}

@@ -7,17 +7,20 @@ from threading import Event
 import av
 
 from ..encoding.output import OutputTransaction
+from ..media_tools import find_ffmpeg
 from ..models.cutting import CutPlan
 from ..models.progress import EncodeProgress, EncodeStage
 from .analysis import CutAnalysisError
+from .exact import encode_edges, exact_packets
 from .packets import check_cut_cancel, prepare_cut, selected_packets
 from .verification import verify_cut_output
 
 
 class CutRunner:
-    def __init__(self, *, ffprobe: str | None = None) -> None:
+    def __init__(self, *, ffprobe: str | None = None, ffmpeg: str | None = None) -> None:
         self._cancel = Event()
         self._ffprobe = ffprobe
+        self._ffmpeg = ffmpeg
 
     def cancel(self) -> None:
         self._cancel.set()
@@ -46,7 +49,12 @@ class CutRunner:
                         duration=duration,
                         message=message,
                         indeterminate=stage
-                        in {EncodeStage.PREPARING, EncodeStage.JOINING, EncodeStage.VERIFYING},
+                        in {
+                            EncodeStage.PREPARING,
+                            EncodeStage.ENCODING_EDGES,
+                            EncodeStage.JOINING,
+                            EncodeStage.VERIFYING,
+                        },
                     )
                 )
             if stage != EncodeStage.COMPLETED:
@@ -57,6 +65,20 @@ class CutRunner:
             analysis = prepare_cut(plan, self._cancel, self._ffprobe)
             with OutputTransaction(Path(plan.output_path)) as transaction:
                 result = transaction.workspace / "result.mp4"
+                edges = None
+                if plan.precision == "exact":
+                    report(EncodeStage.ENCODING_EDGES, "Encoding cut edges")
+                    ffmpeg = self._ffmpeg or find_ffmpeg()
+                    if not ffmpeg:
+                        raise CutAnalysisError("cut_failed", "FFmpeg is not available.")
+                    edges = encode_edges(
+                        plan,
+                        analysis,
+                        transaction.workspace,
+                        self._cancel,
+                        ffmpeg=ffmpeg,
+                        on_frame=lambda: check_cut_cancel(self._cancel),
+                    )
                 report(EncodeStage.COPYING, "Copying")
                 with (
                     av.open(plan.identity.path) as incoming,
@@ -81,10 +103,23 @@ class CutRunner:
                                 disposition=stream.disposition.value,
                             )
                             target.metadata.update(stream.metadata)
+                            if edges is not None and stream.type == "video":
+                                # lists the encoded edges' parameter sets beside the source's
+                                target.codec_context.extradata = edges.extradata
                             streams[stream.index] = target
                     copied = 0
                     last_progress = -1
-                    for packet in selected_packets(incoming, plan, analysis, self._cancel):
+                    packets = selected_packets(incoming, plan, analysis, self._cancel)
+                    if edges is not None:
+                        packets = exact_packets(
+                            packets,
+                            plan,
+                            analysis,
+                            edges,
+                            incoming.streams.video[0],
+                            self._cancel,
+                        )
+                    for packet in packets:
                         if packet.stream.type == "video":
                             copied += 1
                         packet.stream = streams[packet.stream.index]
@@ -98,7 +133,12 @@ class CutRunner:
                     report(EncodeStage.JOINING, "Joining")
                 report(EncodeStage.VERIFYING, "Checking output")
                 verify_cut_output(
-                    plan, result, self._cancel, analysis=analysis, ffprobe=self._ffprobe
+                    plan,
+                    result,
+                    self._cancel,
+                    analysis=analysis,
+                    ffprobe=self._ffprobe,
+                    edges=edges,
                 )
                 check_cut_cancel(self._cancel)
                 output = transaction.publish(result)

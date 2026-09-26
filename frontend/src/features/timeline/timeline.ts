@@ -276,13 +276,13 @@ function paintCutOverlay() {
       range.style.setProperty("--sliver", (sliver.delta / (segment.end - segment.start)) * 100 + "%");
     }
     const hatch = documentRef.createElement("div");
-    hatch.className = "tl-sliver";
+    hatch.className = "tl-sliver" + (sliver.kind === "exact" ? " exact" : "");
     hatch.setAttribute("aria-hidden", "true");
     hatch.style.left = (sliver.requestedStart / full) * 100 + "%";
     hatch.style.width = (sliver.delta / full) * 100 + "%";
     const chip = documentRef.createElement("button");
     chip.type = "button";
-    chip.className = "edge-chip";
+    chip.className = "edge-chip" + (sliver.kind === "exact" ? " exact" : "");
     chip.dataset.cutChip = String(index);
     chip.style.left = (sliver.exportedStart / full) * 100 + "%";
     chip.title = Keyframes.chipLabel(sliver);
@@ -291,7 +291,12 @@ function paintCutOverlay() {
     arrow.setAttribute("viewBox", "0 0 12 12");
     arrow.setAttribute("aria-hidden", "true");
     const path = documentRef.createElementNS("http://www.w3.org/2000/svg", "path");
-    path.setAttribute("d", "M2 6h7M6.5 3.5 9 6l-2.5 2.5");
+    path.setAttribute(
+      "d",
+      sliver.kind === "exact"
+        ? "M2 6a4 4 0 0 1 7-2.6M10 6a4 4 0 0 1-7 2.6M9 1v2.5H6.5M3 11V8.5h2.5"
+        : "M2 6h7M6.5 3.5 9 6l-2.5 2.5",
+    );
     arrow.appendChild(path);
     chip.append(arrow, Keyframes.chipText(sliver.kind, sliver.delta));
     segmentsLayer.append(hatch, chip);

@@ -4,7 +4,7 @@ import type { EditorClip } from "../editor/types.ts";
 import type { EditorSession } from "../editor/session.ts";
 import { formatBytes } from "../editor/format.ts";
 import { toast } from "../editor/toast.ts";
-import { createCutState, cutSegmentStatus, cutTime, mediaSeconds, reduceCutState } from "./cut-state.ts";
+import { createCutState, cutSegmentStatus, cutTime, encodedSeconds, mediaSeconds, reduceCutState } from "./cut-state.ts";
 
 interface CutControlsDeps {
   session: EditorSession;
@@ -26,6 +26,7 @@ export function installCutControls(deps: CutControlsDeps) {
   };
   const state = (clip: EditorClip) => clip.cutState ??= createCutState();
   const selected = () => session.selPath ? session.clips[session.selPath] : undefined;
+  const exactSeen = new WeakMap<EditorClip, boolean>();
   let active = false;
   let busy = false;
   let refreshDeferred = false;
@@ -160,9 +161,28 @@ export function installCutControls(deps: CutControlsDeps) {
     element("cut-message").textContent = message;
     element("cut-message").hidden = !message;
     element("cut-reread").hidden = !clip?.probed || !current?.error;
-    const exactReason = plan?.exact_reason || current?.analysis?.analysis?.exact_reason || "Exact cutting is not available yet.";
-    element<HTMLButtonElement>("cut-exact").title = exactReason;
-    element("cut-exact-note").textContent = exactReason;
+    const precision = current?.precision ?? "keyframes";
+    // keep the last answer while a new plan is prepared, so the control does not flicker
+    const exactAvailable = clip && plan ? (exactSeen.set(clip, plan.exact_available), plan.exact_available) : clip ? exactSeen.get(clip) ?? false : false;
+    const exactReason = plan?.exact_reason || current?.analysis?.analysis?.exact_reason || "Exact is not available for this video.";
+    const exactButton = element<HTMLButtonElement>("cut-exact");
+    exactButton.disabled = !exactAvailable && precision !== "exact" || busy;
+    exactButton.title = exactAvailable ? "" : exactReason;
+    element("cut-exact-note").textContent = exactAvailable ? "" : exactReason;
+    element("cut-exact-note").hidden = exactAvailable;
+    for (const option of element("precision-a").querySelectorAll<HTMLButtonElement>("[data-precision]")) {
+      const checked = option.dataset.precision === precision;
+      option.setAttribute("aria-checked",String(checked));
+      option.tabIndex = checked ? 0 : -1;
+    }
+    element<HTMLButtonElement>("precision-a").querySelector<HTMLButtonElement>('[data-precision="keyframes"]')!.disabled = busy;
+    element("precision-note").textContent = precision === "exact"
+      ? "Re-encodes near cuts; copies the rest. Audio stays packet-accurate."
+      : "Fast. Off-keyframe cuts start at the next keyframe.";
+    element("cut-title").textContent = precision === "exact" ? "Cut at the chosen frames" : "Cut without re-encoding";
+    element("cut-lede-text").textContent = precision === "exact"
+      ? "Re-encodes video near cuts; copies the rest. Audio is copied."
+      : "Video and audio are copied, not re-encoded. Cuts start on keyframes.";
     const ranges = request?.segments ?? [];
     element("cuts-title").textContent = ranges.length ? `Cuts · ${ranges.length} kept` : "Cuts";
     const list = element<HTMLOListElement>("cut-list");
@@ -185,13 +205,13 @@ export function installCutControls(deps: CutControlsDeps) {
       const button = row.querySelector("button")!;
       const range = ranges[index]!;
       const segment = plan?.segments[index];
-      const status = segment ? cutSegmentStatus(segment) : "Checking keyframes…";
+      const status = segment ? cutSegmentStatus(segment, precision) : "Checking keyframes…";
       const rangeText = `${cutTime(mediaSeconds(range.start))} – ${cutTime(mediaSeconds(range.end))}`;
       button.children[0]!.textContent = String(index+1);
       button.children[1]!.textContent = rangeText;
       button.children[2]!.textContent = segment ? cutTime(mediaSeconds(segment.resolved.end)-mediaSeconds(segment.resolved.start)) : "";
       button.children[3]!.textContent = status;
-      button.children[3]!.className = `cut-status ${!segment ? "pending" : segment.start_kind === "collapsed" ? "collapsed" : segment.start_kind === "moved" || segment.end_frames_moved ? "moved" : "ok"}`;
+      button.children[3]!.className = `cut-status ${!segment ? "pending" : segment.start_kind === "collapsed" ? "collapsed" : encodedSeconds(segment, precision) > 0 ? "exact" : segment.start_kind === "moved" || segment.end_frames_moved ? "moved" : "ok"}`;
       button.setAttribute("aria-label",`Segment ${index+1}, ${rangeText}. ${status}`);
       button.setAttribute("aria-pressed",String(index === clip?.activeSegment));
     }
@@ -288,6 +308,26 @@ export function installCutControls(deps: CutControlsDeps) {
   element("snap-all").addEventListener("click",() => {
     const clip = selected(); const plan = clip && state(clip).plan;
     if (clip && plan && ready(clip) && deps.moveStarts(clip,plan)) refresh();
+  });
+  function choosePrecision(value: "keyframes" | "exact"): void {
+    const clip = selected();
+    const option = element("precision-a").querySelector<HTMLButtonElement>(`[data-precision="${value}"]`);
+    if (!clip || !option || option.disabled || state(clip).precision === value) return;
+    clip.cutState = reduceCutState(state(clip),{type:"precision",value});
+    refresh();
+    option.focus();
+  }
+  element("precision-a").addEventListener("click",event => {
+    const option = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("[data-precision]") : null;
+    if (option?.dataset.precision === "keyframes" || option?.dataset.precision === "exact") choosePrecision(option.dataset.precision);
+  });
+  element("precision-a").addEventListener("keydown",event => {
+    const clip = selected();
+    if (!clip || !["ArrowLeft","ArrowRight","ArrowUp","ArrowDown","Home","End"].includes(event.key)) return;
+    event.preventDefault();
+    const next = event.key === "Home" ? "keyframes" : event.key === "End" ? "exact"
+      : state(clip).precision === "exact" ? "keyframes" : "exact";
+    choosePrecision(next);
   });
   element("conflict-compress").addEventListener("click",deps.compressInstead);
   for (const [id,value] of [["conflict-remove",true],["conflict-restore",false]] as const) {

@@ -19,6 +19,7 @@ from .analysis import (
     analyze_source,
     source_identity,
 )
+from .exact import exact_encoder_available
 from .planner import CutPlanChanged, plan_cut
 
 
@@ -45,7 +46,7 @@ def validate_cut_source(plan: CutPlan, cancel: Event) -> None:
 
 def prepare_cut(plan: CutPlan, cancel: Event, ffprobe: str | None) -> CutAnalysis:
     validate_cut_source(plan, cancel)
-    if plan.issues or plan.precision != "keyframes" or plan.container != "mp4":
+    if plan.issues or plan.precision not in ("keyframes", "exact") or plan.container != "mp4":
         raise CutAnalysisError("unsupported_cut", "This cut plan is not ready to export.")
     source, output = Path(plan.identity.path), Path(plan.output_path)
     if output.resolve() == source.resolve() or (output.exists() and output.samefile(source)):
@@ -60,7 +61,7 @@ def prepare_cut(plan: CutPlan, cancel: Event, ffprobe: str | None) -> CutAnalysi
         or CutRequest(
             str(source),
             tuple(s.requested for s in plan.segments),
-            "keyframes",
+            plan.precision,
             plan.include_audio,
             (),
             False,
@@ -68,6 +69,7 @@ def prepare_cut(plan: CutPlan, cancel: Event, ffprobe: str | None) -> CutAnalysi
             output.name,
         ),
         analysis,
+        exact_encoder=exact_encoder_available(),
     )
     if (
         not plan.segments
@@ -83,7 +85,7 @@ def rebuild_cut_plan(plan: CutPlan, cancel: Event, *, ffprobe: str | None = None
     analysis = prepare_cut(plan, cancel, ffprobe)
     if plan.request is None:
         raise CutAnalysisError("plan_changed", "Review the cut plan before retrying.")
-    rebuilt = plan_cut(plan.request, analysis)
+    rebuilt = plan_cut(plan.request, analysis, exact_encoder=exact_encoder_available())
     if rebuilt.fingerprint != plan.fingerprint:
         raise CutPlanChanged(rebuilt)
     return rebuilt

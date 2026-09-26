@@ -2,6 +2,7 @@
 
 from ..bridge_contract import JsonValue
 from ..models.cutting import CutIssue, CutPlan, CutRange
+from .exact import exact_media_reason
 from .service import AnalysisSnapshot
 
 
@@ -43,6 +44,7 @@ def cut_plan_preview_dict(plan: CutPlan) -> dict[str, JsonValue]:
                 "audio_source": range_dict(s.audio_source),
                 "audio_output": range_dict(s.audio_output),
                 "audio_packet_count": s.audio_packet_count,
+                "copied": range_dict(s.copied),
             }
             for s in plan.segments
         ],
@@ -64,8 +66,9 @@ def analysis_snapshot_dict(snapshot: AnalysisSnapshot) -> dict[str, JsonValue]:
         result["analysis"] = {
             "duration": analysis.duration.to_dict(),
             "frame_duration": analysis.frame_duration.to_dict(),
-            "exact_available": analysis.exact_available,
-            "exact_reason": analysis.exact_reason,
+            # whether the video itself supports Exact; the plan also checks for the encoder
+            "exact_available": not exact_media_reason(analysis),
+            "exact_reason": exact_media_reason(analysis),
             "issues": [issue_dict(i) for i in analysis.issues],
             "version": analysis.version,
             "streams": [

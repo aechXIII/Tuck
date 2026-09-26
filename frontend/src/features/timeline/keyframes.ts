@@ -13,9 +13,11 @@ export interface KeyframeStrip {
 export interface CutSliver {
   index: number;
   requestedStart: number;
+  // where copying starts: the next keyframe, or the segment end when all of it is encoded
   exportedStart: number;
   delta: number;
-  kind: "moved";
+  kind: "moved" | "exact";
+  whole?: boolean;
 }
 
 // requested times travel as microseconds or rational frames, so allow for float rounding
@@ -90,7 +92,14 @@ export function sliverFor(
   segment: { start: number; end: number },
   planSegment: CutSegment | null | undefined,
 ): CutSliver | null {
-  if (!planSegment || planSegment.start_kind !== "moved" || !planMatches(segment, planSegment)) return null;
+  if (!planSegment || !planMatches(segment, planSegment)) return null;
+  if (planSegment.start_kind === "exact") {
+    const start = mediaSeconds(planSegment.resolved.start);
+    const whole = !planSegment.copied;
+    const copyStart = whole ? mediaSeconds(planSegment.resolved.end) : mediaSeconds(planSegment.copied!.start);
+    return copyStart > start ? {index,requestedStart:start,exportedStart:copyStart,delta:copyStart-start,kind:"exact",whole} : null;
+  }
+  if (planSegment.start_kind !== "moved") return null;
   const requestedStart = mediaSeconds(planSegment.requested.start);
   const exportedStart = mediaSeconds(planSegment.resolved.start);
   const delta = exportedStart - requestedStart;
@@ -117,6 +126,11 @@ export function preciseTime(seconds: number): string {
 }
 
 export function chipLabel(sliver: CutSliver): string {
+  if (sliver.kind === "exact") {
+    return sliver.whole
+      ? "This segment is re-encoded"
+      : `Starts exactly at ${preciseTime(sliver.requestedStart)}. ${deltaText(sliver.delta)} near the start is re-encoded`;
+  }
   return `Starts at ${preciseTime(sliver.exportedStart)}, the next keyframe, ${deltaText(sliver.delta)} later than where you cut`;
 }
 

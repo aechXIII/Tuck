@@ -616,8 +616,8 @@
               <div class="gr">
                 <div class="inspector-label-row"><div class="grt">Precision</div></div>
                 <div class="cut-precision" role="radiogroup" aria-label="Cut precision" id="precision-a">
-                  <button type="button" role="radio" aria-checked="true" data-precision="keyframes">On keyframes</button>
-                  <button type="button" role="radio" aria-checked="false" data-precision="exact" id="cut-exact" aria-describedby="cut-exact-note" disabled>Exact <span class="beta">Beta</span></button>
+                  <button type="button" role="radio" aria-checked="true" tabindex="0" data-precision="keyframes">On keyframes</button>
+                  <button type="button" role="radio" aria-checked="false" tabindex="-1" data-precision="exact" id="cut-exact" aria-describedby="cut-exact-note" disabled>Exact <span class="beta">Beta</span></button>
                 </div>
                 <p class="setting-note" id="precision-note">Fast. Off-keyframe cuts start at the next keyframe.</p>
                 <p class="setting-note" id="cut-exact-note">Exact cutting is not available yet.</p>

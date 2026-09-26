@@ -341,6 +341,7 @@ export function installEditorRuntime(
     onSendto: (data) => handleSendto(data),
   });
 
+
   encoding = installEncodingControls({
     session,
     byId,
@@ -375,7 +376,9 @@ export function installEditorRuntime(
     },
     pollQueue: () => queue.pollQueue(),
     renderClips: () => library.renderClips(),
-    paintCutTimeline: () => timeline.paintCutOverlay(),
+    paintCutTimeline: () => {
+      timeline.paintCutOverlay();
+    },
   });
 
   settings = installSettings({

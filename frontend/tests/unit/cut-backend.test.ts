@@ -42,7 +42,7 @@ test("typed cut previews retain ticks above JavaScript's integer precision", asy
     output_path:"clip_cut.mp4",exported_duration:end,estimated_bytes:1000,
     fingerprint:"a".repeat(64),issues:[],exact_available:false,exact_reason:"Not available in this build.",
     source_identity:{path:"clip.mp4",size:1000,mtime_ns:"1234567890123456789",signature:"b".repeat(64)},
-    segments:[{requested:{start:zero,end},resolved:{start:zero,end},start_kind:"at_start",end_frames_moved:0,audio_source:null,audio_output:null,audio_packet_count:0}],
+    segments:[{requested:{start:zero,end},resolved:{start:zero,end},start_kind:"at_start",end_frames_moved:0,audio_source:null,audio_output:null,audio_packet_count:0,copied:null}],
   };
   const client = createTauriBackendClient(async () => ({data:plan,_request_id:4}));
   const result = await client.createPlan({operation:"cut",source:"clip.mp4",segments:[{start:zero,end}]});

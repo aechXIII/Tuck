@@ -2,6 +2,7 @@ import pytest
 from media.cut_fixtures import create_source, find_tools
 
 from tuck.bridge import BridgeAPI
+from tuck.cutting.exact import exact_encoder_available
 from tuck.models.cutting import MediaTime
 from tuck.sidecar.handlers import dispatch
 from tuck.sidecar.protocol import Request
@@ -79,7 +80,8 @@ def test_real_analysis_and_profile_free_cut_preview_round_trip(api, tmp_path):
     assert preview["data"]["operation"] == "cut"
     assert preview["data"]["issues"] == []
     assert preview["data"]["exported_duration"] == MediaTime(61, 1, 30).to_dict()
-    assert preview["data"]["exact_available"] is False
+    # the generated fixture is supported H.264, so only the encoder decides
+    assert preview["data"]["exact_available"] is exact_encoder_available()
     assert preview["data"]["segments"][0]["audio_source"] is not None
     with source.open("ab") as output:
         output.write(b"changed")

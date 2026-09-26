@@ -2281,3 +2281,16 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
   padding: 5px var(--panel-inset);
   border-bottom: 1px solid var(--hair);
 }
+
+/* visually hidden, still read by assistive technology */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

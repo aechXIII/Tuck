@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createCutState, reduceCutState, cutSegmentStatus, mediaSeconds } from "../../src/features/export/cut-state.ts";
+import { createCutState, reduceCutState, cutSegmentStatus, encodedSeconds, mediaSeconds } from "../../src/features/export/cut-state.ts";
 import { buildCutRequest } from "../../src/features/export/plan-request.ts";
 import { createEditorClip } from "../../src/features/editor/types.ts";
 import type { CutPlanPreview } from "../../src/backend/cutting-types.ts";
@@ -11,7 +11,7 @@ const plan: CutPlanPreview = {
   output_path:"/videos/ride_cut.mp4", exported_duration:time(1063), estimated_bytes:1000,
   fingerprint:"a".repeat(64), issues:[], exact_available:false, exact_reason:"Exact is not available yet.",
   source_identity:{path:"/videos/ride.mp4",size:1200,mtime_ns:"1",signature:"b".repeat(64)},
-  segments:[{requested:{start:time(424),end:time(1200)},resolved:{start:time(440),end:time(1200)},start_kind:"moved",end_frames_moved:3,audio_source:null,audio_output:null,audio_packet_count:0}],
+  segments:[{requested:{start:time(424),end:time(1200)},resolved:{start:time(440),end:time(1200)},start_kind:"moved",end_frames_moved:3,audio_source:null,audio_output:null,audio_packet_count:0,copied:null}],
 };
 
 test("cut state belongs to each clip and accepts only the current plan generation", () => {
@@ -82,4 +82,17 @@ test("cut status reports the backend's movement and early end together", () => {
   assert.equal(mediaSeconds(time(424)),42.4);
   assert.equal(cutSegmentStatus(plan.segments[0]!),"Starts 1.6 s later, at 0:44 · Ends 3 frames early");
   assert.equal(cutSegmentStatus({...plan.segments[0]!,start_kind:"collapsed"}),"Too short: no keyframe inside");
+});
+
+test("exact rows name how much is re-encoded", () => {
+  const time = (seconds: number) => ({ticks:String(Math.round(seconds*30)),time_base_num:1,time_base_den:30});
+  const segment = (copied: [number, number] | null, kind: "exact" | "keyframe" = "exact") => ({
+    requested:{start:time(42.4),end:time(120)},resolved:{start:time(42.4),end:time(120)},start_kind:kind,end_frames_moved:0,
+    audio_source:null,audio_output:null,audio_packet_count:0,copied:copied && {start:time(copied[0]),end:time(copied[1])},
+  });
+  assert.equal(cutSegmentStatus(segment([44,119.9]),"exact"),"Exact · 1.7 s re-encoded");
+  assert.equal(cutSegmentStatus(segment(null),"exact"),"This segment is re-encoded");
+  assert.equal(cutSegmentStatus(segment([42.4,120],"keyframe"),"exact"),"Starts on a keyframe");
+  assert.equal(encodedSeconds(segment([44,119.9]),"keyframes"),0);
+  assert.equal(cutSegmentStatus({...segment(null),start_kind:"collapsed"},"exact"),"Too short: under one frame");
 });

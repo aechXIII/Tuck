@@ -28,6 +28,7 @@ function segment(start: number, end: number, exportedStart: number, kind: CutSeg
     audio_source: null,
     audio_output: null,
     audio_packet_count: 0,
+    copied: null,
   };
 }
 
@@ -118,4 +119,26 @@ test("handles expose the exported boundary in their value text", () => {
   assert.equal(Keyframes.handleValueText("start", 4, segment(4, 8, 4, "keyframe")), "0:04.000");
   assert.equal(Keyframes.handleValueText("start", 42.4, null), "0:42.400");
   assert.equal(Keyframes.handleValueText("start", 1, segment(1, 2, 1, "collapsed")), "0:01.000");
+});
+
+function exactSegment(start: number, end: number, copied: [number, number] | null, kind: CutSegment["start_kind"] = "exact"): CutSegment {
+  return {...segment(start, end, start, kind), copied: copied && { start: time(copied[0]), end: time(copied[1]) }};
+}
+
+test("an exact start is drawn as re-encoded, up to where copying starts", () => {
+  const sliver = Keyframes.sliverFor(1, { start: 42.4, end: 120 }, exactSegment(42.4, 120, [44, 119]))!;
+  assert.equal(sliver.kind, "exact");
+  assert.equal(sliver.exportedStart, 44);
+  assert.equal(Keyframes.chipText(sliver.kind, sliver.delta), "1.6 s re-encoded");
+  assert.equal(Keyframes.chipLabel(sliver), "Starts exactly at 0:42.400. 1.6 s near the start is re-encoded");
+});
+
+test("a wholly encoded segment is drawn across its full width", () => {
+  const sliver = Keyframes.sliverFor(0, { start: 42.4, end: 42.8 }, exactSegment(42.4, 42.8, null))!;
+  assert.equal(sliver.exportedStart, 42.8);
+  assert.equal(Keyframes.chipLabel(sliver), "This segment is re-encoded");
+});
+
+test("exact segments that start on a keyframe draw nothing at their start", () => {
+  assert.equal(Keyframes.sliverFor(0, { start: 44, end: 120 }, exactSegment(44, 120, [44, 119], "keyframe")), null);
 });

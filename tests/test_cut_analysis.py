@@ -4,6 +4,8 @@ from threading import Event
 import pytest
 from media.cut_fixtures import create_source, find_tools
 
+from tuck.cutting.exact import exact_media_reason
+
 
 def analyzer():
     from tuck.cutting.analysis import analyze_source
@@ -32,7 +34,8 @@ def test_scan_preserves_rational_safe_endpoints_and_stream_inventory(media_tools
     assert updates[-1].coverage_end == result.duration
     assert updates[-1].progress == 1
     assert len(result.identity.signature) == 64
-    assert not result.exact_available
+    # a supported fractional-rate H.264 source can use Exact
+    assert exact_media_reason(result) == ""
 
 
 @pytest.mark.parametrize("variant", ["open_gop", "vfr", "hdr", "multiple_audio", "subtitle"])

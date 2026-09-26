@@ -8,6 +8,7 @@ from media.cut_fixtures import create_source, find_tools
 
 from tuck.bridge_serialization import queue_item_dict
 from tuck.cutting.analysis import CutAnalysisError, analyze_source
+from tuck.cutting.exact import exact_encoder_available
 from tuck.cutting.planner import parse_cut_request, plan_cut
 from tuck.diagnostics import build_diagnostics
 from tuck.encoding.runner import EncodeCancelled, FFmpegEngine
@@ -29,7 +30,8 @@ def cut(tmp_path):
         "source": str(source),
         "segments": [{"start": MediaTime(0).to_dict(), "end": MediaTime(2).to_dict()}],
     }
-    return analysis, raw, plan_cut(parse_cut_request(raw), analysis)
+    plan = plan_cut(parse_cut_request(raw), analysis, exact_encoder=exact_encoder_available())
+    return analysis, raw, plan
 
 
 def finish(queue, items):

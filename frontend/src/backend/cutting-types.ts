@@ -37,6 +37,8 @@ export interface CutSegment extends JsonObject {
   readonly audio_source: CutRange | null;
   readonly audio_output: CutRange | null;
   readonly audio_packet_count: number;
+  // Exact plans: the copied part between encoded edges, or null when all of it is encoded
+  readonly copied: CutRange | null;
 }
 export interface CutPlanPreview extends JsonObject {
   readonly operation: "cut";
@@ -141,6 +143,7 @@ function segment(value: unknown): value is CutSegment {
     && integer(value.audio_packet_count)
     && (value.audio_source === null || range(value.audio_source))
     && (value.audio_output === null || range(value.audio_output))
+    && (value.copied === null || range(value.copied))
   );
 }
 function stream(value: unknown): value is CutStream {
