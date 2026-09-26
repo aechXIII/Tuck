@@ -169,6 +169,10 @@
   margin-top: 7px;
   background: rgb(255 255 255 / 0.18);
 }
+.clip .c-progress.is-indeterminate .c-progress-fill {
+  width: 32%;
+  margin-left: 34%;
+}
 .clip[data-queue-state="running"] .c-progress-fill,
 .clip[data-queue-state="processing"] .c-progress-fill {
   background: var(--accent);

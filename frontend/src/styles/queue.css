@@ -53,6 +53,9 @@
   background: var(--accent);
   border-radius: 3px;
 }
+#qprog:indeterminate::-webkit-progress-bar {
+  background: linear-gradient(to right, var(--sink) 34%, var(--accent) 34%, var(--accent) 66%, var(--sink) 66%);
+}
 #qeta {
   color: var(--dim);
   font-size: 11px;

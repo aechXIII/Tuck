@@ -35,6 +35,7 @@ export interface ClipCardModel {
   resultPath?: string | undefined;
   statusLabel?: string | undefined;
   progress?: number | undefined;
+  progressIndeterminate?: boolean | undefined;
   probeError?: unknown;
   fileSize?: number | undefined;
   meta?: { text?: unknown; error?: boolean | undefined } | null | undefined;
@@ -183,7 +184,7 @@ function libraryGroup(model: ClipCardModel): string {
 
 export function groupClipModels(models: ClipCardModel[]): ClipGroup[] {
   const definitions = [
-    { key: "encoding", label: "Encoding" },
+    { key: "encoding", label: "Exporting" },
     { key: "queued", label: "Queued" },
     { key: "ready", label: "Ready" },
   ];
@@ -273,12 +274,14 @@ export function createClipCard<T extends ClipCardElement>(
     const progress = Math.max(0, Math.min(100, Number(model.progress) || 0));
     const progressTrack = createElement(documentRef, "div", "c-progress");
     const progressFill = createElement(documentRef, "span", "c-progress-fill");
-    progressFill.setAttribute("style", "width:" + progress + "%");
+    if (model.progressIndeterminate) progressTrack.setAttribute("class", "c-progress is-indeterminate");
+    else progressFill.setAttribute("style", "width:" + progress + "%");
     progressTrack.setAttribute("role", "progressbar");
-    progressTrack.setAttribute("aria-label", "Encoding progress");
+    progressTrack.setAttribute("aria-label", "Export progress");
+    if (model.statusLabel) progressTrack.setAttribute("aria-valuetext", model.statusLabel);
     progressTrack.setAttribute("aria-valuemin", "0");
     progressTrack.setAttribute("aria-valuemax", "100");
-    progressTrack.setAttribute("aria-valuenow", String(Math.round(progress)));
+    if (!model.progressIndeterminate) progressTrack.setAttribute("aria-valuenow", String(Math.round(progress)));
     progressTrack.appendChild(progressFill);
     main.appendChild(progressTrack);
   }

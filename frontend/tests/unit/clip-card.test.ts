@@ -147,7 +147,7 @@ test("library groups active work ahead of queued and ready clips without reorder
     [
       {
         key: "encoding",
-        label: "Encoding",
+        label: "Exporting",
         paths: ["encoding-a.mp4", "encoding-b.mp4"],
       },
       {

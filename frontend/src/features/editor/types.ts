@@ -89,6 +89,7 @@ export interface EditorClip {
   _queueItemId?: string;
   _resultPath?: string;
   _progress?: number;
+  _progressIndeterminate?: boolean;
   _fileSize?: number;
   _resultSize?: number;
   _queueError?: string;

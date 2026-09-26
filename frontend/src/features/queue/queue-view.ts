@@ -4,7 +4,7 @@ export interface QueueItem {
   readonly source_path?: string;
   readonly state?: string;
   readonly progress?: number;
-  readonly progress_info?: { readonly speed?: number; readonly eta_seconds?: number | null };
+  readonly progress_info?: { readonly speed?: number; readonly eta_seconds?: number | null; readonly indeterminate?: boolean };
   readonly status_text?: string;
   readonly result_path?: string;
   readonly finished_at?: string;
@@ -26,6 +26,7 @@ export interface QueueViewState {
   readonly activeItemIds: Readonly<Record<string, true>>;
   readonly runningItemId: string;
   readonly progress: number;
+  readonly indeterminate: boolean;
   readonly barVisible: boolean;
   readonly active: boolean;
   readonly stopAfterDisabled: boolean;
@@ -46,6 +47,7 @@ export function emptyQueueView(): QueueViewState {
     activeItemIds: {},
     runningItemId: "",
     progress: 0,
+    indeterminate: false,
     barVisible: false,
     active: false,
     stopAfterDisabled: true,
@@ -74,7 +76,7 @@ export function formatQueueStatus(item: QueueItem | null | undefined): string {
   if (!item) return "";
   if (item.status_text) {
     const parts = [item.status_text];
-    if (item.state === "running") {
+    if (item.state === "running" && !item.progress_info?.indeterminate) {
       if ((item.progress ?? 0) > 0) parts.push(`${Math.round(item.progress ?? 0)}%`);
       const pi = item.progress_info ?? {};
       if (pi.speed) parts.push(`${pi.speed.toFixed(1)}x`);
@@ -153,6 +155,7 @@ export function reduceQueueSnapshot(
 
   let count = "0/0";
   let progress = 0;
+  let indeterminate = false;
   let eta = "ETA --";
   let fname = "";
   let runningItemId = "";
@@ -166,14 +169,17 @@ export function reduceQueueSnapshot(
         ? Math.max(raw, previous.progress)
         : raw;
     const pi = first.progress_info ?? {};
+    indeterminate = pi.indeterminate === true;
     count = `${done + 1}/${total}`;
-    eta = pi.eta_seconds != null ? `ETA ${formatEta(pi.eta_seconds)}` : "ETA --";
+    eta = indeterminate ? "" : pi.eta_seconds != null ? `ETA ${formatEta(pi.eta_seconds)}` : "ETA --";
     const segmentCount = first.segment_count || 1;
     const selection =
       `${segmentCount}${segmentCount === 1 ? " segment" : " segments"}` +
       (first.duration ? ` · ${formatDuration(first.duration)}` : "");
     const status = formatQueueStatus(first);
-    fname = `${first.source ?? "?"} · ${selection}${status ? ` · ${status}` : ""}`;
+    fname = first.operation === "cut"
+      ? `${status} · ${first.source ?? "?"} · ${selection}`
+      : `${first.source ?? "?"} · ${selection}${status ? ` · ${status}` : ""}`;
   } else if (pending.length) {
     count = `${done}/${total}`;
     progress = 0;
@@ -191,6 +197,7 @@ export function reduceQueueSnapshot(
     activeItemIds: nextActiveItemIds,
     runningItemId,
     progress,
+    indeterminate,
     barVisible: items.length > 0,
     active: active > 0,
     stopAfterDisabled: active === 0,

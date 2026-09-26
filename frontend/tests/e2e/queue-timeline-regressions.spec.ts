@@ -129,3 +129,36 @@ test("hovered completed cards survive unchanged queue polls", async ({ page }) =
     }
   }
 });
+for (const width of [1240, 960]) {
+  test(`cut queue progress and finalization at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({width, height: width === 960 ? 640 : 800});
+    await page.emulateMedia({reducedMotion: "reduce"});
+    for (const [index, status] of ["Copying", "Joining", "Checking output", "Completed"].entries()) {
+      await expect.poll(() => page.evaluate(() => window.__tuckFakeBackendCalls?.filter(c => c.method === "getQueueState").length ?? 0)).toBeGreaterThan(index);
+      await page.evaluate(({status, index}) => {
+        const complete = status === "Completed";
+        (window as Window & {__tuckReleaseHeld?: (method: string, value: unknown) => void}).__tuckReleaseHeld?.("getQueueState", {
+          ok: true, items: [{id: "cut", operation: "cut", source: "clip.mp4", source_path: "/mnt/exchange/clip.mp4", state: complete ? "completed" : "running", progress: complete ? 100 : index === 0 ? 45 : 0, status_text: status, progress_info: {indeterminate: index === 1 || index === 2}, result_path: complete ? "/mnt/exchange/clip_cut.mp4" : ""}],
+        });
+      }, {status, index});
+      await expect(page.locator("#clips")).toContainText(status);
+      if (index === 1 || index === 2) {
+        await expect(page.locator("#qprog")).not.toHaveAttribute("value");
+        await expect(page.locator("#clips [role=progressbar]")).not.toHaveAttribute("aria-valuenow");
+        await expect(page.locator("#qfname")).toHaveText(`${status} · clip.mp4 · 1 segment`);
+        await expect(page.locator("#qeta")).toHaveText("");
+        await expect(page.locator("#qfname")).not.toContainText("%");
+      } else {
+        await expect(page.locator("#qprog")).toHaveAttribute("value", index === 0 ? "45" : "100");
+      }
+      if (index === 2) {
+        await page.locator("#btn-cancel").focus();
+        await expect(page.locator("#btn-cancel")).toBeFocused();
+        await expect(page.locator("#btn-cancel")).toBeEnabled();
+      }
+    }
+    await expect(page.locator("#btn-cancel")).toBeDisabled();
+    if (width === 960) await page.locator("#panel-toggle-library").click();
+    await expect(page.locator("#clips").getByRole("button", {name: "Show", exact: true})).toBeVisible();
+  });
+}

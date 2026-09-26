@@ -77,6 +77,7 @@ export function installQueue(deps: QueueDeps): QueueApi {
         clip._queueItemId = item.id ?? "";
         clip._statusText = formatQueueStatus(item);
         clip._progress = item.progress || 0;
+        clip._progressIndeterminate = item.progress_info?.indeterminate === true;
         if (item.error) clip._queueError = item.error;
         if (item.state === "completed" && previousState !== "completed") completed = true;
         if (item.state === "failed" && previousState !== "failed") {
@@ -130,9 +131,15 @@ export function installQueue(deps: QueueDeps): QueueApi {
       if (!items.length) return;
       text("qcnt", queueView.count);
       const progress = byId<HTMLProgressElement>("qprog");
-      if (progress) progress.value = queueView.progress;
+      if (progress) {
+        if (queueView.indeterminate) progress.removeAttribute("value");
+        else progress.value = queueView.progress;
+        progress.setAttribute("aria-valuetext", queueView.fname);
+      }
       text("qeta", queueView.eta);
       text("qfname", queueView.fname);
+      const filename = byId("qfname");
+      if (filename) filename.title = queueView.fname;
     } catch {
       /* polling errors are transient */
     } finally {

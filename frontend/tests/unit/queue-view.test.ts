@@ -122,3 +122,14 @@ test("queueCompletionOutput ignores completions from before the batch started", 
   assert.equal(queueCompletionOutput(items, true, false, { new: true }), "new.mp4");
   assert.equal(queueCompletionOutput(items, false, false, { new: true }), "");
 });
+test("cut finalization has no percentage, speed or ETA", () => {
+  for (const status of ["Joining", "Checking output"]) {
+    const item = {id: "cut", operation: "cut", state: "running", progress: 99, status_text: status,
+      progress_info: {indeterminate: true, speed: 2, eta_seconds: 1}};
+    assert.equal(formatQueueStatus(item), status);
+    const view = reduceQueueSnapshot(emptyQueueView(), {items: [item]});
+    assert.equal(view.indeterminate, true);
+    assert.equal(view.eta, "");
+  }
+  assert.equal(formatQueueStatus({state: "running", progress: 50, status_text: "Copying", progress_info: {indeterminate: false}}), "Copying · 50%");
+});

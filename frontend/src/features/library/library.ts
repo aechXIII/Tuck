@@ -503,6 +503,7 @@ export function createLibrary(host: LibraryHost): LibraryApi {
         resultPath: clip._resultPath || "",
         statusLabel,
         progress: clip._progress || 0,
+        progressIndeterminate: clip._progressIndeterminate === true,
         probeError: !!clip.error,
         fileSize: clip._fileSize || 0,
         meta: metaStr(clip),
