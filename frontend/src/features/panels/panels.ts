@@ -92,6 +92,8 @@ export interface AudioTimelineApi {
 
 export interface PanelsHost {
   byId: <T extends HTMLElement = HTMLElement>(id: string) => T | null;
+  // the Lossless cut Inspector stops above the timeline, so the timeline stays usable
+  timelineBesideInspector?: () => boolean;
   document: Document;
   window: Window & typeof globalThis;
   clips: () => Readonly<Record<string, EditorClip>>;
@@ -200,9 +202,10 @@ export function installPanels(host: PanelsHost): PanelsApi {
     const center = byId("center");
     const audioEditor = byId("audio-editor");
     const qbar = byId("qbar");
+    const timelineOpen = timelineStaysOpen();
     if (center) center.inert = drawerOpen;
-    if (audioEditor) audioEditor.inert = drawerOpen;
-    if (qbar) qbar.inert = drawerOpen;
+    if (audioEditor) audioEditor.inert = drawerOpen && !timelineOpen;
+    if (qbar) qbar.inert = drawerOpen && !timelineOpen;
 
     (
       [
@@ -225,7 +228,7 @@ export function installPanels(host: PanelsHost): PanelsApi {
       close.setAttribute("aria-label", (overlay ? "Close " : "Hide ") + entry[0]);
       if (overlay && open) {
         panel.setAttribute("role", "dialog");
-        panel.setAttribute("aria-modal", "true");
+        panel.setAttribute("aria-modal", String(!timelineOpen));
         panel.setAttribute(
           "aria-label",
           entry[0] === "library" ? "Library" : "Inspector",
@@ -284,8 +287,17 @@ export function installPanels(host: PanelsHost): PanelsApi {
     applyWorkspacePanels(!!restoreFocus);
   }
 
+  function timelineStaysOpen(): boolean {
+    return (
+      workspaceViewportMode === "overlay" &&
+      workspacePanels.inspectorOpen &&
+      !workspacePanels.libraryOpen &&
+      !!host.timelineBesideInspector?.()
+    );
+  }
+
   function trapWorkspaceDrawerFocus(event: KeyboardEvent): boolean {
-    if (event.key !== "Tab" || workspaceViewportMode !== "overlay") return false;
+    if (event.key !== "Tab" || workspaceViewportMode !== "overlay" || timelineStaysOpen()) return false;
     const panel = workspacePanels.libraryOpen
       ? byId("left")
       : workspacePanels.inspectorOpen

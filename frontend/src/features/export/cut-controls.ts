@@ -164,12 +164,13 @@ export function installCutControls(deps: CutControlsDeps) {
     const precision = current?.precision ?? "keyframes";
     // keep the last answer while a new plan is prepared, so the control does not flicker
     const exactAvailable = clip && plan ? (exactSeen.set(clip, plan.exact_available), plan.exact_available) : clip ? exactSeen.get(clip) ?? false : false;
-    const exactReason = plan?.exact_reason || current?.analysis?.analysis?.exact_reason || "Exact is not available for this video.";
+    // only give a reason once the backend has said why; while reading keyframes it is unknown
+    const exactReason = plan?.exact_reason || current?.analysis?.analysis?.exact_reason || "";
     const exactButton = element<HTMLButtonElement>("cut-exact");
     exactButton.disabled = !exactAvailable && precision !== "exact" || busy;
     exactButton.title = exactAvailable ? "" : exactReason;
     element("cut-exact-note").textContent = exactAvailable ? "" : exactReason;
-    element("cut-exact-note").hidden = exactAvailable;
+    element("cut-exact-note").hidden = exactAvailable || !exactReason;
     for (const option of element("precision-a").querySelectorAll<HTMLButtonElement>("[data-precision]")) {
       const checked = option.dataset.precision === precision;
       option.setAttribute("aria-checked",String(checked));

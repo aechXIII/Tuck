@@ -711,13 +711,17 @@ body.tl-segment-dragging * {
   }
 
   /* make room for the Keyframes switch without scrolling the toolbar */
-  body.task-cut #btn-timeline-height-fit {
+  body.task-cut #btn-timeline-height-fit,
+  body.task-cut #audio-fragment-mute,
+  body.task-cut #audio-add {
     width: 28px;
     padding: 0;
     justify-content: center;
   }
 
-  body.task-cut #btn-timeline-height-fit .timeline-command-label {
+  body.task-cut #btn-timeline-height-fit .timeline-command-label,
+  body.task-cut #audio-fragment-mute .timeline-command-label,
+  body.task-cut #audio-add .timeline-command-label {
     display: none;
   }
 }

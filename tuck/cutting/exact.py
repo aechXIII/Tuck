@@ -22,6 +22,8 @@ from .analysis import MAX_PACKET_BYTES, CutAnalysisError
 EDGE_CRF = "14"
 # a correctly placed edge frame differs from its source only by encoding noise
 MAX_EDGE_DIFFERENCE = 12.0
+# frames closer than this (mean grey level) are treated as the same picture
+MIN_ORDER_SEPARATION = 1.0
 MAX_EXACT_DECODE_SECONDS = 600.0
 # comparisons use small grey pictures, so long edges stay cheap to hold in memory
 _CHECK_WIDTH = 256
@@ -227,8 +229,9 @@ def _encoder_arguments(analysis: CutAnalysis, ffmpeg: str, sps_id: int, output: 
         value = properties.get(key)
         if value and value != "unknown":
             arguments += [option, value]
+    # declare the same aspect as the source, including an explicit 1:1
     aspect = properties.get("sample_aspect_ratio", "")
-    if aspect and aspect not in {"1:1", "0:1", "N/A"}:
+    if aspect and aspect not in {"0:1", "N/A"}:
         arguments += ["-vf", f"setsar={aspect.replace(':', '/')}"]
     return [*arguments, "-f", "mp4", str(output)]
 
@@ -500,8 +503,9 @@ def verify_exact_frames(
 ) -> int:
     """Decode each cut edge and check every frame is the intended source picture.
 
-    Copied frames must be identical. Encoded frames must match their own source frame more
-    closely than either neighbour, which catches a shifted, missing or repeated frame.
+    Copied frames must be identical. An encoded frame fails when it sits more than halfway
+    towards a visibly different neighbour, which catches a shifted, missing or repeated frame
+    while tolerating repeated frames in the source.
     """
     step = analysis.frame_duration.seconds
     edge_width = 3 * step
@@ -568,12 +572,17 @@ def verify_exact_frames(
                         )
                 else:
                     difference = float(np.abs(image - reference).mean())
-                    neighbours = [
-                        float(np.abs(image - lookup[source_moment + delta]).mean())
-                        for delta in (-step, step)
-                        if source_moment + delta in lookup
-                    ]
-                    if difference > MAX_EDGE_DIFFERENCE or any(n < difference for n in neighbours):
+                    misplaced = difference > MAX_EDGE_DIFFERENCE
+                    for delta in (-step, step):
+                        neighbour = lookup.get(source_moment + delta)
+                        if neighbour is None:
+                            continue
+                        # repeated or near-identical source frames cannot be told apart, and
+                        # swapping them is invisible; only judge order between distinct pictures
+                        separation = float(np.abs(reference - neighbour).mean())
+                        nearer = difference - float(np.abs(image - neighbour).mean())
+                        misplaced |= separation >= MIN_ORDER_SEPARATION and nearer > separation / 2
+                    if misplaced:
                         raise CutAnalysisError(
                             "verification_failed",
                             "The cut could not be verified: an encoded frame is out of place.",

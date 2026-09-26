@@ -160,29 +160,31 @@ def test_fractional_frame_rates_cut_exactly(tools, tmp_path):
     assert_frames(path, output, ranges, encoded_frames(plan, rate))
 
 
-def test_segments_shorter_than_a_frame_collapse_and_other_times_round_inward(tools, source):
+def test_exact_edges_round_to_the_nearest_frame_and_splits_stay_contiguous(tools, source):
     analysis = analyze_source(source, Event(), lambda _: None)
+    ms = lambda value: MediaTime(value, 1, 1_000_000).to_dict()  # noqa: E731
     request = parse_cut_request(
         {
             "operation": "cut",
             "source": str(source),
             "precision": "exact",
             "segments": [
-                {
-                    "start": MediaTime(10, 1, 1000).to_dict(),
-                    "end": MediaTime(2030, 1, 1000).to_dict(),
-                },
-                {
-                    "start": MediaTime(3001, 1, 1000).to_dict(),
-                    "end": MediaTime(3020, 1, 1000).to_dict(),
-                },
+                # a split from the player lands just under a frame edge
+                {"start": ms(10_000), "end": ms(1_066_666)},
+                {"start": ms(1_066_666), "end": ms(2_000_000)},
+                {"start": ms(3_000_100), "end": ms(3_010_000)},
             ],
         }
     )
     plan = plan_cut(request, analysis, exact_encoder=True)
-    assert plan.segments[0].resolved.start.seconds == Fraction(1, 30)
-    assert plan.segments[0].resolved.end.seconds == Fraction(60, 30)
-    assert plan.segments[1].start_kind == "collapsed"
+    first, second, short = plan.segments
+    assert first.resolved.start.seconds == 0
+    assert (
+        first.resolved.end.seconds
+        == second.resolved.start.seconds
+        == Fraction(1, 1) + Fraction(2, 30)
+    )
+    assert short.start_kind == "collapsed"
     assert [issue.code for issue in plan.issues] == ["segment_collapsed"]
 
 
@@ -296,3 +298,158 @@ def test_decoder_configuration_round_trips_and_merges():
     for broken in [b"", b"\x02" + raw[1:], raw[:-8]]:
         with pytest.raises(CutAnalysisError):
             DecoderConfig.parse(broken)
+
+
+def test_repeated_source_frames_pass_verification(tools, tmp_path):
+    # repeated pictures give near-identical neighbours, which must not look misplaced
+    path = tmp_path / "repeats.mp4"
+    tools.run(
+        [
+            "-v",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=160x96:rate=10:duration=4",
+            "-vf",
+            "fps=30",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "fast",
+            "-crf",
+            "18",
+            "-g",
+            "60",
+            "-keyint_min",
+            "60",
+            "-sc_threshold",
+            "0",
+            "-bf",
+            "3",
+            "-x264-params",
+            "open-gop=0:b-adapt=0",
+            "-pix_fmt",
+            "yuv420p",
+            str(path),
+        ]
+    )
+    output = tmp_path / "cut.mp4"
+    ranges = [(7, 50), (65, 100)]
+    _, plan = make_plan(path, ranges, output, audio=False)
+    assert plan.issues == ()
+    CutRunner().run(plan)
+    assert len(decoded(output)) == sum(end - start for start, end in ranges)
+
+
+@pytest.mark.parametrize("precision", ["keyframes", "exact"])
+def test_a_container_only_pixel_aspect_is_kept(tools, tmp_path, precision):
+    # the pixel aspect lives only in the MP4 container, not in the H.264 bitstream
+    raw, encoded, path = tmp_path / "frames.yuv", tmp_path / "plain.mp4", tmp_path / "aspect.mp4"
+    tools.run(
+        [
+            "-v",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=160x96:rate=30:duration=4",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "yuv420p",
+            str(raw),
+        ]
+    )
+    tools.run(
+        [
+            "-v",
+            "error",
+            "-y",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "yuv420p",
+            "-s",
+            "160x96",
+            "-framerate",
+            "30",
+            "-i",
+            str(raw),
+            "-c:v",
+            "libx264",
+            "-g",
+            "60",
+            "-keyint_min",
+            "60",
+            "-sc_threshold",
+            "0",
+            "-bf",
+            "3",
+            "-x264-params",
+            "open-gop=0:b-adapt=0",
+            str(encoded),
+        ]
+    )
+    tools.run(["-v", "error", "-y", "-i", str(encoded), "-c", "copy", "-aspect", "5:3", str(path)])
+    with av.open(str(path)) as container:
+        assert container.streams.video[0].codec_context.sample_aspect_ratio is None
+    output = tmp_path / "cut.mp4"
+    _, plan = make_plan(
+        path,
+        [(60, 119)] if precision == "keyframes" else [(7, 50)],
+        output,
+        audio=False,
+        precision=precision,
+    )
+    assert plan.issues == ()
+    CutRunner().run(plan)
+    with av.open(str(output)) as container:
+        assert container.streams.video[0].sample_aspect_ratio == Fraction(1, 1)
+
+
+@pytest.mark.parametrize("precision", ["keyframes", "exact"])
+def test_joined_durations_are_stored_exactly(tools, tmp_path, precision):
+    # with a fine track timescale, the stored duration must match the frames exactly even when
+    # the joined length is not a whole number of milliseconds
+    path = tmp_path / "fine.mp4"
+    tools.run(
+        [
+            "-v",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=160x96:rate=30:duration=13",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "fast",
+            "-g",
+            "30",
+            "-keyint_min",
+            "30",
+            "-sc_threshold",
+            "0",
+            "-bf",
+            "2",
+            "-x264-params",
+            "open-gop=0:b-adapt=0",
+            "-pix_fmt",
+            "yuv420p",
+            "-video_track_timescale",
+            "3000000",
+            str(path),
+        ]
+    )
+    output = tmp_path / "cut.mp4"
+    ranges = [(0, 111), (180, 229), (270, 361)]
+    _, plan = make_plan(path, ranges, output, audio=False, precision=precision)
+    assert plan.issues == ()
+    CutRunner().run(plan)
+    with av.open(str(output)) as container:
+        video = container.streams.video[0]
+        assert video.duration * video.time_base == plan.exported_duration.seconds

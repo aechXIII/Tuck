@@ -5,6 +5,8 @@ from pathlib import Path
 from threading import Event
 
 import av
+from av.container import InputContainer
+from av.video.stream import VideoStream
 
 from ..encoding.output import OutputTransaction
 from ..media_tools import find_ffmpeg
@@ -14,6 +16,11 @@ from .analysis import CutAnalysisError
 from .exact import encode_edges, exact_packets
 from .packets import check_cut_cancel, prepare_cut, selected_packets
 from .verification import verify_cut_output
+
+
+def _video_timescale(container: InputContainer) -> int:
+    base = container.streams.video[0].time_base
+    return base.denominator if base is not None else 1000
 
 
 class CutRunner:
@@ -86,7 +93,11 @@ class CutRunner:
                         str(result),
                         "w",
                         format="mp4",
-                        options={"movflags": "+use_metadata_tags"},
+                        options={
+                            "movflags": "+use_metadata_tags",
+                            # the default 1/1000 movie timescale rounds the joined duration
+                            "movie_timescale": str(_video_timescale(incoming)),
+                        },
                     ) as outgoing,
                 ):
                     outgoing.metadata.update(incoming.metadata)
@@ -103,6 +114,16 @@ class CutRunner:
                                 disposition=stream.disposition.value,
                             )
                             target.metadata.update(stream.metadata)
+                            if (
+                                isinstance(stream, VideoStream)
+                                and isinstance(target, VideoStream)
+                                and target.codec_context.sample_aspect_ratio is None
+                                and stream.sample_aspect_ratio
+                            ):
+                                # some files declare the pixel aspect only in the container
+                                target.codec_context.sample_aspect_ratio = (
+                                    stream.sample_aspect_ratio
+                                )
                             if edges is not None and stream.type == "video":
                                 # lists the encoded edges' parameter sets beside the source's
                                 target.codec_context.extradata = edges.extradata

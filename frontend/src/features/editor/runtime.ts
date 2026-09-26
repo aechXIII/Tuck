@@ -241,6 +241,7 @@ export function installEditorRuntime(
     byId,
     document: windowRef.document,
     window: windowRef,
+    timelineBesideInspector: () => encoding?.workflow() === 2,
     clips: () => session.clips,
     selPath: () => session.selPath,
     appSettings: session.appSettings,
@@ -341,6 +342,7 @@ export function installEditorRuntime(
     onSendto: (data) => handleSendto(data),
   });
 
+  let workspaceCutTask = false;
 
   encoding = installEncodingControls({
     session,
@@ -378,6 +380,11 @@ export function installEditorRuntime(
     renderClips: () => library.renderClips(),
     paintCutTimeline: () => {
       timeline.paintCutOverlay();
+      const cutTask = encoding?.workflow() === 2;
+      if (cutTask !== workspaceCutTask) {
+        workspaceCutTask = cutTask;
+        panels?.applyWorkspacePanels();
+      }
     },
   });
 

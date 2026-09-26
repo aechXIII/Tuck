@@ -72,7 +72,13 @@ def _verify_streams(
             source.kind != target.kind
             or source.codec != target.codec
             or source.dispositions != target.dispositions
-            or any(source_properties.get(key) != target_properties.get(key) for key in properties)
+            or any(
+                source_properties.get(key) != target_properties.get(key)
+                for key in properties
+                # MP4 stores audio in its sample-rate time base; the packet check below
+                # still compares every audio timestamp exactly
+                if not (key == "time_base" and source.kind == "audio")
+            )
             or any(dict(target.metadata).get(key) != value for key, value in source.metadata)
         ):
             raise _failed("the output stream properties or metadata changed.")

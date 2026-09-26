@@ -180,9 +180,10 @@ def plan_cut(request: CutRequest, analysis: CutAnalysis, *, exact_encoder: bool 
                 CutIssue("invalid_range", "A kept segment extends beyond the video.", "segments")
             )
         if exact:
-            # Exact keeps every frame that starts inside the requested range
-            start = math.ceil(start / step) * step
-            end = min(math.floor(end / step) * step, analysis.duration.seconds)
+            # timeline times are player floats; the nearest frame edge keeps a plain split
+            # contiguous instead of dropping the frame at the split
+            start = math.floor(start / step + Fraction(1, 2)) * step
+            end = min(math.floor(end / step + Fraction(1, 2)) * step, analysis.duration.seconds)
         left = bisect_left(keys, start)
         right = bisect_right(ends, end) - 1
         copyable = left < len(keys) and right >= 0 and keys[left] < ends[right]

@@ -494,3 +494,24 @@ for (const width of [1440,960]) {
     expect(layout.row.right).toBeLessThanOrEqual(layout.panel.right + 1);
   });
 }
+
+test("at 960 the cut Inspector leaves the timeline usable by keyboard", async ({page}) => {
+  await page.setViewportSize({width:960,height:640});
+  await setup(page);
+  await page.getByRole("button",{name:"Inspector",exact:true}).click();
+  await page.locator("#wf-l").click();
+  await expect(page.locator("#btn-one")).toBeEnabled();
+  await expect(page.locator("#audio-editor")).not.toHaveAttribute("inert",/.*/);
+  await expect(page.locator("#right")).toHaveAttribute("aria-modal","false");
+  await page.locator("#tl-in").focus();
+  await expect(page.locator("#tl-in")).toBeFocused();
+  await page.keyboard.press("]");
+  await expect(page.locator("#tl-in")).toHaveAttribute("aria-valuenow","4");
+  // trimming shows Reset; the toolbar still fits
+  expect(await page.evaluate(() => { const row = document.getElementById("timeline-row")!; return row.scrollWidth - row.clientWidth; })).toBeLessThanOrEqual(1);
+  await expect(page.getByRole("button",{name:"Add audio"})).toBeVisible();
+  // other tasks keep the modal drawer
+  await page.locator("#wf-c").click();
+  await expect(page.locator("#audio-editor")).toHaveAttribute("inert",/.*/);
+  await expect(page.locator("#right")).toHaveAttribute("aria-modal","true");
+});

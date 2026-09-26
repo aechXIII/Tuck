@@ -251,7 +251,8 @@ def test_editor_shell_uses_adaptive_accessible_panels() -> None:
     assert "function syncWorkspaceForViewport()" in panels_js
     assert "function trapWorkspaceDrawerFocus(event: KeyboardEvent)" in panels_js
     assert "if (center) center.inert = drawerOpen;" in panels_js
-    assert "if (audioEditor) audioEditor.inert = drawerOpen;" in panels_js
+    # the Lossless cut Inspector stops above the timeline, which stays usable beside it
+    assert "if (audioEditor) audioEditor.inert = drawerOpen && !timelineOpen;" in panels_js
     assert "workspace-drawer-open" in styles
     assert "@media (max-width: 1179px)" in styles
     assert "@media (max-width: 719px)" in styles

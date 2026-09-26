@@ -519,7 +519,7 @@ test("export controls have balanced insets and timeline text shares a baseline",
   const geometry = await page.evaluate(() => {
     const rect = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
     const tabs = rect("#insp-tabs"), tab = rect("#insp-tab-export");
-    const modes = rect("#task-wf"), first = rect("#wf-c"), last = rect("#wf-u");
+    const modes = rect("#task-wf"), first = rect("#wf-c"), last = rect("#task-wf > button:last-of-type");
     const footer = rect("#right-foot"), button = rect("#btn-one"), actions = rect(".export-actions");
     return {
       tabInsets: { top: tab.top-tabs.top, bottom: tabs.bottom-tab.bottom },
