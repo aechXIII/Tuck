@@ -30,7 +30,6 @@ from ..models import (
 )
 from ..models.encoding_policy import validate_encoder_supported_on_desktop
 from ..models.progress import EncodeProgress, EncodeStage
-from ..output_paths import reservation_path, resolve_output_collision
 from .capabilities import (
     auto_encoder_candidates,
     get_available_encoders,
@@ -41,6 +40,7 @@ from .command import build_base_cmd
 
 # load native array libraries before sidecar workers block on Windows stdio
 from .frame_blending import prepare_blended_video
+from .output import OutputTransaction
 from .progress import ProgressTracker
 from .target_size import DEFAULT_MAX_RETRIES, decide_retry, is_content_limited
 
@@ -145,25 +145,6 @@ class FFmpegEngine:
                 if not audio_source.is_file():
                     raise FileNotFoundError(f"Audio source file not found: {audio_source}")
 
-    def _reserve_output(self, plan: EncodePlan, output: Path) -> tuple[Path, Path]:
-        reservation = reservation_path(output)
-        try:
-            fd = os.open(str(reservation), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-            os.close(fd)
-        except FileExistsError:
-            new_output = resolve_output_collision(output)
-            plan.output = str(new_output)
-            output = new_output
-            reservation = reservation_path(output)
-            try:
-                fd = os.open(str(reservation), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-                os.close(fd)
-            except FileExistsError:
-                raise FileExistsError(
-                    f"Cannot reserve output path: {output} is locked by another process"
-                ) from None
-        return output, reservation
-
     def _run_candidates(
         self,
         candidates: tuple[str, ...],
@@ -211,28 +192,6 @@ class FFmpegEngine:
             raise EncodeError("No usable video encoders were detected in this FFmpeg installation.")
         return result
 
-    def _publish_result(
-        self, result: Path, plan: EncodePlan, output: Path, reservation: Path
-    ) -> tuple[Path, Path]:
-        if output.exists():
-            with contextlib.suppress(OSError):
-                reservation.unlink()
-            output = resolve_output_collision(output)
-            reservation = reservation_path(output)
-            try:
-                fd = os.open(str(reservation), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-                os.close(fd)
-            except FileExistsError:
-                raise FileExistsError(
-                    f"Publication slot stolen: {output} is locked by another process"
-                ) from None
-            plan.output = str(output)
-
-        result.replace(output)
-        with contextlib.suppress(OSError):
-            reservation.unlink()
-        return output, reservation
-
     def encode(
         self,
         plan: EncodePlan,
@@ -257,9 +216,6 @@ class FFmpegEngine:
         output = Path(plan.output)
         self._validate_sources(plan, source)
 
-        output.parent.mkdir(parents=True, exist_ok=True)
-        output, reservation = self._reserve_output(plan, output)
-
         total_duration = plan.effective_duration
         if total_duration <= 0 and plan.source_info is not None:
             total_duration = float(plan.source_info.duration or 0)
@@ -267,84 +223,73 @@ class FFmpegEngine:
         if not plan.original_video_bitrate:
             plan.original_video_bitrate = plan.video_bitrate
 
-        tmp_output = output.parent / f".tmp_{output.stem}_{os.getpid()}.mp4"
-
         blend_directory: tempfile.TemporaryDirectory | None = None
         try:
-            if self._cancel_event.is_set():
-                raise EncodeCancelled("Encoding cancelled by user")
-            if plan.frame_blending.enabled:
-                blend_directory = tempfile.TemporaryDirectory(
-                    prefix=".tuck-blend-", dir=output.parent
-                )
-                self._prepared_video = Path(blend_directory.name) / "video.nut"
-
-                def check_cancel() -> None:
-                    if self._cancel_event.is_set():
-                        raise EncodeCancelled("Encoding cancelled by user")
-
-                def blend_progress(fraction: float) -> None:
-                    _emit(
-                        on_progress,
-                        EncodeProgress(
-                            percent=0.0,
-                            stage=EncodeStage.PREPARING,
-                            current_time=fraction * total_duration,
-                            duration=total_duration,
-                            message=f"Blending frames ({int(fraction * 100)}%)",
-                        ),
+            with OutputTransaction(output) as transaction:
+                plan.output = str(transaction.output)
+                tmp_output = transaction.workspace / "result.mp4"
+                if self._cancel_event.is_set():
+                    raise EncodeCancelled("Encoding cancelled by user")
+                if plan.frame_blending.enabled:
+                    blend_directory = tempfile.TemporaryDirectory(
+                        prefix=".tuck-blend-", dir=output.parent
                     )
+                    self._prepared_video = Path(blend_directory.name) / "video.nut"
 
-                blend_progress(0.0)
-                prepare_blended_video(plan, self._prepared_video, check_cancel, blend_progress)
-            result = self._run_candidates(
-                candidates,
-                was_auto,
-                plan,
-                ffmpeg_path,
-                source,
-                tmp_output,
-                total_duration,
-                on_progress,
-            )
+                    def check_cancel() -> None:
+                        if self._cancel_event.is_set():
+                            raise EncodeCancelled("Encoding cancelled by user")
 
-            output, reservation = self._publish_result(result, plan, output, reservation)
+                    def blend_progress(fraction: float) -> None:
+                        _emit(
+                            on_progress,
+                            EncodeProgress(
+                                percent=0.0,
+                                stage=EncodeStage.PREPARING,
+                                current_time=fraction * total_duration,
+                                duration=total_duration,
+                                message=f"Blending frames ({int(fraction * 100)}%)",
+                            ),
+                        )
 
-            _emit(
-                on_progress,
-                EncodeProgress(
-                    percent=100.0,
-                    stage=EncodeStage.COMPLETED,
-                    duration=total_duration,
-                    message="Completed",
-                ),
-            )
-            return output
+                    blend_progress(0.0)
+                    prepare_blended_video(plan, self._prepared_video, check_cancel, blend_progress)
+                result = self._run_candidates(
+                    candidates,
+                    was_auto,
+                    plan,
+                    ffmpeg_path,
+                    source,
+                    tmp_output,
+                    total_duration,
+                    on_progress,
+                )
 
+                if self._cancel_event.is_set():
+                    raise EncodeCancelled("Encoding cancelled by user")
+                output = transaction.publish(result)
+                plan.output = str(output)
+
+                _emit(
+                    on_progress,
+                    EncodeProgress(
+                        percent=100.0,
+                        stage=EncodeStage.COMPLETED,
+                        duration=total_duration,
+                        message="Completed",
+                    ),
+                )
+                return output
         except EncodeCancelled:
-            self._abort_encode(
-                tmp_output, reservation, on_progress, EncodeStage.CANCELLED, "Cancelled"
-            )
+            _emit(on_progress, EncodeProgress(stage=EncodeStage.CANCELLED, message="Cancelled"))
             raise
         except Exception as exc:
-            self._abort_encode(tmp_output, reservation, on_progress, EncodeStage.FAILED, str(exc))
+            _emit(on_progress, EncodeProgress(stage=EncodeStage.FAILED, message=str(exc)))
             raise
         finally:
             self._prepared_video = None
             if blend_directory is not None:
                 blend_directory.cleanup()
-
-    def _abort_encode(
-        self,
-        tmp_output: Path,
-        reservation: Path,
-        on_progress: ProgressCallback | None,
-        stage: EncodeStage,
-        message: str,
-    ) -> None:
-        self._cleanup_output(tmp_output)
-        self._cleanup_output(reservation)
-        _emit(on_progress, EncodeProgress(percent=0.0, stage=stage, message=message))
 
     def _run_one_attempt(
         self,
