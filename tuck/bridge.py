@@ -717,8 +717,8 @@ class BridgeAPI:
                     not isinstance(data[key], int) or not 0 <= data[key] <= 365
                 ):
                     return {"ok": False, "error": "encoder_cache_days must be 0 to 365"}
-                if key == "last_task" and data[key] not in ("compression", "upscale"):
-                    return {"ok": False, "error": "last_task must be compression or upscale"}
+                if key == "last_task" and data[key] not in ("compression", "upscale", "cut"):
+                    return {"ok": False, "error": "last_task must be compression, upscale or cut"}
 
                 if key in (
                     "last_compress_profile_id",

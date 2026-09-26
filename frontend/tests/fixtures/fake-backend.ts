@@ -4,6 +4,12 @@ import type { BackendCall, BackendClient } from "../../src/backend/types.ts";
 
 export interface FakeBackendCall extends BackendCall {}
 
+declare global {
+  interface Window {
+    __tuckReleaseHeld?: (method: string, value?: unknown) => void;
+  }
+}
+
 export interface FakeBackendFixture {
   holdMethods?: readonly (keyof BackendClient)[];
   queueStateAfterEnqueue?: unknown;
@@ -130,6 +136,9 @@ export async function installFakeBackend(
         getMediaUrl: (path: string) => respond("getMediaUrl", [path]),
         releaseMediaToken: (token: string) => respond("releaseMediaToken", [token]),
         createPlan: (request: unknown) => respond("createPlan", [request]),
+        analyzeCut: (path: string, workId: string) => respond("analyzeCut", [path, workId]),
+        getCutAnalysis: (path: string) => respond("getCutAnalysis", [path]),
+        cancelCutWork: (workId: string) => respond("cancelCutWork", [workId]),
         enqueueWithOptions: (request: unknown) => respond("enqueueWithOptions", [request]),
         enqueueBatch: (requests: unknown) => respond("enqueueBatch", [requests]),
         cancelItem: (itemId: string) => respond("cancelItem", [itemId]),

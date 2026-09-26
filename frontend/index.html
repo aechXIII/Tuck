@@ -601,7 +601,47 @@
               >
                 Upscale
               </button>
+              <button type="button" id="wf-l" data-action-click="encoding-workflow" data-action-value="2" aria-pressed="false">Lossless cut</button>
             </div>
+            <div id="insp-cut">
+              <div class="cut-lede">
+                <h3 id="cut-title">Cut without re-encoding</h3>
+                <p id="cut-lede-text">Video and audio are copied, not re-encoded. Cuts start on keyframes.</p>
+              </div>
+              <div class="cut-notice" id="cut-conflict" hidden>
+                <h4 id="conflict-title"></h4>
+                <p>They can't be applied without re-encoding. Your edits stay saved.</p>
+                <div class="row"><button type="button" class="btn2 primary" id="conflict-compress">Compress instead</button><button type="button" class="btn2" id="conflict-remove">Export without them</button><button type="button" class="btn2" id="conflict-restore" hidden>Include edits</button></div>
+              </div>
+              <div class="gr">
+                <div class="inspector-label-row"><div class="grt">Precision</div></div>
+                <div class="cut-precision" role="radiogroup" aria-label="Cut precision" id="precision-a">
+                  <button type="button" role="radio" aria-checked="true" data-precision="keyframes">On keyframes</button>
+                  <button type="button" role="radio" aria-checked="false" data-precision="exact" id="cut-exact" aria-describedby="cut-exact-note" disabled>Exact <span class="beta">Beta</span></button>
+                </div>
+                <p class="setting-note" id="precision-note">Fast. Off-keyframe cuts start at the next keyframe.</p>
+                <p class="setting-note" id="cut-exact-note">Exact cutting is not available yet.</p>
+              </div>
+              <div class="gr" id="cuts-card">
+                <div class="inspector-label-row"><div class="grt" id="cuts-title">Cuts</div><div class="inspector-label-actions"><button type="button" class="inspector-text-action" id="snap-all" hidden>Move to keyframes</button></div></div>
+                <p id="cut-message" class="setting-note">Choose a video to cut without re-encoding.</p>
+                <button type="button" class="btn2" id="cut-reread" hidden>Read keyframes again</button>
+                <ol class="cut-list" id="cut-list"></ol>
+                <div class="cut-scan" id="cut-scan" hidden><span id="cut-scan-text">Reading keyframes…</span><progress id="cut-scan-bar" max="100" aria-label="Reading keyframes"></progress></div>
+                <span id="cut-announcement" class="sr-only" role="status"></span>
+              </div>
+              <div class="gr">
+                <div class="inspector-label-row"><div class="grt">Output</div></div>
+                <div class="out-name" id="out-name"></div>
+                <div class="out-meta" id="out-meta"></div>
+                <div class="out-row">
+                  <label class="toggle-row export-toggle" for="cut-audio"><input type="checkbox" role="switch" id="cut-audio" checked><span class="toggle-track" aria-hidden="true"></span><span>Include audio</span></label>
+                  <span class="out-meta" id="cut-audio-meta"></span>
+                </div>
+                <p class="setting-note" id="cut-audio-note">Audio is copied at packet boundaries; a cut may include up to one packet outside the kept range.</p>
+              </div>
+            </div>
+            <div id="insp-compress">
             <div class="gr" id="profile-card">
               <div class="inspector-label-row">
                 <div class="grt">Profile</div>
@@ -927,6 +967,7 @@
             </div>
               </div>
             </details>
+            </div>
           </div>
         </div>
         <div id="right-foot">
@@ -943,10 +984,10 @@
               <button class="btn2" id="btn-all" data-action-click="encoding-run-all" disabled>
                 Compress all
               </button>
-              <button class="btn2" data-action-click="encoding-save-profile-as">
+              <button class="btn2 encoding-profile-action" data-action-click="encoding-save-profile-as">
                 Save as new profile…
               </button>
-              <button class="btn2" data-action-click="settings-open-profiles">
+              <button class="btn2 encoding-profile-action" data-action-click="settings-open-profiles">
                 Manage profiles
               </button>
             </div>

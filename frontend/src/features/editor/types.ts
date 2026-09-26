@@ -1,4 +1,5 @@
 import type { CropRect, Segment } from "../../types/foundation.ts";
+import type { CutClipState } from "../export/cut-state.ts";
 
 export type { CropRect, Segment };
 
@@ -71,6 +72,7 @@ export interface EditorClip {
   probing: boolean;
   probeData: ProbeData | null;
   planData: Record<string, unknown> | null;
+  cutState?: CutClipState;
   mediaToken: string | null;
   error: string;
   segments: Segment[] | null;

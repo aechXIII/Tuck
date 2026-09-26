@@ -1,5 +1,8 @@
 import { installLutControls } from "./lut-controls.ts";
 import { installFrameBlending } from "./frame-blending.ts";
+import { installCutControls } from "./cut-controls.ts";
+import { createCutState } from "./cut-state.ts";
+import type { CutPlanPreview } from "../../backend/cutting-types.ts";
 import type { BackendClient } from "../../backend/types.ts";
 import { allProbesReady, isProbeReady } from "../../state/probe.ts";
 import * as InspectorUi from "../panels/inspector-ui.ts";
@@ -12,6 +15,7 @@ import type { EditorSession } from "../editor/session.ts";
 import {
   buildPlanRequest,
   buildProfilePayload,
+  buildCutRequest,
   type ExportFormState,
 } from "./plan-request.ts";
 import {
@@ -47,6 +51,8 @@ export interface EncodingControlsDeps {
   audioRequestPayload: (clip: EditorClip) => Record<string, unknown>;
   pollQueue: () => void | Promise<void>;
   renderClips?: () => void;
+  selectCutSegment: (index: number, time: number) => void;
+  moveCutStarts: (clip: EditorClip, plan: CutPlanPreview) => boolean;
 }
 
 export interface EncodingControlsApi {
@@ -104,6 +110,7 @@ interface ProfileRecord {
 export function installEncodingControls(deps: EncodingControlsDeps): EncodingControlsApi {
   const { session, byId, getBackendClient } = deps;
   let wf = 0;
+  let encodingWf = 0;
   let lastComp = "";
   let lastUpscale = "";
   let previewRequestId = 0;
@@ -137,18 +144,62 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     updateActionButtons();
   });
 
+  const cutting = installCutControls({
+    session,client,request: cutRequest,
+    selectSegment: deps.selectCutSegment,moveStarts: deps.moveCutStarts,
+    compressInstead: () => { setWf(0); el("wf-c").focus(); },pollQueue: deps.pollQueue,
+  });
+
+  function cutRequest(clip: EditorClip) {
+    const form = readForm();
+    const edits: string[] = [];
+    if (clip.crop && !isFullCrop(clip.crop,Number(clip.probeData?.width),Number(clip.probeData?.height))) edits.push("crop");
+    if (clip.rotation) edits.push("rotation");
+    if (clip.flipHorizontal || clip.flipVertical) edits.push("flip");
+    if (form.resolutionMode === "custom" && (form.customWidth !== clip.probeData?.width || form.customHeight !== clip.probeData?.height)) edits.push("resize");
+    if (!form.useSourceFps && form.customFps !== clip.probeData?.fps) edits.push("fps");
+    if (form.lut?.enabled) edits.push("lut");
+    if (form.frameBlending?.enabled) edits.push("frame_blending");
+    const state = clip.cutState ??= createCutState();
+    const analysis = state.analysis?.analysis;
+    return buildCutRequest({clip,state,edits,
+      ...(analysis ? {frameDuration:analysis.frame_duration,duration:analysis.duration} : {}),
+      ...(typeof appSettings().output_dir === "string" ? {outputDir:String(appSettings().output_dir)} : {}),
+    });
+  }
+
   function workflowName(): "compression" | "upscale" {
-    return wf === 1 ? "upscale" : "compression";
+    return (wf === 2 ? encodingWf : wf) === 1 ? "upscale" : "compression";
   }
 
   function setWf(idx: number): void {
-    if (wf === idx) return;
+    if (wf === idx || ![0,1,2].includes(idx)) return;
+    const previous = wf;
+    if (idx === 2) encodingWf = wf;
+    document.body.classList.toggle("task-cut",idx === 2);
+    session.wf = idx;
+    if (idx === 2 || previous === 2 && idx === encodingWf) {
+      wf = idx;
+      for (const [index,id] of ["wf-c","wf-u","wf-l"].entries()) {
+        el(id).classList.toggle("on",idx === index);
+        el(id).setAttribute("aria-pressed",String(idx === index));
+      }
+      cutting.setActive(idx === 2);
+      updateActionButtons();
+      if (idx !== 2) void reqPreview();
+      void persistSession();
+      return;
+    }
+    cutting.setActive(false);
     const curPid = select("prof-sel").value;
     if (curPid) {
-      if (wf === 0) lastComp = curPid;
+      if (wf === 0 || wf === 2 && encodingWf === 0) lastComp = curPid;
       else lastUpscale = curPid;
     }
     wf = idx;
+    encodingWf = idx;
+    el("wf-l").classList.remove("on");
+    el("wf-l").setAttribute("aria-pressed","false");
     const c = el("wf-c");
     const u = el("wf-u");
     const up = idx === 1;
@@ -186,7 +237,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
       open_output_folder_after_queue: !!settings.open_output_folder_after_queue,
       compression_suffix: settings.compression_suffix,
       upscale_suffix: settings.upscale_suffix,
-      last_task: workflowName(),
+      last_task: wf === 2 ? "cut" : workflowName(),
       last_compress_profile_id: lastComp,
       last_upscale_profile_id: lastUpscale,
       left_sidebar_width: 220,
@@ -196,6 +247,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
   }
 
   function updateActionButtons(): void {
+    if (wf === 2) { cutting.render(); return; }
     const up = wf === 1;
     const count = Object.keys(session.clips).length;
     const selReady = isProbeReady(session.selPath ? session.clips[session.selPath] : null);
@@ -211,6 +263,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
   }
 
   function syncExportSummary(): void {
+    if (wf === 2) { cutting.render(); return; }
     blending.sync();
     const keepAudio = input("keep-audio").checked;
     const audioBitrateKbps = input("audio-br").value;
@@ -376,12 +429,14 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
         typeof s.last_upscale_profile_id === "string" ? s.last_upscale_profile_id : "";
     if (s.last_task === "upscale" && !lastUpscale) lastUpscale = def;
     updateEncoderOptions();
-    const task = s.last_task === "upscale" ? 1 : 0;
+    const task = s.last_task === "cut" ? 2 : s.last_task === "upscale" ? 1 : 0;
+    if (task === 2 && wf !== 2) refilter();
     if (task !== wf) setWf(task);
     else refilter();
   }
 
   function refilter(): void {
+    if (wf === 2) { cutting.refresh(); return; }
     const up = wf === 1;
     const targetWf = up ? "upscale" : "compression";
     const matching = profiles().filter(
@@ -831,6 +886,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
   }
 
   async function reqPreview(): Promise<void> {
+    if (wf === 2) { cutting.refresh(); return; }
     const path = session.selPath;
     const clip = path ? session.clips[path] : undefined;
     if (!clip || !clip.probed) return;
@@ -888,6 +944,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
   }
 
   async function compressOne(): Promise<void> {
+    if (wf === 2) { await cutting.exportCuts(false); return; }
     if (!lut.valid() || !blending.reportValidity() || !videoSettingsValid()) return;
     const path = session.selPath;
     if (!path) {
@@ -906,6 +963,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
   }
 
   async function compressAll(): Promise<void> {
+    if (wf === 2) { await cutting.exportCuts(true); return; }
     if (!lut.valid() || !blending.reportValidity() || !videoSettingsValid()) return;
     const keys = deps.orderedClipKeys();
     if (!keys.length) {

@@ -1,6 +1,10 @@
 import type { LutSettings } from "./lut-controls.ts";
 import type { FrameBlendingSettings } from "./frame-blending.ts";
 import type { CropTransform } from "../transform/crop-geometry.ts";
+import type { EditorClip } from "../editor/types.ts";
+import type { CutPlanRequest, MediaTime } from "../../backend/cutting-types.ts";
+import { mediaSeconds, type CutClipState } from "./cut-state.ts";
+import { SegmentEditing } from "../timeline/segments.ts";
 import {
   defaultRateControl,
   isCpuEncoder,
@@ -199,4 +203,45 @@ function toInt(value: number | string): number {
 
 function numberOr(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+export interface CutRequestContext {
+  clip: EditorClip;
+  state: CutClipState;
+  edits: readonly string[];
+  frameDuration?: MediaTime;
+  duration?: MediaTime;
+  outputDir?: string;
+}
+
+export function buildCutRequest({clip,state,edits,frameDuration,duration,outputDir}: CutRequestContext): CutPlanRequest {
+  const toTime = (seconds: number): MediaTime => {
+    if (duration && Math.abs(seconds - mediaSeconds(duration)) < 0.00001) return duration;
+    if (frameDuration) {
+      const frame = Math.round(seconds / mediaSeconds(frameDuration));
+      // preserve rational frame edges when the timeline's floating point value is rounded
+      if (Math.abs(seconds - frame * mediaSeconds(frameDuration)) < 0.0000001) {
+        return {...frameDuration,ticks:String(BigInt(frameDuration.ticks) * BigInt(frame))};
+      }
+    }
+    return {ticks:String(Math.round(seconds*1000000)),time_base_num:1,time_base_den:1000000};
+  };
+  const full = clip.probeData?.duration ?? 0;
+  const segments = SegmentEditing.segmentsForClip(clip,full);
+  const audio = clip.audioTimeline;
+  const includeAudio = state.includeAudio && clip.probeData?.has_audio !== false && !audio?.sourceMuted && audio?.enabled !== false;
+  const editSet = new Set(edits);
+  if (audio?.sourceGainDb) editSet.add("source_gain");
+  if (audio?.tracks.some(track => track.clips.length)) editSet.add("added_audio");
+  if (segments.some(segment => segment.muted)) editSet.add("muted_segments");
+  return {
+    operation:"cut",source:clip.path,precision:state.precision,include_audio:includeAudio,
+    without_edits:state.withoutEdits,edits:[...editSet].sort(),
+    segments:segments.map(segment => ({
+      start:toTime(segment.start),
+      // container duration can include audio padding beyond the last video frame
+      end:duration && Math.abs(segment.end-full) < 0.000001 ? duration : toTime(segment.end),
+    })),
+    ...(outputDir ? {output_dir:outputDir} : {}),
+  };
 }

@@ -33,6 +33,7 @@ import {
   installEncodingControls,
   type EncodingControlsApi,
 } from "../export/encoding-controls.ts";
+import { mediaSeconds } from "../export/cut-state.ts";
 import { installQueue, type QueueApi } from "../queue/queue.ts";
 import { installSettings, type SettingsApi } from "../settings/settings.ts";
 import { checkUpdates, checkUpdatesFromSettings } from "./updates.ts";
@@ -326,7 +327,7 @@ export function installEditorRuntime(
     session,
     byId,
     getBackendClient,
-    renderClips: () => library.renderClips(),
+    renderClips: () => { library.renderClips(); encoding?.updateActionButtons(); },
     removeClip: (path) => library.removeClip(path),
     isReordering: () => library.isReordering(),
     workflow: () => encoding?.workflow() ?? 0,
@@ -345,6 +346,27 @@ export function installEditorRuntime(
     orderedClipKeys: () => library.orderedClipKeys(),
     audioRequestPayload: (clip) =>
       audio.requestPayload(clip) as Record<string, unknown>,
+    selectCutSegment: (index,time) => { timeline.selectSegment(index,false); player.seekPreview(time); },
+    moveCutStarts: (clip,plan) => {
+      const duration = clip.probeData?.duration ?? 0;
+      let moved;
+      try {
+        const segments = SegmentEditing.segmentsForClip(clip,duration);
+        moved = SegmentEditing.normalizeSegments(segments.map((segment,index) => ({...segment,start:mediaSeconds(plan.segments[index]!.resolved.start)})),duration);
+      } catch (error) {
+        toast(error instanceof Error && error.message.includes("at least 0.05")
+          ? "A moved segment would be too short for the timeline. You can still export these cuts as shown, or widen the segment first."
+          : "The cut points could not be moved. Your timeline is unchanged.","err");
+        return false;
+      }
+      history.action(clip.path,() => {
+        timeline.setClipSegments(clip,moved,clip.activeSegment);
+      });
+      timeline.syncTimelineUI();
+      audio.render();
+      library.renderClips();
+      return true;
+    },
     pollQueue: () => queue.pollQueue(),
     renderClips: () => library.renderClips(),
   });
@@ -431,6 +453,7 @@ export function installEditorRuntime(
     transform.syncTransformControls();
     transform.paintCropOverlay();
     panels.renderClipDetails();
+    if (encoding?.workflow() === 2) requestPreview();
   }
 
   function handleSendto(data: unknown): void {

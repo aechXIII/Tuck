@@ -1497,6 +1497,17 @@ class TestBridgeWorkflowPropagation:
         assert not invalid["ok"]
         assert invalid["error"] == "open_output_folder_after_queue must be boolean"
 
+    def test_save_settings_remembers_cut_task(self, tmp_path, monkeypatch):
+        import tuck.settings as settings_mod
+
+        monkeypatch.setattr(settings_mod, "_config_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
+        api = BridgeAPI()
+        assert api.save_settings({"last_task": "cut"})["ok"]
+        assert api.get_settings()["last_task"] == "cut"
+        assert not api.save_settings({"last_task": "unknown"})["ok"]
+
     def test_save_settings_validates_timeline_height(self, tmp_path, monkeypatch):
         import tuck.settings as settings_mod
 

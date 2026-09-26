@@ -105,6 +105,13 @@
 #right-scroll {
   padding: 0 var(--panel-inset) var(--panel-inset);
 }
+
+@media (max-width: 1179px) {
+  body.task-cut #right,
+  body.task-cut.inspector-panel-open #workspace-backdrop {
+    bottom: var(--cut-workspace-bottom, 0px);
+  }
+}
 #insp-edit,
 #insp-audio,
 #insp-export,
