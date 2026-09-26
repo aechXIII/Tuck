@@ -316,7 +316,8 @@ body.tl-segment-dragging * {
   color: var(--danger);
 }
 
-#btn-snap-toggle {
+#btn-snap-toggle,
+#btn-kf-toggle {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -325,7 +326,12 @@ body.tl-segment-dragging * {
   font-weight: 650;
 }
 
-#btn-snap-toggle.on {
+#btn-kf-toggle[hidden] {
+  display: none;
+}
+
+#btn-snap-toggle.on,
+#btn-kf-toggle.on {
   background: transparent;
   color: var(--accent-light);
   box-shadow: none;
@@ -352,11 +358,13 @@ body.tl-segment-dragging * {
   transition: transform 160ms ease;
 }
 
-#btn-snap-toggle.on .timeline-switch {
+#btn-snap-toggle.on .timeline-switch,
+#btn-kf-toggle.on .timeline-switch {
   background: var(--accent);
 }
 
-#btn-snap-toggle.on .timeline-switch-thumb {
+#btn-snap-toggle.on .timeline-switch-thumb,
+#btn-kf-toggle.on .timeline-switch-thumb {
   transform: translateX(10px);
 }
 
@@ -701,6 +709,17 @@ body.tl-segment-dragging * {
   .tl-time-readout {
     min-width: 82px;
   }
+
+  /* make room for the Keyframes switch without scrolling the toolbar */
+  body.task-cut #btn-timeline-height-fit {
+    width: 28px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  body.task-cut #btn-timeline-height-fit .timeline-command-label {
+    display: none;
+  }
 }
 
 @media (max-width: 719px) {
@@ -733,7 +752,127 @@ body.tl-segment-dragging * {
   }
 }
 
+/* keyframe strip on the top edge of the video lane, so ticks line up with the handles */
+.kf-lane {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -9px;
+  height: 8px;
+  pointer-events: none;
+  z-index: 2;
+}
+.kf-lane[hidden] {
+  display: none;
+}
+.kf-lane .kf {
+  position: absolute;
+  bottom: 1px;
+  width: 1.5px;
+  height: 6px;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--accent-light) 88%, transparent);
+}
+.kf-lane .kf.near {
+  width: 2.5px;
+  height: 9px;
+  margin-left: -0.5px;
+  background: var(--accent-light);
+  box-shadow: 0 0 5px var(--accent-light);
+}
+.kf-lane .kf-scan,
+.kf-lane .kf-unread {
+  position: absolute;
+  bottom: 0;
+  height: 1px;
+}
+.kf-lane .kf-scan {
+  left: 0;
+  background: color-mix(in srgb, var(--accent-light) 60%, transparent);
+}
+.kf-lane .kf-unread {
+  right: 0;
+  background: repeating-linear-gradient(90deg, var(--border2) 0 3px, transparent 3px 6px);
+}
+.kf-guide {
+  position: absolute;
+  top: -8px;
+  bottom: 0;
+  width: 0;
+  border-left: 1px dashed color-mix(in srgb, var(--accent-light) 70%, transparent);
+  pointer-events: none;
+  z-index: 3;
+  animation: kf-guide-in 120ms ease-out;
+}
+@keyframes kf-guide-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* the part of a kept segment the export skips because the cut starts on the next keyframe */
+.tl-sliver {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 2;
+  border-radius: 6px 0 0 6px;
+  background: repeating-linear-gradient(135deg, rgba(8, 7, 12, 0.55) 0 4px, transparent 4px 8px);
+  pointer-events: none;
+}
+.tl-sliver::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: -1px;
+  width: 2px;
+  background: var(--warn);
+}
+.tl-segment.has-sliver .tl-segment-surface {
+  padding-left: var(--sliver, 0px);
+}
+.edge-chip {
+  position: absolute;
+  bottom: 5px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 16px;
+  margin-left: -4px;
+  padding: 0 5px;
+  transform: translateX(-100%);
+  border: 1px solid color-mix(in srgb, var(--warn) 50%, transparent);
+  border-radius: 4px;
+  background: rgba(12, 11, 18, 0.92);
+  color: var(--warn);
+  font: 600 9px var(--mono);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.edge-chip svg {
+  width: 9px;
+  height: 9px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.edge-chip:hover {
+  background: rgba(28, 26, 38, 0.98);
+}
+.edge-chip:focus-visible {
+  outline: 2px solid var(--accent-light);
+  outline-offset: 1px;
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .kf-guide {
+    animation: none;
+  }
+
   .tl-segment,
   .seq-track-mute,
   .seq-track-remove,

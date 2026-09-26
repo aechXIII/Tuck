@@ -1142,6 +1142,22 @@
           </button>
           <button
             type="button"
+            id="btn-kf-toggle"
+            class="dock-toggle on"
+            data-action-click="timeline-toggle-keyframes"
+            aria-label="Show keyframes"
+            aria-pressed="true"
+            data-tip="Show keyframes. A lossless cut can start on any of them"
+            hidden
+            disabled
+          >
+            Keyframes
+            <span class="timeline-switch" aria-hidden="true">
+              <span class="timeline-switch-thumb"></span>
+            </span>
+          </button>
+          <button
+            type="button"
             id="btn-timeline-height-fit"
             class="dock-text-btn"
             data-action-click="timeline-reset-height"
@@ -1232,6 +1248,7 @@
                 tabindex="-1"
                 aria-disabled="true"
               >
+                <div class="kf-lane" id="kf-lane" aria-hidden="true" hidden></div>
                 <div class="tl-track" id="tl-track">
                   <div id="tl-segments"></div>
                 </div>
@@ -1282,7 +1299,7 @@
             id="tl-in"
             role="slider"
             aria-label="Active segment start"
-            aria-keyshortcuts="ArrowLeft ArrowRight"
+            aria-keyshortcuts="ArrowLeft ArrowRight [ ]"
             tabindex="0"
             data-tip="Segment start"
           ></div>
@@ -1291,7 +1308,7 @@
             id="tl-out"
             role="slider"
             aria-label="Active segment end"
-            aria-keyshortcuts="ArrowLeft ArrowRight"
+            aria-keyshortcuts="ArrowLeft ArrowRight [ ]"
             tabindex="0"
             data-tip="Segment end"
           ></div>

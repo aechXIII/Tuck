@@ -4,6 +4,8 @@ import * as TuckLayout from "../../ui/layout.ts";
 import { formatTime } from "../editor/format.ts";
 import type { EditorClip, EditorSession } from "../editor/session.ts";
 import { toast } from "../editor/toast.ts";
+import { mediaSeconds } from "../export/cut-state.ts";
+import * as Keyframes from "./keyframes.ts";
 import * as SegmentEditing from "./segments.ts";
 import * as TimelineCore from "./timeline-core.ts";
 
@@ -24,6 +26,9 @@ export interface TimelineHost {
   setPreviewSec?: (sec: number | null) => void;
   getPreviewSec?: () => number | null;
   flushVideoSeek?: () => void;
+  // the lossless cut task shows keyframes and where each cut really starts
+  cutTask?: () => boolean;
+  showCutRow?: (index: number, time: number) => void;
   AudioTimeline?: {
     isSourceGroupSelected?: () => boolean;
     paintSource?: () => void;
@@ -118,6 +123,8 @@ export function installTimeline(host: TimelineHost) {
   };
   let _previewSecLocal: number | null = null;
 let snapOn = true;
+  let keyframesOn = true;
+  let _kfNear: number[] = [];
   let timelineZoom = 1;
   let TL_ZOOM_MIN = TimelineCore.ZOOM_MIN;
   let TL_SNAP_PX = 8;
@@ -193,6 +200,154 @@ function setClipSegments(c: EditorClip | null | undefined, segments: SegmentLike
 
 function playbackSegments() {
   return clipSegments(selectedClip(session), videoDuration());
+}
+
+function cutOverlay() {
+  if (!host.cutTask?.()) return null;
+  const clip = selectedClip(session);
+  const full = videoDuration();
+  if (!clip || !(full > 0) || probeStatus(clip) !== "ready") return null;
+  const state = clip.cutState;
+  const frame = state?.analysis?.analysis?.frame_duration;
+  return {
+    clip,
+    full,
+    strip: Keyframes.keyframeStrip(state?.analysis, full),
+    plan: state?.plan ?? null,
+    // half a frame, so the keyframe under the playhead counts as the current one
+    tolerance: frame ? mediaSeconds(frame) / 2 : 0.001,
+  };
+}
+
+function keyframesNear(times: readonly number[]) {
+  const overlay = keyframesOn ? cutOverlay() : null;
+  if (!overlay) return [];
+  return times.flatMap((time) => Keyframes.keyframeSnapCandidates(overlay.strip.times, time));
+}
+
+function paintCutOverlay() {
+  const overlay = cutOverlay();
+  if (_previewSecLocal != null) paintPlayerTime(_previewSecLocal, videoDuration());
+  const lane = byId("kf-lane");
+  const toggle = byId("btn-kf-toggle");
+  const tlIn = byId("tl-in");
+  const tlOut = byId("tl-out");
+  const segmentsLayer = byId("tl-segments");
+  if (toggle) {
+    toggle.hidden = !host.cutTask?.();
+    if (isButtonElement(toggle)) toggle.disabled = !overlay;
+  }
+  byId("btn-snap-toggle")?.setAttribute(
+    "data-tip",
+    host.cutTask?.() ? "Snap to keyframes, playhead and clip edges" : "Snap to playhead and clip edges",
+  );
+  for (const old of documentRef.querySelectorAll(".tl-sliver, .edge-chip, .kf-guide")) old.remove();
+  for (const segment of documentRef.querySelectorAll(".tl-segment.has-sliver")) {
+    segment.classList.remove("has-sliver");
+    if (isHtmlElement(segment)) segment.style.removeProperty("--sliver");
+  }
+  if (lane) lane.hidden = !overlay || !keyframesOn;
+  if (!overlay) {
+    tlIn?.removeAttribute("aria-valuetext");
+    tlOut?.removeAttribute("aria-valuetext");
+    return;
+  }
+  const { clip, full, strip, plan } = overlay;
+  const near = _tlDrag === "in" ? _kfNear : [];
+  if (lane && keyframesOn) {
+    Keyframes.renderKeyframeStrip(lane, strip, full, near);
+    const track = byId("tl-track");
+    for (const time of near) {
+      const guide = documentRef.createElement("i");
+      guide.className = "kf-guide";
+      guide.setAttribute("aria-hidden", "true");
+      guide.style.left = (time / full) * 100 + "%";
+      track?.appendChild(guide);
+    }
+  }
+  const segments = clipSegments(clip, full);
+  const active = activeSegmentIndex(clip, segments);
+  for (const [index, segment] of segments.entries()) {
+    const sliver = Keyframes.sliverFor(index, segment, plan?.segments[index]);
+    if (!sliver || !segmentsLayer) continue;
+    const range = segmentsLayer.querySelector('.tl-segment[data-segment-index="' + index + '"]');
+    if (isHtmlElement(range)) {
+      range.classList.add("has-sliver");
+      range.style.setProperty("--sliver", (sliver.delta / (segment.end - segment.start)) * 100 + "%");
+    }
+    const hatch = documentRef.createElement("div");
+    hatch.className = "tl-sliver";
+    hatch.setAttribute("aria-hidden", "true");
+    hatch.style.left = (sliver.requestedStart / full) * 100 + "%";
+    hatch.style.width = (sliver.delta / full) * 100 + "%";
+    const chip = documentRef.createElement("button");
+    chip.type = "button";
+    chip.className = "edge-chip";
+    chip.dataset.cutChip = String(index);
+    chip.style.left = (sliver.exportedStart / full) * 100 + "%";
+    chip.title = Keyframes.chipLabel(sliver);
+    chip.setAttribute("aria-label", "Segment " + (index + 1) + ". " + chip.title);
+    const arrow = documentRef.createElementNS("http://www.w3.org/2000/svg", "svg");
+    arrow.setAttribute("viewBox", "0 0 12 12");
+    arrow.setAttribute("aria-hidden", "true");
+    const path = documentRef.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", "M2 6h7M6.5 3.5 9 6l-2.5 2.5");
+    arrow.appendChild(path);
+    chip.append(arrow, Keyframes.chipText(sliver.kind, sliver.delta));
+    segmentsLayer.append(hatch, chip);
+  }
+  const bounds = arrayItem(segments, active);
+  const planSegment = plan?.segments[active] ?? null;
+  if (bounds) {
+    const current = Keyframes.planMatches(bounds, planSegment) ? planSegment : null;
+    tlIn?.setAttribute("aria-valuetext", Keyframes.handleValueText("start", bounds.start, current));
+    tlOut?.setAttribute("aria-valuetext", Keyframes.handleValueText("end", bounds.end, current));
+  }
+}
+
+function toggleKeyframes() {
+  keyframesOn = !keyframesOn;
+  const button = byId("btn-kf-toggle");
+  if (button) {
+    button.classList.toggle("on", keyframesOn);
+    button.setAttribute("aria-pressed", String(keyframesOn));
+  }
+  paintCutOverlay();
+}
+
+function seekToKeyframe(direction: -1 | 1) {
+  const overlay = cutOverlay();
+  const video = currentVideo();
+  if (!overlay) return;
+  const time = host.getPreviewSec?.() ?? (video && Number.isFinite(video.currentTime) ? video.currentTime : 0);
+  const target = Keyframes.adjacentKeyframe(overlay.strip.times, time, direction, overlay.tolerance);
+  if (target != null) host.seekPreview?.(target);
+}
+
+// [ and ] on a focused handle move that edge; elsewhere the global shortcut moves the playhead
+function moveHandleToKeyframe(e: KeyboardEvent) {
+  const target = isHtmlElement(e.target) ? e.target : null;
+  if (!target || (target.id !== "tl-in" && target.id !== "tl-out")) return;
+  const overlay = cutOverlay();
+  if (!overlay) return;
+  e.preventDefault();
+  const endpoint = target.id === "tl-in" ? "start" : "end";
+  const current = paintTrimChrome().bounds[endpoint];
+  const next = Keyframes.adjacentKeyframe(
+    overlay.strip.times,
+    current,
+    e.key === "[" ? -1 : 1,
+    overlay.tolerance,
+  );
+  if (next == null) return;
+  host.History?.begin?.(session.selPath);
+  const value = endpoint === "start" ? applyTrimStart(next, false) : applyTrimEnd(next, false);
+  host.History?.commit?.();
+  paintTrimChrome();
+  if (value != null) host.seekPreview?.(value);
+  host.renderClips?.();
+  host.reqPreview?.();
+  if (host.AudioTimeline) host.AudioTimeline.render();
 }
 
 
@@ -280,6 +435,7 @@ function paintTrimChrome() {
             ? "Retry clip details first"
             : "Add a video first";
     }
+    paintCutOverlay();
     return {
       full: 0,
       bounds: { start: 0, end: 0 },
@@ -416,6 +572,7 @@ function paintTrimChrome() {
     addButton.setAttribute("aria-disabled", canAdd ? "false" : "true");
     addButton.dataset.tip = canAdd ? "Add segment (A)" : "Shorten a segment first";
   }
+  paintCutOverlay();
   if (host.AudioTimeline && host.AudioTimeline.paintSource)
     host.AudioTimeline.paintSource();
   if (host.AudioTimeline && host.AudioTimeline.paintMixer)
@@ -490,8 +647,7 @@ function setPlayheadUI(sec: number, full?: number) {
     byId("timeline")?.setAttribute("aria-valuemax", String(Math.round(full)));
     byId("timeline")?.setAttribute("aria-valuenow", String(Math.round(sec)));
   }
-  const timeDisplay = byId("ptime");
-  if (timeDisplay) timeDisplay.textContent = fmtt(sec) + " / " + fmtt(full || 0);
+  paintPlayerTime(sec, full || 0);
   let tlTime = byId("tl-time");
   if (tlTime)
     tlTime.textContent =
@@ -501,6 +657,15 @@ function setPlayheadUI(sec: number, full?: number) {
   host.paintStageScrub?.(pct);
   _previewSecLocal = sec;
   host.setPreviewSec?.(sec);
+}
+
+// the cut task reads the player time to the hundredth, like the timeline
+function paintPlayerTime(sec: number, full: number) {
+  const timeDisplay = byId("ptime");
+  if (!timeDisplay) return;
+  timeDisplay.textContent = host.cutTask?.()
+    ? formatTimelineTime(sec) + " / " + formatTimelineTime(full)
+    : fmtt(sec) + " / " + fmtt(full);
 }
 
 function formatTimelineTime(seconds: number) {
@@ -551,8 +716,13 @@ function timelineRatioFromEvent(e: PointerEvent) {
   return Math.max(0, Math.min(1, x / rect.width));
 }
 
-function segmentSnapCandidates(segments: SegmentLike[], active: unknown, full: number) {
-  let points = [0, full];
+function segmentSnapCandidates(
+  segments: SegmentLike[],
+  active: unknown,
+  full: number,
+  near: readonly number[] = [],
+) {
+  let points = [0, full, ...keyframesNear(near)];
   let v = currentVideo();
   if (v) points.push(v.currentTime);
   for (const [i, segment] of segments.entries()) {
@@ -572,7 +742,7 @@ function applyTrimStart(sec: number, snap?: boolean) {
   if (snap !== false && typeof snapCandidateTime === "function")
     sec = snapCandidateTime(
       sec,
-      segmentSnapCandidates(segments, active, full),
+      segmentSnapCandidates(segments, active, full, [sec]),
       timelinePxPerSecond(),
     );
   segments = SegmentEditing.editEndpoint(segments, active, "start", sec, full);
@@ -590,7 +760,7 @@ function applyTrimEnd(sec: number, snap?: boolean) {
   if (snap !== false && typeof snapCandidateTime === "function")
     sec = snapCandidateTime(
       sec,
-      segmentSnapCandidates(segments, active, full),
+      segmentSnapCandidates(segments, active, full, [sec]),
       timelinePxPerSecond(),
     );
   segments = SegmentEditing.editEndpoint(segments, active, "end", sec, full);
@@ -636,7 +806,12 @@ function moveActiveSegment(start: number, snap?: boolean) {
     const activeSegment = arrayItem(segments, active);
     if (!activeSegment) return null;
     let duration = activeSegment.end - activeSegment.start;
-    let candidates = segmentSnapCandidates(segments, active, full).reduce<number[]>(function(acc, point) {
+    let candidates = segmentSnapCandidates(
+      segments,
+      active,
+      full,
+      [start, start + duration],
+    ).reduce<number[]>(function(acc, point) {
       acc.push(point, point - duration);
       return acc;
     }, []);
@@ -741,8 +916,9 @@ function setRulerScrubCursor(active: unknown) {
 
 function onTimelinePointerDown(e: PointerEvent) {
   if (e.button != null && e.button !== 0) return;
-  host.AudioTimeline?.selectVideoTrack?.();
   const target = isHtmlElement(e.target) ? e.target : null;
+  if (target?.closest(".edge-chip")) return;
+  host.AudioTimeline?.selectVideoTrack?.();
   const edgeCandidate = target?.closest(".clip-edge") ?? null;
   let edge = isHtmlElement(edgeCandidate) ? edgeCandidate : null;
   const isSegment = target?.classList.contains("tl-segment") ?? false;
@@ -809,6 +985,7 @@ function processTimelineMove(e: PointerEvent) {
   if (_tlDrag === "in") {
     let start = applyTrimStart(time);
     if (start == null) return;
+    _kfNear = keyframesNear([start]);
     paintTrimChrome();
     host.seekPreview?.(start);
   } else if (_tlDrag === "out") {
@@ -863,6 +1040,10 @@ function onTimelinePointerUp(e: PointerEvent) {
   setSegmentDragCursor(false);
   if (_tlDrag === "ruler") setRulerScrubCursor(false);
   _tlDrag = null;
+  if (_kfNear.length) {
+    _kfNear = [];
+    paintCutOverlay();
+  }
   if (_previewSecLocal != null) {
     host.setPreviewSec?.(_previewSecLocal);
     host.flushVideoSeek?.();
@@ -877,6 +1058,10 @@ function onTimelinePointerUp(e: PointerEvent) {
 function handleTimelineEditKey(e: KeyboardEvent) {
   let v = currentVideo();
   if (!v || !v.duration) return;
+  if ((e.key === "[" || e.key === "]") && !e.ctrlKey && !e.altKey && !e.metaKey) {
+    moveHandleToKeyframe(e);
+    return;
+  }
   let intent = TimelineCore.editKeyIntent(
     isHtmlElement(e.target) ? e.target : null,
     e.key,
@@ -961,6 +1146,15 @@ function handleTimelineEditKey(e: KeyboardEvent) {
   }
   timeline.addEventListener("click", function(e: MouseEvent) {
     const target = isHtmlElement(e.target) ? e.target : null;
+    const chip = target?.closest<HTMLElement>(".edge-chip");
+    if (chip) {
+      const index = Number(chip.dataset.cutChip);
+      const resolved = selectedClip(session)?.cutState?.plan?.segments[index]?.resolved.start;
+      if (!resolved) return;
+      host.AudioTimeline?.selectVideoTrack?.();
+      host.showCutRow?.(index, mediaSeconds(resolved));
+      return;
+    }
     if (target?.classList.contains("tl-segment") && e.detail === 0) {
       selectSegment(parseInt(target.dataset.segmentIndex ?? "", 10), true);
     }
@@ -1228,6 +1422,19 @@ function initTimelineResizer() {
     },
     execute: addSegment,
   });
+  for (const [id, direction] of [
+    ["timeline.previous-keyframe", -1],
+    ["timeline.next-keyframe", 1],
+  ] as const) {
+    host.TuckShortcuts?.registerAction(id, {
+      enabled: function () {
+        return !!cutOverlay()?.strip.times.length;
+      },
+      execute: function () {
+        seekToKeyframe(direction);
+      },
+    });
+  }
   host.TuckShortcuts?.registerAction("timeline.zoom-in", {
     enabled: function () {
       return !!session.selPath;
@@ -1260,6 +1467,7 @@ function initTimelineResizer() {
     clipSegments: clipSegments,
     fitTimeline: fitTimeline,
     nudgeTimelineZoom: nudgeTimelineZoom,
+    paintCutOverlay: paintCutOverlay,
     paintTrimChrome: paintTrimChrome,
     playbackSegments: playbackSegments,
     removeActiveSegment: removeActiveSegment,
@@ -1275,6 +1483,7 @@ function initTimelineResizer() {
     syncTimelineTrackCount: syncTimelineTrackCount,
     syncTimelineUI: syncTimelineUI,
     timelinePxPerSecond: timelinePxPerSecond,
+    toggleKeyframes: toggleKeyframes,
     toggleSnap: toggleSnap,
     trimActiveSegmentToPlayhead: trimActiveSegmentToPlayhead,
     videoDuration: videoDuration,

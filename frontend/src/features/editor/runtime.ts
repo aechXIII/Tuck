@@ -201,6 +201,12 @@ export function installEditorRuntime(
     setPreviewSec: (seconds) => player?.setPreviewSec(seconds),
     getPreviewSec: () => player?.getPreviewSec() ?? null,
     flushVideoSeek: () => player?.flushVideoSeek(),
+    cutTask: () => encoding?.workflow() === 2,
+    showCutRow: (index, time) => {
+      timeline.selectSegment(index, false);
+      player.seekPreview(time);
+      encoding.focusCutRow(index);
+    },
     AudioTimeline: audio,
     History: history,
     TuckShortcuts: shortcuts,
@@ -369,6 +375,7 @@ export function installEditorRuntime(
     },
     pollQueue: () => queue.pollQueue(),
     renderClips: () => library.renderClips(),
+    paintCutTimeline: () => timeline.paintCutOverlay(),
   });
 
   settings = installSettings({
@@ -517,6 +524,7 @@ export function installEditorRuntime(
         "timeline-remove-segment": () => timeline.removeActiveSegment(),
         "timeline-reset-segments": () => timeline.resetSegments(),
         "timeline-toggle-snap": () => timeline.toggleSnap(),
+        "timeline-toggle-keyframes": () => timeline.toggleKeyframes(),
         "timeline-reset-height": (_target, event) =>
           timeline.resetTimelineHeight(event as MouseEvent),
         "timeline-fit": () => timeline.fitTimeline(),

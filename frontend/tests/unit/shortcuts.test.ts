@@ -70,6 +70,8 @@ test("production commands are the source of the existing shortcut guide", () => 
     "edit.delete-selection": ["Delete", "Backspace"],
     "timeline.set-selection-start": ["I"],
     "timeline.set-selection-end": ["O"],
+    "timeline.previous-keyframe": ["["],
+    "timeline.next-keyframe": ["]"],
     "timeline.zoom-in": ["Ctrl+="],
     "timeline.zoom-out": ["Ctrl+-"],
     "timeline.fit": ["Ctrl+0"],
@@ -140,6 +142,7 @@ test("production commands are the source of the existing shortcut guide", () => 
           { label: "Mute / unmute fragment", bindings: "M" },
           { label: "Delete selected item", bindings: "Delete or Backspace" },
           { label: "Set selected start / end", bindings: "I or O" },
+          { label: "Previous / next keyframe", bindings: "[ or ]" },
           {
             label: "Zoom timeline in / out",
             bindings: "Ctrl + = or Ctrl + -",
@@ -799,7 +802,7 @@ test("the production guide renders every physical key with one base keycap style
     ),
   );
 
-  assert.equal(shortcuts.search(shortcuts.sections, "").total, 18);
+  assert.equal(shortcuts.search(shortcuts.sections, "").total, 19);
   assert.deepEqual(
     Array.from(shortcutIds).filter((id) => !renderedIds.has(id)),
     [],
@@ -807,4 +810,14 @@ test("the production guide renders every physical key with one base keycap style
   assert.match(markup, /class="kbs-key"[^>]*data-k="del"[^>]*>Del<\/div>/);
   assert.match(markup, /class="kbs-key"[^>]*>PgUp<\/div>/);
   assert.doesNotMatch(markup, /kbs-key-(?:util|live)/);
+});
+
+test("keyframe navigation is searchable by bracket and highlights both bracket keys", () => {
+  const result = shortcuts.search(shortcuts.sections, "bracket");
+  assert.deepEqual(
+    result.sections.flatMap((section) => section.items.map((item) => item.label)),
+    ["Previous / next keyframe"],
+  );
+  assert.deepEqual(result.keyIds.slice().sort(), ["lbracket", "rbracket"]);
+  assert.match(shortcuts.keyboardRowsMarkup(), /data-k="lbracket"[^>]*>\[<\/div>/);
 });

@@ -13,7 +13,7 @@ const plan: CutPlanPreview = {
   segments:[{requested:{start:time(0),end:time(12)},resolved:{start:time(0),end:time(11.9)},start_kind:"at_start",end_frames_moved:3,audio_source:null,audio_output:null,audio_packet_count:0}],
 };
 
-async function setup(page: Page, options: {pending?:boolean; collapsed?:boolean; moved?:boolean; shortMoved?:boolean; files?:string[]; startupCut?:boolean; holdAnalysis?:boolean; holdExportPlan?:boolean; rejectExport?:boolean} = {}) {
+async function setup(page: Page, options: {pending?:boolean; collapsed?:boolean; moved?:boolean; shortMoved?:boolean; files?:string[]; startupCut?:boolean; holdAnalysis?:boolean; holdExportPlan?:boolean; rejectExport?:boolean; scanning?:boolean} = {}) {
   const fixture = healthyBackendFixture();
   fixture.startup.files = options.files ?? [source];
   fixture.responses.probeFile = {data:{duration:12,width:1920,height:1080,fps:30,has_audio:true,video_codec:"h264",audio_codec:"aac",file_size:15000000}};
@@ -23,7 +23,8 @@ async function setup(page: Page, options: {pending?:boolean; collapsed?:boolean;
     fixture.responses.probeFile = {data:{duration:4+1/30,width:1920,height:1080,fps:30,has_audio:false}};
     analysis.analysis.duration = {ticks:"121",time_base_num:1,time_base_den:30};
   }
-  fixture.responses.getCutAnalysis = options.pending ? {...analysis,status:"reading",analysis:null,progress:null} : analysis;
+  fixture.responses.getCutAnalysis = options.pending ? {...analysis,status:"reading",analysis:null,progress:null}
+    : options.scanning ? {...analysis,status:"reading",analysis:null,progress:0.5,coverage_end:time(6),keyframes:[time(0),time(4)]} : analysis;
   fixture.responses.analyzeCut = analysis;
   fixture.responses.enqueueWithOptions = {item_id:"cut-1"};
   fixture.responses.getSettings = {...fixture.responses.getSettings as object,profiles:[
@@ -284,12 +285,17 @@ for (const width of [1440,960]) {
     if (width === 960) await page.getByRole("button",{name:"Inspector",exact:true}).click();
     await page.locator("#wf-l").click();
     await expect(page.locator("#snap-all")).toBeVisible();
+    await expect(page.locator(".edge-chip")).toBeVisible();
     await expect(page.locator("#btn-one")).toBeEnabled();
     const layout = await page.evaluate(() => {
       const rect = (id: string) => document.getElementById(id)!.getBoundingClientRect();
-      return {inspector:rect("right").bottom,timeline:rect("audio-editor").top,footer:rect("right-foot").bottom,main:rect("main").bottom};
+      return {inspector:rect("right").bottom,timeline:rect("audio-editor").top,footer:rect("right-foot").bottom,main:rect("main").bottom,
+        lane:rect("kf-lane").top,frame:rect("sequence-frame").top,toolbar:document.getElementById("timeline-row")!.scrollWidth-rect("timeline-row").width,chip:document.querySelector(".edge-chip")!.getBoundingClientRect().left,track:rect("tl-track").left};
     });
     expect(layout.inspector).toBeLessThanOrEqual(layout.timeline);
+    expect(layout.lane).toBeGreaterThanOrEqual(layout.frame);
+    expect(layout.chip).toBeGreaterThanOrEqual(layout.track);
+    expect(layout.toolbar).toBeLessThanOrEqual(1);
     expect(layout.footer).toBeLessThanOrEqual(layout.main);
     await page.locator("#cut-list button").press("Enter");
     await expect(page.locator("#cut-list button")).toBeFocused();
@@ -304,3 +310,113 @@ for (const width of [1440,960]) {
     await expect(page.locator("#btn-one")).toBeEnabled();
   });
 }
+
+test("keyframes show on the timeline only in the Lossless cut task", async ({page}) => {
+  await setup(page);
+  await expect(page.locator("#kf-lane")).toBeHidden();
+  await expect(page.locator("#btn-kf-toggle")).toBeHidden();
+  await expect(page.locator("#ptime")).toHaveText("0:00 / 0:12");
+  await page.locator("#wf-l").click();
+  await expect(page.locator("#btn-one")).toBeEnabled();
+  await expect(page.locator("#kf-lane")).toBeVisible();
+  await expect(page.locator("#kf-lane .kf")).toHaveCount(3);
+  await expect(page.locator("#kf-lane .kf-unread")).toHaveCount(0);
+  await expect(page.locator("#ptime")).toHaveText("0:00.00 / 0:12.00");
+  await expect(page.locator("#btn-snap-toggle")).toHaveAttribute("data-tip","Snap to keyframes, playhead and clip edges");
+  const toggle = page.getByRole("button",{name:"Show keyframes"});
+  await expect(toggle).toHaveAttribute("aria-pressed","true");
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-pressed","false");
+  await expect(page.locator("#kf-lane")).toBeHidden();
+  await toggle.click();
+  await expect(page.locator("#kf-lane")).toBeVisible();
+  await page.locator("#wf-c").click();
+  await expect(page.locator("#kf-lane")).toBeHidden();
+  await expect(page.locator("#btn-kf-toggle")).toBeHidden();
+  await expect(page.locator("#ptime")).toHaveText("0:00 / 0:12");
+});
+
+test("unread time during a scan is marked instead of looking empty", async ({page}) => {
+  await setup(page,{scanning:true});
+  await page.locator("#wf-l").click();
+  await expect(page.locator("#kf-lane .kf")).toHaveCount(2);
+  await expect(page.locator("#kf-lane .kf-scan")).toHaveAttribute("style",/width: 50%/);
+  await expect(page.locator("#kf-lane .kf-unread")).toHaveAttribute("style",/left: 50%/);
+  await expect(page.locator("#btn-one")).toHaveText("Reading keyframes…");
+});
+
+test("[ and ] move the playhead, or a focused handle, between keyframes", async ({page}) => {
+  await setup(page);
+  await page.locator("#wf-l").click();
+  await expect(page.locator("#btn-one")).toBeEnabled();
+  await page.keyboard.press("]");
+  await expect(page.locator("#tl-time")).toHaveText("0:04.00 / 0:12.00");
+  await page.keyboard.press("]");
+  await expect(page.locator("#tl-time")).toHaveText("0:08.00 / 0:12.00");
+  await page.keyboard.press("[");
+  await expect(page.locator("#tl-time")).toHaveText("0:04.00 / 0:12.00");
+  await page.locator("#tl-in").focus();
+  await page.keyboard.press("]");
+  await expect(page.locator("#tl-in")).toHaveAttribute("aria-valuenow","4");
+  await expect(page.locator("#tl-in")).toBeFocused();
+  await page.locator("#tl-out").focus();
+  await page.keyboard.press("[");
+  await expect(page.locator("#tl-out")).toHaveAttribute("aria-valuenow","8");
+  await expect(page.locator("#tl-time")).toHaveText("0:08.00 / 0:12.00");
+  await page.getByRole("button",{name:"Undo",exact:true}).click();
+  await expect(page.locator("#tl-out")).toHaveAttribute("aria-valuenow","12");
+  await expect(page.locator("#tl-in")).toHaveAttribute("aria-valuenow","4");
+  await page.locator("#wf-c").click();
+  await page.locator("#tl-in").focus();
+  await page.keyboard.press("[");
+  await expect(page.locator("#tl-in")).toHaveAttribute("aria-valuenow","4");
+});
+
+test("a start that moves shows its sliver and chip, and the chip opens its cut", async ({page}) => {
+  await setup(page,{moved:true});
+  await page.locator("#wf-l").click();
+  await expect(page.locator("#btn-one")).toBeEnabled();
+  const chip = page.locator(".edge-chip");
+  await expect(chip).toHaveText("+4.0 s");
+  await expect(chip).toHaveAccessibleName("Segment 1. Starts at 0:04.000, the next keyframe, 4.0 s later than where you cut");
+  await expect(page.locator(".tl-sliver")).toHaveCount(1);
+  await expect(page.locator(".tl-segment.has-sliver")).toHaveCount(1);
+  await expect(page.locator("#tl-in")).toHaveAttribute("aria-valuetext","0:00.000, exported from 0:04.000");
+  await expect(page.locator("#tl-out")).toHaveAttribute("aria-valuetext","0:12.000, exported to 0:11.900");
+  await chip.click();
+  await expect(page.locator('#cut-list [data-cut-index="0"]')).toBeFocused();
+  await expect(page.locator("#tl-time")).toHaveText("0:04.00 / 0:12.00");
+  await expect(page.locator("#tl-in")).toHaveAttribute("aria-valuenow","0");
+  await page.locator("#snap-all").click();
+  await expect(page.locator("#tl-in")).toHaveAttribute("aria-valuenow","4");
+  await expect(page.locator(".edge-chip")).toHaveCount(0);
+  await page.locator("#wf-c").click();
+  await expect(page.locator(".tl-sliver")).toHaveCount(0);
+  await expect(page.locator("#tl-in")).not.toHaveAttribute("aria-valuetext",/./);
+});
+
+test("dragging a start snaps to keyframes and shows the neighbouring guides", async ({page}) => {
+  await setup(page);
+  await page.locator("#wf-l").click();
+  await expect(page.locator("#btn-one")).toBeEnabled();
+  const track = (await page.locator("#tl-track").boundingBox())!;
+  const edge = (await page.locator('.tl-segment[data-segment-index="0"] .clip-edge.start').boundingBox())!;
+  const x = (seconds: number) => track.x + track.width * seconds / 12;
+  const y = edge.y + edge.height / 2;
+  await page.mouse.move(edge.x + edge.width / 2, y);
+  await page.mouse.down();
+  await page.mouse.move(x(3.96), y, {steps:6});
+  await expect(page.locator(".kf-guide")).toHaveCount(2);
+  await expect(page.locator("#kf-lane .kf.near")).toHaveCount(2);
+  await page.mouse.up();
+  await expect(page.locator("#tl-in")).toHaveAttribute("aria-valuenow","4");
+  await expect(page.locator(".kf-guide")).toHaveCount(0);
+  await page.locator("#btn-snap-toggle").click();
+  const moved = (await page.locator('.tl-segment[data-segment-index="0"] .clip-edge.start').boundingBox())!;
+  await page.mouse.move(moved.x + moved.width / 2, y);
+  await page.mouse.down();
+  await page.mouse.move(x(7.95), y, {steps:6});
+  await page.mouse.up();
+  await expect(page.locator("#tl-in")).not.toHaveAttribute("aria-valuenow","4");
+  await expect(page.locator("#tl-in")).not.toHaveAttribute("aria-valuenow","8");
+});

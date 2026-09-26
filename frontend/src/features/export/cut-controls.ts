@@ -14,6 +14,7 @@ interface CutControlsDeps {
   moveStarts: (clip: EditorClip, plan: CutPlanPreview) => boolean;
   compressInstead: () => void;
   pollQueue: () => void | Promise<void>;
+  paintTimeline: () => void;
 }
 
 export function installCutControls(deps: CutControlsDeps) {
@@ -61,11 +62,14 @@ export function installCutControls(deps: CutControlsDeps) {
   function setActive(value: boolean): void {
     active = value;
     if (value) refresh();
-    else if (!busy) {
-      ticket += 1;
-      clearTimeout(timer);
-      stopScan();
-      pendingPath = null;
+    else {
+      if (!busy) {
+        ticket += 1;
+        clearTimeout(timer);
+        stopScan();
+        pendingPath = null;
+      }
+      deps.paintTimeline();
     }
   }
 
@@ -217,6 +221,14 @@ export function installCutControls(deps: CutControlsDeps) {
     all.disabled = !clips.length || busy || pending || clips.some(item => !ready(item) || exporting(item));
     all.title = all.disabled ? "Review the cuts for each video before exporting all." : "";
     all.style.background = "";
+    deps.paintTimeline();
+  }
+
+  function focusRow(index: number): void {
+    render();
+    const row = element("cut-list").querySelector<HTMLButtonElement>(`[data-cut-index="${index}"]`);
+    // the compact Inspector can be closed; the timeline keeps focus then
+    if (row && row.getClientRects().length) row.focus();
   }
 
   async function exportCuts(all: boolean): Promise<void> {
@@ -293,5 +305,5 @@ export function installCutControls(deps: CutControlsDeps) {
   element("cut-reread").addEventListener("click",() => {
     const clip = selected(); if (clip) { state(clip).error = ""; state(clip).plan = null; refresh(); }
   });
-  return {setActive,refresh,render,exportCuts};
+  return {setActive,refresh,render,exportCuts,focusRow};
 }

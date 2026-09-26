@@ -53,6 +53,7 @@ export interface EncodingControlsDeps {
   renderClips?: () => void;
   selectCutSegment: (index: number, time: number) => void;
   moveCutStarts: (clip: EditorClip, plan: CutPlanPreview) => boolean;
+  paintCutTimeline: () => void;
 }
 
 export interface EncodingControlsApi {
@@ -68,6 +69,7 @@ export interface EncodingControlsApi {
   buildRequest: (source: string) => Record<string, unknown>;
   updateActionButtons: () => void;
   syncExportSummary: () => void;
+  focusCutRow: (index: number) => void;
   syncFpsToClip: (force?: boolean) => void;
   syncResolutionToClip: (force?: boolean) => void;
   updateSizePresets: (value: number) => void;
@@ -148,6 +150,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     session,client,request: cutRequest,
     selectSegment: deps.selectCutSegment,moveStarts: deps.moveCutStarts,
     compressInstead: () => { setWf(0); el("wf-c").focus(); },pollQueue: deps.pollQueue,
+    paintTimeline: deps.paintCutTimeline,
   });
 
   function cutRequest(clip: EditorClip) {
@@ -1156,6 +1159,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     buildRequest: (source: string) => buildRequest(source),
     updateActionButtons,
     syncExportSummary,
+    focusCutRow: (index: number) => cutting.focusRow(index),
     syncFpsToClip,
     syncResolutionToClip,
     updateSizePresets,
