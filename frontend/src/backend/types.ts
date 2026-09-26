@@ -1,3 +1,5 @@
+import type { CutAnalysisPayload, CutCancellation, CutPlanPayload, CutPlanRequest } from "./cutting-types.ts";
+
 export type JsonPrimitive = boolean | number | string | null;
 export type JsonValue = JsonPrimitive | JsonObject | readonly JsonValue[];
 export interface JsonObject {
@@ -106,6 +108,9 @@ export interface LutPayload extends JsonObject {
 }
 
 export interface DomainBackendClient {
+  analyzeCut(path: string, workId: string): Promise<BackendResult<CutAnalysisPayload>>;
+  getCutAnalysis(path: string): Promise<BackendResult<CutAnalysisPayload>>;
+  cancelCutWork(workId: string): Promise<BackendResult<CutCancellation>>;
   clearLutHistory(): Promise<BackendResult<LutHistoryClearedPayload>>;
   listLuts(): Promise<BackendResult<LutLibraryPayload>>;
   loadLut(path: string): Promise<BackendResult<LutPayload>>;
@@ -115,6 +120,7 @@ export interface DomainBackendClient {
   getThumbnail(path: string): Promise<BackendResult<ThumbnailPayload>>;
   getMediaUrl(path: string): Promise<BackendResult<UrlPayload>>;
   releaseMediaToken(token: string): Promise<BackendResult<EmptyPayload>>;
+  createPlan(request: CutPlanRequest): Promise<BackendResult<CutPlanPayload>>;
   createPlan(request: PlanRequest): Promise<BackendResult<DataPayload>>;
   enqueueWithOptions(request: PlanRequest): Promise<BackendResult<JsonObject>>;
   enqueueBatch(requests: readonly PlanRequest[]): Promise<BackendResult<JsonObject>>;

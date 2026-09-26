@@ -69,11 +69,28 @@ def _normalize_result(request: Request, value: object) -> Response:
                     message = "The backend could not complete the request."
                 field = value.get("field")
                 details: dict[str, JsonValue] = {"method": request.method}
-                if field in ("lut", "frame_blending"):
+                if field in ("lut", "frame_blending", "cut"):
                     details["field"] = field
+                if field == "cut" and isinstance(value.get("_request_id"), int):
+                    details["_request_id"] = value["_request_id"]
+                cut_code = value.get("code")
+                code = (
+                    cut_code.upper()
+                    if field == "cut"
+                    and isinstance(cut_code, str)
+                    and cut_code
+                    in {
+                        "analysis_required",
+                        "analysis_failed",
+                        "analysis_cancelled",
+                        "source_changed",
+                        "invalid_cut_request",
+                    }
+                    else _error_code(request.method, message)
+                )
                 return Response.failure(
                     request.request_id,
-                    code=_error_code(request.method, message),
+                    code=code,
                     message=message,
                     details=details,
                 )
@@ -357,7 +374,28 @@ def _load_lut(api: BridgeAPI, params: dict[str, object]) -> object:
     return api.load_lut(_string(params, "path"))
 
 
+def _analyze_cut(api: BridgeAPI, params: dict[str, object]) -> object:
+    if (
+        set(params) != {"path", "work_id"}
+        or not isinstance(params["path"], str)
+        or not isinstance(params["work_id"], str)
+    ):
+        raise _ParameterError
+    return api.analyze_cut(params["path"], params["work_id"])
+
+
+def _get_cut_analysis(api: BridgeAPI, params: dict[str, object]) -> object:
+    return api.get_cut_analysis(_string(params, "path"))
+
+
+def _cancel_cut_work(api: BridgeAPI, params: dict[str, object]) -> object:
+    return api.cancel_cut_work(_string(params, "work_id"))
+
+
 _HANDLERS: dict[str, Handler] = {
+    "analyze_cut": _analyze_cut,
+    "get_cut_analysis": _get_cut_analysis,
+    "cancel_cut_work": _cancel_cut_work,
     "load_lut": _load_lut,
     "list_luts": _list_luts,
     "clear_lut_history": _clear_lut_history,

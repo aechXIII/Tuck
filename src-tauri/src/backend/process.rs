@@ -720,6 +720,9 @@ impl BackendCommand {
     fn timeout(&self) -> Duration {
         match self {
             Self::Health
+            | Self::AnalyzeCut { .. }
+            | Self::GetCutAnalysis { .. }
+            | Self::CancelCutWork { .. }
             | Self::ListLuts
             | Self::ClearLutHistory
             | Self::GetQueueState

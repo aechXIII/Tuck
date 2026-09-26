@@ -1,6 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 
 import { backendFailure, errorMessage, isBackendError } from "./errors.ts";
+import { isCutAnalysisPayload, isCutCancellation, isCutPlanPayload } from "./cutting-types.ts";
+import type { CutAnalysisPayload, CutCancellation, CutPlanPayload, CutPlanRequest } from "./cutting-types.ts";
 import type {
   BackendClient,
   BackendError,
@@ -51,6 +53,9 @@ type TauriBackendCommand =
   | { command: "get_thumbnail"; payload: { path: string } }
   | { command: "get_media_url"; payload: { path: string } }
   | { command: "release_media_token"; payload: { token: string } }
+  | { command: "analyze_cut"; payload: { path: string; work_id: string } }
+  | { command: "get_cut_analysis"; payload: { path: string } }
+  | { command: "cancel_cut_work"; payload: { work_id: string } }
   | { command: "create_plan"; payload: { request: PlanRequest } }
   | { command: "enqueue_with_options"; payload: { request: PlanRequest } }
   | { command: "enqueue_batch"; payload: { requests: readonly PlanRequest[] } }
@@ -342,11 +347,25 @@ class TauriTransport implements TauriBackendClient {
     );
   }
 
+  analyzeCut(path: string, workId: string): Promise<BackendResult<CutAnalysisPayload>> {
+    return this.#request("analyzeCut", {command:"analyze_cut",payload:{path,work_id:workId}}, isCutAnalysisPayload);
+  }
+
+  getCutAnalysis(path: string): Promise<BackendResult<CutAnalysisPayload>> {
+    return this.#request("getCutAnalysis", {command:"get_cut_analysis",payload:{path}}, isCutAnalysisPayload);
+  }
+
+  cancelCutWork(workId: string): Promise<BackendResult<CutCancellation>> {
+    return this.#request("cancelCutWork", {command:"cancel_cut_work",payload:{work_id:workId}}, isCutCancellation);
+  }
+
+  createPlan(request: CutPlanRequest): Promise<BackendResult<CutPlanPayload>>;
+  createPlan(request: PlanRequest): Promise<BackendResult<DataPayload>>;
   createPlan(request: PlanRequest): Promise<BackendResult<DataPayload>> {
     return this.#request(
       "createPlan",
       { command: "create_plan", payload: { request } },
-      isDataPayload,
+      request.operation === "cut" ? isCutPlanPayload : isDataPayload,
     );
   }
 

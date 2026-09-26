@@ -18,6 +18,10 @@ from .bridge_validation import (
     parse_plan_request,
     validate_path,
 )
+from .cutting.analysis import CutAnalysisError
+from .cutting.planner import parse_cut_request, plan_cut
+from .cutting.serialization import analysis_snapshot_dict, cut_plan_preview_dict
+from .cutting.service import CutAnalysisService
 from .desktop_platform import is_linux_desktop
 from .diagnostics import build_diagnostics
 from .encoding.capabilities import (
@@ -61,6 +65,7 @@ class BridgeAPI:
 
         self._probe_cache = ProbeCache(lambda path: probe_video(path))
         self._audio_probe_cache = ProbeCache(lambda path: probe_audio(path))
+        self._cut_analysis = CutAnalysisService()
 
         self._media_server = get_media_server()
         self._media_server.set_thumbnail_cache_dir(self._settings.cache_dir / "thumbs")
@@ -91,6 +96,7 @@ class BridgeAPI:
 
     def stop_background_services(self) -> None:
         """Stop process-owned services using the GUI cleanup order."""
+        self._cut_analysis.close()
         self._queue.stop()
         self._media_server.stop()
         cleanup_cache(self._settings.cache_dir)
@@ -247,12 +253,45 @@ class BridgeAPI:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    def analyze_cut(self, path: str, work_id: str) -> BridgeResult:
+        try:
+            source = Path(validate_path(path))
+            return {"ok": True, **analysis_snapshot_dict(self._cut_analysis.start(source, work_id))}
+        except (ValueError, OSError) as exc:
+            return {"ok": False, "error": str(exc), "code": "analysis_failed", "field": "cut"}
+
+    def get_cut_analysis(self, path: str) -> BridgeResult:
+        try:
+            return {"ok": True, **analysis_snapshot_dict(self._cut_analysis.get(Path(path)))}
+        except (ValueError, OSError) as exc:
+            return {"ok": False, "error": str(exc), "code": "analysis_failed", "field": "cut"}
+
+    def cancel_cut_work(self, work_id: str) -> BridgeResult:
+        return {"ok": True, "cancelled": self._cut_analysis.cancel(work_id)}
+
     def create_plan(self, request: object) -> BridgeResult:
         if not isinstance(request, dict):
             return {"ok": False, "error": "Expected request object"}
         raw = request
 
         req_id = raw.get("_request_id", 0)
+
+        if raw.get("operation") == "cut":
+            try:
+                cut_request = parse_cut_request(raw)
+                analysis = self._cut_analysis.result(Path(cut_request.source))
+                cut_plan = plan_cut(cut_request, analysis)
+                return {"ok": True, "_request_id": req_id, "data": cut_plan_preview_dict(cut_plan)}
+            except (ValueError, OSError) as exc:
+                return {
+                    "ok": False,
+                    "error": str(exc),
+                    "code": exc.code
+                    if isinstance(exc, CutAnalysisError)
+                    else "invalid_cut_request",
+                    "field": "cut",
+                    "_request_id": req_id,
+                }
 
         try:
             req = self._parse_plan_request(raw)
@@ -777,6 +816,10 @@ class BridgeAPI:
         return find_profile_by_id(profiles, profile_id)
 
     def _parse_plan_request(self, raw: dict[str, Any]) -> PlanRequest:
+        if raw.get("operation", "encode") == "cut":
+            raise ValueError("Lossless cut export is not available in this build yet")
+        if raw.get("operation", "encode") != "encode":
+            raise ValueError("Unknown export operation")
 
         return parse_plan_request(raw, self._validate_path)
 

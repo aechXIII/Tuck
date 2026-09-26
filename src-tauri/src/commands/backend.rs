@@ -30,6 +30,16 @@ pub enum BackendCommand {
     ReleaseMediaToken {
         token: String,
     },
+    AnalyzeCut {
+        path: String,
+        work_id: String,
+    },
+    GetCutAnalysis {
+        path: String,
+    },
+    CancelCutWork {
+        work_id: String,
+    },
     CreatePlan {
         request: Value,
     },
@@ -129,6 +139,11 @@ impl BackendCommand {
             Self::GetThumbnail { path } => ("get_thumbnail", json!({ "path": path })),
             Self::GetMediaUrl { path } => ("get_media_url", json!({ "path": path })),
             Self::ReleaseMediaToken { token } => ("release_media_token", json!({ "token": token })),
+            Self::AnalyzeCut { path, work_id } => {
+                ("analyze_cut", json!({"path":path,"work_id":work_id}))
+            }
+            Self::GetCutAnalysis { path } => ("get_cut_analysis", json!({"path":path})),
+            Self::CancelCutWork { work_id } => ("cancel_cut_work", json!({"work_id":work_id})),
             Self::CreatePlan { request } => ("create_plan", json!({ "request": request })),
             Self::EnqueueWithOptions { request } => {
                 ("enqueue_with_options", json!({ "request": request }))
