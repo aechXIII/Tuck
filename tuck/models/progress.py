@@ -8,6 +8,8 @@ class EncodeStage(Enum):
     PREPARING = "preparing"
     PROBING = "probing"
     ENCODING = "encoding"
+    COPYING = "copying"
+    JOINING = "joining"
     PASS_1 = "pass_1"
     PASS_2 = "pass_2"
     RETRYING = "retrying"
