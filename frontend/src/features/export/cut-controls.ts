@@ -4,7 +4,7 @@ import type { EditorClip } from "../editor/types.ts";
 import type { EditorSession } from "../editor/session.ts";
 import { formatBytes } from "../editor/format.ts";
 import { toast } from "../editor/toast.ts";
-import { createCutState, cutSegmentStatus, cutStartUnchecked, cutTime, cutTrackSummary, encodedSeconds, mediaSeconds, reduceCutState } from "./cut-state.ts";
+import { createCutState, cutSegmentStatus, cutStartUnchecked, cutTime, cutTrackSummary, encodedSeconds, mediaSeconds, reduceCutState, shownSegment } from "./cut-state.ts";
 
 interface CutControlsDeps {
   session: EditorSession;
@@ -33,6 +33,10 @@ export function installCutControls(deps: CutControlsDeps) {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let scanning: {clip:EditorClip;workId:string} | null = null;
   let pendingPath: string | null = null;
+  // settles whenever the pending plan does, so an export clicked meanwhile can wait for it
+  let settled = Promise.resolve();
+  let settle = () => {};
+  let waiting = false;
   const main = element("main");
   const measureWorkspace = () => document.documentElement.style.setProperty("--cut-workspace-bottom",`${window.innerHeight-main.getBoundingClientRect().bottom}px`);
   new ResizeObserver(measureWorkspace).observe(main);
@@ -48,6 +52,24 @@ export function installCutControls(deps: CutControlsDeps) {
     const current = state(clip);
     return !!current.plan && !current.plan.issues.length && !current.error
       && current.requestKey === JSON.stringify(deps.request(clip));
+  }
+
+  function setPending(path: string | null): void {
+    settle();
+    pendingPath = path;
+    if (path) settled = new Promise(resolve => { settle = resolve; });
+  }
+
+  // a changed request is being planned from keyframes already read, and the plan on screen
+  // could export; the button stays usable and an export waits for the new plan
+  function replanning(clip: EditorClip): boolean {
+    const current = state(clip);
+    return pendingPath === clip.path && current.analysis?.status === "ready" && !current.error
+      && !!current.shown && !current.shown.issues.length;
+  }
+
+  function exportable(clip: EditorClip): boolean {
+    return (ready(clip) || replanning(clip)) && !exporting(clip);
   }
 
   function exporting(clip: EditorClip): boolean {
@@ -67,13 +89,14 @@ export function installCutControls(deps: CutControlsDeps) {
         ticket += 1;
         clearTimeout(timer);
         stopScan();
-        pendingPath = null;
+        setPending(null);
       }
       deps.paintTimeline();
     }
   }
 
-  function refresh(): void {
+  // drags are coalesced; a switch flip is planned straight away
+  function refresh(delay = 180): void {
     if (!active) return;
     if (busy) { refreshDeferred = true; return; }
     refreshDeferred = false;
@@ -81,17 +104,17 @@ export function installCutControls(deps: CutControlsDeps) {
     const currentTicket = ++ticket;
     clearTimeout(timer);
     if (scanning && scanning.clip !== clip) stopScan();
-    pendingPath = clip?.probed ? clip.path : null;
+    setPending(clip?.probed ? clip.path : null);
     if (!clip?.probed) { render(); return; }
     syncRequest(clip);
     render();
-    // coalesce timeline drags; generation checks also discard already-running previews
+    // generation checks also discard already-running previews
     timer = setTimeout(() => {
       void prepare(clip,() => active && ticket === currentTicket && session.clips[clip.path] === clip)
         .finally(() => {
-          if (ticket === currentTicket) { pendingPath = null; render(); }
+          if (ticket === currentTicket) { setPending(null); render(); }
         });
-    },180);
+    },delay);
   }
 
   async function prepare(clip: EditorClip, current: () => boolean): Promise<CutPlanPreview | null> {
@@ -146,16 +169,19 @@ export function installCutControls(deps: CutControlsDeps) {
     const clip = selected();
     const current = clip ? state(clip) : null;
     const plan = current?.plan;
+    // while a changed request is planned the last plan stays on screen; export waits for the new one
+    const shown = plan ?? (current?.error ? null : current?.shown ?? null);
     const pending = !!clip && pendingPath === clip.path;
+    const reading = pending && current?.analysis?.status !== "ready";
     const request = clip ? deps.request(clip) : null;
-    const conflict = plan?.issues.find(issue => issue.code === "incompatible_edit");
+    const conflict = shown?.issues.find(issue => issue.code === "incompatible_edit");
     const withoutEdits = !!current?.withoutEdits && !!request?.edits?.length;
     element("cut-conflict").hidden = !conflict && !withoutEdits;
     element("conflict-title").textContent = withoutEdits ? "Exporting without these edits" : conflict?.title || conflict?.message || "";
     element("conflict-remove").hidden = withoutEdits;
     element("conflict-restore").hidden = !withoutEdits;
-    const issue = plan?.issues.find(issue => !["incompatible_edit","segment_collapsed"].includes(issue.code));
-    const message = !clip ? "Choose a video to cut without re-encoding."
+    const issue = shown?.issues.find(issue => !["incompatible_edit","segment_collapsed"].includes(issue.code));
+    const message = !clip ? "Choose a video to cut."
       : !clip.probed ? clip.error || "Reading video details…" : current?.error || issue?.message || "";
     element("cut-message").textContent = message;
     element("cut-message").hidden = !message;
@@ -163,25 +189,16 @@ export function installCutControls(deps: CutControlsDeps) {
     const precision = current?.precision ?? "keyframes";
     const exactAvailable = current?.exactAvailable ?? false;
     // only give a reason once the backend has said why; while reading keyframes it is unknown
-    const exactReason = plan?.exact_reason || current?.analysis?.analysis?.exact_reason || "";
-    const exactButton = element<HTMLButtonElement>("cut-exact");
-    exactButton.disabled = !exactAvailable && precision !== "exact" || busy;
-    exactButton.title = exactAvailable ? "" : exactReason;
-    element("cut-exact-note").textContent = exactAvailable ? "" : exactReason;
-    element("cut-exact-note").hidden = exactAvailable || !exactReason;
-    for (const option of element("precision-a").querySelectorAll<HTMLButtonElement>("[data-precision]")) {
-      const checked = option.dataset.precision === precision;
-      option.setAttribute("aria-checked",String(checked));
-      option.tabIndex = checked ? 0 : -1;
-    }
-    element("precision-a").querySelector<HTMLButtonElement>('[data-precision="keyframes"]')!.disabled = busy;
-    element("precision-note").textContent = precision === "exact"
-      ? "Re-encodes near cuts; copies the rest. Audio stays packet-accurate."
-      : "Fast. Off-keyframe cuts start at the next keyframe.";
-    element("cut-title").textContent = precision === "exact" ? "Cut at the chosen frames" : "Cut without re-encoding";
-    element("cut-lede-text").textContent = precision === "exact"
-      ? "Re-encodes video near cuts; copies the rest. Audio is copied."
-      : "Video and audio are copied, not re-encoded. Cuts start on keyframes.";
+    const exactReason = shown?.exact_reason || current?.analysis?.analysis?.exact_reason || "";
+    const keyframesOption = element<HTMLInputElement>("cut-keyframes");
+    const exactOption = element<HTMLInputElement>("cut-exact");
+    keyframesOption.checked = precision === "keyframes";
+    exactOption.checked = precision === "exact";
+    keyframesOption.disabled = busy;
+    exactOption.disabled = !exactAvailable && precision !== "exact" || busy;
+    // an unavailable Exact explains why in place of what it does
+    element("cut-exact-note").textContent = !exactAvailable && exactReason && precision !== "exact"
+      ? exactReason : "Re-encodes a little video at each cut.";
     const ranges = request?.segments ?? [];
     element("cuts-title").textContent = ranges.length ? `Cuts · ${ranges.length} kept` : "Cuts";
     const list = element<HTMLOListElement>("cut-list");
@@ -203,52 +220,51 @@ export function installCutControls(deps: CutControlsDeps) {
       row.className = `cut-row${index === clip?.activeSegment ? " active" : ""}`;
       const button = row.querySelector("button")!;
       const range = ranges[index]!;
-      const segment = plan?.segments[index];
+      const segment = plan ? plan.segments[index] : shownSegment(shown,index,range);
+      const planned = shown?.precision ?? precision;
       const status = !segment ? "Checking keyframes…"
-        : `${cutSegmentStatus(segment, precision)}${plan && cutStartUnchecked(plan, segment) ? " · Start not checked" : ""}`;
+        : `${cutSegmentStatus(segment, planned)}${shown && cutStartUnchecked(shown, segment) ? " · Start not checked" : ""}`;
       const rangeText = `${cutTime(mediaSeconds(range.start))} – ${cutTime(mediaSeconds(range.end))}`;
       button.children[0]!.textContent = String(index+1);
       button.children[1]!.textContent = rangeText;
       button.children[2]!.textContent = segment ? cutTime(mediaSeconds(segment.resolved.end)-mediaSeconds(segment.resolved.start)) : "";
       button.children[3]!.textContent = status;
-      button.children[3]!.className = `cut-status ${!segment ? "pending" : segment.start_kind === "collapsed" ? "collapsed" : encodedSeconds(segment, precision) > 0 ? "exact" : segment.start_kind === "moved" || segment.end_frames_moved ? "moved" : "ok"}`;
+      button.children[3]!.className = `cut-status ${!segment ? "pending" : segment.start_kind === "collapsed" ? "collapsed" : encodedSeconds(segment, planned) > 0 ? "exact" : segment.start_kind === "moved" || segment.end_frames_moved ? "moved" : "ok"}`;
       button.setAttribute("aria-label",`Segment ${index+1}, ${rangeText}. ${status}`);
       button.setAttribute("aria-pressed",String(index === clip?.activeSegment));
     }
-    element("snap-all").hidden = !plan?.segments.some(segment => segment.start_kind === "moved");
+    element("snap-all").hidden = !shown?.segments.some(segment => segment.start_kind === "moved");
     element<HTMLButtonElement>("snap-all").disabled = pending || busy || !!plan?.issues.length;
-    element("cut-scan").hidden = !pending || !!current?.error;
+    element("cut-scan").hidden = !reading || !!current?.error;
     const progress = current?.analysis?.progress;
-    element("cut-scan-text").textContent = current?.analysis?.status === "ready" ? "Preparing cut…" : `Reading keyframes…${typeof progress === "number" ? ` ${Math.round(progress*100)}%` : ""}`;
+    element("cut-scan-text").textContent = `Reading keyframes…${typeof progress === "number" ? ` ${Math.round(progress*100)}%` : ""}`;
     const bar = element<HTMLProgressElement>("cut-scan-bar");
     if (typeof progress === "number") bar.value = progress*100;
     else bar.removeAttribute("value");
-    element("out-name").textContent = plan?.output_path.split(/[\\/]/).pop() || "Output appears when the cut is ready.";
-    element("out-name").title = plan?.output_path ?? "";
+    element("out-name").textContent = shown?.output_path.split(/[\\/]/).pop() || "Output appears when the cut is ready.";
+    element("out-name").title = shown?.output_path ?? "";
     const videoCodec = clip?.probeData?.video_codec === "h264" ? "H.264" : clip?.probeData?.video_codec?.toUpperCase() || "Video";
     const audioCodec = clip?.probeData?.audio_codec?.toUpperCase() || "Audio";
-    element("out-meta").textContent = plan ? `${plan.container.toUpperCase()} · ${videoCodec}${plan.include_audio ? ` + ${audioCodec}` : ""} · ${cutTime(mediaSeconds(plan.exported_duration))} · about ${formatBytes(plan.estimated_bytes)}` : "";
-    const tracks = plan ? cutTrackSummary(plan) : {kept:"",dropped:[]};
+    element("out-meta").textContent = shown ? `${shown.container.toUpperCase()} · ${videoCodec}${shown.include_audio ? ` + ${audioCodec}` : ""} · ${cutTime(mediaSeconds(shown.exported_duration))} · about ${formatBytes(shown.estimated_bytes)}` : "";
+    const tracks = shown ? cutTrackSummary(shown) : {kept:"",dropped:[]};
     element("out-tracks").textContent = tracks.kept;
     element("out-tracks").hidden = !tracks.kept;
     element("cut-dropped").textContent = tracks.dropped.join(" ");
     element("cut-dropped").hidden = !tracks.dropped.length;
-    const notes = plan?.unverified ?? [];
+    const notes = shown?.unverified ?? [];
     element("cut-unchecked").hidden = !notes.length;
     element("cut-unchecked-list").replaceChildren(...notes.map(note => {
       const item = document.createElement("li"); item.textContent = note.message; return item;
     }));
     element<HTMLInputElement>("cut-audio").checked = request?.include_audio === true;
     element<HTMLInputElement>("cut-audio").disabled = !clip?.probed || clip.probeData?.has_audio === false || !!clip.audioTimeline?.sourceMuted || clip.audioTimeline?.enabled === false || busy;
-    element("cut-audio-meta").textContent = request?.include_audio ? `${audioCodec} · copied` : "No audio";
-    element("cut-audio-note").hidden = !request?.include_audio;
     const one = element<HTMLButtonElement>("btn-one");
-    one.textContent = busy || clip && exporting(clip) ? "Exporting…" : pending ? "Reading keyframes…" : "Export cut";
-    one.disabled = !clip || !ready(clip) || pending || busy || exporting(clip);
+    one.textContent = busy || clip && exporting(clip) ? "Exporting…" : reading ? "Reading keyframes…" : "Export cut";
+    one.disabled = !clip || !exportable(clip) || busy || waiting;
     const clips = Object.values(session.clips);
     const all = element<HTMLButtonElement>("btn-all");
     all.textContent = `Export all cuts${clips.length ? ` (${clips.length})` : ""}`;
-    all.disabled = !clips.length || busy || pending || clips.some(item => !ready(item) || exporting(item));
+    all.disabled = !clips.length || busy || waiting || clips.some(item => !exportable(item));
     all.title = all.disabled ? "Review the cuts for each video before exporting all." : "";
     deps.paintTimeline();
   }
@@ -261,7 +277,14 @@ export function installCutControls(deps: CutControlsDeps) {
   }
 
   async function exportCuts(all: boolean): Promise<void> {
-    if (busy || pendingPath) return;
+    if (busy || waiting) return;
+    waiting = true;
+    try {
+      while (pendingPath) await settled;
+    } finally {
+      waiting = false;
+    }
+    if (busy) return;
     const clips = all ? session.clipOrder.map(path => session.clips[path]).filter((clip): clip is EditorClip => !!clip) : selected() ? [selected()!] : [];
     if (!clips.length || clips.some(clip => !ready(clip) || exporting(clip))) return;
     const reviewed = clips.map(clip => ({clip,fingerprint:state(clip).plan!.fingerprint,requestKey:state(clip).requestKey}));
@@ -318,25 +341,11 @@ export function installCutControls(deps: CutControlsDeps) {
     const clip = selected(); const plan = clip && state(clip).plan;
     if (clip && plan && ready(clip) && deps.moveStarts(clip,plan)) refresh();
   });
-  function choosePrecision(value: "keyframes" | "exact"): void {
+  element("cut-precision").addEventListener("change",event => {
     const clip = selected();
-    const option = element("precision-a").querySelector<HTMLButtonElement>(`[data-precision="${value}"]`);
-    if (!clip || !option || option.disabled || state(clip).precision === value) return;
-    clip.cutState = reduceCutState(state(clip),{type:"precision",value});
-    refresh();
-    option.focus();
-  }
-  element("precision-a").addEventListener("click",event => {
-    const option = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("[data-precision]") : null;
-    if (option?.dataset.precision === "keyframes" || option?.dataset.precision === "exact") choosePrecision(option.dataset.precision);
-  });
-  element("precision-a").addEventListener("keydown",event => {
-    const clip = selected();
-    if (!clip || !["ArrowLeft","ArrowRight","ArrowUp","ArrowDown","Home","End"].includes(event.key)) return;
-    event.preventDefault();
-    const next = event.key === "Home" ? "keyframes" : event.key === "End" ? "exact"
-      : state(clip).precision === "exact" ? "keyframes" : "exact";
-    choosePrecision(next);
+    const value = event.target instanceof HTMLInputElement ? event.target.value : "";
+    if (!clip || value !== "keyframes" && value !== "exact" || state(clip).precision === value) return;
+    clip.cutState = reduceCutState(state(clip),{type:"precision",value}); refresh(0);
   });
   element("conflict-compress").addEventListener("click",deps.compressInstead);
   for (const [id,value] of [["conflict-remove",true],["conflict-restore",false]] as const) {
@@ -344,12 +353,13 @@ export function installCutControls(deps: CutControlsDeps) {
       const clip = selected(); if (!clip) return;
       clip.cutState = reduceCutState(state(clip),{type:"withoutEdits",value}); refresh();
       if (value) element("conflict-restore").focus();
-      else element("precision-a").querySelector<HTMLButtonElement>('[data-precision="keyframes"]')?.focus();
+      // the notice hides until the new plan arrives, so focus the cuts it applies to
+      else (element("cut-list").querySelector<HTMLButtonElement>("button") ?? element("wf-l")).focus();
     });
   }
   element<HTMLInputElement>("cut-audio").addEventListener("change",event => {
     const clip = selected(); if (!clip) return;
-    clip.cutState = reduceCutState(state(clip),{type:"audio",value:(event.currentTarget as HTMLInputElement).checked}); refresh();
+    clip.cutState = reduceCutState(state(clip),{type:"audio",value:(event.currentTarget as HTMLInputElement).checked}); refresh(0);
   });
   element("cut-reread").addEventListener("click",() => {
     const clip = selected(); if (clip) { clip.cutState = reduceCutState(state(clip),{type:"retry"}); refresh(); }

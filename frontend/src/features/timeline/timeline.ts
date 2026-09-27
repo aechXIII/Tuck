@@ -213,7 +213,8 @@ function cutOverlay() {
     clip,
     full,
     strip: Keyframes.keyframeStrip(state?.analysis, full),
-    plan: state?.plan ?? null,
+    // the last plan stays drawn while a changed request is planned, as in the Inspector
+    plan: state?.plan ?? (state?.error ? null : state?.shown) ?? null,
     // half a frame, so the keyframe under the playhead counts as the current one
     tolerance: frame ? mediaSeconds(frame) / 2 : 0.001,
   };

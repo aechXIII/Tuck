@@ -4,6 +4,8 @@ export interface CutClipState {
   generation: number;
   requestKey: string;
   plan: CutPlanPreview | null;
+  // the last plan, kept on screen while a changed request is planned so the Inspector does not jump
+  shown: CutPlanPreview | null;
   analysis: CutAnalysisPayload | null;
   precision: "keyframes" | "exact";
   includeAudio: boolean;
@@ -26,27 +28,35 @@ export type CutEvent =
   | {type:"audio" | "withoutEdits"; value:boolean};
 
 export function createCutState(): CutClipState {
-  return {generation:0,requestKey:"",plan:null,analysis:null,precision:"keyframes",includeAudio:true,withoutEdits:false,workId:null,error:"",exactAvailable:false};
+  return {generation:0,requestKey:"",plan:null,shown:null,analysis:null,precision:"keyframes",includeAudio:true,withoutEdits:false,workId:null,error:"",exactAvailable:false};
 }
 
 export function reduceCutState(state: CutClipState, event: CutEvent): CutClipState {
   if (event.type === "plan" || event.type === "analysis") {
     if (event.generation !== state.generation) return state;
     return event.type === "plan"
-      ? {...state,plan:event.plan,error:"",exactAvailable:event.plan.exact_available}
+      ? {...state,plan:event.plan,shown:event.plan,error:"",exactAvailable:event.plan.exact_available}
       : {...state,analysis:event.analysis,workId:event.analysis.work_id};
   }
   if (event.type === "scan") return {...state,workId:event.workId};
   if (event.type === "failed") {
     const plan = event.plan === undefined ? state.plan : event.plan;
-    return {...state,plan,error:event.message,exactAvailable:plan ? plan.exact_available : state.exactAvailable};
+    return {...state,plan,shown:plan ?? state.shown,error:event.message,exactAvailable:plan ? plan.exact_available : state.exactAvailable};
   }
-  if (event.type === "retry") return {...state,plan:null,error:""};
+  if (event.type === "retry") return {...state,plan:null,shown:null,error:""};
   if (event.type === "request" && event.key === state.requestKey) return state;
   const change = event.type === "request" ? {requestKey:event.key}
     : event.type === "precision" ? {precision:event.value}
     : event.type === "audio" ? {includeAudio:event.value} : {withoutEdits:event.value};
   return {...state,...change,generation:state.generation+1,plan:null,error:""};
+}
+
+// an older plan segment still describes a row that starts in the same place. Ends are not
+// compared: the plan's last end is the analysed stream duration, not the probed one.
+export function shownSegment(plan: CutPlanPreview | null | undefined, index: number, range: {start: MediaTime}): CutSegment | undefined {
+  const segment = plan?.segments[index];
+  if (!segment) return undefined;
+  return Math.abs(mediaSeconds(segment.requested.start) - mediaSeconds(range.start)) <= 0.0005 ? segment : undefined;
 }
 
 export function mediaSeconds(time: MediaTime): number {

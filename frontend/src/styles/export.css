@@ -579,9 +579,6 @@ label.export-toggle {
 .lut-picker-popup [hidden] { display: none; }
 
 #insp-cut { display: flex; flex-direction: column; }
-.cut-lede { margin: 14px 0 2px; }
-.cut-lede h3 { margin: 0 0 3px; font: 600 13px/1.3 var(--font); color: var(--text); }
-.cut-lede p { margin: 0; font: 400 11px/1.45 var(--font); color: var(--muted); }
 #insp-cut .gr { padding: 12px 0 10px; border-bottom: 1px solid var(--border); }
 #insp-cut .gr:last-child { border-bottom: 0; }
 #insp-cut .inspector-label-row { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 7px; }
@@ -630,21 +627,33 @@ label.export-toggle {
 .cut-unchecked ul { margin: 0; padding: 0; list-style: none; }
 .cut-unchecked li { font: 400 10.5px/1.45 var(--font); color: var(--muted); }
 .cut-unchecked li + li { margin-top: 3px; }
-.out-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; }
+.out-row { margin-top: 10px; }
 .out-row .toggle-row { margin: 0; }
-.out-row .out-meta { margin: 0; white-space: nowrap; }
 
 body:not(.task-cut) #insp-cut,
 body.task-cut #insp-compress,
 body.task-cut .encoding-profile-action { display: none; }
-.cut-precision { display: flex; width: 100%; gap: 3px; padding: 3px; border-radius: var(--r-ctl); background: var(--raised); }
-.cut-precision button { flex: 1; min-width: 0; min-height: 28px; border: 0; border-radius: 4px; background: transparent; color: var(--muted); font: 500 11px var(--font); cursor: pointer; }
-.cut-precision button[aria-checked="true"] { background: var(--raised-2); color: var(--text); }
-.cut-precision button:disabled { opacity: .5; cursor: default; }
-.cut-precision button:focus-visible { outline: 2px solid var(--accent-light); outline-offset: -2px; }
-.cut-precision .beta { margin-left: 3px; padding: 1px 3px; border-radius: 2px; background: color-mix(in srgb, var(--accent) 30%, transparent); font-size: 9px; }
+.cut-precision { display: grid; gap: 2px; }
+/* same columns as the cut rows below, so the dots sit over the row numbers and the titles line up */
+.cut-option { display: grid; grid-template-columns: 20px minmax(0, 1fr); align-items: center; column-gap: 8px; row-gap: 2px; padding: 6px 8px 6px 6px; border-radius: var(--r-ctl); cursor: pointer; }
+.cut-option:has(input:checked) { background: var(--raised); }
+.cut-option:hover:has(input:enabled:not(:checked)) { background: color-mix(in srgb, var(--raised) 55%, transparent); }
+.cut-option:has(input:disabled) { cursor: default; }
+/* whole-pixel sizes keep the dot centred at 100% scale: a 14px ring, 3px gap and a 6px dot */
+.cut-option input { grid-row: 1 / span 2; justify-self: center; width: 14px; height: 14px; margin: 0; box-sizing: border-box; border: 1px solid var(--muted); border-radius: 50%; background: transparent; appearance: none; cursor: inherit; }
+.cut-option input:checked { border-color: var(--accent-light); background: var(--accent-light); box-shadow: inset 0 0 0 3px var(--raised); }
+.cut-option input:disabled { opacity: .45; }
+.cut-option input:focus-visible { outline: 2px solid var(--accent-light); outline-offset: 2px; }
+.cut-option-title { font: 500 11px/16px var(--font); color: var(--muted); }
+.cut-option:has(input:checked) .cut-option-title { font-weight: 600; color: var(--text); }
+.cut-option:has(input:disabled) .cut-option-title { color: var(--dim); }
+.cut-option-note { grid-column: 2; font: 400 10.5px/14px var(--font); color: var(--dim); }
+.cut-option .beta { margin-left: 4px; color: var(--dim); font: 500 10px var(--font); }
+@media (forced-colors: active) {
+  .cut-option input { border-color: ButtonText; }
+  .cut-option input:checked { border-color: Highlight; }
+}
 #insp-cut [hidden] { display: none; }
-#cut-exact-note { color: var(--dim); }
 #cut-message { white-space: pre-wrap; overflow-wrap: anywhere; }
 .cut-notice .row { flex-wrap: wrap; }
 .cut-row-btn { min-width: 0; }

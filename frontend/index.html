@@ -604,10 +604,6 @@
               <button type="button" id="wf-l" data-action-click="encoding-workflow" data-action-value="2" aria-pressed="false">Lossless cut</button>
             </div>
             <div id="insp-cut">
-              <div class="cut-lede">
-                <h3 id="cut-title">Cut without re-encoding</h3>
-                <p id="cut-lede-text">Video and audio are copied, not re-encoded. Cuts start on keyframes.</p>
-              </div>
               <div class="cut-notice" id="cut-conflict" hidden>
                 <h4 id="conflict-title"></h4>
                 <p>They can't be applied without re-encoding. Your edits stay saved.</p>
@@ -617,14 +613,20 @@
                   <button type="button" class="btn2" id="conflict-restore" hidden>Include edits</button>
                 </div>
               </div>
-              <div class="gr">
-                <div class="inspector-label-row"><div class="grt">Precision</div></div>
-                <div class="cut-precision" role="radiogroup" aria-label="Cut precision" id="precision-a">
-                  <button type="button" role="radio" aria-checked="true" tabindex="0" data-precision="keyframes">On keyframes</button>
-                  <button type="button" role="radio" aria-checked="false" tabindex="-1" data-precision="exact" id="cut-exact" aria-describedby="cut-exact-note" disabled>Exact <span class="beta">Beta</span></button>
+              <div class="gr" id="precision-card">
+                <div class="inspector-label-row"><div class="grt" id="precision-title">Precision</div></div>
+                <div class="cut-precision" id="cut-precision" role="radiogroup" aria-labelledby="precision-title">
+                  <label class="cut-option">
+                    <input type="radio" name="cut-precision" value="keyframes" id="cut-keyframes" aria-labelledby="cut-keyframes-title" aria-describedby="cut-keyframes-note" checked>
+                    <span class="cut-option-title" id="cut-keyframes-title">On keyframes</span>
+                    <span class="cut-option-note" id="cut-keyframes-note">Copies everything. Cuts start on the next keyframe.</span>
+                  </label>
+                  <label class="cut-option">
+                    <input type="radio" name="cut-precision" value="exact" id="cut-exact" aria-labelledby="cut-exact-title" aria-describedby="cut-exact-note" disabled>
+                    <span class="cut-option-title" id="cut-exact-title">Exact <span class="beta">Beta</span></span>
+                    <span class="cut-option-note" id="cut-exact-note">Re-encodes a little video at each cut.</span>
+                  </label>
                 </div>
-                <p class="setting-note" id="precision-note">Fast. Off-keyframe cuts start at the next keyframe.</p>
-                <p class="setting-note" id="cut-exact-note">Exact cutting is not available yet.</p>
               </div>
               <div class="gr" id="cuts-card">
                 <div class="inspector-label-row">
@@ -633,7 +635,7 @@
                     <button type="button" class="inspector-text-action" id="snap-all" hidden>Move to keyframes</button>
                   </div>
                 </div>
-                <p id="cut-message" class="setting-note">Choose a video to cut without re-encoding.</p>
+                <p id="cut-message" class="setting-note">Choose a video to cut.</p>
                 <button type="button" class="btn2" id="cut-reread" hidden>Read keyframes again</button>
                 <ol class="cut-list" id="cut-list"></ol>
                 <div class="cut-scan" id="cut-scan" hidden>
@@ -653,9 +655,7 @@
                     <span class="toggle-track" aria-hidden="true"></span>
                     <span>Include audio</span>
                   </label>
-                  <span class="out-meta" id="cut-audio-meta"></span>
                 </div>
-                <p class="setting-note" id="cut-audio-note">Audio is copied at packet boundaries; a cut may include up to one packet outside the kept range.</p>
                 <p class="setting-note" id="cut-dropped" hidden></p>
                 <div class="cut-unchecked" id="cut-unchecked" hidden>
                   <h4>Not checked</h4>

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createCutState, reduceCutState, cutSegmentStatus, cutStartUnchecked, cutTrackSummary, encodedSeconds, mediaSeconds } from "../../src/features/export/cut-state.ts";
+import { createCutState, reduceCutState, cutSegmentStatus, cutStartUnchecked, cutTrackSummary, encodedSeconds, mediaSeconds, shownSegment } from "../../src/features/export/cut-state.ts";
 import { buildCutRequest } from "../../src/features/export/plan-request.ts";
 import { createEditorClip } from "../../src/features/editor/types.ts";
 import type { CutPlanPreview } from "../../src/backend/cutting-types.ts";
@@ -35,6 +35,24 @@ test("precision, audio and edit choices invalidate the plan without changing oth
     assert.equal(state.plan,plan);
     assert.equal(next.generation,state.generation+1);
   }
+});
+
+test("the last plan stays shown while a changed request is planned, until a retry", () => {
+  const ready = reduceCutState(createCutState(),{type:"plan",generation:0,plan});
+  assert.equal(ready.shown,plan);
+  const flipped = reduceCutState(ready,{type:"precision",value:"exact"});
+  assert.equal(flipped.plan,null);
+  assert.equal(flipped.shown,plan);
+  assert.equal(reduceCutState(flipped,{type:"failed",message:"Could not plan."}).shown,plan);
+  assert.equal(reduceCutState(flipped,{type:"retry"}).shown,null);
+});
+
+test("a shown plan segment only describes a row that starts in the same place", () => {
+  const segment = plan.segments[0]!;
+  assert.equal(shownSegment(plan,0,{start:segment.requested.start}),segment);
+  assert.equal(shownSegment(plan,0,{start:{ticks:"999",time_base_num:1,time_base_den:10}}),undefined);
+  assert.equal(shownSegment(plan,1,{start:segment.requested.start}),undefined);
+  assert.equal(shownSegment(null,0,{start:segment.requested.start}),undefined);
 });
 
 test("cut request contains only cut intent and preserves fractional frame boundaries", () => {

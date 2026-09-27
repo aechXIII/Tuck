@@ -82,7 +82,6 @@ async function setup(page: Page, options: {pending?:boolean; collapsed?:boolean;
 test("lossless Inspector shows measured boundaries and exports only cut intent", async ({page}) => {
   await setup(page);
   await page.locator("#wf-l").click();
-  await expect(page.getByRole("heading",{name:"Cut without re-encoding"})).toBeVisible();
   await expect(page.locator("#cut-list")).toContainText("Ends 3 frames early");
   await expect(page.getByRole("radio",{name:/Exact/})).toBeDisabled();
   await expect(page.locator("#profile-card")).toBeHidden();
@@ -258,7 +257,7 @@ test("conflicting edits require a reversible choice and stay intact", async ({pa
   await expect(page.locator("#btn-one")).toBeEnabled();
   await expect(page.locator("#conflict-restore")).toBeVisible();
   await page.locator("#conflict-restore").click();
-  await expect(page.locator('[data-precision="keyframes"]')).toBeFocused();
+  await expect(page.locator('#cut-list [data-cut-index="0"]')).toBeFocused();
   await expect(page.locator("#conflict-remove")).toBeVisible();
   await expect(page.locator("#btn-one")).toBeDisabled();
   await page.locator("#conflict-compress").click();
@@ -290,7 +289,7 @@ test("a collapsed segment blocks export and empty selection stays useful", async
 test("saved Lossless cut task opens without a video", async ({page}) => {
   await setup(page,{files:[],startupCut:true});
   await expect(page.locator("#wf-l")).toHaveAttribute("aria-pressed","true");
-  await expect(page.locator("#cut-message")).toHaveText("Choose a video to cut without re-encoding.");
+  await expect(page.locator("#cut-message")).toHaveText("Choose a video to cut.");
   await expect(page.locator("#btn-one")).toBeDisabled();
 });
 
@@ -462,16 +461,12 @@ test("Exact is chosen by pointer or keyboard and shows what is re-encoded", asyn
   const exact = page.getByRole("radio",{name:/Exact/});
   const keyframes = page.getByRole("radio",{name:"On keyframes"});
   await expect(exact).toBeEnabled();
-  await expect(page.locator("#cut-exact-note")).toBeHidden();
+  await expect(keyframes).toBeChecked();
+  await expect(page.locator("#cut-exact-note")).toHaveText("Re-encodes a little video at each cut.");
   await keyframes.focus();
-  await page.keyboard.press("ArrowRight");
-  await expect(exact).toHaveAttribute("aria-checked","true");
+  await page.keyboard.press("ArrowDown");
+  await expect(exact).toBeChecked();
   await expect(exact).toBeFocused();
-  await expect(exact).toHaveAttribute("tabindex","0");
-  await expect(keyframes).toHaveAttribute("tabindex","-1");
-  await expect(page.getByRole("heading",{name:"Cut at the chosen frames"})).toBeVisible();
-  await expect(page.locator("#cut-lede-text")).toHaveText("Re-encodes video near cuts; copies the rest. Audio is copied.");
-  await expect(page.locator("#precision-note")).toHaveText("Re-encodes near cuts; copies the rest. Audio stays packet-accurate.");
   await expect(page.locator("#cut-list .cut-status")).toHaveText("Exact · 4.1 s re-encoded");
   await expect(page.locator("#cut-list .cut-status")).toHaveClass(/exact/);
   await expect(page.locator(".tl-sliver.exact")).toHaveCount(1);
@@ -484,11 +479,39 @@ test("Exact is chosen by pointer or keyboard and shows what is re-encoded", asyn
   await expect.poll(() => page.evaluate(() => window.__tuckFakeBackendCalls?.filter(call => call.method === "enqueueWithOptions").length)).toBe(1);
   const request = await page.evaluate(() => window.__tuckFakeBackendCalls?.find(call => call.method === "enqueueWithOptions")?.args[0]);
   expect(request).toMatchObject({operation:"cut",precision:"exact"});
-  await page.keyboard.press("Home");
   await keyframes.click();
-  await expect(keyframes).toHaveAttribute("aria-checked","true");
+  await expect(keyframes).toBeChecked();
   await expect(page.locator(".tl-sliver.exact")).toHaveCount(0);
-  await expect(page.getByRole("heading",{name:"Cut without re-encoding"})).toBeVisible();
+});
+
+test("changing precision keeps the Inspector steady and does not read keyframes again", async ({page}) => {
+  await setup(page,{exact:true,holdExportPlan:true});
+  await page.locator("#wf-l").click();
+  await expect(page.locator("#btn-one")).toBeEnabled();
+  const before = await page.locator("#insp-cut").boundingBox();
+  await page.evaluate(() => {
+    const button = document.getElementById("btn-one")!;
+    new MutationObserver(() => { if (button.hasAttribute("disabled")) document.body.dataset.exportBlinked = "true"; })
+      .observe(button,{attributes:true,attributeFilter:["disabled"]});
+  });
+  await page.getByRole("radio",{name:/Exact/}).click();
+  await expect.poll(() => page.evaluate(() => window.__tuckFakeBackendCalls?.filter(call => call.method === "createPlan").length)).toBe(2);
+  // the new plan is held; the last one stays on screen and the button stays usable
+  await expect(page.locator("#btn-one")).toHaveText("Export cut");
+  await expect(page.locator("#btn-one")).toBeEnabled();
+  await expect(page.locator("#cut-scan")).toBeHidden();
+  await expect(page.locator("#cut-list .cut-status")).toHaveText("Starts at the beginning · Ends 3 frames early");
+  await expect(page.locator("#out-name")).toHaveText("Morning ride_cut.mp4");
+  expect((await page.locator("#insp-cut").boundingBox())?.height).toBe(before?.height);
+  expect(await page.evaluate(() => document.body.dataset.exportBlinked)).toBeUndefined();
+  // an export clicked now waits for the new plan and sends that one
+  await page.locator("#btn-one").click();
+  await page.evaluate(() => window.__tuckReleaseHeld?.("cut-plan"));
+  await expect(page.locator("#cut-list .cut-status")).toHaveText("Exact · 4.1 s re-encoded");
+  await expect.poll(() => page.evaluate(() => window.__tuckFakeBackendCalls?.filter(call => call.method === "enqueueWithOptions").length)).toBe(1);
+  const request = await page.evaluate(() => window.__tuckFakeBackendCalls?.find(call => call.method === "enqueueWithOptions")?.args[0]);
+  expect(request).toMatchObject({operation:"cut",precision:"exact"});
+  expect(await page.evaluate(() => window.__tuckFakeBackendCalls?.filter(call => call.method === "analyzeCut").length)).toBe(0);
 });
 
 test("Exact stays disabled with the reason when this video cannot use it", async ({page}) => {
@@ -496,10 +519,8 @@ test("Exact stays disabled with the reason when this video cannot use it", async
   await page.locator("#wf-l").click();
   await expect(page.locator("#btn-one")).toBeEnabled();
   await expect(page.getByRole("radio",{name:/Exact/})).toBeDisabled();
+  await expect(page.getByRole("radio",{name:"On keyframes"})).toBeChecked();
   await expect(page.locator("#cut-exact-note")).toHaveText("Exact cutting is not available yet.");
-  await page.getByRole("radio",{name:"On keyframes"}).focus();
-  await page.keyboard.press("ArrowRight");
-  await expect(page.getByRole("radio",{name:"On keyframes"})).toHaveAttribute("aria-checked","true");
 });
 
 for (const width of [1440,960]) {
