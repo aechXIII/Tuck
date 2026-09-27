@@ -23,6 +23,9 @@ export interface CutSliver {
 // requested times travel as microseconds or rational frames, so allow for float rounding
 const MATCH_EPSILON = 0.0005;
 
+// average on-screen gap, in pixels, below which keyframe hairlines are left out
+const MIN_LINE_SPACING = 6;
+
 // timeline paints run on every drag frame; analysis payloads are replaced, never mutated
 const sortedTimes = new WeakMap<CutAnalysisPayload, number[]>();
 
@@ -187,6 +190,9 @@ export function renderKeyframeStrip(
     }
     lane.replaceChildren(ticks);
   }
+  // hairlines only help while they stay apart; a dense comb would hide the video
+  const width = lane.getBoundingClientRect().width;
+  lane.classList.toggle("lines", strip.times.length > 0 && width / strip.times.length >= MIN_LINE_SPACING);
   for (const old of lane.querySelectorAll(".kf.near")) old.remove();
   for (const time of near) {
     const tick = doc.createElement("i");

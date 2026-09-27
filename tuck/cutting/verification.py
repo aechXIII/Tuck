@@ -17,7 +17,13 @@ from ..media_tools import find_ffprobe
 from ..models.cutting import CutAnalysis, CutPlan
 from .analysis import CutAnalysisError, read_inventory
 from .exact import ExactEdges, verify_exact_frames
-from .packets import check_cut_cancel, prepare_cut, selected_packets, validate_cut_source
+from .packets import (
+    check_cut_cancel,
+    check_source_unchanged,
+    prepare_cut,
+    selected_packets,
+    validate_cut_source,
+)
 from .timeline import MAX_PACKET_BYTES, MAX_PACKETS
 
 MAX_BOUNDARY_FRAMES = 24_000
@@ -354,7 +360,8 @@ def _decode_window(
             or stream.codec_context.width * stream.codec_context.height > MAX_FRAME_PIXELS
         ):
             raise _failed("this video exceeds the boundary decoding limit.")
-        stream.codec_context.thread_count = 1
+        # threaded decoding gives the same pictures, much faster on large frames
+        stream.thread_type = "AUTO"
         if seek > 0:
             container.seek(int(seek / stream.time_base), stream=stream, backward=True)
         with av_logging.Capture() as logs:
@@ -517,8 +524,9 @@ def verify_cut_output(
     binary = ffprobe or find_ffprobe()
     if not binary:
         raise _failed("FFprobe is not available.")
+    # without an analysis the source is hashed here; otherwise the caller hashed it already
     analysis = analysis or prepare_cut(plan, cancel, binary)
-    validate_cut_source(plan, cancel)
+    check_source_unchanged(plan)
     try:
         if (plan.precision == "exact") != (edges is not None):
             raise _failed("the exact cut edges are missing.")
@@ -537,5 +545,6 @@ def verify_cut_output(
             frames = _verify_boundaries(plan, output, analysis, cancel, shift)
     except FFmpegError as exc:
         raise _failed(f"the media could not be read ({exc}).") from exc
+    # hash every byte again: an edit that keeps the size and time must still stop publishing
     validate_cut_source(plan, cancel)
     return CutVerification(video, audio, frames)

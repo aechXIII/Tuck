@@ -356,4 +356,5 @@ def plan_cut(request: CutRequest, analysis: CutAnalysis) -> CutPlan:
         tracks=tracks,
         chapters=chapters,
         unverified=(*analysis.unverified, *notes),
+        analysis=analysis,
     )

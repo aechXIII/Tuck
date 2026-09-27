@@ -756,13 +756,14 @@ body.tl-segment-dragging * {
   }
 }
 
-/* keyframe strip on the top edge of the video lane, so ticks line up with the handles */
+/* keyframes: a marker on the lane's top edge and a hairline through the video, so it is clear
+   where a copied part can start. Dense keyframes keep only the markers. */
 .kf-lane {
   position: absolute;
   left: 0;
   right: 0;
   top: -9px;
-  height: 8px;
+  bottom: 0;
   pointer-events: none;
   z-index: 2;
 }
@@ -771,23 +772,48 @@ body.tl-segment-dragging * {
 }
 .kf-lane .kf {
   position: absolute;
-  bottom: 1px;
-  width: 1.5px;
-  height: 6px;
-  border-radius: 1px;
-  background: color-mix(in srgb, var(--accent-light) 88%, transparent);
+  top: 0;
+  bottom: 0;
+  width: 0;
 }
-.kf-lane .kf.near {
-  width: 2.5px;
-  height: 9px;
-  margin-left: -0.5px;
+.kf-lane .kf::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -4px;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 7px solid var(--accent-light);
+}
+.kf-lane.lines .kf::after {
+  content: "";
+  position: absolute;
+  top: 9px;
+  bottom: 0;
+  left: -0.5px;
+  width: 1px;
+  background: color-mix(in srgb, var(--text) 40%, transparent);
+}
+.kf-lane .kf.near::before {
+  left: -5px;
+  border-left-width: 5px;
+  border-right-width: 5px;
+  border-top-width: 9px;
+  filter: drop-shadow(0 0 4px var(--accent-light));
+}
+.kf-lane .kf.near::after {
+  content: "";
+  position: absolute;
+  top: 9px;
+  bottom: 0;
+  left: -0.5px;
+  width: 1px;
   background: var(--accent-light);
-  box-shadow: 0 0 5px var(--accent-light);
 }
 .kf-lane .kf-scan,
 .kf-lane .kf-unread {
   position: absolute;
-  bottom: 0;
+  top: 8px;
   height: 1px;
 }
 .kf-lane .kf-scan {

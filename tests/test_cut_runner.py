@@ -243,6 +243,15 @@ def test_modified_resolved_plan_is_rejected(media_tools, tmp_path):
     assert not Path(plan.output_path).exists()
 
 
+def test_export_reuses_the_plan_analysis_of_unchanged_bytes(media_tools, tmp_path, monkeypatch):
+    from tuck.cutting import packets
+
+    source = create_source(media_tools, tmp_path / "source.mp4", duration=4)
+    _, plan = make_plan(media_tools, source, [(0, 2)], tmp_path / "result.mp4")
+    monkeypatch.setattr(packets, "analyze_source", lambda *_, **__: pytest.fail("scanned again"))
+    assert runner(media_tools).run(plan) == Path(plan.output_path)
+
+
 def test_twenty_joins_keep_audio_markers_within_one_packet(media_tools, tmp_path):
     source = create_source(media_tools, tmp_path / "source.mp4", duration=42)
     ranges = [(second, Fraction(second) + Fraction(6, 5)) for second in range(0, 40, 2)]

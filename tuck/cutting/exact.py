@@ -614,9 +614,10 @@ def _frames(
 ) -> Iterator[tuple[Fraction, np.ndarray]]:
     with av.open(str(path)) as container:
         stream = container.streams.video[0] if index is None else container.streams[index]
-        if stream.time_base is None:
+        if not isinstance(stream, VideoStream) or stream.time_base is None:
             raise _failed("a video has no time base.")
         stream.codec_context.options = {"err_detect": "explode"}
+        stream.thread_type = "AUTO"
         container.seek(int((origin + start) / stream.time_base), stream=stream, backward=True)
         for packet in container.demux(stream):
             if cancel.is_set():

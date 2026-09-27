@@ -1,6 +1,6 @@
 """Cut intent, measured media boundaries, and export previews."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from fractions import Fraction
 
 
@@ -207,6 +207,8 @@ class CutPlan:
     chapters: tuple[Chapter, ...] = ()
     # checks that cannot be made for this video; shown as "Not checked"
     unverified: tuple[CutIssue, ...] = ()
+    # the analysis the plan was made from; reused at export while the file's bytes still match
+    analysis: CutAnalysis | None = field(default=None, compare=False, repr=False)
 
     @property
     def source(self) -> str:

@@ -41,7 +41,21 @@ def validate_cut_source(plan: CutPlan, cancel: Event) -> None:
         raise CutAnalysisError("source_changed", "The video changed. Read its keyframes again.")
 
 
-def prepare_cut(plan: CutPlan, cancel: Event, ffprobe: str | None) -> CutAnalysis:
+def check_source_unchanged(plan: CutPlan) -> None:
+    """A quick check that the source was not replaced or edited since its bytes were hashed."""
+    try:
+        stat = Path(plan.identity.path).stat()
+    except OSError as exc:
+        raise CutAnalysisError(
+            "source_changed", "The video is no longer available. Add it again before exporting."
+        ) from exc
+    if (stat.st_size, stat.st_mtime_ns) != (plan.identity.size, plan.identity.mtime_ns):
+        raise CutAnalysisError("source_changed", "The video changed. Read its keyframes again.")
+
+
+def prepare_cut(
+    plan: CutPlan, cancel: Event, ffprobe: str | None, *, reuse_analysis: bool = True
+) -> CutAnalysis:
     validate_cut_source(plan, cancel)
     if (
         plan.issues
@@ -52,7 +66,10 @@ def prepare_cut(plan: CutPlan, cancel: Event, ffprobe: str | None) -> CutAnalysi
     source, output = Path(plan.identity.path), Path(plan.output_path)
     if output.resolve() == source.resolve() or (output.exists() and output.samefile(source)):
         raise CutAnalysisError("invalid_output", "Choose an output name different from the source.")
-    analysis = analyze_source(source, cancel, lambda _: None, ffprobe=ffprobe)
+    # the identity check above hashed every byte, so an analysis of the same bytes still holds
+    analysis = plan.analysis if reuse_analysis else None
+    if analysis is None or analysis.identity != plan.identity:
+        analysis = analyze_source(source, cancel, lambda _: None, ffprobe=ffprobe)
     if analysis.identity != plan.identity:
         raise CutAnalysisError("source_changed", "The video changed. Read its keyframes again.")
     if analysis.issues:
@@ -82,7 +99,8 @@ def prepare_cut(plan: CutPlan, cancel: Event, ffprobe: str | None) -> CutAnalysi
 
 
 def rebuild_cut_plan(plan: CutPlan, cancel: Event, *, ffprobe: str | None = None) -> CutPlan:
-    analysis = prepare_cut(plan, cancel, ffprobe)
+    # a retry reads the keyframes again rather than trusting the earlier scan
+    analysis = prepare_cut(plan, cancel, ffprobe, reuse_analysis=False)
     if plan.request is None:
         raise CutAnalysisError("plan_changed", "Review the cut plan before retrying.")
     rebuilt = plan_cut(plan.request, analysis)
