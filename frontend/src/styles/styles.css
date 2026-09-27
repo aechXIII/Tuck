@@ -308,7 +308,6 @@ body.workspace-overlay .panel-heading {
   color: var(--text);
 }
 .lib-tab.on {
-  background: var(--raised);
   color: var(--text);
 }
 .lib-tab:focus-visible {
@@ -715,7 +714,6 @@ body.workspace-overlay .panel-heading {
   color: var(--text);
 }
 .insp-tab.on {
-  background: var(--raised);
   color: var(--text);
 }
 .insp-tab:focus-visible {
@@ -2273,13 +2271,31 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
 #right {
   background: var(--panel);
 }
+/* section tabs are marked by ink and a rule rather than a fill, so they never read as another
+   segmented control next to the choices inside a section */
 .lib-tabs,
 .insp-tabs {
   flex: 0 0 40px;
   align-items: stretch;
   gap: 3px;
-  padding: 5px var(--panel-inset);
+  padding: 0 var(--panel-inset);
   border-bottom: 1px solid var(--hair);
+}
+.lib-tab,
+.insp-tab {
+  position: relative;
+  border-radius: 0;
+}
+.lib-tab.on::after,
+.insp-tab.on::after {
+  content: "";
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--text);
 }
 
 /* visually hidden, still read by assistive technology */
