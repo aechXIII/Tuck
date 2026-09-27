@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createCutState, reduceCutState, cutSegmentStatus, encodedSeconds, mediaSeconds } from "../../src/features/export/cut-state.ts";
+import { createCutState, reduceCutState, cutSegmentStatus, cutStartUnchecked, cutTrackSummary, encodedSeconds, mediaSeconds } from "../../src/features/export/cut-state.ts";
 import { buildCutRequest } from "../../src/features/export/plan-request.ts";
 import { createEditorClip } from "../../src/features/editor/types.ts";
 import type { CutPlanPreview } from "../../src/backend/cutting-types.ts";
@@ -9,7 +9,7 @@ const time = (ticks: number) => ({ticks: String(ticks), time_base_num: 1, time_b
 const plan: CutPlanPreview = {
   operation:"cut", precision:"keyframes", container:"mp4", include_audio:true,
   output_path:"/videos/ride_cut.mp4", exported_duration:time(1063), estimated_bytes:1000,
-  fingerprint:"a".repeat(64), issues:[], exact_available:false, exact_reason:"Exact is not available yet.",
+  fingerprint:"a".repeat(64), issues:[], exact_available:false, exact_reason:"Exact is not available yet.", unverified:[], tracks:[], chapter_count:0,
   source_identity:{path:"/videos/ride.mp4",size:1200,mtime_ns:"1",signature:"b".repeat(64)},
   segments:[{requested:{start:time(424),end:time(1200)},resolved:{start:time(440),end:time(1200)},start_kind:"moved",end_frames_moved:3,audio_source:null,audio_output:null,audio_packet_count:0,copied:null}],
 };
@@ -95,4 +95,28 @@ test("exact rows name how much is re-encoded", () => {
   assert.equal(cutSegmentStatus(segment([42.4,120],"keyframe"),"exact"),"Starts on a keyframe");
   assert.equal(encodedSeconds(segment([44,119.9]),"keyframes"),0);
   assert.equal(cutSegmentStatus({...segment(null),start_kind:"collapsed"},"exact"),"Too short: under one frame");
+});
+
+test("track summary names extra kept tracks and each reason for leaving one out", () => {
+  const track = (index: number, kind: string, keep: boolean, reason = "") => ({index, kind, codec:"x", keep, reason});
+  const rich: CutPlanPreview = {...plan, chapter_count:2, tracks:[
+    track(1,"audio",true), track(2,"audio",true), track(3,"subtitle",true), track(4,"attachment",true),
+    track(5,"data",false,"Timecode and data tracks are not kept."), track(6,"data",false,"Timecode and data tracks are not kept."),
+  ]};
+  assert.deepEqual(cutTrackSummary(rich), {
+    kept:"Also keeps 2 audio tracks, 1 subtitle track, 1 attachment, 2 chapters",
+    dropped:["Timecode and data tracks are not kept."],
+  });
+  const silent = {...plan, include_audio:false, tracks:[track(1,"audio",false,"Include audio is off.")]};
+  assert.deepEqual(cutTrackSummary(silent), {kept:"", dropped:[]});
+});
+
+test("only copied starts are marked when keyframes could not be confirmed", () => {
+  const segment = plan.segments[0]!;
+  const unchecked = {...plan, unverified:[{code:"unverified_start", message:"Not confirmed.", field:null}]};
+  assert.equal(cutStartUnchecked(plan, segment), false);
+  assert.equal(cutStartUnchecked(unchecked, segment), true);
+  assert.equal(cutStartUnchecked(unchecked, {...segment, start_kind:"at_start"}), false);
+  assert.equal(cutStartUnchecked({...unchecked, precision:"exact"}, segment), false);
+  assert.equal(cutStartUnchecked({...unchecked, precision:"exact"}, {...segment, copied:segment.resolved}), true);
 });

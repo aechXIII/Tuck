@@ -74,6 +74,10 @@ export function formatEta(seconds: number | null | undefined): string {
 
 export function formatQueueStatus(item: QueueItem | null | undefined): string {
   if (!item) return "";
+  // a finished cut Tuck could not fully check stays marked; the Inspector lists why
+  if (item.state === "completed" && Array.isArray(item.unverified) && item.unverified.length) {
+    return `${item.status_text || "Completed"} · Not checked`;
+  }
   if (item.status_text) {
     const parts = [item.status_text];
     if (item.state === "running" && !item.progress_info?.indeterminate) {

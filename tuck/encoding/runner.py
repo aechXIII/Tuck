@@ -13,7 +13,6 @@ from pathlib import Path
 from typing import Any
 
 from ..cutting.analysis import CutAnalysisError
-from ..cutting.runner import CutRunner
 from ..formatting import format_size
 from ..media_tools import find_ffmpeg
 from ..models import (
@@ -111,6 +110,9 @@ class FFmpegEngine:
         self._last_stderr: str = ""
         self._resolved_encoder: str = ""
         self._prepared_video: Path | None = None
+        # the cut runner uses this package's output helpers, so import it once both exist
+        from ..cutting.runner import CutRunner
+
         self._cut_runner = CutRunner()
 
     @property

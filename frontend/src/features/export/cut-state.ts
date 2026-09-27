@@ -71,3 +71,33 @@ export function cutSegmentStatus(segment: CutSegment, precision: "keyframes" | "
   const frames = segment.end_frames_moved;
   return frames ? `${start} · Ends ${frames} frame${frames === 1 ? "" : "s"} early` : start;
 }
+
+// cuts that copy from a keyframe the backend could not confirm as a clean start
+export function cutStartUnchecked(plan: CutPlanPreview, segment: CutSegment): boolean {
+  if (!plan.unverified.some(note => note.code === "unverified_start")) return false;
+  if (segment.start_kind === "at_start" || segment.start_kind === "collapsed") return false;
+  return plan.precision === "keyframes" || segment.copied !== null;
+}
+
+function counted(count: number, one: string, many = `${one}s`): string {
+  return `${count} ${count === 1 ? one : many}`;
+}
+
+// what the output keeps besides the video and first audio track, and what it leaves out
+export function cutTrackSummary(plan: CutPlanPreview): {kept: string; dropped: string[]} {
+  const kept = plan.tracks.filter(track => track.keep);
+  const count = (kind: string) => kept.filter(track => track.kind === kind).length;
+  const audio = count("audio");
+  const parts = [
+    audio > 1 ? counted(audio, "audio track") : "",
+    count("subtitle") ? counted(count("subtitle"), "subtitle track") : "",
+    count("video") ? counted(count("video"), "cover image") : "",
+    count("attachment") ? counted(count("attachment"), "attachment") : "",
+    plan.chapter_count ? counted(plan.chapter_count, "chapter") : "",
+  ].filter(Boolean);
+  // the audio switch already says when audio is left out
+  const reasons = plan.tracks
+    .filter(track => !track.keep && track.reason && !(track.kind === "audio" && !plan.include_audio))
+    .map(track => track.reason);
+  return {kept: parts.length ? `Also keeps ${parts.join(", ")}` : "", dropped: [...new Set(reasons)]};
+}

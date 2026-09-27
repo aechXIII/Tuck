@@ -40,10 +40,18 @@ export interface CutSegment extends JsonObject {
   // Exact plans: the copied part between encoded edges, or null when all of it is encoded
   readonly copied: CutRange | null;
 }
+export interface CutTrack extends JsonObject {
+  readonly index: number;
+  readonly kind: string;
+  readonly codec: string;
+  readonly keep: boolean;
+  readonly reason: string;
+}
 export interface CutPlanPreview extends JsonObject {
   readonly operation: "cut";
   readonly precision: "keyframes" | "exact";
-  readonly container: "mp4";
+  // the output keeps the source container, named by its extension
+  readonly container: string;
   readonly include_audio: boolean;
   readonly output_path: string;
   readonly exported_duration: MediaTime;
@@ -52,6 +60,10 @@ export interface CutPlanPreview extends JsonObject {
   readonly issues: readonly CutIssue[];
   readonly exact_available: boolean;
   readonly exact_reason: string;
+  // checks Tuck cannot make for this file; the export still goes ahead
+  readonly unverified: readonly CutIssue[];
+  readonly tracks: readonly CutTrack[];
+  readonly chapter_count: number;
   readonly segments: readonly CutSegment[];
   readonly source_identity: {
     readonly path: string;
@@ -158,6 +170,16 @@ function stream(value: unknown): value is CutStream {
     && value.dispositions.every(v => typeof v === "string")
   );
 }
+function track(value: unknown): value is CutTrack {
+  return (
+    object(value)
+    && integer(value.index)
+    && typeof value.kind === "string"
+    && typeof value.codec === "string"
+    && typeof value.keep === "boolean"
+    && typeof value.reason === "string"
+  );
+}
 function summary(value: unknown): value is CutAnalysisSummary {
   return (
     object(value)
@@ -200,7 +222,8 @@ export function isCutPlanPayload(value: unknown): value is CutPlanPayload {
   return (
     plan.operation === "cut"
     && oneOf(plan.precision, ["keyframes", "exact"])
-    && plan.container === "mp4"
+    && typeof plan.container === "string"
+    && /^[a-z0-9]+$/.test(plan.container)
     && typeof plan.include_audio === "boolean"
     && typeof plan.output_path === "string"
     && isMediaTime(plan.exported_duration)
@@ -210,6 +233,10 @@ export function isCutPlanPayload(value: unknown): value is CutPlanPayload {
     && issues(plan.issues)
     && typeof plan.exact_available === "boolean"
     && typeof plan.exact_reason === "string"
+    && issues(plan.unverified)
+    && Array.isArray(plan.tracks)
+    && plan.tracks.every(track)
+    && integer(plan.chapter_count)
     && Array.isArray(plan.segments)
     && plan.segments.every(segment)
     && object(identity)

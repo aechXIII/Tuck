@@ -19,7 +19,6 @@ from .bridge_validation import (
     validate_path,
 )
 from .cutting.analysis import CutAnalysisError, CutRequestWork
-from .cutting.exact import exact_encoder_available
 from .cutting.planner import CutPlanChanged, parse_cut_export, parse_cut_request, plan_cut
 from .cutting.serialization import analysis_snapshot_dict, cut_plan_preview_dict
 from .cutting.service import CutAnalysisService
@@ -281,7 +280,7 @@ class BridgeAPI:
             try:
                 cut_request = parse_cut_request(raw)
                 analysis = self._cut_analysis.result(Path(cut_request.source))
-                cut_plan = plan_cut(cut_request, analysis, exact_encoder=exact_encoder_available())
+                cut_plan = plan_cut(cut_request, analysis)
                 return {"ok": True, "_request_id": req_id, "data": cut_plan_preview_dict(cut_plan)}
             except (ValueError, OSError) as exc:
                 return {

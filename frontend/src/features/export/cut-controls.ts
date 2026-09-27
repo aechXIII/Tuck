@@ -4,7 +4,7 @@ import type { EditorClip } from "../editor/types.ts";
 import type { EditorSession } from "../editor/session.ts";
 import { formatBytes } from "../editor/format.ts";
 import { toast } from "../editor/toast.ts";
-import { createCutState, cutSegmentStatus, cutTime, encodedSeconds, mediaSeconds, reduceCutState } from "./cut-state.ts";
+import { createCutState, cutSegmentStatus, cutStartUnchecked, cutTime, cutTrackSummary, encodedSeconds, mediaSeconds, reduceCutState } from "./cut-state.ts";
 
 interface CutControlsDeps {
   session: EditorSession;
@@ -206,7 +206,8 @@ export function installCutControls(deps: CutControlsDeps) {
       const button = row.querySelector("button")!;
       const range = ranges[index]!;
       const segment = plan?.segments[index];
-      const status = segment ? cutSegmentStatus(segment, precision) : "Checking keyframes…";
+      const status = !segment ? "Checking keyframes…"
+        : `${cutSegmentStatus(segment, precision)}${plan && cutStartUnchecked(plan, segment) ? " · Start not checked" : ""}`;
       const rangeText = `${cutTime(mediaSeconds(range.start))} – ${cutTime(mediaSeconds(range.end))}`;
       button.children[0]!.textContent = String(index+1);
       button.children[1]!.textContent = rangeText;
@@ -229,6 +230,16 @@ export function installCutControls(deps: CutControlsDeps) {
     const videoCodec = clip?.probeData?.video_codec === "h264" ? "H.264" : clip?.probeData?.video_codec?.toUpperCase() || "Video";
     const audioCodec = clip?.probeData?.audio_codec?.toUpperCase() || "Audio";
     element("out-meta").textContent = plan ? `${plan.container.toUpperCase()} · ${videoCodec}${plan.include_audio ? ` + ${audioCodec}` : ""} · ${cutTime(mediaSeconds(plan.exported_duration))} · about ${formatBytes(plan.estimated_bytes)}` : "";
+    const tracks = plan ? cutTrackSummary(plan) : {kept:"",dropped:[]};
+    element("out-tracks").textContent = tracks.kept;
+    element("out-tracks").hidden = !tracks.kept;
+    element("cut-dropped").textContent = tracks.dropped.join(" ");
+    element("cut-dropped").hidden = !tracks.dropped.length;
+    const notes = plan?.unverified ?? [];
+    element("cut-unchecked").hidden = !notes.length;
+    element("cut-unchecked-list").replaceChildren(...notes.map(note => {
+      const item = document.createElement("li"); item.textContent = note.message; return item;
+    }));
     element<HTMLInputElement>("cut-audio").checked = request?.include_audio === true;
     element<HTMLInputElement>("cut-audio").disabled = !clip?.probed || clip.probeData?.has_audio === false || !!clip.audioTimeline?.sourceMuted || clip.audioTimeline?.enabled === false || busy;
     element("cut-audio-meta").textContent = request?.include_audio ? `${audioCodec} · copied` : "No audio";

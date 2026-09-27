@@ -195,6 +195,7 @@ def queue_item_dict(item: QueueItem) -> dict[str, Any]:
             ],
             "segment_count": len(plan.segments),
             "include_audio": plan.include_audio,
+            "unverified": [issue.message for issue in plan.unverified],
             "error": item.error,
             "error_detail": item.error_detail,
             "error_code": item.error_code,

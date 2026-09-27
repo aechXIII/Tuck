@@ -81,6 +81,24 @@ class PacketTiming:
     start: MediaTime
     duration: MediaTime
     skip_samples: int = 0
+    discard_samples: int = 0
+
+
+@dataclass(frozen=True)
+class TrackPackets:
+    """Packet timings of a track other than the main video, relative to the video origin."""
+
+    index: int
+    kind: str
+    codec: str
+    packets: tuple[PacketTiming, ...]
+
+
+@dataclass(frozen=True)
+class Chapter:
+    start: MediaTime
+    end: MediaTime
+    title: str
 
 
 @dataclass(frozen=True)
@@ -96,6 +114,16 @@ class CutAnalysis:
     max_pts_dts_lag: MediaTime
     issues: tuple[CutIssue, ...]
     version: str
+    # every video frame's presentation time in seconds, relative to the origin
+    frames: tuple[Fraction, ...] = ()
+    tracks: tuple[TrackPackets, ...] = ()
+    chapters: tuple[Chapter, ...] = ()
+    format_name: str = "mp4"
+    video_index: int = 0
+    # how many frames the decoder holds back before showing one
+    reorder_frames: int = 0
+    # facts that could not be confirmed; the cut still works and says so
+    unverified: tuple[CutIssue, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -138,6 +166,29 @@ class CutSegment:
 
 
 @dataclass(frozen=True)
+class TrackSegment:
+    """What one kept segment takes from a non-video track."""
+
+    # source packets from `first` up to (not including) `stop`, in demux order
+    first: int
+    stop: int
+    # where the first chosen packet starts in the output
+    output_start: MediaTime
+    # subtitle packets are clipped to the segment instead of copied whole
+    clip: bool = False
+
+
+@dataclass(frozen=True)
+class TrackPlan:
+    index: int
+    kind: str
+    codec: str
+    keep: bool
+    reason: str = ""
+    segments: tuple[TrackSegment, ...] = ()
+
+
+@dataclass(frozen=True)
 class CutPlan:
     identity: SourceIdentity
     segments: tuple[CutSegment, ...]
@@ -152,6 +203,10 @@ class CutPlan:
     fingerprint: str
     container: str = "mp4"
     request: CutRequest | None = None
+    tracks: tuple[TrackPlan, ...] = ()
+    chapters: tuple[Chapter, ...] = ()
+    # checks that cannot be made for this video; shown as "Not checked"
+    unverified: tuple[CutIssue, ...] = ()
 
     @property
     def source(self) -> str:

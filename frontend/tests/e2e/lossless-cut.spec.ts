@@ -8,12 +8,12 @@ const source = "C:/videos/Morning ride.mp4";
 const plan: CutPlanPreview = {
   operation:"cut",precision:"keyframes",container:"mp4",include_audio:true,
   output_path:"C:/videos/Morning ride_cut.mp4",exported_duration:time(11.9),estimated_bytes:13000000,
-  fingerprint:"a".repeat(64),issues:[],exact_available:false,exact_reason:"Exact cutting is not available yet.",
+  fingerprint:"a".repeat(64),issues:[],exact_available:false,exact_reason:"Exact cutting is not available yet.",unverified:[],tracks:[],chapter_count:0,
   source_identity:{path:source,size:15000000,mtime_ns:"1",signature:"b".repeat(64)},
   segments:[{requested:{start:time(0),end:time(12)},resolved:{start:time(0),end:time(11.9)},start_kind:"at_start",end_frames_moved:3,audio_source:null,audio_output:null,audio_packet_count:0,copied:null}],
 };
 
-async function setup(page: Page, options: {pending?:boolean; collapsed?:boolean; moved?:boolean; shortMoved?:boolean; files?:string[]; startupCut?:boolean; holdAnalysis?:boolean; holdExportPlan?:boolean; rejectExport?:boolean; scanning?:boolean; exact?:boolean} = {}) {
+async function setup(page: Page, options: {pending?:boolean; collapsed?:boolean; moved?:boolean; shortMoved?:boolean; files?:string[]; startupCut?:boolean; holdAnalysis?:boolean; holdExportPlan?:boolean; rejectExport?:boolean; scanning?:boolean; exact?:boolean; planOverride?:Partial<CutPlanPreview>} = {}) {
   const fixture = healthyBackendFixture();
   fixture.startup.files = options.files ?? [source];
   fixture.responses.probeFile = {data:{duration:12,width:1920,height:1080,fps:30,has_audio:true,video_codec:"h264",audio_codec:"aac",file_size:15000000}};
@@ -69,7 +69,7 @@ async function setup(page: Page, options: {pending?:boolean; collapsed?:boolean;
           : moved ? plan.segments.map(segment => ({...segment,start_kind:"moved",resolved:{...segment.resolved,start:{ticks:"40",time_base_num:1,time_base_den:10}}})) : plan.segments}}};
     }
     backend.createPlan = createPlan;
-  },{planJson:JSON.stringify(options.shortMoved ? {...plan,exported_duration:{ticks:"1",time_base_num:1,time_base_den:30},segments:plan.segments.map(segment=>({...segment,requested:{start:time(0),end:analysis.analysis.duration},resolved:{start:time(4),end:analysis.analysis.duration},start_kind:"moved",end_frames_moved:0}))} : plan),collapsed:options.collapsed,moved:options.moved,holdExportPlan:options.holdExportPlan,exact:options.exact});
+  },{planJson:JSON.stringify({...(options.shortMoved ? {...plan,exported_duration:{ticks:"1",time_base_num:1,time_base_den:30},segments:plan.segments.map(segment=>({...segment,requested:{start:time(0),end:analysis.analysis.duration},resolved:{start:time(4),end:analysis.analysis.duration},start_kind:"moved",end_frames_moved:0}))} : plan),...options.planOverride}),collapsed:options.collapsed,moved:options.moved,holdExportPlan:options.holdExportPlan,exact:options.exact});
   await page.goto("/");
   if (options.files?.length === 0) return;
   // timeline keyboard edits require decoded media metadata as well as probe data
@@ -91,6 +91,27 @@ test("lossless Inspector shows measured boundaries and exports only cut intent",
   expect(request).toMatchObject({operation:"cut",source,plan_fingerprint:plan.fingerprint});
   expect(request).not.toHaveProperty("profile_id");
   expect(request).not.toHaveProperty("video_encoder");
+});
+
+test("checks Tuck cannot make and tracks it keeps are shown without blocking export", async ({page}) => {
+  await setup(page,{planOverride:{
+    container:"mkv",segments:[{...plan.segments[0]!,start_kind:"keyframe"}],output_path:"C:/videos/Morning ride_cut.mkv",chapter_count:2,
+    unverified:[{code:"unverified_start",message:"Cut starts use keyframes that could not be confirmed as clean starting points.",field:null}],
+    tracks:[
+      {index:1,kind:"audio",codec:"aac",keep:true,reason:""},{index:2,kind:"audio",codec:"opus",keep:true,reason:""},
+      {index:3,kind:"subtitle",codec:"ass",keep:true,reason:""},
+      {index:4,kind:"data",codec:"bin_data",keep:false,reason:"Timecode and data tracks are not kept."},
+    ],
+  }});
+  await page.locator("#wf-l").click();
+  await expect(page.locator("#out-name")).toHaveText("Morning ride_cut.mkv");
+  await expect(page.locator("#out-meta")).toContainText("MKV");
+  await expect(page.locator("#out-tracks")).toHaveText("Also keeps 2 audio tracks, 1 subtitle track, 2 chapters");
+  await expect(page.locator("#cut-dropped")).toHaveText("Timecode and data tracks are not kept.");
+  await expect(page.locator("#cut-unchecked")).toContainText("Not checked");
+  await expect(page.locator("#cut-unchecked")).toContainText("could not be confirmed");
+  await expect(page.locator(".cut-status")).toHaveText("Starts on a keyframe · Ends 3 frames early · Start not checked");
+  await expect(page.locator("#btn-one")).toBeEnabled();
 });
 
 test("a stale analysis response cannot replace the selected video's state", async ({page}) => {

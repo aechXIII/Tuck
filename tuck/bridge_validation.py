@@ -30,7 +30,12 @@ from .models.encoding_policy import (
 from .models.frame_blending import FrameBlending
 from .models.lut import LutSettings
 
-VIDEO_EXTENSIONS = frozenset({".mp4", ".mkv", ".webm", ".mov", ".avi", ".wmv", ".flv", ".m4v"})
+VIDEO_EXTENSIONS = frozenset(
+    {
+        *(".mp4", ".mkv", ".webm", ".mov", ".avi", ".wmv", ".flv", ".m4v"),
+        *(".ts", ".m2ts", ".mts", ".3gp", ".ogv"),
+    }
+)
 AUDIO_EXTENSIONS = frozenset(
     {".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg", ".opus", ".wma", ".aif", ".aiff"}
 )

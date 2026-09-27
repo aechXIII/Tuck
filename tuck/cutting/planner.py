@@ -1,14 +1,14 @@
 """Resolve validated cut intent against measured packet boundaries without doing I/O."""
 
 import json
-import math
 from bisect import bisect_left, bisect_right
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from fractions import Fraction
 from hashlib import sha256
 from pathlib import Path
 
 from ..models.cutting import (
+    Chapter,
     CutAnalysis,
     CutIssue,
     CutPlan,
@@ -16,9 +16,12 @@ from ..models.cutting import (
     CutRequest,
     CutSegment,
     MediaTime,
+    PacketTiming,
+    TrackSegment,
 )
 from .analysis import CutAnalysisError
 from .exact import exact_media_reason
+from .tracks import plan_tracks
 
 EDIT_NAMES = {
     "crop": "Crop",
@@ -107,7 +110,9 @@ def parse_cut_request(raw: object) -> CutRequest:
         segments.append(CutRange(start, end))
         previous_end = end.seconds
     directory = raw.get("output_dir", str(source_path.parent))
-    name = raw.get("output_name", source_path.stem + "_cut.mp4")
+    # the cut keeps the source's container, so it keeps its extension too
+    extension = source_path.suffix.lower() or ".mp4"
+    name = raw.get("output_name", source_path.stem + "_cut" + extension)
     if not isinstance(directory, str) or not directory or "\x00" in directory:
         raise ValueError("Choose an output directory")
     if (
@@ -126,8 +131,8 @@ def parse_cut_request(raw: object) -> CutRequest:
         *(f"COM{i}" for i in range(1, 10)),
         *(f"LPT{i}" for i in range(1, 10)),
     }
-    if name.split(".", 1)[0].upper() in reserved or Path(name).suffix.lower() != ".mp4":
-        raise ValueError("Choose an MP4 filename that is not a reserved device name")
+    if name.split(".", 1)[0].upper() in reserved or Path(name).suffix.lower() != extension:
+        raise ValueError(f"Choose a {extension} filename that is not a reserved device name")
     output_dir = str(Path(directory).resolve())
     if Path(output_dir) / name == source_path:
         raise ValueError("The output must have a different name from the source")
@@ -143,11 +148,86 @@ def parse_cut_request(raw: object) -> CutRequest:
     )
 
 
-def plan_cut(request: CutRequest, analysis: CutAnalysis, *, exact_encoder: bool = False) -> CutPlan:
-    issues = list(analysis.issues)
-    exact_reason = exact_media_reason(analysis) or (
-        "" if exact_encoder else "Exact needs FFmpeg with the libx264 encoder."
+# the source container is kept; this maps its file extension to the muxer that writes it
+OUTPUT_FORMATS = {
+    ".mp4": "mp4",
+    ".m4v": "mp4",
+    ".mov": "mov",
+    ".3gp": "3gp",
+    ".mkv": "matroska",
+    ".webm": "webm",
+    ".ts": "mpegts",
+    ".m2ts": "mpegts",
+    ".mts": "mpegts",
+    ".avi": "avi",
+    ".flv": "flv",
+    ".ogv": "ogg",
+}
+
+
+def _frame_edges(analysis: CutAnalysis) -> list[Fraction]:
+    if analysis.frames:
+        return [*analysis.frames, analysis.duration.seconds]
+    step, end = analysis.frame_duration.seconds, analysis.duration.seconds
+    if step <= 0:
+        return [Fraction(0), end]
+    return [index * step for index in range(int(end / step) + 1)]
+
+
+def _nearest(edges: list[Fraction], time: Fraction) -> Fraction:
+    # timeline times are player floats; the nearest frame edge keeps a plain split contiguous
+    index = bisect_left(edges, time)
+    candidates = edges[max(0, index - 1) : index + 1]
+    return min(candidates, key=lambda edge: (abs(edge - time), -edge))
+
+
+def _chapters(
+    analysis: CutAnalysis, ranges: list[tuple[Fraction, Fraction]]
+) -> tuple[Chapter, ...]:
+    kept = []
+    elapsed = Fraction(0)
+    for first, last in ranges:
+        for chapter in analysis.chapters:
+            start = max(chapter.start.seconds, first)
+            end = min(chapter.end.seconds, last)
+            if end > start:
+                kept.append(
+                    Chapter(
+                        MediaTime.from_seconds(elapsed + start - first),
+                        MediaTime.from_seconds(elapsed + end - first),
+                        chapter.title,
+                    )
+                )
+        elapsed += last - first
+    return tuple(kept)
+
+
+def _audio_fields(
+    segment: CutSegment, packets: tuple[PacketTiming, ...], piece: TrackSegment
+) -> CutSegment:
+    """Describe the main audio track's cut on the segment, for the Inspector."""
+    chosen = list(packets[piece.first : piece.stop])
+    # encoder priming before the first frame is not part of the kept range
+    priming = [p for p in chosen if p.start.seconds + p.duration.seconds <= 0]
+    heard = [p for p in chosen if p not in priming] or chosen
+    output_start = piece.output_start.seconds + sum(
+        (p.duration.seconds for p in priming), Fraction(0)
     )
+    length = sum((p.duration.seconds for p in heard), Fraction(0))
+    source_end = heard[-1].start.seconds + heard[-1].duration.seconds
+    return replace(
+        segment,
+        audio_source=CutRange(heard[0].start, MediaTime.from_seconds(source_end)),
+        audio_output=CutRange(
+            MediaTime.from_seconds(output_start), MediaTime.from_seconds(output_start + length)
+        ),
+        audio_packet_count=len(heard),
+    )
+
+
+def plan_cut(request: CutRequest, analysis: CutAnalysis) -> CutPlan:
+    issues = list(analysis.issues)
+    exact_reason = exact_media_reason(analysis)
     exact = request.precision == "exact"
     if request.source != analysis.identity.path:
         issues.insert(
@@ -164,26 +244,29 @@ def plan_cut(request: CutRequest, analysis: CutAnalysis, *, exact_encoder: bool 
         )
     if exact and exact_reason:
         issues.append(CutIssue("exact_unavailable", exact_reason, "precision"))
+    suffix = Path(request.output_name).suffix.lower()
+    if suffix not in OUTPUT_FORMATS and not analysis.issues:
+        issues.append(
+            CutIssue("unsupported_codec", "Lossless cut cannot write this file type yet.")
+        )
     keys = [t.seconds for t in analysis.keyframes]
-    step = analysis.frame_duration.seconds
     ends = [t.seconds for t in analysis.safe_ends]
-    segments = []
+    edges = _frame_edges(analysis)
+    frames = edges[:-1]
+    duration = analysis.duration.seconds
+    segments: list[CutSegment] = []
+    ranges: list[tuple[Fraction, Fraction]] = []
+    kept: list[int] = []
     elapsed = Fraction(0)
-    audio_elapsed = Fraction(0)
-    packets = analysis.audio_packets
-    # analysis qualifies uniform AAC frames, with only a shorter final packet
-    quantum = packets[0].duration.seconds if packets else Fraction(0)
     for requested in request.segments:
         start, end = requested.start.seconds, requested.end.seconds
-        if end > analysis.duration.seconds and not analysis.issues:
+        if end > duration and not analysis.issues:
             issues.append(
                 CutIssue("invalid_range", "A kept segment extends beyond the video.", "segments")
             )
         if exact:
-            # timeline times are player floats; the nearest frame edge keeps a plain split
-            # contiguous instead of dropping the frame at the split
-            start = math.floor(start / step + Fraction(1, 2)) * step
-            end = min(math.floor(end / step + Fraction(1, 2)) * step, analysis.duration.seconds)
+            start = _nearest(edges, start)
+            end = min(_nearest(edges, end), duration)
         left = bisect_left(keys, start)
         right = bisect_right(ends, end) - 1
         copyable = left < len(keys) and right >= 0 and keys[left] < ends[right]
@@ -221,81 +304,46 @@ def plan_cut(request: CutRequest, analysis: CutAnalysis, *, exact_encoder: bool 
         else:
             first, last = keys[left], ends[right]
             kind = "at_start" if start == first == 0 else "keyframe" if start == first else "moved"
-            moved = math.ceil((end - last) / step)
-        audio_source = audio_output = None
-        count = 0
-        if request.include_audio and packets:
-            permitted = [
-                p
-                for p in packets
-                if p.start.seconds < last and p.start.seconds + p.duration.seconds > first
-            ]
-            count = round((elapsed + last - first) / quantum) - round(audio_elapsed / quantum)
-            if count <= 0 or count > len(permitted):
-                issues.append(
-                    CutIssue(
-                        "unsupported_stream",
-                        "This segment is too short to keep copied audio in sync. "
-                        "Widen it or turn Include audio off.",
-                        "include_audio",
-                    )
-                )
-                count = 0
-            else:
-                wanted = first + audio_elapsed - elapsed
-                nearest = min(
-                    range(len(permitted)), key=lambda i: abs(permitted[i].start.seconds - wanted)
-                )
-                nearest = min(nearest, len(permitted) - count)
-                chosen = permitted[nearest : nearest + count]
-                source_end = chosen[-1].start.seconds + chosen[-1].duration.seconds
-                duration = sum((p.duration.seconds for p in chosen), Fraction(0))
-                if abs(audio_elapsed + duration - (elapsed + last - first)) > quantum:
-                    issues.append(
-                        CutIssue(
-                            "unsupported_stream",
-                            "The copied audio would not stay in sync. Turn Include audio off.",
-                            "include_audio",
-                        )
-                    )
-                    count = 0
-                else:
-                    audio_source = CutRange(chosen[0].start, MediaTime.from_seconds(source_end))
-                    audio_output = CutRange(
-                        MediaTime.from_seconds(audio_elapsed),
-                        MediaTime.from_seconds(audio_elapsed + duration),
-                    )
-                    audio_elapsed += duration
+            # frames that start between the copyable end and the requested end are left out
+            moved = bisect_left(frames, end) - bisect_left(frames, last)
+        kept.append(len(segments))
+        ranges.append((first, last))
         segments.append(
             CutSegment(
                 requested,
                 CutRange(MediaTime.from_seconds(first), MediaTime.from_seconds(last)),
                 kind,
                 moved,
-                audio_source,
-                audio_output,
-                count,
-                copied,
+                copied=copied,
             )
         )
         elapsed += last - first
-    duration = analysis.duration.seconds
+    tracks, track_issues, notes = plan_tracks(analysis, ranges, request.include_audio)
+    issues.extend(track_issues)
+    audio = next((t for t in tracks if t.kind == "audio" and t.keep), None)
+    if audio is not None:
+        packets = next(t for t in analysis.tracks if t.index == audio.index).packets
+        for number, piece in zip(kept, audio.segments, strict=True):
+            segments[number] = _audio_fields(segments[number], packets, piece)
     estimate = round(analysis.identity.size * elapsed / duration) if duration else 0
+    chapters = _chapters(analysis, ranges)
     fingerprint_data = {
         "request": asdict(request),
         "identity": asdict(analysis.identity),
         "segments": [asdict(s) for s in segments],
+        "tracks": [asdict(t) for t in tracks],
+        "chapters": [asdict(c) for c in chapters],
         "version": analysis.version,
-        "planner": 2,
+        "planner": 3,
     }
     fingerprint = sha256(
-        json.dumps(fingerprint_data, sort_keys=True, separators=(",", ":")).encode()
+        json.dumps(fingerprint_data, sort_keys=True, separators=(",", ":"), default=str).encode()
     ).hexdigest()
     return CutPlan(
         analysis.identity,
         tuple(segments),
         request.precision,
-        request.include_audio,
+        request.include_audio and audio is not None,
         str(Path(request.output_dir) / request.output_name),
         MediaTime.from_seconds(elapsed),
         estimate,
@@ -303,5 +351,9 @@ def plan_cut(request: CutRequest, analysis: CutAnalysis, *, exact_encoder: bool 
         not exact_reason,
         exact_reason,
         fingerprint,
+        suffix.lstrip(".") or "mp4",
         request=request,
+        tracks=tracks,
+        chapters=chapters,
+        unverified=(*analysis.unverified, *notes),
     )

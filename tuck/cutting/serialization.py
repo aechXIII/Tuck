@@ -29,6 +29,19 @@ def cut_plan_preview_dict(plan: CutPlan) -> dict[str, JsonValue]:
         "issues": [issue_dict(i) for i in plan.issues],
         "exact_available": plan.exact_available,
         "exact_reason": plan.exact_reason,
+        # exports that go ahead although some checks cannot be made for this file
+        "unverified": [issue_dict(i) for i in plan.unverified],
+        "tracks": [
+            {
+                "index": t.index,
+                "kind": t.kind,
+                "codec": t.codec,
+                "keep": t.keep,
+                "reason": t.reason,
+            }
+            for t in plan.tracks
+        ],
+        "chapter_count": len(plan.chapters),
         "source_identity": {
             "path": plan.identity.path,
             "size": plan.identity.size,
@@ -66,7 +79,7 @@ def analysis_snapshot_dict(snapshot: AnalysisSnapshot) -> dict[str, JsonValue]:
         result["analysis"] = {
             "duration": analysis.duration.to_dict(),
             "frame_duration": analysis.frame_duration.to_dict(),
-            # whether the video itself supports Exact; the plan also checks for the encoder
+            # whether this video can use Exact, including an encoder for its codec
             "exact_available": not exact_media_reason(analysis),
             "exact_reason": exact_media_reason(analysis),
             "issues": [issue_dict(i) for i in analysis.issues],

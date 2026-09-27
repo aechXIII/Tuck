@@ -38,12 +38,26 @@ def test_scan_preserves_rational_safe_endpoints_and_stream_inventory(media_tools
     assert exact_media_reason(result) == ""
 
 
-@pytest.mark.parametrize("variant", ["open_gop", "vfr", "hdr", "multiple_audio", "subtitle"])
-def test_unsupported_media_has_an_explicit_issue(media_tools, tmp_path, variant):
+@pytest.mark.parametrize(
+    ("variant", "note"),
+    [
+        ("open_gop", "unverified_start"),
+        ("vfr", None),
+        ("hdr", None),
+        ("multiple_audio", None),
+        ("subtitle", None),
+    ],
+)
+def test_wider_media_can_be_cut_and_says_what_is_not_checked(media_tools, tmp_path, variant, note):
     source = create_source(media_tools, tmp_path / "source.mp4", variant=variant)
     result = analyzer()(source, Event(), lambda _: None, ffprobe=media_tools.ffprobe)
-    assert result.issues
-    assert result.issues[0].code in {"unsupported_stream", "unsupported_codec"}
+    assert result.issues == ()
+    assert [n.code for n in result.unverified] == ([note] if note else [])
+    kinds = [track.kind for track in result.tracks]
+    if variant == "multiple_audio":
+        assert kinds == ["audio", "audio"]
+    if variant == "subtitle":
+        assert "subtitle" in kinds
 
 
 def test_scan_cancels_and_stops_reporting_progress(media_tools, tmp_path):
@@ -241,8 +255,9 @@ def test_rotation_metadata_is_inventoried_and_not_silently_ignored(media_tools, 
         ]
     )
     result = analyzer()(rotated, Event(), lambda _: None, ffprobe=media_tools.ffprobe)
+    # rotation is kept by copying, so it is recorded rather than refused
     assert dict(result.streams[0].properties)["rotation"] == "90"
-    assert any(issue.code == "unsupported_stream" for issue in result.issues)
+    assert result.issues == ()
 
 
 def test_truncated_file_is_a_real_error(media_tools, tmp_path):
@@ -376,7 +391,7 @@ def test_cache_never_uses_identity_from_before_a_replacement(media_tools, tmp_pa
         service.close()
 
 
-def test_irregular_aac_timing_cannot_produce_a_copyable_analysis(media_tools, tmp_path):
+def test_irregular_aac_timing_is_marked_as_not_checked(media_tools, tmp_path):
     source = create_source(media_tools, tmp_path / "source.mp4", duration=6)
     irregular = tmp_path / "irregular.mp4"
     media_tools.run(
@@ -396,15 +411,11 @@ def test_irregular_aac_timing_cannot_produce_a_copyable_analysis(media_tools, tm
         ]
     )
     result = analyzer()(irregular, Event(), lambda _: None, ffprobe=media_tools.ffprobe)
-    assert any(
-        issue.code == "unsupported_stream" and "audio" in issue.message.lower()
-        for issue in result.issues
-    )
+    assert result.issues == ()
+    assert any(note.code == "unverified_audio" for note in result.unverified)
 
 
-def test_faststart_video_truncated_at_packet_boundary_is_not_a_shorter_source(
-    media_tools, tmp_path
-):
+def test_faststart_video_truncated_at_packet_boundary_is_marked_incomplete(media_tools, tmp_path):
     import av
 
     source = create_source(
@@ -431,7 +442,9 @@ def test_faststart_video_truncated_at_packet_boundary_is_not_a_shorter_source(
         boundary = packet.pos + packet.size
     faststart.write_bytes(faststart.read_bytes()[:boundary])
     result = analyzer()(faststart, Event(), lambda _: None, ffprobe=media_tools.ffprobe)
-    assert any("complete" in issue.message.lower() for issue in result.issues)
+    # the frames that exist can be cut, but the file is not taken for a shorter complete video
+    assert result.duration.seconds == 3
+    assert any(note.code == "unverified_end" for note in result.unverified)
 
 
 def test_metadata_limit_stops_a_running_probe(monkeypatch):

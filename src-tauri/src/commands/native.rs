@@ -17,7 +17,9 @@ pub fn platform_capabilities() -> PlatformCapabilities {
     current_capabilities()
 }
 
-const VIDEO_EXTENSIONS: &[&str] = &["mp4", "mkv", "mov", "avi", "webm", "wmv", "m4v", "flv"];
+const VIDEO_EXTENSIONS: &[&str] = &[
+    "mp4", "mkv", "mov", "avi", "webm", "wmv", "m4v", "flv", "ts", "m2ts", "mts", "3gp", "ogv",
+];
 const AUDIO_EXTENSIONS: &[&str] = &["mp3", "flac", "wav", "aac", "ogg", "wma", "m4a", "opus"];
 
 fn paths_to_strings(paths: Vec<tauri_plugin_dialog::FilePath>) -> Vec<String> {

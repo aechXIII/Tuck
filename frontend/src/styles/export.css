@@ -622,6 +622,14 @@ label.export-toggle {
 .cut-footnote b { color: var(--text); font-weight: 600; }
 .out-name { font: 600 11.5px var(--font); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .out-meta { margin-top: 3px; font: 400 10px/1.4 var(--mono); color: var(--dim); }
+#out-tracks { margin-top: 5px; font: 400 10.5px/1.45 var(--font); color: var(--muted); }
+/* export still goes ahead, so this reads as information rather than a warning */
+.cut-unchecked { margin-top: 10px; padding: 8px 10px 8px; border: 1px dashed var(--border2); border-radius: var(--r-surf); }
+.cut-unchecked h4 { display: flex; align-items: center; gap: 6px; margin: 0 0 3px; font: 600 11px var(--font); color: var(--text); }
+.cut-unchecked h4::before { content: ""; width: 6px; height: 6px; border: 1px solid var(--warn); border-radius: 50%; }
+.cut-unchecked ul { margin: 0; padding: 0; list-style: none; }
+.cut-unchecked li { font: 400 10.5px/1.45 var(--font); color: var(--muted); }
+.cut-unchecked li + li { margin-top: 3px; }
 .out-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; }
 .out-row .toggle-row { margin: 0; }
 .out-row .out-meta { margin: 0; white-space: nowrap; }

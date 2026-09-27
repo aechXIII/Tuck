@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Lossless cut: remove parts of a video without re-encoding. Cuts keep the source's file type,
+  audio tracks, subtitles and chapters
+- Exact cuts (Beta) that re-encode only the frames next to each cut, for H.264, HEVC, AV1, VP9
+  and VP8 video
+- Keyframes on the timeline, with `[` and `]` to jump between them
+
 ## [0.5.2] - 2026-09-19
 
 ### Added

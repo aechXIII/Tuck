@@ -133,3 +133,9 @@ test("cut finalization has no percentage, speed or ETA", () => {
   }
   assert.equal(formatQueueStatus({state: "running", progress: 50, status_text: "Copying", progress_info: {indeterminate: false}}), "Copying · 50%");
 });
+
+test("finished cuts that could not be fully checked stay marked", () => {
+  assert.equal(formatQueueStatus({state: "completed", status_text: "Completed", unverified: ["Starts not confirmed."]}), "Completed · Not checked");
+  assert.equal(formatQueueStatus({state: "completed", status_text: "Completed", unverified: []}), "Completed");
+  assert.equal(formatQueueStatus({state: "running", status_text: "Copying", unverified: ["x"], progress_info: {indeterminate: true}}), "Copying");
+});

@@ -634,11 +634,17 @@
                 <div class="inspector-label-row"><div class="grt">Output</div></div>
                 <div class="out-name" id="out-name"></div>
                 <div class="out-meta" id="out-meta"></div>
+                <div class="out-meta" id="out-tracks" hidden></div>
                 <div class="out-row">
                   <label class="toggle-row export-toggle" for="cut-audio"><input type="checkbox" role="switch" id="cut-audio" checked><span class="toggle-track" aria-hidden="true"></span><span>Include audio</span></label>
                   <span class="out-meta" id="cut-audio-meta"></span>
                 </div>
                 <p class="setting-note" id="cut-audio-note">Audio is copied at packet boundaries; a cut may include up to one packet outside the kept range.</p>
+                <p class="setting-note" id="cut-dropped" hidden></p>
+                <div class="cut-unchecked" id="cut-unchecked" hidden>
+                  <h4>Not checked</h4>
+                  <ul id="cut-unchecked-list"></ul>
+                </div>
               </div>
             </div>
             <div id="insp-compress">

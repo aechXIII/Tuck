@@ -9,7 +9,8 @@ from media.cut_fixtures import create_source, find_tools
 
 from tuck.cutting import exact
 from tuck.cutting.analysis import CutAnalysisError, analyze_source
-from tuck.cutting.exact import DecoderConfig, exact_media_reason, exact_regions
+from tuck.cutting.bitstream import AvcConfig, BitstreamError
+from tuck.cutting.exact import exact_media_reason, exact_regions
 from tuck.cutting.planner import parse_cut_request, plan_cut
 from tuck.models.cutting import MediaTime
 from tuck.models.progress import EncodeStage
@@ -20,8 +21,8 @@ def tools():
     value = find_tools()
     if value is None:
         pytest.skip("FFmpeg and ffprobe are required")
-    if not exact.exact_encoder_available():
-        pytest.skip("FFmpeg with libx264 is required")
+    if not exact.encoder_supports("libx264", "yuv420p"):
+        pytest.skip("libx264 is required")
     return value
 
 
@@ -59,7 +60,7 @@ def make_plan(source, ranges, output, *, audio=True, rate=Fraction(30), precisio
             "output_name": output.name,
         }
     )
-    return analysis, plan_cut(request, analysis, exact_encoder=True)
+    return analysis, plan_cut(request, analysis)
 
 
 def decoded(path):
@@ -134,7 +135,7 @@ def test_exact_cuts_keep_exactly_the_requested_frames(
     assert_frames(source, output, ranges, encoded)
     assert sorted(path.name for path in tmp_path.iterdir()) == ["cut.mp4"]
     with av.open(str(output)) as container:
-        config = DecoderConfig.parse(container.streams.video[0].codec_context.extradata)
+        config = AvcConfig.parse(container.streams.video[0].codec_context.extradata)
         parameter_sets = 2 if encoded else 1
         assert len(config.sps) == parameter_sets and len(config.pps) == parameter_sets
         audio = container.streams.audio[0]
@@ -176,7 +177,7 @@ def test_exact_edges_round_to_the_nearest_frame_and_splits_stay_contiguous(tools
             ],
         }
     )
-    plan = plan_cut(request, analysis, exact_encoder=True)
+    plan = plan_cut(request, analysis)
     first, second, short = plan.segments
     assert first.resolved.start.seconds == 0
     assert (
@@ -188,20 +189,25 @@ def test_exact_edges_round_to_the_nearest_frame_and_splits_stay_contiguous(tools
     assert [issue.code for issue in plan.issues] == ["segment_collapsed"]
 
 
-def test_exact_is_unavailable_without_the_encoder_or_for_unsupported_video(source, tmp_path):
+def test_exact_is_unavailable_without_the_encoder_or_for_unsupported_video(
+    source, tmp_path, monkeypatch
+):
     analysis, plan = make_plan(source, [(45, 150)], tmp_path / "cut.mp4")
     request = plan.request
     assert request is not None
-    blocked = plan_cut(request, analysis, exact_encoder=False)
+    monkeypatch.setattr(exact, "encoder_supports", lambda *_: False)
+    blocked = plan_cut(request, analysis)
     assert not blocked.exact_available
-    assert blocked.exact_reason == "Exact needs FFmpeg with the libx264 encoder."
+    assert blocked.exact_reason == "This build cannot re-encode H.264 video in this colour format."
     assert [issue.code for issue in blocked.issues] == ["exact_unavailable"]
-    keyframes = plan_cut(replace(request, precision="keyframes"), analysis, exact_encoder=False)
+    keyframes = plan_cut(replace(request, precision="keyframes"), analysis)
     assert keyframes.issues == ()
+    monkeypatch.undo()
     video = next(s for s in analysis.streams if s.kind == "video")
     for key, value, reason in [
-        ("profile", "High 4:4:4 Predictive", "Exact needs H.264 Baseline, Main or High video."),
+        ("profile", "Extended", "Exact does not support this H.264 profile."),
         ("width", "161", "Exact needs video with even width and height."),
+        ("field_order", "tt", "Exact needs progressive video."),
     ]:
         properties = tuple((k, value if k == key else v) for k, v in video.properties)
         changed = replace(
@@ -244,16 +250,15 @@ def test_cancelling_while_encoding_edges_leaves_no_output(tools, source, tmp_pat
     assert list(tmp_path.iterdir()) == []
 
 
-def test_an_encoder_failure_reports_ffmpeg_detail(tools, source, tmp_path, monkeypatch):
+def test_an_encoder_failure_reports_the_encoder_detail(tools, source, tmp_path, monkeypatch):
     output = tmp_path / "cut.mp4"
     _, plan = make_plan(source, [(45, 150)], output)
-    arguments = exact._encoder_arguments
+    options = exact._encoder_options
 
     def broken(*args, **kwargs):
-        values = arguments(*args, **kwargs)
-        return [*values[:-1], "-profile:v", "not-a-profile", values[-1]]
+        return {**options(*args, **kwargs), "profile": "not-a-profile"}
 
-    monkeypatch.setattr(exact, "_encoder_arguments", broken)
+    monkeypatch.setattr(exact, "_encoder_options", broken)
     with pytest.raises(CutAnalysisError) as error:
         CutRunner().run(plan)
     assert error.value.code == "cut_failed"
@@ -284,20 +289,18 @@ def test_decoder_configuration_round_trips_and_merges():
     pps = bytes([0x68, 0xEB, 0xE3, 0xCB])
     edge_sps = bytes([0x67, 0x64, 0x00, 0x1F, 0x4C, 0xA5])  # sps id ue(1) = 010
     edge_pps = bytes([0x68, 0x5B, 0x0F])  # pps 1, sps 1
-    config = DecoderConfig(b"\x64\x00\x1f", 4, (sps,), (pps,), b"\xfd\xf8\xf8\x00")
-    raw = config.merged(DecoderConfig(b"", 4, (), (), b""))
-    parsed = DecoderConfig.parse(raw)
+    config = AvcConfig(b"\x64\x00\x1f", 4, (sps,), (pps,), b"\xfd\xf8\xf8\x00")
+    raw = config.merged(AvcConfig(b"", 4, (), (), b""))
+    parsed = AvcConfig.parse(raw)
     assert parsed == config
     assert parsed.sps_ids() == {0} and parsed.pps_ids() == {0}
-    merged = DecoderConfig.parse(
-        config.merged(DecoderConfig(b"", 4, (edge_sps,), (edge_pps,), b""))
-    )
+    merged = AvcConfig.parse(config.merged(AvcConfig(b"", 4, (edge_sps,), (edge_pps,), b"")))
     assert merged.sps == (sps, edge_sps) and merged.pps == (pps, edge_pps)
     assert merged.sps_ids() == {0, 1} and merged.pps_ids() == {0, 1}
     assert merged.extension == config.extension
     for broken in [b"", b"\x02" + raw[1:], raw[:-8]]:
-        with pytest.raises(CutAnalysisError):
-            DecoderConfig.parse(broken)
+        with pytest.raises(BitstreamError):
+            AvcConfig.parse(broken)
 
 
 def test_repeated_source_frames_pass_verification(tools, tmp_path):

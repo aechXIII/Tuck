@@ -122,8 +122,11 @@ def test_untrusted_cut_payloads_are_rejected(analyzed, overrides):
         parse_cut_request(request_for(analyzed, **overrides))
 
 
-def test_collapsed_and_unavailable_exact_plans_explain_the_block(analyzed):
+def test_collapsed_and_unavailable_exact_plans_explain_the_block(analyzed, monkeypatch):
+    from tuck.cutting import exact
     from tuck.cutting.planner import parse_cut_request, plan_cut
+
+    monkeypatch.setattr(exact, "encoder_supports", lambda *_: False)
 
     raw = request_for(
         analyzed, segments=[{"start": moment(Fraction(21, 10)), "end": moment(Fraction(39, 10))}]
@@ -154,9 +157,16 @@ def test_audio_plan_refuses_unqualified_packet_durations(analyzed):
 
     from tuck.cutting.planner import parse_cut_request, plan_cut
 
-    packets = list(analyzed.audio_packets)
+    audio = next(track for track in analyzed.tracks if track.kind == "audio")
+    packets = list(audio.packets)
     packets[100] = replace(packets[100], duration=MediaTime.from_seconds(Fraction(383, 375)))
-    irregular = replace(analyzed, audio_packets=tuple(packets))
+    irregular = replace(
+        analyzed,
+        tracks=tuple(
+            replace(track, packets=tuple(packets)) if track is audio else track
+            for track in analyzed.tracks
+        ),
+    )
     result = plan_cut(
         parse_cut_request(
             request_for(irregular, segments=[{"start": moment(0), "end": moment(6)}])

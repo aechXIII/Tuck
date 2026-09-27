@@ -16,6 +16,16 @@ class TestVideoPathExtraction:
         assert accepted == [str(first.resolve()), str(second.resolve())]
         assert rejected == []
 
+    def test_accepts_the_containers_lossless_cut_keeps(self, tmp_path) -> None:
+        videos = [tmp_path / f"clip.{ext}" for ext in ("ts", "M2TS", "mts", "3gp", "ogv")]
+        for video in videos:
+            video.write_text("a")
+
+        accepted, rejected = validate_video_paths([str(video) for video in videos])
+
+        assert accepted == [str(video.resolve()) for video in videos]
+        assert rejected == []
+
     def test_rejects_non_video_missing_files_and_directories(self, tmp_path) -> None:
         video = tmp_path / "clip.mp4"
         text = tmp_path / "notes.txt"

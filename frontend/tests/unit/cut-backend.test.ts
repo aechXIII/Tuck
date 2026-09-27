@@ -40,7 +40,7 @@ test("typed cut previews retain ticks above JavaScript's integer precision", asy
   const plan: CutPlanPreview = {
     operation:"cut",precision:"keyframes",container:"mp4",include_audio:false,
     output_path:"clip_cut.mp4",exported_duration:end,estimated_bytes:1000,
-    fingerprint:"a".repeat(64),issues:[],exact_available:false,exact_reason:"Not available in this build.",
+    fingerprint:"a".repeat(64),issues:[],exact_available:false,exact_reason:"Not available in this build.",unverified:[],tracks:[],chapter_count:0,
     source_identity:{path:"clip.mp4",size:1000,mtime_ns:"1234567890123456789",signature:"b".repeat(64)},
     segments:[{requested:{start:zero,end},resolved:{start:zero,end},start_kind:"at_start",end_frames_moved:0,audio_source:null,audio_output:null,audio_packet_count:0,copied:null}],
   };
@@ -49,6 +49,25 @@ test("typed cut previews retain ticks above JavaScript's integer precision", asy
   assert.ok(result.ok);
   assert.equal(result.value.data.segments[0]?.requested.end.ticks,end.ticks);
   assert.equal(result.value._request_id,4);
+});
+test("cut previews keep the source container and carry unchecked notes and tracks", async () => {
+  const plan = {
+    operation:"cut",precision:"keyframes",container:"mkv",include_audio:true,
+    output_path:"clip_cut.mkv",exported_duration:zero,estimated_bytes:1,
+    fingerprint:"a".repeat(64),issues:[],exact_available:false,exact_reason:"",
+    unverified:[{code:"unverified_start",message:"Starts not confirmed.",field:null}],
+    tracks:[{index:1,kind:"subtitle",codec:"ass",keep:true,reason:""},{index:2,kind:"data",codec:"bin_data",keep:false,reason:"Not kept."}],
+    chapter_count:2,
+    source_identity:{path:"clip.mkv",size:1,mtime_ns:"1",signature:"b".repeat(64)},
+    segments:[],
+  };
+  const request = {operation:"cut" as const,source:"clip.mkv",segments:[]};
+  const result = await createTauriBackendClient(async () => ({data:plan})).createPlan(request);
+  assert.ok(result.ok);
+  assert.deepEqual(result.value,{data:plan});
+  for (const broken of [{container:"MP4 "},{tracks:[{index:1,kind:"audio"}]},{unverified:null},{chapter_count:-1}]) {
+    assert.equal((await createTauriBackendClient(async () => ({data:{...plan,...broken}})).createPlan(request)).ok,false);
+  }
 });
 test("cut enqueue validates success and preserves stale-plan error details", async () => {
   const request: CutEnqueueRequest = {operation: "cut", source: "clip.mp4", segments: [{start: zero, end: zero}], plan_fingerprint: "a".repeat(64)};
