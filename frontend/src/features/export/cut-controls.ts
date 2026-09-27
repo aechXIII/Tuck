@@ -142,7 +142,8 @@ export function installCutControls(deps: CutControlsDeps) {
           throw new Error(analysis.issue?.message ?? "Keyframes could not be read. Read them again to retry.");
         }
         scanning = {clip,workId:analysis.work_id};
-        await new Promise(resolve => setTimeout(resolve,500));
+        // a status read is cheap, and a short video is often read in well under a second
+        await new Promise(resolve => setTimeout(resolve,150));
         if (!current()) return null;
         result = await client().getCutAnalysis(clip.path);
       }

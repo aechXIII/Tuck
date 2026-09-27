@@ -27,7 +27,8 @@ from .analysis import (
 )
 from .planner import CutPlanChanged, plan_cut
 
-Scanner = Callable[[Path, Event, ProgressCallback], CutAnalysis]
+# the scanner is given the hash just taken, so the bytes are not hashed twice before the scan
+Scanner = Callable[[Path, Event, ProgressCallback, SourceIdentity], CutAnalysis]
 logger = logging.getLogger(__name__)
 
 
@@ -191,7 +192,7 @@ class CutAnalysisService:
                 key = (source_identity(work.path, work.cancel), self._version())
                 result = self._cache.get(key)
                 if result is None:
-                    result = self._scanner(work.path, work.cancel, progress)
+                    result = self._scanner(work.path, work.cancel, progress, key[0])
                 if result.identity != key[0]:
                     raise CutAnalysisError(
                         "source_changed", "The video changed. Read its keyframes again."

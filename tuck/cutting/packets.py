@@ -62,7 +62,7 @@ def prepare_cut(
     # the identity check above hashed every byte, so an analysis of the same bytes still holds
     analysis = plan.analysis if reuse_analysis else None
     if analysis is None or analysis.identity != plan.identity:
-        analysis = analyze_source(source, cancel, lambda _: None, ffprobe=ffprobe)
+        analysis = analyze_source(source, cancel, lambda _: None, plan.identity, ffprobe=ffprobe)
     if analysis.identity != plan.identity:
         raise CutAnalysisError("source_changed", "The video changed. Read its keyframes again.")
     if analysis.issues:

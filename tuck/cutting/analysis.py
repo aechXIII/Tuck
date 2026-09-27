@@ -10,6 +10,7 @@ import subprocess
 import tempfile
 import time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from fractions import Fraction
 from pathlib import Path
 from threading import Event
@@ -250,23 +251,52 @@ def analyze_source(
     path: Path,
     cancel: Event,
     on_progress: ProgressCallback,
+    identity: SourceIdentity | None = None,
     *,
     ffprobe: str | None = None,
     max_packets: int = MAX_PACKETS,
 ) -> CutAnalysis:
+    """Read the keyframes and packet timing of `path`.
+
+    `identity` is a hash the caller has just taken of these bytes, so it is not taken twice.
+    The bytes are hashed again after the scan: an edit that keeps the size and time and is
+    later undone must not leave keyframes from other bytes paired with this hash.
+    """
     check_cancel(cancel)
-    identity = source_identity(path, cancel)
     binary = ffprobe or find_ffprobe()
     if not binary:
         raise CutAnalysisError("analysis_failed", "FFprobe is not available.")
     version = analysis_version(binary)
-    streams, issues = read_inventory(Path(identity.path), cancel, binary)
+    with ThreadPoolExecutor(1, thread_name_prefix="tuck-cut-inventory") as pool:
+        # ffprobe runs as its own process, so the track list is read while the packets are
+        inventory = pool.submit(read_inventory, path.resolve(strict=True), cancel, binary)
+        try:
+            if identity is None:
+                identity = source_identity(path, cancel)
+            scanned = _scan(identity, cancel, on_progress, max_packets)
+            if source_identity(Path(identity.path), cancel) != identity:
+                raise CutAnalysisError(
+                    "source_changed", "The video changed. Read its keyframes again."
+                )
+        except Exception:
+            # a file ffprobe cannot describe reports that, as it did before the scan ran alongside
+            inventory.result()
+            raise
+        streams, issues = inventory.result()
     zero = MediaTime(0)
     if issues:
         return CutAnalysis(identity, streams, zero, zero, zero, (), (), (), zero, issues, version)
-    on_progress(AnalysisProgress(None, zero))
+    timeline, unverified, issues = scanned
+    return _analysis(identity, streams, version, timeline, unverified, issues, on_progress)
+
+
+def _scan(
+    identity: SourceIdentity, cancel: Event, on_progress: ProgressCallback, max_packets: int
+) -> tuple[MediaTimeline | None, tuple[CutIssue, ...], tuple[CutIssue, ...]]:
+    on_progress(AnalysisProgress(None, MediaTime(0)))
     timeline: MediaTimeline | None = None
     unverified: tuple[CutIssue, ...] = ()
+    issues: tuple[CutIssue, ...] = ()
 
     def progress(keys: tuple[Fraction, ...], reached: Fraction) -> None:
         declared = timeline_duration[0]
@@ -292,8 +322,19 @@ def analyze_source(
         issues = (CutIssue(exc.code, str(exc)),)
     except FFmpegError as exc:
         raise CutAnalysisError("analysis_failed", "The video packets could not be read.") from exc
-    if source_identity(Path(identity.path), cancel) != identity:
-        raise CutAnalysisError("source_changed", "The video changed. Read its keyframes again.")
+    return timeline, unverified, issues
+
+
+def _analysis(
+    identity: SourceIdentity,
+    streams: tuple[StreamDescriptor, ...],
+    version: str,
+    timeline: MediaTimeline | None,
+    unverified: tuple[CutIssue, ...],
+    issues: tuple[CutIssue, ...],
+    on_progress: ProgressCallback,
+) -> CutAnalysis:
+    zero = MediaTime(0)
     if timeline is None or issues:
         video = timeline.video if timeline else None
         return CutAnalysis(

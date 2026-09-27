@@ -127,7 +127,7 @@ def test_async_service_replaces_work_and_ignores_late_progress(tmp_path):
     path = tmp_path / "source.mp4"
     path.write_bytes(b"fixture")
 
-    def scan(source, cancel, progress):
+    def scan(source, cancel, progress, identity):
         entered.set()
         assert release.wait(5)
         progress(AnalysisProgress(0.8, MediaTime(8)))
@@ -173,9 +173,9 @@ def test_analysis_cache_checks_content_and_tool_version(media_tools, tmp_path):
     calls = []
     version = ["one"]
 
-    def scan(source, cancel, progress):
+    def scan(source, cancel, progress, identity):
         calls.append(source)
-        return analyzer()(source, cancel, progress, ffprobe=media_tools.ffprobe)
+        return analyzer()(source, cancel, progress, identity, ffprobe=media_tools.ffprobe)
 
     service = CutAnalysisService(scanner=scan, version=lambda: version[0])
 
@@ -219,9 +219,9 @@ def test_progress_from_an_old_scan_cannot_update_a_new_job(media_tools, tmp_path
     path = create_source(media_tools, tmp_path / "source.mp4")
     callbacks = []
 
-    def scan(source, cancel, progress):
+    def scan(source, cancel, progress, identity):
         callbacks.append(progress)
-        return analyzer()(source, cancel, progress, ffprobe=media_tools.ffprobe)
+        return analyzer()(source, cancel, progress, identity, ffprobe=media_tools.ffprobe)
 
     service = CutAnalysisService(scanner=scan)
     try:
@@ -269,6 +269,39 @@ def test_truncated_file_is_a_real_error(media_tools, tmp_path):
         analyzer()(source, Event(), lambda _: None, ffprobe=media_tools.ffprobe)
 
 
+def test_reading_keyframes_hashes_the_video_before_and_after_the_scan_only(
+    media_tools, tmp_path, monkeypatch
+):
+    from tuck.cutting import analysis, service
+    from tuck.cutting.service import CutAnalysisService
+
+    path = create_source(media_tools, tmp_path / "source.mp4")
+    hashes = []
+    identity = analysis.source_identity
+
+    def counted(source, cancel):
+        hashes.append(source)
+        return identity(source, cancel)
+
+    monkeypatch.setattr(analysis, "source_identity", counted)
+    monkeypatch.setattr(service, "source_identity", counted)
+
+    def scan(source, cancel, progress, known):
+        return analysis.analyze_source(source, cancel, progress, known, ffprobe=media_tools.ffprobe)
+
+    cut_service = CutAnalysisService(scanner=scan)
+    try:
+        cut_service.start(path, "only")
+        with cut_service._condition:
+            assert cut_service._condition.wait_for(
+                lambda: cut_service.get(path).status in {"ready", "failed"}, timeout=10
+            )
+        assert cut_service.get(path).status == "ready"
+        assert len(hashes) == 2
+    finally:
+        cut_service.close()
+
+
 def test_new_request_cancels_running_work_before_the_next_scan(media_tools, tmp_path):
     from tuck.cutting.analysis import check_cancel
     from tuck.cutting.service import CutAnalysisService
@@ -277,13 +310,13 @@ def test_new_request_cancels_running_work_before_the_next_scan(media_tools, tmp_
     entered, release = Event(), Event()
     calls = []
 
-    def scan(source, cancel, progress):
+    def scan(source, cancel, progress, identity):
         calls.append(cancel)
         if len(calls) == 1:
             entered.set()
             assert release.wait(5)
             check_cancel(cancel)
-        return analyzer()(source, cancel, progress, ffprobe=media_tools.ffprobe)
+        return analyzer()(source, cancel, progress, identity, ffprobe=media_tools.ffprobe)
 
     service = CutAnalysisService(scanner=scan)
     try:
@@ -360,12 +393,12 @@ def test_cache_never_uses_identity_from_before_a_replacement(media_tools, tmp_pa
     original_identity = source_identity(path, Event())
     calls = []
 
-    def scan(source, cancel, progress):
+    def scan(source, cancel, progress, identity):
         calls.append(source)
         if len(calls) == 1:
             source.write_bytes(original[:-4] + b"skip")
             os.utime(source, ns=(original_identity.mtime_ns, original_identity.mtime_ns))
-        return analyzer()(source, cancel, progress, ffprobe=media_tools.ffprobe)
+        return analyzer()(source, cancel, progress, identity, ffprobe=media_tools.ffprobe)
 
     service = CutAnalysisService(scanner=scan)
 
