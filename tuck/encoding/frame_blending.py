@@ -6,15 +6,17 @@ import time
 from collections import deque
 from collections.abc import Callable, Generator, Iterator
 from concurrent.futures import Future, ThreadPoolExecutor
+from dataclasses import dataclass
 from fractions import Fraction
 from pathlib import Path
 
 import av
 import numpy as np
+from av.error import FFmpegError
 from av.video.stream import VideoStream
 from numpy.typing import NDArray
 
-from ..models import EncodePlan, VideoInfo
+from ..models import EncodePlan, Segment, VideoInfo
 from ..models.frame_blending import FrameBlending, interval_weight, vegas_weights
 
 PixelArray = NDArray[np.uint8]
@@ -46,6 +48,10 @@ SUPPORTED_FORMATS = frozenset(
 )
 SUPPORTED_TRANSFERS = frozenset(
     {"bt709", "smpte170m", "iec61966-2-1", "linear", "gamma22", "gamma28"}
+)
+# planar YUV that tmix blends in place, as the source is decoded
+TMIX_FORMATS = frozenset(
+    {"yuv420p", "yuv422p", "yuv444p", "yuvj420p", "yuvj422p", "yuvj444p", "gray"}
 )
 
 
@@ -356,6 +362,173 @@ def blended_frames(
         pool.shutdown(wait=True, cancel_futures=True)
         if frames is not None:
             frames.close()
+
+
+@dataclass(frozen=True)
+class TmixPiece:
+    """One segment blended by FFmpeg's tmix filter instead of the frame-by-frame path."""
+
+    # trim points halfway between source frames, on FFmpeg's input clock
+    start: Fraction
+    end: Fraction
+    weights: tuple[Fraction, ...]  # oldest source frame first
+    # indices in the trimmed segment of the blended pictures kept, every `step` pictures
+    first: int
+    last: int
+    step: int
+    # output frames the blur window cannot fill at the cut edges repeat the nearest picture
+    lead: int
+    trail: int
+
+
+@dataclass(frozen=True)
+class TmixBlend:
+    rate: Fraction
+    pieces: tuple[TmixPiece, ...]
+
+
+def _frame_grid(
+    source: Path, segments: list[Segment], margin: Fraction
+) -> tuple[Fraction, Fraction] | None:
+    """(one frame time, frame step) when every frame near the segments sits on one even grid."""
+    times: set[Fraction] = set()
+    with av.open(str(source)) as container:
+        stream = container.streams.video[0]
+        if stream.time_base is None:
+            return None
+        base = Fraction(stream.time_base)
+        origin = Fraction(container.start_time or 0, 1_000_000)
+        for segment in segments:
+            first = Fraction(segment.start) - margin
+            last = Fraction(segment.end) + margin
+            container.seek(max(0, int((first + origin) / base)), stream=stream, backward=True)
+            for packet in container.demux(stream):
+                if packet.pts is None:
+                    if packet.size:
+                        return None
+                    continue
+                moment = packet.pts * base - origin
+                if first <= moment <= last:
+                    times.add(moment)
+                # decode order runs slightly behind display order; a second covers reordering
+                if packet.dts is not None and packet.dts * base - origin > last + 1:
+                    break
+    ordered = sorted(times)
+    if len(ordered) < 2:
+        return None
+    step = ordered[1] - ordered[0]
+    if step <= 0 or any((later - ordered[0]) % step for later in ordered[2:]):
+        return None
+    # a missing frame inside a segment breaks the even grid tmix relies on
+    for segment in segments:
+        inside = [t for t in ordered if Fraction(segment.start) <= t < Fraction(segment.end)]
+        if inside and (inside[-1] - inside[0]) / step + 1 != len(inside):
+            return None
+    return ordered[0], step
+
+
+def _output_indices(
+    segments: list[Segment], fps: Fraction, total: float
+) -> list[tuple[int, int, float]]:
+    """(first output frame, frame count, output start) per segment, as blended_frames assigns."""
+    count = max(1, math.ceil(total * fps - 1e-8))
+    ranges: list[list[int]] = [[] for _ in segments]
+    starts = [0.0] * len(segments)
+    segment_index = 0
+    output_start = 0.0
+    for index in range(count):
+        midpoint = min(float((Fraction(index) + Fraction(1, 2)) / fps), math.nextafter(total, 0))
+        while (
+            midpoint >= output_start + segments[segment_index].duration
+            and segment_index < len(segments) - 1
+        ):
+            output_start += segments[segment_index].duration
+            segment_index += 1
+            starts[segment_index] = output_start
+        ranges[segment_index].append(index)
+    return [(r[0] if r else 0, len(r), starts[i]) for i, r in enumerate(ranges)]
+
+
+def tmix_blend(plan: EncodePlan) -> TmixBlend | None:
+    """FFmpeg's tmix filter for blends it can reproduce, or None to blend frame by frame.
+
+    It covers equal weights on constant-rate video whose frame rate is a whole multiple of the
+    output rate, like 180 to 60 FPS. Pictures match the frame-by-frame path except where the
+    blur window reaches past a cut, which is only the first and last frames of each segment.
+    """
+    info = plan.source_info
+    settings = plan.frame_blending
+    if info is None or not settings.enabled:
+        return None
+    validate_blending_source(settings, info, plan.target_fps)
+    if (
+        settings.curve != "equal"
+        or settings.custom_weights
+        or settings.linear_light
+        or settings.amount <= 0
+        or info.pixel_format not in TMIX_FORMATS
+    ):
+        return None
+    segments = plan.effective_segments
+    if not segments:
+        return None
+    fps = Fraction(plan.target_fps).limit_denominator(100_000)
+    exposure = Fraction(settings.amount) / fps
+    try:
+        grid = _frame_grid(Path(plan.source), segments, exposure + 1 / fps)
+    except FFmpegError:
+        # the frame-by-frame path reads the file again and reports a real problem clearly
+        return None
+    if grid is None:
+        return None
+    reference, step = grid
+    ratio = 1 / (step * fps)
+    if ratio.denominator != 1:
+        return None
+    length = exposure / step  # blur window in source frames
+    pieces = []
+    for segment, (first_index, count, output_start) in zip(
+        segments, _output_indices(segments, fps, plan.effective_duration), strict=True
+    ):
+        if not count:
+            continue
+        start, end = Fraction(segment.start), Fraction(segment.end)
+        # the window of the segment's first output frame, in source frames from `reference`
+        center = start + (first_index + Fraction(1, 2)) / fps - Fraction(output_start)
+        opening = (center - exposure / 2 - reference) / step
+        oldest = math.floor(opening)
+        offset = opening - oldest
+        weights = []
+        position = 0
+        while position < offset + length:
+            weights.append(min(position + 1, offset + length) - max(position, offset))
+            position += 1
+        while weights and not weights[-1]:
+            weights.pop()
+        if not weights or len(weights) > MAX_WINDOW_FRAMES:
+            return None
+        head = math.ceil((start - reference) / step)
+        tail = math.ceil((end - reference) / step)
+        if tail <= head:
+            return None
+        # blended picture n of the trimmed segment ends at source frame head + n
+        wanted = [oldest + len(weights) - 1 - head + k * ratio.numerator for k in range(count)]
+        kept = [n for n in wanted if 0 <= n < tail - head]
+        if not kept:
+            return None
+        pieces.append(
+            TmixPiece(
+                reference + (head - Fraction(1, 2)) * step,
+                reference + (tail - Fraction(1, 2)) * step,
+                tuple(weights),
+                kept[0],
+                kept[-1],
+                ratio.numerator,
+                wanted.index(kept[0]),
+                count - 1 - wanted.index(kept[-1]),
+            )
+        )
+    return TmixBlend(fps, tuple(pieces)) if pieces else None
 
 
 def prepare_blended_video(

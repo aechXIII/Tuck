@@ -42,7 +42,7 @@ from .capabilities import (
 from .command import build_base_cmd
 
 # load native array libraries before sidecar workers block on Windows stdio
-from .frame_blending import prepare_blended_video
+from .frame_blending import TmixBlend, prepare_blended_video, tmix_blend
 from .progress import ProgressTracker
 from .target_size import DEFAULT_MAX_RETRIES, decide_retry, is_content_limited
 
@@ -110,6 +110,7 @@ class FFmpegEngine:
         self._last_stderr: str = ""
         self._resolved_encoder: str = ""
         self._prepared_video: Path | None = None
+        self._tmix: TmixBlend | None = None
         self._cut_runner = CutRunner()
 
     @property
@@ -241,7 +242,9 @@ class FFmpegEngine:
                 tmp_output = transaction.workspace / "result.mp4"
                 if self._cancel_event.is_set():
                     raise EncodeCancelled("Encoding cancelled by user")
-                if plan.frame_blending.enabled:
+                # FFmpeg blends simple cases itself; the rest are blended frame by frame first
+                self._tmix = tmix_blend(plan) if plan.frame_blending.enabled else None
+                if plan.frame_blending.enabled and self._tmix is None:
                     # the export workspace removes the blended video with everything else
                     self._prepared_video = transaction.workspace / "video.nut"
 
@@ -297,6 +300,7 @@ class FFmpegEngine:
             raise
         finally:
             self._prepared_video = None
+            self._tmix = None
 
     def _run_one_attempt(
         self,
@@ -547,7 +551,12 @@ class FFmpegEngine:
         try:
             pass1_cmd = [
                 *build_base_cmd(
-                    ffmpeg, plan, source, include_audio=False, prepared_video=self._prepared_video
+                    ffmpeg,
+                    plan,
+                    source,
+                    include_audio=False,
+                    prepared_video=self._prepared_video,
+                    blend=self._tmix,
                 ),
                 "-pass",
                 "1",
@@ -573,7 +582,9 @@ class FFmpegEngine:
                 raise EncodeCancelled("Encoding cancelled by user")
 
             pass2_cmd = [
-                *build_base_cmd(ffmpeg, plan, source, prepared_video=self._prepared_video),
+                *build_base_cmd(
+                    ffmpeg, plan, source, prepared_video=self._prepared_video, blend=self._tmix
+                ),
                 "-pass",
                 "2",
                 "-passlogfile",
@@ -612,7 +623,9 @@ class FFmpegEngine:
         max_retries: int | None = None,
     ) -> Path:
         cmd = [
-            *build_base_cmd(ffmpeg, plan, source, prepared_video=self._prepared_video),
+            *build_base_cmd(
+                ffmpeg, plan, source, prepared_video=self._prepared_video, blend=self._tmix
+            ),
             str(output),
         ]
 

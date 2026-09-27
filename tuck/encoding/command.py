@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 from fractions import Fraction
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from ..models import (
     RCM_CBR,
@@ -21,6 +22,9 @@ from ..models import (
 from ..models.encoding_policy import AMF_ENCODERS, CPU_ENCODERS, NVENC_ENCODERS
 from . import filters as _filters
 from .filters import build_plan_video_filters, join_video_filters
+
+if TYPE_CHECKING:
+    from .frame_blending import TmixBlend
 
 scaler_to_ffmpeg_flag = _filters.scaler_to_ffmpeg_flag
 
@@ -120,6 +124,46 @@ def nvenc_preset(preset: str) -> str:
     )
 
 
+def _tmix_time(seconds: Fraction) -> str:
+    # halfway between source frames, so millisecond rounding cannot move a frame
+    return f"{max(0.0, float(seconds)):.6f}"
+
+
+def _tmix_graph(blend: TmixBlend, video_filters: list[str]) -> list[str]:
+    """Blend each segment with tmix, keep one picture per output frame, then join."""
+    rate = blend.rate
+    parts: list[str] = []
+    labels: list[str] = []
+    for index, piece in enumerate(blend.pieces):
+        weights = " ".join(format(float(weight), ".9g") for weight in piece.weights)
+        chain = [
+            f"trim=start={_tmix_time(piece.start)}:end={_tmix_time(piece.end)}",
+            "setpts=PTS-STARTPTS",
+            f"tmix=frames={len(piece.weights)}:weights='{weights}'",
+            f"select='between(n\\,{piece.first}\\,{piece.last})"
+            f"*not(mod(n-{piece.first}\\,{piece.step}))'",
+        ]
+        if piece.lead or piece.trail:
+            chain.append(
+                f"tpad=start_mode=clone:start={piece.lead}:stop_mode=clone:stop={piece.trail}"
+            )
+        # number the kept pictures on the output grid; fps then gives each its length
+        chain += [
+            f"settb={rate.denominator}/{rate.numerator}",
+            "setpts=N",
+            f"fps={rate.numerator}/{rate.denominator}",
+        ]
+        parts.append(f"[0:v]{','.join(chain)}[blend{index}]")
+        labels.append(f"[blend{index}]")
+    joined = labels[0]
+    if len(labels) > 1:
+        parts.append("".join(labels) + f"concat=n={len(labels)}:v=1:a=0[blended]")
+        joined = "[blended]"
+    filters = join_video_filters(video_filters) if video_filters else "null"
+    parts.append(f"{joined}{filters}[vout]")
+    return parts
+
+
 def build_base_cmd(
     ffmpeg: str,
     plan: EncodePlan,
@@ -127,12 +171,15 @@ def build_base_cmd(
     *,
     include_audio: bool = True,
     prepared_video: Path | None = None,
+    blend: TmixBlend | None = None,
 ) -> list[str]:
     # explicit progress records are flushed independently of console status output
     cmd = [ffmpeg, "-hide_banner", "-loglevel", "info", "-nostats", "-progress", "pipe:2"]
 
     segments = plan.effective_segments
     single_segment = len(segments) == 1
+    # both blending paths put video on the output frame grid from the source clock
+    blending = prepared_video is not None or blend is not None
     trim_start = float(segments[0].start) if single_segment else 0.0
     trim_end = float(segments[0].end) if single_segment else 0.0
     trim_duration = float(segments[0].duration) if single_segment else 0.0
@@ -164,7 +211,7 @@ def build_base_cmd(
             len(segments) > 1
             or abs(plan.source_audio_gain_db) > 1e-9
             or audio_independent
-            or prepared_video is not None
+            or blending
         )
     )
     timeline_audio_edits = bool(
@@ -175,7 +222,7 @@ def build_base_cmd(
             or (source_audio_active and audio_independent)
         )
     )
-    filtered_timeline = len(segments) > 1 or timeline_audio_edits or prepared_video is not None
+    filtered_timeline = len(segments) > 1 or timeline_audio_edits or blending
 
     if not filtered_timeline and single_segment and trim_start > 0.001:
         cmd += ["-ss", fmt_ffmpeg_time(trim_start)]
@@ -204,7 +251,7 @@ def build_base_cmd(
 
     filtered_audio = False
     video_filters = build_plan_video_filters(
-        plan if prepared_video is None else replace(plan, apply_fps_filter=False)
+        replace(plan, apply_fps_filter=False) if blending else plan
     )
     if filtered_timeline:
         graph_parts: list[str] = []
@@ -239,6 +286,9 @@ def build_base_cmd(
                 video_filters.append("setparams=" + ":".join(tags))
             video_chain = join_video_filters(video_filters)
             graph_parts.append(f"[{len(imported_inputs) + 1}:v]{video_chain}[vout]")
+            cmd += ["-t", fmt_ffmpeg_time(plan.effective_duration)]
+        elif blend is not None:
+            graph_parts.extend(_tmix_graph(blend, video_filters))
             cmd += ["-t", fmt_ffmpeg_time(plan.effective_duration)]
         else:
             video_inputs: list[str] = []
@@ -303,7 +353,7 @@ def build_base_cmd(
                         f"end={fmt_ffmpeg_time(piece.source_end)}",
                         "asetpts=PTS-STARTPTS",
                     ]
-                    if prepared_video is not None:
+                    if blending:
                         # retain silence before delayed source audio on the shared video clock
                         filters[-1] = f"asetpts=PTS-{fmt_ffmpeg_time(piece.source_start)}/TB"
                         filters.append("aresample=async=1:first_pts=0")
@@ -327,7 +377,7 @@ def build_base_cmd(
                         graph_parts,
                         segment,
                         f"sa{index}",
-                        preserve_offset=prepared_video is not None,
+                        preserve_offset=blending,
                     )
                     source_audio_inputs.append(f"[sa{index}]")
                 if not source_audio_inputs:

@@ -895,3 +895,188 @@ def test_fixed_point_blending_matches_the_exact_average():
         assert np.abs(blended.astype(np.float64) - exact).max() <= 0.5 + 1e-3
     white = np.full((4, 4, 3), 255, dtype=np.uint8)
     assert (_blend([(white, 1.0)] * 3, None, "bt709") == 255).all()
+
+
+@pytest.fixture
+def grid_source(skip_if_no_ffmpeg, tmp_path):
+    import shutil
+    import subprocess
+
+    from tuck.probe import probe
+
+    path = tmp_path / "grid.mp4"
+    subprocess.run(
+        [
+            shutil.which("ffmpeg") or "ffmpeg",
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=96x64:rate=90:duration=6",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=duration=6",
+            "-c:v",
+            "libx264",
+            "-crf",
+            "10",
+            "-g",
+            "45",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            str(path),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    return path, probe(path)
+
+
+def grid_plan(source, info, segments, **blending):
+    from tuck.models import EncodePlan
+
+    return EncodePlan(
+        source=str(source),
+        output=str(source.with_name("out.mp4")),
+        source_info=info,
+        target_fps=30,
+        segments=segments,
+        frame_blending=FrameBlending(enabled=True, **blending),
+    )
+
+
+@pytest.mark.ffmpeg
+@pytest.mark.parametrize(
+    ("segments", "amount"),
+    [
+        ([(0, 6)], 1),
+        ([(1.013, 2.4), (3.3, 4.05)], 1),
+        ([(4.2, 5.1), (0.5, 1.7)], 0.5),
+        ([(2.02, 3.5)], 2),
+    ],
+)
+def test_ffmpeg_blending_matches_frame_by_frame_away_from_cuts(grid_source, segments, amount):
+    import shutil
+    import subprocess
+
+    import numpy as np
+
+    from tuck.encoding.command import _tmix_graph
+    from tuck.encoding.frame_blending import _output_indices, tmix_blend
+    from tuck.models import Segment
+
+    source, info = grid_source
+    plan = grid_plan(source, info, [Segment(a, b) for a, b in segments], amount=amount)
+    blend = tmix_blend(plan)
+    assert blend is not None
+    reference = np.stack(blend_all(plan)).astype(int)
+    frames = subprocess.run(
+        [
+            shutil.which("ffmpeg") or "ffmpeg",
+            "-v",
+            "error",
+            "-i",
+            str(source),
+            "-filter_complex",
+            ";".join(_tmix_graph(blend, [])),
+            "-map",
+            "[vout]",
+            "-fps_mode",
+            "passthrough",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "rgb24",
+            "-",
+        ],
+        check=True,
+        capture_output=True,
+    ).stdout
+    blended = np.frombuffer(frames, np.uint8).reshape(-1, 64, 96, 3).astype(int)
+    # the same frames on the same output grid, so audio stays in step
+    assert len(blended) == len(reference)
+    # only frames whose blur reaches past a cut may differ
+    edges = set()
+    for first, count, _ in _output_indices(
+        plan.effective_segments, blend.rate, plan.effective_duration
+    ):
+        reach = math.ceil(amount)
+        edges |= set(range(first, first + reach)) | set(range(first + count - reach, first + count))
+    difference = np.abs(blended - reference).mean(axis=(1, 2, 3))
+    assert [i for i, value in enumerate(difference) if value > 1 and i not in edges] == []
+
+
+@pytest.mark.ffmpeg
+def test_ffmpeg_blending_is_only_used_where_it_can_match(grid_source, tmp_path):
+    import shutil
+    import subprocess
+    from dataclasses import replace
+
+    from tuck.encoding.frame_blending import tmix_blend
+    from tuck.models import Segment
+    from tuck.probe import probe
+
+    source, info = grid_source
+    whole = [Segment(0, 6)]
+    assert tmix_blend(grid_plan(source, info, whole)) is not None
+    tagged = replace(info, color_transfer="bt709")
+    assert tmix_blend(grid_plan(source, tagged, whole, linear_light=True)) is None
+    for settings in (
+        {"curve": "vegas"},
+        {"curve": "gaussian"},
+        {"custom_weights": (1.0, 2.0)},
+        {"amount": 0},
+    ):
+        assert tmix_blend(grid_plan(source, info, whole, **settings)) is None, settings
+    # 90 to 40 FPS is not a whole number of source frames per output frame
+    uneven = grid_plan(source, info, whole)
+    uneven.target_fps = 40
+    assert tmix_blend(uneven) is None
+    # frames that are not evenly spaced keep the frame-by-frame path
+    variable = tmp_path / "variable.mp4"
+    subprocess.run(
+        [
+            shutil.which("ffmpeg") or "ffmpeg",
+            "-v",
+            "error",
+            "-i",
+            str(source),
+            "-vf",
+            r"select=not(eq(mod(n\,5)\,2))",
+            "-fps_mode",
+            "vfr",
+            "-an",
+            str(variable),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    assert tmix_blend(grid_plan(variable, probe(variable), whole)) is None
+
+
+@pytest.mark.ffmpeg
+def test_simple_blends_export_without_the_prepared_video(grid_source, monkeypatch):
+    import av
+
+    from tuck.encoding import runner
+    from tuck.encoding.runner import FFmpegEngine
+    from tuck.models import Segment
+
+    source, info = grid_source
+    plan = grid_plan(source, info, [Segment(1.013, 2.4), Segment(3.3, 4.05)])
+    plan.audio_bitrate = 128000
+    plan.video_bitrate = 500000
+    plan.target_size = 2 * 1024 * 1024
+    plan.preset = "ultrafast"
+    monkeypatch.setattr(
+        runner, "prepare_blended_video", lambda *_: pytest.fail("blended frame by frame")
+    )
+    result = FFmpegEngine().encode(plan, lambda _: None)
+    with av.open(str(result)) as container:
+        video = container.streams.video[0]
+        assert sum(1 for _ in container.decode(video)) == 65
+        assert container.streams.audio
