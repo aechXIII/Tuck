@@ -234,12 +234,15 @@ def plan_cut(request: CutRequest, analysis: CutAnalysis) -> CutPlan:
             0, CutIssue("source_changed", "The cut analysis belongs to a different video.")
         )
     if request.edits and not request.without_edits:
-        names = ", ".join(EDIT_NAMES[edit] for edit in request.edits)
+        names = [EDIT_NAMES[edit] for edit in request.edits]
+        listed = names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+        title = f"{listed} {'needs' if len(names) == 1 else 'need'} re-encoding"
         issues.append(
             CutIssue(
                 "incompatible_edit",
-                f"{names} need re-encoding. Choose Compress or export without these edits.",
+                f"{title}. Choose Compress or export without these edits.",
                 "edits",
+                title,
             )
         )
     if exact and exact_reason:

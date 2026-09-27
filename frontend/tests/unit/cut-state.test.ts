@@ -120,3 +120,22 @@ test("only copied starts are marked when keyframes could not be confirmed", () =
   assert.equal(cutStartUnchecked({...unchecked, precision:"exact"}, segment), false);
   assert.equal(cutStartUnchecked({...unchecked, precision:"exact"}, {...segment, copied:segment.resolved}), true);
 });
+
+test("failures, retries and scans change only this clip's cut state", () => {
+  const ready = reduceCutState(createCutState(), {type:"plan", generation:0, plan:{...plan, exact_available:true}});
+  assert.equal(ready.exactAvailable, true);
+  // the Exact answer survives while the next plan is prepared
+  const pending = reduceCutState(ready, {type:"request", key:"next"});
+  assert.equal(pending.plan, null);
+  assert.equal(pending.exactAvailable, true);
+  const failed = reduceCutState(ready, {type:"failed", message:"The video changed."});
+  assert.equal(failed.plan, ready.plan);
+  assert.equal(failed.error, "The video changed.");
+  const newer = {...plan, fingerprint:"c".repeat(64), exact_available:false};
+  const replaced = reduceCutState(ready, {type:"failed", message:"Review the cuts.", plan:newer});
+  assert.equal(replaced.plan, newer);
+  assert.equal(replaced.exactAvailable, false);
+  const retried = reduceCutState(failed, {type:"retry"});
+  assert.deepEqual([retried.plan, retried.error, retried.generation], [null, "", failed.generation]);
+  assert.equal(reduceCutState(retried, {type:"scan", workId:"scan-2"}).workId, "scan-2");
+});

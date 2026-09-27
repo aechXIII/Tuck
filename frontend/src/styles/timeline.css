@@ -840,6 +840,24 @@ body.tl-segment-dragging * {
   }
 }
 
+/* laid over the video lane in the same grid cell, so the chips are not inside the
+   timeline slider; every item in the row is placed, since placed items claim cells first */
+#video-track > .seq-head {
+  grid-area: 1 / 1;
+}
+#video-track > #timeline,
+.tl-cut-marks {
+  grid-area: 1 / 2;
+}
+.tl-cut-marks {
+  position: relative;
+  align-self: center;
+  height: 48px;
+  pointer-events: none;
+}
+.tl-cut-marks .edge-chip {
+  pointer-events: auto;
+}
 /* the part of a kept segment the export skips because the cut starts on the next keyframe */
 .tl-sliver {
   position: absolute;
@@ -883,7 +901,7 @@ body.tl-segment-dragging * {
   border-radius: 4px;
   background: rgba(12, 11, 18, 0.92);
   color: var(--warn);
-  font: 600 9px var(--mono);
+  font: 600 10px var(--mono);
   white-space: nowrap;
   cursor: pointer;
 }

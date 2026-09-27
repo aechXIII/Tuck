@@ -291,7 +291,7 @@ def test_full_encode_audio_duration_and_pixels(timestamped_source, two_pass, mon
         frames = list(container.decode(video=0))
         assert len(frames) == 3
         assert float(frames[0].to_ndarray(format="rgb24").mean()) == pytest.approx(188, abs=5)
-    assert not list(source.parent.glob(".tuck-blend-*"))
+    assert not list(source.parent.glob(".tuck-*"))
     assert not list(source.parent.glob("*.lock"))
 
 
@@ -309,7 +309,7 @@ def test_cancel_preparation_cleans_up(timestamped_source):
     with pytest.raises(EncodeCancelled):
         engine.encode(make_blend_plan(source, info), progress)
     assert not source.with_name("out.mp4").exists()
-    assert not list(source.parent.glob(".tuck-blend-*"))
+    assert not list(source.parent.glob(".tuck-*"))
 
 
 @pytest.mark.ffmpeg
@@ -701,7 +701,7 @@ def test_cancel_before_preparation_releases_reservation(timestamped_source):
     with pytest.raises(EncodeCancelled):
         engine.encode(make_blend_plan(source, info))
     assert not list(source.parent.glob("*.lock"))
-    assert not list(source.parent.glob(".tuck-blend-*"))
+    assert not list(source.parent.glob(".tuck-*"))
 
 
 def test_profile_settings_survive_save_reload_and_partial_edit(tmp_path, monkeypatch):

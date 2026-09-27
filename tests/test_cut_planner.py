@@ -67,6 +67,20 @@ def test_fingerprint_changes_with_intent_but_not_ui_request_id(analyzed):
     assert silent.segments[0].audio_source is None
 
 
+def test_the_edit_notice_names_the_edits_in_plain_english(analyzed):
+    from tuck.cutting.planner import parse_cut_request, plan_cut
+
+    def notice(edits):
+        plan = plan_cut(parse_cut_request(request_for(analyzed, edits=edits)), analyzed)
+        return next(i for i in plan.issues if i.code == "incompatible_edit")
+
+    assert notice(["crop"]).title == "Crop needs re-encoding"
+    assert notice(["crop", "flip"]).title == "Crop and Flip need re-encoding"
+    three = notice(["crop", "flip", "lut"])
+    assert three.title == "Crop, Flip and Color LUT need re-encoding"
+    assert three.message.startswith(three.title + ". Choose Compress")
+
+
 @pytest.mark.parametrize(
     "edit",
     [

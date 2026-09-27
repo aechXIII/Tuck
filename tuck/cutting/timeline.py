@@ -9,8 +9,10 @@ from itertools import pairwise
 from threading import Event
 
 import av
+from av.container import InputContainer
 from av.error import FFmpegError
-from av.stream import Disposition
+from av.stream import Disposition, Stream
+from av.video.stream import VideoStream
 
 from .bitstream import nal_length_size, nal_units
 
@@ -121,6 +123,142 @@ def _check(cancel: Event) -> None:
         raise TimelineError("analysis_cancelled", "Keyframe analysis was cancelled.")
 
 
+def _safe_ends(
+    decode_order: list[Fraction], last_end: Fraction, origin: Fraction
+) -> tuple[Fraction, ...]:
+    """Ends where every frame decoded so far is shown before every frame decoded later."""
+    suffix_min = [Fraction(0)] * (len(decode_order) + 1)
+    suffix_min[-1] = last_end
+    for index in range(len(decode_order) - 1, -1, -1):
+        suffix_min[index] = min(decode_order[index], suffix_min[index + 1])
+    ends = []
+    highest: Fraction | None = None
+    for index, pts in enumerate(decode_order):
+        highest = pts if highest is None else max(highest, pts)
+        if highest < suffix_min[index + 1]:
+            ends.append(suffix_min[index + 1] - origin)
+    return tuple(ends)
+
+
+def _reorder_depth(decode_order: list[Fraction], presented: list[Fraction]) -> int:
+    """How many frames the decoder holds back before showing one."""
+    rank = {pts: index for index, pts in enumerate(presented)}
+    return max(0, max(index - rank[pts] for index, pts in enumerate(decode_order)))
+
+
+def _typical_step(presented: list[Fraction]) -> tuple[Fraction, bool]:
+    """The most common frame spacing, and whether every frame uses it."""
+    counts: dict[Fraction, int] = {}
+    for delta in (b - a for a, b in pairwise(presented)):
+        counts[delta] = counts.get(delta, 0) + 1
+    return max(counts, key=lambda d: (counts[d], -d)), len(counts) == 1
+
+
+class _VideoScan:
+    """Timing and entry-point facts gathered from video packets in file order."""
+
+    def __init__(self, codec: str, length_size: int | None) -> None:
+        self.codec = codec
+        self.length_size = length_size
+        self.decode_order: list[Fraction] = []
+        self.decode_times: list[Fraction | None] = []
+        self.durations: dict[Fraction, Fraction] = {}
+        self.key_times: list[Fraction] = []
+        self.unverified = False
+        self.decode_delay = Fraction(0)
+        self.all_intra = True
+
+    def add(self, packet: av.Packet, pts: Fraction, duration: Fraction, base: Fraction) -> None:
+        if pts in self.durations:
+            raise TimelineError(
+                "unsupported_codec", "The video repeats a frame timestamp and cannot be cut."
+            )
+        self.durations[pts] = duration
+        self.decode_order.append(pts)
+        dts = packet.dts * base if packet.dts is not None else None
+        self.decode_times.append(dts)
+        if dts is not None:
+            self.decode_delay = max(self.decode_delay, pts - dts)
+        self.all_intra &= packet.is_keyframe
+        if packet.is_keyframe:
+            # a keyframe the codec rules cannot confirm is still usable; frames shown
+            # before it belong to the removed part, but the start is not verified
+            self.key_times.append(pts)
+            clean = is_clean_entry(self.codec, bytes(packet), self.length_size)
+            self.unverified |= clean is not True
+
+    def timeline(self, video: VideoStream) -> VideoTimeline:
+        if len(self.decode_order) < 2:
+            raise TimelineError("unsupported_codec", "The video is too short to cut.")
+        presented = sorted(self.decode_order)
+        origin = presented[0]
+        if not self.key_times or min(self.key_times) != origin:
+            raise TimelineError(
+                "unsupported_codec", "The video does not begin at a clean entry point."
+            )
+        step, constant = _typical_step(presented)
+        last = self.durations[presented[-1]] or step
+        known_dts = [t for t in self.decode_times if t is not None]
+        regular = len(known_dts) == len(self.decode_times) and all(
+            b - a == step for a, b in pairwise(known_dts)
+        )
+        frames = tuple(t - origin for t in presented)
+        return VideoTimeline(
+            video.index,
+            self.codec,
+            origin,
+            frames,
+            presented[-1] + last - origin,
+            frames if self.all_intra else tuple(sorted({t - origin for t in self.key_times})),
+            self.unverified and not self.all_intra,
+            _safe_ends(self.decode_order, presented[-1] + last, origin),
+            self.decode_delay,
+            step,
+            constant,
+            regular,
+            video.frames,
+            video.duration * Fraction(video.time_base)
+            if video.duration is not None and video.time_base is not None
+            else None,
+            _reorder_depth(self.decode_order, presented),
+        )
+
+
+def _packet_time(packet: av.Packet, pts: Fraction, duration: Fraction) -> PacketTime:
+    side = bytes(packet.get_sidedata("skip_samples")) if packet.stream.type == "audio" else b""
+    return PacketTime(
+        pts,
+        duration,
+        int.from_bytes(side[:4], "little") if len(side) >= 4 else 0,
+        int.from_bytes(side[4:8], "little") if len(side) >= 8 else 0,
+        packet.is_keyframe,
+    )
+
+
+def _declared_duration(stream: Stream) -> Fraction | None:
+    if stream.duration is None or stream.time_base is None:
+        return None
+    return stream.duration * Fraction(stream.time_base)
+
+
+def _chapters(
+    container: InputContainer, origin: Fraction
+) -> tuple[tuple[Fraction, Fraction, str], ...]:
+    chapters = []
+    for chapter in container.chapters():
+        base = chapter["time_base"]
+        if base is None:
+            continue
+        chapters.append(
+            (
+                Fraction(chapter["start"]) * base - origin,
+                Fraction(chapter["end"]) * base - origin,
+                str(chapter.get("metadata", {}).get("title", "")),
+            )
+        )
+    return tuple(chapters)
+
+
 def read_timeline(
     path: str,
     cancel: Event,
@@ -141,18 +279,9 @@ def read_timeline(
                 raise TimelineError("unsupported_stream", "This file has no video to cut.")
             video = videos[0]
             codec = video.codec_context.codec.canonical_name
-            length_size = nal_length_size(codec, video.codec_context.extradata)
-            declared = Fraction(container.duration or 0, av.time_base)
-            decode_order: list[Fraction] = []
-            decode_times: list[Fraction | None] = []
-            durations: dict[Fraction, Fraction] = {}
-            key_times: list[Fraction] = []
-            unverified = False
-            decode_delay = Fraction(0)
+            scan = _VideoScan(codec, nal_length_size(codec, video.codec_context.extradata))
             others: dict[int, list[PacketTime]] = {}
-            declared_durations: dict[int, Fraction | None] = {}
-            other_meta: dict[int, tuple[str, str]] = {}
-            all_intra = True
+            streams: dict[int, Stream] = {}
             for count, packet in enumerate(container.demux(), 1):
                 check_cancel(cancel)
                 if count > max_packets or packet.size > MAX_PACKET_BYTES:
@@ -176,127 +305,28 @@ def read_timeline(
                 pts = packet.pts * base
                 duration = packet.duration * base if packet.duration else Fraction(0)
                 if packet.stream.index != video.index:
-                    side = (
-                        bytes(packet.get_sidedata("skip_samples"))
-                        if packet.stream.type == "audio"
-                        else b""
-                    )
                     others.setdefault(packet.stream.index, []).append(
-                        PacketTime(
-                            pts,
-                            duration,
-                            int.from_bytes(side[:4], "little") if len(side) >= 4 else 0,
-                            int.from_bytes(side[4:8], "little") if len(side) >= 8 else 0,
-                            packet.is_keyframe,
-                        )
+                        _packet_time(packet, pts, duration)
                     )
-                    if packet.stream.index not in declared_durations:
-                        stream = packet.stream
-                        declared_durations[stream.index] = (
-                            stream.duration * Fraction(stream.time_base)
-                            if stream.duration is not None and stream.time_base is not None
-                            else None
-                        )
-                    other_meta[packet.stream.index] = (
-                        packet.stream.type,
-                        packet.stream.codec_context.codec.canonical_name
-                        if packet.stream.codec_context
-                        else "unknown",
-                    )
+                    streams.setdefault(packet.stream.index, packet.stream)
                     continue
-                if pts in durations:
-                    raise TimelineError(
-                        "unsupported_codec",
-                        "The video repeats a frame timestamp and cannot be cut.",
-                    )
-                durations[pts] = duration
-                decode_order.append(pts)
-                dts = packet.dts * base if packet.dts is not None else None
-                decode_times.append(dts)
-                if dts is not None:
-                    decode_delay = max(decode_delay, pts - dts)
-                all_intra &= packet.is_keyframe
-                if packet.is_keyframe:
-                    # a keyframe the codec rules cannot confirm is still usable; frames shown
-                    # before it belong to the removed part, but the start is not verified
-                    key_times.append(pts)
-                    unverified |= is_clean_entry(codec, bytes(packet), length_size) is not True
-                if len(decode_order) % 256 == 0 and on_frames is not None and key_times:
-                    first = key_times[0]
-                    on_frames(tuple(t - first for t in key_times), max(decode_order) - first)
-            if len(decode_order) < 2:
-                raise TimelineError("unsupported_codec", "The video is too short to cut.")
-            presented = sorted(decode_order)
-            origin = presented[0]
-            if not key_times or min(key_times) != origin:
-                raise TimelineError(
-                    "unsupported_codec", "The video does not begin at a clean entry point."
-                )
-            deltas = [b - a for a, b in pairwise(presented)]
-            counts: dict[Fraction, int] = {}
-            for delta in deltas:
-                counts[delta] = counts.get(delta, 0) + 1
-            step = max(counts, key=lambda d: (counts[d], -d))
-            last = durations[presented[-1]] or step
-            end = presented[-1] + last - origin
-            # a decode-order prefix is complete when no later packet is presented before it
-            safe_ends = []
-            suffix_min = [Fraction(0)] * (len(decode_order) + 1)
-            suffix_min[-1] = presented[-1] + last
-            for index in range(len(decode_order) - 1, -1, -1):
-                suffix_min[index] = min(decode_order[index], suffix_min[index + 1])
-            highest = None
-            for index, pts in enumerate(decode_order):
-                highest = pts if highest is None else max(highest, pts)
-                if highest < suffix_min[index + 1]:
-                    safe_ends.append(suffix_min[index + 1] - origin)
-            rank = {pts: index for index, pts in enumerate(presented)}
-            reorder = max(index - rank[pts] for index, pts in enumerate(decode_order))
-            known_dts = [t for t in decode_times if t is not None]
-            regular = len(known_dts) == len(decode_times) and all(
-                b - a == step for a, b in pairwise(known_dts)
-            )
-            timeline = VideoTimeline(
-                video.index,
-                codec,
-                origin,
-                tuple(t - origin for t in presented),
-                end,
-                tuple(sorted({t - origin for t in key_times}))
-                if not all_intra
-                else tuple(t - origin for t in presented),
-                unverified and not all_intra,
-                tuple(safe_ends),
-                decode_delay,
-                step,
-                len(counts) == 1,
-                regular,
-                video.frames,
-                video.duration * Fraction(video.time_base)
-                if video.duration is not None and video.time_base is not None
-                else None,
-                max(0, reorder),
-            )
-            chapters = []
-            for chapter in container.chapters():
-                base = chapter["time_base"]
-                if base is None:
-                    continue
-                chapters.append(
-                    (
-                        Fraction(chapter["start"]) * base - origin,
-                        Fraction(chapter["end"]) * base - origin,
-                        str(chapter.get("metadata", {}).get("title", "")),
-                    )
-                )
+                scan.add(packet, pts, duration, base)
+                if len(scan.decode_order) % 256 == 0 and on_frames is not None and scan.key_times:
+                    first = scan.key_times[0]
+                    keys = tuple(t - first for t in scan.key_times)
+                    on_frames(keys, max(scan.decode_order) - first)
+            timeline = scan.timeline(video)
+            origin = timeline.origin
             return MediaTimeline(
                 container.format.name,
                 timeline,
                 tuple(
                     StreamPackets(
                         index,
-                        other_meta[index][0],
-                        other_meta[index][1],
+                        streams[index].type,
+                        streams[index].codec_context.codec.canonical_name
+                        if streams[index].codec_context
+                        else "unknown",
                         tuple(
                             PacketTime(
                                 p.start - origin,
@@ -307,12 +337,12 @@ def read_timeline(
                             )
                             for p in packets
                         ),
-                        declared_durations.get(index),
+                        _declared_duration(streams[index]),
                     )
                     for index, packets in sorted(others.items())
                 ),
-                declared,
-                tuple(chapters),
+                Fraction(container.duration or 0, av.time_base),
+                _chapters(container, origin),
             )
     except FFmpegError as exc:
         raise TimelineError("analysis_failed", "The video packets could not be read.") from exc

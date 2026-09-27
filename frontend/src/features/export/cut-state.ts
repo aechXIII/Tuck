@@ -10,24 +10,38 @@ export interface CutClipState {
   withoutEdits: boolean;
   workId: string | null;
   error: string;
+  // the last answer on Exact, kept while a new plan is prepared so the control does not flicker
+  exactAvailable: boolean;
 }
 
-type CutEvent =
+export type CutEvent =
   | {type:"request"; key:string}
   | {type:"plan"; generation:number; plan:CutPlanPreview}
   | {type:"analysis"; generation:number; analysis:CutAnalysisPayload}
+  | {type:"scan"; workId:string}
+  // a failure keeps the current plan unless the backend sent a newer one
+  | {type:"failed"; message:string; plan?:CutPlanPreview | null | undefined}
+  | {type:"retry"}
   | {type:"precision"; value:"keyframes" | "exact"}
   | {type:"audio" | "withoutEdits"; value:boolean};
 
 export function createCutState(): CutClipState {
-  return {generation:0,requestKey:"",plan:null,analysis:null,precision:"keyframes",includeAudio:true,withoutEdits:false,workId:null,error:""};
+  return {generation:0,requestKey:"",plan:null,analysis:null,precision:"keyframes",includeAudio:true,withoutEdits:false,workId:null,error:"",exactAvailable:false};
 }
 
 export function reduceCutState(state: CutClipState, event: CutEvent): CutClipState {
   if (event.type === "plan" || event.type === "analysis") {
     if (event.generation !== state.generation) return state;
-    return event.type === "plan" ? {...state,plan:event.plan,error:""} : {...state,analysis:event.analysis,workId:event.analysis.work_id};
+    return event.type === "plan"
+      ? {...state,plan:event.plan,error:"",exactAvailable:event.plan.exact_available}
+      : {...state,analysis:event.analysis,workId:event.analysis.work_id};
   }
+  if (event.type === "scan") return {...state,workId:event.workId};
+  if (event.type === "failed") {
+    const plan = event.plan === undefined ? state.plan : event.plan;
+    return {...state,plan,error:event.message,exactAvailable:plan ? plan.exact_available : state.exactAvailable};
+  }
+  if (event.type === "retry") return {...state,plan:null,error:""};
   if (event.type === "request" && event.key === state.requestKey) return state;
   const change = event.type === "request" ? {requestKey:event.key}
     : event.type === "precision" ? {precision:event.value}

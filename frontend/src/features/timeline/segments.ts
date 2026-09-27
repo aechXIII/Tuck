@@ -1,5 +1,8 @@
 export const MIN_DURATION = 0.05;
 
+// the only rejection an edit can cause by itself, so callers can explain it
+export class SegmentTooShortError extends Error {}
+
 export interface SegmentRange {
   start: number;
   end: number;
@@ -82,7 +85,7 @@ export function normalizeSegments(
     end = Math.min(end, resolvedDuration);
     if (end <= start) throw new Error("segment end must be after segment start");
     if (end - start < MIN_DURATION - 0.000001)
-      throw new Error("segments must be at least 0.05 seconds");
+      throw new SegmentTooShortError("segments must be at least 0.05 seconds");
     const previous = normalized[normalized.length - 1];
     if (previous && start < previous.end - 0.000001)
       throw new Error("segments must be ordered and must not overlap");

@@ -7,7 +7,7 @@ from tuck.output_paths import reservation_path
 
 
 def transaction(path):
-    from tuck.encoding.output import OutputTransaction
+    from tuck.output_transaction import OutputTransaction
 
     return OutputTransaction(path)
 

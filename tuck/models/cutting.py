@@ -59,11 +59,38 @@ class SourceIdentity:
     signature: str
 
 
+# every code a cut request can fail with; the desktop bridge passes only these through
+CUT_ERROR_CODES = frozenset(
+    {
+        "analysis_cancelled",
+        "analysis_failed",
+        "analysis_required",
+        "cut_cancelled",
+        "cut_failed",
+        "cut_timed_out",
+        "exact_unavailable",
+        "incompatible_edit",
+        "invalid_cut_request",
+        "invalid_output",
+        "invalid_range",
+        "plan_changed",
+        "segment_collapsed",
+        "source_changed",
+        "unsupported_codec",
+        "unsupported_cut",
+        "unsupported_stream",
+        "verification_failed",
+    }
+)
+
+
 @dataclass(frozen=True)
 class CutIssue:
     code: str
     message: str
     field: str | None = None
+    # a short heading for notices that show the message below it
+    title: str = ""
 
 
 @dataclass(frozen=True)

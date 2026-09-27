@@ -7,7 +7,12 @@ from .service import AnalysisSnapshot
 
 
 def issue_dict(issue: CutIssue) -> dict[str, JsonValue]:
-    return {"code": issue.code, "message": issue.message, "field": issue.field}
+    return {
+        "code": issue.code,
+        "message": issue.message,
+        "field": issue.field,
+        "title": issue.title,
+    }
 
 
 def range_dict(value: CutRange | None) -> JsonValue:

@@ -4,7 +4,8 @@ import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from ..cutting.analysis import CutRequestWork
+from ..models.cutting import CUT_ERROR_CODES
+from ..request_work import RequestWork
 from .protocol import JsonValue, Request, Response
 
 if TYPE_CHECKING:
@@ -15,27 +16,33 @@ logger = logging.getLogger(__name__)
 Handler = Callable[["BridgeAPI", dict[str, object]], object]
 
 
-def dispatch(api: BridgeAPI, request: Request, work: CutRequestWork | None = None) -> Response:
+def _handler_for(method: str, work: RequestWork | None) -> Handler | None:
+    work_handler = _WORK_HANDLERS.get(method)
+    if work_handler is None:
+        return _HANDLERS.get(method)
+    current = work or RequestWork()
+
+    def run(api: BridgeAPI, params: dict[str, object]) -> object:
+        return work_handler(api, params, current)
+
+    return run
+
+
+def dispatch(api: BridgeAPI, request: Request, work: RequestWork | None = None) -> Response:
     if request.method == "health":
         if request.params:
             return _invalid_params(request)
         return Response.success(request.request_id, {"status": "ok"})
 
-    handler = _HANDLERS.get(request.method)
-    work_handler = _WORK_HANDLERS.get(request.method)
-    if handler is None and work_handler is None:
+    handler = _handler_for(request.method, work)
+    if handler is None:
         return Response.failure(
             request.request_id,
             code="UNKNOWN_METHOD",
             message="The requested backend method is not available.",
         )
     try:
-        if work_handler is not None:
-            value = work_handler(api, request.params, work or CutRequestWork())
-        elif handler is not None:
-            value = handler(api, request.params)
-        else:
-            raise _ParameterError
+        value = handler(api, request.params)
     except _ParameterError:
         return _invalid_params(request)
     except TimeoutError:
@@ -94,26 +101,7 @@ def _normalize_result(request: Request, value: object) -> Response:
                 cut_code = value.get("code")
                 code = (
                     cut_code.upper()
-                    if field == "cut"
-                    and isinstance(cut_code, str)
-                    and cut_code
-                    in {
-                        "analysis_required",
-                        "analysis_failed",
-                        "analysis_cancelled",
-                        "source_changed",
-                        "invalid_cut_request",
-                        "cut_timed_out",
-                        "plan_changed",
-                        "unsupported_cut",
-                        "unsupported_codec",
-                        "unsupported_stream",
-                        "invalid_range",
-                        "exact_unavailable",
-                        "incompatible_edit",
-                        "segment_collapsed",
-                        "invalid_output",
-                    }
+                    if field == "cut" and isinstance(cut_code, str) and cut_code in CUT_ERROR_CODES
                     else _error_code(request.method, message)
                 )
                 return Response.failure(
@@ -220,13 +208,11 @@ def _create_plan(api: BridgeAPI, params: dict[str, object]) -> object:
     return api.create_plan(_object(params, "request"))
 
 
-def _enqueue_with_options(
-    api: BridgeAPI, params: dict[str, object], work: CutRequestWork
-) -> object:
+def _enqueue_with_options(api: BridgeAPI, params: dict[str, object], work: RequestWork) -> object:
     return api.enqueue_with_options(_object(params, "request"), work=work)
 
 
-def _enqueue_batch(api: BridgeAPI, params: dict[str, object], work: CutRequestWork) -> object:
+def _enqueue_batch(api: BridgeAPI, params: dict[str, object], work: RequestWork) -> object:
     if set(params) != {"requests"} or not isinstance(params["requests"], list):
         raise _ParameterError
     return api.enqueue_batch(params["requests"], work=work)
@@ -257,7 +243,7 @@ def _move_item(api: BridgeAPI, params: dict[str, object]) -> object:
     return api.move_item(params["item_id"], params["new_index"])
 
 
-def _retry_item(api: BridgeAPI, params: dict[str, object], work: CutRequestWork) -> object:
+def _retry_item(api: BridgeAPI, params: dict[str, object], work: RequestWork) -> object:
     return api.retry_item(_string(params, "item_id"), work=work)
 
 
@@ -422,7 +408,7 @@ def _cancel_cut_work(api: BridgeAPI, params: dict[str, object]) -> object:
     return api.cancel_cut_work(_string(params, "work_id"))
 
 
-_WORK_HANDLERS: dict[str, Callable[[BridgeAPI, dict[str, object], CutRequestWork], object]] = {
+_WORK_HANDLERS: dict[str, Callable[[BridgeAPI, dict[str, object], RequestWork], object]] = {
     "enqueue_with_options": _enqueue_with_options,
     "enqueue_batch": _enqueue_batch,
     "retry_item": _retry_item,

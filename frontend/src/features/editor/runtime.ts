@@ -33,7 +33,7 @@ import {
   installEncodingControls,
   type EncodingControlsApi,
 } from "../export/encoding-controls.ts";
-import { mediaSeconds } from "../export/cut-state.ts";
+import { segmentsAtExportedStarts } from "../timeline/cut-starts.ts";
 import { installQueue, type QueueApi } from "../queue/queue.ts";
 import { installSettings, type SettingsApi } from "../settings/settings.ts";
 import { checkUpdates, checkUpdatesFromSettings } from "./updates.ts";
@@ -357,19 +357,13 @@ export function installEditorRuntime(
       audio.requestPayload(clip) as Record<string, unknown>,
     selectCutSegment: (index,time) => { timeline.selectSegment(index,false); player.seekPreview(time); },
     moveCutStarts: (clip,plan) => {
-      const duration = clip.probeData?.duration ?? 0;
-      let moved;
-      try {
-        const segments = SegmentEditing.segmentsForClip(clip,duration);
-        moved = SegmentEditing.normalizeSegments(segments.map((segment,index) => ({...segment,start:mediaSeconds(plan.segments[index]!.resolved.start)})),duration);
-      } catch (error) {
-        toast(error instanceof Error && error.message.includes("at least 0.05")
-          ? "A moved segment would be too short for the timeline. You can still export these cuts as shown, or widen the segment first."
-          : "The cut points could not be moved. Your timeline is unchanged.","err");
+      const moved = segmentsAtExportedStarts(clip,plan,clip.probeData?.duration ?? 0);
+      if (!moved.ok) {
+        toast(moved.message,"err");
         return false;
       }
       history.action(clip.path,() => {
-        timeline.setClipSegments(clip,moved,clip.activeSegment);
+        timeline.setClipSegments(clip,moved.segments,clip.activeSegment);
       });
       timeline.syncTimelineUI();
       audio.render();

@@ -1,8 +1,8 @@
 import type { CutAnalysisPayload, CutSegment } from "../../backend/cutting-types.ts";
 import { mediaSeconds } from "../export/cut-state.ts";
 
-// Keyframe feedback for the lossless cut task. These helpers only draw Python's analysis and
-// plan; which keyframe is safe to start on is decided by the backend planner.
+// keyframe feedback for the lossless cut task: these helpers only draw Python's analysis and
+// plan, and the backend planner decides which keyframe is safe to start on
 
 export interface KeyframeStrip {
   times: readonly number[];
@@ -150,6 +150,57 @@ export function handleValueText(
   }
   const exported = mediaSeconds(planSegment.resolved.end);
   return requested - exported > MATCH_EPSILON ? `${base}, exported to ${preciseTime(exported)}` : base;
+}
+
+const ARROWS = {
+  moved: "M2 6h7M6.5 3.5 9 6l-2.5 2.5",
+  exact: "M2 6a4 4 0 0 1 7-2.6M10 6a4 4 0 0 1-7 2.6M9 1v2.5H6.5M3 11V8.5h2.5",
+};
+
+function markNode<K extends "div" | "button">(layer: HTMLElement, tag: K, className: string, key: string): HTMLElementTagNameMap[K] {
+  const found = layer.querySelector<HTMLElementTagNameMap[K]>(`${tag}.${className}[data-cut-mark="${key}"]`);
+  if (found) return found;
+  const node = layer.ownerDocument.createElement(tag);
+  node.className = className;
+  node.dataset.cutMark = key;
+  layer.append(node);
+  return node;
+}
+
+// nodes are kept per segment, so repaints during a drag neither flicker nor drop chip focus
+export function renderCutMarks(layer: HTMLElement, slivers: readonly CutSliver[], duration: number): void {
+  const wanted = new Set(slivers.map((sliver) => String(sliver.index)));
+  for (const node of layer.querySelectorAll<HTMLElement>("[data-cut-mark]")) {
+    if (!wanted.has(node.dataset.cutMark ?? "")) node.remove();
+  }
+  const doc = layer.ownerDocument;
+  for (const sliver of slivers) {
+    const key = String(sliver.index);
+    const exact = sliver.kind === "exact";
+    const hatch = markNode(layer, "div", "tl-sliver", key);
+    hatch.classList.toggle("exact", exact);
+    hatch.setAttribute("aria-hidden", "true");
+    hatch.style.left = percent(sliver.requestedStart, duration);
+    hatch.style.width = `${(sliver.delta / duration) * 100}%`;
+    const chip = markNode(layer, "button", "edge-chip", key);
+    chip.type = "button";
+    chip.classList.toggle("exact", exact);
+    chip.dataset.cutChip = key;
+    chip.style.left = percent(sliver.exportedStart, duration);
+    const label = chipLabel(sliver);
+    const text = chipText(sliver.kind, sliver.delta);
+    if (chip.title !== label || chip.textContent !== text) {
+      chip.title = label;
+      chip.setAttribute("aria-label", `Segment ${sliver.index + 1}. ${label}`);
+      const arrow = doc.createElementNS("http://www.w3.org/2000/svg", "svg");
+      arrow.setAttribute("viewBox", "0 0 12 12");
+      arrow.setAttribute("aria-hidden", "true");
+      const path = doc.createElementNS("http://www.w3.org/2000/svg", "path");
+      path.setAttribute("d", ARROWS[sliver.kind]);
+      arrow.append(path);
+      chip.replaceChildren(arrow, text);
+    }
+  }
 }
 
 function percent(time: number, duration: number): string {

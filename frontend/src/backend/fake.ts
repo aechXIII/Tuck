@@ -27,6 +27,10 @@ function success<T>(value: T): BackendResult<T> {
   return { ok: true, value };
 }
 
+function notConfigured(message: string): BackendResult<never> {
+  return { ok: false, error: { code: "NOT_CONFIGURED", message, details: {} } };
+}
+
 class DeterministicFakeBackend implements BackendClient {
   readonly calls: BackendCall[] = [];
   readonly #responses: FakeBackendResponses;
@@ -109,22 +113,49 @@ class DeterministicFakeBackend implements BackendClient {
   }
 
   analyzeCut(path: string, workId: string) {
-    return this.#record("analyzeCut", [path, workId], this.#responses.analyzeCut ?? {ok:false,error:{code:"NOT_CONFIGURED",message:"No cut analysis fixture is configured.",details:{}}});
+    return this.#record(
+      "analyzeCut",
+      [path, workId],
+      this.#responses.analyzeCut ?? notConfigured("No cut analysis fixture is configured."),
+    );
   }
 
   getCutAnalysis(path: string) {
-    return this.#record("getCutAnalysis", [path], this.#responses.getCutAnalysis ?? {ok:true,value:{work_id:"",status:"missing",progress:null,coverage_end:{ticks:"0",time_base_num:1,time_base_den:1},keyframes:[],issue:null,analysis:null}});
+    return this.#record(
+      "getCutAnalysis",
+      [path],
+      this.#responses.getCutAnalysis ?? {
+        ok: true,
+        value: {
+          work_id: "",
+          status: "missing",
+          progress: null,
+          coverage_end: { ticks: "0", time_base_num: 1, time_base_den: 1 },
+          keyframes: [],
+          issue: null,
+          analysis: null,
+        },
+      },
+    );
   }
 
   cancelCutWork(workId: string) {
-    return this.#record("cancelCutWork", [workId], this.#responses.cancelCutWork ?? success({cancelled:false}));
+    return this.#record(
+      "cancelCutWork",
+      [workId],
+      this.#responses.cancelCutWork ?? success({ cancelled: false }),
+    );
   }
 
   createPlan(request: CutPlanRequest): Promise<BackendResult<CutPlanPayload>>;
   createPlan(request: PlanRequest): Promise<BackendResult<DataPayload>>;
   createPlan(request: PlanRequest): Promise<BackendResult<DataPayload>> {
     if (request.operation === "cut" && !this.#responses.createPlan) {
-      return this.#record("createPlan", [request], {ok:false,error:{code:"NOT_CONFIGURED",message:"No cut plan fixture is configured.",details:{}}});
+      return this.#record(
+        "createPlan",
+        [request],
+        notConfigured("No cut plan fixture is configured."),
+      );
     }
     return this.#record(
       "createPlan",

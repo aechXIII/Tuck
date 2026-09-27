@@ -241,13 +241,15 @@ function paintCutOverlay() {
     "data-tip",
     host.cutTask?.() ? "Snap to keyframes, playhead and clip edges" : "Snap to playhead and clip edges",
   );
-  for (const old of documentRef.querySelectorAll(".tl-sliver, .edge-chip, .kf-guide")) old.remove();
+  for (const old of documentRef.querySelectorAll(".kf-guide")) old.remove();
+  const marks = byId("tl-cut-marks");
   for (const segment of documentRef.querySelectorAll(".tl-segment.has-sliver")) {
     segment.classList.remove("has-sliver");
     if (isHtmlElement(segment)) segment.style.removeProperty("--sliver");
   }
   if (lane) lane.hidden = !overlay || !keyframesOn;
   if (!overlay) {
+    if (marks) Keyframes.renderCutMarks(marks, [], 1);
     tlIn?.removeAttribute("aria-valuetext");
     tlOut?.removeAttribute("aria-valuetext");
     return;
@@ -267,40 +269,18 @@ function paintCutOverlay() {
   }
   const segments = clipSegments(clip, full);
   const active = activeSegmentIndex(clip, segments);
+  const slivers: Keyframes.CutSliver[] = [];
   for (const [index, segment] of segments.entries()) {
     const sliver = Keyframes.sliverFor(index, segment, plan?.segments[index]);
-    if (!sliver || !segmentsLayer) continue;
-    const range = segmentsLayer.querySelector('.tl-segment[data-segment-index="' + index + '"]');
+    if (!sliver) continue;
+    slivers.push(sliver);
+    const range = segmentsLayer?.querySelector('.tl-segment[data-segment-index="' + index + '"]') ?? null;
     if (isHtmlElement(range)) {
       range.classList.add("has-sliver");
       range.style.setProperty("--sliver", (sliver.delta / (segment.end - segment.start)) * 100 + "%");
     }
-    const hatch = documentRef.createElement("div");
-    hatch.className = "tl-sliver" + (sliver.kind === "exact" ? " exact" : "");
-    hatch.setAttribute("aria-hidden", "true");
-    hatch.style.left = (sliver.requestedStart / full) * 100 + "%";
-    hatch.style.width = (sliver.delta / full) * 100 + "%";
-    const chip = documentRef.createElement("button");
-    chip.type = "button";
-    chip.className = "edge-chip" + (sliver.kind === "exact" ? " exact" : "");
-    chip.dataset.cutChip = String(index);
-    chip.style.left = (sliver.exportedStart / full) * 100 + "%";
-    chip.title = Keyframes.chipLabel(sliver);
-    chip.setAttribute("aria-label", "Segment " + (index + 1) + ". " + chip.title);
-    const arrow = documentRef.createElementNS("http://www.w3.org/2000/svg", "svg");
-    arrow.setAttribute("viewBox", "0 0 12 12");
-    arrow.setAttribute("aria-hidden", "true");
-    const path = documentRef.createElementNS("http://www.w3.org/2000/svg", "path");
-    path.setAttribute(
-      "d",
-      sliver.kind === "exact"
-        ? "M2 6a4 4 0 0 1 7-2.6M10 6a4 4 0 0 1-7 2.6M9 1v2.5H6.5M3 11V8.5h2.5"
-        : "M2 6h7M6.5 3.5 9 6l-2.5 2.5",
-    );
-    arrow.appendChild(path);
-    chip.append(arrow, Keyframes.chipText(sliver.kind, sliver.delta));
-    segmentsLayer.append(hatch, chip);
   }
+  if (marks) Keyframes.renderCutMarks(marks, slivers, full);
   const bounds = arrayItem(segments, active);
   const planSegment = plan?.segments[active] ?? null;
   if (bounds) {
@@ -922,7 +902,6 @@ function setRulerScrubCursor(active: unknown) {
 function onTimelinePointerDown(e: PointerEvent) {
   if (e.button != null && e.button !== 0) return;
   const target = isHtmlElement(e.target) ? e.target : null;
-  if (target?.closest(".edge-chip")) return;
   host.AudioTimeline?.selectVideoTrack?.();
   const edgeCandidate = target?.closest(".clip-edge") ?? null;
   let edge = isHtmlElement(edgeCandidate) ? edgeCandidate : null;
@@ -1151,20 +1130,20 @@ function handleTimelineEditKey(e: KeyboardEvent) {
   }
   timeline.addEventListener("click", function(e: MouseEvent) {
     const target = isHtmlElement(e.target) ? e.target : null;
-    const chip = target?.closest<HTMLElement>(".edge-chip");
-    if (chip) {
-      const index = Number(chip.dataset.cutChip);
-      const resolved = selectedClip(session)?.cutState?.plan?.segments[index]?.resolved.start;
-      if (!resolved) return;
-      host.AudioTimeline?.selectVideoTrack?.();
-      host.showCutRow?.(index, mediaSeconds(resolved));
-      return;
-    }
     if (target?.classList.contains("tl-segment") && e.detail === 0) {
       selectSegment(parseInt(target.dataset.segmentIndex ?? "", 10), true);
     }
   });
   timeline.addEventListener("keydown", handleTimelineEditKey);
+  byId("tl-cut-marks")?.addEventListener("click", function(e: MouseEvent) {
+    const chip = isHtmlElement(e.target) ? e.target.closest<HTMLElement>(".edge-chip") : null;
+    if (!chip) return;
+    const index = Number(chip.dataset.cutChip);
+    const resolved = selectedClip(session)?.cutState?.plan?.segments[index]?.resolved.start;
+    if (!resolved) return;
+    host.AudioTimeline?.selectVideoTrack?.();
+    host.showCutRow?.(index, mediaSeconds(resolved));
+  });
 })();
 
 

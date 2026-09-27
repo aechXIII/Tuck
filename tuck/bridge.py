@@ -18,7 +18,7 @@ from .bridge_validation import (
     parse_plan_request,
     validate_path,
 )
-from .cutting.analysis import CutAnalysisError, CutRequestWork
+from .cutting.analysis import CutAnalysisError, check_request
 from .cutting.planner import CutPlanChanged, parse_cut_export, parse_cut_request, plan_cut
 from .cutting.serialization import analysis_snapshot_dict, cut_plan_preview_dict
 from .cutting.service import CutAnalysisService
@@ -49,6 +49,7 @@ from .probe import probe as probe_video
 from .probe_cache import ProbeCache
 from .profile_service import ProfileService
 from .queue import get_queue
+from .request_work import RequestWork
 from .settings import get_settings_manager
 
 logger = logging.getLogger(__name__)
@@ -262,6 +263,9 @@ class BridgeAPI:
 
     def get_cut_analysis(self, path: str) -> BridgeResult:
         try:
+            if not isinstance(path, str) or not path:
+                raise ValueError("Invalid path: empty or not a string")
+            # only a lookup key: nothing is opened, and a removed file reads as changed
             return {"ok": True, **analysis_snapshot_dict(self._cut_analysis.get(Path(path)))}
         except (ValueError, OSError) as exc:
             return {"ok": False, "error": str(exc), "code": "analysis_failed", "field": "cut"}
@@ -322,14 +326,14 @@ class BridgeAPI:
             return {"ok": False, "error": str(e), "_request_id": req_id}
 
     def enqueue_with_options(
-        self, request: object, *, work: CutRequestWork | None = None
+        self, request: object, *, work: RequestWork | None = None
     ) -> BridgeResult:
         if not isinstance(request, dict):
             return {"ok": False, "error": "Expected request object"}
         raw = request
 
         if raw.get("operation") == "cut":
-            return self._enqueue_cut(raw, work or CutRequestWork())
+            return self._enqueue_cut(raw, work or RequestWork())
 
         try:
             req = self._parse_plan_request(raw)
@@ -347,9 +351,9 @@ class BridgeAPI:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
-    def _enqueue_cut(self, raw: object, work: CutRequestWork) -> dict[str, JsonValue]:
+    def _enqueue_cut(self, raw: object, work: RequestWork) -> dict[str, JsonValue]:
         try:
-            work.check()
+            check_request(work)
             request, fingerprint = parse_cut_export(raw)
             cut = self._cut_analysis.plan_for_export(request, fingerprint, work)
             item = self._queue.enqueue(cut, work=work)
@@ -370,13 +374,11 @@ class BridgeAPI:
                 "field": "cut",
             }
 
-    def enqueue_batch(
-        self, requests: object, *, work: CutRequestWork | None = None
-    ) -> BridgeResult:
+    def enqueue_batch(self, requests: object, *, work: RequestWork | None = None) -> BridgeResult:
         if not isinstance(requests, list) or not requests:
             return {"ok": False, "error": "No requests provided"}
         raw = requests
-        work = work or CutRequestWork()
+        work = work or RequestWork()
 
         planning_options = None
         enqueued: list[str] = []
@@ -396,8 +398,8 @@ class BridgeAPI:
                     errors.append(str(response["error"]))
                     rejections.append({"index": idx, **response})
                 continue
+            # the request's time budget is for preparing cuts; encodes plan quickly
             try:
-                work.check()
                 req = self._parse_plan_request(entry)
             except (ValueError, TypeError, FileNotFoundError) as e:
                 src = entry.get("source", f"request {idx}")
@@ -413,7 +415,7 @@ class BridgeAPI:
                 if planning_options is None:
                     planning_options = self._planning_options()
                 enc_plan = self._build_plan(req, profile, planning_options)
-                item = self._queue.enqueue(enc_plan, work=work)
+                item = self._queue.enqueue(enc_plan)
                 enqueued.append(item.id)
             except Exception as e:
                 errors.append(f"{Path(req.source).name}: {e}")
@@ -451,7 +453,7 @@ class BridgeAPI:
         ok = self._queue.move_item(str(item_id), new_index)
         return {"ok": ok}
 
-    def retry_item(self, item_id: str, *, work: CutRequestWork | None = None) -> BridgeResult:
+    def retry_item(self, item_id: str, *, work: RequestWork | None = None) -> BridgeResult:
         try:
             item = self._queue.retry(str(item_id), work=work)
         except CutPlanChanged as exc:
@@ -877,8 +879,7 @@ class BridgeAPI:
         return find_profile_by_id(profiles, profile_id)
 
     def _parse_plan_request(self, raw: dict[str, Any]) -> PlanRequest:
-        if raw.get("operation", "encode") == "cut":
-            raise ValueError("Lossless cut export is not available in this build yet")
+        # cut requests are routed to the cut planner before this point
         if raw.get("operation", "encode") != "encode":
             raise ValueError("Unknown export operation")
 

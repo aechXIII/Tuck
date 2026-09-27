@@ -12,6 +12,7 @@ from tuck.cutting.analysis import CutAnalysisError, analyze_source
 from tuck.cutting.bitstream import AvcConfig, BitstreamError
 from tuck.cutting.exact import exact_media_reason, exact_regions
 from tuck.cutting.planner import parse_cut_request, plan_cut
+from tuck.cutting.runner import CutRunner
 from tuck.models.cutting import MediaTime
 from tuck.models.progress import EncodeStage
 
@@ -31,13 +32,6 @@ def source(tools, tmp_path_factory):
     # B-frames, a non-zero start and audio are the cases most likely to break a splice
     path = tmp_path_factory.mktemp("exact") / "source.mp4"
     return create_source(tools, path, duration=6, gop=60, b_frames=3, offset=5)
-
-
-def CutRunner():  # noqa: N802
-    # tuck.encoding imports the cut runner, so importing it first would be circular
-    from tuck.cutting.runner import CutRunner as Runner
-
-    return Runner()
 
 
 def frame_time(index, rate=Fraction(30)):
@@ -163,7 +157,10 @@ def test_fractional_frame_rates_cut_exactly(tools, tmp_path):
 
 def test_exact_edges_round_to_the_nearest_frame_and_splits_stay_contiguous(tools, source):
     analysis = analyze_source(source, Event(), lambda _: None)
-    ms = lambda value: MediaTime(value, 1, 1_000_000).to_dict()  # noqa: E731
+
+    def ms(value):
+        return MediaTime(value, 1, 1_000_000).to_dict()
+
     request = parse_cut_request(
         {
             "operation": "cut",

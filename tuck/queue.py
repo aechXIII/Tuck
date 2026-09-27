@@ -9,13 +9,14 @@ from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .cutting.analysis import CutRequestWork
+from .cutting.analysis import check_request
 from .cutting.packets import rebuild_cut_plan
 from .engine import EncodeCancelled, FFmpegEngine
 from .models import EncodePlan, QueueItem, QueueState
 from .models.cutting import CutPlan
 from .models.progress import EncodeProgress, EncodeStage
 from .output_paths import resolve_output_collision
+from .request_work import RequestWork
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +33,7 @@ class ProcessingQueue:
         self._stop_after_current = False
         self._cancelling = 0
         self._cancel_generation = 0
-        self._retry_work: set[CutRequestWork] = set()
+        self._retry_work: set[RequestWork] = set()
 
     @property
     def items(self) -> list[QueueItem]:
@@ -50,9 +51,7 @@ class ProcessingQueue:
                 (list(self._items.values()), self._current_item, list(self._pending))
             )
 
-    def enqueue(
-        self, plan: EncodePlan | CutPlan, *, work: CutRequestWork | None = None
-    ) -> QueueItem:
+    def enqueue(self, plan: EncodePlan | CutPlan, *, work: RequestWork | None = None) -> QueueItem:
         item = QueueItem(
             plan=copy.deepcopy(plan),
             state=QueueState.PENDING,
@@ -61,7 +60,7 @@ class ProcessingQueue:
         )
         with self._condition:
             if work is not None:
-                work.check()
+                check_request(work)
             self._items[item.id] = item
             self._pending.append(item.id)
             self._condition.notify()
@@ -144,8 +143,8 @@ class ProcessingQueue:
                 del self._items[iid]
             return len(to_remove)
 
-    def retry(self, item_id: str, *, work: CutRequestWork | None = None) -> QueueItem | None:
-        work = work or CutRequestWork()
+    def retry(self, item_id: str, *, work: RequestWork | None = None) -> QueueItem | None:
+        work = work or RequestWork()
         with self._condition:
             item = self._items.get(item_id)
             if (
@@ -292,7 +291,7 @@ class ProcessingQueue:
                     item.state = QueueState.FAILED
                     item.error = str(e)
                     item.error_code = str(getattr(e, "code", ""))
-                    detail = getattr(e, "stderr", "") or ""
+                    detail = getattr(e, "stderr", "") or getattr(e, "detail", "") or ""
                     if not detail:
                         detail = getattr(self._engine, "last_stderr", "") or ""
                     item.error_detail = str(detail)[-4000:]

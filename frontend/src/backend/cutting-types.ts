@@ -25,6 +25,8 @@ export interface CutIssue extends JsonObject {
   readonly code: string;
   readonly message: string;
   readonly field: string | null;
+  // a short heading for notices; empty when the message stands alone
+  readonly title?: string;
 }
 export interface CutEnqueueRequest extends CutPlanRequest {
   readonly plan_fingerprint: string;
@@ -37,7 +39,7 @@ export interface CutSegment extends JsonObject {
   readonly audio_source: CutRange | null;
   readonly audio_output: CutRange | null;
   readonly audio_packet_count: number;
-  // Exact plans: the copied part between encoded edges, or null when all of it is encoded
+  // in Exact plans, the copied part between encoded edges, or null when all of it is encoded
   readonly copied: CutRange | null;
 }
 export interface CutTrack extends JsonObject {
@@ -140,6 +142,7 @@ function issue(value: unknown): value is CutIssue {
     && typeof value.code === "string"
     && typeof value.message === "string"
     && (value.field === null || typeof value.field === "string")
+    && (value.title === undefined || typeof value.title === "string")
   );
 }
 function issues(value: unknown): value is readonly CutIssue[] {

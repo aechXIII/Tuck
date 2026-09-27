@@ -611,7 +611,11 @@
               <div class="cut-notice" id="cut-conflict" hidden>
                 <h4 id="conflict-title"></h4>
                 <p>They can't be applied without re-encoding. Your edits stay saved.</p>
-                <div class="row"><button type="button" class="btn2 primary" id="conflict-compress">Compress instead</button><button type="button" class="btn2" id="conflict-remove">Export without them</button><button type="button" class="btn2" id="conflict-restore" hidden>Include edits</button></div>
+                <div class="row">
+                  <button type="button" class="btn2 primary" id="conflict-compress">Compress instead</button>
+                  <button type="button" class="btn2" id="conflict-remove">Export without them</button>
+                  <button type="button" class="btn2" id="conflict-restore" hidden>Include edits</button>
+                </div>
               </div>
               <div class="gr">
                 <div class="inspector-label-row"><div class="grt">Precision</div></div>
@@ -623,11 +627,19 @@
                 <p class="setting-note" id="cut-exact-note">Exact cutting is not available yet.</p>
               </div>
               <div class="gr" id="cuts-card">
-                <div class="inspector-label-row"><div class="grt" id="cuts-title">Cuts</div><div class="inspector-label-actions"><button type="button" class="inspector-text-action" id="snap-all" hidden>Move to keyframes</button></div></div>
+                <div class="inspector-label-row">
+                  <div class="grt" id="cuts-title">Cuts</div>
+                  <div class="inspector-label-actions">
+                    <button type="button" class="inspector-text-action" id="snap-all" hidden>Move to keyframes</button>
+                  </div>
+                </div>
                 <p id="cut-message" class="setting-note">Choose a video to cut without re-encoding.</p>
                 <button type="button" class="btn2" id="cut-reread" hidden>Read keyframes again</button>
                 <ol class="cut-list" id="cut-list"></ol>
-                <div class="cut-scan" id="cut-scan" hidden><span id="cut-scan-text">Reading keyframes…</span><progress id="cut-scan-bar" max="100" aria-label="Reading keyframes"></progress></div>
+                <div class="cut-scan" id="cut-scan" hidden>
+                  <span id="cut-scan-text">Reading keyframes…</span>
+                  <progress id="cut-scan-bar" max="100" aria-label="Reading keyframes"></progress>
+                </div>
                 <span id="cut-announcement" class="sr-only" role="status"></span>
               </div>
               <div class="gr">
@@ -636,7 +648,11 @@
                 <div class="out-meta" id="out-meta"></div>
                 <div class="out-meta" id="out-tracks" hidden></div>
                 <div class="out-row">
-                  <label class="toggle-row export-toggle" for="cut-audio"><input type="checkbox" role="switch" id="cut-audio" checked><span class="toggle-track" aria-hidden="true"></span><span>Include audio</span></label>
+                  <label class="toggle-row export-toggle" for="cut-audio">
+                    <input type="checkbox" role="switch" id="cut-audio" checked>
+                    <span class="toggle-track" aria-hidden="true"></span>
+                    <span>Include audio</span>
+                  </label>
                   <span class="out-meta" id="cut-audio-meta"></span>
                 </div>
                 <p class="setting-note" id="cut-audio-note">Audio is copied at packet boundaries; a cut may include up to one packet outside the kept range.</p>
@@ -648,331 +664,331 @@
               </div>
             </div>
             <div id="insp-compress">
-            <div class="gr" id="profile-card">
-              <div class="inspector-label-row">
-                <div class="grt">Profile</div>
-                <div class="inspector-label-actions">
+              <div class="gr" id="profile-card">
+                <div class="inspector-label-row">
+                  <div class="grt">Profile</div>
+                  <div class="inspector-label-actions">
+                    <button
+                      type="button"
+                      class="inspector-text-action"
+                      data-action-click="settings-open-profiles"
+                      aria-label="Manage profiles"
+                    >
+                      Manage
+                    </button>
+                    <button
+                      type="button"
+                      class="inspector-text-action"
+                      data-action-click="encoding-save-profile"
+                    >
+                      Save changes
+                    </button>
+                  </div>
+                </div>
+                <div class="profile-select-row">
+                  <select
+                    id="prof-sel"
+                    data-action-change="encoding-profile"
+                    aria-label="Select profile"
+                  ></select>
                   <button
                     type="button"
-                    class="inspector-text-action"
-                    data-action-click="settings-open-profiles"
-                    aria-label="Manage profiles"
+                    class="profile-reset-button"
+                    data-action-click="encoding-reset-profile"
+                    aria-label="Reset to profile"
+                    data-tip="Reset to profile"
                   >
-                    Manage
-                  </button>
-                  <button
-                    type="button"
-                    class="inspector-text-action"
-                    data-action-click="encoding-save-profile"
-                  >
-                    Save changes
+                    <svg viewBox="0 0 16 16" aria-hidden="true">
+                      <polyline points="1.5 3 1.5 6.5 5 6.5"></polyline>
+                      <path d="M3 9.5a5.5 5.5 0 1 0 1.3-5.7L1.5 6.5"></path>
+                    </svg>
                   </button>
                 </div>
-              </div>
-              <div class="profile-select-row">
-                <select
-                  id="prof-sel"
-                  data-action-change="encoding-profile"
-                  aria-label="Select profile"
-                ></select>
-                <button
-                  type="button"
-                  class="profile-reset-button"
-                  data-action-click="encoding-reset-profile"
-                  aria-label="Reset to profile"
-                  data-tip="Reset to profile"
-                >
-                  <svg viewBox="0 0 16 16" aria-hidden="true">
-                    <polyline points="1.5 3 1.5 6.5 5 6.5"></polyline>
-                    <path d="M3 9.5a5.5 5.5 0 1 0 1.3-5.7L1.5 6.5"></path>
-                  </svg>
-                </button>
-              </div>
-              <div class="prof-meta">
-                <span class="mod-badge" id="mod-badge">Modified</span>
-              </div>
-              <details class="profile-options">
-                <summary>Profile options</summary>
-                <div class="profile-options-body">
-                  <div class="prof-row">
-                    <button class="btn2" data-action-click="encoding-save-profile-as">
-                      Save as new…
-                    </button>
+                <div class="prof-meta">
+                  <span class="mod-badge" id="mod-badge">Modified</span>
+                </div>
+                <details class="profile-options">
+                  <summary>Profile options</summary>
+                  <div class="profile-options-body">
+                    <div class="prof-row">
+                      <button class="btn2" data-action-click="encoding-save-profile-as">
+                        Save as new…
+                      </button>
+                    </div>
+                    <div id="prof-reset-row" class="hid">
+                      <button class="btn2" data-action-click="encoding-reset-profile">
+                        Reset to profile
+                      </button>
+                    </div>
                   </div>
-                  <div id="prof-reset-row" class="hid">
-                    <button class="btn2" data-action-click="encoding-reset-profile">
-                      Reset to profile
-                    </button>
+                </details>
+              </div>
+              <div class="gr" id="sz-grp">
+                <div class="sz-head">
+                  <span class="sz-cap">Target size</span>
+                  <span
+                    id="export-summary-modified"
+                    class="export-modified-dot"
+                    aria-label="Modified settings"
+                  ></span>
+                </div>
+                <div class="sz-fig">
+                  <span class="sz-est">
+                    <input id="sz-badge" type="number" min="2" step="1" value="10"
+                      data-action-change="encoding-badge-size"
+                      aria-label="Target size in megabytes" />
+                    <span id="sz-unit">MB</span>
+                  </span>
+                  <div class="pset" id="sz-presets"></div>
+                </div>
+                <input
+                  type="range"
+                  id="sz-slider"
+                  min="2"
+                  max="500"
+                  value="10"
+                  data-action-input="encoding-target-size"
+                  aria-label="Target size in megabytes"
+                  aria-valuenow="10"
+                  aria-valuemin="2"
+                  aria-valuemax="500"
+                />
+                <div id="export-summary-detail" class="sz-detail">
+                  1920&times;1080 &middot; 30 fps &middot; H.264 &middot; AAC 128k
+                </div>
+              </div>
+              <div class="stitle adjust-title">Adjust</div>
+              <p id="export-plan-error" class="blend-error" role="alert" hidden></p>
+              <details class="adjust-panel" id="export-video-panel" open>
+                <summary><span>Video</span><span id="export-video-summary">Source</span></summary>
+                <div class="adjust-panel-body export-video-body">
+                  <div class="video-control-group">
+                    <label for="export-res-select">Resolution</label>
+                    <select id="export-res-select" data-action-change="encoding-resolution-facade" aria-label="Output resolution"></select>
+                    <div id="res-cust" class="video-dimensions" hidden>
+                      <label for="res-w">Width<input type="number" id="res-w" min="2" step="1" value="1920" aria-label="Custom width" data-action-input="encoding-resolution" required /></label>
+                      <span aria-hidden="true">×</span>
+                      <label for="res-h">Height<input type="number" id="res-h" min="2" step="1" value="1080" aria-label="Custom height" data-action-input="encoding-resolution" required /></label>
+                    </div>
                   </div>
+                  <div class="video-control-group">
+                    <label for="export-fps-select">Frame rate</label>
+                    <div class="video-fps-controls">
+                      <select id="export-fps-select" data-action-change="encoding-frame-rate-facade" aria-label="Output frame rate"></select>
+                      <label id="video-custom-fps" class="video-fps-value" hidden><input type="number" id="fps-slider" step="any" min="0.1" value="30" data-action-input="encoding-frame-rate" aria-label="Target frame rate" required /><span>FPS</span></label>
+                    </div>
+                  </div>
+                    <div id="scaler-row" class="video-control-group">
+                      <label for="scaler-sel">Scaling</label>
+                      <select id="scaler-sel" data-action-change="encoding-preview-dirty" aria-label="Scaler algorithm">
+                        <option>Bilinear</option><option>Bicubic</option><option>Lanczos</option><option>Point</option><option selected>Neighbor</option>
+                      </select>
+                    </div>
+                  <p id="video-error" class="blend-error" role="alert" hidden></p>
+                  <input type="checkbox" id="use-source-res" checked hidden />
+                  <input type="hidden" id="res-mode" value="source" />
+                  <input type="checkbox" id="use-source-fps" checked hidden />
+                  <input type="hidden" id="fps-val" value="30" />
                 </div>
               </details>
-            </div>
-            <div class="gr" id="sz-grp">
-              <div class="sz-head">
-                <span class="sz-cap">Target size</span>
-                <span
-                  id="export-summary-modified"
-                  class="export-modified-dot"
-                  aria-label="Modified settings"
-                ></span>
-              </div>
-              <div class="sz-fig">
-                <span class="sz-est">
-                  <input id="sz-badge" type="number" min="2" step="1" value="10"
-                    data-action-change="encoding-badge-size"
-                    aria-label="Target size in megabytes" />
-                  <span id="sz-unit">MB</span>
-                </span>
-                <div class="pset" id="sz-presets"></div>
-              </div>
-              <input
-                type="range"
-                id="sz-slider"
-                min="2"
-                max="500"
-                value="10"
-                data-action-input="encoding-target-size"
-                aria-label="Target size in megabytes"
-                aria-valuenow="10"
-                aria-valuemin="2"
-                aria-valuemax="500"
-              />
-              <div id="export-summary-detail" class="sz-detail">
-                1920&times;1080 &middot; 30 fps &middot; H.264 &middot; AAC 128k
-              </div>
-            </div>
-            <div class="stitle adjust-title">Adjust</div>
-            <p id="export-plan-error" class="blend-error" role="alert" hidden></p>
-            <details class="adjust-panel" id="export-video-panel" open>
-              <summary><span>Video</span><span id="export-video-summary">Source</span></summary>
-              <div class="adjust-panel-body export-video-body">
-                <div class="video-control-group">
-                  <label for="export-res-select">Resolution</label>
-                  <select id="export-res-select" data-action-change="encoding-resolution-facade" aria-label="Output resolution"></select>
-                  <div id="res-cust" class="video-dimensions" hidden>
-                    <label for="res-w">Width<input type="number" id="res-w" min="2" step="1" value="1920" aria-label="Custom width" data-action-input="encoding-resolution" required /></label>
-                    <span aria-hidden="true">×</span>
-                    <label for="res-h">Height<input type="number" id="res-h" min="2" step="1" value="1080" aria-label="Custom height" data-action-input="encoding-resolution" required /></label>
-                  </div>
-                </div>
-                <div class="video-control-group">
-                  <label for="export-fps-select">Frame rate</label>
-                  <div class="video-fps-controls">
-                    <select id="export-fps-select" data-action-change="encoding-frame-rate-facade" aria-label="Output frame rate"></select>
-                    <label id="video-custom-fps" class="video-fps-value" hidden><input type="number" id="fps-slider" step="any" min="0.1" value="30" data-action-input="encoding-frame-rate" aria-label="Target frame rate" required /><span>FPS</span></label>
-                  </div>
-                </div>
-                  <div id="scaler-row" class="video-control-group">
-                    <label for="scaler-sel">Scaling</label>
-                    <select id="scaler-sel" data-action-change="encoding-preview-dirty" aria-label="Scaler algorithm">
-                      <option>Bilinear</option><option>Bicubic</option><option>Lanczos</option><option>Point</option><option selected>Neighbor</option>
-                    </select>
-                  </div>
-                <p id="video-error" class="blend-error" role="alert" hidden></p>
-                <input type="checkbox" id="use-source-res" checked hidden />
-                <input type="hidden" id="res-mode" value="source" />
-                <input type="checkbox" id="use-source-fps" checked hidden />
-                <input type="hidden" id="fps-val" value="30" />
-              </div>
-            </details>
-            <details class="adjust-panel" id="frame-blending-panel">
-              <summary><span>Frame Blending</span><span id="blend-summary">Off</span></summary>
-              <div class="adjust-panel-body blend-body">
-                <label class="toggle-row export-toggle" for="blend-enabled"><span>Enable frame blending</span><input type="checkbox" role="switch" id="blend-enabled" /><span class="toggle-track" aria-hidden="true"></span></label>
-                <fieldset id="blend-options" aria-label="Frame blending settings" disabled>
-                  <div class="export-setting-line blend-fps-row"><label for="blend-fps-select">Output FPS</label><div class="video-fps-controls">
-                    <select id="blend-fps-select" aria-label="Frame blending output frame rate"></select>
-                    <label id="blend-custom-fps" class="video-fps-value" hidden><input type="number" id="blend-fps-input" min="0.1" step="any" value="30" aria-label="Frame blending custom frame rate" data-shared-fps required /><span>FPS</span></label>
-                  </div></div>
-                  <div class="export-setting-line"><label for="blend-amount">Blur amount</label><input type="number" id="blend-amount" min="0" max="4" step="0.01" value="1" required /></div>
-                  <div class="export-setting-line"><label for="blend-curve">Weighting</label><select id="blend-curve"><option value="equal">Equal</option><option value="vegas">Vegas</option><option value="gaussian">Gaussian</option><option value="triangular">Triangular</option><option value="ascending">Ascending</option><option value="descending">Descending</option></select></div>
-                  <figure class="blend-preview">
-                    <svg id="blend-chart" viewBox="0 0 256 48" preserveAspectRatio="none" role="img" aria-label="Weight preview, earlier to later"></svg>
-                    <figcaption><span>Earlier</span><span>Weight preview</span><span>Later</span></figcaption>
-                  </figure>
-                  <details class="blend-advanced">
-                    <summary>Advanced settings</summary>
-                    <div class="export-setting-line blend-curve-setting" hidden><label for="blend-sigma">Gaussian width</label><input type="number" id="blend-sigma" min="0.05" max="1" step="any" value="0.25" required title="Width relative to the exposure window: 0.05&ndash;1" /></div>
-                    <div class="export-setting-line blend-curve-setting" hidden><label for="blend-peak">Triangle peak</label><input type="number" id="blend-peak" min="0.05" max="0.95" step="any" value="0.5" required title="Peak position from earlier to later: 0.05&ndash;0.95" /></div>
-                    <div class="export-setting-line blend-curve-setting" hidden><label for="blend-power">Curve power</label><input type="number" id="blend-power" min="0.1" max="8" step="any" value="1" required title="Higher values emphasize the favored end: 0.1&ndash;8" /></div>
-                    <label class="blend-label" for="blend-weights">Custom weights <span>Optional</span></label>
-                    <input type="text" id="blend-weights" placeholder="e.g. 1, 2, 3, 2, 1" aria-describedby="blend-weights-help blend-error" />
-                    <p class="blend-help" id="blend-weights-help">Earlier to later. Up to 64 numbers, from 0 to 1000. Replaces weighting.</p>
-                    <label class="toggle-row export-toggle" for="blend-linear"><span>Blend in linear light</span><input type="checkbox" role="switch" id="blend-linear" /><span class="toggle-track" aria-hidden="true"></span></label>
-                    <p class="blend-help">Brighter trails. Slower processing.</p>
-                  </details>
+              <details class="adjust-panel" id="frame-blending-panel">
+                <summary><span>Frame Blending</span><span id="blend-summary">Off</span></summary>
+                <div class="adjust-panel-body blend-body">
+                  <label class="toggle-row export-toggle" for="blend-enabled"><span>Enable frame blending</span><input type="checkbox" role="switch" id="blend-enabled" /><span class="toggle-track" aria-hidden="true"></span></label>
+                  <fieldset id="blend-options" aria-label="Frame blending settings" disabled>
+                    <div class="export-setting-line blend-fps-row"><label for="blend-fps-select">Output FPS</label><div class="video-fps-controls">
+                      <select id="blend-fps-select" aria-label="Frame blending output frame rate"></select>
+                      <label id="blend-custom-fps" class="video-fps-value" hidden><input type="number" id="blend-fps-input" min="0.1" step="any" value="30" aria-label="Frame blending custom frame rate" data-shared-fps required /><span>FPS</span></label>
+                    </div></div>
+                    <div class="export-setting-line"><label for="blend-amount">Blur amount</label><input type="number" id="blend-amount" min="0" max="4" step="0.01" value="1" required /></div>
+                    <div class="export-setting-line"><label for="blend-curve">Weighting</label><select id="blend-curve"><option value="equal">Equal</option><option value="vegas">Vegas</option><option value="gaussian">Gaussian</option><option value="triangular">Triangular</option><option value="ascending">Ascending</option><option value="descending">Descending</option></select></div>
+                    <figure class="blend-preview">
+                      <svg id="blend-chart" viewBox="0 0 256 48" preserveAspectRatio="none" role="img" aria-label="Weight preview, earlier to later"></svg>
+                      <figcaption><span>Earlier</span><span>Weight preview</span><span>Later</span></figcaption>
+                    </figure>
+                    <details class="blend-advanced">
+                      <summary>Advanced settings</summary>
+                      <div class="export-setting-line blend-curve-setting" hidden><label for="blend-sigma">Gaussian width</label><input type="number" id="blend-sigma" min="0.05" max="1" step="any" value="0.25" required title="Width relative to the exposure window: 0.05&ndash;1" /></div>
+                      <div class="export-setting-line blend-curve-setting" hidden><label for="blend-peak">Triangle peak</label><input type="number" id="blend-peak" min="0.05" max="0.95" step="any" value="0.5" required title="Peak position from earlier to later: 0.05&ndash;0.95" /></div>
+                      <div class="export-setting-line blend-curve-setting" hidden><label for="blend-power">Curve power</label><input type="number" id="blend-power" min="0.1" max="8" step="any" value="1" required title="Higher values emphasize the favored end: 0.1&ndash;8" /></div>
+                      <label class="blend-label" for="blend-weights">Custom weights <span>Optional</span></label>
+                      <input type="text" id="blend-weights" placeholder="e.g. 1, 2, 3, 2, 1" aria-describedby="blend-weights-help blend-error" />
+                      <p class="blend-help" id="blend-weights-help">Earlier to later. Up to 64 numbers, from 0 to 1000. Replaces weighting.</p>
+                      <label class="toggle-row export-toggle" for="blend-linear"><span>Blend in linear light</span><input type="checkbox" role="switch" id="blend-linear" /><span class="toggle-track" aria-hidden="true"></span></label>
+                      <p class="blend-help">Brighter trails. Slower processing.</p>
+                    </details>
 
-                  <p id="blend-error" class="blend-error" role="alert" hidden></p>
-                </fieldset>
-              </div>
-            </details>
-            <details class="adjust-panel" id="lut-panel">
-              <summary><span>Color LUT</span><span id="lut-summary">Not selected</span></summary>
-              <div class="adjust-panel-body lut-body">
-                <div class="enc-field">
-                  <label id="lut-field-label" for="lut-name">LUT</label>
-                  <div class="lut-file-row">
-                    <button type="button" id="lut-name" class="lut-picker-trigger" aria-labelledby="lut-field-label lut-current-name" aria-haspopup="dialog" aria-expanded="false" aria-controls="lut-picker-popup"><span id="lut-current-name">No LUT selected</span></button>
-                    <div id="lut-picker-popup" class="lut-picker-popup" popover="auto" role="dialog" aria-label="Saved LUTs">
-                      <div class="lut-picker-head"><div class="lut-search-row">
-                        <svg width="14" height="14" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5" stroke="currentColor" stroke-width="1.5"/><path d="m13 13 4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-                        <input id="lut-search" type="search" role="combobox" aria-label="Search saved LUTs" placeholder="Find a LUT…" aria-autocomplete="list" aria-expanded="true" aria-controls="lut-options" autocomplete="off" />
-                      </div></div>
-                      <div id="lut-options" class="lut-options" role="listbox" aria-label="Saved LUTs"></div>
-                      <p id="lut-empty" class="lut-picker-message" hidden>No saved LUTs.</p>
-                      <div class="lut-picker-footer"><button type="button" id="lut-remove" hidden>Remove LUT</button><button type="button" id="lut-clear-history" title="Clear saved choices. Your current LUT and files are kept.">Clear history</button></div>
-                      <p id="lut-history-status" class="lut-picker-message" role="status" hidden></p>
+                    <p id="blend-error" class="blend-error" role="alert" hidden></p>
+                  </fieldset>
+                </div>
+              </details>
+              <details class="adjust-panel" id="lut-panel">
+                <summary><span>Color LUT</span><span id="lut-summary">Not selected</span></summary>
+                <div class="adjust-panel-body lut-body">
+                  <div class="enc-field">
+                    <label id="lut-field-label" for="lut-name">LUT</label>
+                    <div class="lut-file-row">
+                      <button type="button" id="lut-name" class="lut-picker-trigger" aria-labelledby="lut-field-label lut-current-name" aria-haspopup="dialog" aria-expanded="false" aria-controls="lut-picker-popup"><span id="lut-current-name">No LUT selected</span></button>
+                      <div id="lut-picker-popup" class="lut-picker-popup" popover="auto" role="dialog" aria-label="Saved LUTs">
+                        <div class="lut-picker-head"><div class="lut-search-row">
+                          <svg width="14" height="14" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5" stroke="currentColor" stroke-width="1.5"/><path d="m13 13 4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                          <input id="lut-search" type="search" role="combobox" aria-label="Search saved LUTs" placeholder="Find a LUT…" aria-autocomplete="list" aria-expanded="true" aria-controls="lut-options" autocomplete="off" />
+                        </div></div>
+                        <div id="lut-options" class="lut-options" role="listbox" aria-label="Saved LUTs"></div>
+                        <p id="lut-empty" class="lut-picker-message" hidden>No saved LUTs.</p>
+                        <div class="lut-picker-footer"><button type="button" id="lut-remove" hidden>Remove LUT</button><button type="button" id="lut-clear-history" title="Clear saved choices. Your current LUT and files are kept.">Clear history</button></div>
+                        <p id="lut-history-status" class="lut-picker-message" role="status" hidden></p>
+                      </div>
+                      <button type="button" id="lut-import" class="btn2">Import</button>
                     </div>
-                    <button type="button" id="lut-import" class="btn2">Import</button>
                   </div>
-                </div>
-                <div id="lut-adjustments" class="lut-adjustments" hidden>
-                  <label class="toggle-row export-toggle" for="lut-enabled"><span>Apply LUT</span><input type="checkbox" role="switch" id="lut-enabled" aria-describedby="lut-apply-help" disabled /><span class="toggle-track" aria-hidden="true"></span></label>
-                  <p id="lut-apply-help" class="lut-help">Applies to the preview and export.</p>
-                  <div class="export-setting-line lut-strength-row">
-                    <label for="lut-strength">Strength</label>
-                    <input type="range" id="lut-strength" min="0" max="100" step="1" value="100" disabled />
-                    <output id="lut-strength-value" for="lut-strength">100%</output>
+                  <div id="lut-adjustments" class="lut-adjustments" hidden>
+                    <label class="toggle-row export-toggle" for="lut-enabled"><span>Apply LUT</span><input type="checkbox" role="switch" id="lut-enabled" aria-describedby="lut-apply-help" disabled /><span class="toggle-track" aria-hidden="true"></span></label>
+                    <p id="lut-apply-help" class="lut-help">Applies to the preview and export.</p>
+                    <div class="export-setting-line lut-strength-row">
+                      <label for="lut-strength">Strength</label>
+                      <input type="range" id="lut-strength" min="0" max="100" step="1" value="100" disabled />
+                      <output id="lut-strength-value" for="lut-strength">100%</output>
+                    </div>
                   </div>
+                  <p id="lut-error" class="blend-error" role="alert" hidden></p>
+                  <p id="lut-status" class="lut-status" role="status" hidden></p>
                 </div>
-                <p id="lut-error" class="blend-error" role="alert" hidden></p>
-                <p id="lut-status" class="lut-status" role="status" hidden></p>
-              </div>
-            </details>
-            <details class="adjust-panel">
-              <summary><span>Audio</span><span id="export-audio-summary">AAC 128k</span></summary>
-              <div class="adjust-panel-body">
-            <div class="gr">
-              <div class="info-row">
-                <label class="toggle-row export-toggle"
-                  ><input
-                    type="checkbox" role="switch"
-                    id="keep-audio"
-                    data-action-change="encoding-keep-audio"
-                  /><span class="toggle-track" aria-hidden="true"></span><span>Copy when possible</span></label
-                >
-              </div>
-              <div class="enc-field">
-                <label for="audio-br">Bitrate (kbps)</label
-                ><input
-                  type="number"
-                  id="audio-br"
-                  value="128"
-                  min="0"
-                  max="320"
-                  aria-label="Audio bitrate"
-                  data-action-change="encoding-preview-dirty"
-                />
-              </div>
-            </div>
-              </div>
-            </details>
-            <details class="adjust-panel">
-              <summary><span>Encoder</span><span id="export-encoder-summary">H.264 · Balanced</span></summary>
-              <div class="adjust-panel-body">
-            <div class="gr">
-              <div class="grt">Encoding</div>
-              <div class="enc-field">
-                <label for="enc-sel">Encoder</label
-                ><select
-                  id="enc-sel"
-                  data-action-change="encoding-encoder"
-                  aria-label="Video encoder"
-                ></select>
-              </div>
-              <div class="setting-note" id="encoder-note">
-                Hardware is faster; software can produce smaller files.
-              </div>
-              <div class="enc-field">
-                <label for="speed-sel">Encoding speed</label
-                ><select
-                  id="speed-sel"
-                  data-action-change="encoding-speed"
-                  aria-label="Encoding speed"
-                >
-                  <option value="fast">Fast</option>
-                  <option value="balanced" selected>Balanced</option>
-                  <option value="best">Best compression</option>
-                </select>
-              </div>
-              <div class="enc-field" id="two-pass-wrap">
-                <label for="two-pass">Two-pass encoding</label
-                ><select
-                  id="two-pass"
-                  data-action-change="encoding-two-pass"
-                  aria-label="Two-pass encoding"
-                >
-                  <option value="on" selected>On</option>
-                  <option value="off">Off</option>
-                </select>
-              </div>
-              <span class="setting-note hid" id="two-pass-note"
-                >Two-pass is available only for software compression.</span
-              >
-              <button
-                class="advanced-toggle"
-                id="adv-toggle"
-                type="button"
-                aria-expanded="false"
-                data-action-click="encoding-toggle-advanced"
-              >
-                <span>Advanced encoding</span
-                ><svg class="advanced-arrow" aria-hidden="true" viewBox="0 0 12 12"><path d="m3 4.5 3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              </button>
-              <div class="hid" id="adv-sec">
+              </details>
+              <details class="adjust-panel">
+                <summary><span>Audio</span><span id="export-audio-summary">AAC 128k</span></summary>
+                <div class="adjust-panel-body">
+              <div class="gr">
+                <div class="info-row">
+                  <label class="toggle-row export-toggle"
+                    ><input
+                      type="checkbox" role="switch"
+                      id="keep-audio"
+                      data-action-change="encoding-keep-audio"
+                    /><span class="toggle-track" aria-hidden="true"></span><span>Copy when possible</span></label
+                  >
+                </div>
                 <div class="enc-field">
-                  <label for="preset-sel">Native FFmpeg preset</label
-                  ><select
-                    id="preset-sel"
-                    data-action-change="encoding-native-preset"
-                    aria-label="Native FFmpeg preset"
-                  ></select>
-                </div>
-                <div class="enc-field" id="rate-control-row">
-                  <label id="rate-label" for="rc-sel">Quality method</label
-                  ><select
-                    id="rc-sel"
-                    data-action-change="encoding-rate-control"
-                    aria-label="Rate control method"
-                  ></select>
-                </div>
-                <div class="enc-field hid" id="quality-row">
-                  <label id="quality-label" for="quality-val">CQ value</label
+                  <label for="audio-br">Bitrate (kbps)</label
                   ><input
                     type="number"
-                    id="quality-val"
-                    value="23"
+                    id="audio-br"
+                    value="128"
                     min="0"
-                    max="51"
+                    max="320"
+                    aria-label="Audio bitrate"
                     data-action-change="encoding-preview-dirty"
-                    aria-label="Quality value"
-                  />
-                  <div class="quality-help">Lower value = higher quality.</div>
-                </div>
-                <div class="enc-field hid" id="br-row">
-                  <label for="br-val">Bitrate (kbps)</label
-                  ><input
-                    type="number"
-                    id="br-val"
-                    value="2000"
-                    min="50"
-                    max="50000"
-                    data-action-change="encoding-preview-dirty"
-                    aria-label="Explicit bitrate"
                   />
                 </div>
-                <div class="enc-field hid" id="tune-row">
-                  <label for="tune-sel">Tune</label
+              </div>
+                </div>
+              </details>
+              <details class="adjust-panel">
+                <summary><span>Encoder</span><span id="export-encoder-summary">H.264 · Balanced</span></summary>
+                <div class="adjust-panel-body">
+              <div class="gr">
+                <div class="grt">Encoding</div>
+                <div class="enc-field">
+                  <label for="enc-sel">Encoder</label
                   ><select
-                    id="tune-sel"
-                    data-action-change="encoding-preview-dirty"
-                    aria-label="Encoder tune"
+                    id="enc-sel"
+                    data-action-change="encoding-encoder"
+                    aria-label="Video encoder"
                   ></select>
                 </div>
+                <div class="setting-note" id="encoder-note">
+                  Hardware is faster; software can produce smaller files.
+                </div>
+                <div class="enc-field">
+                  <label for="speed-sel">Encoding speed</label
+                  ><select
+                    id="speed-sel"
+                    data-action-change="encoding-speed"
+                    aria-label="Encoding speed"
+                  >
+                    <option value="fast">Fast</option>
+                    <option value="balanced" selected>Balanced</option>
+                    <option value="best">Best compression</option>
+                  </select>
+                </div>
+                <div class="enc-field" id="two-pass-wrap">
+                  <label for="two-pass">Two-pass encoding</label
+                  ><select
+                    id="two-pass"
+                    data-action-change="encoding-two-pass"
+                    aria-label="Two-pass encoding"
+                  >
+                    <option value="on" selected>On</option>
+                    <option value="off">Off</option>
+                  </select>
+                </div>
+                <span class="setting-note hid" id="two-pass-note"
+                  >Two-pass is available only for software compression.</span
+                >
+                <button
+                  class="advanced-toggle"
+                  id="adv-toggle"
+                  type="button"
+                  aria-expanded="false"
+                  data-action-click="encoding-toggle-advanced"
+                >
+                  <span>Advanced encoding</span
+                  ><svg class="advanced-arrow" aria-hidden="true" viewBox="0 0 12 12"><path d="m3 4.5 3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+                <div class="hid" id="adv-sec">
+                  <div class="enc-field">
+                    <label for="preset-sel">Native FFmpeg preset</label
+                    ><select
+                      id="preset-sel"
+                      data-action-change="encoding-native-preset"
+                      aria-label="Native FFmpeg preset"
+                    ></select>
+                  </div>
+                  <div class="enc-field" id="rate-control-row">
+                    <label id="rate-label" for="rc-sel">Quality method</label
+                    ><select
+                      id="rc-sel"
+                      data-action-change="encoding-rate-control"
+                      aria-label="Rate control method"
+                    ></select>
+                  </div>
+                  <div class="enc-field hid" id="quality-row">
+                    <label id="quality-label" for="quality-val">CQ value</label
+                    ><input
+                      type="number"
+                      id="quality-val"
+                      value="23"
+                      min="0"
+                      max="51"
+                      data-action-change="encoding-preview-dirty"
+                      aria-label="Quality value"
+                    />
+                    <div class="quality-help">Lower value = higher quality.</div>
+                  </div>
+                  <div class="enc-field hid" id="br-row">
+                    <label for="br-val">Bitrate (kbps)</label
+                    ><input
+                      type="number"
+                      id="br-val"
+                      value="2000"
+                      min="50"
+                      max="50000"
+                      data-action-change="encoding-preview-dirty"
+                      aria-label="Explicit bitrate"
+                    />
+                  </div>
+                  <div class="enc-field hid" id="tune-row">
+                    <label for="tune-sel">Tune</label
+                    ><select
+                      id="tune-sel"
+                      data-action-change="encoding-preview-dirty"
+                      aria-label="Encoder tune"
+                    ></select>
+                  </div>
+                </div>
               </div>
-            </div>
-              </div>
-            </details>
+                </div>
+              </details>
             </div>
           </div>
         </div>
@@ -1260,6 +1276,7 @@
                   <div id="tl-segments"></div>
                 </div>
               </div>
+              <div class="tl-cut-marks" id="tl-cut-marks"></div>
             </div>
             <div class="seq-row audio" id="source-audio-track">
               <div class="seq-head" id="source-audio-head">
@@ -1338,7 +1355,7 @@
           max="100"
           aria-label="Queue progress"
         ></progress>
-        <span id="qeta">ETA --</span><span id="qfname" role="status"></span>
+        <span id="qeta">ETA --</span><span id="qfname"></span>
         <button
           class="qbtn"
           id="btn-stop-after"

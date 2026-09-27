@@ -6,7 +6,7 @@ import tempfile
 from pathlib import Path
 from types import TracebackType
 
-from ..output_paths import reservation_path, resolve_output_collision
+from .output_paths import reservation_path, resolve_output_collision
 
 logger = logging.getLogger(__name__)
 

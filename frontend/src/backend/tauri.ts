@@ -348,15 +348,27 @@ class TauriTransport implements TauriBackendClient {
   }
 
   analyzeCut(path: string, workId: string): Promise<BackendResult<CutAnalysisPayload>> {
-    return this.#request("analyzeCut", {command:"analyze_cut",payload:{path,work_id:workId}}, isCutAnalysisPayload);
+    return this.#request(
+      "analyzeCut",
+      { command: "analyze_cut", payload: { path, work_id: workId } },
+      isCutAnalysisPayload,
+    );
   }
 
   getCutAnalysis(path: string): Promise<BackendResult<CutAnalysisPayload>> {
-    return this.#request("getCutAnalysis", {command:"get_cut_analysis",payload:{path}}, isCutAnalysisPayload);
+    return this.#request(
+      "getCutAnalysis",
+      { command: "get_cut_analysis", payload: { path } },
+      isCutAnalysisPayload,
+    );
   }
 
   cancelCutWork(workId: string): Promise<BackendResult<CutCancellation>> {
-    return this.#request("cancelCutWork", {command:"cancel_cut_work",payload:{work_id:workId}}, isCutCancellation);
+    return this.#request(
+      "cancelCutWork",
+      { command: "cancel_cut_work", payload: { work_id: workId } },
+      isCutCancellation,
+    );
   }
 
   createPlan(request: CutPlanRequest): Promise<BackendResult<CutPlanPayload>>;

@@ -26,7 +26,6 @@ export function installCutControls(deps: CutControlsDeps) {
   };
   const state = (clip: EditorClip) => clip.cutState ??= createCutState();
   const selected = () => session.selPath ? session.clips[session.selPath] : undefined;
-  const exactSeen = new WeakMap<EditorClip, boolean>();
   let active = false;
   let busy = false;
   let refreshDeferred = false;
@@ -103,7 +102,7 @@ export function installCutControls(deps: CutControlsDeps) {
       if (["missing","cancelled","failed"].includes(result.value.status)) {
         const workId = crypto.randomUUID();
         scanning = {clip,workId};
-        state(clip).workId = workId;
+        clip.cutState = reduceCutState(state(clip),{type:"scan",workId});
         result = await client().analyzeCut(clip.path,workId);
       }
       while (current()) {
@@ -135,8 +134,8 @@ export function installCutControls(deps: CutControlsDeps) {
       return response.value.data;
     } catch (error) {
       if (current()) {
-        state(clip).plan = null;
-        state(clip).error = error instanceof Error ? error.message : "The cut could not be prepared. Read keyframes again to retry.";
+        const message = error instanceof Error ? error.message : "The cut could not be prepared. Read keyframes again to retry.";
+        clip.cutState = reduceCutState(state(clip),{type:"failed",message,plan:null});
       }
       return null;
     }
@@ -152,7 +151,7 @@ export function installCutControls(deps: CutControlsDeps) {
     const conflict = plan?.issues.find(issue => issue.code === "incompatible_edit");
     const withoutEdits = !!current?.withoutEdits && !!request?.edits?.length;
     element("cut-conflict").hidden = !conflict && !withoutEdits;
-    element("conflict-title").textContent = withoutEdits ? "Exporting without these edits" : conflict?.message.split(". Choose Compress")[0] ?? "";
+    element("conflict-title").textContent = withoutEdits ? "Exporting without these edits" : conflict?.title || conflict?.message || "";
     element("conflict-remove").hidden = withoutEdits;
     element("conflict-restore").hidden = !withoutEdits;
     const issue = plan?.issues.find(issue => !["incompatible_edit","segment_collapsed"].includes(issue.code));
@@ -162,8 +161,7 @@ export function installCutControls(deps: CutControlsDeps) {
     element("cut-message").hidden = !message;
     element("cut-reread").hidden = !clip?.probed || !current?.error;
     const precision = current?.precision ?? "keyframes";
-    // keep the last answer while a new plan is prepared, so the control does not flicker
-    const exactAvailable = clip && plan ? (exactSeen.set(clip, plan.exact_available), plan.exact_available) : clip ? exactSeen.get(clip) ?? false : false;
+    const exactAvailable = current?.exactAvailable ?? false;
     // only give a reason once the backend has said why; while reading keyframes it is unknown
     const exactReason = plan?.exact_reason || current?.analysis?.analysis?.exact_reason || "";
     const exactButton = element<HTMLButtonElement>("cut-exact");
@@ -176,7 +174,7 @@ export function installCutControls(deps: CutControlsDeps) {
       option.setAttribute("aria-checked",String(checked));
       option.tabIndex = checked ? 0 : -1;
     }
-    element<HTMLButtonElement>("precision-a").querySelector<HTMLButtonElement>('[data-precision="keyframes"]')!.disabled = busy;
+    element("precision-a").querySelector<HTMLButtonElement>('[data-precision="keyframes"]')!.disabled = busy;
     element("precision-note").textContent = precision === "exact"
       ? "Re-encodes near cuts; copies the rest. Audio stays packet-accurate."
       : "Fast. Off-keyframe cuts start at the next keyframe.";
@@ -252,7 +250,6 @@ export function installCutControls(deps: CutControlsDeps) {
     all.textContent = `Export all cuts${clips.length ? ` (${clips.length})` : ""}`;
     all.disabled = !clips.length || busy || pending || clips.some(item => !ready(item) || exporting(item));
     all.title = all.disabled ? "Review the cuts for each video before exporting all." : "";
-    all.style.background = "";
     deps.paintTimeline();
   }
 
@@ -281,16 +278,16 @@ export function installCutControls(deps: CutControlsDeps) {
           break;
         }
         if (plan.fingerprint !== fingerprint || plan.issues.length) {
-          state(clip).error = "The cut plan changed. Review the current cuts before exporting.";
-          toast(`${clip.name}: ${state(clip).error}`,"err"); break;
+          const message = "The cut plan changed. Review the current cuts before exporting.";
+          clip.cutState = reduceCutState(state(clip),{type:"failed",message});
+          toast(`${clip.name}: ${message}`,"err"); break;
         }
         const request = syncRequest(clip);
         const response = await client().enqueueWithOptions({...request,plan_fingerprint:fingerprint});
         if (!response.ok) {
           const latest = response.error.details?.current_plan;
           const payload = {data:latest};
-          if (isCutPlanPayload(payload)) state(clip).plan = payload.data;
-          state(clip).error = response.error.message;
+          clip.cutState = reduceCutState(state(clip),{type:"failed",message:response.error.message,plan:isCutPlanPayload(payload) ? payload.data : undefined});
           toast(`${clip.name}: ${response.error.message}`,"err"); break;
         }
         clip._queueState = "queued";
@@ -355,7 +352,7 @@ export function installCutControls(deps: CutControlsDeps) {
     clip.cutState = reduceCutState(state(clip),{type:"audio",value:(event.currentTarget as HTMLInputElement).checked}); refresh();
   });
   element("cut-reread").addEventListener("click",() => {
-    const clip = selected(); if (clip) { state(clip).error = ""; state(clip).plan = null; refresh(); }
+    const clip = selected(); if (clip) { clip.cutState = reduceCutState(state(clip),{type:"retry"}); refresh(); }
   });
   return {setActive,refresh,render,exportCuts,focusRow};
 }

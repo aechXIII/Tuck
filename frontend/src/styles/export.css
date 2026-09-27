@@ -651,3 +651,8 @@ body.task-cut .encoding-profile-action { display: none; }
 .cut-status { line-height: 1.4; }
 .cut-dur { color: var(--muted); }
 #cut-announcement { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* the Upscale batch button keeps its own colour; the cut task styles the button itself */
+body:not(.task-cut) #btn-all.upscale-batch {
+  background: #2a2a3e;
+}

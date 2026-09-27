@@ -5,7 +5,6 @@ import copy
 import logging
 import os
 import subprocess
-import tempfile
 import threading
 import time
 from collections.abc import Callable
@@ -13,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from ..cutting.analysis import CutAnalysisError
+from ..cutting.runner import CutRunner
 from ..formatting import format_size
 from ..media_tools import find_ffmpeg
 from ..models import (
@@ -32,6 +32,7 @@ from ..models import (
 from ..models.cutting import CutPlan
 from ..models.encoding_policy import validate_encoder_supported_on_desktop
 from ..models.progress import EncodeProgress, EncodeStage
+from ..output_transaction import OutputTransaction
 from .capabilities import (
     auto_encoder_candidates,
     get_available_encoders,
@@ -42,7 +43,6 @@ from .command import build_base_cmd
 
 # load native array libraries before sidecar workers block on Windows stdio
 from .frame_blending import prepare_blended_video
-from .output import OutputTransaction
 from .progress import ProgressTracker
 from .target_size import DEFAULT_MAX_RETRIES, decide_retry, is_content_limited
 
@@ -110,9 +110,6 @@ class FFmpegEngine:
         self._last_stderr: str = ""
         self._resolved_encoder: str = ""
         self._prepared_video: Path | None = None
-        # the cut runner uses this package's output helpers, so import it once both exist
-        from ..cutting.runner import CutRunner
-
         self._cut_runner = CutRunner()
 
     @property
@@ -238,7 +235,6 @@ class FFmpegEngine:
         if not plan.original_video_bitrate:
             plan.original_video_bitrate = plan.video_bitrate
 
-        blend_directory: tempfile.TemporaryDirectory | None = None
         try:
             with OutputTransaction(output) as transaction:
                 plan.output = str(transaction.output)
@@ -246,10 +242,8 @@ class FFmpegEngine:
                 if self._cancel_event.is_set():
                     raise EncodeCancelled("Encoding cancelled by user")
                 if plan.frame_blending.enabled:
-                    blend_directory = tempfile.TemporaryDirectory(
-                        prefix=".tuck-blend-", dir=output.parent
-                    )
-                    self._prepared_video = Path(blend_directory.name) / "video.nut"
+                    # the export workspace removes the blended video with everything else
+                    self._prepared_video = transaction.workspace / "video.nut"
 
                     def check_cancel() -> None:
                         if self._cancel_event.is_set():
@@ -303,8 +297,6 @@ class FFmpegEngine:
             raise
         finally:
             self._prepared_video = None
-            if blend_directory is not None:
-                blend_directory.cleanup()
 
     def _run_one_attempt(
         self,

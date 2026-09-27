@@ -183,14 +183,14 @@ def test_retry_reports_a_removed_source_as_changed(cut):
 
 def test_expired_retry_cannot_enqueue_late(cut, monkeypatch):
     import tuck.queue as module
-    from tuck.cutting import analysis
+    from tuck import request_work
 
     _, _, plan = cut
     queue = ProcessingQueue()
     item = queue.enqueue(plan)
     queue.cancel(item.id)
     clock = [0.0]
-    monkeypatch.setattr(analysis, "monotonic", lambda: clock[0], raising=False)
+    monkeypatch.setattr(request_work, "monotonic", lambda: clock[0])
 
     def rebuild(*args, **kwargs):
         clock[0] = 121.0

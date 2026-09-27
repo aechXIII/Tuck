@@ -5,7 +5,7 @@ import threading
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import TextIO
 
-from ..cutting.analysis import CutRequestWork
+from ..request_work import RequestWork
 from .handlers import dispatch
 from .lifecycle import BackendLifecycle
 from .protocol import (
@@ -30,7 +30,7 @@ def run_server(
     write_lock = threading.Lock()
     executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="tuck-sidecar")
     seen_ids: set[str] = set()
-    request_work: set[CutRequestWork] = set()
+    request_work: set[RequestWork] = set()
     work_lock = threading.Lock()
 
     def write_response(response: Response) -> None:
@@ -43,7 +43,7 @@ def run_server(
             stdout.write(encode_event(event) + "\n")
             stdout.flush()
 
-    def complete(future: Future[Response], request_id: str, work: CutRequestWork) -> None:
+    def complete(future: Future[Response], request_id: str, work: RequestWork) -> None:
         try:
             write_response(future.result())
         except Exception:
@@ -102,7 +102,7 @@ def run_server(
                 lifecycle.shutdown()
                 write_response(Response.success(request.request_id, {"status": "stopped"}))
                 return 0
-            work = CutRequestWork()
+            work = RequestWork()
             with work_lock:
                 request_work.add(work)
             future = executor.submit(dispatch, api, request, work)

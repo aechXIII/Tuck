@@ -261,7 +261,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     one.disabled = !selReady || !blending.valid() || !lut.valid() || !videoSettingsValid();
     all.textContent = (up ? "Upscale all" : "Compress all") + (count ? ` (${count})` : "");
     all.disabled = !allReady || !blending.valid() || !lut.valid() || !videoSettingsValid();
-    all.style.background = up ? "#2a2a3e" : "";
+    all.classList.toggle("upscale-batch", up);
     syncExportSummary();
   }
 

@@ -53,8 +53,8 @@ async function setup(page: Page, options: {pending?:boolean; collapsed?:boolean;
         });
       }
       const issues = Array.isArray(request.edits) && request.edits.length && !request.without_edits
-        ? [{code:"incompatible_edit",field:"edits",message:"Crop need re-encoding. Choose Compress or export without these edits."}] : [];
-      if (collapsed) issues.push({code:"segment_collapsed",field:"segments",message:"A segment has no copyable frames."});
+        ? [{code:"incompatible_edit",field:"edits",message:"Crop needs re-encoding. Choose Compress or export without these edits.",title:"Crop needs re-encoding"}] : [];
+      if (collapsed) issues.push({code:"segment_collapsed",field:"segments",message:"A segment has no copyable frames.",title:""});
       if (exact) {
         const precise = request.precision === "exact";
         const tenth = (value: number) => ({ticks:String(value),time_base_num:1,time_base_den:10});
@@ -411,6 +411,11 @@ test("a start that moves shows its sliver and chip, and the chip opens its cut",
   await expect(chip).toHaveAccessibleName("Segment 1. Starts at 0:04.000, the next keyframe, 4.0 s later than where you cut");
   await expect(page.locator(".tl-sliver")).toHaveCount(1);
   await expect(page.locator(".tl-segment.has-sliver")).toHaveCount(1);
+  // the chip is a button, so it stays out of the timeline slider and keeps focus through repaints
+  await expect(page.locator("#timeline .edge-chip")).toHaveCount(0);
+  await chip.focus();
+  await page.evaluate(() => { document.getElementById("btn-kf-toggle")!.click(); document.getElementById("btn-kf-toggle")!.click(); });
+  await expect(chip).toBeFocused();
   await expect(page.locator("#tl-in")).toHaveAttribute("aria-valuetext","0:00.000, exported from 0:04.000");
   await expect(page.locator("#tl-out")).toHaveAttribute("aria-valuetext","0:12.000, exported to 0:11.900");
   await chip.click();

@@ -46,7 +46,9 @@ def test_slice_renumbering_moves_the_slice_data_by_exactly_one_byte(idr):
 
 
 def pps(pps_id, sps_id):
-    code = lambda v: "0" * (len(f"{v + 1:b}") - 1) + f"{v + 1:b}"  # noqa: E731
+    def code(value):
+        return "0" * (len(f"{value + 1:b}") - 1) + f"{value + 1:b}"
+
     body = code(pps_id) + code(sps_id) + "1011"
     body += "1" + "0" * (-(len(body) + 1) % 8)
     return bytes([0x44, 0x01]) + escape(int(body, 2).to_bytes(len(body) // 8, "big"))

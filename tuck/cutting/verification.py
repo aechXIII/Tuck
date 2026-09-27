@@ -3,20 +3,24 @@ from __future__ import annotations
 import hashlib
 import time
 from bisect import bisect_left, bisect_right
+from collections.abc import Iterator
 from dataclasses import dataclass
 from fractions import Fraction
 from pathlib import Path
 from threading import Event
 
 import av
+import numpy as np
 from av import logging as av_logging
 from av.container import InputContainer
 from av.error import FFmpegError
+from av.video.stream import VideoStream
 
 from ..media_tools import find_ffprobe
 from ..models.cutting import CutAnalysis, CutPlan
 from .analysis import CutAnalysisError, read_inventory
-from .exact import ExactEdges, verify_exact_frames
+from .exact import ExactEdges, exact_packets
+from .output_timing import output_frame_times
 from .packets import (
     check_cut_cancel,
     check_source_unchanged,
@@ -284,8 +288,6 @@ def _chain_exact(
     edges: ExactEdges,
     cancel: Event,
 ):
-    from .exact import exact_packets
-
     return exact_packets(
         selected_packets(source, plan, analysis, cancel),
         plan,
@@ -548,3 +550,138 @@ def verify_cut_output(
     # hash every byte again: an edit that keeps the size and time must still stop publishing
     validate_cut_source(plan, cancel)
     return CutVerification(video, audio, frames)
+
+
+# --- Exact edges ---
+
+# a correctly placed edge frame differs from its source only by encoding noise
+MAX_EDGE_DIFFERENCE = 12.0
+# frames closer than this (mean grey level) are treated as the same picture
+MIN_ORDER_SEPARATION = 1.0
+MAX_EXACT_DECODE_SECONDS = 600.0
+# comparisons use small grey pictures, so long edges stay cheap to hold in memory
+_CHECK_WIDTH = 256
+
+
+def _exact_window(
+    path: Path,
+    index: int | None,
+    origin: Fraction,
+    start: Fraction,
+    end: Fraction,
+    deadline: float,
+    cancel: Event,
+) -> Iterator[tuple[Fraction, np.ndarray]]:
+    with av.open(str(path)) as container:
+        stream = container.streams.video[0] if index is None else container.streams[index]
+        if not isinstance(stream, VideoStream) or stream.time_base is None:
+            raise _failed("a video has no time base.")
+        stream.codec_context.options = {"err_detect": "explode"}
+        stream.thread_type = "AUTO"
+        container.seek(int((origin + start) / stream.time_base), stream=stream, backward=True)
+        for packet in container.demux(stream):
+            if cancel.is_set():
+                raise CutAnalysisError("cut_cancelled", "Cutting was cancelled.")
+            if time.monotonic() > deadline:
+                raise CutAnalysisError(
+                    "verification_failed", "The cut could not be verified: checking took too long."
+                )
+            for frame in packet.decode():
+                if (
+                    not isinstance(frame, av.VideoFrame)
+                    or frame.pts is None
+                    or frame.time_base is None
+                ):
+                    raise CutAnalysisError(
+                        "verification_failed", "The cut could not be verified: a frame is damaged."
+                    )
+                moment = frame.pts * Fraction(frame.time_base) - origin
+                if moment >= end:
+                    return
+                if moment >= start:
+                    width = min(_CHECK_WIDTH, frame.width)
+                    height = max(2, round(frame.height * width / frame.width))
+                    small = frame.reformat(width=width, height=height, format="gray")
+                    yield moment, small.to_ndarray().astype(np.int16)
+
+
+def verify_exact_frames(plan: CutPlan, output: Path, analysis: CutAnalysis, cancel: Event) -> int:
+    """Decode each cut edge and check every frame is the intended source picture.
+
+    Copied frames must be identical. An encoded frame fails when it sits more than halfway
+    towards a visibly different neighbour, which catches a shifted, missing or repeated frame
+    while tolerating repeated frames in the source.
+    """
+    frames = analysis.frames
+    ends = (*frames[1:], analysis.duration.seconds)
+    presented = output_frame_times(plan, analysis)
+    source = Path(plan.identity.path)
+    deadline = time.monotonic() + MAX_EXACT_DECODE_SECONDS
+    checked = 0
+    shown = 0  # output frames before the current segment
+    for segment in plan.segments:
+        if segment.start_kind == "collapsed":
+            continue
+        low = bisect_left(frames, segment.resolved.start.seconds)
+        high = bisect_left(frames, segment.resolved.end.seconds)
+        copied = segment.copied
+        copy_low = bisect_left(frames, copied.start.seconds) if copied else high
+        copy_high = bisect_left(frames, copied.end.seconds) if copied else high
+        windows = [(low, min(high, copy_low + 3)), (max(low, copy_high - 3), high)]
+        if not copied or windows[0][1] >= windows[1][0]:
+            windows = [(low, high)]
+        for first, last in windows:
+            if first >= last:
+                continue
+            before, after = max(0, first - 1), min(len(frames), last + 1)
+            reference = dict(
+                _exact_window(
+                    source,
+                    analysis.video_index,
+                    analysis.origin.seconds,
+                    frames[before],
+                    ends[after - 1],
+                    deadline,
+                    cancel,
+                )
+            )
+            # coarse containers round output times, so take the frames between midpoints
+            head, tail = shown + first - low, shown + last - 1 - low
+            out_start = (presented[head - 1] + presented[head]) / 2 if head else presented[0] - 1
+            out_end = (
+                (presented[tail] + presented[tail + 1]) / 2
+                if tail + 1 < len(presented)
+                else presented[tail] + 1
+            )
+            found = list(
+                _exact_window(output, None, Fraction(0), out_start, out_end, deadline, cancel)
+            )
+            if len(found) != last - first:
+                raise _failed("frames at a cut edge are missing or repeated.")
+            for index, (_, image) in zip(range(first, last), found, strict=True):
+                wanted = reference.get(frames[index])
+                if wanted is None:
+                    raise _failed("a frame moved.")
+                if copy_low <= index < copy_high:
+                    if not np.array_equal(image, wanted):
+                        raise _failed("a copied frame changed.")
+                    checked += 1
+                    continue
+                difference = float(np.abs(image - wanted).mean())
+                misplaced = difference > MAX_EDGE_DIFFERENCE
+                for neighbour_index in (index - 1, index + 1):
+                    if not 0 <= neighbour_index < len(frames):
+                        continue
+                    neighbour = reference.get(frames[neighbour_index])
+                    if neighbour is None:
+                        continue
+                    # repeated or near-identical source frames cannot be told apart, and
+                    # swapping them is invisible; only judge order between distinct pictures
+                    separation = float(np.abs(wanted - neighbour).mean())
+                    nearer = difference - float(np.abs(image - neighbour).mean())
+                    misplaced |= separation >= MIN_ORDER_SEPARATION and nearer > separation / 2
+                if misplaced:
+                    raise _failed("an encoded frame is out of place.")
+                checked += 1
+        shown += high - low
+    return checked

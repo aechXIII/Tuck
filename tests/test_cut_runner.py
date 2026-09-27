@@ -226,8 +226,11 @@ def test_disk_failure_during_copy_cleans_up(media_tools, tmp_path, monkeypatch):
         return original(file, mode, **kwargs)
 
     monkeypatch.setattr(module.av, "open", fail_write)
-    with pytest.raises(CutAnalysisError, match="No space left"):
+    with pytest.raises(CutAnalysisError, match="could not be saved") as error:
         runner(media_tools).run(plan)
+    # the system text, which can name private paths, stays in the details
+    assert "No space left" not in str(error.value)
+    assert error.value.detail == "No space left on device"
     assert not Path(plan.output_path).exists()
     assert not list(tmp_path.glob(".tuck-*"))
     assert not list(tmp_path.glob("*.reserved"))

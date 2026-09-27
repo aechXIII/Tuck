@@ -13,7 +13,6 @@ from collections.abc import Callable
 from fractions import Fraction
 from pathlib import Path
 from threading import Event
-from time import monotonic
 
 import av
 from av.error import FFmpegError
@@ -30,6 +29,7 @@ from ..models.cutting import (
     StreamDescriptor,
     TrackPackets,
 )
+from ..request_work import RequestWork
 from .timeline import (
     MAX_PACKETS,
     MediaTimeline,
@@ -46,32 +46,33 @@ ProgressCallback = Callable[[AnalysisProgress], None]
 
 
 class CutAnalysisError(ValueError):
-    def __init__(self, code: str, message: str) -> None:
+    def __init__(self, code: str, message: str, detail: str = "") -> None:
         super().__init__(message)
         self.code = code
+        # technical text for the expandable error details, kept out of the message
+        self.detail = detail
 
 
-class CutRequestWork(Event):
-    def __init__(self) -> None:
-        super().__init__()
-        # leave time to return a refusal before the native 120-second timeout
-        self.deadline = monotonic() + 90
-
-    def check(self) -> None:
-        if monotonic() >= self.deadline:
-            raise CutAnalysisError(
-                "cut_timed_out",
-                "Preparing the cut took too long. Read its keyframes again and retry.",
-            )
-        if self.is_set():
-            raise CutAnalysisError("analysis_cancelled", "Cut preparation was cancelled.")
+def check_request(work: RequestWork) -> None:
+    """Stop preparing a cut once its desktop request ran out of time or was cancelled."""
+    if work.expired:
+        raise CutAnalysisError(
+            "cut_timed_out",
+            "Preparing the cut took too long. Read its keyframes again and retry.",
+        )
+    if work.is_set():
+        raise CutAnalysisError("analysis_cancelled", "Cut preparation was cancelled.")
 
 
-def check_cancel(cancel: Event) -> None:
-    if isinstance(cancel, CutRequestWork):
-        cancel.check()
+def check_cancel(
+    cancel: Event,
+    code: str = "analysis_cancelled",
+    message: str = "Keyframe analysis was cancelled.",
+) -> None:
+    if isinstance(cancel, RequestWork):
+        check_request(cancel)
     if cancel.is_set():
-        raise CutAnalysisError("analysis_cancelled", "Keyframe analysis was cancelled.")
+        raise CutAnalysisError(code, message)
 
 
 def analysis_version(ffprobe: str | None = None) -> str:

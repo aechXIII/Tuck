@@ -1,6 +1,7 @@
 import pytest
 from media.cut_fixtures import create_source, find_tools
 
+from tuck import request_work
 from tuck.bridge import BridgeAPI
 from tuck.cutting.exact import encoder_supports
 from tuck.models.cutting import MediaTime
@@ -164,12 +165,12 @@ def test_cut_batch_preserves_partial_success_and_rejected_plan(api, planned_cut)
 
 @pytest.mark.parametrize("batch", [False, True])
 def test_expired_cut_request_cannot_enqueue_after_hashing(api, planned_cut, monkeypatch, batch):
-    from tuck.cutting import analysis, service
+    from tuck.cutting import service
 
     request, preview = planned_cut
     request = {**request, "plan_fingerprint": preview["fingerprint"]}
     clock = [0.0]
-    monkeypatch.setattr(analysis, "monotonic", lambda: clock[0], raising=False)
+    monkeypatch.setattr(request_work, "monotonic", lambda: clock[0])
     identity = service.source_identity
 
     def slow_hash(path, cancel):
@@ -206,12 +207,11 @@ def test_cut_enqueue_hashes_the_source_even_when_its_stat_is_unchanged(api, plan
 
 
 def test_expired_sidecar_work_is_not_restarted_by_dispatch(api, planned_cut, monkeypatch):
-    from tuck.cutting import analysis
 
     request, preview = planned_cut
     clock = [0.0]
-    monkeypatch.setattr(analysis, "monotonic", lambda: clock[0])
-    work = analysis.CutRequestWork()
+    monkeypatch.setattr(request_work, "monotonic", lambda: clock[0])
+    work = request_work.RequestWork()
     clock[0] = 121.0
     response = dispatch(
         api,
@@ -228,6 +228,27 @@ def test_expired_sidecar_work_is_not_restarted_by_dispatch(api, planned_cut, mon
     assert not api._queue.items
 
 
+def test_compress_batches_are_not_held_to_the_cut_preparation_time(api, planned_cut, monkeypatch):
+    request, _ = planned_cut
+    clock = [0.0]
+    monkeypatch.setattr(request_work, "monotonic", lambda: clock[0])
+    from tuck.models import EncodePlan
+
+    # only the batch control flow is under test, so encode planning is stubbed
+    monkeypatch.setattr(api, "_resolve_profile", lambda _: object())
+    monkeypatch.setattr(api, "_planning_options", lambda: None)
+    monkeypatch.setattr(
+        api,
+        "_build_plan",
+        lambda req, *_: EncodePlan(source=req.source, output=req.source + ".out.mp4"),
+    )
+    work = request_work.RequestWork()
+    clock[0] = 121.0
+    result = api.enqueue_batch([{"source": request["source"]}] * 2, work=work)
+    assert result["ok"] and result["count"] == 2, result
+    assert result["errors"] == []
+
+
 def test_expired_request_stops_source_hashing(planned_cut, monkeypatch):
     from pathlib import Path
 
@@ -235,8 +256,8 @@ def test_expired_request_stops_source_hashing(planned_cut, monkeypatch):
 
     request, _ = planned_cut
     clock = [0.0]
-    monkeypatch.setattr(analysis, "monotonic", lambda: clock[0])
-    work = analysis.CutRequestWork()
+    monkeypatch.setattr(request_work, "monotonic", lambda: clock[0])
+    work = request_work.RequestWork()
     clock[0] = 91.0
     with pytest.raises(analysis.CutAnalysisError) as error:
         analysis.source_identity(Path(request["source"]), work)
@@ -250,3 +271,25 @@ def test_cut_enqueue_rejects_missing_or_malformed_fingerprints(api, planned_cut,
     assert not response["ok"]
     assert response["code"] == "invalid_cut_request"
     assert not api._queue.items
+
+
+def test_every_cut_error_code_reaches_the_desktop_app():
+    import ast
+    from pathlib import Path
+
+    import tuck.cutting
+    from tuck.models.cutting import CUT_ERROR_CODES
+
+    raised = set()
+    for path in Path(tuck.cutting.__file__).parent.glob("*.py"):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "CutAnalysisError"
+                and node.args
+                and isinstance(node.args[0], ast.Constant)
+            ):
+                raised.add(node.args[0].value)
+    # an unlisted code would reach the app as a generic failure
+    assert raised and raised <= CUT_ERROR_CODES, raised - CUT_ERROR_CODES

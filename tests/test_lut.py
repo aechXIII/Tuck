@@ -337,7 +337,7 @@ def test_lut_after_blending_full_export(tmp_path, storage, two_pass):
     np.testing.assert_allclose(
         frames[0].to_ndarray(format="rgb24").mean(axis=(0, 1)), [175, 143, 95], atol=5
     )
-    assert not list(tmp_path.glob(".tuck-blend-*"))
+    assert not list(tmp_path.glob(".tuck-*"))
 
 
 @pytest.mark.ffmpeg

@@ -10,6 +10,10 @@
   and VP8 video
 - Keyframes on the timeline, with `[` and `]` to jump between them
 
+### Changed
+
+- Frame blending is much faster, and a selection late in a long video starts blending right away
+
 ## [0.5.2] - 2026-09-19
 
 ### Added
