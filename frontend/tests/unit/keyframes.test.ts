@@ -94,10 +94,10 @@ test("the last segment still matches when the analysed duration differs from the
 });
 
 test("chip text reads as a start delay or as re-encoded time", () => {
-  assert.equal(Keyframes.chipText("moved", 1.6), "+1.6 s");
+  assert.equal(Keyframes.chipText("moved", 1.6), "starts 1.6 s later");
   assert.equal(Keyframes.chipText("exact", 1.6), "1.6 s re-encoded");
-  assert.equal(Keyframes.chipText("moved", 0.033), "+0.03 s");
-  assert.equal(Keyframes.chipText("moved", 13.66), "+13.7 s");
+  assert.equal(Keyframes.chipText("moved", 0.033), "starts 0.03 s later");
+  assert.equal(Keyframes.chipText("moved", 13.66), "starts 13.7 s later");
 });
 
 test("precise times keep milliseconds and hours", () => {

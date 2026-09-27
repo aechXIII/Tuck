@@ -844,14 +844,15 @@ body.tl-segment-dragging * {
 .tl-cut-marks .edge-chip {
   pointer-events: auto;
 }
-/* the part of a kept segment the export skips because the cut starts on the next keyframe */
+/* the part of a kept segment the export skips because the cut starts on the next keyframe is
+   dimmed as part of the clip; with Exact that part is kept and re-encoded, so it is only tinted */
 .tl-sliver {
   position: absolute;
   top: 0;
   bottom: 0;
   z-index: 2;
   border-radius: 6px 0 0 6px;
-  background: repeating-linear-gradient(135deg, rgba(8, 7, 12, 0.55) 0 4px, transparent 4px 8px);
+  background: color-mix(in srgb, var(--sink) 58%, transparent);
   pointer-events: none;
 }
 .tl-sliver::after {
@@ -859,57 +860,74 @@ body.tl-segment-dragging * {
   position: absolute;
   top: 0;
   bottom: 0;
-  right: -1px;
-  width: 2px;
-  background: var(--warn);
+  right: 0;
+  width: 1px;
+  background: color-mix(in srgb, var(--warn) 85%, transparent);
 }
 .tl-sliver.exact {
-  background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--accent-light) 42%, transparent) 0 3px, transparent 3px 7px);
+  background: color-mix(in srgb, var(--accent-light) 16%, transparent);
 }
 .tl-sliver.exact::after {
+  background: var(--accent-light);
+}
+/* tinted text is too faint on the clip fill, so the note keeps the line's colour and a dot
+   carries the state, as on the chip */
+.tl-cut-note::before {
+  content: "";
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin: 0 5px 1px 6px;
+  border-radius: 50%;
+  background: var(--warn);
+}
+.tl-cut-note.exact::before {
   background: var(--accent-light);
 }
 .tl-segment.has-sliver .tl-segment-surface {
   padding-left: var(--sliver, 0px);
 }
+/* drawn like the segment time bubble, above the cut it describes */
 .edge-chip {
   position: absolute;
-  bottom: 5px;
+  top: -22px;
   z-index: 3;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  height: 16px;
-  margin-left: -4px;
-  padding: 0 5px;
-  transform: translateX(-100%);
-  border: 1px solid color-mix(in srgb, var(--warn) 50%, transparent);
+  gap: 5px;
+  height: 18px;
+  padding: 0 6px;
+  transform: translateX(-50%);
+  border: 1px solid var(--border2);
   border-radius: 4px;
-  background: rgba(12, 11, 18, 0.92);
-  color: var(--warn);
-  font: 600 10px var(--mono);
+  background: rgba(20, 19, 29, 0.96);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  color: var(--muted);
+  font: 600 9px var(--mono);
   white-space: nowrap;
   cursor: pointer;
 }
-.edge-chip svg {
-  width: 9px;
-  height: 9px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.6;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+.edge-chip::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--warn);
 }
-.edge-chip.exact {
-  border-color: color-mix(in srgb, var(--accent-light) 50%, transparent);
-  color: var(--accent-light);
+.edge-chip.exact::before {
+  background: var(--accent-light);
 }
 .edge-chip:hover {
-  background: rgba(28, 26, 38, 0.98);
+  color: var(--text);
 }
 .edge-chip:focus-visible {
   outline: 2px solid var(--accent-light);
   outline-offset: 1px;
+}
+/* the clip already says it; the chip stays in the tab order and appears while focused */
+.edge-chip.in-clip:not(:focus-visible) {
+  opacity: 0;
+  pointer-events: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

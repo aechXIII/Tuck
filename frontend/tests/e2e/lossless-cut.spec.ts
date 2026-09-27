@@ -401,12 +401,16 @@ test("[ and ] move the playhead, or a focused handle, between keyframes", async 
   await expect(page.locator("#tl-in")).toHaveAttribute("aria-valuenow","4");
 });
 
-test("a start that moves shows its sliver and chip, and the chip opens its cut", async ({page}) => {
+test("a start that moves shows its sliver and note, and the chip opens its cut", async ({page}) => {
   await setup(page,{moved:true});
   await page.locator("#wf-l").click();
   await expect(page.locator("#btn-one")).toBeEnabled();
   const chip = page.locator(".edge-chip");
-  await expect(chip).toHaveText("+4.0 s");
+  // the clip is wide enough to say it in its own time line, so the chip only shows when focused
+  await expect(page.locator(".tl-segment .tl-cut-note")).toHaveText("starts 4.0 s later");
+  await expect(chip).toHaveClass(/in-clip/);
+  await expect(chip).toHaveCSS("opacity","0");
+  await expect(chip).toHaveText("starts 4.0 s later");
   await expect(chip).toHaveAccessibleName("Segment 1. Starts at 0:04.000, the next keyframe, 4.0 s later than where you cut");
   await expect(page.locator(".tl-sliver")).toHaveCount(1);
   await expect(page.locator(".tl-segment.has-sliver")).toHaveCount(1);
@@ -417,7 +421,11 @@ test("a start that moves shows its sliver and chip, and the chip opens its cut",
   await expect(chip).toBeFocused();
   await expect(page.locator("#tl-in")).toHaveAttribute("aria-valuetext","0:00.000, exported from 0:04.000");
   await expect(page.locator("#tl-out")).toHaveAttribute("aria-valuetext","0:12.000, exported to 0:11.900");
-  await chip.click();
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Shift+Tab");
+  await expect(chip).toBeFocused();
+  await expect(chip).toHaveCSS("opacity","1");
+  await page.keyboard.press("Enter");
   await expect(page.locator('#cut-list [data-cut-index="0"]')).toBeFocused();
   await expect(page.locator("#tl-time")).toHaveText("0:04.00 / 0:12.00");
   await expect(page.locator("#tl-in")).toHaveAttribute("aria-valuenow","0");

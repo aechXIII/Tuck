@@ -245,6 +245,7 @@ function paintCutOverlay() {
   const marks = byId("tl-cut-marks");
   for (const segment of documentRef.querySelectorAll(".tl-segment.has-sliver")) {
     segment.classList.remove("has-sliver");
+    segment.querySelector(".tl-cut-note")?.remove();
     if (isHtmlElement(segment)) segment.style.removeProperty("--sliver");
   }
   if (lane) lane.hidden = !overlay || !keyframesOn;
@@ -260,6 +261,7 @@ function paintCutOverlay() {
   const segments = clipSegments(clip, full);
   const active = activeSegmentIndex(clip, segments);
   const slivers: Keyframes.CutSliver[] = [];
+  const inClip = new Set<number>();
   for (const [index, segment] of segments.entries()) {
     const sliver = Keyframes.sliverFor(index, segment, plan?.segments[index]);
     if (!sliver) continue;
@@ -268,9 +270,10 @@ function paintCutOverlay() {
     if (isHtmlElement(range)) {
       range.classList.add("has-sliver");
       range.style.setProperty("--sliver", (sliver.delta / (segment.end - segment.start)) * 100 + "%");
+      if (showCutNote(range, sliver)) inClip.add(index);
     }
   }
-  if (marks) Keyframes.renderCutMarks(marks, slivers, full);
+  if (marks) Keyframes.renderCutMarks(marks, slivers, full, inClip);
   const bounds = arrayItem(segments, active);
   const planSegment = plan?.segments[active] ?? null;
   if (bounds) {
@@ -278,6 +281,20 @@ function paintCutOverlay() {
     tlIn?.setAttribute("aria-valuetext", Keyframes.handleValueText("start", bounds.start, current));
     tlOut?.setAttribute("aria-valuetext", Keyframes.handleValueText("end", bounds.end, current));
   }
+}
+
+// the clip's time line says how late the cut starts when the whole line fits; narrow clips
+// hide or cut that line short, so their chip above the cut says it instead
+function showCutNote(range: HTMLElement, sliver: Keyframes.CutSliver): boolean {
+  const line = range.querySelector<HTMLElement>(".tl-segment-range");
+  if (!line) return false;
+  const note = documentRef.createElement("span");
+  note.className = sliver.kind === "exact" ? "tl-cut-note exact" : "tl-cut-note";
+  note.textContent = Keyframes.chipText(sliver.kind, sliver.delta);
+  line.append(note);
+  if (line.getClientRects().length && line.scrollWidth <= line.clientWidth) return true;
+  note.remove();
+  return false;
 }
 
 function toggleKeyframes() {

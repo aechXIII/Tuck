@@ -116,7 +116,7 @@ export function deltaText(seconds: number): string {
 }
 
 export function chipText(kind: "moved" | "exact", delta: number): string {
-  return kind === "exact" ? `${deltaText(delta)} re-encoded` : `+${deltaText(delta)}`;
+  return kind === "exact" ? `${deltaText(delta)} re-encoded` : `starts ${deltaText(delta)} later`;
 }
 
 // 0:44.000 or 1:02:03.250; the handles and chips need millisecond precision
@@ -152,11 +152,6 @@ export function handleValueText(
   return requested - exported > MATCH_EPSILON ? `${base}, exported to ${preciseTime(exported)}` : base;
 }
 
-const ARROWS = {
-  moved: "M2 6h7M6.5 3.5 9 6l-2.5 2.5",
-  exact: "M2 6a4 4 0 0 1 7-2.6M10 6a4 4 0 0 1-7 2.6M9 1v2.5H6.5M3 11V8.5h2.5",
-};
-
 function markNode<K extends "div" | "button">(layer: HTMLElement, tag: K, className: string, key: string): HTMLElementTagNameMap[K] {
   const found = layer.querySelector<HTMLElementTagNameMap[K]>(`${tag}.${className}[data-cut-mark="${key}"]`);
   if (found) return found;
@@ -168,12 +163,17 @@ function markNode<K extends "div" | "button">(layer: HTMLElement, tag: K, classN
 }
 
 // nodes are kept per segment, so repaints during a drag neither flicker nor drop chip focus
-export function renderCutMarks(layer: HTMLElement, slivers: readonly CutSliver[], duration: number): void {
+// `inClip` lists segments whose own time line already says this; their chip only shows on focus
+export function renderCutMarks(
+  layer: HTMLElement,
+  slivers: readonly CutSliver[],
+  duration: number,
+  inClip: ReadonlySet<number> = new Set(),
+): void {
   const wanted = new Set(slivers.map((sliver) => String(sliver.index)));
   for (const node of layer.querySelectorAll<HTMLElement>("[data-cut-mark]")) {
     if (!wanted.has(node.dataset.cutMark ?? "")) node.remove();
   }
-  const doc = layer.ownerDocument;
   for (const sliver of slivers) {
     const key = String(sliver.index);
     const exact = sliver.kind === "exact";
@@ -185,6 +185,7 @@ export function renderCutMarks(layer: HTMLElement, slivers: readonly CutSliver[]
     const chip = markNode(layer, "button", "edge-chip", key);
     chip.type = "button";
     chip.classList.toggle("exact", exact);
+    chip.classList.toggle("in-clip", inClip.has(sliver.index));
     chip.dataset.cutChip = key;
     chip.style.left = percent(sliver.exportedStart, duration);
     const label = chipLabel(sliver);
@@ -192,13 +193,7 @@ export function renderCutMarks(layer: HTMLElement, slivers: readonly CutSliver[]
     if (chip.title !== label || chip.textContent !== text) {
       chip.title = label;
       chip.setAttribute("aria-label", `Segment ${sliver.index + 1}. ${label}`);
-      const arrow = doc.createElementNS("http://www.w3.org/2000/svg", "svg");
-      arrow.setAttribute("viewBox", "0 0 12 12");
-      arrow.setAttribute("aria-hidden", "true");
-      const path = doc.createElementNS("http://www.w3.org/2000/svg", "path");
-      path.setAttribute("d", ARROWS[sliver.kind]);
-      arrow.append(path);
-      chip.replaceChildren(arrow, text);
+      chip.textContent = text;
     }
   }
 }
