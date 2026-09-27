@@ -528,7 +528,9 @@ test("export controls have balanced insets and timeline text shares a baseline",
       footerInsets: [button.top-footer.top,footer.bottom-button.bottom,button.left-footer.left,footer.right-actions.right],
     };
   });
-  expect(geometry.tabInsets.top).toBeCloseTo(geometry.tabInsets.bottom, 0);
+  // tabs fill their row down to its hairline, where the selected tab's rule sits
+  expect(geometry.tabInsets.top).toBeCloseTo(0, 0);
+  expect(geometry.tabInsets.bottom).toBeCloseTo(1, 0);
   expect(geometry.rowGap).toBeGreaterThanOrEqual(8);
   for (const inset of geometry.modeInsets) expect(inset).toBeCloseTo(4, 0);
   for (const inset of geometry.footerInsets) expect(inset).toBeCloseTo(12, 0);
