@@ -241,7 +241,6 @@ function paintCutOverlay() {
     "data-tip",
     host.cutTask?.() ? "Snap to keyframes, playhead and clip edges" : "Snap to playhead and clip edges",
   );
-  for (const old of documentRef.querySelectorAll(".kf-guide")) old.remove();
   const marks = byId("tl-cut-marks");
   for (const segment of documentRef.querySelectorAll(".tl-segment.has-sliver")) {
     segment.classList.remove("has-sliver");
@@ -256,17 +255,7 @@ function paintCutOverlay() {
   }
   const { clip, full, strip, plan } = overlay;
   const near = _tlDrag === "in" ? _kfNear : [];
-  if (lane && keyframesOn) {
-    Keyframes.renderKeyframeStrip(lane, strip, full, near);
-    const track = byId("tl-track");
-    for (const time of near) {
-      const guide = documentRef.createElement("i");
-      guide.className = "kf-guide";
-      guide.setAttribute("aria-hidden", "true");
-      guide.style.left = (time / full) * 100 + "%";
-      track?.appendChild(guide);
-    }
-  }
+  if (lane && keyframesOn) Keyframes.renderKeyframeStrip(lane, strip, full, near);
   const segments = clipSegments(clip, full);
   const active = activeSegmentIndex(clip, segments);
   const slivers: Keyframes.CutSliver[] = [];

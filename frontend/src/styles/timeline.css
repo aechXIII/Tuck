@@ -756,13 +756,13 @@ body.tl-segment-dragging * {
   }
 }
 
-/* keyframes: a marker on the lane's top edge and a hairline through the video, so it is clear
-   where a copied part can start. Dense keyframes keep only the markers. */
+/* keyframes: short notches hanging from the clip's top edge, in the clip label's ink, so they
+   read as part of the clip. While a start is dragged, the keyframes it can land on become lines. */
 .kf-lane {
   position: absolute;
   left: 0;
   right: 0;
-  top: -9px;
+  top: 0;
   bottom: 0;
   pointer-events: none;
   z-index: 2;
@@ -779,65 +779,51 @@ body.tl-segment-dragging * {
 .kf-lane .kf::before {
   content: "";
   position: absolute;
-  top: 0;
-  left: -4px;
-  border-left: 4px solid transparent;
-  border-right: 4px solid transparent;
-  border-top: 7px solid var(--accent-light);
-}
-.kf-lane.lines .kf::after {
-  content: "";
-  position: absolute;
-  top: 9px;
-  bottom: 0;
+  top: 1px;
   left: -0.5px;
   width: 1px;
-  background: color-mix(in srgb, var(--text) 40%, transparent);
+  height: 6px;
+  border-radius: 0 0 1px 1px;
+  background: color-mix(in srgb, var(--text) 55%, transparent);
+}
+/* a solid comb would hide the clip, so dense keyframes fade to a texture */
+.kf-lane.dense .kf::before {
+  height: 4px;
+  opacity: 0.45;
 }
 .kf-lane .kf.near::before {
-  left: -5px;
-  border-left-width: 5px;
-  border-right-width: 5px;
-  border-top-width: 9px;
-  filter: drop-shadow(0 0 4px var(--accent-light));
+  height: 8px;
+  opacity: 1;
+  background: var(--accent-light);
 }
 .kf-lane .kf.near::after {
   content: "";
   position: absolute;
-  top: 9px;
-  bottom: 0;
+  top: 1px;
+  bottom: 1px;
   left: -0.5px;
   width: 1px;
-  background: var(--accent-light);
+  background: color-mix(in srgb, var(--accent-light) 80%, transparent);
+  animation: kf-near-in 120ms ease-out;
+}
+@keyframes kf-near-in {
+  from {
+    opacity: 0;
+  }
 }
 .kf-lane .kf-scan,
 .kf-lane .kf-unread {
   position: absolute;
-  top: 8px;
+  top: 1px;
   height: 1px;
 }
 .kf-lane .kf-scan {
   left: 0;
-  background: color-mix(in srgb, var(--accent-light) 60%, transparent);
+  background: color-mix(in srgb, var(--accent-light) 50%, transparent);
 }
 .kf-lane .kf-unread {
   right: 0;
-  background: repeating-linear-gradient(90deg, var(--border2) 0 3px, transparent 3px 6px);
-}
-.kf-guide {
-  position: absolute;
-  top: -8px;
-  bottom: 0;
-  width: 0;
-  border-left: 1px dashed color-mix(in srgb, var(--accent-light) 70%, transparent);
-  pointer-events: none;
-  z-index: 3;
-  animation: kf-guide-in 120ms ease-out;
-}
-@keyframes kf-guide-in {
-  from {
-    opacity: 0;
-  }
+  background: repeating-linear-gradient(90deg, color-mix(in srgb, var(--text) 35%, transparent) 0 3px, transparent 3px 6px);
 }
 
 /* laid over the video lane in the same grid cell, so the chips are not inside the
@@ -927,7 +913,7 @@ body.tl-segment-dragging * {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .kf-guide {
+  .kf-lane .kf.near::after {
     animation: none;
   }
 
