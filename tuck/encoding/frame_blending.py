@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import math
+import os
 import time
 from collections import deque
 from collections.abc import Callable, Generator, Iterator
+from concurrent.futures import Future, ThreadPoolExecutor
 from fractions import Fraction
 from pathlib import Path
 
@@ -21,6 +23,10 @@ MAX_BUFFER_BYTES = 256 * 1024 * 1024
 MAX_WINDOW_FRAMES = 256
 MAX_PIXELS = 4096 * 2160
 MAX_TEMP_BYTES = 16 * 1024**3
+# decoding up to this many seconds is cheaper than seeking past them
+SEEK_THRESHOLD = 2.0
+_WEIGHT_BITS = 16
+_WEIGHT_ONE = 1 << _WEIGHT_BITS
 SUPPORTED_FORMATS = frozenset(
     {
         "yuv420p",
@@ -111,12 +117,16 @@ def _source_frames(
     source: Path,
     info: VideoInfo,
     check_cancel: Callable[[], None],
+    start: float = 0.0,
 ) -> Generator[tuple[float, PixelArray], None, None]:
+    """Source frames from the last keyframe at or before `start` onward."""
     with av.open(str(source)) as container:
         stream = container.streams.video[0]
-        stream.codec_context.thread_count = 2
+        stream.thread_type = "AUTO"
         # use the same container origin as FFmpeg so delayed video stays aligned with audio
         origin = (container.start_time or 0) / av.time_base
+        if start > 0 and stream.time_base is not None:
+            container.seek(int((start + origin) / stream.time_base), stream=stream, backward=True)
         previous = -math.inf
         matrix = "ITU709" if info.color_space == "bt709" else "ITU601"
         if info.color_space in {"unknown", "unspecified", ""} and info.height >= 720:
@@ -165,6 +175,46 @@ def _source_frames(
             yield timestamp, pixels
 
 
+def _integer_weights(weights: list[float]) -> list[int]:
+    """Weights in 1/65536 steps that add up exactly, so white stays white."""
+    total = sum(weights)
+    scaled = [w / total * _WEIGHT_ONE for w in weights]
+    whole = [math.floor(value) for value in scaled]
+    by_remainder = sorted(range(len(scaled)), key=lambda i: whole[i] - scaled[i])
+    for i in by_remainder[: _WEIGHT_ONE - sum(whole)]:
+        whole[i] += 1
+    return whole
+
+
+def _blend(
+    weighted: list[tuple[PixelArray, float]], linear: FloatArray | None, transfer: str
+) -> PixelArray:
+    """One output picture from its weighted source pictures."""
+    if linear is not None:
+        total = sum(weight for _, weight in weighted)
+        result = np.zeros(weighted[0][0].shape, dtype=np.float32)
+        for pixels, weight in weighted:
+            result += linear[pixels] * np.float32(weight / total)
+        result = from_linear(np.clip(result, 0, 1), transfer)
+        return np.rint(np.clip(result, 0, 1) * 255).astype(np.uint8)
+    # fixed point in place: far less memory traffic than a float copy of every picture
+    weights = _integer_weights([weight for _, weight in weighted])
+    total = np.zeros(weighted[0][0].shape, dtype=np.uint32)
+    scratch = np.empty_like(total)
+    for (pixels, _), weight in zip(weighted, weights, strict=True):
+        if weight:
+            np.multiply(pixels, np.uint32(weight), out=scratch, dtype=np.uint32)
+            total += scratch
+    total += _WEIGHT_ONE // 2
+    total >>= _WEIGHT_BITS
+    return total.astype(np.uint8)
+
+
+def _workers() -> int:
+    # blending is memory bound; a few threads fill the memory bandwidth
+    return max(1, min(6, os.cpu_count() or 1))
+
+
 def blended_frames(
     plan: EncodePlan,
     check_cancel: Callable[[], None],
@@ -184,18 +234,41 @@ def blended_frames(
     segments = plan.effective_segments
     if not segments:
         raise ValueError("Frame blending requires a nonempty timeline")
-    frames = _source_frames(Path(plan.source), info, check_cancel)
-    try:
+    frames: Generator[tuple[float, PixelArray], None, None] | None = None
+    current: tuple[float, PixelArray] | None = None
+    following: tuple[float, PixelArray] | None = None
+    first_timestamp: float | None = None
+
+    def open_at(time: float) -> None:
+        """Read frames from the one shown at `time`, seeking when that skips enough video."""
+        nonlocal frames, current, following, first_timestamp
+        if frames is not None:
+            frames.close()
+        seek = time if time > SEEK_THRESHOLD else 0.0
+        frames = _source_frames(Path(plan.source), info, check_cancel, seek)
         current = next(frames, None)
         following = next(frames, None)
         if current is None:
             raise ValueError("No video frames were decoded for frame blending")
-        first_timestamp = current[0]
+        if seek and current[0] > time:
+            # without a usable index a seek can land late; read from the start instead
+            open_at(0.0)
+            return
+        # the first frame of the file covers any gap before it
+        first_timestamp = None if seek else current[0]
+
+    linear = (
+        to_linear(np.arange(256, dtype=np.float32) / np.float32(255), info.color_transfer)
+        if settings.linear_light
+        else None
+    )
+    pending: deque[Future[PixelArray]] = deque()
+    pool = ThreadPoolExecutor(max_workers=_workers(), thread_name_prefix="blend")
+    try:
         buffer: deque[tuple[float, float, PixelArray]] = deque()
         segment_index = 0
         output_start = 0.0
         count = max(1, math.ceil(plan.effective_duration * fps - 1e-8))
-        lookup = to_linear(np.arange(256, dtype=np.float32) / np.float32(255), info.color_transfer)
         for index in range(count):
             check_cancel()
             # one global output grid prevents rounding error accumulating at each cut
@@ -203,6 +276,7 @@ def blended_frames(
                 float((Fraction(index) + Fraction(1, 2)) / fps),
                 math.nextafter(plan.effective_duration, 0),
             )
+            switched = index == 0
             while (
                 midpoint >= output_start + segments[segment_index].duration
                 and segment_index < len(segments) - 1
@@ -210,7 +284,15 @@ def blended_frames(
                 output_start += segments[segment_index].duration
                 segment_index += 1
                 buffer.clear()
+                switched = True
             segment = segments[segment_index]
+            # a later part can start earlier in the source, or far past where reading stopped
+            if switched and (
+                current is None
+                or current[0] > segment.start
+                or segment.start - current[0] > SEEK_THRESHOLD
+            ):
+                open_at(segment.start)
             center = segment.start + midpoint - output_start
             left = max(segment.start, center - exposure / 2)
             right = min(segment.end, center + exposure / 2)
@@ -239,7 +321,7 @@ def blended_frames(
                 if end >= right and (exposure > 0 or end > center):
                     break
                 current = following
-                following = next(frames, None) if current is not None else None
+                following = next(frames, None) if current is not None and frames else None
             weighted: list[tuple[PixelArray, float]] = []
             for start, end, pixels in buffer:
                 if exposure == 0:
@@ -254,26 +336,26 @@ def blended_frames(
                     )
                 if weight > 0:
                     weighted.append((pixels, weight))
-            if not weighted:
+            if weighted:
+                pending.append(pool.submit(_blend, weighted, linear, info.color_transfer))
+            else:
                 # zero custom density after boundary clipping falls back to the held frame
                 held = next((p for start, end, p in buffer if start <= center < end), None)
                 if held is None:
                     raise ValueError("No source frame covers this timeline interval")
-                yield held
-                continue
-            total = sum(weight for _, weight in weighted)
-            result = np.zeros(weighted[0][0].shape, dtype=np.float32)
-            for pixels, weight in weighted:
-                check_cancel()
-                values = (
-                    lookup[pixels] if settings.linear_light else pixels.astype(np.float32) / 255
-                )
-                result += values * (weight / total)
-            if settings.linear_light:
-                result = from_linear(np.clip(result, 0, 1), info.color_transfer)
-            yield np.rint(np.clip(result, 0, 1) * 255).astype(np.uint8)
+                done: Future[PixelArray] = Future()
+                done.set_result(held)
+                pending.append(done)
+            # blend a few pictures at once, but hand them out in order
+            while len(pending) > _workers():
+                yield pending.popleft().result()
+        while pending:
+            check_cancel()
+            yield pending.popleft().result()
     finally:
-        frames.close()
+        pool.shutdown(wait=True, cancel_futures=True)
+        if frames is not None:
+            frames.close()
 
 
 def prepare_blended_video(
@@ -293,7 +375,9 @@ def prepare_blended_video(
         stream.width, stream.height = info.width, info.height
         stream.pix_fmt = "bgr0"
         stream.time_base = 1 / fps
-        stream.codec_context.thread_count = 2
+        # FFV1 encodes slices in parallel; one thread per slice keeps up with blending
+        stream.codec_context.thread_count = 0
+        stream.codec_context.options = {"slices": "24"}
         last_progress = time.monotonic()
         for index, pixels in enumerate(blended_frames(plan, check_cancel)):
             frame = av.VideoFrame.from_ndarray(pixels, format="rgb24")

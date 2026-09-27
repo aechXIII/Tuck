@@ -792,3 +792,106 @@ def test_vegas_softens_edge_frame_contributions(tmp_path):
     plan.frame_blending = FrameBlending(enabled=True, curve="vegas", custom_weights=(1,))
     frames = list(blended_frames(plan, lambda: None))
     assert float(frames[0].mean()) == pytest.approx(64, abs=1)
+
+
+@pytest.fixture
+def long_source(skip_if_no_ffmpeg, tmp_path):
+    import shutil
+    import subprocess
+
+    from tuck.probe import probe
+
+    path = tmp_path / "long.mp4"
+    subprocess.run(
+        [
+            shutil.which("ffmpeg") or "ffmpeg",
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=64x64:rate=30:duration=8",
+            "-c:v",
+            "libx264",
+            "-g",
+            "30",
+            "-pix_fmt",
+            "yuv420p",
+            str(path),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    return path, probe(path)
+
+
+def blend_all(plan):
+    from tuck.encoding.frame_blending import blended_frames
+
+    return [frame.copy() for frame in blended_frames(plan, lambda: None)]
+
+
+@pytest.mark.ffmpeg
+def test_a_late_selection_skips_the_video_before_it(long_source, monkeypatch):
+    import numpy as np
+
+    from tuck.encoding import frame_blending
+    from tuck.models import Segment
+
+    source, info = long_source
+    plan = make_blend_plan(source, info)
+    plan.target_fps = 10
+    plan.segments = [Segment(6, 7)]
+    original = frame_blending._source_frames
+    decoded = 0
+
+    def counted(*args, **kwargs):
+        nonlocal decoded
+        for frame in original(*args, **kwargs):
+            decoded += 1
+            yield frame
+
+    monkeypatch.setattr(frame_blending, "_source_frames", counted)
+    seeking = blend_all(plan)
+    # reading starts at the keyframe before the selection, not at the start of the file
+    assert decoded <= 2 * 30 + 2
+    monkeypatch.setattr(frame_blending, "SEEK_THRESHOLD", math.inf)
+    from_start = blend_all(plan)
+    assert len(seeking) == 10
+    assert all(np.array_equal(a, b) for a, b in zip(seeking, from_start, strict=True))
+
+
+@pytest.mark.ffmpeg
+def test_parts_in_any_source_order_blend_like_each_part_alone(long_source):
+    import numpy as np
+
+    from tuck.models import Segment
+
+    source, info = long_source
+    plan = make_blend_plan(source, info)
+    plan.target_fps = 10
+    parts = [Segment(5, 6), Segment(1, 2), Segment(6.5, 7)]
+    alone = []
+    for part in parts:
+        plan.segments = [part]
+        alone += blend_all(plan)
+    plan.segments = parts
+    joined = blend_all(plan)
+    assert len(joined) == len(alone) == 25
+    assert all(np.array_equal(a, b) for a, b in zip(joined, alone, strict=True))
+
+
+def test_fixed_point_blending_matches_the_exact_average():
+    import numpy as np
+
+    from tuck.encoding.frame_blending import _blend
+
+    rng = np.random.default_rng(3)
+    pictures = [rng.integers(0, 256, (32, 48, 3), dtype=np.uint8) for _ in range(7)]
+    for weights in ([1.0] * 7, [0.1, 0.3, 2.0, 0.7, 1e-6, 5.0, 0.25]):
+        weighted = list(zip(pictures, weights, strict=True))
+        exact = sum(p.astype(np.float64) * w for p, w in weighted) / sum(weights)
+        blended = _blend(weighted, None, "bt709")
+        assert np.abs(blended.astype(np.float64) - exact).max() <= 0.5 + 1e-3
+    white = np.full((4, 4, 3), 255, dtype=np.uint8)
+    assert (_blend([(white, 1.0)] * 3, None, "bt709") == 255).all()
