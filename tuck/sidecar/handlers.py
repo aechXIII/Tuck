@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from ..models.cutting import CUT_ERROR_CODES
 from ..request_work import RequestWork
+from ..sendto import SENDTO_KINDS
 from .protocol import JsonValue, Request, Response
 
 if TYPE_CHECKING:
@@ -321,20 +322,33 @@ def _export_profile_to_file(api: BridgeAPI, params: dict[str, object]) -> object
     return api.export_profile_to_file(params["path"], params["profile_id"])
 
 
-def _install_generic_sendto(api: BridgeAPI, params: dict[str, object]) -> object:
-    if set(params) - {"executable_path"}:
+def _sendto_kind(params: dict[str, object], *, allow_executable_path: bool) -> str:
+    allowed = {"kind", "executable_path"} if allow_executable_path else {"kind"}
+    kind = params.get("kind")
+    if set(params) - allowed or not isinstance(kind, str) or kind not in SENDTO_KINDS:
         raise _ParameterError
+    return kind
+
+
+def _executable_path(params: dict[str, object]) -> str | None:
     exec_path = params.get("executable_path")
     if exec_path is not None and not isinstance(exec_path, str):
         raise _ParameterError
-    return api.install_generic_sendto(
-        executable_path=exec_path if isinstance(exec_path, str) else None
-    )
+    return exec_path
+
+
+def _install_generic_sendto(api: BridgeAPI, params: dict[str, object]) -> object:
+    kind = _sendto_kind(params, allow_executable_path=True)
+    return api.install_generic_sendto(kind, executable_path=_executable_path(params))
 
 
 def _remove_generic_sendto(api: BridgeAPI, params: dict[str, object]) -> object:
-    _empty(params)
-    return api.remove_generic_sendto()
+    return api.remove_generic_sendto(_sendto_kind(params, allow_executable_path=False))
+
+
+def _repair_generic_sendto(api: BridgeAPI, params: dict[str, object]) -> object:
+    kind = _sendto_kind(params, allow_executable_path=True)
+    return api.repair_generic_sendto(kind, executable_path=_executable_path(params))
 
 
 def _install_profile_sendto(api: BridgeAPI, params: dict[str, object]) -> object:
@@ -449,6 +463,7 @@ _HANDLERS: dict[str, Handler] = {
     "export_profile_to_file": _export_profile_to_file,
     "install_generic_sendto": _install_generic_sendto,
     "remove_generic_sendto": _remove_generic_sendto,
+    "repair_generic_sendto": _repair_generic_sendto,
     "install_profile_sendto": _install_profile_sendto,
     "remove_profile_sendto": _remove_profile_sendto,
     "repair_profile_sendto": _repair_profile_sendto,

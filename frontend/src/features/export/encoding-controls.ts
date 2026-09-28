@@ -8,6 +8,7 @@ import { allProbesReady, isProbeReady } from "../../state/probe.ts";
 import * as InspectorUi from "../panels/inspector-ui.ts";
 import { cropForAspect, isFullCrop, type CropTransform } from "../transform/crop-geometry.ts";
 import { SegmentEditing } from "../timeline/segments.ts";
+import { hiddenParts, launchTask, taskAt, taskIndex, visibleTasks } from "../settings/visibility.ts";
 import { legacyBackendResult } from "../editor/backend-compat.ts";
 import { closeMod, showMod, toast } from "../editor/toast.ts";
 import type { EditorClip } from "../editor/types.ts";
@@ -64,6 +65,8 @@ export interface EncodingControlsApi {
   refilter: () => void;
   onProfileChange: () => void;
   loadSettings: () => Promise<void>;
+  // picks the task on launch, or when a Send To shortcut asks for one while Tuck is open
+  openTask: (launch: unknown, atStart: boolean) => void;
   reqPreview: () => Promise<void>;
   reqPreviewAndDirty: () => void;
   buildRequest: (source: string) => Record<string, unknown>;
@@ -268,6 +271,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
   function syncExportSummary(): void {
     if (wf === 2) { cutting.render(); return; }
     blending.sync();
+    applySectionVisibility();
     const keepAudio = input("keep-audio").checked;
     const audioBitrateKbps = input("audio-br").value;
     const speed = select("speed-sel").value;
@@ -432,10 +436,37 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
         typeof s.last_upscale_profile_id === "string" ? s.last_upscale_profile_id : "";
     if (s.last_task === "upscale" && !lastUpscale) lastUpscale = def;
     updateEncoderOptions();
-    const task = s.last_task === "cut" ? 2 : s.last_task === "upscale" ? 1 : 0;
+    const hidden = hiddenParts(s.hidden_ui);
+    const task = taskIndex(launchTask({start:"last", last:s.last_task, hidden}));
     if (task === 2 && wf !== 2) refilter();
     if (task !== wf) setWf(task);
     else refilter();
+    applyTaskVisibility();
+    applySectionVisibility();
+  }
+
+  function applyTaskVisibility(): void {
+    const visible = visibleTasks(hiddenParts(appSettings().hidden_ui));
+    for (const [index, id] of ["wf-c", "wf-u", "wf-l"].entries()) {
+      el(id).classList.toggle("user-hidden", !visible.includes(taskAt(index)));
+    }
+    // one task left needs no picker
+    el("task-wf").classList.toggle("user-hidden", visible.length < 2);
+    const first = visible[0];
+    if (first && !visible.includes(taskAt(wf))) setWf(taskIndex(first));
+  }
+
+  // a hidden effect stays visible while it is on, so a profile never applies it unseen
+  function applySectionVisibility(): void {
+    const hidden = hiddenParts(appSettings().hidden_ui);
+    el("frame-blending-panel").classList.toggle("user-hidden", hidden.has("frame_blending") && !blending.read().enabled);
+    el("lut-panel").classList.toggle("user-hidden", hidden.has("lut") && !lut.read().enabled);
+  }
+
+  function openTask(launch: unknown, atStart: boolean): void {
+    const s = appSettings();
+    const task = launchTask({launch, start:atStart ? s.start_task : "last", last:taskAt(wf), hidden:hiddenParts(s.hidden_ui)});
+    setWf(taskIndex(task));
   }
 
   function refilter(): void {
@@ -535,6 +566,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     }
     blending.apply(p.frame_blending);
     lut.apply(p.lut);
+    applySectionVisibility();
     const sizeMb = Math.round((num(p.target_size_bytes) || 0) / (1024 * 1024));
     input("sz-slider").value = String(sizeMb);
     input("sz-badge").value = String(sizeMb);
@@ -1154,6 +1186,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     refilter,
     onProfileChange,
     loadSettings,
+    openTask,
     reqPreview,
     reqPreviewAndDirty,
     buildRequest: (source: string) => buildRequest(source),

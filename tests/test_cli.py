@@ -1,3 +1,5 @@
+import pytest
+
 from tuck.app import _parse_sendto_args
 from tuck.cli import _do_encode, _profile_with_resolution
 from tuck.cli import main as cli_main
@@ -36,8 +38,8 @@ class TestSendToDispatch:
 
         requests = []
 
-        def encode(files, profile_id=None):
-            requests.append((files, profile_id))
+        def encode(files, profile_id=None, task=None):
+            requests.append((files, profile_id, task))
             return 7
 
         monkeypatch.setattr(app, "run_sendto_console", encode)
@@ -56,7 +58,83 @@ class TestSendToDispatch:
         )
 
         assert app.main() == 7
-        assert requests == [(["clip one.mp4", "clip two.mp4"], "discord-50mb")]
+        assert requests == [(["clip one.mp4", "clip two.mp4"], "discord-50mb", None)]
+
+    def test_upscale_shortcut_passes_its_task_to_the_console_run(self, monkeypatch):
+        from tuck import app
+
+        requests = []
+
+        def encode(files, profile_id=None, task=None):
+            requests.append((files, profile_id, task))
+            return 0
+
+        monkeypatch.setattr(app, "run_sendto_console", encode)
+        monkeypatch.setattr(
+            "sys.argv",
+            [
+                "tuck",
+                "--sendto-action",
+                "start",
+                "--sendto-task",
+                "upscale",
+                "--sendto-files",
+                "clip.mp4",
+            ],
+        )
+
+        assert app.main() == 0
+        assert requests == [(["clip.mp4"], None, "upscale")]
+
+    def test_packaged_cli_routes_upscale_task(self, monkeypatch):
+        from tuck import app, cli_entry
+
+        requests = []
+
+        def encode(files, profile_id=None, task=None):
+            requests.append((files, profile_id, task))
+            return 0
+
+        monkeypatch.setattr(app, "run_sendto_console", encode)
+        monkeypatch.setattr(
+            "sys.argv",
+            [
+                "TuckCli.exe",
+                "--sendto-action",
+                "start",
+                "--sendto-task",
+                "upscale",
+                "--sendto-files",
+                "clip.mp4",
+            ],
+        )
+
+        assert cli_entry.main() == 0
+        assert requests == [(["clip.mp4"], None, "upscale")]
+
+    @pytest.mark.parametrize(
+        ("task", "message"),
+        [("cut", "Lossless cut needs the Tuck editor"), ("trim", "does not know")],
+    )
+    def test_background_run_refuses_cut_and_unknown_tasks(
+        self, task, message, tmp_path, monkeypatch, capsys
+    ):
+        import builtins
+
+        from tuck import app
+
+        monkeypatch.setattr(app, "_ensure_console", lambda: None)
+        monkeypatch.setattr(builtins, "input", lambda _prompt: "")
+        video = tmp_path / "clip.mp4"
+        video.write_bytes(b"")
+
+        def fail_encode(*_args, **_kwargs):
+            raise AssertionError("encoding must not start")
+
+        monkeypatch.setattr("tuck.cli.run_console_encode", fail_encode)
+
+        assert app.run_sendto_console([str(video)], task=task) == 2
+        assert message in capsys.readouterr().out
 
 
 class TestCLISingleInstanceBypass:
@@ -457,9 +535,142 @@ class TestConsoleProgress:
         assert "Send To -> Tuck Compress" in raw.getvalue().decode("cp1252")
 
 
+class TestSendToCommand:
+    @pytest.fixture
+    def packaged(self, tmp_path, monkeypatch):
+        install = tmp_path / "install"
+        install.mkdir()
+        for name in ("Tuck.exe", "TuckCli.exe", "tuck-sidecar.exe"):
+            (install / name).write_bytes(b"")
+        sendto = tmp_path / "SendTo"
+        sendto.mkdir()
+        monkeypatch.setattr("sys.frozen", True, raising=False)
+        monkeypatch.setattr("sys.executable", str(install / "tuck-sidecar.exe"))
+        monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: sendto)
+        monkeypatch.setattr("tuck.sendto._can_create_shortcuts", lambda: False)
+        return install, sendto
+
+    def test_install_without_kind_adds_only_the_open_shortcut(self, packaged):
+        install, sendto = packaged
+
+        assert cli_main(["sendto", "install"]) == 0
+
+        assert [path.name for path in sendto.iterdir()] == ["Tuck.bat"]
+        content = (sendto / "Tuck.bat").read_text(encoding="ascii")
+        assert str(install / "Tuck.exe") in content
+        assert "--sendto-action review --sendto-files" in content
+
+    def test_kind_installs_repairs_and_removes_one_shortcut(self, packaged, capsys):
+        install, sendto = packaged
+
+        assert cli_main(["sendto", "install", "--kind", "upscale"]) == 0
+        batch = sendto / "Tuck Upscale.bat"
+        content = batch.read_bytes()
+        assert str(install / "TuckCli.exe").encode("ascii") in content
+        assert b"--sendto-action start --sendto-task upscale --sendto-files" in content
+
+        batch.write_bytes(content.replace(b"TuckCli.exe", b"Old-TuckCli.exe"))
+        capsys.readouterr()
+        assert cli_main(["sendto", "repair", "--kind", "upscale"]) == 0
+        assert "Tuck Upscale" in capsys.readouterr().out
+        assert batch.read_bytes() == content
+
+        assert cli_main(["sendto", "install", "--kind", "open"]) == 0
+        assert cli_main(["sendto", "uninstall", "--kind", "upscale"]) == 0
+        assert [path.name for path in sendto.iterdir()] == ["Tuck.bat"]
+
+    def test_uninstall_without_kind_removes_every_generic_shortcut(self, packaged):
+        _install, sendto = packaged
+        for kind in ("open", "compress", "upscale", "cut"):
+            assert cli_main(["sendto", "install", "--kind", kind]) == 0
+        assert len(list(sendto.iterdir())) == 4
+
+        assert cli_main(["sendto", "uninstall"]) == 0
+
+        assert list(sendto.iterdir()) == []
+
+    def test_unknown_kind_is_rejected(self, packaged):
+        with pytest.raises(SystemExit):
+            cli_main(["sendto", "install", "--kind", "trim"])
+
+
+class TestConsoleUpscaleProfile:
+    class _Settings:
+        def __init__(self, profiles, last_upscale_profile_id=""):
+            self._profiles = profiles
+            self._last = last_upscale_profile_id
+
+        def get_profiles(self):
+            return list(self._profiles)
+
+        def get_setting(self, key, default=None):
+            return self._last if key == "last_upscale_profile_id" else default
+
+    @staticmethod
+    def _profiles():
+        from tuck.models import Profile
+
+        return [
+            Profile(profile_id="small", name="Small", workflow="compression"),
+            Profile(profile_id="hd", name="HD", workflow="upscale"),
+            Profile(profile_id="uhd", name="UHD", workflow="upscale"),
+        ]
+
+    def test_explicit_profile_wins(self):
+        from tuck.cli import _resolve_console_upscale_profile
+
+        mgr = self._Settings(self._profiles(), last_upscale_profile_id="hd")
+        assert _resolve_console_upscale_profile(mgr, "uhd").profile_id == "uhd"
+
+    def test_explicit_compression_profile_is_rejected(self, capsys):
+        from tuck.cli import _resolve_console_upscale_profile
+
+        mgr = self._Settings(self._profiles())
+        assert _resolve_console_upscale_profile(mgr, "small") is None
+        assert "not upscale" in capsys.readouterr().out
+
+    def test_last_used_upscale_profile_comes_next(self):
+        from tuck.cli import _resolve_console_upscale_profile
+
+        mgr = self._Settings(self._profiles(), last_upscale_profile_id="uhd")
+        assert _resolve_console_upscale_profile(mgr, None).profile_id == "uhd"
+
+    def test_missing_or_compression_last_profile_falls_back_to_first_upscale(self):
+        from tuck.cli import _resolve_console_upscale_profile
+
+        for last in ("gone", "small", ""):
+            mgr = self._Settings(self._profiles(), last_upscale_profile_id=last)
+            assert _resolve_console_upscale_profile(mgr, None).profile_id == "hd"
+
+    def test_no_upscale_profile_asks_the_user_to_create_one(self, capsys):
+        from tuck.cli import _resolve_console_upscale_profile
+        from tuck.models import Profile
+
+        mgr = self._Settings([Profile(profile_id="small", name="Small", workflow="compression")])
+        assert _resolve_console_upscale_profile(mgr, None) is None
+        assert "Create an Upscale profile in Tuck" in capsys.readouterr().out
+
+
 class TestParseSendtoArgs:
+    def test_parse_sendto_task(self):
+        files, profile_id, action, task = _parse_sendto_args(
+            [
+                "tuck",
+                "--sendto-action",
+                "start",
+                "--sendto-task",
+                "upscale",
+                "--sendto-files",
+                "C:\\vids\\a.mp4",
+            ]
+        )
+        assert files == ["C:\\vids\\a.mp4"]
+        assert profile_id is None
+        assert action == "start"
+        assert task == "upscale"
+
     def test_parse_sendto_files_only(self):
-        files, profile_id, action = _parse_sendto_args(
+        files, profile_id, action, _task = _parse_sendto_args(
             ["tuck", "--sendto-files", "C:\\vids\\a.mp4", "C:\\vids\\b.mkv"]
         )
         assert files == ["C:\\vids\\a.mp4", "C:\\vids\\b.mkv"]
@@ -467,7 +678,7 @@ class TestParseSendtoArgs:
         assert action is None
 
     def test_parse_sendto_with_profile(self):
-        files, profile_id, action = _parse_sendto_args(
+        files, profile_id, action, _task = _parse_sendto_args(
             ["tuck", "--profile-id", "discord-10mb", "--sendto-files", "C:\\vids\\a.mp4"]
         )
         assert files == ["C:\\vids\\a.mp4"]
@@ -475,7 +686,7 @@ class TestParseSendtoArgs:
         assert action is None
 
     def test_parse_sendto_with_action(self):
-        files, profile_id, action = _parse_sendto_args(
+        files, profile_id, action, _task = _parse_sendto_args(
             ["tuck", "--sendto-action", "start", "--sendto-files", "C:\\vids\\a.mp4"]
         )
         assert files == ["C:\\vids\\a.mp4"]
@@ -483,7 +694,7 @@ class TestParseSendtoArgs:
         assert action == "start"
 
     def test_parse_sendto_review_action(self):
-        files, _profile_id, action = _parse_sendto_args(
+        files, _profile_id, action, _task = _parse_sendto_args(
             ["tuck", "--sendto-action", "review", "--sendto-files", "C:\\vids\\a.mp4"]
         )
         assert files == ["C:\\vids\\a.mp4"]
@@ -491,7 +702,7 @@ class TestParseSendtoArgs:
 
     def test_parse_sendto_full(self):
 
-        files, profile_id, action = _parse_sendto_args(
+        files, profile_id, action, _task = _parse_sendto_args(
             [
                 "tuck",
                 "--profile-id",
@@ -509,7 +720,7 @@ class TestParseSendtoArgs:
 
     def test_parse_sendto_flags_after_files_still_consumed(self):
 
-        files, profile_id, action = _parse_sendto_args(
+        files, profile_id, action, _task = _parse_sendto_args(
             [
                 "tuck",
                 "--sendto-action",
@@ -525,7 +736,7 @@ class TestParseSendtoArgs:
         assert action == "review"
 
     def test_parse_sendto_no_files(self):
-        files, profile_id, action = _parse_sendto_args(
+        files, profile_id, action, _task = _parse_sendto_args(
             ["tuck", "--profile-id", "discord-10mb", "--sendto-files"]
         )
         assert files == []
@@ -533,14 +744,14 @@ class TestParseSendtoArgs:
         assert action is None
 
     def test_parse_sendto_empty_argv(self):
-        files, profile_id, action = _parse_sendto_args([])
+        files, profile_id, action, _task = _parse_sendto_args([])
         assert files == []
         assert profile_id is None
         assert action is None
 
     def test_parse_sendto_missing_profile_value(self):
 
-        files, profile_id, action = _parse_sendto_args(
+        files, profile_id, action, _task = _parse_sendto_args(
             ["tuck", "--profile-id", "--sendto-files", "C:\\vids\\a.mp4"]
         )
 

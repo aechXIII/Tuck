@@ -24,6 +24,8 @@ import type {
   Profile,
   ProfileInput,
   QueueState,
+  SendToKind,
+  SendToShortcut,
   SendToShortcuts,
   Settings,
   SettingsPatch,
@@ -77,8 +79,9 @@ type TauriBackendCommand =
   | { command: "duplicate_profile"; payload: { profile_id: string } }
   | { command: "import_profiles_from_file"; payload: { path: string } }
   | { command: "export_profile_to_file"; payload: { path: string; profile_id: string } }
-  | { command: "install_generic_sendto"; payload?: { executable_path?: string } }
-  | { command: "remove_generic_sendto" }
+  | { command: "install_generic_sendto"; payload: { kind: SendToKind } }
+  | { command: "remove_generic_sendto"; payload: { kind: SendToKind } }
+  | { command: "repair_generic_sendto"; payload: { kind: SendToKind } }
   | { command: "install_profile_sendto"; payload: { profile_id: string; action?: string; executable_path?: string } }
   | { command: "remove_profile_sendto"; payload: { profile_id: string } }
   | { command: "repair_profile_sendto"; payload: { profile_id: string; action?: string; executable_path?: string } }
@@ -169,8 +172,29 @@ function isEncoderPayload(value: unknown): value is EncoderPayload {
   return isJsonObject(value) && Array.isArray(value.available_encoders);
 }
 
+const SEND_TO_KINDS: readonly SendToKind[] = ["open", "compress", "upscale", "cut"];
+
+function isSendToKind(value: unknown): value is SendToKind {
+  return typeof value === "string" && (SEND_TO_KINDS as readonly string[]).includes(value);
+}
+
+function isSendToShortcut(value: JsonObject): value is SendToShortcut {
+  return (
+    typeof value.name === "string" &&
+    typeof value.path === "string" &&
+    typeof value.type === "string" &&
+    typeof value.status === "string" &&
+    (value.kind === undefined || isSendToKind(value.kind)) &&
+    (value.profile_id === undefined || typeof value.profile_id === "string")
+  );
+}
+
 function isSendToShortcuts(value: unknown): value is SendToShortcuts {
-  return isJsonObject(value) && isJsonObjectArray(value.shortcuts);
+  return (
+    isJsonObject(value) &&
+    isJsonObjectArray(value.shortcuts) &&
+    value.shortcuts.every(isSendToShortcut)
+  );
 }
 
 function unavailable<T>(method: string): BackendResult<T> {
@@ -593,16 +617,28 @@ class TauriTransport implements TauriBackendClient {
     }
   }
 
-  installGenericSendto(): Promise<BackendResult<EmptyPayload>> {
+  installGenericSendto(kind: SendToKind): Promise<BackendResult<EmptyPayload>> {
     return this.#request(
       "installGenericSendto",
-      { command: "install_generic_sendto" },
+      { command: "install_generic_sendto", payload: { kind } },
       isJsonObject,
     );
   }
 
-  removeGenericSendto(): Promise<BackendResult<EmptyPayload>> {
-    return this.#request("removeGenericSendto", { command: "remove_generic_sendto" }, isJsonObject);
+  removeGenericSendto(kind: SendToKind): Promise<BackendResult<EmptyPayload>> {
+    return this.#request(
+      "removeGenericSendto",
+      { command: "remove_generic_sendto", payload: { kind } },
+      isJsonObject,
+    );
+  }
+
+  repairGenericSendto(kind: SendToKind): Promise<BackendResult<EmptyPayload>> {
+    return this.#request(
+      "repairGenericSendto",
+      { command: "repair_generic_sendto", payload: { kind } },
+      isJsonObject,
+    );
   }
 
   installProfileSendto(profileId: string, action?: string): Promise<BackendResult<EmptyPayload>> {

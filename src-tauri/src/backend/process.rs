@@ -744,7 +744,8 @@ impl BackendCommand {
             | Self::ImportProfilesFromFile { .. }
             | Self::ExportProfileToFile { .. }
             | Self::InstallGenericSendto { .. }
-            | Self::RemoveGenericSendto
+            | Self::RemoveGenericSendto { .. }
+            | Self::RepairGenericSendto { .. }
             | Self::InstallProfileSendto { .. }
             | Self::RemoveProfileSendto { .. }
             | Self::RepairProfileSendto { .. }

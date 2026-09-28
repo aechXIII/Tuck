@@ -1960,7 +1960,7 @@ class TestBridgeRemoveGenericSendTo:
 
         api = BridgeAPI()
         api._settings.load()
-        resp = api.remove_generic_sendto()
+        resp = api.remove_generic_sendto("open")
         assert resp["ok"]
 
 
@@ -2135,3 +2135,68 @@ class TestBridgeRateControlMatrixValidation:
         payload = {"rate_control_method": "cbr", "two_pass": False}
         resp = api.update_profile("rc-matrix-valid", payload)
         assert resp["ok"]
+
+
+class TestBridgeInterfacePreferences:
+    @staticmethod
+    def _api(tmp_path, monkeypatch):
+        import tuck.settings as settings_mod
+
+        monkeypatch.setattr(settings_mod, "_config_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
+        return BridgeAPI()
+
+    def test_get_settings_reports_defaults(self, tmp_path, monkeypatch):
+        api = self._api(tmp_path, monkeypatch)
+
+        resp = api.get_settings()
+
+        assert resp["hidden_ui"] == []
+        assert resp["start_task"] == "last"
+
+    def test_save_stores_canonical_order_and_survives_reload(self, tmp_path, monkeypatch):
+        import tuck.settings as settings_mod
+
+        api = self._api(tmp_path, monkeypatch)
+
+        assert api.save_settings(
+            {"hidden_ui": ["lut", "upscale", "lut", "panel_video"], "start_task": "upscale"}
+        ) == {"ok": True}
+        assert api.get_settings()["hidden_ui"] == ["upscale", "panel_video", "lut"]
+
+        reloaded = settings_mod.SettingsManager().load()
+        assert reloaded.hidden_ui == ["upscale", "panel_video", "lut"]
+        assert reloaded.start_task == "upscale"
+
+        assert api.save_settings({"hidden_ui": [], "start_task": "last"}) == {"ok": True}
+        assert api.get_settings()["hidden_ui"] == []
+
+    @pytest.mark.parametrize(
+        ("hidden_ui", "error"),
+        [
+            ("lut", "hidden_ui must be a list of interface parts"),
+            (["lut", None], "hidden_ui must only list interface part names"),
+            (["timeline"], "hidden_ui has an unknown interface part: timeline"),
+            (
+                ["compression", "cut", "upscale"],
+                "Keep at least one of Compress, Upscale, or Lossless cut visible.",
+            ),
+        ],
+    )
+    def test_save_rejects_invalid_hidden_ui(self, hidden_ui, error, tmp_path, monkeypatch):
+        api = self._api(tmp_path, monkeypatch)
+        assert api.save_settings({"hidden_ui": ["lut"]})["ok"]
+
+        assert api.save_settings({"hidden_ui": hidden_ui}) == {"ok": False, "error": error}
+        assert api.get_settings()["hidden_ui"] == ["lut"]
+
+    @pytest.mark.parametrize("start_task", ["export", "", None, 1])
+    def test_save_rejects_invalid_start_task(self, start_task, tmp_path, monkeypatch):
+        api = self._api(tmp_path, monkeypatch)
+
+        assert api.save_settings({"start_task": start_task}) == {
+            "ok": False,
+            "error": "start_task must be last, compression, upscale, or cut",
+        }
+        assert api.get_settings()["start_task"] == "last"

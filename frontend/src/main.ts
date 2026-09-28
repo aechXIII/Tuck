@@ -11,7 +11,12 @@ import {
   type EditorRuntime,
 } from "./features/editor/runtime.ts";
 import { backendUnavailableMessage, hasDesktopBackend } from "./desktop-status.ts";
-import { createSecondInstanceLaunchQueue } from "./platform/second-instance.ts";
+import {
+  createSecondInstanceLaunchQueue,
+  launchFromPayload,
+  mergeLaunches,
+  type StartupLaunch,
+} from "./platform/second-instance.ts";
 import "./styles/index.ts";
 
 export { backendUnavailableMessage, hasDesktopBackend };
@@ -104,10 +109,10 @@ function startTauriBackend(client: TauriBackendClient): void {
 
   // Rust keeps forwarded paths buffered until this listener has completed the
   // startup request; later forwards arrive only through this event.
-  const secondInstanceLaunches = createSecondInstanceLaunchQueue((files) => {
-    editorRuntime?.initApp({ files, sendto: null });
+  const secondInstanceLaunches = createSecondInstanceLaunchQueue((launch) => {
+    editorRuntime?.initApp({ files: launch.files, sendto: null, task: launch.task });
   });
-  const listenerReady = listen<string[]>("second-instance", (event) => {
+  const listenerReady = listen<unknown>("second-instance", (event) => {
     secondInstanceLaunches.enqueue(event.payload);
   }).catch(() => undefined);
 
@@ -117,19 +122,14 @@ function startTauriBackend(client: TauriBackendClient): void {
       return;
     }
     // Fetch startup files after backend is ready (normalized in Rust, validated in Python)
-    let startupFiles: string[] = [];
+    let startup: StartupLaunch = { files: [], task: null };
     try {
-      const files = (await invoke("get_startup_files", {})) as unknown;
-      if (Array.isArray(files)) {
-        startupFiles = files.filter((file): file is string => typeof file === "string");
-      }
+      startup = launchFromPayload(await invoke("get_startup_files", {}));
     } catch {
       // the backend health result remains authoritative if launch-file delivery fails
     }
-    editorRuntime?.initApp({
-      files: startupFiles.concat(secondInstanceLaunches.drain()),
-      sendto: null,
-    });
+    const launch = mergeLaunches([startup, secondInstanceLaunches.drain()]);
+    editorRuntime?.initApp({ files: launch.files, sendto: null, task: launch.task });
     attachDesktopBackend(client);
     secondInstanceLaunches.markReadyAndFlush();
   });

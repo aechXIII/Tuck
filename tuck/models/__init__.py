@@ -193,6 +193,7 @@ from .transforms import (
 from .transforms import (
     oriented_dimensions as oriented_dimensions,
 )
+from .ui_preferences import START_TASK_LAST
 
 # Keep the old ID so saved settings, CLI commands, and Send To shortcuts still work
 PROFILE_ID_DISCORD_FREE = "discord-10mb"
@@ -1199,6 +1200,8 @@ class AppSettings:
     timeline_height: int = 0
     inspector_start_panel: str = "export"
     last_inspector_panel: str = "export"
+    hidden_ui: list[str] = field(default_factory=list)
+    start_task: str = START_TASK_LAST
     window_width: int = 1240
     window_height: int = 800
     profiles: list[dict[str, Any]] = field(default_factory=list)

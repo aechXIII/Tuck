@@ -18,6 +18,7 @@ export interface FakeBackendFixture {
   startup: {
     files: string[];
     sendto: null;
+    task?: "compression" | "upscale" | "cut" | null;
   };
 }
 
@@ -170,8 +171,9 @@ export async function installFakeBackend(
         getDownloadProgress: () => respond("getDownloadProgress", []),
         installUpdate: () => respond("installUpdate", []),
         openOutputFolder: (path: string) => respond("openOutputFolder", [path]),
-        installGenericSendto: () => respond("installGenericSendto", []),
-        removeGenericSendto: () => respond("removeGenericSendto", []),
+        installGenericSendto: (kind: string) => respond("installGenericSendto", [kind]),
+        removeGenericSendto: (kind: string) => respond("removeGenericSendto", [kind]),
+        repairGenericSendto: (kind: string) => respond("repairGenericSendto", [kind]),
         installProfileSendto: (profileId: string, action = "start") =>
           respond("installProfileSendto", [profileId, action]),
         removeProfileSendto: (profileId: string) => respond("removeProfileSendto", [profileId]),

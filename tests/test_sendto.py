@@ -9,15 +9,10 @@ from tuck.sendto import (
     ACTION_REVIEW,
     ACTION_START,
     PROFILE_SHORTCUT_PREFIX,
-    SENDTO_BATCH_NAME,
-    SENDTO_COMPRESS_BATCH_NAME,
-    SENDTO_COMPRESS_SHORTCUT_NAME,
-    SENDTO_SHORTCUT_NAME,
-    _create_batch_fallback,
+    SENDTO_KINDS,
     _create_windows_shortcut,
+    _generic_paths,
     _get_args,
-    _get_batch_path,
-    _get_generic_shortcut_path,
     _get_profile_batch_path,
     _get_profile_shortcut_path,
     _get_target_path,
@@ -27,14 +22,22 @@ from tuck.sendto import (
     _verify_bat_ownership,
     _verify_lnk_ownership,
     _write_batch_file,
+    generic_shortcut,
+    install_generic_shortcut,
     install_profile_shortcut,
-    install_sendto,
     list_sendto_shortcuts,
     remove_all_profile_shortcuts,
-    repair_sendto,
+    repair_generic_shortcut,
+    uninstall_generic_shortcut,
     uninstall_profile_shortcut,
     uninstall_sendto,
 )
+
+# these names are what Explorer shows, and older installs already use the first two
+SENDTO_SHORTCUT_NAME = "Tuck.lnk"
+SENDTO_BATCH_NAME = "Tuck.bat"
+SENDTO_COMPRESS_SHORTCUT_NAME = "Tuck Compress.lnk"
+SENDTO_COMPRESS_BATCH_NAME = "Tuck Compress.bat"
 
 requires_windows_com = pytest.mark.skipif(
     sys.platform != "win32", reason="Windows shortcut tests require pywin32 COM"
@@ -417,28 +420,57 @@ class TestListShortcuts:
         assert any(r["type"] == "generic" for r in result)
         assert result[0]["status"] == "broken"
 
-    def test_reports_single_owned_generic_batch_as_needing_repair(self, tmp_path, monkeypatch):
+    def test_single_owned_generic_batch_is_ok_on_its_own(self, tmp_path, monkeypatch):
         monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
         _make_marker_bat(tmp_path / SENDTO_BATCH_NAME)
 
         result = list_sendto_shortcuts()
 
-        assert result[0]["status"] == "broken"
+        assert [(item["kind"], item["status"]) for item in result] == [("open", "ok")]
 
-    def test_reports_generic_shortcuts_as_one_integration(self, tmp_path, monkeypatch):
+    def test_reports_each_generic_kind_separately(self, tmp_path, monkeypatch):
         monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
         _make_marker_bat(tmp_path / SENDTO_BATCH_NAME)
-        _make_marker_bat(tmp_path / SENDTO_COMPRESS_BATCH_NAME)
+        _make_marker_bat(tmp_path / "Tuck Upscale.bat")
+        _make_foreign_bat(tmp_path / "Tuck Lossless Cut.bat")
 
         generic = [item for item in list_sendto_shortcuts() if item["type"] == "generic"]
 
         assert generic == [
             {
-                "name": "Tuck + Tuck Compress",
-                "path": str(tmp_path / SENDTO_BATCH_NAME),
+                "name": "Tuck",
                 "type": "generic",
+                "kind": "open",
                 "status": "ok",
-            }
+                "path": str(tmp_path / SENDTO_BATCH_NAME),
+            },
+            {
+                "name": "Tuck Upscale",
+                "type": "generic",
+                "kind": "upscale",
+                "status": "ok",
+                "path": str(tmp_path / "Tuck Upscale.bat"),
+            },
+            {
+                "name": "Tuck Lossless Cut",
+                "type": "generic",
+                "kind": "cut",
+                "status": "broken",
+                "path": str(tmp_path / "Tuck Lossless Cut.bat"),
+            },
+        ]
+
+    def test_old_paired_shortcuts_list_as_open_and_compress(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
+        monkeypatch.setattr("tuck.sendto._verify_lnk_ownership", lambda p: True)
+        (tmp_path / SENDTO_SHORTCUT_NAME).write_text("old pair")
+        (tmp_path / SENDTO_COMPRESS_SHORTCUT_NAME).write_text("old pair")
+
+        generic = [item for item in list_sendto_shortcuts() if item["type"] == "generic"]
+
+        assert [(item["kind"], item["status"]) for item in generic] == [
+            ("open", "ok"),
+            ("compress", "ok"),
         ]
 
     def test_finds_owned_profile_bat(self, tmp_path, monkeypatch):
@@ -641,18 +673,59 @@ class TestGetWorkingDir:
         assert len(result) > 0
 
 
-class TestGenericShortcutPath:
-    def test_get_generic_shortcut_path(self, tmp_path, monkeypatch):
+class TestGenericShortcutSpecs:
+    def test_generic_paths_use_the_kind_file_names(self, tmp_path, monkeypatch):
         monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
-        p = _get_generic_shortcut_path()
-        assert p.name == SENDTO_SHORTCUT_NAME
-        assert p.parent == tmp_path
+        names = [
+            tuple(path.name for path in _generic_paths(generic_shortcut(kind)))
+            for kind in SENDTO_KINDS
+        ]
+        assert names == [
+            (SENDTO_SHORTCUT_NAME, SENDTO_BATCH_NAME),
+            (SENDTO_COMPRESS_SHORTCUT_NAME, SENDTO_COMPRESS_BATCH_NAME),
+            ("Tuck Upscale.lnk", "Tuck Upscale.bat"),
+            ("Tuck Lossless Cut.lnk", "Tuck Lossless Cut.bat"),
+        ]
 
-    def test_get_batch_path(self, tmp_path, monkeypatch):
+    @pytest.mark.parametrize("kind", ["", "Open", "trim", None, 1])
+    def test_unknown_kind_is_rejected(self, kind):
+        with pytest.raises(ValueError, match="open, compress, upscale, or cut"):
+            generic_shortcut(kind)
+
+    @pytest.mark.parametrize(
+        ("kind", "arguments"),
+        [
+            ("open", ["--sendto-action", "review", "--sendto-files"]),
+            ("compress", ["--sendto-action", "start", "--sendto-files"]),
+            (
+                "upscale",
+                ["--sendto-action", "start", "--sendto-task", "upscale", "--sendto-files"],
+            ),
+            (
+                "cut",
+                ["--sendto-action", "review", "--sendto-task", "cut", "--sendto-files"],
+            ),
+        ],
+    )
+    def test_packaged_arguments_per_kind(self, kind, arguments, monkeypatch):
+        monkeypatch.setattr("sys.frozen", True, raising=False)
+        spec = generic_shortcut(kind)
+        assert _get_args(action=spec.action, task=spec.task) == arguments
+
+    def test_source_start_shortcuts_run_the_python_module(self, monkeypatch):
+        monkeypatch.setattr("sys.frozen", False, raising=False)
+        spec = generic_shortcut("upscale")
+        assert _get_args(action=spec.action, task=spec.task)[:2] == ["-m", "tuck"]
+
+    def test_source_cut_shortcut_requires_desktop_app(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("sys.frozen", False, raising=False)
         monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
-        p = _get_batch_path()
-        assert p.name == SENDTO_BATCH_NAME
-        assert p.parent == tmp_path
+        monkeypatch.setattr("tuck.sendto._can_create_shortcuts", lambda: False)
+
+        with pytest.raises(RuntimeError, match="desktop app"):
+            install_generic_shortcut("cut")
+
+        assert list(tmp_path.iterdir()) == []
 
 
 class TestBatchFallback:
@@ -690,50 +763,33 @@ class TestBatchFallback:
         assert "--sendto-files" in content
         assert f"REM {_TUCK_MARKER}" in content
 
-    def test_create_batch_fallback_returns_batch_path(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
-        batch = _create_batch_fallback(r"C:\Tuck\Tuck.exe", ["--sendto-files"], tmp_path)
-        assert batch.exists()
-        assert batch.suffix == ".bat"
-        assert batch.name == SENDTO_BATCH_NAME
-        content = batch.read_text()
-        assert "--sendto-files" in content
-        assert f"REM {_TUCK_MARKER}" in content
-
-    def test_create_batch_fallback_with_suffix(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
-        batch = _create_batch_fallback(
-            r"C:\Tuck\Tuck.exe",
-            ["--profile-id", "my-id", "--sendto-files"],
-            tmp_path,
-            suffix="-my-id",
-        )
-        assert batch.exists()
-        assert batch.name.startswith("Tuck")
-        assert "my-id" in batch.name
-        assert batch.suffix == ".bat"
-
-    def test_install_sendto_batch_fallback(self, tmp_path, monkeypatch):
+    def test_install_each_kind_writes_only_its_own_batch(self, tmp_path, monkeypatch):
         monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
         monkeypatch.setattr("tuck.sendto._can_create_shortcuts", lambda: False)
         monkeypatch.setattr("tuck.sendto._get_target_path", lambda *a, **k: sys.executable)
         monkeypatch.setattr("tuck.sendto._get_working_dir", lambda: str(tmp_path))
 
-        result = install_sendto()
-        assert result.suffix == ".bat"
-        assert result.name == SENDTO_BATCH_NAME
-        assert result.exists()
+        result = install_generic_shortcut("open")
+        assert result == tmp_path / SENDTO_BATCH_NAME
+        assert [path.name for path in tmp_path.iterdir()] == [SENDTO_BATCH_NAME]
         review_content = result.read_text()
         assert "--sendto-action review" in review_content
         assert "--sendto-files" in review_content
-        assert f"REM {_TUCK_MARKER}" in review_content
+        assert f"REM {_TUCK_MARKER}|generic-open" in review_content
 
-        compress_path = tmp_path / SENDTO_COMPRESS_BATCH_NAME
-        assert compress_path.exists()
-        compress_content = compress_path.read_text()
-        assert "--sendto-action start" in compress_content
-        assert "--sendto-files" in compress_content
-        assert f"REM {_TUCK_MARKER}" in compress_content
+        upscale = install_generic_shortcut("upscale")
+        assert upscale.name == "Tuck Upscale.bat"
+        upscale_content = upscale.read_text()
+        assert "--sendto-action start --sendto-task upscale --sendto-files" in upscale_content
+        assert f"REM {_TUCK_MARKER}|generic-upscale" in upscale_content
+        assert _is_tuck_shortcut(upscale)
+
+    def test_batch_file_uses_exact_crlf_line_endings(self, tmp_path):
+        batch_path = tmp_path / "Tuck.bat"
+        _write_batch_file(batch_path, r"C:\Tuck\Tuck.exe", ["--sendto-files"])
+        content = batch_path.read_bytes()
+        assert b"\r\r\n" not in content
+        assert content.startswith(b"@echo off\r\nREM TUCK_OWNER_V1\r\n")
 
     def test_install_profile_shortcut_batch_fallback(self, tmp_path, monkeypatch):
         monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
@@ -768,7 +824,7 @@ class TestBatchFallback:
         uninstall_sendto()
         assert bat_path.exists()
 
-    def test_install_sendto_rejects_foreign_generic_collision(self, tmp_path, monkeypatch):
+    def test_install_rejects_foreign_collision_for_its_kind_only(self, tmp_path, monkeypatch):
         monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
         monkeypatch.setattr("tuck.sendto._can_create_shortcuts", lambda: False)
         monkeypatch.setattr("tuck.sendto._get_target_path", lambda *a, **k: sys.executable)
@@ -776,15 +832,39 @@ class TestBatchFallback:
         _make_foreign_bat(foreign_path)
         original = foreign_path.read_bytes()
 
-        try:
-            install_sendto()
-        except FileExistsError as error:
-            assert SENDTO_COMPRESS_BATCH_NAME in str(error)
-        else:
-            raise AssertionError("foreign shortcut collision was overwritten")
+        with pytest.raises(FileExistsError, match=SENDTO_COMPRESS_BATCH_NAME):
+            install_generic_shortcut("compress")
 
         assert foreign_path.read_bytes() == original
-        assert not (tmp_path / SENDTO_BATCH_NAME).exists()
+        # another kind installs fine next to the foreign file
+        assert install_generic_shortcut("open").name == SENDTO_BATCH_NAME
+        assert foreign_path.read_bytes() == original
+
+    def test_uninstall_one_kind_leaves_the_others(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
+        _make_marker_bat(tmp_path / SENDTO_BATCH_NAME)
+        _make_marker_bat(tmp_path / SENDTO_COMPRESS_BATCH_NAME)
+        _make_foreign_bat(tmp_path / "Tuck Upscale.bat")
+
+        assert uninstall_generic_shortcut("compress") is True
+        assert uninstall_generic_shortcut("upscale") is False
+        assert uninstall_generic_shortcut("cut") is False
+
+        assert {path.name for path in tmp_path.iterdir()} == {
+            SENDTO_BATCH_NAME,
+            "Tuck Upscale.bat",
+        }
+
+    def test_uninstall_all_generic_kinds_keeps_profiles(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
+        for name in ("Tuck.bat", "Tuck Compress.bat", "Tuck Upscale.bat", "Tuck Lossless Cut.bat"):
+            _make_marker_bat(tmp_path / name)
+        profile = tmp_path / f"{PROFILE_SHORTCUT_PREFIX}keep.bat"
+        _make_marker_bat(profile)
+
+        uninstall_sendto()
+
+        assert list(tmp_path.iterdir()) == [profile]
 
 
 class TestRepairGenericShortcuts:
@@ -797,12 +877,37 @@ class TestRepairGenericShortcuts:
         shortcut.write_bytes(_SHELL_LINK_HEADER)
 
         with pytest.raises(RuntimeError, match="desktop app"):
-            repair_sendto()
+            repair_generic_shortcut("open")
 
         assert shortcut.read_bytes() == _SHELL_LINK_HEADER
 
+    def test_missing_kind_does_not_need_repair(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
+        monkeypatch.setattr("tuck.sendto._can_create_shortcuts", lambda: False)
+
+        assert repair_generic_shortcut("upscale") is False
+        assert list(tmp_path.iterdir()) == []
+
+    def test_repairs_owned_batch_for_its_kind_only(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("sys.frozen", True, raising=False)
+        monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
+        monkeypatch.setattr("tuck.sendto._can_create_shortcuts", lambda: False)
+        monkeypatch.setattr("tuck.sendto._get_target_path", lambda *a, **k: r"C:\New\TuckCli.exe")
+        stale = tmp_path / "Tuck Upscale.bat"
+        _write_batch_file(stale, r"C:\Old\TuckCli.exe", ["--sendto-files"])
+        other = tmp_path / SENDTO_COMPRESS_BATCH_NAME
+        _write_batch_file(other, r"C:\Old\TuckCli.exe", ["--sendto-files"])
+        other_before = other.read_bytes()
+
+        assert repair_generic_shortcut("upscale") is True
+        content = stale.read_text()
+        assert r"C:\New\TuckCli.exe" in content
+        assert "--sendto-task upscale" in content
+        assert repair_generic_shortcut("upscale") is False
+        assert other.read_bytes() == other_before
+
     @requires_windows_com
-    def test_repairs_legacy_shortcut_into_review_and_compress_pair(self, tmp_path, monkeypatch):
+    def test_repairs_legacy_shortcut_into_open_shortcut(self, tmp_path, monkeypatch):
         legacy_path = tmp_path / SENDTO_SHORTCUT_NAME
         legacy_path.write_bytes(_SHELL_LINK_HEADER)
 
@@ -830,15 +935,14 @@ class TestRepairGenericShortcuts:
         monkeypatch.setattr("tuck.sendto._get_target_path", lambda *a, **k: r"C:\Tuck\Tuck.exe")
         monkeypatch.setattr("win32com.client.Dispatch", lambda _name: shell)
 
-        assert repair_sendto()
-        assert "--sendto-action review" in shell.shortcuts[str(legacy_path)].Arguments
-        compress_path = tmp_path / SENDTO_COMPRESS_SHORTCUT_NAME
-        assert "--sendto-action start" in shell.shortcuts[str(compress_path)].Arguments
+        assert repair_generic_shortcut("open")
+        repaired = shell.shortcuts[str(legacy_path)]
+        assert repaired.Arguments == "--sendto-action review --sendto-files"
+        assert repaired.Description == f"{_TUCK_MARKER}|generic-open|Open in Tuck"
+        assert not (tmp_path / SENDTO_COMPRESS_SHORTCUT_NAME).exists()
 
     @requires_windows_com
-    def test_repair_rejects_foreign_counterpart_before_migrating_legacy(
-        self, tmp_path, monkeypatch
-    ):
+    def test_repair_leaves_a_foreign_shortcut_of_another_kind_alone(self, tmp_path, monkeypatch):
         legacy_path = tmp_path / SENDTO_SHORTCUT_NAME
         foreign_path = tmp_path / SENDTO_COMPRESS_SHORTCUT_NAME
         legacy_path.write_bytes(_SHELL_LINK_HEADER)
@@ -872,14 +976,10 @@ class TestRepairGenericShortcuts:
         monkeypatch.setattr("tuck.sendto._get_target_path", lambda *a, **k: r"C:\Tuck\Tuck.exe")
         monkeypatch.setattr("win32com.client.Dispatch", lambda _name: shell)
 
-        try:
-            repair_sendto()
-        except FileExistsError as error:
-            assert SENDTO_COMPRESS_SHORTCUT_NAME in str(error)
-        else:
-            raise AssertionError("repair accepted a foreign counterpart")
-
-        assert shell.shortcuts[str(legacy_path)].Arguments == "--sendto-files"
+        assert repair_generic_shortcut("open")
+        assert repair_generic_shortcut("compress") is False
+        assert shell.shortcuts[str(foreign_path)].Arguments == "--foreign-action"
+        assert foreign_path.read_bytes() == _SHELL_LINK_HEADER
 
 
 class TestBridgeSendTo:
@@ -1128,7 +1228,7 @@ class TestRemoveGenericSendTo:
 
         _make_marker_bat(tmp_path / f"{PROFILE_SHORTCUT_PREFIX}keep-me.bat")
 
-        resp = api.remove_generic_sendto()
+        resp = api.remove_generic_sendto("open")
         assert resp["ok"]
         assert not (tmp_path / SENDTO_BATCH_NAME).exists()
         assert (tmp_path / f"{PROFILE_SHORTCUT_PREFIX}keep-me.bat").exists()
@@ -1147,7 +1247,7 @@ class TestRemoveGenericSendTo:
         api._settings.load()
 
         _make_foreign_bat(tmp_path / SENDTO_BATCH_NAME)
-        resp = api.remove_generic_sendto()
+        resp = api.remove_generic_sendto("open")
         assert resp["ok"]
         assert (tmp_path / SENDTO_BATCH_NAME).exists()
 
@@ -1173,7 +1273,7 @@ class TestRemoveGenericSendTo:
         foreign_lnk = tmp_path / f"{PROFILE_SHORTCUT_PREFIX}keep-me.lnk"
         foreign_lnk.write_text("foreign")
 
-        resp = api.remove_generic_sendto()
+        resp = api.remove_generic_sendto("open")
         assert resp["ok"]
 
         assert not owned_lnk.exists()

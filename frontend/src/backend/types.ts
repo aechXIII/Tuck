@@ -82,8 +82,22 @@ export interface UpdateCheck extends JsonObject {
   readonly version?: string;
 }
 
+/** The generic Send To shortcuts Tuck manages one at a time. */
+export type SendToKind = "open" | "compress" | "upscale" | "cut";
+
+export interface SendToShortcut extends JsonObject {
+  readonly name: string;
+  readonly path: string;
+  readonly type: string;
+  readonly status: string;
+  /** set on generic shortcuts */
+  readonly kind?: SendToKind;
+  /** set on profile shortcuts */
+  readonly profile_id?: string;
+}
+
 export interface SendToShortcuts extends JsonObject {
-  readonly shortcuts: readonly JsonObject[];
+  readonly shortcuts: readonly SendToShortcut[];
 }
 
 export interface LutEntry extends JsonObject {
@@ -150,8 +164,9 @@ export interface DomainBackendClient {
   getDownloadProgress(): Promise<BackendResult<DownloadProgress>>;
   installUpdate(): Promise<BackendResult<EmptyPayload>>;
   openOutputFolder(path: string): Promise<BackendResult<EmptyPayload>>;
-  installGenericSendto(): Promise<BackendResult<EmptyPayload>>;
-  removeGenericSendto(): Promise<BackendResult<EmptyPayload>>;
+  installGenericSendto(kind: SendToKind): Promise<BackendResult<EmptyPayload>>;
+  removeGenericSendto(kind: SendToKind): Promise<BackendResult<EmptyPayload>>;
+  repairGenericSendto(kind: SendToKind): Promise<BackendResult<EmptyPayload>>;
   installProfileSendto(profileId: string, action?: string): Promise<BackendResult<EmptyPayload>>;
   removeProfileSendto(profileId: string): Promise<BackendResult<EmptyPayload>>;
   repairProfileSendto(profileId: string, action?: string): Promise<BackendResult<EmptyPayload>>;

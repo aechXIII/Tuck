@@ -149,12 +149,18 @@ def _build_parser() -> argparse.ArgumentParser:
     p_set_sub.add_parser("show", help="Show current settings")
     p_set_sub.add_parser("reset", help="Reset to defaults")
 
+    from .sendto import SENDTO_KINDS
+
     p_st = sub.add_parser("sendto", help="Manage Send To shortcuts")
     p_st_sub = p_st.add_subparsers(dest="sendto_cmd")
-    p_st_sub.add_parser("install", help="Install Send To shortcut")
-    p_st_sub.add_parser("uninstall", help="Remove Send To shortcut")
+    for name, help_text in (
+        ("install", "Add a Send To shortcut (default: open)"),
+        ("uninstall", "Remove Send To shortcuts (default: every Tuck shortcut except profiles)"),
+        ("repair", "Repair Send To shortcuts (default: every installed one)"),
+    ):
+        p_st_cmd = p_st_sub.add_parser(name, help=help_text)
+        p_st_cmd.add_argument("--kind", choices=SENDTO_KINDS, help="Shortcut to change")
     p_st_sub.add_parser("uninstall-all", help="Remove all Send To shortcuts")
-    p_st_sub.add_parser("repair", help="Repair Send To shortcut")
 
     return parser
 
@@ -417,6 +423,33 @@ def _resolve_console_profile(mgr, profile_id: str | None):
     return profile
 
 
+def _resolve_console_upscale_profile(mgr, profile_id: str | None):
+    from .models import WORKFLOW_UPSCALE, find_profile_by_id
+
+    profiles = mgr.get_profiles()
+    if profile_id:
+        profile = find_profile_by_id(profiles, profile_id)
+        if profile is None:
+            print(f"Error: Profile not found: {profile_id}")
+            print("Use `tuck profiles list` to see available profiles.")
+            return None
+        if profile.workflow != WORKFLOW_UPSCALE:
+            print(f"Error: Profile '{profile_id}' is for {profile.workflow}, not upscale.")
+            return None
+        return profile
+
+    # prefer the profile last used for upscaling in the editor
+    last_id = str(mgr.get_setting("last_upscale_profile_id", "") or "")
+    last = find_profile_by_id(profiles, last_id) if last_id else None
+    if last is not None and last.workflow == WORKFLOW_UPSCALE:
+        return last
+    profile = next((item for item in profiles if item.workflow == WORKFLOW_UPSCALE), None)
+    if profile is None:
+        print("Error: there is no Upscale profile yet.")
+        print("Create an Upscale profile in Tuck, then send the videos again.")
+    return profile
+
+
 def _encode_queue(
     valid: list[str], profile, output_dir: str
 ) -> tuple[list[tuple[str, str, float]], int]:
@@ -463,7 +496,9 @@ def _print_queue_summary(results: list[tuple[str, str, float]], errors: int, tot
     )
 
 
-def run_console_encode(files: list[str], profile_id: str | None = None) -> int:
+def run_console_encode(
+    files: list[str], profile_id: str | None = None, workflow: str = "compression"
+) -> int:
 
     from .engine import is_ffmpeg_available
     from .probe import is_ffprobe_available
@@ -475,7 +510,10 @@ def run_console_encode(files: list[str], profile_id: str | None = None) -> int:
 
     mgr = get_settings_manager()
     mgr.load()
-    profile = _resolve_console_profile(mgr, profile_id)
+    if workflow == "upscale":
+        profile = _resolve_console_upscale_profile(mgr, profile_id)
+    else:
+        profile = _resolve_console_profile(mgr, profile_id)
     if profile is None:
         return 1
 
@@ -623,19 +661,30 @@ def _cmd_settings(args) -> int:
 
 def _cmd_sendto(args) -> int:
     from .sendto import (
-        install_sendto,
+        SENDTO_KINDS,
+        generic_shortcut,
+        install_generic_shortcut,
         remove_all_profile_shortcuts,
-        repair_sendto,
+        repair_generic_shortcut,
+        uninstall_generic_shortcut,
         uninstall_sendto,
     )
 
+    kind: str | None = getattr(args, "kind", None)
+
     def _install() -> str:
-        path = install_sendto()
-        return f"Send To shortcut installed: {path}"
+        spec = generic_shortcut(kind or "open")
+        path = install_generic_shortcut(spec.kind)
+        return f"Send To shortcut {spec.stem} installed: {path}"
 
     def _uninstall() -> str:
-        uninstall_sendto()
-        return "Send To shortcut removed."
+        if kind is None:
+            uninstall_sendto()
+            return "Send To shortcuts removed."
+        spec = generic_shortcut(kind)
+        if uninstall_generic_shortcut(spec.kind):
+            return f"Send To shortcut {spec.stem} removed."
+        return f"Send To shortcut {spec.stem} is not installed."
 
     def _uninstall_all() -> str:
         uninstall_sendto()
@@ -643,9 +692,11 @@ def _cmd_sendto(args) -> int:
         return f"All Send To shortcuts removed ({count} profile shortcuts)."
 
     def _repair() -> str:
-        if repair_sendto():
-            return "Send To shortcut repaired."
-        return "Send To shortcut does not need repair."
+        kinds = (kind,) if kind else SENDTO_KINDS
+        repaired = [generic_shortcut(item).stem for item in kinds if repair_generic_shortcut(item)]
+        if repaired:
+            return f"Send To shortcuts repaired: {', '.join(repaired)}."
+        return "Send To shortcuts do not need repair."
 
     actions: dict[str, Callable[[], str]] = {
         "install": _install,
@@ -655,7 +706,10 @@ def _cmd_sendto(args) -> int:
     }
     action = actions.get(args.sendto_cmd)
     if action is None:
-        print("Usage: tuck sendto {install|uninstall|uninstall-all|repair}")
+        print(
+            "Usage: tuck sendto {install|uninstall|uninstall-all|repair} "
+            "[--kind open|compress|upscale|cut]"
+        )
         return 0
 
     try:

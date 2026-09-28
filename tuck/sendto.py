@@ -3,16 +3,13 @@ from __future__ import annotations
 import logging
 import os
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 from .desktop_platform import is_linux_desktop
 
 logger = logging.getLogger(__name__)
 
-SENDTO_SHORTCUT_NAME = "Tuck.lnk"
-SENDTO_BATCH_NAME = "Tuck.bat"
-SENDTO_COMPRESS_SHORTCUT_NAME = "Tuck Compress.lnk"
-SENDTO_COMPRESS_BATCH_NAME = "Tuck Compress.bat"
 PROFILE_SHORTCUT_PREFIX = "Tuck - "
 
 # embedded in .lnk Description and .bat REM lines so Tuck can tell which shortcuts it owns
@@ -23,6 +20,42 @@ _SHELL_LINK_HEADER = (
 
 ACTION_START = "start"
 ACTION_REVIEW = "review"
+
+
+@dataclass(frozen=True)
+class GenericShortcut:
+    kind: str
+    stem: str
+    action: str
+    task: str | None
+    description: str
+
+    @property
+    def marker_type(self) -> str:
+        return f"generic-{self.kind}"
+
+
+# the file stem identifies the kind, so shortcuts made by the older paired
+# install (marker type "generic") still count as "open" and "compress"
+_GENERIC_SHORTCUTS: dict[str, GenericShortcut] = {
+    spec.kind: spec
+    for spec in (
+        GenericShortcut("open", "Tuck", ACTION_REVIEW, None, "Open in Tuck"),
+        GenericShortcut("compress", "Tuck Compress", ACTION_START, None, "Compress with Tuck"),
+        GenericShortcut("upscale", "Tuck Upscale", ACTION_START, "upscale", "Upscale with Tuck"),
+        GenericShortcut(
+            "cut", "Tuck Lossless Cut", ACTION_REVIEW, "cut", "Open in Tuck Lossless Cut"
+        ),
+    )
+}
+SENDTO_KINDS: tuple[str, ...] = tuple(_GENERIC_SHORTCUTS)
+_LEGACY_SHORTCUT_NAME = "Tuck.lnk"
+
+
+def generic_shortcut(kind: object) -> GenericShortcut:
+    if not isinstance(kind, str) or kind not in _GENERIC_SHORTCUTS:
+        raise ValueError("Send To shortcut kind must be open, compress, upscale, or cut.")
+    return _GENERIC_SHORTCUTS[kind]
 
 
 def _require_sendto_support() -> None:
@@ -89,7 +122,11 @@ def _get_target_path(
     return sys.executable
 
 
-def _get_args(for_profile: str | None = None, action: str = ACTION_START) -> list[str]:
+def _get_args(
+    for_profile: str | None = None,
+    action: str = ACTION_START,
+    task: str | None = None,
+) -> list[str]:
     if action not in (ACTION_START, ACTION_REVIEW):
         action = ACTION_START
 
@@ -100,7 +137,10 @@ def _get_args(for_profile: str | None = None, action: str = ACTION_START) -> lis
     mid: list[str] = []
     if for_profile:
         mid.extend(["--profile-id", for_profile])
-    mid.extend(["--sendto-action", action, "--sendto-files"])
+    mid.extend(["--sendto-action", action])
+    if task:
+        mid.extend(["--sendto-task", task])
+    mid.append("--sendto-files")
     return prefix + mid
 
 
@@ -110,8 +150,9 @@ def _get_working_dir() -> str:
     return str(Path(__file__).resolve().parent.parent)
 
 
-def _get_generic_shortcut_path() -> Path:
-    return _sendto_dir() / SENDTO_SHORTCUT_NAME
+def _generic_paths(spec: GenericShortcut) -> tuple[Path, Path]:
+    sendto = _sendto_dir()
+    return sendto / f"{spec.stem}.lnk", sendto / f"{spec.stem}.bat"
 
 
 def _get_profile_shortcut_path(profile_id: str) -> Path:
@@ -120,18 +161,6 @@ def _get_profile_shortcut_path(profile_id: str) -> Path:
 
 def _get_profile_batch_path(profile_id: str) -> Path:
     return _sendto_dir() / f"{PROFILE_SHORTCUT_PREFIX}{profile_id}.bat"
-
-
-def _get_batch_path() -> Path:
-    return _sendto_dir() / SENDTO_BATCH_NAME
-
-
-def _get_compress_shortcut_path() -> Path:
-    return _sendto_dir() / SENDTO_COMPRESS_SHORTCUT_NAME
-
-
-def _get_compress_batch_path() -> Path:
-    return _sendto_dir() / SENDTO_COMPRESS_BATCH_NAME
 
 
 def _can_create_shortcuts() -> bool:
@@ -143,7 +172,7 @@ def _can_create_shortcuts() -> bool:
 
 
 def _is_legacy_generic_shortcut(path: Path) -> bool:
-    if path.name != SENDTO_SHORTCUT_NAME or not path.is_file() or not _can_create_shortcuts():
+    if path.name != _LEGACY_SHORTCUT_NAME or not path.is_file() or not _can_create_shortcuts():
         return False
     try:
         with path.open("rb") as shortcut_file:
@@ -172,71 +201,48 @@ def _is_legacy_generic_shortcut(path: Path) -> bool:
         return False
 
 
-def _generic_destination_paths() -> tuple[Path, ...]:
-    return (
-        _get_generic_shortcut_path(),
-        _get_compress_shortcut_path(),
-        _get_batch_path(),
-        _get_compress_batch_path(),
-    )
+def _is_owned_generic_file(path: Path) -> bool:
+    return path.exists() and (_is_tuck_shortcut(path) or _is_legacy_generic_shortcut(path))
 
 
-def _ensure_generic_destinations_available() -> None:
-    for path in _generic_destination_paths():
-        if path.exists() and not (_is_tuck_shortcut(path) or _is_legacy_generic_shortcut(path)):
+def _ensure_generic_destination_available(spec: GenericShortcut) -> None:
+    for path in _generic_paths(spec):
+        if path.exists() and not _is_owned_generic_file(path):
             raise FileExistsError(
                 f"Explorer shortcut already exists and is not owned by Tuck: {path}"
             )
 
 
-def install_sendto(executable_path: str | Path | None = None) -> Path:
+def install_generic_shortcut(kind: str, executable_path: str | Path | None = None) -> Path:
     _require_sendto_support()
-    review_target = _get_target_path(executable_path, ACTION_REVIEW)
-    start_target = _get_target_path(executable_path, ACTION_START)
-    if not review_target or not start_target:
+    spec = generic_shortcut(kind)
+    target = _get_target_path(executable_path, spec.action)
+    if not target:
         raise RuntimeError("Cannot determine Tuck executable path")
 
-    sendto = _sendto_dir()
-    sendto.mkdir(parents=True, exist_ok=True)
-    _ensure_generic_destinations_available()
-    shortcut_path = _get_generic_shortcut_path()
+    _sendto_dir().mkdir(parents=True, exist_ok=True)
+    _ensure_generic_destination_available(spec)
+    shortcut_path, batch_path = _generic_paths(spec)
+    arguments = _get_args(action=spec.action, task=spec.task)
 
-    batch_paths = (_get_batch_path(), _get_compress_batch_path())
-    for batch_path in batch_paths:
-        if batch_path.exists() and _is_tuck_shortcut(batch_path):
-            batch_path.unlink()
-            logger.info("Removed old batch fallback: %s", batch_path)
+    if not _can_create_shortcuts():
+        _write_batch_file(batch_path, target, arguments, marker_type=spec.marker_type)
+        logger.info("Send To batch fallback created: %s", batch_path)
+        return batch_path
 
-    if _can_create_shortcuts():
-        _create_windows_shortcut(
-            review_target,
-            shortcut_path,
-            arguments=_get_args(action=ACTION_REVIEW),
-            working_dir=_get_working_dir(),
-            description="Open in Tuck",
-            shortcut_type="generic",
-        )
-        compress_path = _get_compress_shortcut_path()
-        _create_windows_shortcut(
-            start_target,
-            compress_path,
-            arguments=_get_args(action=ACTION_START),
-            working_dir=_get_working_dir(),
-            description="Compress with Tuck",
-            shortcut_type="generic",
-        )
-        logger.info("Send To shortcuts created at %s and %s", shortcut_path, compress_path)
-        return shortcut_path
-    else:
-        batch = _create_batch_fallback(review_target, _get_args(action=ACTION_REVIEW), sendto)
-        compress_batch = _create_batch_fallback(
-            start_target,
-            _get_args(action=ACTION_START),
-            sendto,
-            suffix=" Compress",
-        )
-        logger.info("Send To batch fallbacks created at %s and %s", batch, compress_batch)
-        return batch
+    if batch_path.exists() and _is_tuck_shortcut(batch_path):
+        batch_path.unlink()
+        logger.info("Removed old batch fallback: %s", batch_path)
+    _create_windows_shortcut(
+        target,
+        shortcut_path,
+        arguments=arguments,
+        working_dir=_get_working_dir(),
+        description=spec.description,
+        shortcut_type=spec.marker_type,
+    )
+    logger.info("Send To shortcut created: %s", shortcut_path)
+    return shortcut_path
 
 
 def install_profile_shortcut(
@@ -276,19 +282,23 @@ def install_profile_shortcut(
         return batch_path
 
 
-def uninstall_sendto() -> None:
+def uninstall_generic_shortcut(kind: str) -> bool:
     _require_sendto_support()
-    sendto = _sendto_dir()
-    for name in (
-        SENDTO_SHORTCUT_NAME,
-        SENDTO_BATCH_NAME,
-        SENDTO_COMPRESS_SHORTCUT_NAME,
-        SENDTO_COMPRESS_BATCH_NAME,
-    ):
-        p = sendto / name
-        if p.exists() and _is_tuck_shortcut(p):
-            p.unlink()
-            logger.info("Removed %s", p)
+    spec = generic_shortcut(kind)
+    removed = False
+    for path in _generic_paths(spec):
+        if path.exists() and _is_tuck_shortcut(path):
+            path.unlink()
+            logger.info("Removed %s", path)
+            removed = True
+    return removed
+
+
+def uninstall_sendto() -> None:
+    """Remove every Tuck-owned generic shortcut; profile shortcuts stay."""
+    _require_sendto_support()
+    for kind in SENDTO_KINDS:
+        uninstall_generic_shortcut(kind)
 
 
 def uninstall_profile_shortcut(profile_id: str) -> bool:
@@ -322,71 +332,63 @@ def remove_all_profile_shortcuts() -> int:
     return count
 
 
-def repair_sendto(executable_path: str | Path | None = None) -> bool:
+def repair_generic_shortcut(kind: str, executable_path: str | Path | None = None) -> bool:
+    """Point an installed generic shortcut back at this Tuck install.
+
+    Returns False when the kind is not installed or already correct. Only files
+    Tuck owns are rewritten.
+    """
     _require_sendto_support()
-    if not _can_create_shortcuts():
-        logger.debug("pywin32 COM not available; cannot repair .lnk shortcuts")
+    spec = generic_shortcut(kind)
+    shortcut_path, batch_path = _generic_paths(spec)
+    shortcut_owned = _is_owned_generic_file(shortcut_path)
+    batch_owned = batch_path.exists() and _is_tuck_shortcut(batch_path)
+    if not shortcut_owned and not batch_owned:
         return False
 
-    shortcut_specs = (
-        (_get_generic_shortcut_path(), ACTION_REVIEW, "Open in Tuck"),
-        (_get_compress_shortcut_path(), ACTION_START, "Compress with Tuck"),
-    )
-    if not any(
-        path.exists() and (_is_tuck_shortcut(path) or _is_legacy_generic_shortcut(path))
-        for path, _, _ in shortcut_specs
-    ):
-        return False
-    _ensure_generic_destinations_available()
-
-    # resolve before COM handling so an unsupported editor target is reported
+    # resolve before touching files so an unsupported editor target is reported
     try:
-        targets = {
-            action: _get_target_path(executable_path, action) for _, action, _ in shortcut_specs
-        }
+        target = _get_target_path(executable_path, spec.action)
     except (ValueError, TypeError):
         return False
-
-    try:
-        import pythoncom
-        from win32com.client import Dispatch
-
-        repaired = False
-        sc = None
-        pythoncom.CoInitialize()
-        try:
-            shell = Dispatch("WScript.Shell")
-            for shortcut_path, action, description in shortcut_specs:
-                target = targets[action]
-                if not target:
-                    return repaired
-                expected_args = " ".join(_get_args(action=action))
-                if shortcut_path.exists():
-                    if not (
-                        _is_tuck_shortcut(shortcut_path)
-                        or _is_legacy_generic_shortcut(shortcut_path)
-                    ):
-                        continue
-                    sc = shell.CreateShortCut(str(shortcut_path))
-                    if sc.TargetPath == target and (sc.Arguments or "") == expected_args:
-                        continue
-                _create_windows_shortcut(
-                    target,
-                    shortcut_path,
-                    arguments=_get_args(action=action),
-                    working_dir=_get_working_dir(),
-                    description=description,
-                    shortcut_type="generic",
-                )
-                logger.info("Repaired Send To shortcut: %s", shortcut_path)
-                repaired = True
-            return repaired
-        finally:
-            sc = None
-            shell = None
-            pythoncom.CoUninitialize()
-    except Exception:
+    if not target:
         return False
+    arguments = _get_args(action=spec.action, task=spec.task)
+
+    repaired = False
+    if batch_owned:
+        expected = _batch_content(target, arguments, marker_type=spec.marker_type)
+        if batch_path.read_bytes() != expected:
+            batch_path.write_bytes(expected)
+            logger.info("Repaired Send To batch fallback: %s", batch_path)
+            repaired = True
+    if shortcut_owned and not _windows_shortcut_matches(shortcut_path, target, arguments):
+        _create_windows_shortcut(
+            target,
+            shortcut_path,
+            arguments=arguments,
+            working_dir=_get_working_dir(),
+            description=spec.description,
+            shortcut_type=spec.marker_type,
+        )
+        logger.info("Repaired Send To shortcut: %s", shortcut_path)
+        repaired = True
+    return repaired
+
+
+def _windows_shortcut_matches(shortcut_path: Path, target: str, arguments: list[str]) -> bool:
+    import pythoncom
+    from win32com.client import Dispatch
+
+    pythoncom.CoInitialize()
+    try:
+        shell = Dispatch("WScript.Shell")
+        sc = shell.CreateShortCut(str(shortcut_path))
+        return sc.TargetPath == target and (sc.Arguments or "") == _join_arguments(arguments)
+    finally:
+        sc = None
+        shell = None
+        pythoncom.CoUninitialize()
 
 
 def repair_profile_shortcut(
@@ -458,19 +460,26 @@ def repair_profile_shortcut(
 def list_sendto_shortcuts() -> list[dict[str, str]]:
     _require_sendto_support()
     result: list[dict[str, str]] = []
-    generic_entries: list[tuple[Path, bool]] = []
     sendto = _sendto_dir()
     if not sendto.exists():
         return result
+    for spec in _GENERIC_SHORTCUTS.values():
+        existing = [path for path in _generic_paths(spec) if path.exists()]
+        if not existing:
+            continue
+        # a file Tuck cannot prove it owns needs a repair or a manual cleanup
+        owned = all(_is_tuck_shortcut(path) for path in existing)
+        result.append(
+            {
+                "name": spec.stem,
+                "type": "generic",
+                "kind": spec.kind,
+                "status": "ok" if owned else "broken",
+                "path": str(existing[0]),
+            }
+        )
     for entry in sorted(sendto.iterdir()):
-        if entry.name in {
-            SENDTO_SHORTCUT_NAME,
-            SENDTO_BATCH_NAME,
-            SENDTO_COMPRESS_SHORTCUT_NAME,
-            SENDTO_COMPRESS_BATCH_NAME,
-        }:
-            generic_entries.append((entry, _is_tuck_shortcut(entry)))
-        elif (
+        if (
             entry.name.startswith(PROFILE_SHORTCUT_PREFIX)
             and entry.suffix in (".lnk", ".bat")
             and _is_tuck_shortcut(entry)
@@ -485,24 +494,6 @@ def list_sendto_shortcuts() -> list[dict[str, str]]:
                     "status": "ok",
                 }
             )
-    if generic_entries:
-        names = {entry.stem for entry, _ in generic_entries}
-        review_entry = next(
-            (entry for entry, _ in generic_entries if entry.stem == "Tuck"),
-            generic_entries[0][0],
-        )
-        complete = {"Tuck", "Tuck Compress"}.issubset(names)
-        result.insert(
-            0,
-            {
-                "name": "Tuck + Tuck Compress",
-                "path": str(review_entry),
-                "type": "generic",
-                "status": "ok"
-                if complete and all(owned for _, owned in generic_entries)
-                else "broken",
-            },
-        )
     return result
 
 
@@ -564,6 +555,10 @@ def _verify_bat_ownership(path: Path) -> bool:
     return "--sendto-files" in content
 
 
+def _join_arguments(arguments: list[str]) -> str:
+    return " ".join(f'"{a}"' if " " in a else a for a in arguments)
+
+
 def _create_windows_shortcut(
     target: str,
     shortcut_path: Path,
@@ -587,7 +582,7 @@ def _create_windows_shortcut(
         shell = Dispatch("WScript.Shell")
         shortcut = shell.CreateShortCut(str(shortcut_path))
         shortcut.TargetPath = target
-        shortcut.Arguments = " ".join(f'"{a}"' if " " in a else a for a in arguments)
+        shortcut.Arguments = _join_arguments(arguments)
         shortcut.WorkingDirectory = working_dir or str(Path(target).parent)
         shortcut.Description = marked_desc
         shortcut.Save()
@@ -597,34 +592,26 @@ def _create_windows_shortcut(
         pythoncom.CoUninitialize()
 
 
-def _create_batch_fallback(
-    target: str,
-    arguments: list[str],
-    sendto_dir: Path,
-    suffix: str = "",
-) -> Path:
-    batch_name = f"{SENDTO_BATCH_NAME[:-4]}{suffix}.bat" if suffix else SENDTO_BATCH_NAME
-    batch_path = sendto_dir / batch_name
-    _write_batch_file(batch_path, target, arguments)
-    return batch_path
+def _batch_content(target: str, arguments: list[str], marker_type: str = "") -> bytes:
+    marker = f"{_TUCK_MARKER}|{marker_type}" if marker_type else _TUCK_MARKER
+    return (
+        "@echo off\r\n"
+        f"REM {marker}\r\n"
+        f'"{target}" {_join_arguments(arguments)} %*\r\n'
+        "set ERR=%ERRORLEVEL%\r\n"
+        "echo.\r\n"
+        "if %ERR% neq 0 (\r\n"
+        "  echo Tuck finished with errors ^(exit %ERR%^).\r\n"
+        ") else (\r\n"
+        "  echo Tuck finished successfully.\r\n"
+        ")\r\n"
+        "pause\r\n"
+        "exit /b %ERR%\r\n"
+    ).encode("ascii")
 
 
-def _write_batch_file(batch_path: Path, target: str, arguments: list[str]) -> None:
-    args_str = " ".join(f'"{a}"' if " " in a else a for a in arguments)
-    batch_path.write_text(
-        (
-            "@echo off\r\n"
-            f"REM {_TUCK_MARKER}\r\n"
-            f'"{target}" {args_str} %*\r\n'
-            "set ERR=%ERRORLEVEL%\r\n"
-            "echo.\r\n"
-            "if %ERR% neq 0 (\r\n"
-            "  echo Tuck finished with errors ^(exit %ERR%^).\r\n"
-            ") else (\r\n"
-            "  echo Tuck finished successfully.\r\n"
-            ")\r\n"
-            "pause\r\n"
-            "exit /b %ERR%\r\n"
-        ),
-        encoding="ascii",
-    )
+def _write_batch_file(
+    batch_path: Path, target: str, arguments: list[str], marker_type: str = ""
+) -> None:
+    # bytes keep the CRLF line endings exact so repair can compare contents
+    batch_path.write_bytes(_batch_content(target, arguments, marker_type))

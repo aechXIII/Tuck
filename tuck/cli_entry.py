@@ -17,9 +17,9 @@ def main() -> int:
     from tuck.cli import main as cli_main
 
     if _is_sendto_invocation(argv):
-        files, profile_id, action = _parse_sendto_args(argv)
+        files, profile_id, action, task = _parse_sendto_args(argv)
         if (action or "start") == "start":
-            return run_sendto_console(files, profile_id=profile_id)
+            return run_sendto_console(files, profile_id=profile_id, task=task)
         # "review" Send To shortcuts target the Tauri executable, not TuckCli.exe
         print(
             "Tuck: this Send To action opens the editor. Use the Tuck shortcut.",

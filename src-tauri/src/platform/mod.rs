@@ -48,4 +48,7 @@ pub use opener::{
     open_app_folder_with_validation, open_with_validation, validate_path_for_open, Opener,
     SystemOpener,
 };
-pub use startup::{deliver_second_instance_args, normalize_startup_args, startup_files_ready};
+pub use startup::{
+    deliver_second_instance_args, parse_startup_args, startup_files_ready, LaunchTask,
+    StartupLaunch,
+};

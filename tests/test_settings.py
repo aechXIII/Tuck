@@ -23,6 +23,11 @@ from tuck.models import (
     WORKFLOW_UPSCALE,
     Profile,
 )
+from tuck.models.ui_preferences import (
+    HIDDEN_UI_PARTS,
+    normalize_hidden_ui,
+    normalize_start_task,
+)
 from tuck.settings import (
     ProcessLock,
     SettingsManager,
@@ -1221,3 +1226,147 @@ class TestV2UserProfileMigration:
         assert found.rate_control_method == "cbr"
         assert found.two_pass is False
         assert found.schema_version == PROFILE_SCHEMA_VERSION
+
+
+class TestInterfacePreferences:
+    @staticmethod
+    def _use(tmp_path, monkeypatch):
+        import tuck.settings as settings_mod
+
+        monkeypatch.setattr(settings_mod, "_config_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
+
+    @staticmethod
+    def _write_settings(document: dict) -> None:
+        settings_path().parent.mkdir(parents=True, exist_ok=True)
+        settings_path().write_text(json.dumps(document), encoding="utf-8")
+
+    def test_defaults_show_everything_and_start_with_last_task(self, tmp_path, monkeypatch):
+        self._use(tmp_path, monkeypatch)
+
+        s = SettingsManager().load()
+
+        assert s.hidden_ui == []
+        assert s.start_task == "last"
+
+    def test_round_trip(self, tmp_path, monkeypatch):
+        self._use(tmp_path, monkeypatch)
+        mgr = SettingsManager()
+        mgr.load()
+        mgr.set_setting("hidden_ui", ["upscale", "lut"])
+        mgr.set_setting("start_task", "cut")
+        mgr.save()
+
+        s = SettingsManager().load()
+
+        assert s.hidden_ui == ["upscale", "lut"]
+        assert s.start_task == "cut"
+
+    def test_older_file_without_the_keys_uses_defaults(self, tmp_path, monkeypatch):
+        self._use(tmp_path, monkeypatch)
+        self._write_settings(
+            {"version": 1, "default_profile_id": PROFILE_ID_DISCORD_NITRO, "last_task": "upscale"}
+        )
+
+        s = SettingsManager().load()
+
+        assert s.default_profile_id == PROFILE_ID_DISCORD_NITRO
+        assert s.last_task == "upscale"
+        assert s.hidden_ui == []
+        assert s.start_task == "last"
+
+    @pytest.mark.parametrize(
+        "hidden_ui",
+        [
+            "lut",
+            ["lut", "timeline"],
+            ["lut", 3],
+            ["compression", "upscale", "cut"],
+            None,
+        ],
+    )
+    def test_invalid_hidden_ui_in_file_falls_back_to_default(
+        self, hidden_ui, tmp_path, monkeypatch
+    ):
+        self._use(tmp_path, monkeypatch)
+        self._write_settings(
+            {"version": 1, "default_profile_id": PROFILE_ID_DISCORD_NITRO, "hidden_ui": hidden_ui}
+        )
+
+        s = SettingsManager().load()
+
+        assert s.hidden_ui == []
+        # the rest of the file still loads
+        assert s.default_profile_id == PROFILE_ID_DISCORD_NITRO
+
+    @pytest.mark.parametrize("start_task", ["edit", "", 2, None, ["cut"]])
+    def test_invalid_start_task_in_file_falls_back_to_default(
+        self, start_task, tmp_path, monkeypatch
+    ):
+        self._use(tmp_path, monkeypatch)
+        self._write_settings(
+            {"version": 1, "default_profile_id": PROFILE_ID_DISCORD_NITRO, "start_task": start_task}
+        )
+
+        s = SettingsManager().load()
+
+        assert s.start_task == "last"
+        assert s.default_profile_id == PROFILE_ID_DISCORD_NITRO
+
+    def test_file_values_are_stored_deduplicated_in_canonical_order(self, tmp_path, monkeypatch):
+        self._use(tmp_path, monkeypatch)
+        self._write_settings(
+            {"version": 1, "hidden_ui": ["lut", "cut", "panel_audio", "lut", "compression"]}
+        )
+
+        s = SettingsManager().load()
+
+        assert s.hidden_ui == ["compression", "cut", "panel_audio", "lut"]
+
+
+class TestNormalizeHiddenUi:
+    def test_canonical_order_and_dedupe(self):
+        assert normalize_hidden_ui(
+            ["lut", "frame_blending", "audio_editing", "panel_audio", "panel_video", "cut", "cut"]
+        ) == ["cut", "panel_video", "panel_audio", "audio_editing", "frame_blending", "lut"]
+
+    def test_all_parts_listed_in_the_allowed_order(self):
+        assert HIDDEN_UI_PARTS == (
+            "compression",
+            "upscale",
+            "cut",
+            "panel_video",
+            "panel_audio",
+            "audio_editing",
+            "frame_blending",
+            "lut",
+        )
+
+    def test_two_tasks_may_be_hidden(self):
+        assert normalize_hidden_ui(["upscale", "compression"]) == ["compression", "upscale"]
+
+    def test_all_three_tasks_hidden_is_rejected(self):
+        with pytest.raises(ValueError, match="Keep at least one of Compress, Upscale"):
+            normalize_hidden_ui(["cut", "upscale", "compression", "lut"])
+
+    @pytest.mark.parametrize(
+        ("value", "message"),
+        [
+            ("lut", "must be a list"),
+            ([1], "only list interface part names"),
+            (["timeline"], "unknown interface part: timeline"),
+        ],
+    )
+    def test_invalid_values_are_rejected(self, value, message):
+        with pytest.raises(ValueError, match=message):
+            normalize_hidden_ui(value)
+
+    @pytest.mark.parametrize("value", ["last", "compression", "upscale", "cut"])
+    def test_start_task_accepts_allowed_values(self, value):
+        assert normalize_start_task(value) == value
+
+    @pytest.mark.parametrize("value", ["Last", "export", 0, None])
+    def test_start_task_rejects_other_values(self, value):
+        with pytest.raises(ValueError, match="last, compression, upscale, or cut"):
+            normalize_start_task(value)

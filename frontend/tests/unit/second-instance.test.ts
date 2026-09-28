@@ -1,35 +1,79 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createSecondInstanceLaunchQueue } from "../../src/platform/second-instance.ts";
+import {
+  createSecondInstanceLaunchQueue,
+  launchFromPayload,
+  mergeLaunches,
+  type StartupLaunch,
+} from "../../src/platform/second-instance.ts";
 
 test("second-instance files queue until startup drains them, then deliver immediately", () => {
-  const delivered: string[][] = [];
-  const queue = createSecondInstanceLaunchQueue((files) => delivered.push([...files]));
+  const delivered: StartupLaunch[] = [];
+  const queue = createSecondInstanceLaunchQueue((launch) => delivered.push(launch));
 
-  queue.enqueue(["first.mp4", 42, "second.mp4"]);
-  queue.enqueue("not a path list");
-  assert.deepEqual(queue.drain(), ["first.mp4", "second.mp4"]);
+  queue.enqueue({ files: ["first.mp4", 42, "second.mp4"], task: null });
+  queue.enqueue("not a launch");
+  queue.enqueue(["bare.mp4"]);
+  queue.enqueue({ files: [], task: null });
+  assert.deepEqual(queue.drain(), { files: ["first.mp4", "second.mp4"], task: null });
   assert.deepEqual(delivered, []);
 
   queue.markReadyAndFlush();
-  queue.enqueue(["later.mp4"]);
-  assert.deepEqual(delivered, [["later.mp4"]]);
+  queue.enqueue({ files: ["later.mp4"], task: "upscale" });
+  assert.deepEqual(delivered, [{ files: ["later.mp4"], task: "upscale" }]);
 });
 
 test("second-instance paths queued after startup drain flush during the ready handoff", () => {
-  const delivered: string[][] = [];
-  const queue = createSecondInstanceLaunchQueue((files) => delivered.push([...files]));
+  const delivered: StartupLaunch[] = [];
+  const queue = createSecondInstanceLaunchQueue((launch) => delivered.push(launch));
 
-  queue.enqueue(["startup.mp4"]);
-  assert.deepEqual(queue.drain(), ["startup.mp4"]);
+  queue.enqueue({ files: ["startup.mp4"], task: null });
+  assert.deepEqual(queue.drain(), { files: ["startup.mp4"], task: null });
 
   // This models a Tauri event delivered after startup drain and before the
   // editor finishes attaching its backend client.
-  queue.enqueue(["interleaved.mp4"]);
+  queue.enqueue({ files: ["interleaved.mp4"], task: "cut" });
   queue.markReadyAndFlush();
 
-  assert.deepEqual(delivered, [["interleaved.mp4"]]);
-  queue.enqueue(["later.mp4"]);
-  assert.deepEqual(delivered, [["interleaved.mp4"], ["later.mp4"]]);
+  assert.deepEqual(delivered, [{ files: ["interleaved.mp4"], task: "cut" }]);
+  queue.enqueue({ files: ["later.mp4"], task: null });
+  assert.deepEqual(delivered, [
+    { files: ["interleaved.mp4"], task: "cut" },
+    { files: ["later.mp4"], task: null },
+  ]);
+});
+
+test("a launch with only a task still reaches the editor", () => {
+  const delivered: StartupLaunch[] = [];
+  const queue = createSecondInstanceLaunchQueue((launch) => delivered.push(launch));
+
+  queue.enqueue({ files: [], task: "cut" });
+  assert.deepEqual(queue.drain(), { files: [], task: "cut" });
+
+  queue.markReadyAndFlush();
+  queue.enqueue({ files: [], task: "compression" });
+  assert.deepEqual(delivered, [{ files: [], task: "compression" }]);
+});
+
+test("startup payloads keep valid files and known tasks only", () => {
+  assert.deepEqual(launchFromPayload({ files: ["a.mp4", null], task: "upscale" }), {
+    files: ["a.mp4"],
+    task: "upscale",
+  });
+  assert.deepEqual(launchFromPayload({ files: "a.mp4", task: "trim" }), { files: [], task: null });
+  assert.deepEqual(launchFromPayload(null), { files: [], task: null });
+  assert.deepEqual(launchFromPayload(["a.mp4"]), { files: [], task: null });
+});
+
+test("merged launches keep file order and the latest task", () => {
+  assert.deepEqual(
+    mergeLaunches([
+      { files: ["a.mp4"], task: "cut" },
+      { files: ["b.mp4"], task: null },
+      { files: [], task: "upscale" },
+    ]),
+    { files: ["a.mp4", "b.mp4"], task: "upscale" },
+  );
+  assert.deepEqual(mergeLaunches([]), { files: [], task: null });
 });

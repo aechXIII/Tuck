@@ -1,4 +1,4 @@
-import type { BackendClient } from "../../backend/types.ts";
+import type { BackendClient, SendToKind } from "../../backend/types.ts";
 import { bindDelegatedEvents } from "../../ui/delegated-events.ts";
 import { escapeHtml } from "../../ui/dom.ts";
 import { settingsAreDirty, settingsSnapshot } from "../../state/settings-state.ts";
@@ -34,6 +34,7 @@ import {
 } from "../../platform/capabilities.ts";
 import { confirmToast, toast } from "../editor/toast.ts";
 import { lutSettings } from "../export/lut-controls.ts";
+import { HIDEABLE_PARTS, hiddenParts, isTaskName, visibleTasks, type HideablePart, type TaskName } from "./visibility.ts";
 import type { EditorSession } from "../editor/session.ts";
 
 const esc = escapeHtml;
@@ -806,6 +807,8 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         defaultProfile: select("set-dp").value,
         defaultScaler: select("set-ds").value,
         inspectorStartPanel: select("set-inspector-start").value,
+        startTask: select("set-start-task").value,
+        hiddenUi: chosenHiddenParts().join(","),
         openOutput: input("set-open-output-folder").checked,
         autoClear: input("set-auto-clear").checked,
       };
@@ -843,20 +846,24 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       .join("");
     const autoClear = s.clear_completed_automatically ? "checked" : "";
     const openOutput = s.open_output_folder_after_queue ? "checked" : "";
-    const inspectorStart = String(s.inspector_start_panel || "export");
-    const inspectorOptions = (
-      [
-        ["last", "Last used"],
-        ["video", "Transform"],
-        ["audio", "Audio"],
-        ["export", "Export"],
-      ] as const
-    )
-      .map(([value, label]) => {
-        const selected = value === inspectorStart ? "selected" : "";
-        return `<option value="${value}" ${selected}>${label}</option>`;
-      })
-      .join("");
+    const hidden = hiddenParts(s.hidden_ui);
+    const choices = (items: readonly (readonly [string, string])[], current: string) =>
+      items
+        .map(([value, label]) => `<option value="${value}" ${value === current ? "selected" : ""}>${label}</option>`)
+        .join("");
+    const inspectorOptions = choices(
+      [["last", "Last used"], ["video", "Transform"], ["audio", "Audio"], ["export", "Export"]],
+      String(s.inspector_start_panel || "export"),
+    );
+    const taskOptions = choices(
+      [["last", "Last used"], ["compression", "Compress"], ["upscale", "Upscale"], ["cut", "Lossless cut"]],
+      String(s.start_task || "last"),
+    );
+    const part = (id: HideablePart, title: string, note = "") => `<label class="toggle-row settings-option">
+        <input type="checkbox" role="switch" data-hide-part="${id}" ${hidden.has(id) ? "" : "checked"} data-settings-change="visibility">
+        <span class="toggle-track" aria-hidden="true"></span>
+        <span class="settings-option-copy"><strong>${title}</strong>${note ? `<small>${note}</small>` : ""}</span>
+      </label>`;
     return `<div class="settings-card">
     <h3 class="settings-card-title">Task defaults</h3>
     <p class="settings-card-copy">Use these when a profile does not specify a setting.</p>
@@ -872,11 +879,39 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     </div>
   </div>
   <div class="settings-card">
-    <h3 class="settings-card-title">Inspector</h3>
+    <h3 class="settings-card-title">On launch</h3>
     <div class="settings-grid">
-      <div class="settings-field full">
-        <label for="set-inspector-start">Open on launch</label>
+      <div class="settings-field">
+        <label for="set-start-task">Export task</label>
+        <select id="set-start-task" data-settings-change="mark-dirty">${taskOptions}</select>
+      </div>
+      <div class="settings-field">
+        <label for="set-inspector-start">Inspector panel</label>
         <select id="set-inspector-start" data-settings-change="mark-dirty">${inspectorOptions}</select>
+      </div>
+    </div>
+  </div>
+  <div class="settings-card">
+    <h3 class="settings-card-title">Show in Tuck</h3>
+    <p class="settings-card-copy">Turn off what you never use. It comes back when you turn it on here.</p>
+    <div class="settings-visibility">
+      <div class="settings-visibility-group" role="group" aria-labelledby="vis-tasks">
+        <h4 id="vis-tasks">Export tasks</h4>
+        ${part("compression", "Compress")}
+        ${part("upscale", "Upscale")}
+        ${part("cut", "Lossless cut")}
+      </div>
+      <div class="settings-visibility-group" role="group" aria-labelledby="vis-panels">
+        <h4 id="vis-panels">Inspector panels</h4>
+        ${part("panel_video", "Transform")}
+        ${part("panel_audio", "Audio")}
+      </div>
+      <div class="settings-visibility-group" role="group" aria-labelledby="vis-tools">
+        <h4 id="vis-tools">Tools</h4>
+        ${part("audio_editing", "Audio editing", "The Library's Audio tab and Add audio.")}
+        ${part("frame_blending", "Frame Blending")}
+        ${part("lut", "Color LUT")}
+        <p class="settings-visibility-note">Frame Blending and Color LUT still show while a profile uses them.</p>
       </div>
     </div>
   </div>
@@ -961,10 +996,12 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
   function explorerSettingsHtml(): string {
     return `<div class="settings-card">
     <h3 class="settings-card-title">Send to shortcuts</h3>
-    <div class="settings-card-copy">
-      Open videos in Tuck from File Explorer.
-      If a shortcut stops working, you can repair it here.
-    </div>
+    <div class="settings-card-copy">Right-click videos in File Explorer and choose Send to. Add only the ones you use.</div>
+    <div id="st-fixed" class="settings-list"></div>
+  </div>
+  <div class="settings-card">
+    <h3 class="settings-card-title">Profile shortcuts</h3>
+    <div class="settings-card-copy">Compress or upscale in the background with one profile.</div>
     <div id="st-list" class="settings-list"></div>
   </div>`;
   }
@@ -1159,14 +1196,17 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       };
     } else if (settingsPage === "explorer") {
       content = explorerSettingsHtml();
-      actions = { html: settingButton("Add shortcut", "add-shortcut", true) };
+      actions = { html: settingButton("Add profile shortcut", "add-shortcut", true) };
     } else {
       content = systemSettingsHtml(s, caps);
       actions = { html: settingButton("Save changes", "save-system", true, true) };
     }
     settingsShell(settingsPage, content, actions, caps);
     settingsDirty = false;
-    if (settingsPage === "general") select("set-dp").value = String(s.default_profile_id || "");
+    if (settingsPage === "general") {
+      select("set-dp").value = String(s.default_profile_id || "");
+      syncVisibilityChoices();
+    }
     if (settingsPage === "output") updateExampleOutput();
     if (settingsPage === "profiles") await refreshProfileManagerList(settingsFilter);
     if (settingsPage === "explorer" && shouldShowSendTo(caps)) await refreshShortcutList();
@@ -1297,9 +1337,39 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       default_profile_id: select("set-dp").value,
       default_scaler: select("set-ds").value.toLowerCase(),
       inspector_start_panel: select("set-inspector-start").value,
+      start_task: select("set-start-task").value,
+      hidden_ui: chosenHiddenParts(),
       clear_completed_automatically: input("set-auto-clear").checked,
       open_output_folder_after_queue: input("set-open-output-folder").checked,
     });
+  }
+
+  function chosenHiddenParts(): HideablePart[] {
+    const switches = document.querySelectorAll<HTMLInputElement>("[data-hide-part]");
+    return HIDEABLE_PARTS.filter((id) =>
+      Array.from(switches).some((node) => node.dataset.hidePart === id && !node.checked),
+    );
+  }
+
+  // one task always stays on, and the launch choices only offer what is shown
+  function syncVisibilityChoices(): void {
+    const hidden = hiddenParts(chosenHiddenParts());
+    const visible = visibleTasks(hidden);
+    for (const node of document.querySelectorAll<HTMLInputElement>("[data-hide-part]")) {
+      const part = node.dataset.hidePart;
+      node.disabled = visible.length === 1 && part === visible[0];
+    }
+    const offer = (id: string, fallback: string, shown: (value: string) => boolean) => {
+      const menu = byId<HTMLSelectElement>(id);
+      if (!menu) return;
+      for (const option of Array.from(menu.options)) {
+        option.hidden = option.disabled = !shown(option.value);
+      }
+      if (menu.selectedOptions[0]?.disabled) menu.value = fallback;
+    };
+    offer("set-start-task", "last", (value) => value === "last" || !isTaskName(value) || visible.includes(value));
+    offer("set-inspector-start", "export", (value) =>
+      !(value === "video" && hidden.has("panel_video")) && !(value === "audio" && hidden.has("panel_audio")));
   }
 
   async function saveOutputSettings(): Promise<void> {
@@ -1372,55 +1442,80 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
 
   interface ShortcutRecord {
     readonly type?: string;
+    readonly kind?: string;
     readonly name?: string;
     readonly profile_id?: string;
     readonly status?: string;
   }
 
-  async function refreshShortcutList(): Promise<void> {
-    const list = byId("st-list");
-    if (!list) return;
-    const r = await legacyBackendResult(client().listSendtoShortcuts());
-    list.replaceChildren();
-    const shortcuts = (Array.isArray(r.shortcuts) ? r.shortcuts : []) as ShortcutRecord[];
-    for (const shortcut of shortcuts) {
-      const row = document.createElement("div");
-      row.className = "settings-list-row";
-      const profile =
-        shortcut.type === "profile"
-          ? profileShortcutName(shortcut.profile_id || shortcut.name || "")
-          : "Default shortcut";
-      const status =
-        shortcut.status === "ok"
-          ? "Installed"
-          : shortcut.status === "broken"
-            ? "Needs repair"
-            : shortcut.status === "missing"
-              ? "Missing"
-              : shortcut.status || "Unknown";
-      const main = document.createElement("div");
-      main.className = "settings-list-main";
-      main.appendChild(elementWithText("strong", shortcut.name || profile));
-      main.appendChild(elementWithText("span", profile));
-      const badge = elementWithText("span", status);
-      badge.className = shortcut.status === "ok" ? "settings-badge" : "status-warn";
+  // each can be added on its own; one for a hidden task is only listed while installed
+  const SEND_TO_SHORTCUTS: readonly {
+    readonly kind: SendToKind;
+    readonly name: string;
+    readonly note: string;
+    readonly task: TaskName | null;
+  }[] = [
+    { kind: "open", name: "Tuck", note: "Opens the videos in Tuck.", task: null },
+    { kind: "compress", name: "Tuck Compress", note: "Compresses in the background with your default profile.", task: "compression" },
+    { kind: "upscale", name: "Tuck Upscale", note: "Upscales in the background with your last Upscale profile.", task: "upscale" },
+    { kind: "cut", name: "Tuck Lossless Cut", note: "Opens the videos in Tuck, ready to cut.", task: "cut" },
+  ];
+
+  function shortcutButton(label: string, run: () => void, danger = false): HTMLButtonElement {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "btn2";
+    if (danger) button.style.color = "var(--danger)";
+    button.textContent = label;
+    button.addEventListener("click", run);
+    return button;
+  }
+
+  function shortcutRow(title: string, note: string, status: string | undefined): HTMLElement {
+    const row = document.createElement("div");
+    row.className = "settings-list-row";
+    const main = document.createElement("div");
+    main.className = "settings-list-main";
+    main.appendChild(elementWithText("strong", title));
+    main.appendChild(elementWithText("span", note));
+    if (status) {
+      const badge = elementWithText("span", status === "ok" ? "Added" : "Needs repair");
+      badge.className = status === "ok" ? "settings-badge" : "status-warn";
       main.appendChild(badge);
-      row.appendChild(main);
-      const repair = document.createElement("button");
-      repair.className = "btn2";
-      repair.textContent = "Repair";
-      repair.addEventListener("click", () => void repairShortcut(shortcut));
-      const remove = document.createElement("button");
-      remove.className = "btn2";
-      remove.style.color = "var(--danger)";
-      remove.textContent = "Remove";
-      remove.addEventListener("click", () => removeShortcut(shortcut));
-      row.appendChild(repair);
-      row.appendChild(remove);
+    }
+    row.appendChild(main);
+    return row;
+  }
+
+  async function refreshShortcutList(): Promise<void> {
+    const fixed = byId("st-fixed");
+    const list = byId("st-list");
+    if (!fixed || !list) return;
+    const r = await legacyBackendResult(client().listSendtoShortcuts());
+    const shortcuts = (Array.isArray(r.shortcuts) ? r.shortcuts : []) as ShortcutRecord[];
+    const hidden = hiddenParts(session.appSettings.hidden_ui);
+    fixed.replaceChildren();
+    for (const item of SEND_TO_SHORTCUTS) {
+      const installed = shortcuts.find((shortcut) => shortcut.type === "generic" && shortcut.kind === item.kind);
+      if (!installed && item.task && hidden.has(item.task)) continue;
+      const row = shortcutRow(item.name, item.note, installed ? installed.status || "broken" : undefined);
+      if (!installed) row.appendChild(shortcutButton("Add", () => void installGenericShortcut(item.kind, item.name)));
+      else {
+        if (installed.status !== "ok") row.appendChild(shortcutButton("Repair", () => void repairShortcut(installed)));
+        row.appendChild(shortcutButton("Remove", () => removeShortcut(installed, item.name), true));
+      }
+      fixed.appendChild(row);
+    }
+    list.replaceChildren();
+    for (const shortcut of shortcuts.filter((item) => item.type === "profile")) {
+      const name = profileShortcutName(shortcut.profile_id || shortcut.name || "");
+      const row = shortcutRow(shortcut.name || name, name, shortcut.status || "broken");
+      row.appendChild(shortcutButton("Repair", () => void repairShortcut(shortcut)));
+      row.appendChild(shortcutButton("Remove", () => removeShortcut(shortcut, name), true));
       list.appendChild(row);
     }
     if (!list.children.length) {
-      list.appendChild(elementWithText("div", "No Explorer shortcuts installed.", "settings-empty"));
+      list.appendChild(elementWithText("div", "No profile shortcuts yet.", "settings-empty"));
     }
   }
 
@@ -1430,7 +1525,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     const profiles = (await legacyBackendResult(client().getProfilesJson())) as unknown as
       | ProfileListEntry[]
       | { ok: false };
-    const content = `${settingsTitle("Add shortcut", "open-explorer")}
+    const content = `${settingsTitle("Add profile shortcut", "open-explorer")}
     <div id="profile-shortcut-choices" style="display:flex;flex-direction:column;gap:6px"></div>`;
     settingsShell("explorer", content, { html: "" }, caps);
     const choices = el("profile-shortcut-choices");
@@ -1438,16 +1533,15 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       summarize: profileSummary,
     });
     bindProfileActions(choices, (action, profileId, name) => {
-      if (action === "install-generic-shortcut") void installGenericShortcut();
-      else if (action === "install-profile-shortcut") void installProfileShortcut(profileId, name);
+      if (action === "install-profile-shortcut") void installProfileShortcut(profileId, name);
     });
   }
 
-  async function installGenericShortcut(): Promise<void> {
-    const r = await legacyBackendResult(client().installGenericSendto());
-    if (r.ok) toast("Explorer shortcuts installed.", "ok");
-    else toast(r.error ?? "Could not add the Explorer shortcuts.", "err");
-    void open("explorer");
+  async function installGenericShortcut(kind: SendToKind, name: string): Promise<void> {
+    const r = await legacyBackendResult(client().installGenericSendto(kind));
+    if (r.ok) toast(`Added "${name}" to Send to.`, "ok");
+    else toast(r.error ?? `Could not add "${name}".`, "err");
+    void refreshShortcutList();
   }
 
   async function installProfileShortcut(pid: string, name: string): Promise<void> {
@@ -1457,30 +1551,30 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     void open("explorer");
   }
 
-  function removeShortcut(data: ShortcutRecord): void {
-    confirmToast(
-      data.type === "generic" ? "Remove both Tuck shortcuts?" : "Remove shortcut?",
-      () => {
-        void legacyBackendResult(
-          data.type === "generic"
-            ? client().removeGenericSendto()
-            : client().removeProfileSendto(data.profile_id || data.name || ""),
-        ).then((r) => {
-          if (r.ok) toast("Shortcut removed.", "ok");
-          else toast(r.error ?? "Could not remove the shortcut.", "err");
-          void refreshShortcutList();
-        });
-      },
-    );
+  function genericKind(data: ShortcutRecord): SendToKind | null {
+    return SEND_TO_SHORTCUTS.find((item) => item.kind === data.kind)?.kind ?? null;
+  }
+
+  function removeShortcut(data: ShortcutRecord, name: string): void {
+    const kind = genericKind(data);
+    confirmToast(`Remove "${name}" from Send to?`, () => {
+      void legacyBackendResult(
+        kind
+          ? client().removeGenericSendto(kind)
+          : client().removeProfileSendto(data.profile_id || data.name || ""),
+      ).then((r) => {
+        if (r.ok) toast("Shortcut removed.", "ok");
+        else toast(r.error ?? "Could not remove the shortcut.", "err");
+        void refreshShortcutList();
+      });
+    });
   }
 
   async function repairShortcut(data: ShortcutRecord): Promise<void> {
-    const r =
-      data.type === "generic"
-        ? await legacyBackendResult(client().installGenericSendto())
-        : await legacyBackendResult(
-            client().repairProfileSendto(data.profile_id || data.name || ""),
-          );
+    const kind = genericKind(data);
+    const r = kind
+      ? await legacyBackendResult(client().repairGenericSendto(kind))
+      : await legacyBackendResult(client().repairProfileSendto(data.profile_id || data.name || ""));
     if (r.ok) toast("Shortcut repaired.", "ok");
     else toast(r.error ?? "Could not repair the shortcut.", "err");
     void refreshShortcutList();
@@ -1539,6 +1633,10 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         "profile-speed": () => peSpeedChanged(),
         "profile-preset": () => pePresetChanged(),
         "mark-dirty": () => markSettingsDirty(),
+        visibility: () => {
+          syncVisibilityChoices();
+          markSettingsDirty();
+        },
       },
     },
     "settings",

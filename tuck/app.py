@@ -21,7 +21,9 @@ _CLI_SUBCOMMANDS = frozenset(
 
 _SENDTO_FILES_FLAG = "--sendto-files"
 _SENDTO_ACTION_FLAG = "--sendto-action"
+_SENDTO_TASK_FLAG = "--sendto-task"
 _SENDTO_PROFILE_FLAG = "--profile-id"
+SENDTO_TASKS = ("compression", "upscale", "cut")
 
 
 def _is_cli_invocation(argv: list[str]) -> bool:
@@ -39,11 +41,14 @@ def _is_sendto_invocation(argv: list[str]) -> bool:
     return _SENDTO_FILES_FLAG in argv
 
 
-def _parse_sendto_args(argv: list[str]) -> tuple[list[str], str | None, str | None]:
-
+def _parse_sendto_args(
+    argv: list[str],
+) -> tuple[list[str], str | None, str | None, str | None]:
+    """Split Send To arguments into files, profile id, action, and task."""
     files: list[str] = []
     profile_id: str | None = None
     action: str | None = None
+    task: str | None = None
     skip_next = False
     for i, arg in enumerate(argv):
         if skip_next:
@@ -62,7 +67,27 @@ def _parse_sendto_args(argv: list[str]) -> tuple[list[str], str | None, str | No
                 action = argv[i + 1]
                 skip_next = True
             continue
-    return files, profile_id, action
+        if arg == _SENDTO_TASK_FLAG:
+            if i + 1 < len(argv):
+                task = argv[i + 1]
+                skip_next = True
+            continue
+    return files, profile_id, action, task
+
+
+def sendto_start_error(task: str | None) -> str | None:
+    """Explain why a background Send To run cannot handle this task."""
+    if task is not None and task not in SENDTO_TASKS:
+        return (
+            "This Send To shortcut asks for a task Tuck does not know. "
+            "Repair the shortcuts in Settings > File Explorer."
+        )
+    if task == "cut":
+        return (
+            "Lossless cut needs the Tuck editor. "
+            "Use Send To -> Tuck Lossless Cut to open these videos."
+        )
+    return None
 
 
 def _ensure_console() -> None:
@@ -91,8 +116,16 @@ def _ensure_console() -> None:
 def run_sendto_console(
     files: list[str],
     profile_id: str | None = None,
+    task: str | None = None,
 ) -> int:
     _ensure_console()
+
+    task_error = sendto_start_error(task)
+    if task_error:
+        print(f"Tuck Send To: {task_error}")
+        with contextlib.suppress(EOFError):
+            input("\nPress Enter to close...")
+        return 2
 
     from .settings import get_settings_manager
 
@@ -108,15 +141,18 @@ def run_sendto_console(
 
     valid = [f for f in files if Path(f).is_file()]
     if not valid:
+        shortcut = "Tuck Upscale" if task == "upscale" else "Tuck Compress"
         print("Tuck Send To: no valid video files were provided.")
-        print("Select one or more video files, then use Send To -> Tuck Compress.")
+        print(f"Select one or more video files, then use Send To -> {shortcut}.")
         with contextlib.suppress(EOFError):
             input("\nPress Enter to close...")
         return 1
 
     from .cli import run_console_encode
 
-    code = run_console_encode(valid, profile_id=profile_id)
+    code = run_console_encode(
+        valid, profile_id=profile_id, workflow="upscale" if task == "upscale" else "compression"
+    )
     with contextlib.suppress(EOFError):
         input("\nPress Enter to close...")
     return code
@@ -138,14 +174,15 @@ def main() -> int:
         return cli_main(sys.argv[1:])
 
     if _is_sendto_invocation(sys.argv):
-        files, profile_id, action = _parse_sendto_args(sys.argv)
+        files, profile_id, action, task = _parse_sendto_args(sys.argv)
         if (action or "start") == "start":
             logger.info(
-                "Send To start: %d file arg(s), profile=%s",
+                "Send To start: %d file arg(s), profile=%s, task=%s",
                 len(files),
                 profile_id or "(default)",
+                task or "compression",
             )
-            return run_sendto_console(files, profile_id=profile_id)
+            return run_sendto_console(files, profile_id=profile_id, task=task)
         _ensure_console()
         print(
             "Could not open the selected videos from this shortcut. "

@@ -51,10 +51,13 @@ import {
 import { createEditorSession, type EditorSession } from "./session.ts";
 import type { EditorClip } from "./types.ts";
 import type { Segment } from "../../types/foundation.ts";
+import { hiddenParts } from "../settings/visibility.ts";
 
 interface LaunchData {
   readonly files?: readonly unknown[];
   readonly sendto?: unknown;
+  // the Export task a Send To shortcut asked for
+  readonly task?: "compression" | "upscale" | "cut" | null;
 }
 
 export interface EditorRuntime {
@@ -386,7 +389,10 @@ export function installEditorRuntime(
     session,
     byId,
     getBackendClient,
-    reloadEditorSettings: () => encoding.loadSettings(),
+    reloadEditorSettings: async () => {
+      await encoding.loadSettings();
+      panels.applyVisibility(hiddenParts(session.appSettings.hidden_ui));
+    },
     setAvailableEncoders: (encoders) => encoding.setAvailableEncoders(encoders),
     copyDiagnostics: () => queue.copyDiagnostics(),
     checkForUpdates: () => checkUpdatesFromSettings(),
@@ -714,6 +720,8 @@ export function installEditorRuntime(
     encoding.updateSizePresets(10);
     try {
       await encoding.loadSettings();
+      panels.applyVisibility(hiddenParts(session.appSettings.hidden_ui));
+      encoding.openTask(launch.task, true);
       panels.setInspectorTab(
         InspectorUi.startupTab(
           String(session.appSettings.inspector_start_panel ?? ""),
@@ -745,6 +753,7 @@ export function installEditorRuntime(
     const launch = launchData(data);
     if (started) {
       const files = launch.files?.filter((file): file is string => typeof file === "string") ?? [];
+      if (launch.task) encoding.openTask(launch.task, false);
       if (files.length) library.addFiles(files);
       if (launch.sendto !== undefined && launch.sendto !== null) handleSendto(launch.sendto);
       return;

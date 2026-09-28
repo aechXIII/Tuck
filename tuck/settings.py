@@ -55,6 +55,7 @@ from .models import (
     import_profiles_json,
     profiles_to_dicts,
 )
+from .models.ui_preferences import START_TASK_LAST, normalize_hidden_ui, normalize_start_task
 
 APP_NAME = "Tuck"
 APP_AUTHOR = "Tuck"
@@ -465,6 +466,18 @@ class SettingsManager:
 
         for key in ("theme", "source_output_mode", "max_concurrent", "shortcut_installed"):
             data.pop(key, None)
+
+        # a hand-edited or newer file must not stop Tuck from starting
+        if "hidden_ui" in data:
+            try:
+                data["hidden_ui"] = normalize_hidden_ui(data["hidden_ui"])
+            except ValueError:
+                data["hidden_ui"] = []
+        if "start_task" in data:
+            try:
+                data["start_task"] = normalize_start_task(data["start_task"])
+            except ValueError:
+                data["start_task"] = START_TASK_LAST
 
         return data
 

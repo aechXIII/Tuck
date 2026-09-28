@@ -102,11 +102,12 @@
     MessageBox MB_OK|MB_ICONEXCLAMATION "Tuck was installed, but its command-line tools could not be added to PATH (exit code $R0). The desktop app will still work."
   ${EndIf}
 
+  ; only the "Tuck" editor shortcut is added here; the others are opt-in from Settings
   ; TuckCli checks Tuck ownership before it touches any Send To shortcut
   nsExec::ExecToLog '"$INSTDIR\TuckCli.exe" sendto install'
   Pop $R0
   ${If} $R0 != 0
-    MessageBox MB_OK|MB_ICONEXCLAMATION "Tuck was installed, but its File Explorer Send To shortcuts could not be created (exit code $R0). You can retry from Settings."
+    MessageBox MB_OK|MB_ICONEXCLAMATION "Tuck was installed, but its File Explorer Send To shortcut could not be created (exit code $R0). You can retry from Settings."
   ${EndIf}
 !macroend
 

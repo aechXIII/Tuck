@@ -10,6 +10,7 @@ import type {
   SourceFileRowValues,
 } from "../library/clip-details.ts";
 import * as ClipDetails from "../library/clip-details.ts";
+import { visibleInspectorTab, type HideablePart } from "../settings/visibility.ts";
 export type { InspectorExportState } from "./inspector-ui.ts";
 
 export type LibraryTab = "media" | "audio";
@@ -116,6 +117,7 @@ export interface PanelsApi {
   closeWorkspacePanels: (restoreFocus?: boolean) => void;
   setLibraryTab: (tab: string) => void;
   setInspectorTab: (tab: string, remember?: boolean) => void;
+  applyVisibility: (hidden: ReadonlySet<HideablePart>) => void;
   applyWorkspacePanels: (restoreFocus?: boolean) => void;
   syncWorkspaceForViewport: () => void;
   renderClipDetails: () => void;
@@ -179,6 +181,7 @@ export function installPanels(host: PanelsHost): PanelsApi {
 
   let libraryTab: LibraryTab = "media";
   let inspectorTab: InspectorTab = "export";
+  let hiddenUi: ReadonlySet<HideablePart> = new Set();
   let inspectorSettingsSave: Promise<void> = Promise.resolve();
   let workspaceViewportMode = "";
   let workspacePanels = { libraryOpen: true, inspectorOpen: true };
@@ -339,7 +342,7 @@ export function installPanels(host: PanelsHost): PanelsApi {
   }
 
   function setLibraryTab(tab: string): void {
-    libraryTab = tab === "audio" ? "audio" : "media";
+    libraryTab = tab === "audio" && !hiddenUi.has("audio_editing") ? "audio" : "media";
     const mediaTab = byId("lib-tab-media");
     const audioTab = byId("lib-tab-audio");
     mediaTab?.classList.toggle("on", libraryTab === "media");
@@ -428,7 +431,8 @@ export function installPanels(host: PanelsHost): PanelsApi {
   }
 
   function setInspectorTab(tab: string, remember?: boolean): void {
-    inspectorTab = tab === "audio" || tab === "export" ? tab : "edit";
+    const shown = visibleInspectorTab(tab === "audio" || tab === "export" ? tab : "edit", hiddenUi);
+    inspectorTab = shown === "audio" || shown === "export" ? shown : "edit";
     (["edit", "audio", "export"] as const).forEach((t) => {
       const isActive = t === inspectorTab;
       const tabButton = byId("insp-tab-" + t);
@@ -440,6 +444,25 @@ export function installPanels(host: PanelsHost): PanelsApi {
     byId("right-foot")?.classList.toggle("hid", inspectorTab !== "export");
     if (inspectorTab === "audio") renderAudioMixerList();
     if (remember !== false) rememberInspectorTab(inspectorTab);
+  }
+
+  // parts the user hid in Settings; tabs switched to while hidden land on a visible one
+  function applyVisibility(hidden: ReadonlySet<HideablePart>): void {
+    hiddenUi = hidden;
+    const video = hidden.has("panel_video");
+    const audio = hidden.has("panel_audio");
+    byId("insp-tab-edit")?.classList.toggle("user-hidden", video);
+    byId("insp-tab-audio")?.classList.toggle("user-hidden", audio);
+    // Export on its own needs no tab row
+    byId("insp-tabs")?.classList.toggle("user-hidden", video && audio);
+    if (visibleInspectorTab(inspectorTab, hidden) !== inspectorTab) setInspectorTab("export", false);
+    const noAudioEditing = hidden.has("audio_editing");
+    byId("lib-tab-audio")?.classList.toggle("user-hidden", noAudioEditing);
+    doc.querySelector(".lib-tabs")?.classList.toggle("user-hidden", noAudioEditing);
+    for (const add of doc.querySelectorAll('[data-action-click="browse-audio"]')) {
+      add.classList.toggle("user-hidden", noAudioEditing);
+    }
+    if (noAudioEditing && libraryTab === "audio") setLibraryTab("media");
   }
 
   function renderClipDetails(): void {
@@ -1029,6 +1052,7 @@ export function installPanels(host: PanelsHost): PanelsApi {
     closeWorkspacePanels,
     setLibraryTab,
     setInspectorTab,
+    applyVisibility,
     applyWorkspacePanels,
     syncWorkspaceForViewport,
     renderClipDetails,

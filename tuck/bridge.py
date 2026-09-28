@@ -43,6 +43,7 @@ from .models import (
     find_profile_by_id,
 )
 from .models.encoding_policy import VALID_SCALERS
+from .models.ui_preferences import normalize_hidden_ui, normalize_start_task
 from .planner import plan
 from .probe import is_ffprobe_available, probe_audio
 from .probe import probe as probe_video
@@ -618,29 +619,46 @@ class BridgeAPI:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
-    def install_generic_sendto(self, executable_path: str | None = None) -> BridgeResult:
+    def install_generic_sendto(
+        self, kind: object, executable_path: str | None = None
+    ) -> BridgeResult:
 
         if is_linux_desktop():
             return {"ok": False, "error": "Send To shortcuts are only available on Windows."}
         try:
-            from .sendto import install_sendto, repair_sendto
+            from .sendto import generic_shortcut, install_generic_shortcut
 
-            if repair_sendto(executable_path=executable_path):
-                return {"ok": True, "repaired": True}
-            path = install_sendto(executable_path=executable_path)
-            return {"ok": True, "path": str(path)}
+            spec = generic_shortcut(kind)
+            path = install_generic_shortcut(spec.kind, executable_path=executable_path)
+            return {"ok": True, "kind": spec.kind, "path": str(path)}
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
-    def remove_generic_sendto(self) -> BridgeResult:
+    def remove_generic_sendto(self, kind: object) -> BridgeResult:
 
         if is_linux_desktop():
             return {"ok": False, "error": "Send To shortcuts are only available on Windows."}
         try:
-            from .sendto import uninstall_sendto
+            from .sendto import generic_shortcut, uninstall_generic_shortcut
 
-            uninstall_sendto()
-            return {"ok": True}
+            spec = generic_shortcut(kind)
+            removed = uninstall_generic_shortcut(spec.kind)
+            return {"ok": True, "kind": spec.kind, "removed": removed}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def repair_generic_sendto(
+        self, kind: object, executable_path: str | None = None
+    ) -> BridgeResult:
+
+        if is_linux_desktop():
+            return {"ok": False, "error": "Send To shortcuts are only available on Windows."}
+        try:
+            from .sendto import generic_shortcut, repair_generic_shortcut
+
+            spec = generic_shortcut(kind)
+            repaired = repair_generic_shortcut(spec.kind, executable_path=executable_path)
+            return {"ok": True, "kind": spec.kind, "repaired": repaired}
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
@@ -667,6 +685,8 @@ class BridgeAPI:
             "timeline_height": getattr(s, "timeline_height", 0),
             "inspector_start_panel": getattr(s, "inspector_start_panel", "export"),
             "last_inspector_panel": getattr(s, "last_inspector_panel", "export"),
+            "hidden_ui": list(s.hidden_ui),
+            "start_task": s.start_task,
             "compression_suffix": getattr(s, "compression_suffix", "_tucked_{size}")
             or "_tucked_{size}",
             "upscale_suffix": getattr(s, "upscale_suffix", "_upscaled_{width}x{height}")
@@ -704,6 +724,8 @@ class BridgeAPI:
             "timeline_height",
             "inspector_start_panel",
             "last_inspector_panel",
+            "hidden_ui",
+            "start_task",
             "compression_suffix",
             "upscale_suffix",
         }
@@ -795,6 +817,18 @@ class BridgeAPI:
                     val = data[key]
                     if not isinstance(val, str) or not val.strip():
                         return {"ok": False, "error": f"{key} must be a non-empty string"}
+                if key == "hidden_ui":
+                    try:
+                        self._settings.set_setting(key, normalize_hidden_ui(data[key]))
+                    except ValueError as error:
+                        return {"ok": False, "error": str(error)}
+                    continue
+                if key == "start_task":
+                    try:
+                        self._settings.set_setting(key, normalize_start_task(data[key]))
+                    except ValueError as error:
+                        return {"ok": False, "error": str(error)}
+                    continue
 
                 self._settings.set_setting(key, data[key])
 

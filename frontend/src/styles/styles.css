@@ -1477,6 +1477,10 @@ select {
 .hid {
   display: none !important;
 }
+/* parts the user hid in Settings; kept apart from .hid, which other code toggles */
+.user-hidden {
+  display: none !important;
+}
 /* native inputs own state and keyboard behavior; the track is decorative */
 label.toggle-row {
   position: relative;

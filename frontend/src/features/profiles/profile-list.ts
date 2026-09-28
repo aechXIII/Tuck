@@ -105,9 +105,6 @@ export function renderShortcutChoices(
   options: ShortcutChoiceOptions,
 ): void {
   list.replaceChildren();
-  list.appendChild(
-    shortcutChoice(documentRef, "Tuck", "Default shortcut", "install-generic-shortcut", {}),
-  );
   for (const profile of profiles) {
     list.appendChild(
       shortcutChoice(

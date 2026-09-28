@@ -3,6 +3,17 @@ use serde_json::{json, Value};
 
 use crate::backend::{BackendState, PublicBackendError};
 
+/// The generic Send To shortcuts Tuck can manage. Serde rejects any other
+/// value before a request reaches the sidecar.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SendToKind {
+    Open,
+    Compress,
+    Upscale,
+    Cut,
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(tag = "command", content = "payload", rename_all = "snake_case")]
 pub enum BackendCommand {
@@ -94,9 +105,16 @@ pub enum BackendCommand {
         profile_id: String,
     },
     InstallGenericSendto {
+        kind: SendToKind,
         executable_path: Option<String>,
     },
-    RemoveGenericSendto,
+    RemoveGenericSendto {
+        kind: SendToKind,
+    },
+    RepairGenericSendto {
+        kind: SendToKind,
+        executable_path: Option<String>,
+    },
     InstallProfileSendto {
         profile_id: String,
         action: Option<String>,
@@ -119,7 +137,8 @@ impl BackendCommand {
         matches!(
             self,
             Self::InstallGenericSendto { .. }
-                | Self::RemoveGenericSendto
+                | Self::RemoveGenericSendto { .. }
+                | Self::RepairGenericSendto { .. }
                 | Self::InstallProfileSendto { .. }
                 | Self::RemoveProfileSendto { .. }
                 | Self::RepairProfileSendto { .. }
@@ -192,14 +211,23 @@ impl BackendCommand {
                 "export_profile_to_file",
                 json!({ "path": path, "profile_id": profile_id }),
             ),
-            Self::InstallGenericSendto { executable_path } => {
-                let mut params = serde_json::Map::new();
-                if let Some(p) = executable_path {
-                    params.insert("executable_path".into(), json!(p));
-                }
-                ("install_generic_sendto", Value::Object(params))
+            Self::InstallGenericSendto {
+                kind,
+                executable_path,
+            } => (
+                "install_generic_sendto",
+                generic_sendto_params(*kind, executable_path.as_deref()),
+            ),
+            Self::RemoveGenericSendto { kind } => {
+                ("remove_generic_sendto", json!({ "kind": kind }))
             }
-            Self::RemoveGenericSendto => ("remove_generic_sendto", json!({})),
+            Self::RepairGenericSendto {
+                kind,
+                executable_path,
+            } => (
+                "repair_generic_sendto",
+                generic_sendto_params(*kind, executable_path.as_deref()),
+            ),
             Self::InstallProfileSendto {
                 profile_id,
                 action,
@@ -240,6 +268,15 @@ impl BackendCommand {
     }
 }
 
+fn generic_sendto_params(kind: SendToKind, executable_path: Option<&str>) -> Value {
+    let mut params = serde_json::Map::new();
+    params.insert("kind".into(), json!(kind));
+    if let Some(path) = executable_path {
+        params.insert("executable_path".into(), json!(path));
+    }
+    Value::Object(params)
+}
+
 #[tauri::command]
 pub async fn backend_request(
     state: tauri::State<'_, BackendState>,
@@ -278,9 +315,16 @@ mod tests {
     fn linux_rejects_every_send_to_command_before_sidecar_ipc() {
         let commands = [
             BackendCommand::InstallGenericSendto {
+                kind: SendToKind::Open,
                 executable_path: None,
             },
-            BackendCommand::RemoveGenericSendto,
+            BackendCommand::RemoveGenericSendto {
+                kind: SendToKind::Compress,
+            },
+            BackendCommand::RepairGenericSendto {
+                kind: SendToKind::Cut,
+                executable_path: None,
+            },
             BackendCommand::InstallProfileSendto {
                 profile_id: "profile-1".into(),
                 action: None,
@@ -310,10 +354,68 @@ mod tests {
     #[test]
     fn windows_keeps_send_to_commands_available() {
         assert!(reject_unsupported_backend_command(
-            &BackendCommand::RemoveGenericSendto,
+            &BackendCommand::RemoveGenericSendto {
+                kind: SendToKind::Open
+            },
             "windows"
         )
         .is_ok());
+    }
+
+    #[test]
+    fn generic_send_to_commands_carry_an_allowlisted_kind() {
+        for (command, method) in [
+            ("install_generic_sendto", "install_generic_sendto"),
+            ("remove_generic_sendto", "remove_generic_sendto"),
+            ("repair_generic_sendto", "repair_generic_sendto"),
+        ] {
+            for kind in ["open", "compress", "upscale", "cut"] {
+                let parsed: BackendCommand =
+                    serde_json::from_value(json!({"command": command, "payload": {"kind": kind}}))
+                        .expect("allowlisted kind");
+                let request = parsed.to_sidecar_request("kind").unwrap();
+                assert_eq!(request["method"], method);
+                assert_eq!(request["params"], json!({ "kind": kind }));
+            }
+        }
+    }
+
+    #[test]
+    fn generic_send_to_commands_reject_other_kinds() {
+        for payload in [
+            json!({}),
+            json!({"kind": "trim"}),
+            json!({"kind": "Open"}),
+            json!({"kind": 1}),
+            json!({"kind": null}),
+        ] {
+            for command in [
+                "install_generic_sendto",
+                "remove_generic_sendto",
+                "repair_generic_sendto",
+            ] {
+                assert!(
+                    serde_json::from_value::<BackendCommand>(
+                        json!({"command": command, "payload": payload.clone()})
+                    )
+                    .is_err(),
+                    "{command} accepted {payload}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn generic_send_to_keeps_an_explicit_executable_path() {
+        let command = BackendCommand::InstallGenericSendto {
+            kind: SendToKind::Upscale,
+            executable_path: Some("C:\\Tuck\\Tuck.exe".into()),
+        };
+        let request = command.to_sidecar_request("path").unwrap();
+        assert_eq!(
+            request["params"],
+            json!({"kind": "upscale", "executable_path": "C:\\Tuck\\Tuck.exe"})
+        );
     }
 
     #[test]

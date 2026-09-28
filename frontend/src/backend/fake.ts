@@ -7,6 +7,7 @@ import type {
   DataPayload,
   PlanRequest,
   ProfileInput,
+  SendToKind,
   SettingsPatch,
 } from "./types.ts";
 
@@ -388,19 +389,27 @@ class DeterministicFakeBackend implements BackendClient {
     );
   }
 
-  installGenericSendto() {
+  installGenericSendto(kind: SendToKind) {
     return this.#record(
       "installGenericSendto",
-      [],
+      [kind],
       this.#responses.installGenericSendto ?? success({}),
     );
   }
 
-  removeGenericSendto() {
+  removeGenericSendto(kind: SendToKind) {
     return this.#record(
       "removeGenericSendto",
-      [],
+      [kind],
       this.#responses.removeGenericSendto ?? success({}),
+    );
+  }
+
+  repairGenericSendto(kind: SendToKind) {
+    return this.#record(
+      "repairGenericSendto",
+      [kind],
+      this.#responses.repairGenericSendto ?? success({}),
     );
   }
 

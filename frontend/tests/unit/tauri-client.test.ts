@@ -165,3 +165,76 @@ test("clear LUT history validates success and preserves backend failures", async
   assert.equal(failed.ok,false);
   if (!failed.ok) assert.match(failed.error.message, /save LUT history/);
 });
+
+test("generic Send To shortcuts are managed one kind at a time", async () => {
+  const calls: unknown[] = [];
+  const client = createTauriBackendClient(async (command, args) => {
+    calls.push({ command, args });
+    return { kind: "upscale", path: "C:\\SendTo\\Tuck Upscale.lnk" };
+  });
+
+  assert.equal((await client.installGenericSendto("upscale")).ok, true);
+  assert.equal((await client.repairGenericSendto("cut")).ok, true);
+  assert.equal((await client.removeGenericSendto("open")).ok, true);
+
+  assert.deepEqual(calls, [
+    {
+      command: "backend_request",
+      args: { command: { command: "install_generic_sendto", payload: { kind: "upscale" } } },
+    },
+    {
+      command: "backend_request",
+      args: { command: { command: "repair_generic_sendto", payload: { kind: "cut" } } },
+    },
+    {
+      command: "backend_request",
+      args: { command: { command: "remove_generic_sendto", payload: { kind: "open" } } },
+    },
+  ]);
+});
+
+test("generic Send To failures keep the backend message", async () => {
+  const client = createTauriBackendClient(async () => {
+    throw {
+      code: "UNSUPPORTED_OPERATION",
+      message: "Send To integration is not supported on Linux.",
+      details: {},
+    };
+  });
+
+  const result = await client.installGenericSendto("open");
+
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.equal(result.error.code, "UNSUPPORTED_OPERATION");
+});
+
+test("Send To listing is typed and carries the generic kind", async () => {
+  const shortcuts = [
+    { name: "Tuck", type: "generic", kind: "open", status: "ok", path: "C:\\SendTo\\Tuck.lnk" },
+    {
+      name: "Tuck Lossless Cut",
+      type: "generic",
+      kind: "cut",
+      status: "broken",
+      path: "C:\\SendTo\\Tuck Lossless Cut.lnk",
+    },
+    {
+      name: "small",
+      profile_id: "small",
+      type: "profile",
+      status: "ok",
+      path: "C:\\SendTo\\Tuck - small.lnk",
+    },
+  ];
+  const client = createTauriBackendClient(async () => ({ shortcuts }));
+
+  assert.deepEqual(await client.listSendtoShortcuts(), { ok: true, value: { shortcuts } });
+
+  for (const entry of [
+    { name: "Tuck", type: "generic", kind: "trim", status: "ok", path: "x" },
+    { name: "Tuck", type: "generic", status: "ok" },
+  ]) {
+    const malformed = createTauriBackendClient(async () => ({ shortcuts: [entry] }));
+    assert.equal((await malformed.listSendtoShortcuts()).ok, false);
+  }
+});
