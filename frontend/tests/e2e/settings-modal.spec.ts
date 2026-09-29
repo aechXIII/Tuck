@@ -28,7 +28,7 @@ test("show-export preference saves through the existing settings key", async ({ 
     await expect(label).toBeInViewport();
     await page.screenshot({ path: testInfo.outputPath(`show-export-${width}.png`) });
   }
-  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  // there is no Save button; the change is saved as it is made
   await expect.poll(() => page.evaluate(() =>
     window.__tuckFakeBackendCalls?.filter((call) => call.method === "saveSettings")
       .some((call) => (call.args[0] as Record<string, unknown>).open_output_folder_after_queue === true),
@@ -42,7 +42,7 @@ test("the default profile picker only offers profiles that can be saved", async 
     options.map((option) => (option as HTMLOptionElement).value),
   )).toEqual(["everyday", "sharing"]);
   await picker.selectOption("sharing");
-  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(page.locator("#settings-unsaved")).toHaveText("Saved");
   await expect.poll(() => page.evaluate(() =>
     window.__tuckFakeBackendCalls?.filter((call) => call.method === "saveSettings")
       .some((call) => (call.args[0] as Record<string, unknown>).default_profile_id === "sharing"),
@@ -59,7 +59,7 @@ test("settings keeps a visible sidebar and footer at the minimum window size", a
   await expect(page.locator("#editor-shell")).toHaveAttribute("inert", "");
   await page.getByRole("button", { name: "System & support" }).click();
   await dialog.getByText("Advanced system settings", { exact: true }).click();
-  await expect(dialog.getByRole("button", { name: "Save changes" })).toBeInViewport();
+  await expect(dialog.locator("#settings-unsaved")).toBeInViewport();
   await expect(page.locator("#settings-nav-general")).toBeInViewport();
   expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -70,7 +70,11 @@ test("settings keeps a visible sidebar and footer at the minimum window size", a
   await expect(page.locator("#editor-shell")).not.toHaveAttribute("inert", "");
 });
 
-test("changing sections preserves unsaved settings until discard is confirmed", async ({ page }) => {
+test("a setting that could not be saved asks before leaving the section", async ({ page }) => {
+  await page.evaluate(() => {
+    window.tuckBackendClient!.saveSettings = async () =>
+      ({ ok: false, error: { code: "BACKEND_REJECTED", message: "Settings could not be saved", details: {} } });
+  });
   await page.getByText("Clear completed jobs automatically", { exact: true }).click();
   await page.getByRole("button", { name: "Output & naming" }).click();
   await expect(page.getByRole("button", { name: "Keep editing" })).toBeFocused();
@@ -104,6 +108,10 @@ test("profile editing keeps keyboard focus and respects the selected sidebar sec
 });
 
 test("discard confirmation text stays readable in normal and hover states", async ({ page }) => {
+  await page.evaluate(() => {
+    window.tuckBackendClient!.saveSettings = async () =>
+      ({ ok: false, error: { code: "BACKEND_REJECTED", message: "Settings could not be saved", details: {} } });
+  });
   await page.getByText("Clear completed jobs automatically", { exact: true }).click();
   await page.getByRole("button", { name: "Output & naming" }).click();
   const discard = page.getByRole("button", { name: "Discard changes" });

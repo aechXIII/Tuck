@@ -25,7 +25,10 @@ from tuck.models import (
 )
 from tuck.models.ui_preferences import (
     HIDDEN_UI_PARTS,
+    clean_shortcut_overrides,
+    normalize_cut_suffix,
     normalize_hidden_ui,
+    normalize_shortcut_overrides,
     normalize_start_task,
 )
 from tuck.settings import (
@@ -1370,3 +1373,241 @@ class TestNormalizeHiddenUi:
     def test_start_task_rejects_other_values(self, value):
         with pytest.raises(ValueError, match="last, compression, upscale, or cut"):
             normalize_start_task(value)
+
+
+class TestEditorPreferences:
+    @staticmethod
+    def _use(tmp_path, monkeypatch):
+        import tuck.settings as settings_mod
+
+        monkeypatch.setattr(settings_mod, "_config_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
+
+    @staticmethod
+    def _write_settings(document: dict) -> None:
+        settings_path().parent.mkdir(parents=True, exist_ok=True)
+        settings_path().write_text(json.dumps(document), encoding="utf-8")
+
+    def test_defaults(self, tmp_path, monkeypatch):
+        self._use(tmp_path, monkeypatch)
+
+        s = SettingsManager().load()
+
+        assert s.cut_suffix == "_cut"
+        assert s.timeline_snap is True
+        assert s.timeline_keyframes is True
+        assert s.shortcut_overrides == {}
+
+    def test_round_trip(self, tmp_path, monkeypatch):
+        self._use(tmp_path, monkeypatch)
+        mgr = SettingsManager()
+        mgr.load()
+        mgr.set_setting("cut_suffix", " trimmed")
+        mgr.set_setting("timeline_snap", False)
+        mgr.set_setting("timeline_keyframes", False)
+        mgr.set_setting("shortcut_overrides", {"timeline.split": ["S"], "edit.undo": []})
+        mgr.save()
+
+        s = SettingsManager().load()
+
+        assert s.cut_suffix == " trimmed"
+        assert s.timeline_snap is False
+        assert s.timeline_keyframes is False
+        assert s.shortcut_overrides == {"timeline.split": ["S"], "edit.undo": []}
+
+    def test_older_file_without_the_keys_uses_defaults(self, tmp_path, monkeypatch):
+        self._use(tmp_path, monkeypatch)
+        self._write_settings({"version": 1, "default_profile_id": PROFILE_ID_DISCORD_NITRO})
+
+        s = SettingsManager().load()
+
+        assert s.default_profile_id == PROFILE_ID_DISCORD_NITRO
+        assert (s.cut_suffix, s.timeline_snap, s.timeline_keyframes) == ("_cut", True, True)
+        assert s.shortcut_overrides == {}
+
+    def test_hand_broken_values_fall_back_without_losing_the_rest(self, tmp_path, monkeypatch):
+        self._use(tmp_path, monkeypatch)
+        self._write_settings(
+            {
+                "version": 1,
+                "default_profile_id": PROFILE_ID_DISCORD_NITRO,
+                "cut_suffix": "../escape",
+                "timeline_snap": "no",
+                "timeline_keyframes": None,
+                "shortcut_overrides": {
+                    "timeline.split": ["S", "Shift+S"],
+                    "edit.undo": [],
+                    "Bad Command": ["Ctrl+Z"],
+                    "playback.toggle": ["Space", "Space"],
+                    "zoom.in": "Ctrl+=",
+                    "zoom.out": ["Ctrl+-", "Hyper+X"],
+                    "go.start": ["Home", "Ctrl+ArrowLeft", "Alt+Home", "Meta+Home"],
+                },
+            }
+        )
+
+        s = SettingsManager().load()
+
+        assert s.default_profile_id == PROFILE_ID_DISCORD_NITRO
+        assert s.cut_suffix == "_cut"
+        assert s.timeline_snap is True
+        assert s.timeline_keyframes is True
+        # a broken entry is dropped so that command keeps its default keys
+        assert s.shortcut_overrides == {"timeline.split": ["S", "Shift+S"], "edit.undo": []}
+
+    @pytest.mark.parametrize("value", ["Ctrl+Z", ["timeline.split"], 3, None])
+    def test_shortcut_overrides_that_are_not_a_map_are_dropped(self, value, tmp_path, monkeypatch):
+        self._use(tmp_path, monkeypatch)
+        self._write_settings({"version": 1, "shortcut_overrides": value})
+
+        assert SettingsManager().load().shortcut_overrides == {}
+
+    def test_too_many_stored_shortcut_overrides_keep_the_first_valid_ones(
+        self, tmp_path, monkeypatch
+    ):
+        self._use(tmp_path, monkeypatch)
+        stored = {"Broken": ["A"], **{f"command-{index}": ["A"] for index in range(70)}}
+        self._write_settings({"version": 1, "shortcut_overrides": stored})
+
+        overrides = SettingsManager().load().shortcut_overrides
+
+        assert list(overrides) == [f"command-{index}" for index in range(64)]
+
+    @pytest.mark.parametrize("value", [5, "", "   ", "a/b", "a\\b", "cut:1", "a\x07", "{size}"])
+    def test_invalid_cut_suffix_in_file_falls_back(self, value, tmp_path, monkeypatch):
+        self._use(tmp_path, monkeypatch)
+        self._write_settings({"version": 1, "cut_suffix": value})
+
+        assert SettingsManager().load().cut_suffix == "_cut"
+
+
+class TestNormalizeCutSuffix:
+    @pytest.mark.parametrize("value", ["_cut", "-trim", " (short)", "_v2.final", "_ścięty"])
+    def test_accepts_file_name_text(self, value):
+        assert normalize_cut_suffix(value) == value
+
+    @pytest.mark.parametrize(
+        ("value", "message"),
+        [
+            (None, "cut_suffix must be a string"),
+            (3, "cut_suffix must be a string"),
+            ("", "Enter a suffix for lossless cut file names."),
+            ("  ", "Enter a suffix for lossless cut file names."),
+            ("x" * 65, "The lossless cut suffix must be 64 characters or fewer."),
+            (
+                "a/b",
+                'The lossless cut suffix cannot contain \\ / : * ? " < > | or control characters.',
+            ),
+            ("a\\b", "cannot contain"),
+            ("a:b", "cannot contain"),
+            ('a"b', "cannot contain"),
+            ("a<b>", "cannot contain"),
+            ("a|b", "cannot contain"),
+            ("a?", "cannot contain"),
+            ("a*", "cannot contain"),
+            ("a\tb", "cannot contain"),
+            ("_{size}", "The lossless cut suffix cannot use tokens like {size}."),
+            ("_}", "cannot use tokens"),
+        ],
+    )
+    def test_rejects_values_that_cannot_be_part_of_a_file_name(self, value, message):
+        with pytest.raises(ValueError) as error:
+            normalize_cut_suffix(value)
+        assert message in str(error.value)
+
+    def test_the_longest_allowed_suffix(self):
+        assert normalize_cut_suffix("x" * 64) == "x" * 64
+
+
+class TestNormalizeShortcutOverrides:
+    def test_accepts_the_combos_the_frontend_writes(self):
+        value = {
+            "edit.undo": ["Ctrl+Z", "Meta+Z"],
+            "edit.redo": ["Ctrl+Shift+Z", "Shift+Meta+Z", "Ctrl+Y"],
+            "playback.toggle": ["Space"],
+            "timeline.nudge-left": ["ArrowLeft", "Alt+ArrowLeft"],
+            "timeline.zoom-in": ["Ctrl++", "+", "="],
+            "marker.previous": ["[", ","],
+            "view.help": ["F1", "F24", "?"],
+            "delete-segment": ["Delete", "Backspace"],
+            "go.home": ["Home", "End", "PageUp"],
+            "go.other": ["PageDown", "Enter", "Tab"],
+            "dialog.close": ["Escape"],
+            "misc": ["Ä", "Ctrl+1"],
+            "cleared": [],
+        }
+
+        assert normalize_shortcut_overrides(value) == value
+
+    def test_returns_a_clean_copy(self):
+        value = {"edit.undo": ["Ctrl+Z"]}
+
+        clean = normalize_shortcut_overrides(value)
+        value["edit.undo"].append("Ctrl+Y")
+
+        assert clean == {"edit.undo": ["Ctrl+Z"]}
+
+    def test_sixty_four_commands_are_allowed(self):
+        value = {f"command-{index}": [] for index in range(64)}
+        assert normalize_shortcut_overrides(value) == value
+
+    @pytest.mark.parametrize(
+        ("value", "message"),
+        [
+            ("Ctrl+Z", "shortcut_overrides must map commands to lists of keys"),
+            (["edit.undo"], "shortcut_overrides must map commands to lists of keys"),
+            (
+                {f"command-{index}": [] for index in range(65)},
+                "Only 64 commands can have changed keyboard shortcuts.",
+            ),
+            ({"Edit.Undo": ["Ctrl+Z"]}, "A keyboard shortcut belongs to a command Tuck"),
+            ({"edit..undo": []}, "belongs to a command Tuck does not know"),
+            ({"-edit": []}, "belongs to a command Tuck does not know"),
+            ({"edit.": []}, "belongs to a command Tuck does not know"),
+            ({"": []}, "belongs to a command Tuck does not know"),
+            ({"edit undo": []}, "belongs to a command Tuck does not know"),
+            ({"a" * 65: []}, "belongs to a command Tuck does not know"),
+            ({"edit.undo": "Ctrl+Z"}, "Keyboard shortcuts must be listed for each command."),
+            ({"edit.undo": None}, "Keyboard shortcuts must be listed for each command."),
+            (
+                {"edit.undo": ["A", "B", "C", "D"]},
+                "A command can have at most 3 keyboard shortcuts.",
+            ),
+            ({"edit.undo": ["Ctrl+Z", "Ctrl+Z"]}, '"Ctrl+Z" is listed twice for the same command.'),
+            ({"edit.undo": ["Ctrl+Shift+Z", "Shift+Ctrl+Z"]}, "is listed twice"),
+            ({"edit.undo": ["Ctrl+"]}, '"Ctrl+" is not a key combination Tuck supports.'),
+            ({"edit.undo": ["ctrl+Z"]}, "not a key combination Tuck supports"),
+            ({"edit.undo": ["Hyper+Z"]}, "not a key combination Tuck supports"),
+            ({"edit.undo": ["Ctrl+Ctrl+Z"]}, "not a key combination Tuck supports"),
+            ({"edit.undo": ["Shift+F25"]}, "not a key combination Tuck supports"),
+            ({"edit.undo": ["F0"]}, "not a key combination Tuck supports"),
+            ({"edit.undo": ["Esc"]}, "not a key combination Tuck supports"),
+            ({"edit.undo": ["space"]}, "not a key combination Tuck supports"),
+            ({"edit.undo": ["arrowleft"]}, "not a key combination Tuck supports"),
+            ({"edit.undo": ["ZZ"]}, "not a key combination Tuck supports"),
+            ({"edit.undo": [" "]}, "not a key combination Tuck supports"),
+            ({"edit.undo": ["\x07"]}, "not a key combination Tuck supports"),
+            ({"edit.undo": [""]}, "One of the keys is not a key combination Tuck supports."),
+            ({"edit.undo": [5]}, "One of the keys is not a key combination Tuck supports."),
+            ({"edit.undo": [None]}, "One of the keys is not a key combination Tuck supports."),
+            (
+                {"edit.undo": ["Ctrl+" * 9 + "Z"]},
+                "One of the keys is not a key combination Tuck supports.",
+            ),
+        ],
+    )
+    def test_rejects_invalid_payloads(self, value, message):
+        with pytest.raises(ValueError) as error:
+            normalize_shortcut_overrides(value)
+        assert message in str(error.value)
+
+    def test_every_modifier_with_a_long_key_name_fits(self):
+        combo = "Ctrl+Alt+Shift+Meta+PageDown"
+        assert normalize_shortcut_overrides({"a": [combo]}) == {"a": [combo]}
+
+    def test_cleaning_a_stored_value_keeps_only_valid_entries(self):
+        assert clean_shortcut_overrides(
+            {"edit.undo": ["Ctrl+Z"], "BAD": [], "edit.redo": ["Ctrl+Z", "Ctrl+Z"]}
+        ) == {"edit.undo": ["Ctrl+Z"]}
+        assert clean_shortcut_overrides([]) == {}

@@ -173,6 +173,10 @@ body.settings-open .settings-workspace {
 .settings-unsaved.on {
   visibility: visible;
 }
+.settings-autosave {
+  color: var(--muted);
+  font-size: 12px;
+}
 .settings-actions .btn1,
 .settings-actions .btn2 {
   min-width: 110px;

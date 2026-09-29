@@ -10,10 +10,14 @@ from tuck.sidecar.protocol import Request
 
 
 @pytest.fixture
-def api(tmp_path):
+def api(tmp_path, monkeypatch):
+    import tuck.settings as settings
     from tuck.cutting.service import CutAnalysisService
 
+    monkeypatch.setattr(settings, "_settings_manager", None)
+    monkeypatch.setattr(settings, "_storage_root", tmp_path / "storage")
     value = BridgeAPI.__new__(BridgeAPI)
+    value._settings = settings.get_settings_manager()
     value._cut_analysis = CutAnalysisService()
     from tuck.queue import ProcessingQueue
 
@@ -147,6 +151,28 @@ def test_cut_enqueue_requires_the_current_fingerprint_and_returns_a_new_plan(api
     )
     assert response.ok
     assert len(api._queue.items) == 1
+
+
+def test_cut_output_name_follows_the_saved_suffix(api, planned_cut):
+    from pathlib import Path
+
+    request, preview = planned_cut
+    assert Path(preview["output_path"]).name == "source_cut.mp4"
+
+    assert api.save_settings({"cut_suffix": " trimmed"}) == {"ok": True}
+    renamed = api.create_plan(request)["data"]
+    assert Path(renamed["output_path"]).name == "source trimmed.mp4"
+
+    # a plan reviewed under the old name no longer matches what export would write
+    stale = api.enqueue_with_options({**request, "plan_fingerprint": preview["fingerprint"]})
+    assert not stale["ok"] and stale["code"] == "plan_changed"
+    assert stale["current_plan"] == renamed
+
+    result = api.enqueue_with_options({**request, "plan_fingerprint": renamed["fingerprint"]})
+    assert result["ok"]
+    [item] = api._queue.items
+    assert item.plan is not None
+    assert Path(item.plan.output).name == "source trimmed.mp4"
 
 
 def test_cut_batch_preserves_partial_success_and_rejected_plan(api, planned_cut):

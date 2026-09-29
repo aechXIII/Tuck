@@ -240,6 +240,14 @@ export function installEditorRuntime(
   const settingsBackend: Pick<BackendClient, "saveSettings"> = {
     saveSettings: (patch) => getBackendClient().saveSettings(patch),
   };
+
+  // the timeline's Snap and Keyframes switches are kept for the next launch
+  function rememberTimelineToggle(patch: {timeline_snap?: boolean; timeline_keyframes?: boolean}): void {
+    Object.assign(session.appSettings, patch);
+    void settingsBackend.saveSettings(patch).then((result) => {
+      if (!result.ok) toast("Could not remember the timeline setting.", "err");
+    });
+  }
   panels = installPanels({
     byId,
     document: windowRef.document,
@@ -533,8 +541,8 @@ export function installEditorRuntime(
         "timeline-split": () => timeline.splitAtPlayhead(),
         "timeline-remove-segment": () => timeline.removeActiveSegment(),
         "timeline-reset-segments": () => timeline.resetSegments(),
-        "timeline-toggle-snap": () => timeline.toggleSnap(),
-        "timeline-toggle-keyframes": () => timeline.toggleKeyframes(),
+        "timeline-toggle-snap": () => rememberTimelineToggle({timeline_snap:timeline.toggleSnap()}),
+        "timeline-toggle-keyframes": () => rememberTimelineToggle({timeline_keyframes:timeline.toggleKeyframes()}),
         "timeline-reset-height": (_target, event) =>
           timeline.resetTimelineHeight(event as MouseEvent),
         "timeline-fit": () => timeline.fitTimeline(),
@@ -722,6 +730,8 @@ export function installEditorRuntime(
       await encoding.loadSettings();
       panels.applyVisibility(hiddenParts(session.appSettings.hidden_ui));
       encoding.openTask(launch.task, true);
+      timeline.setSnap(session.appSettings.timeline_snap !== false);
+      timeline.setKeyframes(session.appSettings.timeline_keyframes !== false);
       panels.setInspectorTab(
         InspectorUi.startupTab(
           String(session.appSettings.inspector_start_panel ?? ""),

@@ -190,17 +190,13 @@ test("settings save errors remain visible and leave recovery enabled", async ({
     .getByText("Show the last export in its folder", { exact: true })
     .click();
   await expect(openOutput).toBeChecked();
-  const save = page
-    .locator("#settings-actions")
-    .getByRole("button", { name: "Save changes" });
-  await expect(save).toBeEnabled();
-  await save.click();
 
+  // the change is saved as it is made; a failure is reported and the choice stays for a retry
   await expect(page.getByRole("alert")).toContainText(
     "Settings could not be saved",
   );
-  await expect(save).toBeEnabled();
-  await expect(save).toBeFocused();
+  await expect(openOutput).toBeChecked();
+  await expect(openOutput).toBeFocused();
   await expect(page.getByRole("dialog", { name: "Settings" })).toBeVisible();
   expect(failures.pageErrors).toEqual([]);
 });

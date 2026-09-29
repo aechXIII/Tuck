@@ -61,7 +61,7 @@ test("Settings keeps one task on and applies what is hidden", async ({page}) => 
   await page.locator("#set-start-task").selectOption("compression");
   await page.getByRole("switch", {name:"Transform"}).uncheck();
   await expect(page.locator('#set-inspector-start option[value="video"]')).toBeDisabled();
-  await page.locator('[data-settings-click="save-general"]').click();
+  await expect(page.locator("#settings-unsaved")).toHaveText("Saved");
   const saved = await page.evaluate(() => window.__tuckFakeBackendCalls?.filter(call => call.method === "saveSettings").at(-1)?.args[0]);
   expect(saved).toMatchObject({hidden_ui:["upscale", "cut", "panel_video"], start_task:"compression"});
   await page.keyboard.press("Escape");
@@ -107,4 +107,55 @@ test("Send to shortcuts are added one at a time", async ({page}) => {
   await expect(page.locator("#st-fixed")).not.toContainText("Lossless Cut");
   await rows.nth(1).getByRole("button", {name:"Add"}).click();
   await expect.poll(() => page.evaluate(() => window.__tuckFakeBackendCalls?.find(call => call.method === "installGenericSendto")?.args)).toEqual(["compress"]);
+});
+
+test("timeline switches start as they were left and are remembered", async ({page}) => {
+  await start(page, {timeline_snap:false, timeline_keyframes:true});
+  const snap = page.locator("#btn-snap-toggle");
+  await expect(snap).toHaveAttribute("aria-pressed", "false");
+  await snap.click();
+  await expect(snap).toHaveAttribute("aria-pressed", "true");
+  await expect.poll(() => page.evaluate(() => window.__tuckFakeBackendCalls?.some(call =>
+    call.method === "saveSettings" && (call.args[0] as Record<string, unknown>).timeline_snap === true))).toBe(true);
+});
+
+test("Add segment stays reachable when there is no room and says why", async ({page}) => {
+  await start(page);
+  const add = page.locator("#btn-segment-add");
+  // announced as unavailable, but not natively disabled, so it can still take focus
+  await expect(add).toHaveAttribute("aria-disabled", "true");
+  await expect(add).not.toHaveAttribute("disabled", /.*/);
+  await add.focus();
+  await expect(add).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("alert")).toContainText("Shorten a segment to make room for another.");
+});
+
+test("the Lossless cut file name suffix is previewed and saved when the field is left", async ({page}) => {
+  await start(page, {cut_suffix:"_cut"});
+  await page.getByRole("button", {name:"Settings"}).first().click();
+  await page.getByRole("button", {name:"Output & naming"}).click();
+  const suffix = page.getByLabel("Lossless cut suffix");
+  await suffix.fill("_trimmed");
+  await expect(page.locator("#ex-cut-out")).toHaveText("video_trimmed.mp4");
+  expect(await page.evaluate(() => window.__tuckFakeBackendCalls?.some(call =>
+    call.method === "saveSettings" && "cut_suffix" in (call.args[0] as Record<string, unknown>)))).toBe(false);
+  await suffix.press("Tab");
+  await expect(page.locator("#settings-unsaved")).toHaveText("Saved");
+  const saved = await page.evaluate(() => window.__tuckFakeBackendCalls?.filter(call => call.method === "saveSettings").at(-1)?.args[0]);
+  expect(saved).toMatchObject({cut_suffix:"_trimmed"});
+});
+
+test("Export all cuts says why it is unavailable", async ({page}) => {
+  const fixture = healthyBackendFixture();
+  fixture.startup.files = [source, "C:/videos/Second.mp4"];
+  fixture.responses.probeFile = {data:{duration:12,width:1920,height:1080,fps:30,has_audio:true,video_codec:"h264",audio_codec:"aac",file_size:15000000}};
+  fixture.responses.getSettings = {...fixture.responses.getSettings as object, last_task:"cut"};
+  fixture.holdMethods = ["getCutAnalysis"];
+  await installFakeBackend(page, fixture);
+  await page.goto("/");
+  await page.locator(".export-actions > summary").click();
+  await expect(page.locator("#btn-all")).toBeDisabled();
+  await expect(page.locator("#btn-all-note")).toHaveText("Every video needs its cuts ready first.");
+  await expect(page.locator("#btn-all")).toHaveAccessibleDescription("Every video needs its cuts ready first.");
 });

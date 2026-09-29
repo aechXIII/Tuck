@@ -96,6 +96,12 @@
   width: 100%;
   text-align: left;
 }
+.export-actions-note {
+  margin: 0 10px 6px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
 #right-foot > .btn1 {
   flex: 1;
   min-width: 0;

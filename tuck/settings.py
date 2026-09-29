@@ -55,7 +55,14 @@ from .models import (
     import_profiles_json,
     profiles_to_dicts,
 )
-from .models.ui_preferences import START_TASK_LAST, normalize_hidden_ui, normalize_start_task
+from .models.ui_preferences import (
+    DEFAULT_CUT_SUFFIX,
+    START_TASK_LAST,
+    clean_shortcut_overrides,
+    normalize_cut_suffix,
+    normalize_hidden_ui,
+    normalize_start_task,
+)
 
 APP_NAME = "Tuck"
 APP_AUTHOR = "Tuck"
@@ -478,6 +485,16 @@ class SettingsManager:
                 data["start_task"] = normalize_start_task(data["start_task"])
             except ValueError:
                 data["start_task"] = START_TASK_LAST
+        if "cut_suffix" in data:
+            try:
+                data["cut_suffix"] = normalize_cut_suffix(data["cut_suffix"])
+            except ValueError:
+                data["cut_suffix"] = DEFAULT_CUT_SUFFIX
+        for key in ("timeline_snap", "timeline_keyframes"):
+            if key in data and not isinstance(data[key], bool):
+                data[key] = True
+        if "shortcut_overrides" in data:
+            data["shortcut_overrides"] = clean_shortcut_overrides(data["shortcut_overrides"])
 
         return data
 

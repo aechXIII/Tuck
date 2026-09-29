@@ -19,6 +19,7 @@ from ..models.cutting import (
     PacketTiming,
     TrackSegment,
 )
+from ..models.ui_preferences import DEFAULT_CUT_SUFFIX
 from .analysis import CutAnalysisError
 from .exact import exact_media_reason
 from .tracks import plan_tracks
@@ -46,7 +47,9 @@ class CutPlanChanged(CutAnalysisError):
         self.current_plan = current_plan
 
 
-def parse_cut_export(raw: object) -> tuple[CutRequest, str]:
+def parse_cut_export(
+    raw: object, *, name_suffix: str = DEFAULT_CUT_SUFFIX
+) -> tuple[CutRequest, str]:
     if not isinstance(raw, dict):
         raise ValueError("Expected a cut request object")
     fingerprint = raw.get("plan_fingerprint")
@@ -57,11 +60,17 @@ def parse_cut_export(raw: object) -> tuple[CutRequest, str]:
     ):
         raise ValueError("Review the cut plan before exporting.")
     return parse_cut_request(
-        {key: value for key, value in raw.items() if key != "plan_fingerprint"}
+        {key: value for key, value in raw.items() if key != "plan_fingerprint"},
+        name_suffix=name_suffix,
     ), fingerprint
 
 
-def parse_cut_request(raw: object) -> CutRequest:
+def parse_cut_request(raw: object, *, name_suffix: str = DEFAULT_CUT_SUFFIX) -> CutRequest:
+    """Validate a cut request from the bridge.
+
+    name_suffix comes from the user's settings and names the output when the
+    request does not; the caller has already checked it.
+    """
     if not isinstance(raw, dict):
         raise ValueError("Expected a cut request object")
     allowed = {
@@ -112,7 +121,7 @@ def parse_cut_request(raw: object) -> CutRequest:
     directory = raw.get("output_dir", str(source_path.parent))
     # the cut keeps the source's container, so it keeps its extension too
     extension = source_path.suffix.lower() or ".mp4"
-    name = raw.get("output_name", source_path.stem + "_cut" + extension)
+    name = raw.get("output_name", source_path.stem + name_suffix + extension)
     if not isinstance(directory, str) or not directory or "\x00" in directory:
         raise ValueError("Choose an output directory")
     if (

@@ -42,6 +42,11 @@ export interface QueueState extends JsonObject {
 
 export interface Settings extends JsonObject {
   readonly profiles?: readonly Profile[];
+  readonly cut_suffix?: string;
+  readonly timeline_snap?: boolean;
+  readonly timeline_keyframes?: boolean;
+  /** command id -> chosen key combos; an empty list means every key was removed */
+  readonly shortcut_overrides?: Readonly<Record<string, readonly string[]>>;
 }
 
 export interface Profile extends JsonObject {

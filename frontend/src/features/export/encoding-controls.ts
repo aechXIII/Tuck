@@ -265,6 +265,9 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     all.textContent = (up ? "Upscale all" : "Compress all") + (count ? ` (${count})` : "");
     all.disabled = !allReady || !blending.valid() || !lut.valid() || !videoSettingsValid();
     all.classList.toggle("upscale-batch", up);
+    const note = el("btn-all-note");
+    note.textContent = count > 1 && !allReady ? "Some videos are still being read." : "";
+    note.hidden = !note.textContent;
     syncExportSummary();
   }
 

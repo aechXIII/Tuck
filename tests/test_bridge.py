@@ -2200,3 +2200,95 @@ class TestBridgeInterfacePreferences:
             "error": "start_task must be last, compression, upscale, or cut",
         }
         assert api.get_settings()["start_task"] == "last"
+
+
+class TestBridgeEditorPreferences:
+    def test_get_settings_reports_defaults(self):
+        resp = BridgeAPI().get_settings()
+
+        assert resp["cut_suffix"] == "_cut"
+        assert resp["timeline_snap"] is True
+        assert resp["timeline_keyframes"] is True
+        assert resp["shortcut_overrides"] == {}
+
+    def test_save_round_trip_survives_reload(self):
+        import tuck.settings as settings_mod
+
+        api = BridgeAPI()
+        overrides = {"edit.redo": ["Ctrl+Shift+Z", "Ctrl+Y"], "timeline.split": []}
+
+        assert api.save_settings(
+            {
+                "cut_suffix": "-trim",
+                "timeline_snap": False,
+                "timeline_keyframes": False,
+                "shortcut_overrides": overrides,
+            }
+        ) == {"ok": True}
+
+        resp = api.get_settings()
+        assert resp["cut_suffix"] == "-trim"
+        assert resp["timeline_snap"] is False
+        assert resp["timeline_keyframes"] is False
+        assert resp["shortcut_overrides"] == overrides
+
+        reloaded = settings_mod.SettingsManager().load()
+        assert reloaded.cut_suffix == "-trim"
+        assert reloaded.timeline_snap is False
+        assert reloaded.timeline_keyframes is False
+        assert reloaded.shortcut_overrides == overrides
+
+    def test_saved_overrides_are_a_copy_of_the_payload(self):
+        api = BridgeAPI()
+        overrides = {"edit.undo": ["Ctrl+Z"]}
+        assert api.save_settings({"shortcut_overrides": overrides})["ok"]
+
+        overrides["edit.undo"].append("Ctrl+Y")
+        api.get_settings()["shortcut_overrides"]["edit.undo"].append("Meta+Z")
+
+        assert api.get_settings()["shortcut_overrides"] == {"edit.undo": ["Ctrl+Z"]}
+
+    @pytest.mark.parametrize(
+        ("value", "error"),
+        [
+            ("", "Enter a suffix for lossless cut file names."),
+            (" ", "Enter a suffix for lossless cut file names."),
+            (None, "cut_suffix must be a string"),
+            (
+                "_cut/",
+                'The lossless cut suffix cannot contain \\ / : * ? " < > | or control characters.',
+            ),
+            ("_{size}", "The lossless cut suffix cannot use tokens like {size}."),
+        ],
+    )
+    def test_save_rejects_invalid_cut_suffix(self, value, error):
+        api = BridgeAPI()
+
+        assert api.save_settings({"cut_suffix": value}) == {"ok": False, "error": error}
+        assert api.get_settings()["cut_suffix"] == "_cut"
+
+    @pytest.mark.parametrize("key", ["timeline_snap", "timeline_keyframes"])
+    @pytest.mark.parametrize("value", [0, 1, "false", None])
+    def test_save_rejects_non_boolean_timeline_toggles(self, key, value):
+        api = BridgeAPI()
+
+        assert api.save_settings({key: value}) == {"ok": False, "error": f"{key} must be boolean"}
+        assert api.get_settings()[key] is True
+
+    def test_invalid_shortcut_overrides_reject_the_whole_save(self):
+        api = BridgeAPI()
+        assert api.save_settings({"shortcut_overrides": {"edit.undo": ["Ctrl+Z"]}})["ok"]
+
+        resp = api.save_settings(
+            {
+                "timeline_snap": False,
+                "cut_suffix": "-trim",
+                "shortcut_overrides": {"edit.redo": ["Ctrl+Y"], "edit.undo": ["Ctrl+Z", "Ctrl+Z"]},
+            }
+        )
+
+        assert resp == {"ok": False, "error": '"Ctrl+Z" is listed twice for the same command.'}
+        settings = api.get_settings()
+        assert settings["shortcut_overrides"] == {"edit.undo": ["Ctrl+Z"]}
+        assert settings["timeline_snap"] is True
+        assert settings["cut_suffix"] == "_cut"

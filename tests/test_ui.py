@@ -379,9 +379,13 @@ def test_settings_save_state_is_wired_into_the_ui() -> None:
     settings_js = _asset("settings.js")
 
     assert '<details class="profile-options">' in html
-    # Settings state is owned by the module, not a legacy window global.
-    assert "settingsDirty = settingsAreDirty(snapshot, settingsPageState())" in settings_js
-    assert 'data-settings-save="true"' in settings_js
+    # Settings state is owned by the module, not a legacy window global. Changes save as they
+    # are made, so only pages with form fields track unsaved changes.
+    assert (
+        "settingsDirty = !!pageSave() && settingsAreDirty(snapshot, settingsPageState())"
+        in settings_js
+    )
+    assert "actions = { autosave: true };" in settings_js
     assert "function captureSettingsSnapshot()" in settings_js
     persist_settings = settings_js.split("async function persistSettings", 1)[1].split(
         "async function saveGeneralSettings", 1

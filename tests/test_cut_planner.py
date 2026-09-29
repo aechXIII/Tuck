@@ -136,6 +136,48 @@ def test_untrusted_cut_payloads_are_rejected(analyzed, overrides):
         parse_cut_request(request_for(analyzed, **overrides))
 
 
+def _plain_cut_request(source, **overrides):
+    return {
+        "operation": "cut",
+        "source": str(source),
+        "segments": [{"start": moment(0), "end": moment(1)}],
+        **overrides,
+    }
+
+
+def test_default_output_name_uses_the_cut_suffix(tmp_path):
+    from tuck.cutting.planner import parse_cut_request
+
+    source = tmp_path / "clip.MKV"
+
+    assert parse_cut_request(_plain_cut_request(source)).output_name == "clip_cut.mkv"
+    request = parse_cut_request(_plain_cut_request(source), name_suffix=" (short)")
+    assert request.output_name == "clip (short).mkv"
+    assert request.output_dir == str(tmp_path.resolve())
+
+
+def test_an_explicit_output_name_wins_over_the_suffix(tmp_path):
+    from tuck.cutting.planner import parse_cut_request
+
+    raw = _plain_cut_request(tmp_path / "clip.mp4", output_name="chosen.mp4")
+
+    assert parse_cut_request(raw, name_suffix="-trim").output_name == "chosen.mp4"
+
+
+def test_export_parsing_uses_the_same_suffix_as_preview(tmp_path):
+    from tuck.cutting.planner import parse_cut_export, parse_cut_request
+
+    raw = _plain_cut_request(tmp_path / "clip.mp4")
+    preview = parse_cut_request(raw, name_suffix="-trim")
+    export, fingerprint = parse_cut_export(
+        {**raw, "plan_fingerprint": "a" * 64}, name_suffix="-trim"
+    )
+
+    assert export == preview
+    assert export.output_name == "clip-trim.mp4"
+    assert fingerprint == "a" * 64
+
+
 def test_collapsed_and_unavailable_exact_plans_explain_the_block(analyzed, monkeypatch):
     from tuck.cutting import exact
     from tuck.cutting.planner import parse_cut_request, plan_cut

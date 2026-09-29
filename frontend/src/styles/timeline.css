@@ -293,7 +293,7 @@ body.tl-segment-dragging * {
   stroke-width: 1.55;
 }
 
-.timeline-tool-group .dock-text-btn:hover:not(:disabled),
+.timeline-tool-group .dock-text-btn:hover:not(:disabled, [aria-disabled="true"]),
 .timeline-tool-group .dock-toggle:hover:not(:disabled),
 .dock-fit-btn:hover:not(:disabled) {
   background: var(--raised);
@@ -307,7 +307,7 @@ body.tl-segment-dragging * {
   outline-offset: 1px;
 }
 
-#btn-segment-add:not(:disabled),
+#btn-segment-add:not(:disabled, [aria-disabled="true"]),
 #btn-seq-split:not(:disabled) {
   color: var(--accent-light);
 }

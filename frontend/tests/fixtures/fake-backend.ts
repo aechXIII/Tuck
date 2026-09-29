@@ -28,6 +28,7 @@ export function healthyBackendFixture(): FakeBackendFixture {
       getSettings: {
         available_encoders: [],
         check_updates: false,
+        cut_suffix: "_cut",
         default_profile_id: "",
         inspector_start_panel: "export",
         last_compress_profile_id: "",
@@ -35,7 +36,10 @@ export function healthyBackendFixture(): FakeBackendFixture {
         last_task: "compression",
         last_upscale_profile_id: "",
         profiles: [],
+        shortcut_overrides: {},
         timeline_height: 150,
+        timeline_keyframes: true,
+        timeline_snap: true,
       },
       listLuts: {luts:[]},
       clearLutHistory: {cleared:true},

@@ -297,14 +297,19 @@ function showCutNote(range: HTMLElement, sliver: Keyframes.CutSliver): boolean {
   return false;
 }
 
-function toggleKeyframes() {
-  keyframesOn = !keyframesOn;
+function setKeyframes(on: boolean) {
+  keyframesOn = on;
   const button = byId("btn-kf-toggle");
   if (button) {
     button.classList.toggle("on", keyframesOn);
     button.setAttribute("aria-pressed", String(keyframesOn));
   }
   paintCutOverlay();
+}
+
+function toggleKeyframes(): boolean {
+  setKeyframes(!keyframesOn);
+  return keyframesOn;
 }
 
 function seekToKeyframe(direction: -1 | 1) {
@@ -560,9 +565,10 @@ function paintTrimChrome() {
   if (isButtonElement(removeButton)) removeButton.disabled = segments.length <= 1;
   let canAdd = SegmentEditing.canAddSegment(segments, full || 1);
   if (isButtonElement(addButton)) {
-    addButton.disabled = !canAdd;
+    // stays focusable while full, so keyboard users can reach the reason and pressing it says why
+    addButton.disabled = false;
     addButton.setAttribute("aria-disabled", canAdd ? "false" : "true");
-    addButton.dataset.tip = canAdd ? "Add segment (A)" : "Shorten a segment first";
+    addButton.dataset.tip = canAdd ? "Add segment (A)" : NO_ROOM_FOR_SEGMENT;
   }
   paintCutOverlay();
   if (host.AudioTimeline && host.AudioTimeline.paintSource)
@@ -839,11 +845,17 @@ function selectSegment(index: number, shouldSeek?: boolean) {
   if (shouldSeek !== false) host.seekPreview?.(arrayItem(segments, index)?.start ?? 0);
 }
 
+const NO_ROOM_FOR_SEGMENT = "Shorten a segment to make room for another";
+
 function addSegment() {
   const c = selectedClip(session);
   if (!c) return;
   let full = videoDuration() || c.probeData?.duration || 0;
   if (full <= 0) return;
+  if (!SegmentEditing.canAddSegment(clipSegments(c, full), full)) {
+    notify(NO_ROOM_FOR_SEGMENT + ".", "err");
+    return;
+  }
   try {
     let pixelsPerSecond = timelinePxPerSecond();
     let preferredDuration = pixelsPerSecond > 0 ? Math.max(1, 64 / pixelsPerSecond) : 1;
@@ -1154,13 +1166,18 @@ function handleTimelineEditKey(e: KeyboardEvent) {
 })();
 
 
-function toggleSnap() {
-  snapOn = !snapOn;
+function setSnap(on: boolean) {
+  snapOn = on;
   let btn = byId("btn-snap-toggle");
   if (btn) {
     btn.classList.toggle("on", snapOn);
     btn.setAttribute("aria-pressed", String(snapOn));
   }
+}
+
+function toggleSnap(): boolean {
+  setSnap(!snapOn);
+  return snapOn;
 }
 
 function snapCandidateTime(time: number, candidates: number[], pxPerSecond: number) {
@@ -1476,6 +1493,8 @@ function initTimelineResizer() {
     timelinePxPerSecond: timelinePxPerSecond,
     toggleKeyframes: toggleKeyframes,
     toggleSnap: toggleSnap,
+    setKeyframes: setKeyframes,
+    setSnap: setSnap,
     trimActiveSegmentToPlayhead: trimActiveSegmentToPlayhead,
     videoDuration: videoDuration,
   };

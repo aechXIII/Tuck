@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 EXPORT_TASKS: tuple[str, ...] = ("compression", "upscale", "cut")
 
 # order here is the stored order, so saved lists stay stable across edits
@@ -40,3 +42,153 @@ def normalize_start_task(value: object) -> str:
     if not isinstance(value, str) or value not in START_TASKS:
         raise ValueError("start_task must be last, compression, upscale, or cut")
     return value
+
+
+DEFAULT_CUT_SUFFIX = "_cut"
+CUT_SUFFIX_MAX_LENGTH = 64
+_INVALID_FILE_NAME_CHARS = frozenset('<>:"/\\|?*')
+
+
+def normalize_cut_suffix(value: object) -> str:
+    """Check the text added to a cut's file name before its extension.
+
+    Cuts keep the source name, so unlike the encode suffixes no {tokens} are
+    filled in. Raises ValueError with a message that can be shown to the user.
+    """
+    if not isinstance(value, str):
+        raise ValueError("cut_suffix must be a string")
+    if not value.strip():
+        raise ValueError("Enter a suffix for lossless cut file names.")
+    if len(value) > CUT_SUFFIX_MAX_LENGTH:
+        raise ValueError(
+            f"The lossless cut suffix must be {CUT_SUFFIX_MAX_LENGTH} characters or fewer."
+        )
+    if any(ord(char) < 32 or char in _INVALID_FILE_NAME_CHARS for char in value):
+        raise ValueError(
+            'The lossless cut suffix cannot contain \\ / : * ? " < > | or control characters.'
+        )
+    if "{" in value or "}" in value:
+        raise ValueError("The lossless cut suffix cannot use tokens like {size}.")
+    return value
+
+
+def normalize_timeline_toggle(key: str, value: object) -> bool:
+    if not isinstance(value, bool):
+        raise ValueError(f"{key} must be boolean")
+    return value
+
+
+SHORTCUT_OVERRIDES_MAX_COMMANDS = 64
+SHORTCUT_COMMAND_MAX_LENGTH = 64
+SHORTCUT_KEYS_PER_COMMAND = 3
+SHORTCUT_COMBO_MAX_LENGTH = 40
+SHORTCUT_MODIFIERS: tuple[str, ...] = ("Ctrl", "Alt", "Shift", "Meta")
+_SHORTCUT_COMMAND = re.compile(r"[a-z0-9]+(?:[.-][a-z0-9]+)*")
+_SHORTCUT_NAMED_KEYS = frozenset(
+    {
+        "ArrowLeft",
+        "ArrowRight",
+        "ArrowUp",
+        "ArrowDown",
+        "Space",
+        "Escape",
+        "Delete",
+        "Backspace",
+        "Home",
+        "End",
+        "PageUp",
+        "PageDown",
+        "Enter",
+        "Tab",
+        *(f"F{number}" for number in range(1, 25)),
+    }
+)
+
+
+def _shortcut_combo_key(combo: str) -> tuple[frozenset[str], str] | None:
+    """Split a combo like "Ctrl+Shift+Z" into its modifiers and key, or None if invalid."""
+    if not combo or len(combo) > SHORTCUT_COMBO_MAX_LENGTH:
+        return None
+    # "+" is a key too, so "Ctrl++" means Ctrl and the plus key
+    if combo == "+":
+        modifiers: list[str] = []
+        key = "+"
+    elif combo.endswith("++"):
+        modifiers = combo[:-2].split("+")
+        key = "+"
+    else:
+        *modifiers, key = combo.split("+")
+    if any(modifier not in SHORTCUT_MODIFIERS for modifier in modifiers):
+        return None
+    if len(set(modifiers)) != len(modifiers):
+        return None
+    single = len(key) == 1 and key.isprintable() and not key.isspace()
+    if not single and key not in _SHORTCUT_NAMED_KEYS:
+        return None
+    return frozenset(modifiers), key
+
+
+def _describe_combo(combo: object) -> str:
+    if isinstance(combo, str) and 0 < len(combo) <= SHORTCUT_COMBO_MAX_LENGTH:
+        return f'"{combo}"'
+    return "One of the keys"
+
+
+def _normalize_shortcut_entry(command: object, combos: object) -> list[str]:
+    if (
+        not isinstance(command, str)
+        or len(command) > SHORTCUT_COMMAND_MAX_LENGTH
+        or not _SHORTCUT_COMMAND.fullmatch(command)
+    ):
+        raise ValueError("A keyboard shortcut belongs to a command Tuck does not know.")
+    if not isinstance(combos, list):
+        raise ValueError("Keyboard shortcuts must be listed for each command.")
+    if len(combos) > SHORTCUT_KEYS_PER_COMMAND:
+        raise ValueError(
+            f"A command can have at most {SHORTCUT_KEYS_PER_COMMAND} keyboard shortcuts."
+        )
+    seen: set[tuple[frozenset[str], str]] = set()
+    clean: list[str] = []
+    for combo in combos:
+        parsed = _shortcut_combo_key(combo) if isinstance(combo, str) else None
+        if parsed is None:
+            raise ValueError(f"{_describe_combo(combo)} is not a key combination Tuck supports.")
+        if parsed in seen:
+            raise ValueError(f'"{combo}" is listed twice for the same command.')
+        seen.add(parsed)
+        clean.append(combo)
+    return clean
+
+
+def normalize_shortcut_overrides(value: object) -> dict[str, list[str]]:
+    """Return a clean copy of the user's keyboard shortcut changes.
+
+    Maps a command id to its chosen key combos; an empty list means every key
+    was removed from that command. The frontend owns the command list, so ids
+    are only checked for shape. Raises ValueError with a message that can be
+    shown to the user.
+    """
+    if not isinstance(value, dict):
+        raise ValueError("shortcut_overrides must map commands to lists of keys")
+    if len(value) > SHORTCUT_OVERRIDES_MAX_COMMANDS:
+        raise ValueError(
+            f"Only {SHORTCUT_OVERRIDES_MAX_COMMANDS} commands can have changed keyboard shortcuts."
+        )
+    return {
+        command: _normalize_shortcut_entry(command, combos) for command, combos in value.items()
+    }
+
+
+def clean_shortcut_overrides(value: object) -> dict[str, list[str]]:
+    """Keep the valid entries from a stored value, so one bad entry keeps its default keys."""
+    if not isinstance(value, dict):
+        return {}
+    clean: dict[str, list[str]] = {}
+    for command, combos in value.items():
+        if len(clean) == SHORTCUT_OVERRIDES_MAX_COMMANDS:
+            break
+        try:
+            clean[command] = _normalize_shortcut_entry(command, combos)
+        except ValueError:
+            continue
+    return clean

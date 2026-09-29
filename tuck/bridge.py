@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -43,7 +44,14 @@ from .models import (
     find_profile_by_id,
 )
 from .models.encoding_policy import VALID_SCALERS
-from .models.ui_preferences import normalize_hidden_ui, normalize_start_task
+from .models.ui_preferences import (
+    DEFAULT_CUT_SUFFIX,
+    normalize_cut_suffix,
+    normalize_hidden_ui,
+    normalize_shortcut_overrides,
+    normalize_start_task,
+    normalize_timeline_toggle,
+)
 from .planner import plan
 from .probe import is_ffprobe_available, probe_audio
 from .probe import probe as probe_video
@@ -283,7 +291,7 @@ class BridgeAPI:
 
         if raw.get("operation") == "cut":
             try:
-                cut_request = parse_cut_request(raw)
+                cut_request = parse_cut_request(raw, name_suffix=self._cut_suffix())
                 analysis = self._cut_analysis.result(Path(cut_request.source))
                 cut_plan = plan_cut(cut_request, analysis)
                 return {"ok": True, "_request_id": req_id, "data": cut_plan_preview_dict(cut_plan)}
@@ -355,7 +363,7 @@ class BridgeAPI:
     def _enqueue_cut(self, raw: object, work: RequestWork) -> dict[str, JsonValue]:
         try:
             check_request(work)
-            request, fingerprint = parse_cut_export(raw)
+            request, fingerprint = parse_cut_export(raw, name_suffix=self._cut_suffix())
             cut = self._cut_analysis.plan_for_export(request, fingerprint, work)
             item = self._queue.enqueue(cut, work=work)
             return {"ok": True, "item_id": item.id}
@@ -699,6 +707,12 @@ class BridgeAPI:
             or "_tucked_{size}",
             "upscale_suffix": getattr(s, "upscale_suffix", "_upscaled_{width}x{height}")
             or "_upscaled_{width}x{height}",
+            "cut_suffix": s.cut_suffix,
+            "timeline_snap": s.timeline_snap,
+            "timeline_keyframes": s.timeline_keyframes,
+            "shortcut_overrides": {
+                command: list(combos) for command, combos in s.shortcut_overrides.items()
+            },
             "version": __version__,
             "ffmpeg_available": is_ffmpeg_available(),
             "ffprobe_available": is_ffprobe_available(),
@@ -736,7 +750,29 @@ class BridgeAPI:
             "start_task",
             "compression_suffix",
             "upscale_suffix",
+            "cut_suffix",
+            "timeline_snap",
+            "timeline_keyframes",
+            "shortcut_overrides",
         }
+        preference_normalizers: dict[str, Callable[[object], object]] = {
+            "hidden_ui": normalize_hidden_ui,
+            "start_task": normalize_start_task,
+            "cut_suffix": normalize_cut_suffix,
+            "timeline_snap": lambda value: normalize_timeline_toggle("timeline_snap", value),
+            "timeline_keyframes": lambda value: normalize_timeline_toggle(
+                "timeline_keyframes", value
+            ),
+            "shortcut_overrides": normalize_shortcut_overrides,
+        }
+        # checked before anything is applied, so a rejected value leaves settings untouched
+        preferences: dict[str, object] = {}
+        for key, normalize in preference_normalizers.items():
+            if key in data:
+                try:
+                    preferences[key] = normalize(data[key])
+                except ValueError as error:
+                    return {"ok": False, "error": str(error)}
         for key in allowed_keys:
             if key in data:
                 if key in (
@@ -825,17 +861,8 @@ class BridgeAPI:
                     val = data[key]
                     if not isinstance(val, str) or not val.strip():
                         return {"ok": False, "error": f"{key} must be a non-empty string"}
-                if key == "hidden_ui":
-                    try:
-                        self._settings.set_setting(key, normalize_hidden_ui(data[key]))
-                    except ValueError as error:
-                        return {"ok": False, "error": str(error)}
-                    continue
-                if key == "start_task":
-                    try:
-                        self._settings.set_setting(key, normalize_start_task(data[key]))
-                    except ValueError as error:
-                        return {"ok": False, "error": str(error)}
+                if key in preferences:
+                    self._settings.set_setting(key, preferences[key])
                     continue
 
                 self._settings.set_setting(key, data[key])
@@ -939,6 +966,10 @@ class BridgeAPI:
                 or "_upscaled_{width}x{height}"
             ),
         }
+
+    def _cut_suffix(self) -> str:
+        # read for both preview and export, so a change in between shows up as a changed plan
+        return str(self._settings.get_setting("cut_suffix", DEFAULT_CUT_SUFFIX))
 
     def _build_plan(
         self,

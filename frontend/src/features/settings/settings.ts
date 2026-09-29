@@ -78,6 +78,8 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
   let editorSnapshot = "";
   let snapshot = "";
   let settingsDirty = false;
+  const AUTOSAVE_NOTE = "Changes save automatically.";
+  let savedNoteTimer: ReturnType<typeof setTimeout> | undefined;
   let settingsReturnFocus: Element | null = null;
   let editorCapabilities: PlatformCapabilities | null = null;
 
@@ -123,7 +125,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
   function settingsShell(
     page: string,
     content: string,
-    actions: { html?: string; split?: boolean; plain?: boolean },
+    actions: { html?: string; split?: boolean; plain?: boolean; autosave?: boolean },
     caps: PlatformCapabilities,
   ): void {
     const actionBar = el("settings-actions");
@@ -149,7 +151,9 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     el("settings-page").innerHTML = `<div class="settings-page-inner">${content}</div>`;
     el("settings-page").scrollTop = 0;
     actionBar.className = `settings-actions ${actions.split ? "split" : ""}`;
-    actionBar.innerHTML = actions.html
+    actionBar.innerHTML = actions.autosave
+      ? `<span class="settings-autosave" id="settings-unsaved" role="status">${AUTOSAVE_NOTE}</span>`
+      : actions.html
       ? actions.plain
         ? actions.html
         : `<span class="settings-unsaved" id="settings-unsaved" role="status">
@@ -174,17 +178,8 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     }
   }
 
-  function settingButton(
-    label: string,
-    action: string,
-    primary?: boolean,
-    dirtyAware?: boolean,
-  ): string {
-    return (
-      `<button type="button" class="${primary ? "btn1" : "btn2"}${
-        dirtyAware ? '" data-settings-save="true" disabled' : '"'
-      } data-settings-click="${action}">${label}</button>`
-    );
+  function settingButton(label: string, action: string, primary?: boolean): string {
+    return `<button type="button" class="${primary ? "btn1" : "btn2"}" data-settings-click="${action}">${label}</button>`;
   }
 
   function settingsTitle(title: string, action?: string): string {
@@ -790,15 +785,31 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     }
   }
 
+  // only the pages with form fields can hold unsaved changes
   function markSettingsDirty(): void {
-    settingsDirty = settingsAreDirty(snapshot, settingsPageState());
-    const indicator = byId("settings-unsaved");
-    if (indicator) {
-      indicator.textContent = "Unsaved changes";
-      indicator.classList.toggle("on", settingsDirty);
-    }
-    const saveButton = document.querySelector<HTMLButtonElement>('[data-settings-save="true"]');
-    if (saveButton) saveButton.disabled = !settingsDirty;
+    settingsDirty = !!pageSave() && settingsAreDirty(snapshot, settingsPageState());
+  }
+
+  function pageSave(): (() => Promise<void>) | null {
+    if (settingsView !== "page") return null;
+    if (settingsPage === "general") return saveGeneralSettings;
+    if (settingsPage === "output") return saveOutputSettings;
+    if (settingsPage === "system") return saveSystemSettings;
+    return null;
+  }
+
+  // General, Output and System save each change as it is made; saves run one at a time
+  // and read the page when they start, so quick changes cannot land out of order
+  let saving: Promise<void> = Promise.resolve();
+  function autosave(): Promise<void> {
+    markSettingsDirty();
+    const save = pageSave();
+    if (!settingsDirty || !save) return saving;
+    saving = saving.then(() => {
+      markSettingsDirty();
+      return settingsDirty && pageSave() === save ? save() : undefined;
+    });
+    return saving;
   }
 
   function settingsPageState(): SettingsRecord {
@@ -817,6 +828,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         outputDirectory: el("set-od").dataset.path || "",
         compressionSuffix: input("set-cs").value,
         upscaleSuffix: input("set-us").value,
+        cutSuffix: input("set-cuts").value,
       };
     if (settingsPage === "system")
       return {
@@ -943,6 +955,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     const outputLabel = esc(s.output_dir || "Next to each source file");
     const compressionSuffix = esc(s.compression_suffix || "_tucked_{size}");
     const upscaleSuffix = esc(s.upscale_suffix || "_upscaled_{width}x{height}");
+    const cutSuffix = esc(s.cut_suffix || "_cut");
     return `<div class="settings-card">
     <h3 class="settings-card-title">Output folder</h3>
     <div class="settings-card-copy">Save beside each source file, or choose one folder for every completed export.</div>
@@ -957,18 +970,22 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     <div class="settings-grid">
       <div class="settings-field">
         <label for="set-cs">Compress suffix</label>
-        <input id="set-cs" value="${compressionSuffix}" data-settings-input="preview-output">
+        <input id="set-cs" value="${compressionSuffix}" data-settings-input="preview-output" data-settings-change="mark-dirty">
         <div class="settings-token-row">
           <button type="button" class="settings-token" data-settings-click="insert-token" data-settings-target="set-cs" data-settings-token="{size}">{size}</button>
         </div>
       </div>
       <div class="settings-field">
         <label for="set-us">Upscale suffix</label>
-        <input id="set-us" value="${upscaleSuffix}" data-settings-input="preview-output">
+        <input id="set-us" value="${upscaleSuffix}" data-settings-input="preview-output" data-settings-change="mark-dirty">
         <div class="settings-token-row">
           <button type="button" class="settings-token" data-settings-click="insert-token" data-settings-target="set-us" data-settings-token="{width}">{width}</button>
           <button type="button" class="settings-token" data-settings-click="insert-token" data-settings-target="set-us" data-settings-token="{height}">{height}</button>
         </div>
+      </div>
+      <div class="settings-field">
+        <label for="set-cuts">Lossless cut suffix</label>
+        <input id="set-cuts" value="${cutSuffix}" data-settings-input="preview-output" data-settings-change="mark-dirty">
       </div>
       <div class="file-naming-example full">
         <span>Compress preview</span>
@@ -977,6 +994,10 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       <div class="file-naming-example full">
         <span>Upscale preview</span>
         <div class="example-out" id="ex-up-out"></div>
+      </div>
+      <div class="file-naming-example full">
+        <span>Lossless cut preview</span>
+        <div class="example-out" id="ex-cut-out"></div>
       </div>
     </div>
   </section>`;
@@ -1178,13 +1199,13 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       return;
     }
     let content = "";
-    let actions: { html?: string; split?: boolean; plain?: boolean } = { html: "" };
+    let actions: { html?: string; split?: boolean; plain?: boolean; autosave?: boolean } = { html: "" };
     if (settingsPage === "general") {
       content = generalSettingsHtml(s, profiles);
-      actions = { html: settingButton("Save changes", "save-general", true, true) };
+      actions = { autosave: true };
     } else if (settingsPage === "output") {
       content = outputSettingsHtml(s);
-      actions = { html: settingButton("Save changes", "save-output", true, true) };
+      actions = { autosave: true };
     } else if (settingsPage === "profiles") {
       content = profilesSettingsHtml();
       actions = {
@@ -1199,7 +1220,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       actions = { html: settingButton("Add profile shortcut", "add-shortcut", true) };
     } else {
       content = systemSettingsHtml(s, caps);
-      actions = { html: settingButton("Save changes", "save-system", true, true) };
+      actions = { autosave: true };
     }
     settingsShell(settingsPage, content, actions, caps);
     settingsDirty = false;
@@ -1222,12 +1243,13 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       } else void open(page);
       return;
     }
-    if (settingsDirty)
+    void autosave().then(() => {
+      if (!settingsDirty) return void open(page);
       confirmToast("Discard unsaved settings?", () => {
         settingsDirty = false;
         void open(page);
       });
-    else void open(page);
+    });
   }
 
   function close(): void {
@@ -1237,12 +1259,13 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         settingsProfileId = "";
         closeSettingsWorkspace();
       });
-    if (settingsDirty)
-      return confirmToast("Discard unsaved settings?", () => {
+    void autosave().then(() => {
+      if (!settingsDirty) return closeSettingsWorkspace();
+      confirmToast("Discard unsaved settings?", () => {
         settingsDirty = false;
         closeSettingsWorkspace();
       });
-    closeSettingsWorkspace();
+    });
   }
 
   function closeSettingsWorkspace(): void {
@@ -1269,13 +1292,13 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       const node = el("set-od");
       node.dataset.path = r.path;
       node.textContent = r.path;
-      markSettingsDirty();
+      void autosave();
     }
   }
 
   function clearOutput(): void {
     clearPath("set-od", "Next to each source file");
-    markSettingsDirty();
+    void autosave();
   }
 
   async function browseFfmpeg(): Promise<void> {
@@ -1284,7 +1307,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       const node = el("set-ffmpeg");
       node.dataset.path = r.path;
       node.textContent = r.path;
-      markSettingsDirty();
+      void autosave();
     }
   }
 
@@ -1294,18 +1317,18 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       const node = el("set-ffprobe");
       node.dataset.path = r.path;
       node.textContent = r.path;
-      markSettingsDirty();
+      void autosave();
     }
   }
 
   function clearFfmpeg(): void {
     clearPath("set-ffmpeg", "Use PATH or automatic detection");
-    markSettingsDirty();
+    void autosave();
   }
 
   function clearFfprobe(): void {
     clearPath("set-ffprobe", "Use PATH or automatic detection");
-    markSettingsDirty();
+    void autosave();
   }
 
   async function persistSettings(data: SettingsRecord): Promise<boolean> {
@@ -1314,18 +1337,15 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       Object.assign(session.appSettings, data);
       snapshot = settingsSnapshot(settingsPageState());
       settingsDirty = false;
-      const saveButton = document.querySelector<HTMLButtonElement>('[data-settings-save="true"]');
-      if (saveButton) saveButton.disabled = true;
       await deps.reloadEditorSettings();
       const indicator = byId("settings-unsaved");
       if (indicator) {
         indicator.textContent = "Saved";
-        indicator.classList.add("on");
-        setTimeout(() => {
-          if (indicator.isConnected) indicator.classList.remove("on");
-        }, 1200);
+        clearTimeout(savedNoteTimer);
+        savedNoteTimer = setTimeout(() => {
+          if (indicator.isConnected) indicator.textContent = AUTOSAVE_NOTE;
+        }, 1500);
       }
-      toast("Settings saved.", "ok");
       return true;
     }
     toast(r.error ?? "Could not save settings.", "err");
@@ -1377,6 +1397,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       output_dir: el("set-od").dataset.path || "",
       compression_suffix: input("set-cs").value.trim() || "_tucked_{size}",
       upscale_suffix: input("set-us").value.trim() || "_upscaled_{width}x{height}",
+      cut_suffix: input("set-cuts").value.trim() || "_cut",
     });
   }
 
@@ -1392,11 +1413,10 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
   }
 
   async function refreshEncoders(): Promise<void> {
+    // a new FFmpeg path must be saved before encoders are detected with it
+    await autosave();
     if (settingsDirty) {
-      confirmToast("Refresh encoders and discard unsaved settings?", () => {
-        settingsDirty = false;
-        void refreshEncoders();
-      });
+      toast("Save a working FFmpeg path before refreshing encoders.", "err");
       return;
     }
     const r = await legacyBackendResult(client().refreshEncoders());
@@ -1412,7 +1432,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
   function insertNamingToken(id: string, token: string): void {
     const field = input(id);
     if (!field.value.includes(token)) field.value += token;
-    markSettingsDirty();
+    void autosave();
     updateExampleOutput();
     field.focus();
   }
@@ -1438,6 +1458,8 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
           .replace("{width}", "1920")
           .replace("{height}", "1080")}.mp4`;
     }
+    const cut = byId<HTMLInputElement>("set-cuts");
+    if (cut && byId("ex-cut-out")) el("ex-cut-out").textContent = `video${cut.value.trim() || "_cut"}.mp4`;
   }
 
   interface ShortcutRecord {
@@ -1591,12 +1613,9 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         navigate: (target) => navigateSettings(target.dataset.settingsValue ?? ""),
         "back-profiles": () => backToProfiles(),
         "save-profile": () => void saveProfileEditor(),
-        "save-general": () => void saveGeneralSettings(),
-        "save-output": () => void saveOutputSettings(),
         "import-profiles": () => void importProfiles(),
         "new-profile": () => void newProfile(),
         "add-shortcut": () => void addShortcutFlow(),
-        "save-system": () => void saveSystemSettings(),
         "open-explorer": () => void open("explorer"),
         "profile-task": (target) => peSetTask((target.dataset.settingsValue as Workflow) ?? "compression"),
         "profile-size": (target) => peSetSize(target.dataset.settingsValue ?? "50"),
@@ -1622,20 +1641,17 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       input: {
         "profile-size": (target) => peSetSize((target as HTMLInputElement).value),
         "profile-fps": (target) => peSetFps((target as HTMLInputElement).value),
-        "preview-output": () => {
-          markSettingsDirty();
-          updateExampleOutput();
-        },
+        "preview-output": () => updateExampleOutput(),
       },
       change: {
         "profile-visibility": () => peVisibility(),
         "profile-encoder": () => peEncoderChanged(),
         "profile-speed": () => peSpeedChanged(),
         "profile-preset": () => pePresetChanged(),
-        "mark-dirty": () => markSettingsDirty(),
+        "mark-dirty": () => void autosave(),
         visibility: () => {
           syncVisibilityChoices();
-          markSettingsDirty();
+          void autosave();
         },
       },
     },

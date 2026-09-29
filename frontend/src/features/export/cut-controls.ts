@@ -266,7 +266,9 @@ export function installCutControls(deps: CutControlsDeps) {
     const all = element<HTMLButtonElement>("btn-all");
     all.textContent = `Export all cuts${clips.length ? ` (${clips.length})` : ""}`;
     all.disabled = !clips.length || busy || waiting || clips.some(item => !exportable(item));
-    all.title = all.disabled ? "Review the cuts for each video before exporting all." : "";
+    const note = element("btn-all-note");
+    note.textContent = all.disabled && clips.length > 1 ? "Every video needs its cuts ready first." : "";
+    note.hidden = !note.textContent;
     deps.paintTimeline();
   }
 

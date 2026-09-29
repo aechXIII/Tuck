@@ -137,6 +137,7 @@ body.timeline-resizing * {
   opacity: 0.42;
 }
 #timeline-row button:disabled,
+#timeline-row button[aria-disabled="true"],
 #timeline-row input:disabled {
   cursor: default;
   opacity: 0.38;
