@@ -18,9 +18,25 @@ def output_frame_times(plan: CutPlan, analysis: CutAnalysis) -> list[Fraction]:
             continue
         first, last = segment.resolved.start.seconds, segment.resolved.end.seconds
         low, high = bisect_left(frames, first), bisect_left(frames, last)
-        times.extend(elapsed + frame - first for frame in frames[low:high])
+        # one addition per frame: a long video has hundreds of thousands
+        offset = elapsed - first
+        times.extend(frame + offset for frame in frames[low:high])
         elapsed += last - first
     return times
+
+
+def output_frame_count(plan: CutPlan, analysis: CutAnalysis) -> int:
+    """How many video frames the joined output keeps."""
+    frames = analysis.frames
+    return sum(
+        max(
+            0,
+            bisect_left(frames, s.resolved.end.seconds)
+            - bisect_left(frames, s.resolved.start.seconds),
+        )
+        for s in plan.segments
+        if s.start_kind != "collapsed"
+    )
 
 
 def decode_times(presented: list[Fraction], reorder: int) -> list[Fraction]:
@@ -36,7 +52,20 @@ def decode_times(presented: list[Fraction], reorder: int) -> list[Fraction]:
     return lead + presented[: len(presented) - len(lead)]
 
 
+def round_div(numerator: int, denominator: int) -> int:
+    """numerator / denominator for a positive denominator, rounded half away from zero."""
+    whole, rest = divmod(abs(numerator), denominator)
+    if 2 * rest >= denominator:
+        whole += 1
+    return whole if numerator >= 0 else -whole
+
+
 def to_ticks(time: Fraction, base: Fraction) -> int:
-    # containers with coarse time bases round; round half away from zero, like FFmpeg
-    value = time / base
-    return int(value + (Fraction(1, 2) if value >= 0 else Fraction(-1, 2)))
+    # containers with coarse time bases round; round half away from zero, like FFmpeg.
+    # whole numbers only: this runs for every copied packet
+    return round_div(time.numerator * base.denominator, time.denominator * base.numerator)
+
+
+def ticks_from(time: Fraction, base: Fraction) -> int:
+    """The first tick of `base` at or after `time`."""
+    return -((-time.numerator * base.denominator) // (time.denominator * base.numerator))

@@ -16,7 +16,7 @@ from ..models.cutting import (
     CutRequest,
     CutSegment,
     MediaTime,
-    PacketTiming,
+    TrackPackets,
     TrackSegment,
 )
 from ..models.ui_preferences import DEFAULT_CUT_SUFFIX
@@ -211,22 +211,21 @@ def _chapters(
     return tuple(kept)
 
 
-def _audio_fields(
-    segment: CutSegment, packets: tuple[PacketTiming, ...], piece: TrackSegment
-) -> CutSegment:
+def _audio_fields(segment: CutSegment, track: TrackPackets, piece: TrackSegment) -> CutSegment:
     """Describe the main audio track's cut on the segment, for the Inspector."""
-    chosen = list(packets[piece.first : piece.stop])
+    times = track.whole_times
+    chosen = range(piece.first, piece.stop)
     # encoder priming before the first frame is not part of the kept range
-    priming = [p for p in chosen if p.start.seconds + p.duration.seconds <= 0]
-    heard = [p for p in chosen if p not in priming] or chosen
-    output_start = piece.output_start.seconds + sum(
-        (p.duration.seconds for p in priming), Fraction(0)
+    priming = [i for i in chosen if times.ends[i] <= 0]
+    heard = [i for i in chosen if times.ends[i] > 0] or list(chosen)
+    output_start = piece.output_start.seconds + Fraction(
+        sum(times.durations[i] for i in priming), times.denominator
     )
-    length = sum((p.duration.seconds for p in heard), Fraction(0))
-    source_end = heard[-1].start.seconds + heard[-1].duration.seconds
+    length = Fraction(sum(times.durations[i] for i in heard), times.denominator)
+    source_end = Fraction(times.ends[heard[-1]], times.denominator)
     return replace(
         segment,
-        audio_source=CutRange(heard[0].start, MediaTime.from_seconds(source_end)),
+        audio_source=CutRange(track.packets[heard[0]].start, MediaTime.from_seconds(source_end)),
         audio_output=CutRange(
             MediaTime.from_seconds(output_start), MediaTime.from_seconds(output_start + length)
         ),
@@ -334,9 +333,9 @@ def plan_cut(request: CutRequest, analysis: CutAnalysis) -> CutPlan:
     issues.extend(track_issues)
     audio = next((t for t in tracks if t.kind == "audio" and t.keep), None)
     if audio is not None:
-        packets = next(t for t in analysis.tracks if t.index == audio.index).packets
+        track = next(t for t in analysis.tracks if t.index == audio.index)
         for number, piece in zip(kept, audio.segments, strict=True):
-            segments[number] = _audio_fields(segments[number], packets, piece)
+            segments[number] = _audio_fields(segments[number], track, piece)
     estimate = round(analysis.identity.size * elapsed / duration) if duration else 0
     chapters = _chapters(analysis, ranges)
     fingerprint_data = {

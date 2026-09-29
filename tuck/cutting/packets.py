@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from bisect import bisect_right
 from collections.abc import Iterator
 from fractions import Fraction
@@ -11,7 +12,7 @@ from av.container import InputContainer
 
 from ..models.cutting import CutAnalysis, CutPlan, CutRequest
 from .analysis import CutAnalysisError, analyze_source, check_cancel, source_identity
-from .output_timing import decode_times, output_frame_times, to_ticks
+from .output_timing import decode_times, output_frame_times, round_div, ticks_from, to_ticks
 from .planner import OUTPUT_FORMATS, CutPlanChanged, plan_cut
 from .timeline import MAX_PACKET_BYTES, MAX_PACKETS
 
@@ -104,27 +105,40 @@ def rebuild_cut_plan(plan: CutPlan, cancel: Event, *, ffprobe: str | None = None
 
 def _track_times(
     plan: CutPlan, analysis: CutAnalysis
-) -> dict[int, dict[int, list[tuple[Fraction, Fraction]]]]:
-    """For each kept track: packet number -> [(output start, output duration), ...]."""
+) -> dict[int, tuple[int, dict[int, list[tuple[int, int]]]]]:
+    """For each kept track: a denominator, and packet number -> [(output start, output
+    duration), ...] as whole numbers over that denominator."""
     ranges = [
         (s.resolved.start.seconds, s.resolved.end.seconds)
         for s in plan.segments
         if s.start_kind != "collapsed"
     ]
-    packets_by_track = {t.index: t.packets for t in analysis.tracks}
-    result: dict[int, dict[int, list[tuple[Fraction, Fraction]]]] = {}
+    tracks_by_index = {t.index: t for t in analysis.tracks}
+    result: dict[int, tuple[int, dict[int, list[tuple[int, int]]]]] = {}
     for track in plan.tracks:
-        if not track.keep or track.index not in packets_by_track:
+        if not track.keep or track.index not in tracks_by_index:
             continue
-        packets = packets_by_track[track.index]
-        times: dict[int, list[tuple[Fraction, Fraction]]] = {}
-        elapsed = Fraction(0)
+        packets = tracks_by_index[track.index].whole_times
+        # one denominator that also holds every segment edge, so each packet costs a few
+        # whole-number steps rather than fraction math
+        scale = math.lcm(
+            packets.denominator,
+            *(edge.denominator for pair in ranges for edge in pair),
+            *(piece.output_start.seconds.denominator for piece in track.segments),
+        )
+        step = scale // packets.denominator
+        times: dict[int, list[tuple[int, int]]] = {}
+        elapsed = 0
         for number, piece in enumerate(track.segments):
-            first, last = ranges[number] if number < len(ranges) else (Fraction(0), Fraction(0))
-            anchor = packets[piece.first].start.seconds if piece.stop > piece.first else Fraction(0)
+            first, last = (
+                (int(ranges[number][0] * scale), int(ranges[number][1] * scale))
+                if number < len(ranges)
+                else (0, 0)
+            )
+            anchor = packets.starts[piece.first] * step if piece.stop > piece.first else 0
+            output_start = int(piece.output_start.seconds * scale)
             for index in range(piece.first, piece.stop):
-                packet = packets[index]
-                start, duration = packet.start.seconds, packet.duration.seconds
+                start, duration = packets.starts[index] * step, packets.durations[index] * step
                 if piece.clip:
                     shown = max(start, first)
                     until = min(start + duration, last) if duration else shown
@@ -132,11 +146,9 @@ def _track_times(
                 else:
                     # keep the source spacing inside a segment, so a gap in the source audio
                     # is not closed up and later sound does not move earlier
-                    times.setdefault(index, []).append(
-                        (piece.output_start.seconds + start - anchor, duration)
-                    )
+                    times.setdefault(index, []).append((output_start + start - anchor, duration))
             elapsed += last - first
-        result[track.index] = times
+        result[track.index] = (scale, times)
     return result
 
 
@@ -151,12 +163,18 @@ def selected_packets(
     """Stream the planned packets with their joined output timestamps, without encoding."""
     origin = analysis.origin.seconds
     segments = [s for s in plan.segments if s.start_kind != "collapsed"]
-    starts = [s.resolved.start.seconds for s in segments]
     offsets = []
     elapsed = Fraction(0)
     for segment in segments:
         offsets.append(elapsed - segment.resolved.start.seconds)
         elapsed += segment.resolved.end.seconds - segment.resolved.start.seconds
+    # every packet of a stream carries that stream's time base
+    bases: dict[int, Fraction] = {}
+    # the video is placed in whole ticks, since fraction math on every frame of a long
+    # video costs seconds: where each segment starts and ends, and how far it moves
+    starts: list[int] = []
+    ends: list[int] = []
+    shifts: list[Fraction] = []
     presented = output_frame_times(plan, analysis)
     decoding = decode_times(presented, analysis.reorder_frames)
     decoded = 0
@@ -170,33 +188,46 @@ def selected_packets(
         check_cut_cancel(cancel)
         if count > MAX_PACKETS or packet.size > MAX_PACKET_BYTES:
             raise CutAnalysisError("cut_failed", "The video exceeds the packet copy limit.")
-        if not packet.size or packet.pts is None:
+        pts = packet.pts
+        if not packet.size or pts is None:
             continue
-        if packet.is_corrupt or not packet.time_base:
+        stream_index = packet.stream.index
+        base = bases.get(stream_index)
+        if base is None:
+            time_base = packet.time_base
+            if not time_base:
+                raise CutAnalysisError("cut_failed", "A media packet cannot be copied safely.")
+            base = bases[stream_index] = Fraction(time_base)
+            if stream_index == analysis.video_index:
+                starts = [ticks_from(s.resolved.start.seconds + origin, base) for s in segments]
+                ends = [ticks_from(s.resolved.end.seconds + origin, base) for s in segments]
+                shifts = [(offset - origin) / base for offset in offsets]
+        if packet.is_corrupt:
             raise CutAnalysisError("cut_failed", "A media packet cannot be copied safely.")
-        base = Fraction(packet.time_base)
-        time = packet.pts * base - origin
-        if packet.stream.index == analysis.video_index:
-            index = bisect_right(starts, time) - 1
-            if index < 0 or time >= segments[index].resolved.end.seconds:
+        if stream_index == analysis.video_index:
+            index = bisect_right(starts, pts) - 1
+            if index < 0 or pts >= ends[index]:
                 continue
             if decoded >= len(decoding):
                 raise CutAnalysisError("plan_changed", "The video frames changed since analysis.")
-            packet.pts = to_ticks(time + offsets[index], base)
+            shift = shifts[index]
+            packet.pts = round_div(pts * shift.denominator + shift.numerator, shift.denominator)
             packet.dts = to_ticks(decoding[decoded], base)
             decoded += 1
             yield packet
             continue
-        counters[packet.stream.index] += 1
-        placements = tracks[packet.stream.index].get(counters[packet.stream.index])
+        counters[stream_index] += 1
+        scale, times = tracks[stream_index]
+        placements = times.get(counters[stream_index])
         if not placements:
             continue
+        divisor = scale * base.numerator
         for number, (start, duration) in enumerate(placements):
             # a subtitle shown across a cut appears once in each kept part
             copy = packet if number == len(placements) - 1 else av.Packet(bytes(packet))
             copy.stream = packet.stream
             copy.time_base = packet.time_base
-            copy.pts = copy.dts = to_ticks(start, base)
+            copy.pts = copy.dts = round_div(start * base.denominator, divisor)
             if duration:
-                copy.duration = to_ticks(duration, base)
+                copy.duration = round_div(duration * base.denominator, divisor)
             yield copy

@@ -16,7 +16,7 @@ from ..models.progress import EncodeProgress, EncodeStage
 from ..output_transaction import OutputTransaction
 from .analysis import CutAnalysisError
 from .exact import ExactEdges, encode_edges, exact_packets
-from .output_timing import output_frame_times
+from .output_timing import output_frame_count
 from .packets import check_cut_cancel, prepare_cut, selected_packets
 from .planner import OUTPUT_FORMATS
 from .verification import is_generated_tag, verify_cut_output
@@ -252,7 +252,7 @@ class CutRunner:
             )
             streams = _add_streams(incoming, outgoing, plan, analysis, muxer, edges)
             _write_chapters(outgoing, plan.chapters)
-            total_frames = max(1, len(output_frame_times(plan, analysis)))
+            total_frames = max(1, output_frame_count(plan, analysis))
             copied = 0
             last_progress = -1
             packets = selected_packets(incoming, plan, analysis, self._cancel)

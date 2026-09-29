@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from bisect import bisect_left
 from fractions import Fraction
 
@@ -26,7 +27,7 @@ def _end(packet: PacketTiming) -> Fraction:
 
 
 def _audio_segment(
-    packets: tuple[PacketTiming, ...],
+    track: TrackPackets,
     first: Fraction,
     last: Fraction,
     audio_elapsed: Fraction,
@@ -38,23 +39,32 @@ def _audio_segment(
     Packets never overlap a removed part by more than one packet, and every segment starts
     where the previous one ended, so drift cannot build up across joins.
     """
-    starts = [p.start.seconds for p in packets]
-    low = bisect_left(starts, first)
-    while low > 0 and _end(packets[low - 1]) > first:
+    packets = track.packets
+    # packet times are whole numbers over `scale`; other times are scaled to match, and
+    # comparisons multiply out their denominators, so no fraction is built per packet
+    times = track.whole_times
+    scale = times.denominator
+    starts, ends, durations = times.starts, times.ends, times.durations
+    low = bisect_left(starts, math.ceil(first * scale))
+    while low > 0 and ends[low - 1] > first * scale:
         low -= 1
-    high = bisect_left(starts, last)
+    high = bisect_left(starts, math.ceil(last * scale))
     if low >= high:
         return None
-    wanted = first + audio_elapsed - video_elapsed
-    begin = min(range(low, high), key=lambda i: (abs(starts[i] - wanted), i))
-    need = video_elapsed + (last - first) - audio_elapsed
+    wanted = (first + audio_elapsed - video_elapsed) * scale
+    begin = min(
+        range(low, high),
+        key=lambda i: (abs(starts[i] * wanted.denominator - wanted.numerator), i),
+    )
+    need = (video_elapsed + (last - first) - audio_elapsed) * scale
+    need_top, need_bottom = need.numerator, need.denominator
 
-    def take(start: int) -> tuple[int, Fraction]:
+    def take(start: int) -> tuple[int, int]:
         # the span from the first packet's start to the last packet's end, gaps included
-        stop, total = start, Fraction(0)
+        stop, total = start, 0
         while stop < high:
-            span = _end(packets[stop]) - starts[start]
-            if abs(span - need) >= abs(total - need):
+            span = ends[stop] - starts[start]
+            if abs(span * need_bottom - need_top) >= abs(total * need_bottom - need_top):
                 break
             total = span
             stop += 1
@@ -62,7 +72,11 @@ def _audio_segment(
 
     stop, total = take(begin)
     # at the end of the range, start earlier rather than run into the removed part
-    while begin > low and stop == high and abs(total - need) > packets[begin].duration.seconds / 2:
+    while (
+        begin > low
+        and stop == high
+        and 2 * abs(total * need_bottom - need_top) > durations[begin] * need_bottom
+    ):
         begin -= 1
         stop, total = take(begin)
     if stop == begin:
@@ -70,10 +84,10 @@ def _audio_segment(
     output_start = audio_elapsed
     if include_priming:
         # encoder priming before the first frame stays in front of the first kept audio
-        while begin > 0 and _end(packets[begin - 1]) <= 0 and packets[begin - 1].skip_samples:
+        while begin > 0 and ends[begin - 1] <= 0 and packets[begin - 1].skip_samples:
             begin -= 1
             output_start -= packets[begin].duration.seconds
-    return TrackSegment(begin, stop, MediaTime.from_seconds(output_start)), total
+    return TrackSegment(begin, stop, MediaTime.from_seconds(output_start)), Fraction(total, scale)
 
 
 def plan_audio(
@@ -88,7 +102,7 @@ def plan_audio(
             [],
             [],
         )
-    longest = max(p.duration.seconds for p in packets)
+    longest = Fraction(max(track.whole_times.durations), track.whole_times.denominator)
     if longest > MAX_AUDIO_PACKET:
         issues.append(
             CutIssue(
@@ -103,7 +117,7 @@ def plan_audio(
     audio_elapsed = video_elapsed = Fraction(0)
     for number, (first, last) in enumerate(ranges):
         chosen = _audio_segment(
-            packets, first, last, audio_elapsed, video_elapsed, number == 0 and first == 0
+            track, first, last, audio_elapsed, video_elapsed, number == 0 and first == 0
         )
         if chosen is None:
             issues.append(

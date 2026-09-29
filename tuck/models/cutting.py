@@ -1,7 +1,9 @@
 """Cut intent, measured media boundaries, and export previews."""
 
+import math
 from dataclasses import dataclass, field
 from fractions import Fraction
+from functools import cached_property
 
 
 @dataclass(frozen=True)
@@ -116,6 +118,16 @@ class PacketTiming:
 
 
 @dataclass(frozen=True)
+class WholeTimes:
+    """Packet starts, ends and durations as whole numbers over one shared denominator."""
+
+    denominator: int
+    starts: tuple[int, ...]
+    ends: tuple[int, ...]
+    durations: tuple[int, ...]
+
+
+@dataclass(frozen=True)
 class TrackPackets:
     """Packet timings of a track other than the main video, relative to the video origin."""
 
@@ -123,6 +135,28 @@ class TrackPackets:
     kind: str
     codec: str
     packets: tuple[PacketTiming, ...]
+
+    @cached_property
+    def whole_times(self) -> WholeTimes:
+        # planning and copying walk every packet of an hour of audio on each change, and
+        # whole numbers keep that fast; worked out once per analysis
+        denominator = math.lcm(
+            1, *{t.time_base_den for p in self.packets for t in (p.start, p.duration)}
+        )
+        starts = tuple(
+            p.start.ticks * p.start.time_base_num * (denominator // p.start.time_base_den)
+            for p in self.packets
+        )
+        durations = tuple(
+            p.duration.ticks * p.duration.time_base_num * (denominator // p.duration.time_base_den)
+            for p in self.packets
+        )
+        return WholeTimes(
+            denominator,
+            starts,
+            tuple(start + duration for start, duration in zip(starts, durations, strict=True)),
+            durations,
+        )
 
 
 @dataclass(frozen=True)

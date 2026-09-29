@@ -20,7 +20,7 @@ from ..media_tools import find_ffprobe
 from ..models.cutting import CutAnalysis, CutPlan
 from .analysis import CutAnalysisError, read_inventory
 from .exact import ExactEdges, exact_packets
-from .output_timing import output_frame_times
+from .output_timing import output_frame_times, round_div
 from .packets import (
     check_cut_cancel,
     check_source_unchanged,
@@ -186,10 +186,13 @@ def _packet_identity(packet: av.Packet, base: Fraction) -> tuple:
         or packet.size > MAX_PACKET_BYTES
     ):
         raise _failed("a packet has invalid timing or data.")
-    own = Fraction(packet.time_base)
+    own = packet.time_base
+    # whole numbers only: this runs for every packet of the source and the output
+    scale = own.numerator * base.denominator
+    divisor = own.denominator * base.numerator
 
     def ticks(value: int | None) -> int | None:
-        return None if value is None else _round(value * own / base)
+        return None if value is None else round_div(value * scale, divisor)
 
     # a video frame's stored duration comes from the container (MP4 derives it from decode
     # times), so frames are identified by time and content; other tracks keep their durations
@@ -198,12 +201,12 @@ def _packet_identity(packet: av.Packet, base: Fraction) -> tuple:
         None if packet.stream.type == "video" else ticks(packet.duration or None),
         packet.is_keyframe,
         bytes(packet.get_sidedata("skip_samples")),
-        hashlib.sha256(bytes(packet)).digest(),
+        hashlib.sha256(packet).digest(),
     )
 
 
 def _round(value: Fraction) -> int:
-    return int(value + (Fraction(1, 2) if value >= 0 else Fraction(-1, 2)))
+    return round_div(value.numerator, value.denominator)
 
 
 def _verify_packets(
