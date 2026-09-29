@@ -8,6 +8,7 @@ from typing import cast
 from .bridge_contract import BridgeResult
 from .bridge_serialization import profile_ui_dict
 from .bridge_validation import normalize_profile_ui_payload
+from .desktop_platform import is_linux_desktop
 from .models import (
     PROFILE_ID_DISCORD_FREE,
     Profile,
@@ -160,7 +161,21 @@ class ProfileService:
 
         self._settings.set_profiles(profiles)
         self._settings.save()
+        if validated.name != found.name or validated.workflow != found.workflow:
+            _rename_sendto_shortcut(profile_id, validated)
         return {"ok": True}
+
+
+def _rename_sendto_shortcut(profile_id: str, profile: Profile) -> None:
+    # the profile is already saved, so a shortcut problem is only logged
+    if is_linux_desktop():
+        return
+    try:
+        from .sendto import rename_profile_shortcut
+
+        rename_profile_shortcut(profile_id, profile.name, workflow=profile.workflow)
+    except Exception as exc:
+        logger.warning("Could not rename Send To shortcut for profile %s: %s", profile_id, exc)
 
 
 def pick_surviving_default(remaining: list[Profile]) -> str:

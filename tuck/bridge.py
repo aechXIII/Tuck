@@ -569,7 +569,11 @@ class BridgeAPI:
             from .sendto import install_profile_shortcut
 
             path = install_profile_shortcut(
-                profile_id, found.name, action=action, executable_path=executable_path
+                profile_id,
+                found.name,
+                action=action,
+                executable_path=executable_path,
+                workflow=found.workflow,
             )
             return {"ok": True, "path": str(path)}
         except Exception as e:
@@ -601,7 +605,11 @@ class BridgeAPI:
             from .sendto import repair_profile_shortcut
 
             repaired = repair_profile_shortcut(
-                profile_id, found.name, action=action, executable_path=executable_path
+                profile_id,
+                found.name,
+                action=action,
+                executable_path=executable_path,
+                workflow=found.workflow,
             )
             return {"ok": True, "repaired": repaired}
         except Exception as e:

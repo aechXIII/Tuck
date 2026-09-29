@@ -112,10 +112,16 @@ class TestInstallSendtoExplicit:
         exe = tmp_path / "Tuck.exe"
         exe.write_text("dummy")
         batch = tmp_path / "Tuck - my-profile.bat"
-        batch.write_text("@echo off\r\nREM TUCK_OWNER_V1\r\necho --sendto-files %*\r\n")
+        batch.write_text(
+            "@echo off\r\nREM TUCK_OWNER_V1\r\necho --profile-id my-profile --sendto-files %*\r\n"
+        )
+        before = batch.read_bytes()
         # Now repair with invalid path should return False
         result = repair_profile_shortcut("my-profile", "My Profile", executable_path="bad.exe")
         assert result is False
+        # a bad target leaves the old shortcut exactly as it was
+        assert sorted(path.name for path in tmp_path.iterdir()) == [batch.name, exe.name]
+        assert batch.read_bytes() == before
 
 
 class TestBridgeExplicitSendTo:

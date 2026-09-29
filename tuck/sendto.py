@@ -2,15 +2,22 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 from .desktop_platform import is_linux_desktop
+from .models.encoding_policy import WORKFLOW_COMPRESSION, WORKFLOW_UPSCALE
 
 logger = logging.getLogger(__name__)
 
 PROFILE_SHORTCUT_PREFIX = "Tuck - "
+_PROFILE_MARKER_TYPE = "profile"
+_PROFILE_NAME_MAX_LENGTH = 80
+_INVALID_FILE_NAME_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+_PROFILE_ID_PATTERN = r"[a-z0-9][a-z0-9-]{0,63}"
+_PROFILE_ID_ARGUMENT = re.compile(rf'(?:^|\s)--profile-id\s+"?({_PROFILE_ID_PATTERN})"?(?=\s|$)')
 
 # embedded in .lnk Description and .bat REM lines so Tuck can tell which shortcuts it owns
 _TUCK_MARKER = "TUCK_OWNER_V1"
@@ -155,12 +162,126 @@ def _generic_paths(spec: GenericShortcut) -> tuple[Path, Path]:
     return sendto / f"{spec.stem}.lnk", sendto / f"{spec.stem}.bat"
 
 
-def _get_profile_shortcut_path(profile_id: str) -> Path:
-    return _sendto_dir() / f"{PROFILE_SHORTCUT_PREFIX}{profile_id}.lnk"
+def profile_shortcut_stems(profile_id: str, profile_name: str) -> tuple[str, ...]:
+    """Return the file stems a profile shortcut may use, in order of preference.
+
+    Explorer shows the stem in the Send To menu. The "Tuck - " prefix also
+    means a stem can never be a reserved device name such as CON.
+    """
+    safe = " ".join(_INVALID_FILE_NAME_CHARS.sub(" ", profile_name).split())
+    safe = safe[:_PROFILE_NAME_MAX_LENGTH].rstrip(". ")
+    if not safe:
+        return (f"{PROFILE_SHORTCUT_PREFIX}{profile_id}",)
+    return (
+        f"{PROFILE_SHORTCUT_PREFIX}{safe}",
+        f"{PROFILE_SHORTCUT_PREFIX}{safe} ({profile_id})",
+    )
 
 
-def _get_profile_batch_path(profile_id: str) -> Path:
-    return _sendto_dir() / f"{PROFILE_SHORTCUT_PREFIX}{profile_id}.bat"
+def _profile_description(profile_name: str, workflow: str) -> str:
+    verb = "Upscale" if workflow == WORKFLOW_UPSCALE else "Compress"
+    return f"{verb} with Tuck ({profile_name})"
+
+
+def _profile_shortcut_entries() -> list[Path]:
+    sendto = _sendto_dir()
+    if not sendto.is_dir():
+        return []
+    return sorted(
+        entry
+        for entry in sendto.iterdir()
+        if entry.name.startswith(PROFILE_SHORTCUT_PREFIX) and entry.suffix in (".lnk", ".bat")
+    )
+
+
+def _marker_profile_id(marker: str) -> str | None:
+    parts = marker.strip().split("|")
+    if (
+        len(parts) >= 3
+        and parts[0] == _TUCK_MARKER
+        and parts[1] == _PROFILE_MARKER_TYPE
+        and re.fullmatch(_PROFILE_ID_PATTERN, parts[2])
+    ):
+        return parts[2]
+    return None
+
+
+def _argument_profile_id(arguments: str) -> str | None:
+    match = _PROFILE_ID_ARGUMENT.search(arguments)
+    return match.group(1) if match else None
+
+
+def _owned_profile_id(path: Path) -> str | None:
+    """Return the profile an owned shortcut belongs to, read from its contents.
+
+    The file name is never trusted: it follows the profile name and can be
+    anything. Batch files from older installs have no id in their marker, so
+    their --profile-id argument is used instead.
+    """
+    suffix = path.suffix.lower()
+    if suffix == ".bat":
+        if not _verify_bat_ownership(path):
+            return None
+        try:
+            text = path.read_text(encoding="ascii", errors="replace")
+        except OSError:
+            return None
+        marker = next(
+            (line[4:] for line in text.splitlines() if line.startswith(f"REM {_TUCK_MARKER}")), ""
+        )
+        return _marker_profile_id(marker) or _argument_profile_id(text)
+    if suffix == ".lnk":
+        if not _verify_lnk_ownership(path):
+            return None
+        link = _read_link(path)
+        if link is None:
+            return None
+        return _marker_profile_id(link.description) or _argument_profile_id(link.arguments)
+    return None
+
+
+def _owned_profile_files(profile_id: str) -> list[Path]:
+    return [path for path in _profile_shortcut_entries() if _owned_profile_id(path) == profile_id]
+
+
+def _choose_profile_stem(profile_id: str, profile_name: str, owned: list[Path]) -> str:
+    sendto = _sendto_dir()
+    owned_names = {path.name.casefold() for path in owned}
+    stems = profile_shortcut_stems(profile_id, profile_name)
+    for stem in stems:
+        # Explorer hides extensions, so a .bat and a .lnk with one stem look like duplicates
+        paths = (sendto / f"{stem}.lnk", sendto / f"{stem}.bat")
+        if all(not path.exists() or path.name.casefold() in owned_names for path in paths):
+            return stem
+    raise FileExistsError(
+        f'Send To already has a shortcut named "{stems[0]}". '
+        "Rename the profile or remove that shortcut, then try again."
+    )
+
+
+def _move_profile_files(owned: list[Path], stem: str) -> tuple[list[Path], bool]:
+    """Rename a profile's shortcut files to stem and drop duplicates.
+
+    Returns the files now in place and whether anything changed on disk.
+    """
+    placed: dict[str, Path] = {}
+    changed = False
+    # a file already at its new name goes first, so a stray older copy is the one removed
+    for path in sorted(owned, key=lambda item: item.stem.casefold() != stem.casefold()):
+        suffix = path.suffix.lower()
+        destination = path.with_name(f"{stem}{suffix}")
+        if suffix in placed:
+            path.unlink()
+            logger.info("Removed duplicate profile shortcut: %s", path)
+            changed = True
+            continue
+        if path.name != destination.name:
+            # a plain rename also handles a change in letter case only
+            path.rename(destination)
+            logger.info("Renamed profile shortcut: %s -> %s", path, destination)
+            changed = True
+        placed[suffix] = destination
+    return list(placed.values()), changed
 
 
 def _can_create_shortcuts() -> bool:
@@ -250,6 +371,8 @@ def install_profile_shortcut(
     profile_name: str,
     action: str = ACTION_START,
     executable_path: str | Path | None = None,
+    *,
+    workflow: str = WORKFLOW_COMPRESSION,
 ) -> Path:
     _require_sendto_support()
     target = _get_target_path(executable_path, action)
@@ -258,28 +381,36 @@ def install_profile_shortcut(
 
     sendto = _sendto_dir()
     sendto.mkdir(parents=True, exist_ok=True)
-    shortcut_path = _get_profile_shortcut_path(profile_id)
+    owned = _owned_profile_files(profile_id)
+    stem = _choose_profile_stem(profile_id, profile_name, owned)
+    placed, _ = _move_profile_files(owned, stem)
+    args = _get_args(for_profile=profile_id, action=action)
 
     if _can_create_shortcuts():
-        args = _get_args(for_profile=profile_id, action=action)
-        desc = f"Compress with Tuck ({profile_name})"
+        path = sendto / f"{stem}.lnk"
         _create_windows_shortcut(
             target,
-            shortcut_path,
+            path,
             arguments=args,
             working_dir=_get_working_dir(),
-            description=desc,
-            shortcut_type="profile",
+            description=_profile_description(profile_name, workflow),
+            shortcut_type=_PROFILE_MARKER_TYPE,
             profile_id=profile_id,
         )
-        logger.info("Profile shortcut created: %s", shortcut_path)
-        return shortcut_path
+        logger.info("Profile shortcut created: %s", path)
     else:
-        args = _get_args(for_profile=profile_id, action=action)
-        batch_path = sendto / f"{PROFILE_SHORTCUT_PREFIX}{profile_id}.bat"
-        _write_batch_file(batch_path, target, args)
-        logger.info("Profile batch fallback created: %s", batch_path)
-        return batch_path
+        path = sendto / f"{stem}.bat"
+        _write_batch_file(
+            path, target, args, marker_type=_PROFILE_MARKER_TYPE, profile_id=profile_id
+        )
+        logger.info("Profile batch fallback created: %s", path)
+
+    # one shortcut per profile, so an older batch fallback goes once the link exists
+    for old in placed:
+        if old.name.casefold() != path.name.casefold() and old.exists():
+            old.unlink()
+            logger.info("Removed old profile shortcut: %s", old)
+    return path
 
 
 def uninstall_generic_shortcut(kind: str) -> bool:
@@ -304,29 +435,41 @@ def uninstall_sendto() -> None:
 def uninstall_profile_shortcut(profile_id: str) -> bool:
     _require_sendto_support()
     removed = False
-    shortcut_path = _get_profile_shortcut_path(profile_id)
-    if shortcut_path.exists() and _is_tuck_shortcut(shortcut_path):
-        shortcut_path.unlink()
-        logger.info("Removed profile shortcut: %s", shortcut_path)
-        removed = True
-    batch_path = _get_profile_batch_path(profile_id)
-    if batch_path.exists() and _is_tuck_shortcut(batch_path):
-        batch_path.unlink()
-        logger.info("Removed profile batch fallback: %s", batch_path)
+    for path in _owned_profile_files(profile_id):
+        path.unlink()
+        logger.info("Removed profile shortcut: %s", path)
         removed = True
     return removed
 
 
+def rename_profile_shortcut(
+    profile_id: str, profile_name: str, *, workflow: str = WORKFLOW_COMPRESSION
+) -> bool:
+    """Give a profile's shortcut the profile's current name and description.
+
+    The shortcut keeps its target and arguments. Returns False when the
+    profile has no shortcut or it already matches.
+    """
+    _require_sendto_support()
+    owned = _owned_profile_files(profile_id)
+    if not owned:
+        return False
+    stem = _choose_profile_stem(profile_id, profile_name, owned)
+    placed, changed = _move_profile_files(owned, stem)
+    description = _marked_description(
+        _PROFILE_MARKER_TYPE, _profile_description(profile_name, workflow), profile_id
+    )
+    for path in placed:
+        if path.suffix.lower() == ".lnk" and _set_link_description(path, description):
+            changed = True
+    return changed
+
+
 def remove_all_profile_shortcuts() -> int:
     _require_sendto_support()
-    sendto = _sendto_dir()
     count = 0
-    for entry in sendto.iterdir():
-        if (
-            entry.name.startswith(PROFILE_SHORTCUT_PREFIX)
-            and entry.suffix in (".lnk", ".bat")
-            and _is_tuck_shortcut(entry)
-        ):
+    for entry in _profile_shortcut_entries():
+        if _is_tuck_shortcut(entry):
             entry.unlink()
             count += 1
     return count
@@ -396,30 +539,20 @@ def repair_profile_shortcut(
     profile_name: str,
     action: str = ACTION_START,
     executable_path: str | Path | None = None,
+    *,
+    workflow: str = WORKFLOW_COMPRESSION,
 ) -> bool:
+    """Point a profile's shortcut at this Tuck install under the current name.
+
+    Returns False when the profile has no shortcut or it is already correct.
+    Raises FileExistsError when the new name is taken by a file Tuck does not
+    own or by another profile's shortcut.
+    """
     _require_sendto_support()
-    shortcut_path = _get_profile_shortcut_path(profile_id)
-    batch_path = _get_profile_batch_path(profile_id)
-
-    if batch_path.exists() and _is_tuck_shortcut(batch_path):
-        try:
-            target = _get_target_path(executable_path, action)
-        except (ValueError, TypeError):
-            return False
-        if not target:
-            return False
-        args = _get_args(for_profile=profile_id, action=action)
-        _write_batch_file(batch_path, target, args)
-        logger.info("Repaired profile batch fallback: %s", batch_path)
-        return True
-
-    if not _can_create_shortcuts():
-        logger.debug("pywin32 COM not available; cannot repair .lnk shortcuts")
+    owned = _owned_profile_files(profile_id)
+    if not owned:
         return False
-    if not shortcut_path.exists():
-        return False
-    if not _is_tuck_shortcut(shortcut_path):
-        return False
+    # resolve before touching files so a bad executable path changes nothing
     try:
         target = _get_target_path(executable_path, action)
     except (ValueError, TypeError):
@@ -427,34 +560,41 @@ def repair_profile_shortcut(
     if not target:
         return False
 
-    try:
-        import pythoncom
-        from win32com.client import Dispatch
-
-        pythoncom.CoInitialize()
-        try:
-            shell = Dispatch("WScript.Shell")
-            sc = shell.CreateShortCut(str(shortcut_path))
-            expected_args = " ".join(_get_args(for_profile=profile_id, action=action))
-            if sc.TargetPath == target and (sc.Arguments or "") == expected_args:
-                return False
-            _create_windows_shortcut(
-                target,
-                shortcut_path,
-                arguments=_get_args(for_profile=profile_id, action=action),
-                working_dir=_get_working_dir(),
-                description=f"Compress with Tuck ({profile_name})",
-                shortcut_type="profile",
-                profile_id=profile_id,
+    stem = _choose_profile_stem(profile_id, profile_name, owned)
+    placed, repaired = _move_profile_files(owned, stem)
+    args = _get_args(for_profile=profile_id, action=action)
+    description = _profile_description(profile_name, workflow)
+    marked = _marked_description(_PROFILE_MARKER_TYPE, description, profile_id)
+    for path in placed:
+        if path.suffix.lower() == ".bat":
+            expected = _batch_content(
+                target, args, marker_type=_PROFILE_MARKER_TYPE, profile_id=profile_id
             )
-            logger.info("Repaired profile shortcut: %s", shortcut_path)
-            return True
-        finally:
-            sc = None
-            shell = None
-            pythoncom.CoUninitialize()
-    except Exception:
-        return False
+            if path.read_bytes() != expected:
+                path.write_bytes(expected)
+                logger.info("Repaired profile batch fallback: %s", path)
+                repaired = True
+            continue
+        link = _read_link(path)
+        if (
+            link is not None
+            and link.target == target
+            and link.arguments == _join_arguments(args)
+            and link.description == marked
+        ):
+            continue
+        _create_windows_shortcut(
+            target,
+            path,
+            arguments=args,
+            working_dir=_get_working_dir(),
+            description=description,
+            shortcut_type=_PROFILE_MARKER_TYPE,
+            profile_id=profile_id,
+        )
+        logger.info("Repaired profile shortcut: %s", path)
+        repaired = True
+    return repaired
 
 
 def list_sendto_shortcuts() -> list[dict[str, str]]:
@@ -478,22 +618,19 @@ def list_sendto_shortcuts() -> list[dict[str, str]]:
                 "path": str(existing[0]),
             }
         )
-    for entry in sorted(sendto.iterdir()):
-        if (
-            entry.name.startswith(PROFILE_SHORTCUT_PREFIX)
-            and entry.suffix in (".lnk", ".bat")
-            and _is_tuck_shortcut(entry)
-        ):
-            profile_id = entry.stem[len(PROFILE_SHORTCUT_PREFIX) :]
-            result.append(
-                {
-                    "name": profile_id,
-                    "profile_id": profile_id,
-                    "path": str(entry),
-                    "type": "profile",
-                    "status": "ok",
-                }
-            )
+    for entry in _profile_shortcut_entries():
+        profile_id = _owned_profile_id(entry)
+        if profile_id is None:
+            continue
+        result.append(
+            {
+                "name": entry.stem,
+                "profile_id": profile_id,
+                "path": str(entry),
+                "type": "profile",
+                "status": "ok",
+            }
+        )
     return result
 
 
@@ -520,29 +657,15 @@ def _verify_lnk_ownership(path: Path) -> bool:
         return False
     if not _can_create_shortcuts():
         return False
-    try:
-        import pythoncom
-        from win32com.client import Dispatch
-
-        pythoncom.CoInitialize()
-        try:
-            shell = Dispatch("WScript.Shell")
-            sc = shell.CreateShortCut(str(path))
-            desc = (sc.Description or "").strip()
-            if not desc.startswith(_TUCK_MARKER):
-                return False
-            args = (sc.Arguments or "").lower()
-            if "--sendto-files" not in args:
-                return False
-            target = (sc.TargetPath or "").lower()
-            target_base = Path(target).name if target else ""
-            return "tuck" in target_base or "python" in target_base
-        finally:
-            sc = None
-            shell = None
-            pythoncom.CoUninitialize()
-    except Exception:
+    link = _read_link(path)
+    if link is None:
         return False
+    if not link.description.strip().startswith(_TUCK_MARKER):
+        return False
+    if "--sendto-files" not in link.arguments.lower():
+        return False
+    target_base = Path(link.target.lower()).name if link.target else ""
+    return "tuck" in target_base or "python" in target_base
 
 
 def _verify_bat_ownership(path: Path) -> bool:
@@ -559,6 +682,58 @@ def _join_arguments(arguments: list[str]) -> str:
     return " ".join(f'"{a}"' if " " in a else a for a in arguments)
 
 
+def _marked_description(shortcut_type: str, description: str, profile_id: str = "") -> str:
+    parts = [_TUCK_MARKER, shortcut_type]
+    if profile_id:
+        parts.append(profile_id)
+    parts.append(description)
+    return "|".join(parts)
+
+
+@dataclass(frozen=True)
+class _LinkFields:
+    target: str
+    arguments: str
+    description: str
+
+
+def _read_link(path: Path) -> _LinkFields | None:
+    try:
+        import pythoncom
+        from win32com.client import Dispatch
+
+        pythoncom.CoInitialize()
+        try:
+            shell = Dispatch("WScript.Shell")
+            sc = shell.CreateShortCut(str(path))
+            return _LinkFields(sc.TargetPath or "", sc.Arguments or "", sc.Description or "")
+        finally:
+            sc = None
+            shell = None
+            pythoncom.CoUninitialize()
+    except Exception:
+        return None
+
+
+def _set_link_description(path: Path, description: str) -> bool:
+    import pythoncom
+    from win32com.client import Dispatch
+
+    pythoncom.CoInitialize()
+    try:
+        shell = Dispatch("WScript.Shell")
+        sc = shell.CreateShortCut(str(path))
+        if (sc.Description or "") == description:
+            return False
+        sc.Description = description
+        sc.Save()
+        return True
+    finally:
+        sc = None
+        shell = None
+        pythoncom.CoUninitialize()
+
+
 def _create_windows_shortcut(
     target: str,
     shortcut_path: Path,
@@ -571,12 +746,6 @@ def _create_windows_shortcut(
     import pythoncom
     from win32com.client import Dispatch
 
-    parts = [_TUCK_MARKER, shortcut_type]
-    if profile_id:
-        parts.append(profile_id)
-    parts.append(description)
-    marked_desc = "|".join(parts)
-
     pythoncom.CoInitialize()
     try:
         shell = Dispatch("WScript.Shell")
@@ -584,7 +753,7 @@ def _create_windows_shortcut(
         shortcut.TargetPath = target
         shortcut.Arguments = _join_arguments(arguments)
         shortcut.WorkingDirectory = working_dir or str(Path(target).parent)
-        shortcut.Description = marked_desc
+        shortcut.Description = _marked_description(shortcut_type, description, profile_id)
         shortcut.Save()
     finally:
         shortcut = None
@@ -592,8 +761,10 @@ def _create_windows_shortcut(
         pythoncom.CoUninitialize()
 
 
-def _batch_content(target: str, arguments: list[str], marker_type: str = "") -> bytes:
-    marker = f"{_TUCK_MARKER}|{marker_type}" if marker_type else _TUCK_MARKER
+def _batch_content(
+    target: str, arguments: list[str], marker_type: str = "", profile_id: str = ""
+) -> bytes:
+    marker = "|".join(part for part in (_TUCK_MARKER, marker_type, profile_id) if part)
     return (
         "@echo off\r\n"
         f"REM {marker}\r\n"
@@ -611,7 +782,11 @@ def _batch_content(target: str, arguments: list[str], marker_type: str = "") -> 
 
 
 def _write_batch_file(
-    batch_path: Path, target: str, arguments: list[str], marker_type: str = ""
+    batch_path: Path,
+    target: str,
+    arguments: list[str],
+    marker_type: str = "",
+    profile_id: str = "",
 ) -> None:
     # bytes keep the CRLF line endings exact so repair can compare contents
-    batch_path.write_bytes(_batch_content(target, arguments, marker_type))
+    batch_path.write_bytes(_batch_content(target, arguments, marker_type, profile_id))
