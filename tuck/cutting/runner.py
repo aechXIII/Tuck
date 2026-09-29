@@ -19,7 +19,7 @@ from .exact import ExactEdges, encode_edges, exact_packets
 from .output_timing import output_frame_count
 from .packets import check_cut_cancel, prepare_cut, selected_packets
 from .planner import OUTPUT_FORMATS
-from .verification import is_generated_tag, verify_cut_output
+from .verification import is_generated_tag, verify_cut_output, without_bitrate_box
 
 _MP4_FAMILY = {"mp4", "mov", "3gp"}
 _UNMEASURED_STAGES = {
@@ -111,6 +111,10 @@ def _add_streams(
         if muxer in _MP4_FAMILY and stream.codec_tag:
             # e.g. HEVC stays hvc1, which Apple players need, not hev1
             target.codec_tag = stream.codec_tag
+        codec = stream.codec_context
+        if muxer in _MP4_FAMILY and codec and codec.name == "mov_text" and codec.extradata:
+            # the muxer adds a bitrate box that describes the new file
+            target.codec_context.extradata = without_bitrate_box(codec.name, codec.extradata)
         if edges is not None and stream.type == "video":
             # lists the encoded edges' parameter sets beside the source's
             target.codec_context.extradata = edges.extradata

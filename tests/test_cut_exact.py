@@ -410,6 +410,35 @@ def test_a_container_only_pixel_aspect_is_kept(tools, tmp_path, precision):
         assert container.streams.video[0].sample_aspect_ratio == Fraction(1, 1)
 
 
+@pytest.mark.parametrize(
+    ("precision", "ranges"),
+    [
+        ("keyframes", [(Fraction(41, 20), Fraction(23, 2))]),
+        ("keyframes", [(Fraction(13, 10), Fraction(26, 5)), (Fraction(61, 10), Fraction(99, 10))]),
+        ("keyframes", [(0, 12)]),
+        ("exact", [(Fraction(41, 20), Fraction(23, 2))]),
+    ],
+)
+def test_variable_frame_rate_cuts_keep_their_full_length(tools, tmp_path, precision, ranges):
+    # every third frame is missing, so frames last one or two 30 fps steps; MP4 takes the
+    # length from the last frame's duration and the decode timeline
+    source = create_source(tools, tmp_path / "vfr.mp4", duration=12, gop=30, variant="vfr")
+    output = tmp_path / "cut.mp4"
+    analysis, plan = make_plan(source, ranges, output, rate=Fraction(1), precision=precision)
+    assert plan.issues == ()
+    CutRunner().run(plan)
+    with av.open(str(output)) as container:
+        video = container.streams.video[0]
+        assert video.duration * video.time_base == plan.exported_duration.seconds
+        shown = [f.pts * f.time_base for f in container.decode(video)]
+    elapsed, wanted = Fraction(0), []
+    for segment in plan.segments:
+        start, end = segment.resolved.start.seconds, segment.resolved.end.seconds
+        wanted += [elapsed + t - start for t in analysis.frames if start <= t < end]
+        elapsed += end - start
+    assert shown == wanted
+
+
 @pytest.mark.parametrize("precision", ["keyframes", "exact"])
 def test_joined_durations_are_stored_exactly(tools, tmp_path, precision):
     # with a fine track timescale, the stored duration must match the frames exactly even when

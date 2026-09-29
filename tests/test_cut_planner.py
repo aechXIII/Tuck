@@ -56,6 +56,27 @@ def test_planning_resolves_both_edges_without_mutating_intent(analyzed):
     assert result.output_path == str(Path(analyzed.identity.path).with_name("source_cut.mp4"))
 
 
+def test_a_copy_starts_at_an_open_keyframe_only_at_the_start_of_the_output(analyzed):
+    from dataclasses import replace
+
+    from tuck.cutting.planner import parse_cut_request, plan_cut
+
+    # keyframes every 2 s; pretend all but the first are open, like x264 with open-gop
+    opened = replace(analyzed, open_keyframes=analyzed.keyframes[1:])
+
+    def refused(ranges, precision="keyframes"):
+        segments = [{"start": moment(a), "end": moment(b)} for a, b in ranges]
+        request = parse_cut_request(request_for(opened, segments=segments, precision=precision))
+        return "unsupported_cut" in [i.code for i in plan_cut(request, opened).issues]
+
+    assert not refused([(Fraction(21, 10), 6)])
+    assert refused([(0, 1), (2, 6)])
+    assert not refused([(2, 6)], "exact")
+    # an encoded edge in front of the copy counts as other pictures
+    assert refused([(1, 6)], "exact")
+    assert refused([(0, 1), (2, 6)], "exact")
+
+
 def test_fingerprint_changes_with_intent_but_not_ui_request_id(analyzed):
     from tuck.cutting.planner import parse_cut_request, plan_cut
 

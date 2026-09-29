@@ -94,6 +94,8 @@ def test_h264_open_gop_keyframes_are_usable_but_unverified(tools, encoders, tmp_
     video = read_timeline(str(path), Event()).video
     assert len(video.keyframes) >= 2
     assert video.unverified_keyframes
+    # only the first picture is IDR; the rest can start a file but not follow other pictures
+    assert video.open_keyframes == video.keyframes[1:]
 
 
 def test_variable_frame_rate_keeps_every_frame_time(tools, encoders, tmp_path):
@@ -135,6 +137,7 @@ def test_hevc_cra_in_matroska_is_a_verified_entry_point(tools, encoders, tmp_pat
     assert timeline.format_name.startswith("matroska")
     assert video.codec == "hevc"
     assert len(video.keyframes) == 3 and not video.unverified_keyframes
+    assert video.open_keyframes == ()
     # millisecond container timestamps make even a steady 30 fps uneven
     assert len(video.frames) == 90 and not video.constant_rate
 

@@ -489,7 +489,13 @@ def exact_packets(
     time_base = Fraction(base)
     frames = analysis.frames
     ends = (*frames[1:], analysis.duration.seconds)
-    decoding = decode_times(output_frame_times(plan, analysis), analysis.reorder_frames)
+    presented = output_frame_times(plan, analysis)
+    decoding = decode_times(presented, analysis.reorder_frames)
+    last_length = (
+        to_ticks(plan.exported_duration.seconds, time_base) - to_ticks(presented[-1], time_base)
+        if presented
+        else 0
+    )
     # pieces of the output in ticks: (start, end, encoded region or None, source-to-output)
     pieces: list[tuple[int, int, ExactRegion | None, Fraction]] = []
     elapsed = Fraction(0)
@@ -526,6 +532,9 @@ def exact_packets(
         packet.time_base = base
         packet.pts = pts
         packet.dts = to_ticks(decoding[decoded], time_base)
+        if decoded == len(decoding) - 1:
+            # the last picture decoded lasts as long as the last frame shown; see decode_times
+            packet.duration = last_length
         decoded += 1
         return packet
 

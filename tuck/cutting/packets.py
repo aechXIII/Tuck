@@ -4,6 +4,7 @@ import math
 from bisect import bisect_right
 from collections.abc import Iterator
 from fractions import Fraction
+from itertools import pairwise
 from pathlib import Path
 from threading import Event
 
@@ -175,6 +176,9 @@ def selected_packets(
     starts: list[int] = []
     ends: list[int] = []
     shifts: list[Fraction] = []
+    # output time -> how long that frame shows, both in ticks
+    lengths: dict[int, int] = {}
+    last_length = 0
     presented = output_frame_times(plan, analysis)
     decoding = decode_times(presented, analysis.reorder_frames)
     decoded = 0
@@ -202,6 +206,11 @@ def selected_packets(
                 starts = [ticks_from(s.resolved.start.seconds + origin, base) for s in segments]
                 ends = [ticks_from(s.resolved.end.seconds + origin, base) for s in segments]
                 shifts = [(offset - origin) / base for offset in offsets]
+                # a frame shows until the next kept frame or the end; an MP4 source stores
+                # gaps between decode times instead, and the muxer ends the file from them
+                shown = [to_ticks(time, base) for time in (*presented, elapsed)]
+                lengths = {start: end - start for start, end in pairwise(shown)}
+                last_length = shown[-1] - shown[-2] if presented else 0
         if packet.is_corrupt:
             raise CutAnalysisError("cut_failed", "A media packet cannot be copied safely.")
         if stream_index == analysis.video_index:
@@ -212,6 +221,11 @@ def selected_packets(
                 raise CutAnalysisError("plan_changed", "The video frames changed since analysis.")
             shift = shifts[index]
             packet.pts = round_div(pts * shift.denominator + shift.numerator, shift.denominator)
+            length = lengths.get(packet.pts)
+            if length is None:
+                raise CutAnalysisError("plan_changed", "The video frames changed since analysis.")
+            # the last picture decoded lasts as long as the last frame shown; see decode_times
+            packet.duration = last_length if decoded == len(decoding) - 1 else length
             packet.dts = to_ticks(decoding[decoded], base)
             decoded += 1
             yield packet

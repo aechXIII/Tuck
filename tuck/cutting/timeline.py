@@ -94,6 +94,9 @@ class VideoTimeline:
     declared_video_duration: Fraction | None
     # how many frames the decoder holds back before showing one
     reorder_frames: int = 0
+    # keyframes the codec rules show are not clean entry points, such as H.264 I-frames that
+    # are not IDR: a decoder can start at one, but joining one after other pictures breaks
+    open_keyframes: tuple[Fraction, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -167,6 +170,7 @@ class _VideoScan:
         self.decode_times: list[int | None] = []
         self.durations: dict[int, int] = {}
         self.key_times: list[int] = []
+        self.open_key_times: list[int] = []
         self.unverified = False
         self.decode_delay = 0
         self.all_intra = True
@@ -190,6 +194,8 @@ class _VideoScan:
             self.key_times.append(pts)
             clean = is_clean_entry(self.codec, bytes(packet), self.length_size)
             self.unverified |= clean is not True
+            if clean is False:
+                self.open_key_times.append(pts)
 
     def timeline(self, video: VideoStream) -> VideoTimeline:
         base = self.base
@@ -230,6 +236,9 @@ class _VideoScan:
             if video.duration is not None and video.time_base is not None
             else None,
             _reorder_depth(self.decode_order, presented),
+            ()
+            if self.all_intra
+            else tuple((t - origin) * base for t in sorted(set(self.open_key_times))),
         )
 
 

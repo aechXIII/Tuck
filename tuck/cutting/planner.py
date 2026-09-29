@@ -262,6 +262,8 @@ def plan_cut(request: CutRequest, analysis: CutAnalysis) -> CutPlan:
         )
     keys = [t.seconds for t in analysis.keyframes]
     ends = [t.seconds for t in analysis.safe_ends]
+    open_keys = {t.seconds for t in analysis.open_keyframes}
+    joins_open_key = False
     edges = _frame_edges(analysis)
     frames = edges[:-1]
     duration = analysis.duration.seconds
@@ -314,9 +316,14 @@ def plan_cut(request: CutRequest, analysis: CutAnalysis) -> CutPlan:
             moved = 0
         else:
             first, last = keys[left], ends[right]
+            copy_start = first
             kind = "at_start" if start == first == 0 else "keyframe" if start == first else "moved"
             # frames that start between the copyable end and the requested end are left out
             moved = bisect_left(frames, end) - bisect_left(frames, last)
+        # an open keyframe decodes cleanly only when nothing comes before it in the output;
+        # after a kept part or an encoded edge the decoder drops or reorders frames
+        if copy_start is not None and copy_start in open_keys and (kept or first < copy_start):
+            joins_open_key = True
         kept.append(len(segments))
         ranges.append((first, last))
         segments.append(
@@ -329,6 +336,15 @@ def plan_cut(request: CutRequest, analysis: CutAnalysis) -> CutPlan:
             )
         )
         elapsed += last - first
+    if joins_open_key:
+        issues.append(
+            CutIssue(
+                "unsupported_cut",
+                "This video's keyframes cannot be joined without damaging the picture. "
+                "Keep one segment with On keyframes, or use Compress.",
+                "precision" if exact else "segments",
+            )
+        )
     tracks, track_issues, notes = plan_tracks(analysis, ranges, request.include_audio)
     issues.extend(track_issues)
     audio = next((t for t in tracks if t.kind == "audio" and t.keep), None)

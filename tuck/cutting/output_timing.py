@@ -44,12 +44,16 @@ def decode_times(presented: list[Fraction], reorder: int) -> list[Fraction]:
 
     The k-th decoded picture takes the (k - reorder)-th presentation time, so decode times
     rise steadily and never pass the presentation time of a picture the decoder holds back.
+    The first pictures decode ahead by as long as the last `reorder` frames show, so with
+    the last picture lasting as long as the last frame, decoding spans exactly as long as
+    presentation: MP4 takes the video's length from its decode times.
     """
-    if not presented:
-        return []
-    step = presented[1] - presented[0] if len(presented) > 1 else Fraction(1, 30)
-    lead = [presented[0] - (reorder - k) * step for k in range(min(reorder, len(presented)))]
-    return lead + presented[: len(presented) - len(lead)]
+    count = min(reorder, len(presented) - 1)
+    if count <= 0:
+        return presented[:]
+    lead = presented[-1] - presented[-1 - count]
+    ahead = [presented[0] - (count - k) * lead / count for k in range(count)]
+    return ahead + presented[: len(presented) - count]
 
 
 def round_div(numerator: int, denominator: int) -> int:

@@ -73,6 +73,31 @@ def is_generated_tag(key: str, format_name: str = "") -> bool:
     )
 
 
+# the tx3g sample entry's fixed fields, before its child boxes
+_TX3G_FIELDS = 30
+
+
+def without_bitrate_box(codec: str, extradata: bytes) -> bytes:
+    """mov_text setup without the `btrt` box that the MP4 muxer writes for each new file.
+
+    The MP4 demuxer passes the whole tx3g sample entry on, including the source's box, so
+    copying it unchanged would stack one more bitrate box in the output on every cut.
+    """
+    if codec != "mov_text" or len(extradata) < _TX3G_FIELDS:
+        return extradata
+    kept = [extradata[:_TX3G_FIELDS]]
+    position = _TX3G_FIELDS
+    while position < len(extradata):
+        size = int.from_bytes(extradata[position : position + 4], "big")
+        # anything that is not a clean list of boxes is compared and copied as it is
+        if size < 8 or position + size > len(extradata):
+            return extradata
+        if extradata[position + 4 : position + 8] != b"btrt":
+            kept.append(extradata[position : position + size])
+        position += size
+    return b"".join(kept)
+
+
 def plan_frame_tolerance(plan: CutPlan, analysis: CutAnalysis) -> Fraction:
     """Containers without stored frame durations may count the last frame as zero long."""
     if analysis.format_name.split(",")[0] in {"mov", "mp4"}:
@@ -146,7 +171,10 @@ def _verify_streams(
             if source.index == analysis.video_index and video_extradata is not None:
                 wanted = video_extradata
             found = target.codec_context.extradata if target.codec_context else None
-            if (wanted or b"") != (found or b""):
+            codec = source.codec_context.name if source.codec_context else ""
+            if without_bitrate_box(codec, wanted or b"") != without_bitrate_box(
+                codec, found or b""
+            ):
                 raise _failed("the codec configuration changed.")
         if any(
             outgoing.metadata.get(key) != value

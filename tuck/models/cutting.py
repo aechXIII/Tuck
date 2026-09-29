@@ -189,6 +189,8 @@ class CutAnalysis:
     reorder_frames: int = 0
     # facts that could not be confirmed; the cut still works and says so
     unverified: tuple[CutIssue, ...] = ()
+    # keyframes a copy may start the output at, but never join after other pictures
+    open_keyframes: tuple[MediaTime, ...] = ()
 
 
 @dataclass(frozen=True)

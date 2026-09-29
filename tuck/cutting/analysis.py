@@ -444,6 +444,7 @@ def _analysis(
         video_index=video.index,
         reorder_frames=video.reorder_frames,
         unverified=unverified,
+        open_keyframes=tuple(MediaTime.from_seconds(k) for k in video.open_keyframes),
     )
     on_progress(AnalysisProgress(1, result.duration, result.keyframes))
     return result

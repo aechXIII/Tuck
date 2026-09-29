@@ -1,18 +1,20 @@
 import subprocess
 from fractions import Fraction
+from pathlib import Path
 from threading import Event
 
 import av
 import pytest
-from media.cut_fixtures import find_tools
+from media.cut_fixtures import create_source, find_tools
 
 from tuck.bridge_serialization import queue_item_dict
-from tuck.cutting.analysis import analyze_source
+from tuck.cutting.analysis import CutAnalysisError, analyze_source
 from tuck.cutting.bitstream import HevcConfig
 from tuck.cutting.exact import exact_media_reason
 from tuck.cutting.planner import parse_cut_request, plan_cut
 from tuck.cutting.runner import CutRunner
 from tuck.cutting.serialization import cut_plan_preview_dict
+from tuck.cutting.verification import without_bitrate_box
 from tuck.models.cutting import MediaTime
 from tuck.queue import QueueItem
 
@@ -276,7 +278,7 @@ def test_open_gop_starts_are_cut_and_marked_not_checked(tools, encoders, tmp_pat
         "-x264-params",
         "open-gop=1:b-adapt=0",
     )
-    analysis, plan, output = cut(source, [(1, 3), (4, 6)])
+    analysis, plan, output = cut(source, [(1, 3)])
     assert [note.code for note in plan.unverified] == ["unverified_start"]
     assert frame_count(output) == kept_frames(analysis, plan)
     # the note reaches the Inspector and the queue so the export is not presented as checked
@@ -285,6 +287,87 @@ def test_open_gop_starts_are_cut_and_marked_not_checked(tools, encoders, tmp_pat
         {"code": "unverified_start", "message": message, "field": None, "title": ""}
     ]
     assert queue_item_dict(QueueItem(plan=plan))["unverified"] == [message]
+
+
+# 12 s, keyframes every second; only the first is an IDR picture
+OPEN_GOP_JOINS = [
+    ("keyframes", [(Fraction(13, 10), Fraction(26, 5)), (Fraction(61, 10), Fraction(99, 10))]),
+    ("exact", [(Fraction(1, 2), Fraction(31, 10))]),
+    ("exact", [(Fraction(13, 10), Fraction(26, 5)), (Fraction(61, 10), Fraction(99, 10))]),
+]
+
+
+@pytest.mark.parametrize(("precision", "ranges"), OPEN_GOP_JOINS)
+def test_open_gop_joins_are_refused_before_copying(tools, encoders, tmp_path, precision, ranges):
+    need(encoders, "libx264")
+    # after other pictures, a decoder drops or reorders the frames that follow an open keyframe
+    source = create_source(tools, tmp_path / "open.mp4", duration=12, gop=30, variant="open_gop")
+    analysis = analysis_of(source)
+    request = parse_cut_request(
+        {
+            "operation": "cut",
+            "source": str(source),
+            "precision": precision,
+            "segments": [
+                {
+                    "start": MediaTime.from_seconds(a).to_dict(),
+                    "end": MediaTime.from_seconds(b).to_dict(),
+                }
+                for a, b in ranges
+            ],
+        }
+    )
+    plan = plan_cut(request, analysis)
+    issue = next(i for i in plan.issues if i.code == "unsupported_cut")
+    assert issue.message == (
+        "This video's keyframes cannot be joined without damaging the picture. "
+        "Keep one segment with On keyframes, or use Compress."
+    )
+    with pytest.raises(CutAnalysisError, match="not ready"):
+        CutRunner().run(plan)
+    assert not Path(plan.output_path).exists()
+
+
+def test_open_gop_cut_that_starts_the_output_keeps_every_frame(tools, encoders, tmp_path):
+    need(encoders, "libx264")
+    source = create_source(tools, tmp_path / "open.mp4", duration=12, gop=30, variant="open_gop")
+    _, plan, output = cut(source, [(Fraction(1, 2), Fraction(31, 10))])
+    assert plan.segments[0].resolved.start.seconds == 1
+    assert decoded_pictures(output) == decoded_pictures(source)[30:91]
+
+
+@pytest.mark.parametrize(
+    ("precision", "ranges"),
+    [("keyframes", [(0, 12)]), ("exact", [(Fraction(41, 20), Fraction(23, 2))])],
+)
+def test_mp4_subtitles_keep_one_bitrate_box(tools, encoders, tmp_path, precision, ranges):
+    need(encoders, "libx264")
+    source = create_source(tools, tmp_path / "subs.mp4", duration=12, gop=30, variant="subtitle")
+    _, _, output = cut(source, ranges, precision)
+    with av.open(str(source)) as original, av.open(str(output)) as result:
+        source_setup = original.streams.subtitles[0].codec_context.extradata
+        setup = result.streams.subtitles[0].codec_context.extradata
+        shown = [p for p in result.demux(result.streams.subtitles[0]) if p.size]
+    # the muxer writes a bitrate box for the new file; the source's is not copied beside it
+    assert setup.count(b"btrt") == 1
+    assert without_bitrate_box("mov_text", setup) == without_bitrate_box("mov_text", source_setup)
+    # each sample is a 2-byte text length and the text; empty ones fill gaps between cues
+    assert [bytes(p)[2:] for p in shown if p.size > 2] == [b"Retain this subtitle"]
+
+
+def test_only_whole_bitrate_boxes_are_removed_from_mov_text_setup():
+    fields = bytes(30)
+    font = (18).to_bytes(4, "big") + b"ftab" + bytes(10)
+    bitrate = (20).to_bytes(4, "big") + b"btrt" + bytes(12)
+    assert without_bitrate_box("mov_text", fields + font + bitrate + bitrate) == fields + font
+    damaged = fields + font + (40).to_bytes(4, "big") + b"btrt"
+    assert without_bitrate_box("mov_text", damaged) == damaged
+    assert without_bitrate_box("h264", fields + bitrate) == fields + bitrate
+
+
+def decoded_pictures(path):
+    with av.open(str(path)) as container:
+        return [frame.to_ndarray().tobytes() for frame in container.decode(video=0)]
 
 
 def probe_video(tools, path, entries):
