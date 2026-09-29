@@ -35,6 +35,18 @@ import {
 import { confirmToast, toast } from "../editor/toast.ts";
 import { lutSettings } from "../export/lut-controls.ts";
 import { HIDEABLE_PARTS, hiddenParts, isTaskName, visibleTasks, type HideablePart, type TaskName } from "./visibility.ts";
+import {
+  bindingFromEvent,
+  bindingKeys,
+  commandsUsing,
+  displayShortcut,
+  editableCommands,
+  isAssignableBinding,
+  sameBinding,
+  setShortcutOverrides,
+  shortcutOverrides,
+  type EditableCommand,
+} from "../shortcuts/shortcuts.ts";
 import type { EditorSession } from "../editor/session.ts";
 
 const esc = escapeHtml;
@@ -141,6 +153,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       general: "General",
       output: "Output & naming",
       profiles: "Profiles",
+      keyboard: "Keyboard shortcuts",
       explorer: "File Explorer",
       system: "System & support",
     };
@@ -152,7 +165,8 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     el("settings-page").scrollTop = 0;
     actionBar.className = `settings-actions ${actions.split ? "split" : ""}`;
     actionBar.innerHTML = actions.autosave
-      ? `<span class="settings-autosave" id="settings-unsaved" role="status">${AUTOSAVE_NOTE}</span>`
+      ? `<span class="settings-autosave" id="settings-unsaved" role="status">${AUTOSAVE_NOTE}</span>${
+        actions.html ? `<span class="settings-action-spacer"></span>${actions.html}` : ""}`
       : actions.html
       ? actions.plain
         ? actions.html
@@ -164,7 +178,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       : "";
     const integrations = byId("settings-integrations");
     if (integrations) integrations.hidden = !shouldShowSendTo(caps);
-    for (const name of ["general", "output", "profiles", "explorer", "system"]) {
+    for (const name of ["general", "output", "profiles", "keyboard", "explorer", "system"]) {
       const button = byId(`settings-nav-${name}`);
       if (!button) continue;
       const active = name === page;
@@ -1215,6 +1229,9 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
           '<span class="settings-action-spacer"></span>' +
           settingButton("New profile", "new-profile", true),
       };
+    } else if (settingsPage === "keyboard") {
+      content = keyboardSettingsHtml();
+      actions = { autosave: true, html: settingButton("Reset all", "reset-shortcuts") };
     } else if (settingsPage === "explorer") {
       content = explorerSettingsHtml();
       actions = { html: settingButton("Add profile shortcut", "add-shortcut", true) };
@@ -1231,6 +1248,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     if (settingsPage === "output") updateExampleOutput();
     if (settingsPage === "profiles") await refreshProfileManagerList(settingsFilter);
     if (settingsPage === "explorer" && shouldShowSendTo(caps)) await refreshShortcutList();
+    if (settingsPage === "keyboard") renderKeyboardList();
     if (settingsPage === "system")
       select("set-encoder-cache-days").value = String(s.encoder_cache_days || 0);
     if (["general", "output", "system"].indexOf(settingsPage) >= 0) captureSettingsSnapshot();
@@ -1269,6 +1287,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
   }
 
   function closeSettingsWorkspace(): void {
+    stopCapture();
     document.body.classList.remove("settings-open");
     el("editor-shell").inert = false;
     if (
@@ -1462,6 +1481,181 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     if (cut && byId("ex-cut-out")) el("ex-cut-out").textContent = `video${cut.value.trim() || "_cut"}.mp4`;
   }
 
+  // Keyboard page: each action can take new keys; they apply and are saved straight away
+  let stopCapture: () => void = () => {};
+
+  function keyboardSettingsHtml(): string {
+    return `<div class="settings-card">
+    <p class="settings-card-copy">Choose Change, then press the keys you want. Esc cancels.</p>
+    <div id="kb-list" class="kb-list"></div>
+    <span id="kb-status" class="sr-only" role="status"></span>
+  </div>`;
+  }
+
+  function keycaps(bindings: readonly string[]): HTMLElement {
+    const keys = document.createElement("span");
+    keys.className = "kbs-bindings kb-keys";
+    if (!bindings.length) keys.appendChild(elementWithText("span", "No keys", "kb-none"));
+    bindings.forEach((binding, index) => {
+      if (index) keys.appendChild(elementWithText("span", "or", "kbs-or"));
+      const chord = document.createElement("span");
+      chord.className = "kbs-chord";
+      bindingKeys(binding).forEach((key, keyIndex) => {
+        if (keyIndex) chord.appendChild(elementWithText("span", "+", "kbs-plus"));
+        chord.appendChild(elementWithText("kbd", key));
+      });
+      keys.appendChild(chord);
+    });
+    keys.setAttribute("aria-hidden", "true");
+    const wrap = document.createElement("span");
+    wrap.className = "kb-keys-wrap";
+    wrap.append(keys, elementWithText("span", bindings.length ? displayShortcut(bindings) : "No keys", "sr-only"));
+    return wrap;
+  }
+
+  function renderKeyboardList(): void {
+    stopCapture();
+    const list = byId("kb-list");
+    if (!list) return;
+    list.replaceChildren();
+    const byCategory = new Map<string, EditableCommand[]>();
+    for (const command of editableCommands()) {
+      byCategory.set(command.category, [...(byCategory.get(command.category) ?? []), command]);
+    }
+    for (const [category, items] of byCategory) {
+      const section = document.createElement("section");
+      section.className = "kb-section";
+      section.appendChild(elementWithText("h3", category, "settings-card-title"));
+      for (const command of items) {
+        const row = document.createElement("div");
+        row.className = "kb-row";
+        row.dataset.command = command.id;
+        row.appendChild(elementWithText("span", command.label, "kb-label"));
+        row.appendChild(keycaps(command.bindings));
+        const actions = document.createElement("span");
+        actions.className = "kb-actions";
+        const change = shortcutButton("Change", () => captureShortcut(command, row, change));
+        change.setAttribute("aria-label", `Change keys for ${command.label}`);
+        actions.appendChild(change);
+        if (command.changed) {
+          const reset = shortcutButton("Reset", () => void saveShortcuts(withoutOverride(command.id), `${command.label} is back to its default keys.`));
+          reset.setAttribute("aria-label", `Reset ${command.label} to its default keys`);
+          actions.appendChild(reset);
+        }
+        row.appendChild(actions);
+        section.appendChild(row);
+      }
+      list.appendChild(section);
+    }
+    const resetAll = document.querySelector<HTMLButtonElement>('[data-settings-click="reset-shortcuts"]');
+    if (resetAll) resetAll.disabled = !Object.keys(shortcutOverrides()).length;
+  }
+
+  function withoutOverride(id: string): Record<string, string[]> {
+    const next = shortcutOverrides();
+    delete next[id];
+    return next;
+  }
+
+  function announceShortcut(message: string): void {
+    const status = byId("kb-status");
+    if (status) status.textContent = message;
+  }
+
+  function captureShortcut(command: EditableCommand, row: HTMLElement, button: HTMLButtonElement): void {
+    stopCapture();
+    row.classList.add("capturing");
+    button.textContent = "Press keys…";
+    button.setAttribute("aria-pressed", "true");
+    announceShortcut(`Press the new keys for ${command.label}. Esc cancels.`);
+    const onKey = (event: KeyboardEvent): void => {
+      // the page keeps these keys; nothing else in Tuck reacts while keys are being chosen
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (event.key === "Escape") {
+        renderKeyboardList();
+        announceShortcut("Keys unchanged.");
+        row.ownerDocument.querySelector<HTMLButtonElement>(`[data-command="${command.id}"] button`)?.focus();
+        return;
+      }
+      const binding = bindingFromEvent(event);
+      if (!binding) return;
+      if (!isAssignableBinding(binding)) {
+        announceShortcut("Those keys cannot be used for shortcuts. Try other keys.");
+        return;
+      }
+      stopCapture();
+      offerShortcut(command, binding, row);
+    };
+    window.addEventListener("keydown", onKey, true);
+    stopCapture = () => {
+      window.removeEventListener("keydown", onKey, true);
+      stopCapture = () => {};
+    };
+  }
+
+  function offerShortcut(command: EditableCommand, binding: string, row: HTMLElement): void {
+    const keys = displayShortcut([binding]);
+    const next = shortcutOverrides();
+    const taken = commandsUsing(binding, command.id);
+    for (const other of taken) {
+      next[other.id] = other.bindings.filter((existing) => !sameBinding(existing, binding));
+    }
+    next[command.id] = [binding];
+    const done = `${command.label} now uses ${keys}.`;
+    if (!taken.length) {
+      void saveShortcuts(next, done, command.id);
+      return;
+    }
+    // the keys already belong to something else; ask before moving them
+    row.classList.remove("capturing");
+    const change = row.querySelector<HTMLButtonElement>(".kb-actions button");
+    if (change) {
+      change.textContent = "Change";
+      change.setAttribute("aria-pressed", "false");
+    }
+    const note = document.createElement("div");
+    note.className = "kb-conflict";
+    note.setAttribute("role", "alert");
+    note.appendChild(elementWithText("span", `${keys} is used by ${taken.map((item) => item.label).join(", ")}.`));
+    const use = shortcutButton("Use here", () => void saveShortcuts(next, `${done} ${taken.map((item) => item.label).join(", ")} lost it.`, command.id));
+    const cancel = shortcutButton("Cancel", () => {
+      renderKeyboardList();
+      announceShortcut("Keys unchanged.");
+    });
+    note.append(use, cancel);
+    row.after(note);
+    use.focus();
+  }
+
+  async function saveShortcuts(next: Record<string, string[]>, message: string, focusId = ""): Promise<void> {
+    const previous = shortcutOverrides();
+    // a choice that matches the defaults is simply the default again
+    for (const command of editableCommands()) {
+      const chosen = next[command.id];
+      if (chosen && chosen.length === command.defaults.length && chosen.every((binding, index) => sameBinding(binding, command.defaults[index] ?? ""))) {
+        delete next[command.id];
+      }
+    }
+    setShortcutOverrides(next);
+    const r = await legacyBackendResult(client().saveSettings({ shortcut_overrides: next } as never));
+    if (r.ok) {
+      session.appSettings.shortcut_overrides = next;
+      announceShortcut(message);
+    } else {
+      setShortcutOverrides(previous);
+      toast(r.error ?? "Could not save the keyboard shortcuts.", "err");
+    }
+    renderKeyboardList();
+    if (focusId) document.querySelector<HTMLButtonElement>(`[data-command="${focusId}"] button`)?.focus();
+  }
+
+  function resetAllShortcuts(): void {
+    confirmToast("Every action goes back to its default keys.", () => {
+      void saveShortcuts({}, "Every shortcut is back to its default keys.");
+    }, { title: "Reset keyboard shortcuts?", confirmLabel: "Reset all", cancelLabel: "Keep my keys" });
+  }
+
   interface ShortcutRecord {
     readonly type?: string;
     readonly kind?: string;
@@ -1616,6 +1810,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         "import-profiles": () => void importProfiles(),
         "new-profile": () => void newProfile(),
         "add-shortcut": () => void addShortcutFlow(),
+        "reset-shortcuts": () => resetAllShortcuts(),
         "open-explorer": () => void open("explorer"),
         "profile-task": (target) => peSetTask((target.dataset.settingsValue as Workflow) ?? "compression"),
         "profile-size": (target) => peSetSize(target.dataset.settingsValue ?? "50"),

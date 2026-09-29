@@ -8,6 +8,7 @@ import { mediaSeconds } from "../export/cut-state.ts";
 import * as Keyframes from "./keyframes.ts";
 import * as SegmentEditing from "./segments.ts";
 import * as TimelineCore from "./timeline-core.ts";
+import { withShortcut } from "../shortcuts/shortcuts.ts";
 
 export interface TimelineHost {
   session: EditorSession;
@@ -568,7 +569,7 @@ function paintTrimChrome() {
     // stays focusable while full, so keyboard users can reach the reason and pressing it says why
     addButton.disabled = false;
     addButton.setAttribute("aria-disabled", canAdd ? "false" : "true");
-    addButton.dataset.tip = canAdd ? "Add segment (A)" : NO_ROOM_FOR_SEGMENT;
+    addButton.dataset.tip = canAdd ? withShortcut("Add segment", "timeline.add-segment") : NO_ROOM_FOR_SEGMENT;
   }
   paintCutOverlay();
   if (host.AudioTimeline && host.AudioTimeline.paintSource)

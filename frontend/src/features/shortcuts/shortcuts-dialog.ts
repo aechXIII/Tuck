@@ -7,7 +7,7 @@ import {
   resultLabel,
   search,
   sectionColumns,
-  sections,
+  currentSections,
   shouldUseSingleColumn,
   spokenBindingText,
   tabbableControls,
@@ -46,6 +46,8 @@ export interface ShortcutDialogHost {
   ) => void;
   prepareModalBox: (className: string) => HTMLElement;
   closeMod: () => void;
+  // opens the Settings page where shortcuts are changed
+  changeShortcuts?: () => void;
 }
 
 export interface ShortcutDialogApi {
@@ -102,6 +104,7 @@ export function installShortcutDialog(host: ShortcutDialogHost): ShortcutDialogA
         <h2 id="kbs-dialog-title">Keyboard shortcuts</h2>
         <p>Browse the keyboard or search by action and key.</p>
       </div>
+      ${host.changeShortcuts ? '<button type="button" class="btn2 kbs-change" id="kbs-change">Change shortcuts</button>' : ""}
       <button type="button" class="kbs-close" id="kbs-dialog-close" aria-label="Close keyboard shortcuts">
         <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3l10 10M13 3L3 13"></path></svg>
       </button>
@@ -122,7 +125,7 @@ export function installShortcutDialog(host: ShortcutDialogHost): ShortcutDialogA
     const grid = byId("kbs-grid");
     if (!grid) return;
 
-    const result = search(sections, query);
+    const result = search(currentSections(), query);
     const sourceColumns = sectionColumns(result.sections, false);
     const singleColumn = shouldUseSingleColumn(
       result.query,
@@ -230,6 +233,11 @@ export function installShortcutDialog(host: ShortcutDialogHost): ShortcutDialogA
     box.removeEventListener("keydown", trapFocus);
     box.addEventListener("keydown", trapFocus);
     byId("kbs-dialog-close")!.addEventListener("click", host.closeMod);
+    const change = host.changeShortcuts;
+    if (change) byId("kbs-change")?.addEventListener("click", () => {
+      host.closeMod();
+      change();
+    });
     byId("kbs-search-clear")!.addEventListener("click", clearSearch);
     const input = byId("kbs-search-input") as HTMLInputElement | null;
     input!.addEventListener("input", () => {

@@ -52,6 +52,7 @@ import { createEditorSession, type EditorSession } from "./session.ts";
 import type { EditorClip } from "./types.ts";
 import type { Segment } from "../../types/foundation.ts";
 import { hiddenParts } from "../settings/visibility.ts";
+import { onShortcutsChanged, setShortcutOverrides, syncShortcutHints } from "../shortcuts/shortcuts.ts";
 
 interface LaunchData {
   readonly files?: readonly unknown[];
@@ -427,7 +428,10 @@ export function installEditorRuntime(
       return box;
     },
     closeMod,
+    changeShortcuts: () => void settings.open("keyboard"),
   });
+  // buttons show the keys the user chose, and follow any later change
+  onShortcutsChanged(() => syncShortcutHints(windowRef.document));
   configureModalHandlers({
     closeMod: () => {
       windowRef.document.getElementById("mod-overlay")?.classList.remove("open");
@@ -728,6 +732,7 @@ export function installEditorRuntime(
     encoding.updateSizePresets(10);
     try {
       await encoding.loadSettings();
+      setShortcutOverrides(session.appSettings.shortcut_overrides);
       panels.applyVisibility(hiddenParts(session.appSettings.hidden_ui));
       encoding.openTask(launch.task, true);
       timeline.setSnap(session.appSettings.timeline_snap !== false);

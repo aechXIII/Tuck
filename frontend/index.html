@@ -58,6 +58,8 @@
         type="button"
         class="tb-command-btn"
         id="shortcuts-toggle"
+        data-shortcut-commands="help.shortcuts"
+        data-shortcut-label="Keyboard shortcuts"
         data-action-click="shortcuts-open"
         data-tip="Keyboard shortcuts (? or Ctrl+/)"
         aria-label="Keyboard shortcuts"
@@ -211,6 +213,8 @@
               type="button"
               class="pbtn"
               id="btn-frame-prev"
+              data-shortcut-commands="playback.step-backward"
+              data-shortcut-label="Previous frame"
               data-action-click="player-step-frame"
               data-action-value="-1"
               aria-label="Previous frame"
@@ -226,6 +230,8 @@
               type="button"
               class="pbtn"
               id="btn-play"
+              data-shortcut-commands="playback.toggle"
+              data-shortcut-label="Play / pause"
               data-action-click="player-toggle-play"
               aria-label="Play/Pause"
               aria-keyshortcuts="Space"
@@ -238,6 +244,8 @@
               type="button"
               class="pbtn"
               id="btn-frame-next"
+              data-shortcut-commands="playback.step-forward"
+              data-shortcut-label="Next frame"
               data-action-click="player-step-frame"
               data-action-value="1"
               aria-label="Next frame"
@@ -1048,6 +1056,7 @@
           <button
             type="button"
             id="btn-segment-add"
+            data-shortcut-commands="timeline.add-segment"
             class="dock-text-btn timeline-primary-btn"
             data-action-click="timeline-add-segment"
             data-tip="Add segment (A)"
@@ -1064,6 +1073,8 @@
           <button
             type="button"
             id="btn-seq-split"
+            data-shortcut-commands="timeline.split"
+            data-shortcut-label="Split"
             class="dock-text-btn timeline-primary-btn"
             data-action-click="timeline-split"
             data-tip="Split (S)"
@@ -1080,6 +1091,7 @@
           <button
             type="button"
             id="btn-segment-remove"
+            data-shortcut-commands="edit.delete-selection"
             class="dock-text-btn"
             data-action-click="timeline-remove-segment"
             data-tip="Remove segment"
@@ -1116,6 +1128,7 @@
           <button
             type="button"
             id="audio-fragment-mute"
+            data-shortcut-commands="audio.toggle-fragment-mute"
             class="dock-text-btn hid"
             data-action-click="audio-toggle-fragment-mute"
             aria-pressed="false"
@@ -1197,6 +1210,8 @@
             <button
               type="button"
               id="btn-timeline-fit"
+              data-shortcut-commands="timeline.fit"
+              data-shortcut-label="Fit timeline"
               class="dock-fit-btn"
               data-action-click="timeline-fit"
               data-tip="Fit timeline (Ctrl+0)"
@@ -1215,6 +1230,8 @@
               data-action-click="timeline-nudge-zoom"
               data-action-value="-1"
               data-tip="Zoom out (Ctrl+-)"
+              data-shortcut-commands="timeline.zoom-out"
+              data-shortcut-label="Zoom out"
               aria-label="Zoom out"
               aria-keyshortcuts="Control+-"
               disabled
@@ -1238,6 +1255,8 @@
               data-action-click="timeline-nudge-zoom"
               data-action-value="1"
               data-tip="Zoom in (Ctrl+=)"
+              data-shortcut-commands="timeline.zoom-in"
+              data-shortcut-label="Zoom in"
               aria-label="Zoom in"
               aria-keyshortcuts="Control+="
               disabled
@@ -1322,6 +1341,7 @@
           <div
             class="tl-handle hid"
             id="tl-in"
+            data-shortcut-commands="timeline.adjust-trim-backward timeline.adjust-trim-forward timeline.previous-keyframe timeline.next-keyframe"
             role="slider"
             aria-label="Active segment start"
             aria-keyshortcuts="ArrowLeft ArrowRight [ ]"
@@ -1331,6 +1351,7 @@
           <div
             class="tl-handle hid"
             id="tl-out"
+            data-shortcut-commands="timeline.adjust-trim-backward timeline.adjust-trim-forward timeline.previous-keyframe timeline.next-keyframe"
             role="slider"
             aria-label="Active segment end"
             aria-keyshortcuts="ArrowLeft ArrowRight [ ]"
@@ -1439,6 +1460,15 @@
               >
                 <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2" /><path d="M9 8h6M9 12h6M9 16h3" /></svg>
                 <span>Profiles</span>
+              </button>
+              <button
+                type="button"
+                id="settings-nav-keyboard"
+                data-settings-click="navigate"
+                data-settings-value="keyboard"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="2" /><path d="M6 10h1M10 10h1M14 10h1M18 10h0M7 14h10" /></svg>
+                <span>Keyboard</span>
               </button>
             </div>
             <div class="settings-nav-group" id="settings-integrations">

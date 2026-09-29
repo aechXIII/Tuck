@@ -19,6 +19,8 @@ export interface CommandDefinition {
   local?: boolean;
   guide?: boolean;
   guideNote?: string;
+  // the name in Settings when the guide pairs this command with another on one row
+  editLabel?: string;
 }
 
 export interface GuideItem {
@@ -232,6 +234,7 @@ const COMMANDS: CommandDefinition[] = [
   },
   {
     id: "playback.step-backward",
+    editLabel: "Previous frame",
     category: "Playback & navigation",
     column: 0,
     label: "Previous / next frame",
@@ -242,6 +245,7 @@ const COMMANDS: CommandDefinition[] = [
   },
   {
     id: "playback.step-forward",
+    editLabel: "Next frame",
     category: "Playback & navigation",
     column: 0,
     label: "Previous / next frame",
@@ -251,6 +255,7 @@ const COMMANDS: CommandDefinition[] = [
   },
   {
     id: "playback.seek-backward",
+    editLabel: "Skip back 3 seconds",
     category: "Playback & navigation",
     column: 0,
     label: "Skip 3 seconds",
@@ -261,6 +266,7 @@ const COMMANDS: CommandDefinition[] = [
   },
   {
     id: "playback.seek-forward",
+    editLabel: "Skip forward 3 seconds",
     category: "Playback & navigation",
     column: 0,
     label: "Skip 3 seconds",
@@ -270,6 +276,7 @@ const COMMANDS: CommandDefinition[] = [
   },
   {
     id: "playback.seek-start",
+    editLabel: "Go to beginning",
     category: "Playback & navigation",
     column: 0,
     label: "Go to beginning / end",
@@ -280,6 +287,7 @@ const COMMANDS: CommandDefinition[] = [
   },
   {
     id: "playback.seek-end",
+    editLabel: "Go to end",
     category: "Playback & navigation",
     column: 0,
     label: "Go to beginning / end",
@@ -289,6 +297,7 @@ const COMMANDS: CommandDefinition[] = [
   },
   {
     id: "media.select-previous",
+    editLabel: "Previous Library video",
     category: "Playback & navigation",
     column: 0,
     label: "Previous / next Library video",
@@ -299,6 +308,7 @@ const COMMANDS: CommandDefinition[] = [
   },
   {
     id: "media.select-next",
+    editLabel: "Next Library video",
     category: "Playback & navigation",
     column: 0,
     label: "Previous / next Library video",
@@ -340,6 +350,7 @@ const COMMANDS: CommandDefinition[] = [
   },
   {
     id: "timeline.set-selection-start",
+    editLabel: "Set selected start",
     category: "Timeline & segments",
     column: 1,
     label: "Set selected start / end",
@@ -350,6 +361,7 @@ const COMMANDS: CommandDefinition[] = [
   },
   {
     id: "timeline.set-selection-end",
+    editLabel: "Set selected end",
     category: "Timeline & segments",
     column: 1,
     label: "Set selected start / end",
@@ -359,6 +371,7 @@ const COMMANDS: CommandDefinition[] = [
   },
   {
     id: "timeline.previous-keyframe",
+    editLabel: "Previous keyframe",
     category: "Timeline & segments",
     column: 1,
     label: "Previous / next keyframe",
@@ -370,6 +383,7 @@ const COMMANDS: CommandDefinition[] = [
   },
   {
     id: "timeline.next-keyframe",
+    editLabel: "Next keyframe",
     category: "Timeline & segments",
     column: 1,
     label: "Previous / next keyframe",
@@ -379,6 +393,7 @@ const COMMANDS: CommandDefinition[] = [
   },
   {
     id: "timeline.zoom-in",
+    editLabel: "Zoom timeline in",
     category: "Timeline & segments",
     column: 1,
     label: "Zoom timeline in / out",
@@ -389,6 +404,7 @@ const COMMANDS: CommandDefinition[] = [
   },
   {
     id: "timeline.zoom-out",
+    editLabel: "Zoom timeline out",
     category: "Timeline & segments",
     column: 1,
     label: "Zoom timeline in / out",
@@ -487,7 +503,10 @@ function displayBinding(binding: string): string[] {
   return keys;
 }
 
-function commandSections(commands: readonly CommandDefinition[]): GuideSection[] {
+function commandSections(
+  commands: readonly CommandDefinition[],
+  bindingsOf: (command: CommandDefinition) => readonly string[] = (command) => command.bindings,
+): GuideSection[] {
   const sections: GuideSection[] = [];
   const sectionByCategory: Record<string, GuideSection> = {};
   const itemByGroup: Record<string, GuideItem> = {};
@@ -521,7 +540,7 @@ function commandSections(commands: readonly CommandDefinition[]): GuideSection[]
       section.items.push(item);
     }
 
-    (command.bindings || []).forEach((binding) => {
+    (bindingsOf(command) || []).forEach((binding) => {
       const keys = displayBinding(binding);
       item.keys.push(keys);
       keys.forEach((key) => {
@@ -599,6 +618,7 @@ function commandAvailable(
 
 export function createRegistry(
   commands?: readonly CommandDefinition[] | null,
+  bindingsOf: (command: CommandDefinition) => readonly string[] = (command) => command.bindings,
 ): ShortcutRegistry {
   const definitions = commands || [];
   const commandById: Record<string, CommandDefinition> = {};
@@ -632,7 +652,7 @@ export function createRegistry(
       if (!command || command.local || !commandAvailable(command, state))
         continue;
       if (
-        !(command.bindings || []).some((binding) =>
+        !(bindingsOf(command) || []).some((binding) =>
           matchesBinding(event, binding),
         )
       )
@@ -1024,7 +1044,171 @@ export function shouldOpenGuide(
   );
 }
 
-const registry = createRegistry(COMMANDS);
+// keys the user chose in Settings, by command id; commands without an entry keep their defaults
+let overrides: Readonly<Record<string, readonly string[]>> = {};
+let effectiveSections: readonly GuideSection[] = SECTIONS;
+const changeListeners = new Set<() => void>();
+
+// Esc closes dialogs, Tab moves focus and Enter presses buttons, so none of them can be taken
+const RESERVED_KEYS = new Set(["escape", "tab", "enter"]);
+const MODIFIER_KEYS = new Set(["control", "shift", "alt", "meta", "os", "altgraph", "capslock"]);
+// the named keys settings can store; any single printable character works too
+const NAMED_KEYS = new Set([
+  "arrowleft", "arrowright", "arrowup", "arrowdown", "space", "delete", "backspace",
+  "home", "end", "pageup", "pagedown",
+  ...Array.from({ length: 24 }, (_, index) => `f${index + 1}`),
+]);
+
+export function isAssignableBinding(binding: unknown): binding is string {
+  if (typeof binding !== "string" || !binding || binding.length > 40) return false;
+  try {
+    const parts = bindingParts(binding);
+    const key = normalizedKey(parts.key);
+    if (!key || RESERVED_KEYS.has(key)) return false;
+    return parts.key.length === 1 ? parts.key.trim() !== "" : NAMED_KEYS.has(key);
+  } catch {
+    return false;
+  }
+}
+
+function configurable(command: CommandDefinition): boolean {
+  return command.configurable !== false && !command.local;
+}
+
+export function effectiveBindings(command: CommandDefinition): readonly string[] {
+  return configurable(command) && overrides[command.id] ? overrides[command.id]! : command.bindings;
+}
+
+// saved values come from a settings file, so anything unknown or unusable is left out
+export function setShortcutOverrides(value: unknown): void {
+  const clean: Record<string, readonly string[]> = {};
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    for (const command of COMMANDS) {
+      const saved = (value as Record<string, unknown>)[command.id];
+      if (!configurable(command) || !Array.isArray(saved) || saved.length > 3) continue;
+      if (!saved.every(isAssignableBinding)) continue;
+      clean[command.id] = Object.freeze([...new Set(saved)]);
+    }
+  }
+  overrides = Object.freeze(clean);
+  effectiveSections = freezeTree(commandSections(COMMANDS, effectiveBindings));
+  changeListeners.forEach((listener) => listener());
+}
+
+export function shortcutOverrides(): Record<string, string[]> {
+  return Object.fromEntries(Object.entries(overrides).map(([id, keys]) => [id, [...keys]]));
+}
+
+export function currentSections(): readonly GuideSection[] {
+  return effectiveSections;
+}
+
+export function onShortcutsChanged(listener: () => void): () => void {
+  changeListeners.add(listener);
+  return () => changeListeners.delete(listener);
+}
+
+export interface EditableCommand {
+  id: string;
+  label: string;
+  category: string;
+  bindings: readonly string[];
+  defaults: readonly string[];
+  changed: boolean;
+}
+
+export function editableCommands(): EditableCommand[] {
+  return COMMANDS.filter(configurable).map((command) => ({
+    id: command.id,
+    label: command.editLabel || command.label || command.id,
+    category: command.category || "General",
+    bindings: effectiveBindings(command),
+    defaults: command.bindings,
+    changed: !!overrides[command.id],
+  }));
+}
+
+// the shortcut a key press makes, written the way bindings are stored; null for a lone modifier
+export function bindingFromEvent(event: KeyboardEventLike): string | null {
+  const raw = String(event.key || "");
+  if (!raw || MODIFIER_KEYS.has(raw.toLowerCase())) return null;
+  const key = raw === " " || raw === "Spacebar" ? "Space" : raw.length === 1 ? raw.toUpperCase() : raw;
+  const parts: string[] = [];
+  if (event.ctrlKey) parts.push("Ctrl");
+  if (event.altKey) parts.push("Alt");
+  // Shift is part of the character itself for punctuation such as ? and +
+  if (event.shiftKey && (raw.length > 1 || /[a-z0-9]/i.test(raw))) parts.push("Shift");
+  if (event.metaKey) parts.push("Meta");
+  parts.push(key);
+  return parts.join("+");
+}
+
+export function sameBinding(a: string, b: string): boolean {
+  try {
+    const x = bindingParts(a);
+    const y = bindingParts(b);
+    return x.ctrl === y.ctrl && x.alt === y.alt && x.shift === y.shift && x.meta === y.meta
+      && normalizedKey(x.key) === normalizedKey(y.key);
+  } catch {
+    return false;
+  }
+}
+
+// commands that already answer to `binding`; local handlers such as the trim nudge are left out
+export function commandsUsing(binding: string, exceptId = ""): EditableCommand[] {
+  return editableCommands().filter((command) =>
+    command.id !== exceptId && command.bindings.some((existing) => sameBinding(existing, binding)));
+}
+
+// the keycaps shown for one binding, for example ["Ctrl", "Shift", "Z"]
+export function bindingKeys(binding: string): string[] {
+  return displayBinding(binding);
+}
+
+export function displayShortcut(bindings: readonly string[]): string {
+  return bindings.map((binding) => displayBinding(binding).join("+")).join(" or ");
+}
+
+// the aria-keyshortcuts form, for example "Control+Shift+Z"
+export function ariaShortcuts(bindings: readonly string[]): string {
+  return bindings
+    .map((binding) => {
+      const parts = bindingParts(binding);
+      const keys: string[] = [];
+      if (parts.ctrl) keys.push("Control");
+      if (parts.alt) keys.push("Alt");
+      if (parts.shift) keys.push("Shift");
+      if (parts.meta) keys.push("Meta");
+      keys.push(parts.key);
+      return keys.join("+");
+    })
+    .join(" ");
+}
+
+export function commandBindings(id: string): readonly string[] {
+  const command = COMMANDS.find((item) => item.id === id);
+  return command ? effectiveBindings(command) : [];
+}
+
+// "Add segment (A)", or just the label when the user removed every key
+export function withShortcut(label: string, id: string): string {
+  const keys = displayShortcut(commandBindings(id));
+  return keys ? `${label} (${keys})` : label;
+}
+
+// buttons name the commands they run, so their tooltip and announced keys follow the user's keys
+export function syncShortcutHints(root: ParentNode): void {
+  for (const element of root.querySelectorAll<HTMLElement>("[data-shortcut-commands]")) {
+    const ids = (element.dataset.shortcutCommands || "").split(/\s+/).filter(Boolean);
+    const bindings = ids.flatMap((id) => commandBindings(id));
+    if (bindings.length) element.setAttribute("aria-keyshortcuts", ariaShortcuts(bindings));
+    else element.removeAttribute("aria-keyshortcuts");
+    const label = element.dataset.shortcutLabel;
+    if (label) element.dataset.tip = ids[0] ? withShortcut(label, ids[0]) : label;
+  }
+}
+
+const registry = createRegistry(COMMANDS, effectiveBindings);
 
 export const commands: readonly CommandDefinition[] = COMMANDS;
 export const sections: readonly GuideSection[] = SECTIONS;
