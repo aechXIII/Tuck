@@ -346,3 +346,40 @@ def read_timeline(
             )
     except FFmpegError as exc:
         raise TimelineError("analysis_failed", "The video packets could not be read.") from exc
+
+
+def sweep_keyframes(
+    path: str,
+    stopped: Callable[[], bool],
+    on_frames: Callable[[tuple[Fraction, ...], Fraction], None],
+) -> None:
+    """Report keyframe times from the container's keyframe flags, for display only.
+
+    This runs while the checked scan waits for the file hash, so the timeline fills in sooner.
+    Times use the same base as read_timeline's progress. Nothing here is trusted to plan a cut.
+    """
+    with av.open(path) as container:
+        videos = [
+            s
+            for s in container.streams.video
+            if not s.disposition.value & Disposition.attached_pic.value
+        ]
+        if not videos:
+            return
+        keys: list[Fraction] = []
+        latest = Fraction(0)
+        count = 0
+        for packet in container.demux(videos[0]):
+            if stopped():
+                return
+            if packet.pts is None or packet.time_base is None or not packet.size:
+                continue
+            pts = packet.pts * Fraction(packet.time_base)
+            latest = max(latest, pts)
+            if packet.is_keyframe:
+                keys.append(pts)
+            count += 1
+            if keys and count % 256 == 0:
+                on_frames(tuple(k - keys[0] for k in keys), latest - keys[0])
+        if keys:
+            on_frames(tuple(k - keys[0] for k in keys), latest - keys[0])

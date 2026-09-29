@@ -23,12 +23,15 @@ from .analysis import (
     ProgressCallback,
     analysis_version,
     analyze_source,
+    preview_keyframes,
     source_identity,
 )
 from .planner import CutPlanChanged, plan_cut
 
 # the scanner is given the hash just taken, so the bytes are not hashed twice before the scan
 Scanner = Callable[[Path, Event, ProgressCallback, SourceIdentity], CutAnalysis]
+# shows keyframes while the checked scan waits for the file hash; nothing it finds is used to plan
+Previewer = Callable[[Path, Callable[[], bool], ProgressCallback], None]
 logger = logging.getLogger(__name__)
 
 
@@ -50,9 +53,14 @@ class _Work:
 
 class CutAnalysisService:
     def __init__(
-        self, *, scanner: Scanner = analyze_source, version: Callable[[], str] = analysis_version
+        self,
+        *,
+        scanner: Scanner = analyze_source,
+        version: Callable[[], str] = analysis_version,
+        previewer: Previewer = preview_keyframes,
     ) -> None:
         self._scanner = scanner
+        self._previewer = previewer
         self._version = version
         self._condition = Condition()
         self._thread: Thread | None = None
@@ -166,6 +174,18 @@ class CutAnalysisService:
             self._history.clear()
             self._cache.clear()
 
+    def _start_preview(self, work: _Work, report: ProgressCallback) -> None:
+        # the preview stops as soon as this work is cancelled or has an answer
+        def stopped() -> bool:
+            return work.cancel.is_set() or work.snapshot.status != "reading"
+
+        Thread(
+            target=self._previewer,
+            args=(work.path, stopped, report),
+            name="tuck-cut-preview",
+            daemon=True,
+        ).start()
+
     def _run(self) -> None:
         while True:
             with self._condition:
@@ -186,8 +206,13 @@ class CutAnalysisService:
                         and not active_work.cancel.is_set()
                         and active_work.snapshot.status == "reading"
                     ):
-                        active_work.snapshot = replace(active_work.snapshot, progress=value)
+                        # the preview and the checked scan both report; the one further along wins,
+                        # so keyframes already on screen are never taken back
+                        shown = active_work.snapshot.progress.coverage_end.seconds
+                        if value.coverage_end.seconds >= shown:
+                            active_work.snapshot = replace(active_work.snapshot, progress=value)
 
+            self._start_preview(work, progress)
             try:
                 key = (source_identity(work.path, work.cancel), self._version())
                 result = self._cache.get(key)

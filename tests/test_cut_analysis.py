@@ -1,3 +1,4 @@
+import time
 from fractions import Fraction
 from threading import Event
 
@@ -528,3 +529,86 @@ def test_metadata_limit_stops_a_running_probe(monkeypatch):
             if child.poll() is None:
                 child.kill()
             child.wait()
+
+
+def test_keyframe_preview_finds_the_same_keyframes_as_the_checked_scan(media_tools, tmp_path):
+    from tuck.cutting.timeline import read_timeline, sweep_keyframes
+
+    path = create_source(media_tools, tmp_path / "source.mp4", duration=6)
+    reports = []
+    sweep_keyframes(str(path), lambda: False, lambda keys, reached: reports.append((keys, reached)))
+    checked = read_timeline(str(path), Event())
+    assert reports, "the preview reports at least once"
+    keys, reached = reports[-1]
+    assert keys == checked.video.keyframes
+    assert reached > 0
+
+
+def test_keyframes_show_while_the_video_is_still_being_hashed(media_tools, tmp_path, monkeypatch):
+    from tuck.cutting import service
+    from tuck.cutting.service import CutAnalysisService
+
+    path = create_source(media_tools, tmp_path / "source.mp4", duration=6)
+    hashing, release = Event(), Event()
+    identity = service.source_identity
+
+    def slow_hash(source, cancel):
+        hashing.set()
+        assert release.wait(10)
+        return identity(source, cancel)
+
+    monkeypatch.setattr(service, "source_identity", slow_hash)
+    cut_service = CutAnalysisService(
+        scanner=lambda source, cancel, progress, known: analyzer()(
+            source, cancel, progress, known, ffprobe=media_tools.ffprobe
+        )
+    )
+    try:
+        cut_service.start(path, "preview")
+        assert hashing.wait(10)
+        # progress is a snapshot rather than an event, so read it until keyframes appear
+        deadline = time.monotonic() + 10
+        while not cut_service.get(path).progress.keyframes and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert cut_service.get(path).progress.keyframes
+        assert cut_service.get(path).status == "reading"
+        release.set()
+        with cut_service._condition:
+            assert cut_service._condition.wait_for(
+                lambda: cut_service.get(path).status in {"ready", "failed"}, timeout=10
+            )
+        assert cut_service.get(path).status == "ready"
+    finally:
+        release.set()
+        cut_service.close()
+
+
+def test_a_pass_that_is_behind_cannot_take_keyframes_back(tmp_path):
+    from tuck.cutting.service import CutAnalysisService
+    from tuck.models.cutting import AnalysisProgress, MediaTime
+
+    path = tmp_path / "source.mp4"
+    path.write_bytes(b"fixture")
+    previewed, checked, release = Event(), Event(), Event()
+
+    def preview(source, stopped, progress):
+        progress(AnalysisProgress(0.5, MediaTime(10), (MediaTime(0), MediaTime(4), MediaTime(8))))
+        previewed.set()
+
+    def scan(source, cancel, progress, known):
+        assert previewed.wait(5)
+        progress(AnalysisProgress(0.1, MediaTime(2), (MediaTime(0),)))
+        checked.set()
+        assert release.wait(5)
+        raise AssertionError("released")
+
+    cut_service = CutAnalysisService(scanner=scan, previewer=preview)
+    try:
+        cut_service.start(path, "only")
+        assert checked.wait(5)
+        shown = cut_service.get(path).progress
+        assert shown.coverage_end == MediaTime(10)
+        assert len(shown.keyframes) == 3
+    finally:
+        release.set()
+        cut_service.close()

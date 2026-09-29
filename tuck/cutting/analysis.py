@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import itertools
 import json
+import logging
 import os
 import subprocess
 import tempfile
@@ -37,6 +38,7 @@ from .timeline import (
     TimelineError,
     is_clean_entry,
     read_timeline,
+    sweep_keyframes,
 )
 
 ANALYSIS_VERSION = (
@@ -44,6 +46,7 @@ ANALYSIS_VERSION = (
 )
 MAX_METADATA_BYTES = 4 * 1024 * 1024
 ProgressCallback = Callable[[AnalysisProgress], None]
+logger = logging.getLogger(__name__)
 
 
 class CutAnalysisError(ValueError):
@@ -297,20 +300,7 @@ def _scan(
     timeline: MediaTimeline | None = None
     unverified: tuple[CutIssue, ...] = ()
     issues: tuple[CutIssue, ...] = ()
-
-    def progress(keys: tuple[Fraction, ...], reached: Fraction) -> None:
-        declared = timeline_duration[0]
-        fraction = min(0.99, float(reached / declared)) if declared > 0 else None
-        on_progress(
-            AnalysisProgress(
-                fraction,
-                MediaTime.from_seconds(reached),
-                tuple(MediaTime.from_seconds(k) for k in keys),
-            )
-        )
-
-    with av.open(identity.path) as probe:
-        timeline_duration = [Fraction(probe.duration or 0, av.time_base)]
+    progress = _progress_reporter(identity.path, on_progress)
     try:
         timeline = read_timeline(
             identity.path, cancel, progress, max_packets=max_packets, check_cancel=check_cancel
@@ -323,6 +313,38 @@ def _scan(
     except FFmpegError as exc:
         raise CutAnalysisError("analysis_failed", "The video packets could not be read.") from exc
     return timeline, unverified, issues
+
+
+def _progress_reporter(
+    path: str, on_progress: ProgressCallback
+) -> Callable[[tuple[Fraction, ...], Fraction], None]:
+    with av.open(path) as probe:
+        declared = Fraction(probe.duration or 0, av.time_base)
+
+    def report(keys: tuple[Fraction, ...], reached: Fraction) -> None:
+        fraction = min(0.99, float(reached / declared)) if declared > 0 else None
+        on_progress(
+            AnalysisProgress(
+                fraction,
+                MediaTime.from_seconds(reached),
+                tuple(MediaTime.from_seconds(k) for k in keys),
+            )
+        )
+
+    return report
+
+
+def preview_keyframes(
+    path: Path, stopped: Callable[[], bool], on_progress: ProgressCallback
+) -> None:
+    """Show keyframes from the container's flags while the checked analysis hashes the file.
+
+    Display only: a file this cannot read is left for the checked scan to report.
+    """
+    try:
+        sweep_keyframes(str(path), stopped, _progress_reporter(str(path), on_progress))
+    except (FFmpegError, OSError) as exc:
+        logger.debug("Keyframe preview stopped for %s: %s", path, exc)
 
 
 def _analysis(
