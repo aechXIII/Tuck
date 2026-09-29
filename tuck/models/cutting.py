@@ -13,9 +13,13 @@ class MediaTime:
     def __post_init__(self) -> None:
         if type(self.ticks) is not int or abs(self.ticks) >= 2**63:
             raise ValueError("Time ticks must be a signed 64-bit integer")
-        if any(
-            type(v) is not int or not 0 < v < 2**31
-            for v in (self.time_base_num, self.time_base_den)
+        # checked without a loop: an analysis builds hundreds of thousands of these
+        num, den = self.time_base_num, self.time_base_den
+        if (
+            type(num) is not int
+            or type(den) is not int
+            or not 0 < num < 2**31
+            or not 0 < den < 2**31
         ):
             raise ValueError("Time base must contain positive 32-bit integers")
 

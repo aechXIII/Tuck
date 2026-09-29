@@ -6,6 +6,7 @@ import logging
 from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
+from functools import partial
 from pathlib import Path
 from threading import Condition, Event, Thread
 
@@ -199,20 +200,28 @@ class CutAnalysisService:
                 work: _Work = pending
                 work.snapshot = replace(work.snapshot, status="reading")
 
-            def progress(value: AnalysisProgress, active_work: _Work = work) -> None:
+            def progress(
+                value: AnalysisProgress, active_work: _Work = work, checked: bool = True
+            ) -> None:
                 with self._condition:
                     if (
                         self._current is active_work
                         and not active_work.cancel.is_set()
                         and active_work.snapshot.status == "reading"
                     ):
-                        # the preview and the checked scan both report; the one further along wins,
-                        # so keyframes already on screen are never taken back
-                        shown = active_work.snapshot.progress.coverage_end.seconds
-                        if value.coverage_end.seconds >= shown:
-                            active_work.snapshot = replace(active_work.snapshot, progress=value)
+                        shown = active_work.snapshot.progress
+                        # the preview and the checked scan both find keyframes; the one further
+                        # along is shown, so keyframes already on screen are never taken back
+                        if value.coverage_end.seconds >= shown.coverage_end.seconds:
+                            shown = replace(
+                                shown, coverage_end=value.coverage_end, keyframes=value.keyframes
+                            )
+                        # only the checked scan moves the progress, since export waits for it
+                        if checked:
+                            shown = replace(shown, progress=value.progress)
+                        active_work.snapshot = replace(active_work.snapshot, progress=shown)
 
-            self._start_preview(work, progress)
+            self._start_preview(work, partial(progress, checked=False))
             try:
                 key = (source_identity(work.path, work.cancel), self._version())
                 result = self._cache.get(key)

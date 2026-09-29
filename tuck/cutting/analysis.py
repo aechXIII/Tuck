@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import itertools
 import json
 import logging
@@ -10,8 +11,9 @@ import os
 import subprocess
 import tempfile
 import time
+from collections import deque
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from fractions import Fraction
 from pathlib import Path
 from threading import Event
@@ -45,6 +47,8 @@ ANALYSIS_VERSION = (
     "cut-prefix-1/pyav-" + av.__version__ + "/" + repr(sorted(av.library_versions.items()))
 )
 MAX_METADATA_BYTES = 4 * 1024 * 1024
+HASH_PIECE_BYTES = 2 * 1024 * 1024
+HASH_THREADS = 4
 ProgressCallback = Callable[[AnalysisProgress], None]
 logger = logging.getLogger(__name__)
 
@@ -92,11 +96,26 @@ def source_identity(path: Path, cancel: Event) -> SourceIdentity:
     if not resolved.is_file():
         raise ValueError("Choose a video file")
     before = resolved.stat()
+    # the signature hashes the list of piece hashes: the file is still read once, front to
+    # back, but its pieces are hashed on several threads
     digest = hashlib.sha256()
-    with resolved.open("rb") as source:
-        while chunk := source.read(1024 * 1024):
+    pending: deque[Future[bytes]] = deque()
+    with (
+        resolved.open("rb", buffering=0) as source,
+        ThreadPoolExecutor(HASH_THREADS, thread_name_prefix="tuck-cut-hash") as pool,
+    ):
+        while True:
             check_cancel(cancel)
-            digest.update(chunk)
+            piece = bytearray(HASH_PIECE_BYTES)
+            size = _fill(source, piece)
+            if not size:
+                break
+            pending.append(pool.submit(_piece_digest, memoryview(piece)[:size]))
+            # a few pieces in flight keep the threads busy without holding the file in memory
+            while len(pending) > HASH_THREADS * 2:
+                digest.update(pending.popleft().result())
+        while pending:
+            digest.update(pending.popleft().result())
     check_cancel(cancel)
     after = resolved.stat()
     if (before.st_size, before.st_mtime_ns, before.st_ino) != (
@@ -106,6 +125,19 @@ def source_identity(path: Path, cancel: Event) -> SourceIdentity:
     ):
         raise CutAnalysisError("source_changed", "The video changed. Read its keyframes again.")
     return SourceIdentity(str(resolved), after.st_size, after.st_mtime_ns, digest.hexdigest())
+
+
+def _fill(source: io.FileIO, piece: bytearray) -> int:
+    # pieces must not depend on how the system splits reads, or the same bytes hash differently
+    view = memoryview(piece)
+    filled = 0
+    while filled < len(piece) and (count := source.readinto(view[filled:])):
+        filled += count
+    return filled
+
+
+def _piece_digest(piece: memoryview) -> bytes:
+    return hashlib.sha256(piece).digest()
 
 
 def read_inventory(
@@ -300,7 +332,9 @@ def _scan(
     timeline: MediaTimeline | None = None
     unverified: tuple[CutIssue, ...] = ()
     issues: tuple[CutIssue, ...] = ()
-    progress = _progress_reporter(identity.path, on_progress)
+    with av.open(identity.path) as probe:
+        declared = Fraction(probe.duration or 0, av.time_base)
+    progress = _progress_reporter(on_progress, declared)
     try:
         timeline = read_timeline(
             identity.path, cancel, progress, max_packets=max_packets, check_cancel=check_cancel
@@ -316,20 +350,15 @@ def _scan(
 
 
 def _progress_reporter(
-    path: str, on_progress: ProgressCallback
+    on_progress: ProgressCallback, declared: Fraction
 ) -> Callable[[tuple[Fraction, ...], Fraction], None]:
-    with av.open(path) as probe:
-        declared = Fraction(probe.duration or 0, av.time_base)
+    shown: list[MediaTime] = []
 
     def report(keys: tuple[Fraction, ...], reached: Fraction) -> None:
+        # each report extends the last one, so only the new keyframes need converting
+        shown.extend(MediaTime.from_seconds(k) for k in keys[len(shown) :])
         fraction = min(0.99, float(reached / declared)) if declared > 0 else None
-        on_progress(
-            AnalysisProgress(
-                fraction,
-                MediaTime.from_seconds(reached),
-                tuple(MediaTime.from_seconds(k) for k in keys),
-            )
-        )
+        on_progress(AnalysisProgress(fraction, MediaTime.from_seconds(reached), tuple(shown)))
 
     return report
 
@@ -337,12 +366,13 @@ def _progress_reporter(
 def preview_keyframes(
     path: Path, stopped: Callable[[], bool], on_progress: ProgressCallback
 ) -> None:
-    """Show keyframes from the container's flags while the checked analysis hashes the file.
+    """Show keyframes from the container's flags while the checked analysis runs.
 
-    Display only: a file this cannot read is left for the checked scan to report.
+    Display only: it reports no progress, and a file it cannot read is left for the checked
+    scan to report.
     """
     try:
-        sweep_keyframes(str(path), stopped, _progress_reporter(str(path), on_progress))
+        sweep_keyframes(str(path), stopped, _progress_reporter(on_progress, Fraction(0)))
     except (FFmpegError, OSError) as exc:
         logger.debug("Keyframe preview stopped for %s: %s", path, exc)
 
@@ -373,7 +403,6 @@ def _analysis(
             version,
         )
     video = timeline.video
-    audio = next((o for o in timeline.others if o.kind == "audio"), None)
     tracks = tuple(
         TrackPackets(
             other.index,
@@ -391,6 +420,8 @@ def _analysis(
         )
         for other in timeline.others
     )
+    # the first audio track's timings are shared rather than converted a second time
+    audio = next((t.packets for t in tracks if t.kind == "audio"), ())
     result = CutAnalysis(
         identity,
         streams,
@@ -399,12 +430,7 @@ def _analysis(
         MediaTime.from_seconds(video.end),
         tuple(MediaTime.from_seconds(k) for k in video.keyframes),
         tuple(MediaTime.from_seconds(e) for e in video.safe_ends),
-        tuple(
-            PacketTiming(
-                MediaTime.from_seconds(p.start), MediaTime.from_seconds(p.duration), p.skip_samples
-            )
-            for p in (audio.packets if audio else ())
-        ),
+        tuple(PacketTiming(p.start, p.duration, p.skip_samples) for p in audio),
         MediaTime.from_seconds(video.decode_delay),
         (),
         version,

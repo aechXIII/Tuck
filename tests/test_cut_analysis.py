@@ -531,10 +531,22 @@ def test_metadata_limit_stops_a_running_probe(monkeypatch):
             child.wait()
 
 
-def test_keyframe_preview_finds_the_same_keyframes_as_the_checked_scan(media_tools, tmp_path):
+@pytest.mark.parametrize(
+    ("name", "options"),
+    [
+        ("source.mp4", {}),
+        ("offset.mp4", {"offset": 7}),
+        ("hevc.mov", {"variant": "hevc"}),
+        ("vfr.mp4", {"variant": "vfr"}),
+        ("source.mkv", {}),
+    ],
+)
+def test_keyframe_preview_finds_the_same_keyframes_as_the_checked_scan(
+    media_tools, tmp_path, name, options
+):
     from tuck.cutting.timeline import read_timeline, sweep_keyframes
 
-    path = create_source(media_tools, tmp_path / "source.mp4", duration=6)
+    path = create_source(media_tools, tmp_path / name, duration=6, gop=30, **options)
     reports = []
     sweep_keyframes(str(path), lambda: False, lambda keys, reached: reports.append((keys, reached)))
     checked = read_timeline(str(path), Event())
@@ -542,6 +554,51 @@ def test_keyframe_preview_finds_the_same_keyframes_as_the_checked_scan(media_too
     keys, reached = reports[-1]
     assert keys == checked.video.keyframes
     assert reached > 0
+
+
+def test_mp4_keyframes_come_from_its_index_in_one_report(media_tools, tmp_path):
+    from tuck.cutting.timeline import sweep_keyframes
+
+    path = create_source(media_tools, tmp_path / "source.mp4", duration=20, gop=30)
+    reports = []
+    sweep_keyframes(str(path), lambda: False, lambda keys, reached: reports.append((keys, reached)))
+    assert len(reports) == 1
+    assert len(reports[0][0]) == 20
+
+
+def test_keyframe_preview_is_right_when_the_index_is_shifted(media_tools, tmp_path):
+    from tuck.cutting.timeline import read_timeline, sweep_keyframes
+
+    source = create_source(media_tools, tmp_path / "source.mp4", duration=8, gop=30)
+    trimmed = tmp_path / "trimmed.mp4"
+    # a copy that starts between keyframes gets an edit list, so its index and frame times differ
+    media_tools.run(
+        ["-v", "error", "-y", "-ss", "2.1", "-i", str(source), "-c", "copy", str(trimmed)]
+    )
+    reports = []
+    sweep_keyframes(
+        str(trimmed), lambda: False, lambda keys, reached: reports.append((keys, reached))
+    )
+    assert reports[-1][0] == read_timeline(str(trimmed), Event()).video.keyframes
+
+
+def test_file_hash_covers_every_piece_in_order(tmp_path, monkeypatch):
+    import hashlib
+
+    from tuck.cutting import analysis
+
+    monkeypatch.setattr(analysis, "HASH_PIECE_BYTES", 4096)
+    # enough pieces to keep every hashing thread busy, and a short last piece
+    data = bytes(range(256)) * 400 + b"tail"
+    path = tmp_path / "source.bin"
+    path.write_bytes(data)
+    pieces = b"".join(
+        hashlib.sha256(data[start : start + 4096]).digest() for start in range(0, len(data), 4096)
+    )
+    identity = analysis.source_identity(path, Event())
+    assert identity.signature == hashlib.sha256(pieces).hexdigest()
+    path.write_bytes(data[:-1] + b"T")
+    assert analysis.source_identity(path, Event()).signature != identity.signature
 
 
 def test_keyframes_show_while_the_video_is_still_being_hashed(media_tools, tmp_path, monkeypatch):
@@ -609,6 +666,8 @@ def test_a_pass_that_is_behind_cannot_take_keyframes_back(tmp_path):
         shown = cut_service.get(path).progress
         assert shown.coverage_end == MediaTime(10)
         assert len(shown.keyframes) == 3
+        # the bar follows the checked scan, which is what export waits for
+        assert shown.progress == 0.1
     finally:
         release.set()
         cut_service.close()

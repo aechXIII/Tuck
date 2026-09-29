@@ -123,59 +123,63 @@ def _check(cancel: Event) -> None:
         raise TimelineError("analysis_cancelled", "Keyframe analysis was cancelled.")
 
 
-def _safe_ends(
-    decode_order: list[Fraction], last_end: Fraction, origin: Fraction
-) -> tuple[Fraction, ...]:
+def _safe_ends(decode_order: list[int], last_end: int, origin: int) -> list[int]:
     """Ends where every frame decoded so far is shown before every frame decoded later."""
-    suffix_min = [Fraction(0)] * (len(decode_order) + 1)
+    suffix_min = [0] * (len(decode_order) + 1)
     suffix_min[-1] = last_end
     for index in range(len(decode_order) - 1, -1, -1):
         suffix_min[index] = min(decode_order[index], suffix_min[index + 1])
     ends = []
-    highest: Fraction | None = None
+    highest: int | None = None
     for index, pts in enumerate(decode_order):
         highest = pts if highest is None else max(highest, pts)
         if highest < suffix_min[index + 1]:
             ends.append(suffix_min[index + 1] - origin)
-    return tuple(ends)
+    return ends
 
 
-def _reorder_depth(decode_order: list[Fraction], presented: list[Fraction]) -> int:
+def _reorder_depth(decode_order: list[int], presented: list[int]) -> int:
     """How many frames the decoder holds back before showing one."""
     rank = {pts: index for index, pts in enumerate(presented)}
     return max(0, max(index - rank[pts] for index, pts in enumerate(decode_order)))
 
 
-def _typical_step(presented: list[Fraction]) -> tuple[Fraction, bool]:
+def _typical_step(presented: list[int]) -> tuple[int, bool]:
     """The most common frame spacing, and whether every frame uses it."""
-    counts: dict[Fraction, int] = {}
+    counts: dict[int, int] = {}
     for delta in (b - a for a, b in pairwise(presented)):
         counts[delta] = counts.get(delta, 0) + 1
     return max(counts, key=lambda d: (counts[d], -d)), len(counts) == 1
 
 
 class _VideoScan:
-    """Timing and entry-point facts gathered from video packets in file order."""
+    """Timing and entry-point facts gathered from video packets in file order.
+
+    Times stay in ticks of the video's time base until the end: fraction math on every frame
+    of a long video costs seconds.
+    """
 
     def __init__(self, codec: str, length_size: int | None) -> None:
         self.codec = codec
         self.length_size = length_size
-        self.decode_order: list[Fraction] = []
-        self.decode_times: list[Fraction | None] = []
-        self.durations: dict[Fraction, Fraction] = {}
-        self.key_times: list[Fraction] = []
+        self.base: Fraction | None = None
+        self.decode_order: list[int] = []
+        self.decode_times: list[int | None] = []
+        self.durations: dict[int, int] = {}
+        self.key_times: list[int] = []
         self.unverified = False
-        self.decode_delay = Fraction(0)
+        self.decode_delay = 0
         self.all_intra = True
 
-    def add(self, packet: av.Packet, pts: Fraction, duration: Fraction, base: Fraction) -> None:
+    def add(self, packet: av.Packet, pts: int, duration: int, base: Fraction) -> None:
         if pts in self.durations:
             raise TimelineError(
                 "unsupported_codec", "The video repeats a frame timestamp and cannot be cut."
             )
+        self.base = base
         self.durations[pts] = duration
         self.decode_order.append(pts)
-        dts = packet.dts * base if packet.dts is not None else None
+        dts = packet.dts
         self.decode_times.append(dts)
         if dts is not None:
             self.decode_delay = max(self.decode_delay, pts - dts)
@@ -188,7 +192,8 @@ class _VideoScan:
             self.unverified |= clean is not True
 
     def timeline(self, video: VideoStream) -> VideoTimeline:
-        if len(self.decode_order) < 2:
+        base = self.base
+        if base is None or len(self.decode_order) < 2:
             raise TimelineError("unsupported_codec", "The video is too short to cut.")
         presented = sorted(self.decode_order)
         origin = presented[0]
@@ -202,18 +207,22 @@ class _VideoScan:
         regular = len(known_dts) == len(self.decode_times) and all(
             b - a == step for a, b in pairwise(known_dts)
         )
-        frames = tuple(t - origin for t in presented)
+        frames = tuple((t - origin) * base for t in presented)
         return VideoTimeline(
             video.index,
             self.codec,
-            origin,
+            origin * base,
             frames,
-            presented[-1] + last - origin,
-            frames if self.all_intra else tuple(sorted({t - origin for t in self.key_times})),
+            (presented[-1] + last - origin) * base,
+            frames
+            if self.all_intra
+            else tuple((t - origin) * base for t in sorted(set(self.key_times))),
             self.unverified and not self.all_intra,
-            _safe_ends(self.decode_order, presented[-1] + last, origin),
-            self.decode_delay,
-            step,
+            tuple(
+                end * base for end in _safe_ends(self.decode_order, presented[-1] + last, origin)
+            ),
+            self.decode_delay * base,
+            step * base,
             constant,
             regular,
             video.frames,
@@ -224,14 +233,71 @@ class _VideoScan:
         )
 
 
-def _packet_time(packet: av.Packet, pts: Fraction, duration: Fraction) -> PacketTime:
+class _KeyframeReport:
+    """Report the keyframes found so far every 256 frames.
+
+    Each report only does work for the keyframes found since the last one, so a long video
+    is not walked again from the start for every report.
+    """
+
+    def __init__(
+        self, on_frames: Callable[[tuple[Fraction, ...], Fraction], None], base: Fraction
+    ) -> None:
+        self._on_frames = on_frames
+        self._base = base
+        self._first: int | None = None
+        self._latest: int | None = None
+        # relative to the first keyframe, which later keyframes never change
+        self._keys: list[Fraction] = []
+        self._frames = 0
+
+    def add(self, pts: int, keyframe: bool) -> None:
+        if self._latest is None or pts > self._latest:
+            self._latest = pts
+        if keyframe:
+            if self._first is None:
+                self._first = pts
+            self._keys.append((pts - self._first) * self._base)
+        self._frames += 1
+        if self._frames % 256 == 0:
+            self.send()
+
+    def send(self) -> None:
+        if self._first is not None and self._latest is not None:
+            self._on_frames(tuple(self._keys), (self._latest - self._first) * self._base)
+
+
+# in ticks of the stream's time base: start, duration, skipped and discarded samples, key flag
+_RawPacket = tuple[int, int, int, int, bool]
+
+
+def _raw_packet(packet: av.Packet, pts: int) -> _RawPacket:
     side = bytes(packet.get_sidedata("skip_samples")) if packet.stream.type == "audio" else b""
-    return PacketTime(
+    return (
         pts,
-        duration,
+        packet.duration or 0,
         int.from_bytes(side[:4], "little") if len(side) >= 4 else 0,
         int.from_bytes(side[4:8], "little") if len(side) >= 8 else 0,
         packet.is_keyframe,
+    )
+
+
+def _relative_packets(
+    packets: list[_RawPacket], base: Fraction, origin: Fraction
+) -> tuple[PacketTime, ...]:
+    # ticks * base - origin over one denominator, so each start is a single fraction
+    scale = base.numerator * origin.denominator
+    shift = origin.numerator * base.denominator
+    denominator = base.denominator * origin.denominator
+    return tuple(
+        PacketTime(
+            Fraction(pts * scale - shift, denominator),
+            Fraction(duration * base.numerator, base.denominator),
+            skip,
+            discard,
+            keyframe,
+        )
+        for pts, duration, skip, discard, keyframe in packets
     )
 
 
@@ -259,6 +325,18 @@ def _chapters(
     return tuple(chapters)
 
 
+def _main_video(container: InputContainer) -> VideoStream | None:
+    # cover art is stored as a one-frame video stream
+    return next(
+        (
+            s
+            for s in container.streams.video
+            if not s.disposition.value & Disposition.attached_pic.value
+        ),
+        None,
+    )
+
+
 def read_timeline(
     path: str,
     cancel: Event,
@@ -270,18 +348,16 @@ def read_timeline(
     """Read every packet once, keeping only timing and entry-point facts."""
     try:
         with av.open(path) as container:
-            videos = [
-                s
-                for s in container.streams.video
-                if not s.disposition.value & Disposition.attached_pic.value
-            ]
-            if not videos:
+            video = _main_video(container)
+            if video is None:
                 raise TimelineError("unsupported_stream", "This file has no video to cut.")
-            video = videos[0]
             codec = video.codec_context.codec.canonical_name
             scan = _VideoScan(codec, nal_length_size(codec, video.codec_context.extradata))
-            others: dict[int, list[PacketTime]] = {}
-            streams: dict[int, Stream] = {}
+            others: dict[int, list[_RawPacket]] = {}
+            streams: dict[int, tuple[Stream, Fraction]] = {}
+            # every packet of a stream carries that stream's time base, so it is read once
+            bases: dict[int, Fraction | None] = {}
+            report: _KeyframeReport | None = None
             for count, packet in enumerate(container.demux(), 1):
                 check_cancel(cancel)
                 if count > max_packets or packet.size > MAX_PACKET_BYTES:
@@ -294,53 +370,47 @@ def read_timeline(
                     raise TimelineError(
                         "unsupported_stream", "The video does not contain complete media packets."
                     )
-                if packet.time_base is None or packet.pts is None:
-                    if packet.stream.index == video.index:
+                index = packet.stream.index
+                if index not in bases:
+                    time_base = packet.time_base
+                    bases[index] = Fraction(time_base) if time_base is not None else None
+                base = bases[index]
+                pts = packet.pts
+                if base is None or pts is None:
+                    if index == video.index:
                         raise TimelineError(
                             "unsupported_codec",
                             "This video's packets have no timestamps to cut by.",
                         )
                     continue
-                base = Fraction(packet.time_base)
-                pts = packet.pts * base
-                duration = packet.duration * base if packet.duration else Fraction(0)
-                if packet.stream.index != video.index:
-                    others.setdefault(packet.stream.index, []).append(
-                        _packet_time(packet, pts, duration)
-                    )
-                    streams.setdefault(packet.stream.index, packet.stream)
+                if index != video.index:
+                    others.setdefault(index, []).append(_raw_packet(packet, pts))
+                    streams.setdefault(index, (packet.stream, base))
                     continue
-                scan.add(packet, pts, duration, base)
-                if len(scan.decode_order) % 256 == 0 and on_frames is not None and scan.key_times:
-                    first = scan.key_times[0]
-                    keys = tuple(t - first for t in scan.key_times)
-                    on_frames(keys, max(scan.decode_order) - first)
+                scan.add(packet, pts, packet.duration or 0, base)
+                if on_frames is not None:
+                    report = report or _KeyframeReport(on_frames, base)
+                    report.add(pts, packet.is_keyframe)
             timeline = scan.timeline(video)
             origin = timeline.origin
+            tracks = []
+            for index, packets in sorted(others.items()):
+                stream, base = streams[index]
+                tracks.append(
+                    StreamPackets(
+                        index,
+                        stream.type,
+                        stream.codec_context.codec.canonical_name
+                        if stream.codec_context
+                        else "unknown",
+                        _relative_packets(packets, base, origin),
+                        _declared_duration(stream),
+                    )
+                )
             return MediaTimeline(
                 container.format.name,
                 timeline,
-                tuple(
-                    StreamPackets(
-                        index,
-                        streams[index].type,
-                        streams[index].codec_context.codec.canonical_name
-                        if streams[index].codec_context
-                        else "unknown",
-                        tuple(
-                            PacketTime(
-                                p.start - origin,
-                                p.duration,
-                                p.skip_samples,
-                                p.discard_samples,
-                                p.keyframe,
-                            )
-                            for p in packets
-                        ),
-                        _declared_duration(streams[index]),
-                    )
-                    for index, packets in sorted(others.items())
-                ),
+                tuple(tracks),
                 Fraction(container.duration or 0, av.time_base),
                 _chapters(container, origin),
             )
@@ -355,31 +425,72 @@ def sweep_keyframes(
 ) -> None:
     """Report keyframe times from the container's keyframe flags, for display only.
 
-    This runs while the checked scan waits for the file hash, so the timeline fills in sooner.
+    This runs beside the checked analysis, so the timeline fills in sooner.
     Times use the same base as read_timeline's progress. Nothing here is trusted to plan a cut.
     """
     with av.open(path) as container:
-        videos = [
-            s
-            for s in container.streams.video
-            if not s.disposition.value & Disposition.attached_pic.value
-        ]
-        if not videos:
+        video = _main_video(container)
+        if video is None:
             return
-        keys: list[Fraction] = []
-        latest = Fraction(0)
-        count = 0
-        for packet in container.demux(videos[0]):
+        # MP4 and MOV list every keyframe in the index read when the file opens
+        if "mov" in container.format.name.split(","):
+            walked = _walk_keyframes(container, video, stopped)
+            if walked is not None:
+                keys, end = walked
+                on_frames(tuple(k - keys[0] for k in keys), max(end, keys[-1]) - keys[0])
+                return
+    # the index could not be followed, so read every packet instead
+    if stopped():
+        return
+    with av.open(path) as container:
+        video = _main_video(container)
+        if video is None or video.time_base is None:
+            return
+        report = _KeyframeReport(on_frames, Fraction(video.time_base))
+        for packet in container.demux(video):
             if stopped():
                 return
-            if packet.pts is None or packet.time_base is None or not packet.size:
+            if packet.pts is None or not packet.size:
                 continue
-            pts = packet.pts * Fraction(packet.time_base)
-            latest = max(latest, pts)
-            if packet.is_keyframe:
-                keys.append(pts)
-            count += 1
-            if keys and count % 256 == 0:
-                on_frames(tuple(k - keys[0] for k in keys), latest - keys[0])
-        if keys:
-            on_frames(tuple(k - keys[0] for k in keys), latest - keys[0])
+            report.add(packet.pts, packet.is_keyframe)
+        report.send()
+
+
+def _walk_keyframes(
+    container: InputContainer, video: VideoStream, stopped: Callable[[], bool]
+) -> tuple[list[Fraction], Fraction] | None:
+    """Jump from each keyframe to the next through the container's index.
+
+    This reads one packet per keyframe instead of the whole file. Returns the keyframes and
+    where the video ends, or None when a jump does not land where it should.
+    """
+    if video.time_base is None:
+        return None
+    base = Fraction(video.time_base)
+    keys: list[Fraction] = []
+    target: int | None = None
+    while not stopped():
+        if target is not None:
+            try:
+                # without backward, this lands on the first keyframe at or after the target
+                container.seek(target, backward=False, stream=video)
+            except FFmpegError:
+                # there is nothing to land on after the last keyframe
+                break
+        packet = next((p for p in container.demux(video) if p.size), None)
+        if packet is None:
+            break
+        if packet.pts is None or not packet.is_keyframe:
+            return None
+        pts = packet.pts * base
+        if keys and pts <= keys[-1]:
+            return None
+        keys.append(pts)
+        target = packet.pts + 1
+    else:
+        return None
+    if not keys:
+        return None
+    if video.duration is not None and video.start_time is not None:
+        return keys, (video.start_time + video.duration) * base
+    return keys, Fraction(container.duration or 0, av.time_base)

@@ -83,7 +83,8 @@ export function installCutControls(deps: CutControlsDeps) {
 
   function setActive(value: boolean): void {
     active = value;
-    if (value) refresh();
+    // nothing to coalesce when the task opens, so keyframes start reading straight away
+    if (value) refresh(0);
     else {
       if (!busy) {
         ticket += 1;
