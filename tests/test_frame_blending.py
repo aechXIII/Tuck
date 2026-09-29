@@ -1083,3 +1083,47 @@ def test_simple_blends_export_without_the_prepared_video(grid_source, monkeypatc
         video = container.streams.video[0]
         assert sum(1 for _ in container.decode(video)) == 65
         assert container.streams.audio
+
+
+def _pictures(count, closed, fail_at=None):
+    import numpy as np
+
+    try:
+        for index in range(count):
+            if index == fail_at:
+                raise ValueError("The source changed to an unsupported frame blending pixel format")
+            yield float(index), np.full((2, 2, 3), index, dtype=np.uint8)
+    finally:
+        closed.append(True)
+
+
+def test_read_ahead_hands_out_every_picture_in_order():
+    from tuck.encoding.frame_blending import _ReadAhead
+
+    closed = []
+    frames = _ReadAhead(_pictures(12, closed))
+    assert [timestamp for timestamp, _ in frames] == [float(i) for i in range(12)]
+    frames.close()
+    assert closed == [True]
+
+
+def test_read_ahead_raises_a_reader_error_where_the_picture_is_read():
+    from tuck.encoding.frame_blending import _ReadAhead
+
+    closed = []
+    frames = _ReadAhead(_pictures(12, closed, fail_at=5))
+    assert [next(frames)[0] for _ in range(5)] == [0.0, 1.0, 2.0, 3.0, 4.0]
+    with pytest.raises(ValueError, match="unsupported frame blending pixel format"):
+        next(frames)
+    frames.close()
+    assert closed == [True]
+
+
+def test_closing_read_ahead_early_stops_and_closes_the_reader():
+    from tuck.encoding.frame_blending import _ReadAhead
+
+    closed = []
+    frames = _ReadAhead(_pictures(10_000, closed))
+    assert next(frames)[0] == 0.0
+    frames.close()
+    assert closed == [True]

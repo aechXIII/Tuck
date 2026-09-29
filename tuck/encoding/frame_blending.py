@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import os
+import threading
 import time
 from collections import deque
 from collections.abc import Callable, Generator, Iterator
@@ -29,6 +30,8 @@ MAX_TEMP_BYTES = 16 * 1024**3
 SEEK_THRESHOLD = 2.0
 _WEIGHT_BITS = 16
 _WEIGHT_ONE = 1 << _WEIGHT_BITS
+# decoded pictures held ready for blending; enough to hide decoding without much memory
+_READ_AHEAD_FRAMES = 4
 SUPPORTED_FORMATS = frozenset(
     {
         "yuv420p",
@@ -181,6 +184,65 @@ def _source_frames(
             yield timestamp, pixels
 
 
+class _ReadAhead:
+    """Runs a source frame reader on its own thread, a few frames ahead of blending.
+
+    Decoding and colour conversion then overlap with the blending that uses them. The reader
+    is closed on its own thread, and its errors, cancellation included, surface on the next read.
+    """
+
+    def __init__(self, frames: Generator[tuple[float, PixelArray], None, None]) -> None:
+        self._items: deque[tuple[float, PixelArray]] = deque()
+        self._condition = threading.Condition()
+        self._finished = False
+        self._closed = False
+        self._error: BaseException | None = None
+        self._thread = threading.Thread(
+            target=self._run, args=(frames,), name="blend-read", daemon=True
+        )
+        self._thread.start()
+
+    def _run(self, frames: Generator[tuple[float, PixelArray], None, None]) -> None:
+        error: BaseException | None = None
+        try:
+            for item in frames:
+                with self._condition:
+                    self._condition.wait_for(
+                        lambda: self._closed or len(self._items) < _READ_AHEAD_FRAMES
+                    )
+                    if self._closed:
+                        return
+                    self._items.append(item)
+                    self._condition.notify_all()
+        except BaseException as exc:
+            error = exc
+        finally:
+            frames.close()
+            with self._condition:
+                self._finished, self._error = True, error
+                self._condition.notify_all()
+
+    def __iter__(self) -> _ReadAhead:
+        return self
+
+    def __next__(self) -> tuple[float, PixelArray]:
+        with self._condition:
+            self._condition.wait_for(lambda: bool(self._items) or self._finished)
+            if self._items:
+                item = self._items.popleft()
+                self._condition.notify_all()
+                return item
+            if self._error is not None:
+                raise self._error
+            raise StopIteration
+
+    def close(self) -> None:
+        with self._condition:
+            self._closed = True
+            self._condition.notify_all()
+        self._thread.join()
+
+
 def _integer_weights(weights: list[float]) -> list[int]:
     """Weights in 1/65536 steps that add up exactly, so white stays white."""
     total = sum(weights)
@@ -205,8 +267,8 @@ def _blend(
         return np.rint(np.clip(result, 0, 1) * 255).astype(np.uint8)
     # fixed point in place: far less memory traffic than a float copy of every picture
     weights = _integer_weights([weight for _, weight in weighted])
-    total = np.zeros(weighted[0][0].shape, dtype=np.uint32)
-    scratch = np.empty_like(total)
+    total, scratch = _sums(weighted[0][0].shape)
+    total.fill(0)
     for (pixels, _), weight in zip(weighted, weights, strict=True):
         if weight:
             np.multiply(pixels, np.uint32(weight), out=scratch, dtype=np.uint32)
@@ -214,6 +276,18 @@ def _blend(
     total += _WEIGHT_ONE // 2
     total >>= _WEIGHT_BITS
     return total.astype(np.uint8)
+
+
+_buffers = threading.local()
+
+
+def _sums(shape: tuple[int, ...]) -> tuple[NDArray[np.uint32], NDArray[np.uint32]]:
+    """This thread's running-sum buffers, kept between pictures instead of reallocated."""
+    kept = getattr(_buffers, "sums", None)
+    if kept is None or kept[0].shape != shape:
+        kept = (np.empty(shape, dtype=np.uint32), np.empty(shape, dtype=np.uint32))
+        _buffers.sums = kept
+    return kept
 
 
 def _workers() -> int:
@@ -240,7 +314,7 @@ def blended_frames(
     segments = plan.effective_segments
     if not segments:
         raise ValueError("Frame blending requires a nonempty timeline")
-    frames: Generator[tuple[float, PixelArray], None, None] | None = None
+    frames: _ReadAhead | None = None
     current: tuple[float, PixelArray] | None = None
     following: tuple[float, PixelArray] | None = None
     first_timestamp: float | None = None
@@ -251,7 +325,7 @@ def blended_frames(
         if frames is not None:
             frames.close()
         seek = time if time > SEEK_THRESHOLD else 0.0
-        frames = _source_frames(Path(plan.source), info, check_cancel, seek)
+        frames = _ReadAhead(_source_frames(Path(plan.source), info, check_cancel, seek))
         current = next(frames, None)
         following = next(frames, None)
         if current is None:
@@ -552,11 +626,16 @@ def prepare_blended_video(
         stream.codec_context.thread_count = 0
         stream.codec_context.options = {"slices": "24"}
         last_progress = time.monotonic()
-        for index, pixels in enumerate(blended_frames(plan, check_cancel)):
+
+        def write(index: int, pixels: PixelArray) -> None:
             frame = av.VideoFrame.from_ndarray(pixels, format="rgb24")
             frame.pts, frame.time_base = index, 1 / fps
             for packet in stream.encode(frame):
                 output.mux(packet)
+
+        def written(index: int, done: Future[None]) -> None:
+            nonlocal last_progress
+            done.result()
             if destination.stat().st_size > MAX_TEMP_BYTES:
                 raise ValueError(
                     "Frame blending temporary video exceeds 16 GiB; export a shorter selection"
@@ -566,6 +645,20 @@ def prepare_blended_video(
             if fraction < 1 and (index == 0 or now - last_progress >= 0.25):
                 progress(fraction)
                 last_progress = now
+
+        # one thread encodes, in order, while the next pictures are decoded and blended;
+        # only that thread touches the output until it has stopped
+        writer = ThreadPoolExecutor(max_workers=1, thread_name_prefix="blend-write")
+        writing: deque[tuple[int, Future[None]]] = deque()
+        try:
+            for index, pixels in enumerate(blended_frames(plan, check_cancel)):
+                writing.append((index, writer.submit(write, index, pixels)))
+                while len(writing) > 2:
+                    written(*writing.popleft())
+            while writing:
+                written(*writing.popleft())
+        finally:
+            writer.shutdown(wait=True, cancel_futures=True)
         for packet in stream.encode():
             output.mux(packet)
     if destination.stat().st_size > MAX_TEMP_BYTES:
