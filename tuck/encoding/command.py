@@ -109,7 +109,8 @@ _NVENC_PRESET_MAP: dict[str, str] = {
     "veryfast": "p3",
     "faster": "p3",
     "fast": "p4",
-    "medium": "p6",
+    # matches the Balanced speed the app offers for NVENC
+    "medium": "p5",
     "slow": "p6",
     "slower": "p7",
     "veryslow": "p7",

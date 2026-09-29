@@ -11,6 +11,9 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+import av
+from av.error import FFmpegError
+
 from ..cutting.analysis import CutAnalysisError
 from ..cutting.runner import CutRunner
 from ..formatting import format_size
@@ -44,7 +47,13 @@ from .command import build_base_cmd
 # load native array libraries before sidecar workers block on Windows stdio
 from .frame_blending import TmixBlend, prepare_blended_video, tmix_blend
 from .progress import ProgressTracker
-from .target_size import DEFAULT_MAX_RETRIES, decide_retry, is_content_limited
+from .target_size import (
+    DEFAULT_MAX_RETRIES,
+    UNDERSHOOT_RATIO,
+    decide_retry,
+    is_content_limited,
+    left_bitrate_unused,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -474,6 +483,17 @@ class FFmpegEngine:
                 )
                 return self._finalize_within_target(result, plan, actual_size, max_attempts)
 
+            # the same holds before any retry when the output shows the encoder left much of
+            # its bitrate unused: raising that bitrate would repeat the encode for nothing
+            if actual_size < plan.target_size * UNDERSHOOT_RATIO and self._left_bitrate_unused(
+                result, plan
+            ):
+                logger.info(
+                    "Output size %s is content-limited (video bitrate left unused); accepting",
+                    format_size(actual_size),
+                )
+                return self._finalize_within_target(result, plan, actual_size, max_attempts)
+
             previous_size = actual_size
             if self._apply_retry_decision(plan, output, actual_size, attempt, max_attempts):
                 attempt += 1
@@ -482,6 +502,20 @@ class FFmpegEngine:
             return self._finalize_within_target(result, plan, actual_size, max_attempts)
 
         raise EncodeError("Encoding failed after all retries")
+
+    @staticmethod
+    def _left_bitrate_unused(result: Path, plan: EncodePlan) -> bool:
+        try:
+            with av.open(str(result)) as container:
+                if not container.streams.video or not container.duration:
+                    return False
+                # the output's own length, so a source that misstates its length still retries
+                duration = container.duration / av.time_base
+                video_bytes = sum(p.size for p in container.demux(container.streams.video[0]))
+        except (FFmpegError, OSError):
+            # an output that cannot be measured keeps the usual retry
+            return False
+        return left_bitrate_unused(video_bytes, duration, plan.video_bitrate)
 
     def _recalc_plan(self, plan: EncodePlan) -> None:
         effective_duration = plan.effective_duration

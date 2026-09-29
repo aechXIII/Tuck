@@ -253,6 +253,9 @@ def test_full_encode_audio_duration_and_pixels(timestamped_source, two_pass, mon
         return original(*args, **kwargs)
 
     monkeypatch.setattr(runner, "build_base_cmd", capture)
+    # this tiny clip cannot use its bitrate, which now ends the encode after one attempt;
+    # keep the undershoot retry so its reuse of the blended video is still checked
+    monkeypatch.setattr(runner.FFmpegEngine, "_left_bitrate_unused", staticmethod(lambda *_: False))
     progress = []
     prepare = runner.prepare_blended_video
 

@@ -18,6 +18,19 @@ HARDWARE_SAFETY_EXTRA = 0.02
 CONTENT_LIMITED_GROWTH = 1.05
 
 
+# an encoder that spent less than this share of its video bitrate was held back by the
+# content, not the budget, so a little more bitrate encodes the same file again
+UNUSED_BITRATE_SHARE = 0.9
+
+
+def left_bitrate_unused(video_bytes: int, duration_s: float, video_bitrate: int) -> bool:
+    """The encoded video used clearly less than the bitrate it was given."""
+
+    if duration_s <= 0 or video_bitrate <= 0:
+        return False
+    return video_bytes * 8 / duration_s < video_bitrate * UNUSED_BITRATE_SHARE
+
+
 def is_content_limited(
     previous_size: int,
     actual_size: int,

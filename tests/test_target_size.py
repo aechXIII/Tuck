@@ -5,6 +5,7 @@ from tuck.encoding.target_size import (
     calculate_target_size_bitrates,
     decide_retry,
     is_content_limited,
+    left_bitrate_unused,
 )
 
 
@@ -100,3 +101,14 @@ class TestContentLimited:
         # over target must keep going through the overshoot retry path
         assert not is_content_limited(2_000_000, 2_100_000, target_size=2_000_000)
         assert not is_content_limited(1_900_000, 2_000_001, target_size=2_000_000)
+
+    def test_video_that_used_far_less_than_its_bitrate_left_it_unused(self):
+        # 10 s at 1 Mbps would be 1_250_000 bytes
+        assert left_bitrate_unused(800_000, 10.0, 1_000_000)
+
+    def test_video_that_used_its_bitrate_did_not_leave_it_unused(self):
+        assert not left_bitrate_unused(1_200_000, 10.0, 1_000_000)
+
+    def test_unknown_length_or_bitrate_never_counts_as_unused(self):
+        assert not left_bitrate_unused(100, 0.0, 1_000_000)
+        assert not left_bitrate_unused(100, 10.0, 0)

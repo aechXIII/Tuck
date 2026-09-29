@@ -1353,6 +1353,34 @@ class TestTargetSizeRetries:
         assert plan.video_bitrate > 1_000_000, "the first undershoot must raise the bitrate"
         assert calls == 2, "stop after the retry that did not grow the output, not at the limit"
 
+    def test_undershoot_is_accepted_when_the_video_left_its_bitrate_unused(
+        self, engine, real_video_path, tmp_path
+    ):
+        output = tmp_path / "output.mp4"
+        plan = EncodePlan(
+            source=str(real_video_path),
+            output=str(output),
+            video_bitrate=5_000_000,
+            audio_bitrate=0,
+            two_pass=False,
+            target_size=10_000_000,
+            rate_control_method=RCM_CBR,
+        )
+        calls = 0
+
+        def encode_once(*_args, **_kwargs):
+            nonlocal calls
+            calls += 1
+            # a small test pattern cannot use 5 Mbps, so more bitrate would change nothing
+            output.write_bytes(real_video_path.read_bytes())
+            return output
+
+        engine._encode_single_pass = encode_once
+        result = engine._encode_with_retry("ffmpeg", plan, Path(plan.source), output, 3.0, None)
+        assert result == output
+        assert calls == 1
+        assert plan.video_bitrate == 5_000_000
+
     def test_undershoot_uses_every_retry_while_the_output_keeps_growing(self, engine, tmp_path):
         output = tmp_path / "output.mp4"
         plan = EncodePlan(
@@ -1692,7 +1720,7 @@ class TestFFmpegCommandPerEncoder:
 
     def testnvenc_preset_mapping(self):
         """NVENC preset mapping converts x264 preset names to p1-p7."""
-        assert nvenc_preset("medium") == "p6"
+        assert nvenc_preset("medium") == "p5"
         assert nvenc_preset("slow") == "p6"
         assert nvenc_preset("fast") == "p4"
         assert nvenc_preset("ultrafast") == "p1"
