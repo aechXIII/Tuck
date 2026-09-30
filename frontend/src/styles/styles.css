@@ -1458,6 +1458,12 @@ select {
 .hid {
   display: none !important;
 }
+/* focus rings show only after Tab (ui/focus-rings.ts); this one gate outranks every control's own ring */
+:root:not([data-focus-rings]) :focus-visible,
+:root:not([data-focus-rings]) :focus-visible + .toggle-track,
+:root:not([data-focus-rings]) .lut-picker-popup:has(:focus-visible) {
+  outline: none !important;
+}
 /* parts the user hid in Settings; kept apart from .hid, which other code toggles */
 .user-hidden {
   display: none !important;

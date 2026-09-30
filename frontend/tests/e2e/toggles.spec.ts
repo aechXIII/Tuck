@@ -13,7 +13,10 @@ for (const width of [1240, 960]) {
     const blend = page.getByRole("switch", { name: "Enable frame blending", exact: true });
     const linear = page.getByRole("switch", { name: "Blend in linear light", exact: true });
     await expect(linear).toBeDisabled();
-    await blend.focus();
+    // focus rings only show after Tab, so reach the switch the way a keyboard user would
+    await page.locator("#frame-blending-panel > summary").focus();
+    await page.keyboard.press("Tab");
+    await expect(blend).toBeFocused();
     await page.keyboard.press("Space");
     await expect(blend).toBeChecked();
     await expect(linear).toBeEnabled();

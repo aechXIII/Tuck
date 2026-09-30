@@ -1,4 +1,5 @@
 import { installPanelScrollSpacing } from "../../ui/panel-scroll-spacing.ts";
+import { installFocusRings } from "../../ui/focus-rings.ts";
 import { getBackendClient, hasBackendClient } from "../../backend/client.ts";
 import { hasTauriInvoke } from "../../backend/index.ts";
 import type { BackendClient } from "../../backend/types.ts";
@@ -92,6 +93,7 @@ export function installEditorRuntime(
   windowRef: Window & typeof globalThis = window,
 ): EditorRuntime {
   installPanelScrollSpacing(windowRef.document);
+  installFocusRings(windowRef.document);
   const session = createEditorSession();
   let started = false;
   let shellReady = false;
