@@ -439,6 +439,12 @@ body.task-cut #timeline-audio-tools {
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
+.tl-time-label {
+  font-family: var(--font);
+}
+.tl-time-kept {
+  color: var(--text);
+}
 
 #sequence-frame {
   scrollbar-color: var(--border2) var(--sink);

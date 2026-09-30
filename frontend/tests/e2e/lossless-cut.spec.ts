@@ -379,11 +379,11 @@ test("[ and ] move the playhead, or a focused handle, between keyframes", async 
   await page.locator("#wf-l").click();
   await expect(page.locator("#btn-one")).toBeEnabled();
   await page.keyboard.press("]");
-  await expect(page.locator("#tl-time")).toHaveText("0:04.00 / 0:12.00");
+  await expect(page.locator("#ptime")).toHaveText("0:04.00 / 0:12.00");
   await page.keyboard.press("]");
-  await expect(page.locator("#tl-time")).toHaveText("0:08.00 / 0:12.00");
+  await expect(page.locator("#ptime")).toHaveText("0:08.00 / 0:12.00");
   await page.keyboard.press("[");
-  await expect(page.locator("#tl-time")).toHaveText("0:04.00 / 0:12.00");
+  await expect(page.locator("#ptime")).toHaveText("0:04.00 / 0:12.00");
   await page.locator("#tl-in").focus();
   await page.keyboard.press("]");
   await expect(page.locator("#tl-in")).toHaveAttribute("aria-valuenow","4");
@@ -391,7 +391,7 @@ test("[ and ] move the playhead, or a focused handle, between keyframes", async 
   await page.locator("#tl-out").focus();
   await page.keyboard.press("[");
   await expect(page.locator("#tl-out")).toHaveAttribute("aria-valuenow","8");
-  await expect(page.locator("#tl-time")).toHaveText("0:08.00 / 0:12.00");
+  await expect(page.locator("#ptime")).toHaveText("0:08.00 / 0:12.00");
   await page.getByRole("button",{name:"Undo",exact:true}).click();
   await expect(page.locator("#tl-out")).toHaveAttribute("aria-valuenow","12");
   await expect(page.locator("#tl-in")).toHaveAttribute("aria-valuenow","4");
@@ -427,7 +427,7 @@ test("a start that moves shows its sliver and note, and the chip opens its cut",
   await expect(chip).toHaveCSS("opacity","1");
   await page.keyboard.press("Enter");
   await expect(page.locator('#cut-list [data-cut-index="0"]')).toBeFocused();
-  await expect(page.locator("#tl-time")).toHaveText("0:04.00 / 0:12.00");
+  await expect(page.locator("#ptime")).toHaveText("0:04.00 / 0:12.00");
   await expect(page.locator("#tl-in")).toHaveAttribute("aria-valuenow","0");
   await page.locator("#snap-all").click();
   await expect(page.locator("#tl-in")).toHaveAttribute("aria-valuenow","4");
@@ -460,6 +460,7 @@ test("the player bar marks the selected segment and steps between keyframes", as
   await expect(page.locator("#btn-cut-go-start .cut-point-value")).toHaveText("0:00.00");
   await page.locator("#wf-c").click();
   await expect(setStart).toBeHidden();
+  await expect(page.locator("#tl-time")).toHaveText(/^0:\d\d\.\d\d \/ 0:12\.00$/);
   await expect(page.getByRole("button", {name: "Next keyframe"})).toBeHidden();
   await expect(page.getByRole("button", {name: "Next frame"})).toBeVisible();
 });
@@ -478,6 +479,8 @@ test("I past the end of a segment starts a new segment at the playhead", async (
   await expect(page.locator(".tl-segment")).toHaveCount(2);
   await expect(page.locator("#btn-cut-go-start .cut-point-value")).toHaveText("0:08.00");
   await expect(page.locator("#btn-cut-go-end .cut-point-value")).toHaveText("0:12.00");
+  // the player bar has the time, so the toolbar says how much of the video is kept
+  await expect(page.locator("#tl-time")).toHaveText("Keeping 0:08.00 of 0:12.00");
   // the test video never finishes seeking, so redrawing must not pull the playhead back to it
   await expect(page.locator("#seq-playhead-layer")).toHaveAttribute("style",/--playhead: 66\.66/);
 });

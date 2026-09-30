@@ -230,6 +230,7 @@ function keyframesNear(times: readonly number[]) {
 function paintCutOverlay() {
   const overlay = cutOverlay();
   if (_previewSecLocal != null) paintPlayerTime(_previewSecLocal, videoDuration());
+  paintTimelineReadout(_previewSecLocal ?? 0, videoDuration());
   const lane = byId("kf-lane");
   const toggle = byId("btn-kf-toggle");
   const tlIn = byId("tl-in");
@@ -720,15 +721,41 @@ function setPlayheadUI(sec: number, full?: number) {
     byId("timeline")?.setAttribute("aria-valuenow", String(Math.round(sec)));
   }
   paintPlayerTime(sec, full || 0);
-  let tlTime = byId("tl-time");
-  if (tlTime)
-    tlTime.textContent =
-      formatTimelineTime(sec) + " / " + formatTimelineTime(full || 0);
+  paintTimelineReadout(sec, full || 0);
   let playheadTime = byId("seq-playhead-time");
   if (playheadTime) playheadTime.textContent = formatTimelineTime(sec);
   _previewSecLocal = sec;
   host.setPreviewSec?.(sec);
   paintKeyframeGuides(sec);
+}
+
+// the player bar already shows the time in the cut task, so the toolbar shows how much is kept
+function paintTimelineReadout(sec: number, full: number) {
+  const readout = byId("tl-time");
+  if (!readout) return;
+  const clip = host.cutTask?.() ? selectedClip(session) : null;
+  if (!clip || !(full > 0)) {
+    delete readout.dataset.kept;
+    readout.setAttribute("aria-label", "Timeline position");
+    readout.textContent = formatTimelineTime(sec) + " / " + formatTimelineTime(full);
+    return;
+  }
+  const kept = clipSegments(clip, full).reduce((total, segment) => total + segment.end - segment.start, 0);
+  // this runs with every playhead move, and only the kept length changes it
+  const key = formatTimelineTime(kept) + "|" + formatTimelineTime(full);
+  if (readout.dataset.kept === key) return;
+  readout.dataset.kept = key;
+  const words = (text: string) => {
+    const span = documentRef.createElement("span");
+    span.className = "tl-time-label";
+    span.textContent = text;
+    return span;
+  };
+  const value = documentRef.createElement("span");
+  value.className = "tl-time-kept";
+  value.textContent = formatTimelineTime(kept);
+  readout.setAttribute("aria-label", "Kept length");
+  readout.replaceChildren(words("Keeping "), value, words(" of "), formatTimelineTime(full));
 }
 
 // the cut task reads the player time to the hundredth, like the timeline
