@@ -460,6 +460,7 @@ export function installEditorRuntime(
     "removeActiveSegment",
     "resetSegments",
     "splitAtPlayhead",
+    "trimActiveSegmentToPlayhead",
   ]) {
     history.wrap(timeline, name);
   }
