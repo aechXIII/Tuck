@@ -8,6 +8,12 @@ export function formatTime(seconds: number): string {
   return `${m}:${("0" + sec).slice(-2)}`;
 }
 
+// 0:05.50, as the player bar and timeline show cut points
+export function formatTimeToHundredths(seconds: number): string {
+  const centiseconds = Math.round(Math.max(0, Number(seconds) || 0) * 100);
+  return `${formatTime(Math.floor(centiseconds / 100))}.${String(centiseconds % 100).padStart(2, "0")}`;
+}
+
 export function formatBytes(bytes: number): string {
   if (!bytes) return "";
   if (bytes < 1024) return `${bytes} B`;

@@ -2,7 +2,7 @@ import type { BackendClient } from "../../backend/types.ts";
 import { isCutPlanPayload, type CutPlanRequest, type CutPlanPreview } from "../../backend/cutting-types.ts";
 import type { EditorClip } from "../editor/types.ts";
 import type { EditorSession } from "../editor/session.ts";
-import { formatBytes } from "../editor/format.ts";
+import { formatBytes, formatTimeToHundredths } from "../editor/format.ts";
 import { toast } from "../editor/toast.ts";
 import { createCutState, cutSegmentStatus, cutStartUnchecked, cutTime, cutTrackSummary, encodedSeconds, mediaSeconds, reduceCutState, shownSegment } from "./cut-state.ts";
 
@@ -226,10 +226,10 @@ export function installCutControls(deps: CutControlsDeps) {
       const planned = shown?.precision ?? precision;
       const status = !segment ? "Checking keyframes…"
         : `${cutSegmentStatus(segment, planned)}${shown && cutStartUnchecked(shown, segment) ? " · Start not checked" : ""}`;
-      const rangeText = `${cutTime(mediaSeconds(range.start))} – ${cutTime(mediaSeconds(range.end))}`;
+      const rangeText = `${formatTimeToHundredths(mediaSeconds(range.start))} – ${formatTimeToHundredths(mediaSeconds(range.end))}`;
       button.children[0]!.textContent = String(index+1);
       button.children[1]!.textContent = rangeText;
-      button.children[2]!.textContent = segment ? cutTime(mediaSeconds(segment.resolved.end)-mediaSeconds(segment.resolved.start)) : "";
+      button.children[2]!.textContent = segment ? formatTimeToHundredths(mediaSeconds(segment.resolved.end)-mediaSeconds(segment.resolved.start)) : "";
       button.children[3]!.textContent = status;
       button.children[3]!.className = `cut-status ${!segment ? "pending" : segment.start_kind === "collapsed" ? "collapsed" : encodedSeconds(segment, planned) > 0 ? "exact" : segment.start_kind === "moved" || segment.end_frames_moved ? "moved" : "ok"}`;
       button.setAttribute("aria-label",`Segment ${index+1}, ${rangeText}. ${status}`);

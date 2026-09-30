@@ -452,6 +452,8 @@ test("the player bar marks the selected segment and steps between keyframes", as
   await setStart.click();
   await expect(page.locator("#btn-cut-go-start .cut-point-value")).toHaveText("0:04.00");
   await expect(page.locator("#tl-in")).toHaveAttribute("aria-valuenow","4");
+  // the Inspector reads cut points as precisely as the player bar
+  await expect(page.locator("#cut-list .cut-range")).toHaveText("0:04.00 – 0:12.00");
   await page.getByRole("button", {name: "Go to the end"}).click();
   await expect(page.locator("#ptime")).toHaveText("0:11.97 / 0:12.00");
   await page.keyboard.press("Control+z");
