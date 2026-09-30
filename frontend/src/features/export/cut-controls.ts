@@ -38,8 +38,17 @@ export function installCutControls(deps: CutControlsDeps) {
   let settle = () => {};
   let waiting = false;
   const main = element("main");
-  const measureWorkspace = () => document.documentElement.style.setProperty("--cut-workspace-bottom",`${window.innerHeight-main.getBoundingClientRect().bottom}px`);
-  new ResizeObserver(measureWorkspace).observe(main);
+  const playerBar = element("player-bar");
+  // on narrow windows the Inspector opens over the stage; in the cut task it stops above the
+  // player bar, so the cut points and keyframe steps stay in reach while it is open
+  const measureWorkspace = () => {
+    const bar = playerBar.getBoundingClientRect();
+    const top = bar.height > 0 ? bar.top : main.getBoundingClientRect().bottom;
+    document.documentElement.style.setProperty("--cut-workspace-bottom",`${window.innerHeight-top}px`);
+  };
+  const workspace = new ResizeObserver(measureWorkspace);
+  workspace.observe(main);
+  workspace.observe(playerBar);
   measureWorkspace();
 
   function syncRequest(clip: EditorClip): CutPlanRequest {

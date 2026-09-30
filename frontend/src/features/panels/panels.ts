@@ -203,10 +203,13 @@ export function installPanels(host: PanelsHost): PanelsApi {
     doc.body.classList.toggle("inspector-panel-open", workspacePanels.inspectorOpen);
     doc.body.classList.toggle("workspace-drawer-open", drawerOpen);
     const center = byId("center");
+    const stage = byId("stage");
     const audioEditor = byId("audio-editor");
     const qbar = byId("qbar");
     const timelineOpen = timelineStaysOpen();
-    if (center) center.inert = drawerOpen;
+    // the player bar stays in reach with the timeline; only the video goes under the drawer
+    if (center) center.inert = drawerOpen && !timelineOpen;
+    if (stage) stage.inert = drawerOpen && timelineOpen;
     if (audioEditor) audioEditor.inert = drawerOpen && !timelineOpen;
     if (qbar) qbar.inert = drawerOpen && !timelineOpen;
 

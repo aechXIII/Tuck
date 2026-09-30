@@ -651,8 +651,16 @@ test("at 960 the cut Inspector leaves the timeline usable by keyboard", async ({
   // trimming shows Reset; the toolbar still fits
   expect(await page.evaluate(() => { const row = document.getElementById("timeline-row")!; return row.scrollWidth - row.clientWidth; })).toBeLessThanOrEqual(1);
   await expect(page.getByRole("button",{name:"Add audio"})).toBeVisible();
+  // the Inspector stops above the player bar, which stays usable
+  const inspector = (await page.locator("#right").boundingBox())!;
+  const bar = (await page.locator("#player-bar").boundingBox())!;
+  expect(inspector.y + inspector.height).toBeLessThanOrEqual(bar.y + 1);
+  await expect(page.locator("#stage")).toHaveAttribute("inert",/.*/);
+  await page.getByRole("button",{name:"Next keyframe"}).click();
+  await expect(page.locator("#ptime")).toHaveText("0:08.00 / 0:12.00");
   // other tasks keep the modal drawer
   await page.locator("#wf-c").click();
+  await expect(page.locator("#center")).toHaveAttribute("inert",/.*/);
   await expect(page.locator("#audio-editor")).toHaveAttribute("inert",/.*/);
   await expect(page.locator("#right")).toHaveAttribute("aria-modal","true");
 });
