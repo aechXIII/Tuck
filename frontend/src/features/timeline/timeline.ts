@@ -125,7 +125,8 @@ export function installTimeline(host: TimelineHost) {
   let _previewSecLocal: number | null = null;
 let snapOn = true;
   let keyframesOn = true;
-  let _kfNear: number[] = [];
+  // the keyframe a dragged start copies from, lit while the drag lasts
+  let _kfLanding: number | null = null;
   let timelineZoom = 1;
   let TL_ZOOM_MIN = TimelineCore.ZOOM_MIN;
   let TL_SNAP_PX = 8;
@@ -249,7 +250,12 @@ function paintCutOverlay() {
     segment.querySelector(".tl-cut-note")?.remove();
     if (isHtmlElement(segment)) segment.style.removeProperty("--sliver");
   }
-  if (lane) lane.hidden = !overlay || !keyframesOn;
+  if (lane) {
+    lane.hidden = !overlay || !keyframesOn;
+    // a dragged start shows every keyframe it could land on
+    lane.classList.toggle("dragging", _tlDrag === "in");
+  }
+  paintKeyframeGuides();
   if (!overlay) {
     if (marks) Keyframes.renderCutMarks(marks, [], 1);
     tlIn?.removeAttribute("aria-valuetext");
@@ -257,8 +263,7 @@ function paintCutOverlay() {
     return;
   }
   const { clip, full, strip, plan } = overlay;
-  const near = _tlDrag === "in" ? _kfNear : [];
-  if (lane && keyframesOn) Keyframes.renderKeyframeStrip(lane, strip, full, near);
+  if (lane && keyframesOn) Keyframes.renderKeyframeStrip(lane, strip, full);
   const segments = clipSegments(clip, full);
   const active = activeSegmentIndex(clip, segments);
   const slivers: Keyframes.CutSliver[] = [];
@@ -282,6 +287,23 @@ function paintCutOverlay() {
     tlIn?.setAttribute("aria-valuetext", Keyframes.handleValueText("start", bounds.start, current));
     tlOut?.setAttribute("aria-valuetext", Keyframes.handleValueText("end", bounds.end, current));
   }
+}
+
+// the keyframe the playhead sits on, or the two either side, are lit; a dragged start lights
+// the keyframe it copies from instead
+function paintKeyframeGuides(sec?: number) {
+  const layer = byId("kf-guides");
+  if (!layer) return;
+  const overlay = keyframesOn ? cutOverlay() : null;
+  layer.hidden = !overlay;
+  if (!overlay) return;
+  const video = currentVideo();
+  const time = sec ?? _previewSecLocal ?? (video && Number.isFinite(video.currentTime) ? video.currentTime : 0);
+  if (_tlDrag === "in") {
+    Keyframes.renderKeyframeGuides(layer, [], _kfLanding, overlay.full);
+    return;
+  }
+  Keyframes.renderKeyframeGuides(layer, Keyframes.keyframesAround(overlay.strip.times, time, overlay.tolerance), null, overlay.full);
 }
 
 // the clip's time line says how late the cut starts when the whole line fits; narrow clips
@@ -656,6 +678,7 @@ function setPlayheadUI(sec: number, full?: number) {
   host.paintStageScrub?.(pct);
   _previewSecLocal = sec;
   host.setPreviewSec?.(sec);
+  paintKeyframeGuides(sec);
 }
 
 // the cut task reads the player time to the hundredth, like the timeline
@@ -989,7 +1012,10 @@ function processTimelineMove(e: PointerEvent) {
   if (_tlDrag === "in") {
     let start = applyTrimStart(time);
     if (start == null) return;
-    _kfNear = keyframesNear([start]);
+    const overlay = cutOverlay();
+    _kfLanding = overlay && selectedClip(session)?.cutState?.precision !== "exact"
+      ? Keyframes.landingKeyframe(overlay.strip.times, start, overlay.tolerance)
+      : null;
     paintTrimChrome();
     host.seekPreview?.(start);
   } else if (_tlDrag === "out") {
@@ -1044,8 +1070,8 @@ function onTimelinePointerUp(e: PointerEvent) {
   setSegmentDragCursor(false);
   if (_tlDrag === "ruler") setRulerScrubCursor(false);
   _tlDrag = null;
-  if (_kfNear.length) {
-    _kfNear = [];
+  if (_kfLanding != null || byId("kf-lane")?.classList.contains("dragging")) {
+    _kfLanding = null;
     paintCutOverlay();
   }
   if (_previewSecLocal != null) {

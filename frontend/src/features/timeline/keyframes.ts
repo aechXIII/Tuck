@@ -81,6 +81,29 @@ export function keyframeSnapCandidates(times: readonly number[], time: number): 
   return around.filter((value): value is number => value !== undefined);
 }
 
+// the keyframe the playhead sits on, or the two either side of it
+export function keyframesAround(
+  times: readonly number[],
+  time: number,
+  tolerance = 0.001,
+): number[] {
+  if (!times.length || !Number.isFinite(time)) return [];
+  const index = lowerBound(times, time - tolerance);
+  const on = times[index];
+  if (on !== undefined && on <= time + tolerance) return [on];
+  return [times[index - 1], on].filter((value): value is number => value !== undefined);
+}
+
+// where copying begins for a start at `time`: that keyframe, or the next one
+export function landingKeyframe(
+  times: readonly number[],
+  time: number,
+  tolerance = 0.001,
+): number | null {
+  if (!Number.isFinite(time)) return null;
+  return times[lowerBound(times, time - tolerance)] ?? null;
+}
+
 // a plan made before the latest edit must not decorate the edited segment. The last end is
 // the analysed stream duration, which can differ from the probed container duration.
 export function planMatches(
@@ -207,7 +230,6 @@ export function renderKeyframeStrip(
   lane: HTMLElement,
   strip: KeyframeStrip,
   duration: number,
-  near: readonly number[] = [],
 ): void {
   const doc = lane.ownerDocument;
   const key = `${duration}|${strip.coverage}|${strip.times.length}|${strip.times[0]}|${strip.times[strip.times.length - 1]}`;
@@ -238,11 +260,32 @@ export function renderKeyframeStrip(
   }
   const width = lane.getBoundingClientRect().width;
   lane.classList.toggle("dense", strip.times.length > 0 && width / strip.times.length < MIN_NOTCH_SPACING);
-  for (const old of lane.querySelectorAll(".kf.near")) old.remove();
+}
+
+// the highlighted keyframes sit in their own layer, since the strip is blended into the clip
+export function renderKeyframeGuides(
+  layer: HTMLElement,
+  near: readonly number[],
+  landing: number | null,
+  duration: number,
+): void {
+  const key = `${duration}|${near.join(",")}|${landing}`;
+  if (layer.dataset.guideKey === key) return;
+  layer.dataset.guideKey = key;
+  const doc = layer.ownerDocument;
+  const guides = doc.createDocumentFragment();
   for (const time of near) {
-    const tick = doc.createElement("i");
-    tick.className = "kf near";
-    tick.style.left = percent(time, duration);
-    lane.append(tick);
+    if (time === landing) continue;
+    const guide = doc.createElement("i");
+    guide.className = "kf-guide";
+    guide.style.left = percent(time, duration);
+    guides.append(guide);
   }
+  if (landing != null) {
+    const guide = doc.createElement("i");
+    guide.className = "kf-guide landing";
+    guide.style.left = percent(landing, duration);
+    guides.append(guide);
+  }
+  layer.replaceChildren(guides);
 }

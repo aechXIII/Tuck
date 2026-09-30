@@ -70,6 +70,21 @@ test("snap candidates are the keyframes either side of the dragged time", () => 
   assert.deepEqual(Keyframes.keyframeSnapCandidates([], 1), []);
 });
 
+test("the playhead lights the keyframe it sits on, or the two either side", () => {
+  const times = [0, 2, 4, 6];
+  assert.deepEqual(Keyframes.keyframesAround(times, 2.7, 0.01), [2, 4]);
+  assert.deepEqual(Keyframes.keyframesAround(times, 4.005, 0.01), [4]);
+  assert.deepEqual(Keyframes.keyframesAround(times, 9, 0.01), [6]);
+  assert.deepEqual(Keyframes.keyframesAround([], 1, 0.01), []);
+});
+
+test("a dragged start copies from that keyframe or the next one", () => {
+  const times = [0, 2, 4];
+  assert.equal(Keyframes.landingKeyframe(times, 2.3, 0.01), 4);
+  assert.equal(Keyframes.landingKeyframe(times, 1.995, 0.01), 2);
+  assert.equal(Keyframes.landingKeyframe(times, 4.5, 0.01), null);
+});
+
 test("a sliver covers the skipped part between the requested and exported start", () => {
   assert.deepEqual(Keyframes.sliverFor(1, { start: 42.4, end: 120 }, segment(42.4, 120, 44)), {
     index: 1,

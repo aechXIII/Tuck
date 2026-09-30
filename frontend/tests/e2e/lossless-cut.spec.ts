@@ -437,7 +437,7 @@ test("a start that moves shows its sliver and note, and the chip opens its cut",
   await expect(page.locator("#tl-in")).not.toHaveAttribute("aria-valuetext",/./);
 });
 
-test("dragging a start snaps to keyframes and shows the neighbouring guides", async ({page}) => {
+test("dragging a start snaps to keyframes and lights the keyframe it copies from", async ({page}) => {
   await setup(page);
   await page.locator("#wf-l").click();
   await expect(page.locator("#btn-one")).toBeEnabled();
@@ -448,10 +448,12 @@ test("dragging a start snaps to keyframes and shows the neighbouring guides", as
   await page.mouse.move(edge.x + edge.width / 2, y);
   await page.mouse.down();
   await page.mouse.move(x(3.96), y, {steps:6});
-  await expect(page.locator("#kf-lane .kf.near")).toHaveCount(2);
+  await expect(page.locator("#kf-lane")).toHaveClass(/dragging/);
+  await expect(page.locator("#kf-guides .kf-guide.landing")).toHaveCount(1);
   await page.mouse.up();
   await expect(page.locator("#tl-in")).toHaveAttribute("aria-valuenow","4");
-  await expect(page.locator("#kf-lane .kf.near")).toHaveCount(0);
+  await expect(page.locator("#kf-lane")).not.toHaveClass(/dragging/);
+  await expect(page.locator("#kf-guides .kf-guide.landing")).toHaveCount(0);
   await page.locator("#btn-snap-toggle").click();
   const moved = (await page.locator('.tl-segment[data-segment-index="0"] .clip-edge.start').boundingBox())!;
   await page.mouse.move(moved.x + moved.width / 2, y);

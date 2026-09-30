@@ -756,9 +756,11 @@ body.tl-segment-dragging * {
   }
 }
 
-/* keyframes: short notches hanging from the clip's top edge, in the clip label's ink, so they
-   read as part of the clip. While a start is dragged, the keyframes it can land on become lines. */
-.kf-lane {
+/* keyframes: faint dividers through the clip, so a segment reads as the pieces a copy can start
+   between. The strip is blended over the timeline, which leaves the dividers faint on the empty
+   lane and clearer on clips; the lit keyframes sit in their own layer so their colour stays true. */
+.kf-lane,
+.kf-guides {
   position: absolute;
   left: 0;
   right: 0;
@@ -767,7 +769,11 @@ body.tl-segment-dragging * {
   pointer-events: none;
   z-index: 2;
 }
-.kf-lane[hidden] {
+.kf-lane {
+  mix-blend-mode: overlay;
+}
+.kf-lane[hidden],
+.kf-guides[hidden] {
   display: none;
 }
 .kf-lane .kf {
@@ -780,36 +786,32 @@ body.tl-segment-dragging * {
   content: "";
   position: absolute;
   top: 1px;
-  left: -0.5px;
-  width: 1px;
-  height: 6px;
-  border-radius: 0 0 1px 1px;
-  background: color-mix(in srgb, var(--text) 55%, transparent);
-}
-/* a solid comb would hide the clip, so dense keyframes fade to a texture */
-.kf-lane.dense .kf::before {
-  height: 4px;
-  opacity: 0.45;
-}
-.kf-lane .kf.near::before {
-  height: 8px;
-  opacity: 1;
-  background: var(--accent-light);
-}
-.kf-lane .kf.near::after {
-  content: "";
-  position: absolute;
-  top: 1px;
   bottom: 1px;
   left: -0.5px;
   width: 1px;
-  background: color-mix(in srgb, var(--accent-light) 80%, transparent);
-  animation: kf-near-in 120ms ease-out;
+  background: rgb(255 255 255 / 0.28);
 }
-@keyframes kf-near-in {
-  from {
-    opacity: 0;
-  }
+/* a solid comb would hide the clip, so dense keyframes fade to a texture */
+.kf-lane.dense .kf::before {
+  opacity: 0.45;
+}
+.kf-lane.dragging .kf::before {
+  background: rgb(255 255 255 / 0.7);
+}
+.kf-guides .kf-guide {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  left: 0;
+  width: 1px;
+  margin-left: -0.5px;
+  background: var(--accent-light);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-light) 22%, transparent);
+}
+.kf-guides .kf-guide.landing {
+  width: 2px;
+  margin-left: -1px;
+  background: var(--accent-light);
 }
 .kf-lane .kf-scan,
 .kf-lane .kf-unread {
@@ -931,10 +933,6 @@ body.tl-segment-dragging * {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .kf-lane .kf.near::after {
-    animation: none;
-  }
-
   .tl-segment,
   .seq-track-mute,
   .seq-track-remove,
