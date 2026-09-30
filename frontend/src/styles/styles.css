@@ -492,9 +492,6 @@ body.workspace-overlay .panel-heading {
 .clip .c-meta {
   min-width: 0;
 }
-.clip .c-error {
-  color: var(--danger);
-}
 .clip .c-time {
   color: var(--muted);
   font-size: 9px;

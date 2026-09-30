@@ -75,7 +75,7 @@ export interface LibraryApi {
   moveSelection(delta: number, event?: Event): void;
   isReordering(): boolean;
   orderedClipKeys(): string[];
-  metaStr(clip: EditorClip): { text: string; error: boolean };
+  metaStr(clip: EditorClip): { text: string };
   probe: ProbeCoordinator;
   preview: PreviewController;
 }
@@ -233,12 +233,10 @@ export function createLibrary(host: LibraryHost): LibraryApi {
     return formatTime(selected);
   }
 
-  function metaStr(clip: EditorClip): { text: string; error: boolean } {
-    if (clip._queueState === "failed" && clip._queueError) {
-      return { text: errorSummary(clip._queueError, 100), error: true };
-    }
-    if (clip.error) return { text: errorSummary(clip.error, 100), error: false };
-    if (!clip.probed) return { text: "…", error: false };
+  function metaStr(clip: EditorClip): { text: string } {
+    // the reason sits on the status line's tooltip; an unreadable file has no details to show
+    if (clip.error) return { text: "" };
+    if (!clip.probed) return { text: "…" };
     const data = clip.probeData;
     const first: string[] = [];
     const duration = clipDuration(clip);
@@ -264,7 +262,7 @@ export function createLibrary(host: LibraryHost): LibraryApi {
       second += ` → ${formatBytes(clip._resultSize)}`;
     }
     if (second) first.push(second);
-    return { text: first.join(" · "), error: false };
+    return { text: first.join(" · ") };
   }
 
   function clipStateBadge(path: string): ClipCardModel["badge"] {
@@ -481,13 +479,16 @@ export function createLibrary(host: LibraryHost): LibraryApi {
     el.classList.remove("show");
     const models: ClipCardModel[] = keys.map((path) => {
       const clip = session.clips[path]!;
-      let statusLabel = clip._statusText || "";
+      let statusLabel = clip._queueState === "failed" ? "" : clip._statusText || "";
       if (!statusLabel && clip._queueState === "completed") statusLabel = "Completed";
       if (!statusLabel && clip._queueState === "pending") statusLabel = "Pending";
       if (!statusLabel && clip._queueState === "running") statusLabel = "Encoding";
-      if (!statusLabel && clip._queueState === "failed") statusLabel = "Failed";
+      if (!statusLabel && clip._queueState === "failed") statusLabel = "Export failed";
       if (!statusLabel && clip._queueState === "cancelled") statusLabel = "Cancelled";
-      if (!statusLabel && clip.error) statusLabel = "Could not read details";
+      if (!statusLabel && clip.error) statusLabel = "Can't read this file";
+      const detail = clip._queueState === "failed" && clip._queueError
+        ? errorSummary(clip._queueError)
+        : clip.error ? errorSummary(clip.error) : "";
       const plan = clip.planData as Record<string, unknown> | null | undefined;
       const est = plan ? Number(plan.estimated_size_mb) : NaN;
       const planTarget = plan ? Number(plan.target_size_mb) : NaN;
@@ -502,6 +503,7 @@ export function createLibrary(host: LibraryHost): LibraryApi {
         queueState: clip._queueState || "",
         resultPath: clip._resultPath || "",
         statusLabel,
+        detail,
         progress: clip._progress || 0,
         progressIndeterminate: clip._progressIndeterminate === true,
         probeError: !!clip.error,

@@ -34,11 +34,13 @@ export interface ClipCardModel {
   queueState?: string | undefined;
   resultPath?: string | undefined;
   statusLabel?: string | undefined;
+  // the full reason behind a failed export or unreadable file, shown on hover
+  detail?: string | undefined;
   progress?: number | undefined;
   progressIndeterminate?: boolean | undefined;
   probeError?: unknown;
   fileSize?: number | undefined;
-  meta?: { text?: unknown; error?: boolean | undefined } | null | undefined;
+  meta?: { text?: unknown } | null | undefined;
   badge?: ClipBadge | null | undefined;
   projectedMb?: number | undefined;
   overBudget?: boolean | undefined;
@@ -128,9 +130,14 @@ function appendStatus<T extends ClipCardElement>(
     return;
 
   const row = createElement(documentRef, "div", "c-status-row");
-  row.appendChild(
-    createElement(documentRef, "span", "c-status", model.statusLabel || ""),
+  const status = createElement(
+    documentRef,
+    "span",
+    libraryGroup(model) === "attention" ? "c-status attention" : "c-status",
+    model.statusLabel || "",
   );
+  if (model.detail) status.dataset.tip = model.detail;
+  row.appendChild(status);
   if (hasOpen) {
     row.appendChild(
       createActionButton(documentRef, "open-result", "Show", "c-act link"),
@@ -145,14 +152,14 @@ function appendStatus<T extends ClipCardElement>(
     row.appendChild(createActionButton(documentRef, "retry", "Retry", "c-act"));
   }
   if (hasProbeRetry) {
-    row.appendChild(
-      createActionButton(
-        documentRef,
-        "retry-probe",
-        "Retry reading " + (model.name || ""),
-        "c-act",
-      ),
+    const retry = createActionButton(
+      documentRef,
+      "retry-probe",
+      "Retry reading " + (model.name || ""),
+      "c-act",
     );
+    retry.textContent = "Retry";
+    row.appendChild(retry);
   }
   cardMain.appendChild(row);
 }
@@ -179,6 +186,7 @@ function libraryGroup(model: ClipCardModel): string {
   const state = model.queueState || "";
   if (state === "running" || state === "processing") return "encoding";
   if (state === "pending") return "queued";
+  if (state === "failed" || model.probeError) return "attention";
   return "ready";
 }
 
@@ -186,6 +194,7 @@ export function groupClipModels(models: ClipCardModel[]): ClipGroup[] {
   const definitions = [
     { key: "encoding", label: "Exporting" },
     { key: "queued", label: "Queued" },
+    { key: "attention", label: "Needs attention" },
     { key: "ready", label: "Ready" },
   ];
   return definitions
@@ -247,6 +256,7 @@ export function createClipCard<T extends ClipCardElement>(
   card.setAttribute("title", name + " - drag handle to reorder");
   card.dataset.clipPath = model.path;
   card.dataset.queueState = model.queueState || "ready";
+  if (model.detail) card.setAttribute("aria-description", model.detail);
   if (model.queueItemId) card.dataset.queueItemId = model.queueItemId;
 
   const drag = createElement(documentRef, "span", "c-drag", "⋮⋮");
@@ -261,13 +271,7 @@ export function createClipCard<T extends ClipCardElement>(
   main.appendChild(titleRow);
   const metadata = createElement(documentRef, "div", "c3");
   const metadataText = createElement(documentRef, "span", "c-meta");
-  if (model.meta && model.meta.error) {
-    metadataText.appendChild(
-      createElement(documentRef, "span", "c-error", model.meta.text),
-    );
-  } else {
-    metadataText.textContent = model.meta ? String(model.meta.text) : "";
-  }
+  metadataText.textContent = model.meta ? String(model.meta.text) : "";
   metadata.appendChild(metadataText);
   main.appendChild(metadata);
   if (model.queueState === "running" || model.queueState === "processing") {

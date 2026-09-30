@@ -69,7 +69,8 @@ test("clip cards keep backend data inert and delegate exact action values", () =
     queueState: "completed",
     resultPath: `C:\\result-'\" dangerous.mp4`,
     statusLabel: '<b onmouseover="globalThis.pwned=true">Done</b>',
-    meta: { text: '<svg onload="globalThis.pwned=true">', error: true },
+    meta: { text: '<svg onload="globalThis.pwned=true">' },
+    detail: '<img src=x onerror="globalThis.pwned=true">',
     badge: { className: "cst-completed", label: "Completed", icon: "✓" },
   };
   const callbacks = {
@@ -101,7 +102,7 @@ test("clip cards keep backend data inert and delegate exact action values", () =
   assert.ok(badge);
   assert.equal(badge.attributes.role, "img");
   assert.equal(badge.attributes["aria-label"], "Completed");
-  assert.ok(descendants(card).some((element) => element.className === "c-error"));
+  assert.equal(card.attributes["aria-description"], model.detail);
   const open = action(card, "open-result");
   assert.ok(open);
   assert.equal(open.textContent, "Show");
@@ -196,6 +197,39 @@ test("library groups active work ahead of queued and ready clips without reorder
   );
 });
 
+test("failed exports and unreadable files need attention and say so briefly", () => {
+  const clips = [
+    { path: "ready.mp4", name: "ready.mp4", queueState: "cancelled" },
+    { path: "failed.mp4", name: "failed.mp4", queueState: "failed", queueItemId: "q1" },
+    { path: "broken.mp4", name: "broken.mp4", queueState: "", probeError: true },
+  ];
+  assert.deepEqual(
+    clipCards.groupClipModels(clips).map((group) => [group.key, group.items.map((clip) => clip.path)]),
+    [["attention", ["failed.mp4", "broken.mp4"]], ["ready", ["ready.mp4"]]],
+  );
+  assert.equal(
+    clipCards.groupHeading({ key: "attention", label: "Needs attention", items: clips.slice(1) }),
+    "Needs attention · 2",
+  );
+
+  const noop = () => {};
+  const created = clipCards.createClipCard(
+    documentRef,
+    { path: "broken.mp4", name: "broken.mp4", probeError: true, statusLabel: "Can't read this file", detail: "moov atom not found" },
+    { select: noop, togglePlay: noop, remove: noop, openResult: noop, cancel: noop, retry: noop, beginReorder: noop },
+  );
+  if (!(created instanceof FakeElement)) throw new Error("expected FakeElement");
+  const status = descendants(created).find((element) => element.className === "c-status attention");
+  assert.ok(status);
+  assert.equal(status.textContent, "Can't read this file");
+  assert.equal(status.dataset.tip, "moov atom not found");
+  assert.equal(created.attributes["aria-description"], "moov atom not found");
+  const retry = action(created, "retry-probe");
+  assert.ok(retry);
+  assert.equal(retry.textContent, "Retry");
+  assert.equal(retry.attributes["aria-label"], "Retry reading broken.mp4");
+});
+
 test("queued cards use their compact badge as the per-item cancel action", () => {
   const calls: string[] = [];
   const created = clipCards.createClipCard(
@@ -207,7 +241,7 @@ test("queued cards use their compact badge as the per-item cancel action", () =>
       queueItemId: "q1",
       queueState: "pending",
       statusLabel: "Pending",
-      meta: { text: "3840×2160 · 1.4 GB", error: false },
+      meta: { text: "3840×2160 · 1.4 GB" },
     },
     {
       select() {},
@@ -251,7 +285,7 @@ test("library omits empty status sections and reports a hand-checked summary", (
   const groups = clipCards.groupClipModels(clips);
   assert.deepEqual(
     groups.map((group) => [group.key, group.items.length]),
-    [["ready", 3]],
+    [["attention", 1], ["ready", 2]],
   );
   assert.deepEqual(clipCards.librarySummary(clips), {
     countLabel: "3 videos",

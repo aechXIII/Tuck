@@ -190,6 +190,12 @@
 .clip[data-queue-state="processing"] .c-status {
   color: var(--text);
 }
+/* a failed export or unreadable file names the problem in warning colour, even when selected */
+.lib-group-attention .lib-section-heading span:first-child,
+.clip .c-status.attention,
+.clip.sel .c-status.attention {
+  color: color-mix(in srgb, var(--warn) 80%, var(--text));
+}
 .clip.sel .c-act {
   height: 20px;
   padding: 0 7px;

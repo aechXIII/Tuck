@@ -147,9 +147,10 @@ test("a failed probe exposes an enabled retry and recovers", async ({ page }) =>
   await page.goto("/");
 
   await page.getByRole("button", { name: "Add videos" }).click();
-  await expect(
-    page.locator(".c-meta").getByText("Probe failed safely", { exact: true }),
-  ).toBeVisible();
+  // the card names the problem; the reason is on its tooltip and read out with it
+  await expect(page.locator(".lib-group-attention .c-status")).toHaveText("Can't read this file");
+  await expect(page.locator(".lib-group-attention .c-status")).toHaveAttribute("data-tip", "Probe failed safely");
+  await expect(page.locator(".lib-group-attention .clip")).toHaveAttribute("aria-description", "Probe failed safely");
   const retry = page.getByRole("button", { name: "Retry reading broken.mp4" });
   await expect(retry).toBeEnabled();
   await retry.click();

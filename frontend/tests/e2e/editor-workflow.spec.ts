@@ -300,7 +300,7 @@ test("a failed probe keeps retry enabled and recovers without executing backend 
   await page.goto("/");
 
   await page.getByRole("button", { name: "Add videos" }).click();
-  await expect(page.locator(".c-meta")).toContainText("malformed");
+  await expect(page.locator(".clip")).toHaveAttribute("aria-description", /malformed/);
   await expect(page.locator("#clips img")).toHaveCount(0);
   const retry = page.getByRole("button", { name: /Retry reading/ });
   await expect(retry).toBeEnabled();
