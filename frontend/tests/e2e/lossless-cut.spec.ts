@@ -462,6 +462,22 @@ test("the player bar marks the selected segment and steps between keyframes", as
   await expect(page.getByRole("button", {name: "Next frame"})).toBeVisible();
 });
 
+test("I past the end of a segment starts a new segment at the playhead", async ({page}) => {
+  await setup(page);
+  await page.locator("#wf-l").click();
+  await expect(page.locator("#btn-one")).toBeEnabled();
+  const next = page.getByRole("button", {name: "Next keyframe"});
+  await next.click();
+  await page.getByRole("button", {name: "Set end at the playhead"}).click();
+  await expect(page.locator("#btn-cut-go-end .cut-point-value")).toHaveText("0:04.00");
+  await next.click();
+  await expect(page.locator("#ptime")).toHaveText("0:08.00 / 0:12.00");
+  await page.keyboard.press("i");
+  await expect(page.locator(".tl-segment")).toHaveCount(2);
+  await expect(page.locator("#btn-cut-go-start .cut-point-value")).toHaveText("0:08.00");
+  await expect(page.locator("#btn-cut-go-end .cut-point-value")).toHaveText("0:12.00");
+});
+
 test("a start that copies from a later keyframe is marked in the player bar", async ({page}) => {
   await setup(page,{moved:true});
   await page.locator("#wf-l").click();

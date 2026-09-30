@@ -216,3 +216,34 @@ test("playback traverses gaps and loops after the final segment", () => {
   assert.equal(segments.playbackTarget(kept, 2.98), 0);
   assert.equal(segments.playbackTarget(kept, 4), 0);
 });
+
+test("I and O inside a segment move that segment's edge and select it", () => {
+  const two = [{ start: 1, end: 4 }, { start: 6, end: 9 }];
+  assert.deepEqual(segments.setBoundaryAt(two, "start", 7, 10), { segments: [{ start: 1, end: 4 }, { start: 7, end: 9 }], index: 1 });
+  assert.deepEqual(segments.setBoundaryAt(two, "end", 3, 10), { segments: [{ start: 1, end: 3 }, { start: 6, end: 9 }], index: 0 });
+});
+
+test("I in an empty part starts a new segment that runs to the next one or the end", () => {
+  const two = [{ start: 1, end: 4 }, { start: 6, end: 9 }];
+  assert.deepEqual(segments.setBoundaryAt(two, "start", 5, 10), {
+    segments: [{ start: 1, end: 4 }, { start: 5, end: 6 }, { start: 6, end: 9 }],
+    index: 1,
+  });
+  assert.deepEqual(segments.setBoundaryAt(two, "start", 9.5, 10)?.segments.at(-1), { start: 9.5, end: 10 });
+  assert.equal(segments.setBoundaryAt(two, "start", 5.98, 10), null);
+});
+
+test("O in an empty part stretches the segment before it, or starts one with the video", () => {
+  const two = [{ start: 1, end: 4 }, { start: 6, end: 9 }];
+  assert.deepEqual(segments.setBoundaryAt(two, "end", 5, 10), { segments: [{ start: 1, end: 5 }, { start: 6, end: 9 }], index: 0 });
+  assert.deepEqual(segments.setBoundaryAt(two, "end", 0.5, 10), {
+    segments: [{ start: 0, end: 0.5 }, { start: 1, end: 4 }, { start: 6, end: 9 }],
+    index: 0,
+  });
+  assert.equal(segments.setBoundaryAt(two, "end", 0.01, 10), null);
+});
+
+test("I and O never leave a segment shorter than the minimum", () => {
+  assert.equal(segments.setBoundaryAt([{ start: 1, end: 4 }], "start", 3.99, 10), null);
+  assert.equal(segments.setBoundaryAt([{ start: 1, end: 4 }], "end", 1.01, 10), null);
+});

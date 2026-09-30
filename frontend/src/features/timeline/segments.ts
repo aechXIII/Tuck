@@ -314,6 +314,51 @@ export function splitAt(
   return null;
 }
 
+// I and O at the playhead. Inside a segment they move that segment's edge; in an empty part of
+// the timeline, a start begins a new segment that runs to the next one, and an end stretches the
+// segment before it. Null when the result would be shorter than a segment can be.
+export function setBoundaryAt(
+  segments: SegmentRange[],
+  endpoint: "start" | "end",
+  time: number,
+  duration: number,
+): { segments: SegmentRange[]; index: number } | null {
+  const result = normalizeSegments(segments, duration);
+  const at = Math.max(0, Math.min(duration, finiteNumber(time, "boundary time")));
+  const short = (length: number) => length < MIN_DURATION - 0.000001;
+  const inside = result.findIndex((segment) =>
+    endpoint === "start" ? at >= segment.start && at < segment.end : at > segment.start && at <= segment.end,
+  );
+  const current = result[inside];
+  if (current) {
+    if (endpoint === "start") {
+      if (short(current.end - at)) return null;
+      current.start = at;
+    } else {
+      if (short(at - current.start)) return null;
+      current.end = at;
+    }
+    return { segments: result, index: inside };
+  }
+  const following = result.findIndex((segment) => segment.start >= at);
+  const insertAt = following === -1 ? result.length : following;
+  if (endpoint === "start") {
+    const end = result[insertAt]?.start ?? duration;
+    if (short(end - at)) return null;
+    result.splice(insertAt, 0, { start: at, end });
+    return { segments: result, index: insertAt };
+  }
+  const previous = result[insertAt - 1];
+  if (previous) {
+    previous.end = at;
+    return { segments: result, index: insertAt - 1 };
+  }
+  // before the first segment there is nothing to stretch, so the new one starts with the video
+  if (short(at)) return null;
+  result.unshift({ start: 0, end: at });
+  return { segments: result, index: 0 };
+}
+
 export function audioSegmentsForClip(
   clip: ClipSegmentSource | null | undefined,
   duration: number,

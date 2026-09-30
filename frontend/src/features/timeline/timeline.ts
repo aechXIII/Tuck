@@ -840,16 +840,23 @@ function canTrimActiveSegmentToPlayhead() {
   return full > 0 && !!video && Number.isFinite(video.currentTime);
 }
 
+// I and O act on the segment under the playhead; in an empty part a start begins a new segment
+// and an end stretches the segment before it
 function trimActiveSegmentToPlayhead(endpoint: "start" | "end") {
   if (!canTrimActiveSegmentToPlayhead()) return null;
-  let video = currentVideo();
-  if (!video) return null;
+  const clip = selectedClip(session);
+  const video = currentVideo();
+  if (!clip || !video) return null;
+  const full = videoDuration() || clip.probeData?.duration || 0;
   // the playhead can be ahead of the video while a seek is still settling
-  let time = host.getPreviewSec?.() ?? video.currentTime;
-  let value =
-    endpoint === "start"
-      ? applyTrimStart(time, false)
-      : applyTrimEnd(time, false);
+  const time = host.getPreviewSec?.() ?? video.currentTime;
+  const result = SegmentEditing.setBoundaryAt(clipSegments(clip, full), endpoint, time, full);
+  if (!result) {
+    notify(NO_ROOM_FOR_SEGMENT, "err");
+    return null;
+  }
+  setClipSegments(clip, result.segments, result.index);
+  const value = arrayItem(result.segments, result.index)?.[endpoint] ?? null;
   paintTrimChrome();
   host.renderClips?.();
   host.reqPreview?.();
