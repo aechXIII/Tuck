@@ -748,7 +748,8 @@ function splitAtPlayhead() {
   if (!c) return;
   let full = videoDuration() || c.probeData?.duration || 0;
   let video = currentVideo();
-  let time = video && Number.isFinite(video.currentTime) ? video.currentTime : 0;
+  // the playhead can be ahead of the video while a seek is still settling
+  let time = host.getPreviewSec?.() ?? (video && Number.isFinite(video.currentTime) ? video.currentTime : 0);
   let result = SegmentEditing.splitAt(clipSegments(c, full), time, full);
   if (!result) {
     notify("Move the playhead inside a video clip to split it.", "err");
@@ -843,7 +844,8 @@ function trimActiveSegmentToPlayhead(endpoint: "start" | "end") {
   if (!canTrimActiveSegmentToPlayhead()) return null;
   let video = currentVideo();
   if (!video) return null;
-  let time = video.currentTime;
+  // the playhead can be ahead of the video while a seek is still settling
+  let time = host.getPreviewSec?.() ?? video.currentTime;
   let value =
     endpoint === "start"
       ? applyTrimStart(time, false)
