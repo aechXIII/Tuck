@@ -19,17 +19,6 @@
   font-family: var(--mono);
   letter-spacing: 0;
 }
-.c-progress {
-  height: 3px;
-  margin-top: 7px;
-  overflow: hidden;
-  background: rgb(255 255 255 / 0.18);
-}
-.c-progress-fill {
-  display: block;
-  height: 100%;
-  background: #fff;
-}
 
 #left-hdr {
   padding: 8px var(--panel-inset) 14px;
@@ -85,152 +74,195 @@
 .clip:hover {
   background: var(--raised);
 }
-.clip.sel:hover,
-.clip[data-queue-state="running"]:hover,
-.clip[data-queue-state="processing"]:hover {
+.clip.sel,
+.clip.sel:hover {
   background: var(--raised-2);
 }
-.clip[data-queue-state="pending"]:hover {
-  background: var(--raised-2);
+
+/* a video row: its picture, then the name over one line of state or result */
+.clip[data-clip-path] {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 2px;
+  padding: 6px 6px 6px 10px;
+  border-radius: 7px;
 }
-.clip[data-queue-state="pending"] {
-  min-height: 50px;
-  padding-right: 76px;
-  background: var(--raised);
-}
-.clip[data-queue-state="running"],
-.clip[data-queue-state="processing"] {
-  padding: 8px 10px 9px;
-  background: var(--raised-2);
-}
-.clip .c2 {
+.clip[data-clip-path] .c1 {
   min-width: 0;
-  padding: 0;
   flex: 1;
-  color: var(--text);
-  font-size: 11.5px;
-  font-weight: 600;
 }
-.clip.sel .c2,
-.clip[data-queue-state="running"] .c2,
-.clip[data-queue-state="processing"] .c2 {
-  color: var(--text);
+.clip[data-clip-path] .c2 {
+  padding-right: 0;
+  font-size: 12px;
+  line-height: 16px;
 }
-.clip .c3 {
-  margin-top: 2px;
-  color: var(--muted);
-  font-size: 10px;
-  line-height: 1.25;
-}
-/* projected output size — the planner's estimate for this clip, once it has one */
-.clip .c-proj {
+.c-thumb {
+  position: relative;
   flex: 0 0 auto;
-  font-family: var(--mono);
-  font-size: 9.5px;
-  font-weight: 500;
-  color: var(--good);
-  white-space: nowrap;
-  pointer-events: none;
+  width: 64px;
+  height: 36px;
+  overflow: hidden;
+  border-radius: 5px;
+  background: var(--sink);
 }
-.clip .c-proj.over {
-  color: var(--danger);
+.c-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
-.clip.sel .c-proj,
-.clip[data-queue-state="running"] .c-proj,
-.clip[data-queue-state="processing"] .c-proj {
-  color: var(--text);
+/* a file Tuck could not read has no picture; hatching keeps the row from looking unfinished */
+.c-thumb.unreadable {
+  background: repeating-linear-gradient(135deg, #1a1a1d 0 6px, #161618 6px 12px);
 }
-.clip.sel .c-proj.over,
-.clip[data-queue-state="running"] .c-proj.over,
-.clip[data-queue-state="processing"] .c-proj.over {
-  color: var(--danger);
+/* the marks are drawn in CSS: the app's content policy allows no inline images */
+.c-thumb.unreadable::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 16px;
+  height: 14px;
+  margin: auto;
+  background: var(--warn);
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
 }
-.clip.sel .c3,
-.clip.sel .c-meta,
-.clip[data-queue-state="running"] .c3,
-.clip[data-queue-state="running"] .c-meta,
-.clip[data-queue-state="processing"] .c3,
-.clip[data-queue-state="processing"] .c-meta {
-  color: var(--muted);
+.c-thumb.unreadable::before {
+  content: "!";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  padding-top: 3px;
+  color: var(--sink);
+  font: 800 9px var(--font);
 }
-.clip .c-progress {
-  margin-top: 7px;
-  background: rgb(255 255 255 / 0.18);
+.clip[data-queue-state="pending"] .c-thumb img {
+  opacity: 0.55;
 }
-.clip .c-progress.is-indeterminate .c-progress-fill {
+.c-dur {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: rgb(10 10 12 / 0.72);
+  color: #f1f0f3;
+  font: 600 9.5px/15px var(--mono);
+}
+.c-thumb .c-progress {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 3px;
+  overflow: hidden;
+  background: rgb(0 0 0 / 0.55);
+}
+.c-thumb .c-progress-fill {
+  display: block;
+  height: 100%;
+  background: var(--accent-light);
+}
+.c-thumb .c-progress.is-indeterminate .c-progress-fill {
   width: 32%;
   margin-left: 34%;
 }
-.clip[data-queue-state="running"] .c-progress-fill,
-.clip[data-queue-state="processing"] .c-progress-fill {
-  background: var(--accent);
-}
-.clip .c-status-row {
-  margin-top: 6px;
-  padding: 0;
-}
-.clip .c-status {
+
+.c-line {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  margin-top: 1px;
   color: var(--muted);
-  font-size: 10px;
+  font: 500 11px/15px var(--font);
+  white-space: nowrap;
 }
-.clip.sel .c-status,
-.clip[data-queue-state="running"] .c-status,
-.clip[data-queue-state="processing"] .c-status {
-  color: var(--text);
+.c-line > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-/* a failed export or unreadable file names the problem in warning colour, even when selected */
-.lib-group-attention .lib-section-heading span:first-child,
-.clip .c-status.attention,
-.clip.sel .c-status.attention {
+.c-line .c-arrow,
+.c-line .c-from {
+  flex: 0 0 auto;
+}
+.c-line .c-arrow {
+  color: var(--dim);
+}
+.c-line .c-to {
+  color: var(--accent-light);
+  font-weight: 600;
+}
+.c-line .c-to.over {
+  color: var(--warn);
+}
+.c-line.run {
+  color: var(--accent-light);
+}
+.c-line.done {
+  color: var(--good);
+}
+.c-line.attention {
   color: color-mix(in srgb, var(--warn) 80%, var(--text));
 }
-.clip.sel .c-act {
-  height: 20px;
-  padding: 0 7px;
-  background: rgb(0 0 0 / 0.28);
-  font-size: 10px;
+/* queued and done carry a small mark before their word */
+.c-line.queued::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+  background: linear-gradient(currentColor, currentColor) 50% 1px / 1.5px 3.5px no-repeat;
 }
-.clip > .c-st {
-  display: none;
+.c-line.done::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 3.5px;
+  height: 7px;
+  margin: 0 2px 2px 1px;
+  border-right: 1.8px solid currentColor;
+  border-bottom: 1.8px solid currentColor;
+  transform: rotate(45deg);
 }
-.clip .c-drag {
-  display: flex;
+.c-line .c-act {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--accent-light);
+  font: 600 11px/18px var(--font);
 }
-.clip .c4 {
-  display: block;
-}
-.clip[data-queue-state="pending"] .c4,
-.clip[data-queue-state="running"] .c4,
-.clip[data-queue-state="processing"] .c4 {
-  display: none;
-}
-.c-queue-badge {
-  position: absolute;
-  top: 50%;
-  right: 10px;
-  padding: 2px 6px;
-  transform: translateY(-50%);
-  border: 0;
-  border-radius: 3px;
-  background: var(--raised);
-  color: var(--dim);
-  cursor: pointer;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-}
-.c-queue-badge:hover {
+.c-line .c-act:hover {
   background: var(--raised-2);
   color: var(--text);
 }
-.c-queue-badge:focus-visible {
-  outline: 2px solid var(--accent-light);
-  outline-offset: 2px;
+.clip.sel .c-line .c-act:hover {
+  background: rgb(0 0 0 / 0.28);
 }
-
-.c-title-row {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding-right: 20px;
+/* the drag handle sits in the row's left gutter, beside the picture */
+.clip[data-clip-path] .c-drag {
+  left: 1px;
+}
+/* the remove button sits over the end of the name on hover, on the row's own fill */
+.clip[data-clip-path] .c4 {
+  top: 4px;
+  right: 4px;
+  padding: 1px 5px;
+  background: var(--raised);
+  font-size: 12px;
+}
+.clip[data-clip-path].sel .c4 {
+  background: var(--raised-2);
+}
+/* failed exports and unreadable files name the problem in warning colour */
+.lib-group-attention .lib-section-heading span:first-child {
+  color: color-mix(in srgb, var(--warn) 80%, var(--text));
+}
+.clip[data-clip-path] .c4:hover {
+  background: color-mix(in srgb, var(--danger) 18%, var(--sink));
 }

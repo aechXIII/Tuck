@@ -100,7 +100,7 @@ test("a rejected enqueue surfaces the backend error without an unhandled failure
   expect(errors).toEqual([]);
 });
 
-test("shared export changes clear outdated Library size estimates", async ({ page }) => {
+test("every Library row shows its size estimate and drops it when the shared settings change", async ({ page }) => {
   const fixture = exportFixture();
   fixture.responses.pickFiles = { ok: true, files: [VIDEO, "C:\\media\\Clip two.mp4"] };
   fixture.holdMethods = ["createPlan"];
@@ -137,19 +137,18 @@ test("shared export changes clear outdated Library size estimates", async ({ pag
   const second = page.locator(".clip").filter({ hasText: "Clip two.mp4" });
   await first.click();
   await finishPlans();
-  await expect(first.locator(".c-proj")).toHaveText("→ 9.5 MB");
-  await second.click();
-  await finishPlans();
-  await expect(second.locator(".c-proj")).toHaveText("→ 9.5 MB");
-  await expect(first.locator(".c-proj")).toBeVisible();
+  await expect(first.locator(".c-to")).toHaveText("9.5 MB");
+  // the video that is not selected is planned too, so its row can say what it becomes
+  await expect(second.locator(".c-to")).toHaveText("9.5 MB");
   await page.locator("#sz-badge").fill("50");
   await page.locator("#sz-badge").dispatchEvent("change");
+  await expect(first.locator(".c-to")).toHaveCount(0);
+  await expect(second.locator(".c-to")).toHaveCount(0);
   await finishPlans();
-  await expect(second.locator(".c-proj")).toHaveText("→ 48.0 MB");
-  await expect(first.locator(".c-proj")).toHaveCount(0);
-  await first.click();
+  await expect(first.locator(".c-to")).toHaveText("48.0 MB");
+  // the others are planned once the selected video's plan is back
   await finishPlans();
-  await expect(first.locator(".c-proj")).toHaveText("→ 48.0 MB");
+  await expect(second.locator(".c-to")).toHaveText("48.0 MB");
 });
 
 test("the size panel shows only the chosen target, never a fabricated estimate", async ({

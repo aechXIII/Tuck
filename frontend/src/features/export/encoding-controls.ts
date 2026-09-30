@@ -68,6 +68,9 @@ export interface EncodingControlsApi {
   // picks the task on launch, or when a Send To shortcut asks for one while Tuck is open
   openTask: (launch: unknown, atStart: boolean) => void;
   reqPreview: () => Promise<void>;
+  // plans the other videos so each Library row can say what it becomes
+  planLibrary: () => Promise<void>;
+  task: () => "compression" | "upscale" | "cut";
   reqPreviewAndDirty: () => void;
   buildRequest: (source: string) => Record<string, unknown>;
   updateActionButtons: () => void;
@@ -192,6 +195,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
       }
       cutting.setActive(idx === 2);
       updateActionButtons();
+      deps.renderClips?.();
       if (idx !== 2) void reqPreview();
       void persistSession();
       return;
@@ -228,6 +232,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     updateRcVis();
     refilter();
     updateActionButtons();
+    deps.renderClips?.();
     void persistSession();
   }
 
@@ -950,6 +955,8 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
         delete video._previewRequestId;
       }
       previewSettingsKey = settingsKey;
+      // an estimate for the old settings would be wrong, so rows drop it until the new plan lands
+      deps.renderClips?.();
     }
     const requestId = (previewRequestId += 1);
     clip._previewRequestId = requestId;
@@ -979,9 +986,42 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
         if (session.selPath !== path) return;
         deps.renderClips?.();
         deps.paintCropOverlay();
+        void planLibrary();
       }
     } catch {
       /* preview failures are non-fatal */
+    }
+  }
+
+  // one plan at a time, after the selected video's; a newer run or changed settings retire an older one
+  let libraryPlanRun = 0;
+
+  async function planLibrary(): Promise<void> {
+    if (wf === 2 || !videoSettingsValid() || !lut.valid()) return;
+    const run = (libraryPlanRun += 1);
+    const settingsKey = previewSettingsKey;
+    for (const path of session.clipOrder.slice()) {
+      if (run !== libraryPlanRun || wf === 2 || settingsKey !== previewSettingsKey) return;
+      const clip = session.clips[path];
+      if (!clip || path === session.selPath || !clip.probed || clip.error || clip.planData) continue;
+      const requestId = (previewRequestId += 1);
+      clip._previewRequestId = requestId;
+      try {
+        const r = await legacyBackendResult(client().createPlan(buildRequest(path, requestId) as never));
+        if (
+          r.ok &&
+          r.data &&
+          settingsKey === previewSettingsKey &&
+          session.clips[path] === clip &&
+          clip._previewRequestId === requestId &&
+          r._request_id === requestId
+        ) {
+          clip.planData = r.data as Record<string, unknown>;
+          deps.renderClips?.();
+        }
+      } catch {
+        // a row without an estimate still lists fine
+      }
     }
   }
 
@@ -1200,6 +1240,8 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     loadSettings,
     openTask,
     reqPreview,
+    planLibrary,
+    task: () => (wf === 2 ? "cut" : wf === 1 ? "upscale" : "compression"),
     reqPreviewAndDirty,
     buildRequest: (source: string) => buildRequest(source),
     updateActionButtons,

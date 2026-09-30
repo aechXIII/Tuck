@@ -459,8 +459,6 @@ body.workspace-overlay .panel-heading {
 .clip.sel .c2,
 .clip.sel .c3,
 .clip.sel .c-meta,
-.clip.sel .c-status,
-.clip.sel .c-st,
 .clip.sel .c-drag {
   color: var(--text);
 }
@@ -531,25 +529,6 @@ body.workspace-overlay .panel-heading {
   outline: 2px solid var(--accent-light);
   outline-offset: -1px;
 }
-.clip .c-st {
-  position: absolute;
-  top: 7px;
-  right: 30px;
-  width: 12px;
-  height: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1;
-}
-.cst-ready {
-  color: var(--muted);
-}
-.cst-queued {
-  color: var(--accent-light);
-}
 .c-act {
   background: var(--raised);
   border: 0;
@@ -576,26 +555,6 @@ body.workspace-overlay .panel-heading {
   border: none;
   color: var(--accent-light);
   text-decoration: underline;
-}
-.c-status-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 3px;
-  min-width: 0;
-  padding-right: 18px;
-}
-.c-status {
-  color: var(--accent-light);
-  font-size: 10px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
-  flex: 1;
-}
-.c-status-row .c-act {
-  margin-left: auto;
 }
 .clip.clip-drag {
   cursor: default;
@@ -655,16 +614,6 @@ body.workspace-overlay .panel-heading {
 }
 .clip .c2 {
   padding-right: 38px;
-}
-.cst-processing {
-  color: var(--warn);
-}
-.cst-completed {
-  color: var(--good);
-}
-.cst-failed,
-.cst-cancelled {
-  color: var(--danger);
 }
 #right {
   width: var(--inspector-width);

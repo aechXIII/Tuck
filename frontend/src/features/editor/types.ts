@@ -96,6 +96,8 @@ export interface EditorClip {
   _resultSize?: number;
   _queueError?: string;
   _previewRequestId?: number;
+  // the Library picture: undefined until asked for, "" when there is none
+  _thumbnail?: string;
   trimStart?: number | null;
   trimEnd?: number | null;
 }

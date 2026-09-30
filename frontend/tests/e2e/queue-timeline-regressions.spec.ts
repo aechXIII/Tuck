@@ -104,7 +104,7 @@ test("Library matches queue items to the resolved probe path", async ({ page }) 
         ok: true, items: [{ id: "resolved", source_path: "/mnt/exchange/clip.mp4", state, progress: state === "running" ? 35 : 100, result_path: "/mnt/exchange/export.mp4", status_text: state === "running" ? "Encoding" : "Completed" }],
       });
     }, state);
-    await expect(page.locator("#clips")).toContainText(state === "running" ? "Encoding" : "Completed");
+    await expect(page.locator("#clips")).toContainText(state === "running" ? "Exporting · 35%" : "Completed");
   }
   await expect(page.locator("#clips").getByRole("button", { name: "Show", exact: true })).toBeVisible();
 });

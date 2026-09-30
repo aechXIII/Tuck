@@ -21,6 +21,7 @@ import {
   type ClipCardElement,
   type ClipCardEvent,
   type ClipCardModel,
+  type ClipResult,
 } from "./clip-card.ts";
 import { createProbeCoordinator, type ProbeCoordinator } from "./probe-coordinator.ts";
 
@@ -28,6 +29,10 @@ export interface LibraryEncodingHooks {
   applyProfile?: (force?: boolean) => void;
   applySelectedProfileTransform?: (clip: EditorClip, force: boolean) => void;
   reqPreview?: () => void;
+  // plans the videos that are not selected, so each row can say what it becomes
+  planLibrary?: () => void;
+  // the export task the Library describes each video for
+  task?: () => "compression" | "upscale" | "cut";
   updateActionButtons?: () => void;
   syncFpsToClip?: (forceSourceValue?: boolean) => void;
   syncResolutionToClip?: (forceSourceValue?: boolean) => void;
@@ -39,7 +44,6 @@ export interface LibraryEncodingHooks {
   syncTimelineUI?: () => void;
   togglePlay?: () => void;
   openResult?: (path: string) => void;
-  cancelQueueItem?: (itemId: string) => void | Promise<void>;
   retryQueueItem?: (itemId: string) => void | Promise<void>;
   pollQueue?: () => void | Promise<void>;
   libraryTab?: () => string;
@@ -190,6 +194,7 @@ export function createLibrary(host: LibraryHost): LibraryApi {
         );
         host.audio?.onProbe?.(clip);
         host.applySelectedProfileTransform?.(clip, false);
+        queueThumbnail(path);
       }
       renderClips();
       if (session.selPath === path) {
@@ -200,9 +205,45 @@ export function createLibrary(host: LibraryHost): LibraryApi {
         host.paintCropOverlay?.();
         host.renderClipDetails?.();
         host.reqPreview?.();
+      } else if (succeeded) {
+        host.planLibrary?.();
       }
     },
   });
+
+  // thumbnails are made one at a time so a large batch never crowds out playback or plans
+  const thumbnailQueue: string[] = [];
+  let thumbnailsLoading = false;
+
+  function queueThumbnail(path: string): void {
+    const clip = session.clips[path];
+    if (!clip || clip._thumbnail !== undefined || thumbnailQueue.includes(path)) return;
+    thumbnailQueue.push(path);
+    void loadThumbnails();
+  }
+
+  async function loadThumbnails(): Promise<void> {
+    if (thumbnailsLoading || !hasBackendClient()) return;
+    thumbnailsLoading = true;
+    try {
+      for (let path = thumbnailQueue.shift(); path !== undefined; path = thumbnailQueue.shift()) {
+        const clip = session.clips[path];
+        if (!clip || clip._thumbnail !== undefined) continue;
+        let thumbnail = "";
+        try {
+          const response = await legacyBackendResult(getBackendClient().getThumbnail(path));
+          if (response.ok && typeof response.thumbnail === "string") thumbnail = response.thumbnail;
+        } catch {
+          // a video without a picture still lists fine
+        }
+        if (session.clips[path] !== clip) continue;
+        clip._thumbnail = thumbnail;
+        renderClips();
+      }
+    } finally {
+      thumbnailsLoading = false;
+    }
+  }
 
   function orderedClipKeys(): string[] {
     session.clipOrder = session.clipOrder.filter((path) => !!session.clips[path]);
@@ -265,28 +306,43 @@ export function createLibrary(host: LibraryHost): LibraryApi {
     return { text: first.join(" · ") };
   }
 
-  function clipStateBadge(path: string): ClipCardModel["badge"] {
-    const clip = session.clips[path];
-    if (!clip) return null;
-    const st = clip._queueState || "";
-    if (!st && !clip.error && !clip._statusText) return null;
-    const states: Record<string, [string, string, string]> = {
-      pending: ["Pending", "●", "cst-queued"],
-      running: ["Encoding", "↻", "cst-processing"],
-      processing: ["Encoding", "↻", "cst-processing"],
-      completed: ["Completed", "✓", "cst-completed"],
-      failed: ["Failed", "!", "cst-failed"],
-      cancelled: ["Cancelled", "!", "cst-cancelled"],
-    };
-    let label =
-      clip._statusText ||
-      (states[st] ? states[st]![0] : "") ||
-      (clip.error ? "Error" : "Ready");
-    if (st === "failed" && clip._queueError) label = `Failed: ${clip._queueError}`;
-    const state =
-      states[st] ||
-      (clip.error ? (["Error", "!", "cst-failed"] as const) : (["Ready", "·", "cst-ready"] as const));
-    return { label, icon: state[1], className: state[2] };
+  // short names for common heights, so a row reads "1080p → 4K"
+  function resolutionLabel(width: number, height: number): string {
+    const names: Record<number, string> = { 2160: "4K", 1440: "1440p", 1080: "1080p", 720: "720p", 480: "480p" };
+    const short = Math.min(width, height);
+    return names[short] ?? `${width}×${height}`;
+  }
+
+  // what the current task makes of a ready video, from its plan when one is ready
+  function clipResult(clip: EditorClip): ClipResult | null {
+    if (!clip.probed || clip.error) return null;
+    const task = host.task?.() ?? "compression";
+    if (task === "cut") {
+      const full = clip.probeData?.duration || 0;
+      if (!full) return null;
+      const segments = SegmentEditing.segmentsForClip(clip, full);
+      if (SegmentEditing.isFullSource(segments, full)) return { to: "Whole video" };
+      return { to: `Keeps ${formatTime(SegmentEditing.selectedDuration(segments))} of ${formatTime(full)}` };
+    }
+    const plan = clip.planData;
+    const width = clip.probeData?.width || 0;
+    const height = clip.probeData?.height || 0;
+    if (task === "upscale") {
+      const source = width && height ? resolutionLabel(width, height) : "";
+      const targetWidth = Number(plan?.target_width) || 0;
+      const targetHeight = Number(plan?.target_height) || 0;
+      if (!plan || !targetWidth || !targetHeight) return source ? { from: source } : null;
+      const target = resolutionLabel(targetWidth, targetHeight);
+      return target === source ? { to: `Stays ${target}` } : { from: source, to: target };
+    }
+    const size = clip._fileSize ? formatBytes(clip._fileSize) : "";
+    const estimateMb = plan ? Number(plan.estimated_size_mb) : NaN;
+    if (!plan || plan.workflow === "upscale" || !Number.isFinite(estimateMb) || estimateMb <= 0) {
+      return size ? { from: size } : null;
+    }
+    const target = Number(plan.target_size_mb);
+    const over = Number.isFinite(target) && target > 0 && estimateMb > target + 0.1;
+    return { from: size, to: formatBytes(estimateMb * 1024 * 1024), over };
   }
 
   function updateLibrarySummary(models: ClipCardModel[]): void {
@@ -446,9 +502,6 @@ export function createLibrary(host: LibraryHost): LibraryApi {
       openResult: (resultPath) => {
         if (resultPath) void host.openResult?.(resultPath);
       },
-      cancel: (itemId) => {
-        if (itemId) void host.cancelQueueItem?.(itemId);
-      },
       retry: (itemId) => {
         if (itemId) void host.retryQueueItem?.(itemId);
       },
@@ -487,16 +540,11 @@ export function createLibrary(host: LibraryHost): LibraryApi {
       if (!statusLabel && clip._queueState === "running") statusLabel = "Encoding";
       if (!statusLabel && clip._queueState === "failed") statusLabel = "Export failed";
       if (!statusLabel && clip._queueState === "cancelled") statusLabel = "Cancelled";
-      if (!statusLabel && clip.error) statusLabel = "Can't read this file";
+      if (!statusLabel && clip.error) statusLabel = "Can't read file";
       const detail = clip._queueState === "failed" && clip._queueError
         ? errorSummary(clip._queueError)
         : clip.error ? errorSummary(clip.error) : "";
-      const plan = clip.planData as Record<string, unknown> | null | undefined;
-      const est = plan ? Number(plan.estimated_size_mb) : NaN;
-      const planTarget = plan ? Number(plan.target_size_mb) : NaN;
-      const isUpscale = plan?.workflow === "upscale";
-      const projectedMb =
-        !isUpscale && Number.isFinite(est) && est > 0 ? est : undefined;
+      const full = clip.probed ? clip.probeData?.duration || 0 : 0;
       return {
         path,
         name: clip.name,
@@ -511,13 +559,10 @@ export function createLibrary(host: LibraryHost): LibraryApi {
         probeError: !!clip.error,
         fileSize: clip._fileSize || 0,
         meta: metaStr(clip),
-        badge: clipStateBadge(path) ?? null,
-        projectedMb,
-        overBudget:
-          projectedMb != null &&
-          Number.isFinite(planTarget) &&
-          planTarget > 0 &&
-          projectedMb > planTarget + 0.1,
+        thumbnail: clip._thumbnail || "",
+        duration: full ? formatTime(full) : "",
+        result: clipResult(clip),
+        resultSize: clip._queueState === "completed" && clip._resultSize ? formatBytes(clip._resultSize) : "",
       };
     });
     const nextModels = JSON.stringify(models);
@@ -533,15 +578,20 @@ export function createLibrary(host: LibraryHost): LibraryApi {
       const section = documentRef.createElement("section");
       section.className = `lib-group lib-group-${group.key}`;
       section.dataset.libraryGroup = group.key;
-      const headingId = `library-group-label-${group.key}`;
-      section.setAttribute("aria-labelledby", headingId);
-      const heading = documentRef.createElement("div");
-      heading.className = "lib-section-heading";
-      const label = documentRef.createElement("span");
-      label.id = headingId;
-      label.textContent = groupHeading(group);
-      heading.appendChild(label);
-      section.appendChild(heading);
+      // a single list needs no heading; one only appears once there is something to tell apart
+      if (groups.length > 1) {
+        const headingId = `library-group-label-${group.key}`;
+        section.setAttribute("aria-labelledby", headingId);
+        const heading = documentRef.createElement("div");
+        heading.className = "lib-section-heading";
+        const label = documentRef.createElement("span");
+        label.id = headingId;
+        label.textContent = groupHeading(group);
+        heading.appendChild(label);
+        section.appendChild(heading);
+      } else {
+        section.setAttribute("aria-label", group.label);
+      }
       for (const item of group.items) appendLibraryClip(section, item);
       cdiv.appendChild(section);
     }
@@ -737,6 +787,7 @@ export function createLibrary(host: LibraryHost): LibraryApi {
         path,
         name: session.clips[path]?.name || path,
         queueState: session.clips[path]?._queueState || "",
+        probeError: !!session.clips[path]?.error,
       })),
     );
     if (!keys.length) return;

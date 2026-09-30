@@ -71,14 +71,14 @@ test("clip cards keep backend data inert and delegate exact action values", () =
     statusLabel: '<b onmouseover="globalThis.pwned=true">Done</b>',
     meta: { text: '<svg onload="globalThis.pwned=true">' },
     detail: '<img src=x onerror="globalThis.pwned=true">',
-    badge: { className: "cst-completed", label: "Completed", icon: "✓" },
+    thumbnail: 'x" onerror="globalThis.pwned=true',
+    resultSize: "9.7 MB",
   };
   const callbacks = {
     select: (path: string) => calls.push(["select", path]),
     togglePlay: (path: string) => calls.push(["play", path]),
     remove: (path: string) => calls.push(["remove", path]),
     openResult: (path: string | undefined) => calls.push(["open", path]),
-    cancel: (id: string | undefined) => calls.push(["cancel", id]),
     retry: (id: string | undefined) => calls.push(["retry", id]),
     beginReorder: (_event: ClipCardEvent, path: string) =>
       calls.push(["reorder", path]),
@@ -96,12 +96,14 @@ test("clip cards keep backend data inert and delegate exact action values", () =
     card.attributes["aria-keyshortcuts"],
     "Enter Space Delete ArrowUp ArrowDown",
   );
-  const badge = descendants(card).find((element) =>
-    element.className.includes("cst-completed"),
-  );
-  assert.ok(badge);
-  assert.equal(badge.attributes.role, "img");
-  assert.equal(badge.attributes["aria-label"], "Completed");
+  // the picture's address is an attribute, never markup
+  const image = descendants(card).find((element) => element.tagName === "img");
+  assert.ok(image);
+  assert.equal(image.attributes.src, model.thumbnail);
+  assert.equal(image.attributes.alt, "");
+  const line = descendants(card).find((element) => element.className === "c-line done");
+  assert.ok(line);
+  assert.equal(line.children[0]?.textContent, "9.7 MB");
   assert.equal(card.attributes["aria-description"], model.detail);
   const open = action(card, "open-result");
   assert.ok(open);
@@ -129,14 +131,13 @@ test("clip cards keep backend data inert and delegate exact action values", () =
   assert.equal((globalThis as { pwned?: unknown }).pwned, undefined);
 });
 
-test("library groups active work ahead of queued and ready clips without reordering within a group", () => {
+test("library lists problems first and keeps every other video in the order it was given", () => {
   const clips = [
     { path: "ready-a.mp4", name: "ready-a.mp4", queueState: "" },
     { path: "queued-a.mp4", name: "queued-a.mp4", queueState: "pending" },
+    { path: "failed.mp4", name: "failed.mp4", queueState: "failed" },
     { path: "encoding-a.mp4", name: "encoding-a.mp4", queueState: "running" },
-    { path: "ready-b.mp4", name: "ready-b.mp4", queueState: "completed" },
-    { path: "encoding-b.mp4", name: "encoding-b.mp4", queueState: "processing" },
-    { path: "queued-b.mp4", name: "queued-b.mp4", queueState: "pending" },
+    { path: "done.mp4", name: "done.mp4", queueState: "completed" },
   ];
 
   assert.deepEqual(
@@ -146,54 +147,20 @@ test("library groups active work ahead of queued and ready clips without reorder
       paths: group.items.map((clip) => clip.path),
     })),
     [
-      {
-        key: "encoding",
-        label: "Exporting",
-        paths: ["encoding-a.mp4", "encoding-b.mp4"],
-      },
-      {
-        key: "queued",
-        label: "Queued",
-        paths: ["queued-a.mp4", "queued-b.mp4"],
-      },
-      {
-        key: "ready",
-        label: "Ready",
-        paths: ["ready-a.mp4", "ready-b.mp4"],
-      },
+      { key: "attention", label: "Needs attention", paths: ["failed.mp4"] },
+      { key: "videos", label: "Videos", paths: ["ready-a.mp4", "queued-a.mp4", "encoding-a.mp4", "done.mp4"] },
     ],
   );
   assert.deepEqual(clipCards.groupedClipPaths(clips), [
-    "encoding-a.mp4",
-    "encoding-b.mp4",
-    "queued-a.mp4",
-    "queued-b.mp4",
+    "failed.mp4",
     "ready-a.mp4",
-    "ready-b.mp4",
+    "queued-a.mp4",
+    "encoding-a.mp4",
+    "done.mp4",
   ]);
   assert.equal(
-    clipCards.groupHeading({
-      key: "encoding",
-      label: "Encoding",
-      items: [{ path: "a", name: "a" }, { path: "b", name: "b" }],
-    }),
-    "Encoding",
-  );
-  assert.equal(
-    clipCards.groupHeading({
-      key: "queued",
-      label: "Queued",
-      items: [{ path: "a", name: "a" }],
-    }),
-    "Queued · 1",
-  );
-  assert.equal(
-    clipCards.groupHeading({
-      key: "ready",
-      label: "Ready",
-      items: [{ path: "a", name: "a" }, { path: "b", name: "b" }],
-    }),
-    "Ready · 2",
+    clipCards.groupHeading({ key: "videos", label: "Videos", items: [{ path: "a", name: "a" }, { path: "b", name: "b" }] }),
+    "Videos · 2",
   );
 });
 
@@ -205,7 +172,7 @@ test("failed exports and unreadable files need attention and say so briefly", ()
   ];
   assert.deepEqual(
     clipCards.groupClipModels(clips).map((group) => [group.key, group.items.map((clip) => clip.path)]),
-    [["attention", ["failed.mp4", "broken.mp4"]], ["ready", ["ready.mp4"]]],
+    [["attention", ["failed.mp4", "broken.mp4"]], ["videos", ["ready.mp4"]]],
   );
   assert.equal(
     clipCards.groupHeading({ key: "attention", label: "Needs attention", items: clips.slice(1) }),
@@ -215,13 +182,14 @@ test("failed exports and unreadable files need attention and say so briefly", ()
   const noop = () => {};
   const created = clipCards.createClipCard(
     documentRef,
-    { path: "broken.mp4", name: "broken.mp4", probeError: true, statusLabel: "Can't read this file", detail: "moov atom not found" },
-    { select: noop, togglePlay: noop, remove: noop, openResult: noop, cancel: noop, retry: noop, beginReorder: noop },
+    { path: "broken.mp4", name: "broken.mp4", probeError: true, statusLabel: "Can't read file", detail: "moov atom not found" },
+    { select: noop, togglePlay: noop, remove: noop, openResult: noop, retry: noop, beginReorder: noop },
   );
   if (!(created instanceof FakeElement)) throw new Error("expected FakeElement");
+  assert.ok(descendants(created).find((element) => element.className === "c-thumb unreadable"));
   const status = descendants(created).find((element) => element.className === "c-status attention");
   assert.ok(status);
-  assert.equal(status.textContent, "Can't read this file");
+  assert.equal(status.textContent, "Can't read file");
   assert.equal(status.dataset.tip, "moov atom not found");
   assert.equal(created.attributes["aria-description"], "moov atom not found");
   const retry = action(created, "retry-probe");
@@ -230,49 +198,63 @@ test("failed exports and unreadable files need attention and say so briefly", ()
   assert.equal(retry.attributes["aria-label"], "Retry reading broken.mp4");
 });
 
-test("queued cards use their compact badge as the per-item cancel action", () => {
-  const calls: string[] = [];
-  const created = clipCards.createClipCard(
-    documentRef,
-    {
-      path: "queued.mp4",
-      name: "queued.mp4",
-      selected: false,
-      queueItemId: "q1",
-      queueState: "pending",
-      statusLabel: "Pending",
-      meta: { text: "3840×2160 · 1.4 GB" },
-    },
-    {
-      select() {},
-      togglePlay() {},
-      remove() {},
-      openResult() {},
-      cancel(id) {
-        if (id !== undefined) calls.push(id);
-      },
-      retry() {},
-      beginReorder() {},
-    },
-  );
-  if (!(created instanceof FakeElement)) throw new Error("expected FakeElement");
-  const card = created;
+const quiet = { select() {}, togglePlay() {}, remove() {}, openResult() {}, retry() {}, beginReorder() {} };
 
-  const badge = descendants(card).find(
-    (element) => element.className === "c-queue-badge",
-  );
-  assert.ok(badge);
-  assert.equal(badge.textContent, "QUEUED");
-  assert.equal(
-    descendants(card).find((element) => element.className === "c-status-row"),
-    undefined,
-  );
-  assert.equal(action(card, "cancel"), badge);
-  assert.equal(badge.attributes["aria-label"], "Cancel queued export");
-  const click = card.listeners.click?.[0];
-  assert.ok(click);
-  click({ target: badge, stopPropagation() {} });
-  assert.deepEqual(calls, ["q1"]);
+test("a queued or exporting row says where it is and leaves its controls to the Exports panel", () => {
+  const queued = clipCards.createClipCard(documentRef, {
+    path: "queued.mp4",
+    name: "queued.mp4",
+    queueItemId: "q1",
+    queueState: "pending",
+    statusLabel: "Pending",
+    duration: "1:35",
+  }, quiet);
+  if (!(queued instanceof FakeElement)) throw new Error("expected FakeElement");
+  const queuedLine = descendants(queued).find((element) => element.className === "c-line queued");
+  assert.equal(queuedLine?.children[0]?.textContent, "Queued");
+  assert.equal(descendants(queued).find((element) => element.className === "c-dur")?.textContent, "1:35");
+  assert.equal(action(queued, "cancel"), undefined);
+  assert.equal(action(queued, "remove"), undefined);
+
+  const running = clipCards.createClipCard(documentRef, {
+    path: "running.mp4",
+    name: "running.mp4",
+    queueItemId: "q2",
+    queueState: "running",
+    statusLabel: "Pass 1 of 2 · 42% · 1.3x · ETA 1:23",
+    progress: 42.4,
+  }, quiet);
+  if (!(running instanceof FakeElement)) throw new Error("expected FakeElement");
+  const bar = descendants(running).find((element) => element.attributes.role === "progressbar");
+  assert.ok(bar);
+  assert.equal(bar.attributes["aria-valuenow"], "42");
+  assert.equal(bar.parentElement?.className, "c-thumb");
+  assert.equal(descendants(running).find((element) => element.className === "c-line run")?.children[0]?.textContent, "Pass 1 of 2 · 42%");
+});
+
+test("a ready row says what the task makes of the video, and warns when it runs over the target", () => {
+  const ready = clipCards.createClipCard(documentRef, {
+    path: "beach.mp4",
+    name: "beach.mp4",
+    result: { from: "1.2 GB", to: "10.0 MB" },
+  }, quiet);
+  if (!(ready instanceof FakeElement)) throw new Error("expected FakeElement");
+  const line = descendants(ready).find((element) => element.className === "c-line");
+  assert.deepEqual(line?.children.map((element) => [element.className, element.textContent]), [
+    ["c-from", "1.2 GB"],
+    ["c-arrow", "→"],
+    ["c-to", "10.0 MB"],
+  ]);
+
+  const over = clipCards.createClipCard(documentRef, {
+    path: "long.mp4",
+    name: "long.mp4",
+    result: { from: "4.0 GB", to: "14.2 MB", over: true },
+  }, quiet);
+  if (!(over instanceof FakeElement)) throw new Error("expected FakeElement");
+  const overLine = descendants(over).find((element) => element.className === "c-line");
+  assert.equal(overLine?.children.at(-1)?.className, "c-to over");
+  assert.equal(overLine?.attributes.title, "The estimate is over the target size");
 });
 
 test("library omits empty status sections and reports a hand-checked summary", () => {
@@ -285,7 +267,7 @@ test("library omits empty status sections and reports a hand-checked summary", (
   const groups = clipCards.groupClipModels(clips);
   assert.deepEqual(
     groups.map((group) => [group.key, group.items.length]),
-    [["attention", 1], ["ready", 2]],
+    [["attention", 1], ["videos", 2]],
   );
   assert.deepEqual(clipCards.librarySummary(clips), {
     countLabel: "3 videos",

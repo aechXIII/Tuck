@@ -99,8 +99,9 @@ test("adding a video probes, renders the filename as text, and enables preview c
 
   await page.getByRole("button", { name: "Add videos" }).click();
   await expect(page.locator(".c2").getByText("Morning clip.mp4", { exact: true })).toBeVisible();
-  await expect(page.locator(".c-meta")).toContainText("0:12");
-  await expect(page.locator(".c-meta")).toContainText("1920×1080");
+  // the row shows the length on its picture; the rest of the details sit on hover
+  await expect(page.locator(".clip .c-dur")).toHaveText("0:12");
+  await expect(page.locator(".clip")).toHaveAttribute("title", /1920×1080/);
   await expect(page.getByRole("button", { name: "Play/Pause" })).toBeEnabled();
   await expect(page.locator("#empty")).toBeHidden();
   expect(errors).toEqual([]);
@@ -131,7 +132,7 @@ test("selected segment and library card text stays readable on the accent fill",
     ),
   ).toBeGreaterThanOrEqual(4.5);
   expect(await textContrast(page, ".clip.sel .c2", ".clip.sel")).toBeGreaterThanOrEqual(4.5);
-  expect(await textContrast(page, ".clip.sel .c-meta", ".clip.sel")).toBeGreaterThanOrEqual(4.5);
+  expect(await textContrast(page, ".clip.sel .c-line span", ".clip.sel")).toBeGreaterThanOrEqual(4.5);
 
   await seekOnRuler(page, 0.4);
   await page.getByRole("button", { name: "Split at playhead" }).click();
@@ -305,7 +306,7 @@ test("a failed probe keeps retry enabled and recovers without executing backend 
   const retry = page.getByRole("button", { name: /Retry reading/ });
   await expect(retry).toBeEnabled();
   await retry.click();
-  await expect(page.locator(".c-meta")).toContainText("1920×1080");
+  await expect(page.locator(".clip")).toHaveAttribute("title", /1920×1080/);
   expect(await page.evaluate(() => Reflect.get(window, "__tuckProbePwned"))).toBeUndefined();
   expect(errors).toEqual([]);
 });
@@ -343,7 +344,7 @@ test("crop, rotation, and segment edits update the selected clip and undo restor
   await installFakeBackend(page, editorFixture());
   await page.goto("/");
   await page.getByRole("button", { name: "Add videos" }).click();
-  await expect(page.locator(".c-meta")).toContainText("0:12");
+  await expect(page.locator(".clip .c-dur")).toHaveText("0:12");
 
   await page.locator("#insp-tab-edit").click();
   await page.getByRole("button", { name: "16:9" }).click();

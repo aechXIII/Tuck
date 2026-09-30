@@ -20,12 +20,6 @@ export interface ClipCardEvent {
   preventDefault?(): void;
 }
 
-export interface ClipBadge {
-  className: string;
-  label: string;
-  icon: string;
-}
-
 export interface ClipCardModel {
   path: string;
   name?: string;
@@ -41,9 +35,20 @@ export interface ClipCardModel {
   probeError?: unknown;
   fileSize?: number | undefined;
   meta?: { text?: unknown } | null | undefined;
-  badge?: ClipBadge | null | undefined;
-  projectedMb?: number | undefined;
-  overBudget?: boolean | undefined;
+  // a frame from the video, or "" while none is available
+  thumbnail?: string | undefined;
+  duration?: string | undefined;
+  // what the current task makes of this video, e.g. "1.2 GB" to "10 MB"
+  result?: ClipResult | null | undefined;
+  // the exported file's size once it is done
+  resultSize?: string | undefined;
+}
+
+export interface ClipResult {
+  from?: string | undefined;
+  to?: string | undefined;
+  // the estimate is over the target size
+  over?: boolean | undefined;
 }
 
 export interface ClipCardCallbacks {
@@ -51,7 +56,6 @@ export interface ClipCardCallbacks {
   togglePlay(path: string): void;
   remove(path: string): void;
   openResult(path: string): void;
-  cancel(id: string): void;
   retry(id: string): void;
   retryProbe?(path: string): void;
   beginReorder(event: ClipCardEvent, path: string, card: ClipCardElement): void;
@@ -107,95 +111,106 @@ function actionFromTarget(
   return "";
 }
 
-function appendStatus<T extends ClipCardElement>(
+function isExporting(model: ClipCardModel): boolean {
+  return model.queueState === "running" || model.queueState === "processing";
+}
+
+function exportProgress(model: ClipCardModel): number {
+  return Math.max(0, Math.min(100, Number(model.progress) || 0));
+}
+
+// the picture and its length; while exporting, the progress runs along its bottom edge
+function appendThumbnail<T extends ClipCardElement>(
   documentRef: { createElement(tagName: string): T },
-  cardMain: T,
+  card: T,
+  model: ClipCardModel,
+): void {
+  const frame = createElement(documentRef, "span", model.probeError ? "c-thumb unreadable" : "c-thumb");
+  if (model.thumbnail) {
+    const image = createElement(documentRef, "img");
+    image.setAttribute("src", model.thumbnail);
+    image.setAttribute("alt", "");
+    image.setAttribute("draggable", "false");
+    frame.appendChild(image);
+  }
+  if (model.duration) frame.appendChild(createElement(documentRef, "span", "c-dur", model.duration));
+  if (isExporting(model)) {
+    const track = createElement(documentRef, "span", model.progressIndeterminate ? "c-progress is-indeterminate" : "c-progress");
+    const fill = createElement(documentRef, "span", "c-progress-fill");
+    if (!model.progressIndeterminate) fill.setAttribute("style", "width:" + exportProgress(model) + "%");
+    track.setAttribute("role", "progressbar");
+    track.setAttribute("aria-label", "Export progress");
+    if (model.statusLabel) track.setAttribute("aria-valuetext", model.statusLabel);
+    track.setAttribute("aria-valuemin", "0");
+    track.setAttribute("aria-valuemax", "100");
+    if (!model.progressIndeterminate) track.setAttribute("aria-valuenow", String(Math.round(exportProgress(model))));
+    track.appendChild(fill);
+    frame.appendChild(track);
+  }
+  card.appendChild(frame);
+}
+
+// one line under the name: where the export is, or what the current task makes of the video
+function appendLine<T extends ClipCardElement>(
+  documentRef: { createElement(tagName: string): T },
+  main: T,
   model: ClipCardModel,
 ): void {
   const state = model.queueState || "";
-  if (state === "pending") return;
-  const hasOpen = state === "completed" && !!model.resultPath;
-  const hasCancel =
-    (state === "running" || state === "processing") && !!model.queueItemId;
-  const hasRetry =
-    (state === "failed" || state === "cancelled") && !!model.queueItemId;
-  const hasProbeRetry = !!model.probeError;
-  if (
-    !model.statusLabel &&
-    !hasOpen &&
-    !hasCancel &&
-    !hasRetry &&
-    !hasProbeRetry
-  )
-    return;
-
-  const row = createElement(documentRef, "div", "c-status-row");
-  const status = createElement(
-    documentRef,
-    "span",
-    libraryGroup(model) === "attention" ? "c-status attention" : "c-status",
-    model.statusLabel || "",
-  );
-  if (model.detail) status.dataset.tip = model.detail;
-  row.appendChild(status);
-  if (hasOpen) {
-    row.appendChild(
-      createActionButton(documentRef, "open-result", "Show", "c-act link"),
-    );
+  const line = createElement(documentRef, "div", "c-line");
+  const text = (className: string, value: string): T => {
+    const span = createElement(documentRef, "span", className, value);
+    line.appendChild(span);
+    return span;
+  };
+  if (isExporting(model)) {
+    // the row names the phase, like "Pass 1 of 2"; speed and time left stay in the bottom bar
+    line.className = "c-line run";
+    const phase = (model.statusLabel || "").split(" · ")[0] || "";
+    const label = phase && phase !== "Encoding" ? phase : "Exporting";
+    const percent = Math.round(exportProgress(model));
+    text("c-status", model.progressIndeterminate || !percent ? label : `${label} · ${percent}%`);
+  } else if (state === "pending") {
+    line.className = "c-line queued";
+    text("c-status", "Queued");
+  } else if (state === "failed" || state === "cancelled" || model.probeError) {
+    const attention = libraryGroup(model) === "attention";
+    if (attention) line.className = "c-line attention";
+    const status = text(attention ? "c-status attention" : "c-status", model.statusLabel || "");
+    if (model.detail) status.dataset.tip = model.detail;
+    if (model.probeError) {
+      const retry = createActionButton(documentRef, "retry-probe", "Retry reading " + (model.name || ""), "c-act");
+      retry.textContent = "Retry";
+      line.appendChild(retry);
+    } else if (model.queueItemId) {
+      line.appendChild(createActionButton(documentRef, "retry", "Retry", "c-act"));
+    }
+  } else if (state === "completed") {
+    line.className = "c-line done";
+    text("c-status", model.resultSize || model.statusLabel || "Exported");
+    if (model.resultPath) line.appendChild(createActionButton(documentRef, "open-result", "Show", "c-act"));
+  } else if (model.result && (model.result.from || model.result.to)) {
+    const result = model.result;
+    if (result.from) text("c-from", result.from);
+    if (result.from && result.to) text("c-arrow", "→");
+    if (result.to) text(result.over ? "c-to over" : "c-to", result.to);
+    if (result.over) line.setAttribute("title", "The estimate is over the target size");
+  } else {
+    text("c-status", model.meta ? String(model.meta.text) : "");
   }
-  if (hasCancel) {
-    row.appendChild(
-      createActionButton(documentRef, "cancel", "Cancel", "c-act danger"),
-    );
-  }
-  if (hasRetry) {
-    row.appendChild(createActionButton(documentRef, "retry", "Retry", "c-act"));
-  }
-  if (hasProbeRetry) {
-    const retry = createActionButton(
-      documentRef,
-      "retry-probe",
-      "Retry reading " + (model.name || ""),
-      "c-act",
-    );
-    retry.textContent = "Retry";
-    row.appendChild(retry);
-  }
-  cardMain.appendChild(row);
-}
-
-function appendBadge<T extends ClipCardElement>(
-  documentRef: { createElement(tagName: string): T },
-  card: T,
-  badge: ClipBadge | null | undefined,
-): void {
-  if (!badge) return;
-  const element = createElement(
-    documentRef,
-    "span",
-    "c-st " + badge.className,
-    badge.icon,
-  );
-  element.setAttribute("role", "img");
-  element.setAttribute("title", badge.label);
-  element.setAttribute("aria-label", badge.label);
-  card.appendChild(element);
+  main.appendChild(line);
 }
 
 function libraryGroup(model: ClipCardModel): string {
-  const state = model.queueState || "";
-  if (state === "running" || state === "processing") return "encoding";
-  if (state === "pending") return "queued";
-  if (state === "failed" || model.probeError) return "attention";
-  return "ready";
+  if (model.queueState === "failed" || model.probeError) return "attention";
+  return "videos";
 }
 
+// problems come first; everything else keeps the order the user gave it
 export function groupClipModels(models: ClipCardModel[]): ClipGroup[] {
   const definitions = [
-    { key: "encoding", label: "Exporting" },
-    { key: "queued", label: "Queued" },
     { key: "attention", label: "Needs attention" },
-    { key: "ready", label: "Ready" },
+    { key: "videos", label: "Videos" },
   ];
   return definitions
     .map((definition) => ({
@@ -207,8 +222,7 @@ export function groupClipModels(models: ClipCardModel[]): ClipGroup[] {
 }
 
 export function groupHeading(group: ClipGroup | null | undefined): string {
-  if (!group || group.key === "encoding") return group ? group.label : "";
-  return group.label + " · " + group.items.length;
+  return group ? group.label + " · " + group.items.length : "";
 }
 
 export function groupedClipPaths(models: ClipCardModel[]): string[] {
@@ -253,7 +267,9 @@ export function createClipCard<T extends ClipCardElement>(
   card.setAttribute("role", "option");
   card.setAttribute("aria-selected", model.selected ? "true" : "false");
   card.setAttribute("aria-keyshortcuts", "Enter Space Delete ArrowUp ArrowDown");
-  card.setAttribute("title", name + " - drag handle to reorder");
+  // the row shows the name and one line; the full details sit on hover
+  const meta = model.meta ? String(model.meta.text) : "";
+  card.setAttribute("title", meta && meta !== "…" ? name + " · " + meta : name);
   card.dataset.clipPath = model.path;
   card.dataset.queueState = model.queueState || "ready";
   if (model.detail) card.setAttribute("aria-description", model.detail);
@@ -265,79 +281,19 @@ export function createClipCard<T extends ClipCardElement>(
   drag.setAttribute("aria-label", "Drag to reorder");
   card.appendChild(drag);
 
+  appendThumbnail(documentRef, card, model);
   const main = createElement(documentRef, "div", "c1");
-  const titleRow = createElement(documentRef, "div", "c-title-row");
-  titleRow.appendChild(createElement(documentRef, "div", "c2", name));
-  main.appendChild(titleRow);
-  const metadata = createElement(documentRef, "div", "c3");
-  const metadataText = createElement(documentRef, "span", "c-meta");
-  metadataText.textContent = model.meta ? String(model.meta.text) : "";
-  metadata.appendChild(metadataText);
-  main.appendChild(metadata);
-  if (model.queueState === "running" || model.queueState === "processing") {
-    const progress = Math.max(0, Math.min(100, Number(model.progress) || 0));
-    const progressTrack = createElement(documentRef, "div", "c-progress");
-    const progressFill = createElement(documentRef, "span", "c-progress-fill");
-    if (model.progressIndeterminate) progressTrack.setAttribute("class", "c-progress is-indeterminate");
-    else progressFill.setAttribute("style", "width:" + progress + "%");
-    progressTrack.setAttribute("role", "progressbar");
-    progressTrack.setAttribute("aria-label", "Export progress");
-    if (model.statusLabel) progressTrack.setAttribute("aria-valuetext", model.statusLabel);
-    progressTrack.setAttribute("aria-valuemin", "0");
-    progressTrack.setAttribute("aria-valuemax", "100");
-    if (!model.progressIndeterminate) progressTrack.setAttribute("aria-valuenow", String(Math.round(progress)));
-    progressTrack.appendChild(progressFill);
-    main.appendChild(progressTrack);
-  }
-  appendStatus(documentRef, main, model);
+  main.appendChild(createElement(documentRef, "div", "c2", name));
+  appendLine(documentRef, main, model);
   card.appendChild(main);
-  const encodingState =
-    model.queueState === "running" || model.queueState === "processing";
-  if (
-    model.projectedMb != null &&
-    Number.isFinite(model.projectedMb) &&
-    !encodingState &&
-    model.queueState !== "pending"
-  ) {
-    const projected = createElement(
-      documentRef,
-      "span",
-      "c-proj" + (model.overBudget ? " over" : ""),
-      "→ " + (model.projectedMb as number).toFixed(1) + " MB",
-    );
-    projected.setAttribute(
-      "title",
-      model.overBudget
-        ? "Projected output is over the target size"
-        : "Projected output size",
-    );
-    titleRow.appendChild(projected);
-  }
-  if (model.queueState === "pending") {
-    const queued = createActionButton(
-      documentRef,
-      "cancel",
-      "Cancel queued export",
-      "c-queue-badge",
-    );
-    queued.textContent = "QUEUED";
-    card.appendChild(queued);
-  } else if (
-    model.queueState !== "running" &&
-    model.queueState !== "processing"
-  ) {
-    appendBadge(documentRef, card, model.badge);
-  }
 
-  const remove = createActionButton(
-    documentRef,
-    "remove",
-    "Remove " + name,
-    "c4",
-  );
-  remove.textContent = "✕";
-  remove.setAttribute("tabindex", "0");
-  card.appendChild(remove);
+  // a video in the queue is removed from the Exports panel instead
+  if (!isExporting(model) && model.queueState !== "pending") {
+    const remove = createActionButton(documentRef, "remove", "Remove " + name, "c4");
+    remove.textContent = "✕";
+    remove.setAttribute("tabindex", "0");
+    card.appendChild(remove);
+  }
 
   card.addEventListener("click", (event) => {
     const action = actionFromTarget(event.target, card);
@@ -349,9 +305,6 @@ export function createClipCard<T extends ClipCardElement>(
     if (action === "open-result") {
       const resultPath = model.resultPath;
       if (resultPath) callbacks.openResult(resultPath);
-    } else if (action === "cancel") {
-      const queueItemId = model.queueItemId;
-      if (queueItemId) callbacks.cancel(queueItemId);
     } else if (action === "retry") {
       const queueItemId = model.queueItemId;
       if (queueItemId) callbacks.retry(queueItemId);

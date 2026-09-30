@@ -318,6 +318,8 @@ export function installEditorRuntime(
     applySelectedProfileTransform: (clip, force) =>
       encoding?.applySelectedProfileTransform(clip, force),
     reqPreview: requestPreview,
+    planLibrary: () => void encoding?.planLibrary(),
+    task: () => encoding?.task() ?? "compression",
     updateActionButtons: () => encoding?.updateActionButtons(),
     syncFpsToClip: (force) => encoding?.syncFpsToClip(force),
     syncResolutionToClip: (force) => encoding?.syncResolutionToClip(force),
@@ -330,9 +332,6 @@ export function installEditorRuntime(
     togglePlay: () => player.togglePlay(),
     openResult: (path) => {
       void queue?.openResult(path);
-    },
-    cancelQueueItem: async (itemId) => {
-      await queue?.cancelQueueItem(itemId);
     },
     retryQueueItem: async (itemId) => {
       await queue?.retryQueueItem(itemId);
