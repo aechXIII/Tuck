@@ -48,6 +48,7 @@
   --r-surf: 10px;
   --radius: var(--r-ctl);
   --topbar-height: 44px;
+  --task-bar-height: 40px;
   --library-width: 232px;
   --inspector-width: 316px;
   --inspector-wide-width: 344px;
@@ -55,6 +56,7 @@
   --workspace-motion: 180ms cubic-bezier(0.22, 1, 0.36, 1);
   --z-workspace-backdrop: 30;
   --z-workspace-panel: 40;
+  --z-exports: 50;
   --z-toast: 70;
   --font: "Segoe UI", system-ui, sans-serif;
   --mono: "Cascadia Code", "Consolas", ui-monospace, monospace;
@@ -1803,44 +1805,6 @@ button.mrow {
 }
 .ft button.on {
   background: var(--raised);
-  color: var(--text);
-}
-#task-wf {
-  display: flex;
-  gap: 3px;
-  padding: 3px;
-  background: var(--panel);
-  border-radius: var(--r-ctl);
-  margin-bottom: 10px;
-  min-height: 34px;
-}
-#task-wf button {
-  flex: 1 1 50%;
-  display: block;
-  background: transparent;
-  border: 0;
-  border-radius: calc(var(--r-ctl) - 3px);
-  color: var(--muted);
-  padding: 7px 2px;
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 600;
-  font-family: var(--font);
-  text-align: center;
-  transition: color 0.15s, background 0.15s;
-  outline: none;
-  line-height: 1;
-}
-#task-wf button.on {
-  color: var(--text);
-  background: var(--raised);
-}
-#task-wf button:hover:not(.on) {
-  color: var(--text);
-}
-#task-wf button:focus-visible {
-  outline: 2px solid var(--accent-light);
-  outline-offset: -2px;
   color: var(--text);
 }
 ::-webkit-scrollbar {

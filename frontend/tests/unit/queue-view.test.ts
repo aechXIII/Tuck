@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   emptyQueueView,
+  exportRows,
   formatEta,
   formatQueueStatus,
   queueCompletionOutput,
@@ -77,7 +78,8 @@ test("a finished queue says it is done and keeps its failures", () => {
   const view = reduceQueueSnapshot(emptyQueueView(), {
     items: [{ id: "c", state: "completed" }, { id: "d", state: "failed" }],
   });
-  assert.equal(view.fname, "Done");
+  assert.equal(view.fname, "1 exported");
+  assert.equal(view.finished, true);
   assert.equal(view.detail, "");
   assert.equal(view.failed, 1);
   assert.equal(view.waiting, 0);
@@ -159,4 +161,26 @@ test("finished cuts that could not be fully checked stay marked", () => {
   assert.equal(formatQueueStatus({state: "completed", status_text: "Completed", unverified: ["Starts not confirmed."]}), "Completed · Not checked");
   assert.equal(formatQueueStatus({state: "completed", status_text: "Completed", unverified: []}), "Completed");
   assert.equal(formatQueueStatus({state: "running", status_text: "Copying", unverified: ["x"], progress_info: {indeterminate: true}}), "Copying");
+});
+
+test("export rows group this session's exports and say what each can do", () => {
+  const sizes: Record<string, number> = { "C:/a.mp4": 20_000_000, "C:/b.mp4": 8_000_000 };
+  const rows = exportRows([
+    { id: "run", source: "a.mp4", source_path: "C:/a.mp4", state: "running", progress: 42.4, progress_info: { eta_seconds: 83 } },
+    { id: "wait", source: "b.mp4", source_path: "C:/b.mp4", state: "pending" },
+    { id: "bad", source: "c.mp4", state: "failed", error: "Out of disk space" },
+    { id: "stop", source: "d.mp4", state: "cancelled" },
+    { id: "done", source: "a.mp4", source_path: "C:/a.mp4", state: "completed", result_path: "C:/a_small.mp4", result_size: 5_000_000 },
+    { id: "gone", source: "e.mp4", source_path: "C:/e.mp4", state: "completed" },
+  ], (path) => sizes[path] ?? 0, (seconds) => `${seconds}s`);
+  assert.deepEqual(rows.running.map((row) => [row.id, row.detail, row.progress, row.action]), [["run", "42% · 83s left", 42, "cancel"]]);
+  assert.deepEqual(rows.waiting.map((row) => [row.id, row.detail, row.action]), [["wait", "Waiting", "cancel"]]);
+  assert.deepEqual(rows.finished.map((row) => [row.id, row.kind, row.detail, row.action]), [
+    ["bad", "failed", "Failed: Out of disk space", "retry"],
+    ["stop", "cancelled", "Cancelled", "retry"],
+    ["done", "completed", "", "show"],
+    ["gone", "completed", "Done", null],
+  ]);
+  assert.deepEqual(rows.finished[2]?.sizes, { from: 20_000_000, to: 5_000_000 });
+  assert.equal(rows.saved, 15_000_000);
 });

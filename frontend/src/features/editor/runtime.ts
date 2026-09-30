@@ -559,6 +559,10 @@ export function installEditorRuntime(
         "queue-stop-after-current": () => queue.stopAfterCurrent(),
         "queue-cancel-all": () => queue.cancelAll(),
         "queue-clear-completed": () => void queue.clearDone(),
+        "exports-toggle": () => queue.toggleExports(),
+        "export-item-cancel": (target) => void queue.cancelQueueItem(target.dataset.itemId ?? ""),
+        "export-item-retry": (target) => void queue.retryQueueItem(target.dataset.itemId ?? ""),
+        "export-item-show": (target) => void queue.openResult(target.dataset.resultPath ?? ""),
         "modal-close-overlay": (target, event) => {
           if (event.target === target) closeActiveModal();
         },
@@ -657,6 +661,13 @@ export function installEditorRuntime(
       enabled: () => session.selPath !== null,
       execute: () => library.moveSelection(1),
     });
+    // a task hidden in Settings has no tab and no shortcut
+    for (const [command, id, index] of [["task.compress", "wf-c", 0], ["task.upscale", "wf-u", 1], ["task.cut", "wf-l", 2]] as const) {
+      shortcuts.registerAction(command, {
+        enabled: () => !byId(id)?.classList.contains("user-hidden"),
+        execute: () => encoding.setWf(index),
+      });
+    }
   }
 
   function installFileDropHandlers(): void {

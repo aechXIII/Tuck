@@ -205,13 +205,11 @@ export function installPanels(host: PanelsHost): PanelsApi {
     const center = byId("center");
     const stage = byId("stage");
     const audioEditor = byId("audio-editor");
-    const qbar = byId("qbar");
     const timelineOpen = timelineStaysOpen();
     // the player bar stays in reach with the timeline; only the video goes under the drawer
     if (center) center.inert = drawerOpen && !timelineOpen;
     if (stage) stage.inert = drawerOpen && timelineOpen;
     if (audioEditor) audioEditor.inert = drawerOpen && !timelineOpen;
-    if (qbar) qbar.inert = drawerOpen && !timelineOpen;
 
     (
       [
@@ -356,7 +354,6 @@ export function installPanels(host: PanelsHost): PanelsApi {
     byId("lib-add-row-audio")?.classList.toggle("hid", libraryTab !== "audio");
     byId("lib-panel-media")?.classList.toggle("hid", libraryTab !== "media");
     byId("lib-panel-audio")?.classList.toggle("hid", libraryTab !== "audio");
-    byId("library-summary")?.classList.toggle("hid", libraryTab !== "media");
     if (libraryTab === "audio") renderAudioLibraryPanel();
   }
 

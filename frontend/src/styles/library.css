@@ -19,18 +19,6 @@
   font-family: var(--mono);
   letter-spacing: 0;
 }
-#library-summary {
-  min-height: 34px;
-  flex: 0 0 34px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 10px;
-  border-top: 1px solid var(--border);
-  background: var(--panel);
-  color: var(--dim);
-  font: 600 10px var(--mono);
-}
 .c-progress {
   height: 3px;
   margin-top: 7px;
@@ -238,17 +226,6 @@
 .c-queue-badge:focus-visible {
   outline: 2px solid var(--accent-light);
   outline-offset: 2px;
-}
-#library-summary {
-  min-height: 38px;
-  flex-basis: 38px;
-  padding: 8px 12px 10px;
-  background: var(--panel);
-  color: var(--dim);
-  font: 400 10px var(--font);
-}
-#library-summary-size {
-  font-family: var(--mono);
 }
 
 .c-title-row {

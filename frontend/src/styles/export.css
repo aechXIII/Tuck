@@ -109,22 +109,6 @@
 #right-foot .export-actions-menu .btn2 {
   background: transparent !important;
 }
-#task-wf {
-  gap: 1px;
-  min-height: 30px;
-  margin-bottom: 0;
-  border: 0;
-  background: var(--raised);
-}
-#task-wf button {
-  padding-block: 7px;
-  border: 0;
-}
-#task-wf button.on {
-  border: 0;
-  background: var(--raised-2);
-  color: var(--text);
-}
 #profile-card {
   padding-top: 4px;
 }
@@ -202,23 +186,6 @@
 #profile-card .profile-options {
   display: none;
 }
-/* Task — first thing in the panel, styled like the Transform/Audio/Export strip
-   so it reads as a mode picker and scales to a third option later. */
-#task-wf {
-  flex-shrink: 0;
-  min-height: 32px;
-  margin: 8px 0 0;
-  padding: 4px;
-  gap: 4px;
-  border-radius: var(--r-ctl);
-}
-#task-wf button {
-  height: 24px;
-  padding: 0;
-  border-radius: 4px;
-  font-size: 11px;
-}
-
 /* Size: the target you chose is the panel's headline number — Tuck can't
    promise the exact output size, so this shows only what you actually set,
    next to the detail line and the target control, in one lifted inset block. */

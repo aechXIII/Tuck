@@ -151,6 +151,7 @@ for (const width of [1240, 960]) {
         await expect(page.locator("#qprog")).toHaveAttribute("value", index === 0 ? "45" : "100");
       }
       if (index === 2) {
+        await page.locator("#qstatus").click();
         await page.locator("#btn-cancel").focus();
         await expect(page.locator("#btn-cancel")).toBeFocused();
         await expect(page.locator("#btn-cancel")).toBeEnabled();

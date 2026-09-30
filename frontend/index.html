@@ -177,10 +177,6 @@
           <div id="audio-lib-list"></div>
           <div id="audio-lib-empty" class="lib-empty"></div>
         </div>
-        <div id="library-summary" aria-label="Library summary">
-          <span id="library-summary-count">0 videos</span>
-          <span id="library-summary-size">0 B</span>
-        </div>
       </div>
       <div id="center">
         <div id="empty">
@@ -673,25 +669,6 @@
             <div id="audio-clip-range" class="hid"></div>
           </div>
           <div id="insp-export">
-            <div id="task-wf" role="group" aria-label="Task selector">
-              <button
-                class="on"
-                id="wf-c"
-                data-action-click="encoding-workflow"
-                data-action-value="0"
-                aria-pressed="true"
-              >
-                Compress</button
-              ><button
-                id="wf-u"
-                data-action-click="encoding-workflow"
-                data-action-value="1"
-                aria-pressed="false"
-              >
-                Upscale
-              </button>
-              <button type="button" id="wf-l" data-action-click="encoding-workflow" data-action-value="2" aria-pressed="false">Lossless cut</button>
-            </div>
             <div id="insp-cut">
               <div class="cut-notice" id="cut-conflict" hidden>
                 <h4 id="conflict-title"></h4>
@@ -1448,42 +1425,86 @@
         </div>
       </div>
     </section>
-    <div id="qbar" class="hid" role="region" aria-label="Export queue">
-      <div id="q-active" class="hid">
-        <span id="qfname"></span>
-        <span id="qeta"></span>
-        <progress
-          id="qprog"
-          value="0"
-          max="100"
-          aria-label="Export progress"
-        ></progress>
-        <span id="qcnt"></span>
-        <span class="q-spacer"></span>
-        <button
-          class="qbtn"
-          id="btn-stop-after"
-          data-action-click="queue-stop-after-current"
-          disabled
+    <div id="task-bar">
+      <div class="task-bar-side">
+        <span id="library-summary" aria-label="Library summary" hidden
+          ><span id="library-summary-count">0 videos</span> · <span id="library-summary-size">0 B</span></span
         >
-          Stop after this
+      </div>
+      <div id="task-wf" role="group" aria-label="Task">
+        <button
+          type="button"
+          class="task-tab on"
+          id="wf-c"
+          data-action-click="encoding-workflow"
+          data-action-value="0"
+          data-shortcut-commands="task.compress"
+          data-shortcut-label="Compress"
+          aria-pressed="true"
+        >
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 2v4.5H2"></path><path d="M6.5 6.5 2 2"></path><path d="M9.5 14V9.5H14"></path><path d="M9.5 9.5 14 14"></path></svg>
+          <span>Compress</span>
         </button>
         <button
-          class="qbtn danger"
-          id="btn-cancel"
-          data-action-click="queue-cancel-all"
-          disabled
+          type="button"
+          class="task-tab"
+          id="wf-u"
+          data-action-click="encoding-workflow"
+          data-action-value="1"
+          data-shortcut-commands="task.upscale"
+          data-shortcut-label="Upscale"
+          aria-pressed="false"
         >
-          Cancel all
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6.5V2h4.5"></path><path d="M2 2l4.5 4.5"></path><path d="M14 9.5V14H9.5"></path><path d="M14 14 9.5 9.5"></path></svg>
+          <span>Upscale</span>
         </button>
         <button
-          class="qbtn"
-          id="btn-clear"
-          data-action-click="queue-clear-completed"
-          disabled
+          type="button"
+          class="task-tab"
+          id="wf-l"
+          data-action-click="encoding-workflow"
+          data-action-value="2"
+          data-shortcut-commands="task.cut"
+          data-shortcut-label="Lossless cut"
+          aria-pressed="false"
         >
-          Clear done
+          <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="4.2" cy="12" r="2.2"></circle><circle cx="11.8" cy="12" r="2.2"></circle><path d="M5.6 10.3 11.5 2"></path><path d="M10.4 10.3 4.5 2"></path></svg>
+          <span>Lossless cut</span>
         </button>
+      </div>
+      <div class="task-bar-side end">
+        <div id="qbar" class="hid" role="region" aria-label="Exports">
+          <button
+            type="button"
+            id="qstatus"
+            data-action-click="exports-toggle"
+            aria-haspopup="dialog"
+            aria-expanded="false"
+            aria-controls="exports-panel"
+          >
+            <svg class="qstatus-done" viewBox="0 0 16 16" aria-hidden="true"><path d="m3.5 8.5 3 3 6-7"></path></svg>
+            <span id="qfname"></span>
+            <span id="qeta"></span>
+            <span id="qcnt"></span>
+            <svg class="qstatus-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 7.5 6 4l3.5 3.5"></path></svg>
+            <progress id="qprog" value="0" max="100" aria-label="Export progress"></progress>
+          </button>
+        </div>
+      </div>
+    </div>
+    <div id="exports-panel" role="dialog" aria-label="Exports" hidden>
+      <div class="exports-head">
+        <strong>Exports</strong>
+        <span id="exports-count"></span>
+        <span class="exports-head-actions">
+          <button type="button" class="exports-btn" id="btn-stop-after" data-action-click="queue-stop-after-current" disabled>Stop after this</button>
+          <button type="button" class="exports-btn danger" id="btn-cancel" data-action-click="queue-cancel-all" disabled>Cancel all</button>
+        </span>
+      </div>
+      <div id="exports-list"></div>
+      <div class="exports-foot">
+        <span id="exports-saved"></span>
+        <button type="button" class="exports-btn" id="btn-clear" data-action-click="queue-clear-completed" disabled>Clear done</button>
       </div>
     </div>
     </div>

@@ -523,20 +523,22 @@ test("export controls have balanced insets and timeline text shares a baseline",
   const geometry = await page.evaluate(() => {
     const rect = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
     const tabs = rect("#insp-tabs"), tab = rect("#insp-tab-export");
-    const modes = rect("#task-wf"), first = rect("#wf-c"), last = rect("#task-wf > button:last-of-type");
+    const tasks = rect("#task-wf"), bar = rect("#task-bar");
     const footer = rect("#right-foot"), button = rect("#btn-one"), actions = rect(".export-actions");
     return {
       tabInsets: { top: tab.top-tabs.top, bottom: tabs.bottom-tab.bottom },
-      rowGap: modes.top-tabs.bottom,
-      modeInsets: [first.top-modes.top,modes.bottom-first.bottom,first.left-modes.left,modes.right-last.right],
+      taskCentre: tasks.left + tasks.width / 2 - window.innerWidth / 2,
+      // the bar's top border sits outside the control's centring
+      taskInsets: [tasks.top-bar.top-1, bar.bottom-tasks.bottom],
       footerInsets: [button.top-footer.top,footer.bottom-button.bottom,button.left-footer.left,footer.right-actions.right],
     };
   });
   // tabs fill their row down to its hairline, where the selected tab's rule sits
   expect(geometry.tabInsets.top).toBeCloseTo(0, 0);
   expect(geometry.tabInsets.bottom).toBeCloseTo(1, 0);
-  expect(geometry.rowGap).toBeGreaterThanOrEqual(8);
-  for (const inset of geometry.modeInsets) expect(inset).toBeCloseTo(4, 0);
+  // the task switch sits in the middle of the window, centred in the bottom bar's height
+  expect(Math.abs(geometry.taskCentre)).toBeLessThanOrEqual(1);
+  expect(Math.abs(geometry.taskInsets[0]! - geometry.taskInsets[1]!)).toBeLessThanOrEqual(1);
   for (const inset of geometry.footerInsets) expect(inset).toBeCloseTo(12, 0);
   const baselines = await page.evaluate(() => {
     const selectors = ['.timeline-tool-group[aria-label="Segment actions"] .timeline-tool-label', '#btn-seq-split .timeline-command-label', '.timeline-tool-group[aria-label="Audio actions"] .timeline-tool-label', '#audio-add .timeline-command-label'];

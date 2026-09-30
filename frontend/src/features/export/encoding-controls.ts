@@ -470,6 +470,12 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     const s = appSettings();
     const task = launchTask({launch, start:atStart ? s.start_task : "last", last:taskAt(wf), hidden:hiddenParts(s.hidden_ui)});
     setWf(taskIndex(task));
+    if (atStart) {
+      // resolve the thumb at the starting task first, so only later switches slide
+      const tabs = el("task-wf");
+      void getComputedStyle(tabs, "::before").transform;
+      tabs.classList.add("thumb-slides");
+    }
   }
 
   function refilter(): void {

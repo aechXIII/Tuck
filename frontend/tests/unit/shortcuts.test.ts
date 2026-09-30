@@ -52,6 +52,9 @@ test("production commands are the source of the existing shortcut guide", () => 
     "file.add-videos": ["Ctrl+O"],
     "settings.open": ["Ctrl+,"],
     "app.exit": ["Ctrl+Q"],
+    "task.compress": ["1"],
+    "task.upscale": ["2"],
+    "task.cut": ["3"],
     "ui.dismiss": ["Escape"],
     "edit.undo": ["Ctrl+Z"],
     "edit.redo": ["Ctrl+Shift+Z", "Ctrl+Y"],
@@ -96,6 +99,7 @@ test("production commands are the source of the existing shortcut guide", () => 
           { label: "Add videos", bindings: "Ctrl + O" },
           { label: "Open settings", bindings: "Ctrl + ," },
           { label: "Exit Tuck", bindings: "Ctrl + Q" },
+          { label: "Compress / Upscale / Lossless cut", bindings: "1 or 2 or 3" },
           { label: "Close dialog", bindings: "Esc" },
         ],
       },
@@ -802,7 +806,7 @@ test("the production guide renders every physical key with one base keycap style
     ),
   );
 
-  assert.equal(shortcuts.search(shortcuts.sections, "").total, 19);
+  assert.equal(shortcuts.search(shortcuts.sections, "").total, 20);
   assert.deepEqual(
     Array.from(shortcutIds).filter((id) => !renderedIds.has(id)),
     [],

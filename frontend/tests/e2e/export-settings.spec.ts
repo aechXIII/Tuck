@@ -214,6 +214,10 @@ test("a running job drives the queue bar count, progress, eta, and controls", as
   await expect(page.locator("#qeta")).toHaveText("40% · 0:12 left");
   // nothing is waiting or failed, so the bar does not say so
   await expect(page.locator("#qcnt")).toHaveText("");
+  // the queue's controls live in the Exports panel the status opens
+  await page.locator("#qstatus").click();
+  await expect(page.locator("#exports-panel")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Cancel Clip one.mp4" })).toBeEnabled();
   await expect(page.getByRole("button", { name: "Cancel all" })).toBeEnabled();
   await expect(page.getByRole("button", { name: "Stop after this" })).toBeEnabled();
 });
@@ -239,6 +243,7 @@ test("stop-after-current failure keeps the queue controls usable", async ({ page
   await addVideo(page);
   await page.getByRole("button", { name: "Compress selected" }).click();
 
+  await page.locator("#qstatus").click();
   const stop = page.getByRole("button", { name: "Stop after this" });
   await expect(stop).toBeEnabled();
   await stop.click();

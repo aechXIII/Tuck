@@ -295,6 +295,8 @@ export function createLibrary(host: LibraryHost): LibraryApi {
     const size = byId("library-summary-size");
     if (count) count.textContent = summary.countLabel;
     if (size) size.textContent = summary.sizeLabel;
+    const summaryElement = byId("library-summary");
+    if (summaryElement) summaryElement.hidden = models.length === 0;
   }
 
   function clearDropTargets(): void {

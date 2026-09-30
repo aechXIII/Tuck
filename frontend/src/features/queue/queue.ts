@@ -1,14 +1,16 @@
 import type { BackendClient } from "../../backend/types.ts";
 import { SegmentEditing } from "../timeline/segments.ts";
 import { legacyBackendResult } from "../editor/backend-compat.ts";
-import { errorSummary, formatTime } from "../editor/format.ts";
+import { errorSummary, formatBytes, formatTime } from "../editor/format.ts";
 import { confirmToast, toast } from "../editor/toast.ts";
 import type { EditorClip } from "../editor/types.ts";
 import type { EditorSession } from "../editor/session.ts";
 import {
   emptyQueueView,
+  exportRows,
   formatQueueStatus,
   reduceQueueSnapshot,
+  type ExportRow,
   type QueueItem,
   type QueueViewState,
 } from "./queue-view.ts";
@@ -35,6 +37,7 @@ export interface QueueApi {
   cancelAll: () => void;
   clearDone: () => Promise<void>;
   copyDiagnostics: (itemId?: string) => Promise<void>;
+  toggleExports: () => void;
 }
 
 export function installQueue(deps: QueueDeps): QueueApi {
@@ -52,21 +55,168 @@ export function installQueue(deps: QueueDeps): QueueApi {
     if (node) node.disabled = disabled;
   };
 
-  // "1 waiting · 1 failed", with the failures in warning colour
-  const paintQueueCounts = (waiting: number, failed: number): void => {
+  // "1 waiting · 1 failed · saved 1.1 GB", with the failures in warning colour
+  const paintQueueCounts = (waiting: number, failed: number, saved: number): void => {
     const counts = byId("qcnt");
     if (!counts) return;
+    const doc = counts.ownerDocument;
     const parts: Node[] = [];
-    if (waiting) parts.push(counts.ownerDocument.createTextNode(`${waiting} waiting`));
-    if (failed) {
-      if (parts.length) parts.push(counts.ownerDocument.createTextNode(" · "));
-      const failures = counts.ownerDocument.createElement("span");
-      failures.className = "q-failed";
-      failures.textContent = `${failed} failed`;
-      parts.push(failures);
-    }
+    const add = (text: string, className = ""): void => {
+      if (parts.length) {
+        const sep = doc.createElement("span");
+        sep.textContent = " · ";
+        if (className === "q-saved") sep.className = "q-saved-sep";
+        parts.push(sep);
+      }
+      const part = doc.createElement("span");
+      if (className) part.className = className;
+      part.textContent = text;
+      parts.push(part);
+    };
+    if (waiting) add(`${waiting} waiting`);
+    if (failed) add(`${failed} failed`, "q-failed");
+    if (saved > 0) add(`saved ${formatBytes(saved)}`, "q-saved");
     counts.replaceChildren(...parts);
   };
+
+  let exportsOpen = false;
+  let lastItems: readonly QueueItem[] = [];
+
+  function setExportsOpen(open: boolean, returnFocus = false): void {
+    const panel = byId("exports-panel");
+    const status = byId("qstatus");
+    exportsOpen = open && lastItems.length > 0;
+    if (panel) panel.hidden = !exportsOpen;
+    status?.setAttribute("aria-expanded", String(exportsOpen));
+    if (exportsOpen) renderExports(lastItems);
+    if (!exportsOpen && returnFocus) status?.focus();
+  }
+
+  function toggleExports(): void {
+    setExportsOpen(!exportsOpen);
+  }
+
+  function sourceSize(path: string): number {
+    const clip = session.clips[path] ?? Object.values(session.clips).find((item) => item?.probeData?.path === path);
+    return Number(clip?._fileSize) || 0;
+  }
+
+  function exportRowElement(doc: Document, row: ExportRow): HTMLElement {
+    const element = doc.createElement("div");
+    element.className = `exports-row ${row.kind}`;
+    const name = doc.createElement("span");
+    name.className = "exports-name";
+    name.textContent = row.name;
+    name.title = row.name;
+    element.append(name);
+    if (row.action) {
+      const labels = { cancel: "Cancel", retry: "Retry", show: "Show" } as const;
+      const button = doc.createElement("button");
+      button.type = "button";
+      button.className = "exports-btn";
+      button.textContent = labels[row.action];
+      button.setAttribute("aria-label", `${labels[row.action]} ${row.name}`);
+      button.dataset.actionClick = `export-item-${row.action}`;
+      button.dataset.itemId = row.id;
+      if (row.action === "show") button.dataset.resultPath = row.resultPath;
+      element.append(button);
+    }
+    const detail = doc.createElement("span");
+    detail.className = row.kind === "failed" ? "exports-detail failed" : "exports-detail";
+    if (row.sizes) {
+      const sizes = doc.createElement("span");
+      sizes.className = "exports-sizes";
+      const smaller = doc.createElement("span");
+      smaller.className = "exports-smaller";
+      smaller.textContent = formatBytes(row.sizes.to);
+      sizes.append(`${formatBytes(row.sizes.from)} → `, smaller);
+      detail.append(sizes);
+      if (row.sizes.from > row.sizes.to) {
+        detail.append(` · saved ${Math.round((1 - row.sizes.to / row.sizes.from) * 100)}%`);
+      }
+    } else {
+      detail.textContent = row.detail;
+    }
+    detail.title = detail.textContent ?? "";
+    element.append(detail);
+    if (row.kind === "running" && row.progress !== null) {
+      const bar = doc.createElement("span");
+      bar.className = "exports-bar";
+      const fill = doc.createElement("span");
+      fill.style.width = `${Math.max(0, Math.min(100, row.progress))}%`;
+      bar.append(fill);
+      element.append(bar);
+    }
+    return element;
+  }
+
+  function renderExports(items: readonly QueueItem[]): void {
+    const list = byId("exports-list");
+    if (!list) return;
+    const doc = list.ownerDocument;
+    const rows = exportRows(items, sourceSize, formatTime);
+    // polling repaints the list; keep the focused button focused
+    const active = doc.activeElement;
+    const focused = active instanceof HTMLElement && list.contains(active)
+      ? { id: active.dataset.itemId ?? "", action: active.dataset.actionClick ?? "" }
+      : null;
+    const nodes: HTMLElement[] = [];
+    const group = (label: string, groupRows: readonly ExportRow[]): void => {
+      if (!groupRows.length) return;
+      if (label) {
+        const heading = doc.createElement("div");
+        heading.className = "exports-group";
+        heading.textContent = label;
+        nodes.push(heading);
+      }
+      for (const row of groupRows) nodes.push(exportRowElement(doc, row));
+    };
+    group("", rows.running);
+    group("Waiting", rows.waiting);
+    group("Finished", rows.finished);
+    list.replaceChildren(...nodes);
+    if (focused?.id) {
+      const match = Array.from(list.querySelectorAll<HTMLElement>("button")).find(
+        (button) => button.dataset.itemId === focused.id && button.dataset.actionClick === focused.action,
+      );
+      match?.focus();
+    }
+    text("exports-count", `${items.length} this session`);
+    const saved = byId("exports-saved");
+    if (saved) {
+      if (rows.saved > 0) {
+        const amount = doc.createElement("b");
+        amount.textContent = formatBytes(rows.saved);
+        saved.replaceChildren("Saved ", amount, " so far");
+      } else {
+        saved.replaceChildren();
+      }
+    }
+  }
+
+  function installExportsDismissal(): void {
+    const panel = byId("exports-panel");
+    const status = byId("qstatus");
+    if (!panel || !status) return;
+    const doc = panel.ownerDocument;
+    doc.addEventListener("pointerdown", (event) => {
+      if (!exportsOpen) return;
+      const target = event.target instanceof Node ? event.target : null;
+      if (target && (panel.contains(target) || status.contains(target))) return;
+      // confirming Stop after this or Cancel all happens in a dialog above; the panel stays open for it
+      if (target instanceof Element && target.closest("#mod-overlay, #toast-ct")) return;
+      setExportsOpen(false);
+    });
+    // Escape closes the panel before any editor shortcut sees it
+    doc.addEventListener("keydown", (event) => {
+      if (!exportsOpen || event.key !== "Escape") return;
+      // a confirmation dialog above the panel takes Escape first
+      if (doc.getElementById("mod-overlay")?.classList.contains("open")) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setExportsOpen(false, true);
+    }, true);
+  }
 
   let queueItemsById: Record<string, QueueItem> = {};
   const queueActiveItemIds: Record<string, true> = {};
@@ -139,12 +289,18 @@ export function installQueue(deps: QueueDeps): QueueApi {
       });
 
       toggleHidden("qbar", !queueView.barVisible);
-      toggleHidden("q-active", !queueView.barVisible);
+      byId("qbar")?.classList.toggle("finished", queueView.finished);
       setDisabled("btn-stop-after", queueView.stopAfterDisabled);
       setDisabled("btn-cancel", queueView.cancelDisabled);
       setDisabled("btn-clear", queueView.clearDisabled);
-      if (!items.length) return;
-      paintQueueCounts(queueView.waiting, queueView.failed);
+      lastItems = items;
+      if (!items.length) {
+        setExportsOpen(false);
+        return;
+      }
+      if (exportsOpen) renderExports(items);
+      const saved = queueView.finished ? exportRows(items, sourceSize).saved : 0;
+      paintQueueCounts(queueView.waiting, queueView.failed, saved);
       const progress = byId<HTMLProgressElement>("qprog");
       if (progress) {
         if (queueView.indeterminate) progress.removeAttribute("value");
@@ -369,6 +525,8 @@ export function installQueue(deps: QueueDeps): QueueApi {
     }
   }
 
+  installExportsDismissal();
+
   return {
     pollQueue,
     pollIpc,
@@ -379,6 +537,7 @@ export function installQueue(deps: QueueDeps): QueueApi {
     cancelAll,
     clearDone,
     copyDiagnostics,
+    toggleExports,
   };
 }
 

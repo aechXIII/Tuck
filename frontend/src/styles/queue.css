@@ -1,104 +1,398 @@
-#qbar {
-  height: 30px;
-  min-height: 30px;
-  background: var(--panel);
+/* The bottom bar: the Library total on the left, the task in the middle and exports on the right.
+   The task sits in the middle so switching it never moves, however much the sides say. */
+#task-bar {
+  flex: 0 0 var(--task-bar-height);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: stretch;
+  gap: 16px;
+  min-height: var(--task-bar-height);
+  padding: 0 10px;
   border-top: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  padding: 0 16px;
-  gap: 12px;
+  background: var(--sink);
 }
-
-#q-active {
+.task-bar-side {
   display: flex;
   align-items: center;
-  gap: 12px;
-  flex: 1;
   min-width: 0;
 }
-/* the name and how far it is read first; the bar only shows the same progress */
+.task-bar-side.end {
+  justify-content: flex-end;
+}
+#library-summary {
+  overflow: hidden;
+  color: var(--dim);
+  font: 500 11px var(--font);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#library-summary-count {
+  color: var(--muted);
+}
+#library-summary-size {
+  color: var(--muted);
+  font-family: var(--mono);
+}
+
+/* equal slots let the thumb find the active task from its index alone, whatever the window width */
+#task-wf {
+  --slots: 3;
+  --slot: 0;
+  position: relative;
+  display: grid;
+  grid-auto-columns: 1fr;
+  grid-auto-flow: column;
+  gap: 2px;
+  align-self: center;
+  height: 30px;
+  padding: 2px;
+  border-radius: 9px;
+  background: var(--raised);
+}
+#task-wf:has(> .user-hidden) {
+  --slots: 2;
+}
+#task-wf:has(> .task-tab:not(.user-hidden) ~ .task-tab.on) {
+  --slot: 1;
+}
+#task-wf:has(> .task-tab:not(.user-hidden) ~ .task-tab:not(.user-hidden) ~ .task-tab.on) {
+  --slot: 2;
+}
+#task-wf::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  width: calc((100% - 4px - (var(--slots) - 1) * 2px) / var(--slots));
+  border-radius: 7px;
+  background: var(--raised-2);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  transform: translateX(calc(var(--slot) * (100% + 2px)));
+}
+#task-wf.thumb-slides::before {
+  transition: transform 0.24s cubic-bezier(0.3, 0.7, 0.2, 1);
+}
+.task-tab {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--dim);
+  font: 600 12px var(--font);
+  cursor: pointer;
+  transition: color 0.12s ease;
+}
+.task-tab svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.task-tab:hover {
+  color: var(--text);
+}
+.task-tab.on {
+  color: var(--text);
+}
+.task-tab.on svg {
+  color: var(--accent-light);
+}
+.task-tab:focus-visible {
+  outline: 2px solid var(--accent-light);
+  outline-offset: -2px;
+}
+
+/* what is exporting: one button that opens every export, its bottom edge the progress */
+#qbar {
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+}
+#qstatus {
+  position: relative;
+  overflow: hidden;
+  height: 28px;
+  min-width: 0;
+  max-width: 470px;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 9px 0 11px;
+  border: 1px solid var(--border2);
+  border-radius: var(--r-ctl);
+  background: var(--raised);
+  color: var(--text);
+  font: 600 12px var(--font);
+  cursor: pointer;
+}
+#qstatus:hover {
+  background: var(--raised-2);
+}
+#qstatus:focus-visible {
+  outline: 2px solid var(--accent-light);
+  outline-offset: 1px;
+}
+#qstatus[aria-expanded="true"] {
+  border-color: color-mix(in srgb, var(--accent-light) 50%, var(--border2));
+}
+#qstatus svg {
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.qstatus-done {
+  display: none;
+  width: 14px;
+  height: 14px;
+  stroke-width: 1.6;
+  color: var(--good);
+}
+#qbar.finished .qstatus-done {
+  display: block;
+}
+.qstatus-chevron {
+  width: 12px;
+  height: 12px;
+  stroke-width: 1.5;
+  color: var(--dim);
+}
 #qfname {
   min-width: 0;
   overflow: hidden;
-  color: var(--text);
-  font-size: 12px;
-  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 #qeta {
   flex-shrink: 0;
   color: var(--muted);
-  font-size: 11px;
-  font-family: var(--mono);
+  font: 500 11px var(--mono);
   white-space: nowrap;
+}
+#qeta:empty,
+#qcnt:empty {
+  display: none;
 }
 #qcnt {
   flex-shrink: 0;
-  color: var(--muted);
-  font-size: 11px;
+  color: var(--dim);
+  font: 500 11px var(--font);
   white-space: nowrap;
 }
-#qcnt .q-failed {
-  color: color-mix(in srgb, var(--warn) 80%, var(--text));
+/* finished: "2 exported · 1 failed" reads as one line */
+#qbar.finished #qcnt::before {
+  content: "· ";
 }
-.q-spacer {
-  flex: 1;
+#qcnt .q-failed {
+  color: color-mix(in srgb, var(--warn) 85%, var(--text));
 }
 #qprog {
-  flex: 0 1 260px;
-  min-width: 60px;
-  height: 6px;
-  border: none;
-  border-radius: 3px;
-  overflow: hidden;
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  border: 0;
+  appearance: none;
+  background: var(--raised-2);
 }
 #qprog::-webkit-progress-bar {
-  background: var(--sink);
-  border-radius: 3px;
+  background: var(--raised-2);
 }
 #qprog::-webkit-progress-value {
-  background: var(--accent);
-  border-radius: 3px;
+  background: var(--accent-light);
 }
-#qprog:indeterminate::-webkit-progress-bar {
-  background: linear-gradient(to right, var(--sink) 34%, var(--accent) 34%, var(--accent) 66%, var(--sink) 66%);
+#qprog:indeterminate {
+  background: linear-gradient(to right, var(--raised-2) 34%, var(--accent-light) 34%, var(--accent-light) 66%, var(--raised-2) 66%);
 }
-#btn-stop-after,
-#btn-clear,
-#btn-cancel {
-  color: var(--muted);
-  font-size: 11px;
+#qbar.finished #qprog {
+  display: none;
 }
-.qbtn {
-  background: transparent;
-  border: none;
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 600;
-  padding: 4px 10px;
+
+/* every export this session, above the bottom bar */
+#exports-panel {
+  position: fixed;
+  right: 10px;
+  bottom: calc(var(--task-bar-height) + 6px);
+  z-index: var(--z-exports);
+  width: min(400px, calc(100vw - 20px));
+  max-height: min(520px, calc(100vh - var(--topbar-height) - var(--task-bar-height) - 24px));
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  background: #1c1c20;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.52);
+}
+#exports-panel[hidden] {
+  display: none;
+}
+.exports-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 6px 8px 8px;
+}
+.exports-head strong {
+  color: var(--text);
+  font: 600 12.5px var(--font);
+}
+#exports-count {
+  color: var(--dim);
+  font: 500 11px var(--font);
+}
+.exports-head-actions {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+}
+.exports-btn {
+  height: 24px;
+  padding: 0 9px;
+  border: 0;
   border-radius: 6px;
-  flex-shrink: 0;
-  transition:
-    color 0.15s,
-    background 0.15s;
-  font-family: var(--font);
+  background: transparent;
+  color: var(--muted);
+  font: 600 11px var(--font);
+  white-space: nowrap;
+  cursor: pointer;
 }
-.qbtn:hover:not(:disabled) {
+.exports-btn:hover:not(:disabled) {
   background: var(--raised);
   color: var(--text);
 }
-.qbtn:focus-visible {
+.exports-btn:focus-visible {
   outline: 2px solid var(--accent-light);
   outline-offset: -1px;
 }
-.qbtn:disabled {
+.exports-btn:disabled {
   color: var(--dim);
-  background: transparent;
+  opacity: 0.55;
   cursor: default;
 }
-.qbtn.danger:hover:not(:disabled) {
-  color: var(--danger);
-  background: color-mix(in srgb, var(--danger) 18%, var(--sink));
+.exports-btn.danger:not(:disabled) {
+  color: color-mix(in srgb, var(--danger) 75%, var(--text));
+}
+#exports-list {
+  min-height: 0;
+  overflow-y: auto;
+}
+.exports-group {
+  padding: 8px 8px 3px;
+  color: var(--dim);
+  font: 600 10.5px var(--font);
+}
+.exports-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 3px 12px;
+  padding: 7px 8px;
+  border-radius: 7px;
+}
+.exports-row.running {
+  background: var(--raised);
+}
+.exports-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font: 600 12px var(--font);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.exports-detail {
+  grid-column: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dim);
+  font: 500 11px var(--font);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.exports-detail.failed {
+  color: color-mix(in srgb, var(--warn) 85%, var(--text));
+}
+.exports-sizes {
+  font-family: var(--mono);
+  font-size: 10.5px;
+}
+.exports-smaller {
+  color: var(--good);
+}
+.exports-row .exports-btn {
+  grid-row: 1 / span 2;
+  grid-column: 2;
+  background: var(--raised);
+  color: var(--text);
+}
+.exports-row.running .exports-btn {
+  background: var(--raised-2);
+}
+.exports-bar {
+  grid-column: 1 / -1;
+  height: 3px;
+  margin-top: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--raised-2);
+}
+.exports-bar span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+.exports-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 8px 6px 4px 8px;
+  border-top: 1px solid var(--hair);
+  color: var(--dim);
+  font: 500 11px var(--font);
+}
+#exports-saved b {
+  color: var(--good);
+  font-weight: 600;
+}
+.exports-foot .exports-btn {
+  margin-left: auto;
+}
+
+/* the drawers stop above the bar, so the task switch and exports are never covered */
+@media (max-width: 1179px) {
+  #left,
+  #right {
+    bottom: var(--task-bar-height);
+  }
+  body.workspace-drawer-open #workspace-backdrop {
+    bottom: var(--task-bar-height);
+  }
+}
+@media (max-width: 1100px) {
+  #qcnt .q-saved,
+  #qcnt .q-saved-sep {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .task-tab,
+  #task-wf.thumb-slides::before {
+    transition: none;
+  }
 }

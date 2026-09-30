@@ -32,8 +32,10 @@ export interface QueueViewState {
   readonly stopAfterDisabled: boolean;
   readonly cancelDisabled: boolean;
   readonly clearDisabled: boolean;
-  /** The export running now, or "Done" once nothing is left. */
+  /** The export running now, or how many exported once nothing is left. */
   readonly fname: string;
+  /** Nothing is running or waiting, but finished exports are still listed. */
+  readonly finished: boolean;
   /** How far the running export is, e.g. "42% · 1:23 left". */
   readonly detail: string;
   readonly waiting: number;
@@ -57,6 +59,7 @@ export function emptyQueueView(): QueueViewState {
     cancelDisabled: true,
     clearDisabled: true,
     fname: "",
+    finished: false,
     detail: "",
     waiting: 0,
     failed: 0,
@@ -122,6 +125,65 @@ export function queueCompletionOutput(
     }
   }
   return latest?.result_path ?? "";
+}
+
+export type ExportRowKind = "running" | "waiting" | "failed" | "cancelled" | "completed";
+
+export interface ExportRow {
+  readonly id: string;
+  readonly name: string;
+  readonly kind: ExportRowKind;
+  readonly detail: string;
+  /** Source and result sizes, shown when both are known. */
+  readonly sizes: { readonly from: number; readonly to: number } | null;
+  readonly progress: number | null;
+  readonly action: "cancel" | "retry" | "show" | null;
+  readonly resultPath: string;
+}
+
+export interface ExportRows {
+  readonly running: readonly ExportRow[];
+  readonly waiting: readonly ExportRow[];
+  readonly finished: readonly ExportRow[];
+  /** Bytes saved by finished exports whose sizes are both known. */
+  readonly saved: number;
+}
+
+// every export this session, grouped the way the Exports panel lists them
+export function exportRows(
+  items: readonly QueueItem[],
+  sourceSize: (path: string) => number,
+  formatDuration: (seconds: number) => string = String,
+): ExportRows {
+  const running: ExportRow[] = [];
+  const waiting: ExportRow[] = [];
+  const finished: ExportRow[] = [];
+  let saved = 0;
+  for (const item of items) {
+    const base = {
+      id: item.id ?? "",
+      name: item.source ?? item.source_path?.split(/[\/]/).pop() ?? "?",
+      resultPath: item.result_path ?? "",
+    };
+    if (item.state === "running") {
+      const progress = Math.round(item.progress ?? 0);
+      running.push({...base, kind: "running", detail: runningDetail(item, progress, formatDuration), sizes: null,
+        progress: item.progress_info?.indeterminate ? null : progress, action: "cancel"});
+    } else if (item.state === "pending") {
+      waiting.push({...base, kind: "waiting", detail: "Waiting", sizes: null, progress: null, action: "cancel"});
+    } else if (item.state === "failed") {
+      finished.push({...base, kind: "failed", detail: item.error ? `Failed: ${item.error}` : "Failed", sizes: null, progress: null, action: "retry"});
+    } else if (item.state === "cancelled") {
+      finished.push({...base, kind: "cancelled", detail: "Cancelled", sizes: null, progress: null, action: "retry"});
+    } else if (item.state === "completed") {
+      const from = item.source_path ? sourceSize(item.source_path) : 0;
+      const to = Number(item.result_size) || 0;
+      const sizes = from > 0 && to > 0 ? {from, to} : null;
+      if (sizes && from > to) saved += from - to;
+      finished.push({...base, kind: "completed", detail: sizes ? "" : "Done", sizes, progress: null, action: base.resultPath ? "show" : null});
+    }
+  }
+  return {running, waiting, finished, saved};
 }
 
 // plain encoding needs no verb; other steps such as a second pass or a cut's joining say theirs
@@ -190,7 +252,7 @@ export function reduceQueueSnapshot(
     detail = runningDetail(first, progress, formatDuration);
   } else if (!pending.length && items.length) {
     progress = 100;
-    fname = "Done";
+    fname = completedCount ? `${completedCount} exported` : "Done";
   }
 
   return {
@@ -205,6 +267,7 @@ export function reduceQueueSnapshot(
     cancelDisabled: active === 0,
     clearDisabled: completedCount === 0,
     fname,
+    finished: items.length > 0 && active === 0,
     detail,
     waiting: pending.length,
     failed,
