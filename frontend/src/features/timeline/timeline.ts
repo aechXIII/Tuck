@@ -124,8 +124,8 @@ export function installTimeline(host: TimelineHost) {
   let _previewSecLocal: number | null = null;
 let snapOn = true;
   let keyframesOn = true;
-  // the keyframe a dragged start copies from, lit while the drag lasts
-  let _kfLanding: number | null = null;
+  // the keyframe a dragged start copies from, lit while the drag lasts, and where the drag is
+  let _kfLanding: { at: number; from: number } | null = null;
   let timelineZoom = 1;
   let TL_ZOOM_MIN = TimelineCore.ZOOM_MIN;
   let TL_SNAP_PX = 8;
@@ -301,10 +301,22 @@ function paintKeyframeGuides(sec?: number) {
   const video = currentVideo();
   const time = sec ?? _previewSecLocal ?? (video && Number.isFinite(video.currentTime) ? video.currentTime : 0);
   if (_tlDrag === "in") {
-    Keyframes.renderKeyframeGuides(layer, [], _kfLanding, overlay.full);
+    const landing = _kfLanding;
+    const late = landing && landing.at - landing.from > overlay.tolerance ? landing.at - landing.from : 0;
+    Keyframes.renderKeyframeGuides(layer, [], landing?.at ?? null, overlay.full, late);
+    nudgePastPlayheadTime(layer.querySelector<HTMLElement>(".kf-landing-note"));
     return;
   }
   Keyframes.renderKeyframeGuides(layer, Keyframes.keyframesAround(overlay.strip.times, time, overlay.tolerance), null, overlay.full);
+}
+
+// a keyframe just after the dragged start would put its note under the playhead's time
+function nudgePastPlayheadTime(note: HTMLElement | null) {
+  const time = byId("seq-playhead-time");
+  if (!note || !time) return;
+  note.style.removeProperty("--nudge");
+  const overlap = time.getBoundingClientRect().right + 4 - note.getBoundingClientRect().left;
+  if (overlap > 0) note.style.setProperty("--nudge", overlap + "px");
 }
 
 // the player bar's start and end follow the selected segment, even before keyframes are read
@@ -1060,9 +1072,10 @@ function processTimelineMove(e: PointerEvent) {
     let start = applyTrimStart(time);
     if (start == null) return;
     const overlay = cutOverlay();
-    _kfLanding = overlay && selectedClip(session)?.cutState?.precision !== "exact"
+    const at = overlay && selectedClip(session)?.cutState?.precision !== "exact"
       ? Keyframes.landingKeyframe(overlay.strip.times, start, overlay.tolerance)
       : null;
+    _kfLanding = at == null ? null : { at, from: start };
     paintTrimChrome();
     host.seekPreview?.(start);
   } else if (_tlDrag === "out") {

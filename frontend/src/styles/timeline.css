@@ -174,11 +174,23 @@ body.tl-segment-dragging * {
 }
 .tl-segment:hover .tl-segment-time,
 .tl-segment:focus-visible .tl-segment-time,
-#video-track.selected #timeline.segment-dragging .tl-segment.active .tl-segment-time,
-#video-track.selected #timeline.trim-dragging .tl-segment.active .tl-segment-time {
+#video-track.selected #timeline.segment-dragging .tl-segment.active .tl-segment-time {
   transform: translateX(-50%) translateY(0);
   opacity: 1;
   visibility: visible;
+}
+/* while an edge is dragged the playhead bubble carries the time and the clip its own range,
+   so the bubble only helps a clip too narrow to show that range */
+#timeline.trim-dragging .tl-segment .tl-segment-time {
+  opacity: 0;
+  visibility: hidden;
+}
+@container (max-width: 150px) {
+  #video-track.selected #timeline.trim-dragging:not(:has(.kf-landing-note)) .tl-segment.active .tl-segment-time {
+    transform: translateX(-50%) translateY(0);
+    opacity: 1;
+    visibility: visible;
+  }
 }
 .tl-segment:focus-visible {
   outline: 2px solid var(--accent-light);
@@ -840,6 +852,32 @@ body.task-cut #timeline-audio-tools {
   width: 2px;
   margin-left: -1px;
   background: var(--accent-light);
+}
+/* drawn like the cut chip it turns into once the drag ends */
+.kf-landing-note {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 18px;
+  padding: 0 6px;
+  transform: translateX(calc(-50% + var(--nudge, 0px)));
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  background: rgba(20, 19, 29, 0.96);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  color: var(--muted);
+  font: 600 9px var(--mono);
+  white-space: nowrap;
+}
+.kf-landing-note::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--warn);
 }
 .kf-lane .kf-scan,
 .kf-lane .kf-unread {

@@ -512,6 +512,33 @@ test("dragging a start snaps to keyframes and lights the keyframe it copies from
   await expect(page.locator("#tl-in")).not.toHaveAttribute("aria-valuenow","8");
 });
 
+test("a dragged start says how much later the cut starts, at the keyframe it copies from", async ({page}) => {
+  await setup(page);
+  await page.locator("#wf-l").click();
+  await expect(page.locator("#btn-one")).toBeEnabled();
+  const track = (await page.locator("#tl-track").boundingBox())!;
+  const edge = (await page.locator('.tl-segment[data-segment-index="0"] .clip-edge.start').boundingBox())!;
+  const y = edge.y + edge.height / 2;
+  await page.mouse.move(edge.x + edge.width / 2, y);
+  await page.mouse.down();
+  await page.mouse.move(track.x + track.width * 5.5 / 12, y, {steps:6});
+  const note = page.locator("#kf-guides .kf-guide.landing .kf-landing-note");
+  await expect(note).toHaveText("starts 2.5 s later");
+  const noteBox = (await note.boundingBox())!;
+  expect(noteBox.x + noteBox.width / 2).toBeCloseTo(track.x + track.width * 8 / 12, -1);
+  // the clip shows its own range, so the bubble above it would only cover the ruler
+  await expect(page.locator(".tl-segment.active .tl-segment-time")).toBeHidden();
+  // close to the keyframe the note moves out from under the playhead's time
+  await page.mouse.move(track.x + track.width * 7.8 / 12, y, {steps:3});
+  await expect(note).toHaveText("starts 0.2 s later");
+  const time = (await page.locator("#seq-playhead-time").boundingBox())!;
+  expect((await note.boundingBox())!.x).toBeGreaterThanOrEqual(time.x + time.width);
+  await page.mouse.move(track.x + track.width * 3.97 / 12, y, {steps:3});
+  await expect(note).toHaveCount(0);
+  await page.mouse.up();
+  await expect(page.locator(".kf-landing-note")).toHaveCount(0);
+});
+
 test("Exact is chosen by pointer or keyboard and shows what is re-encoded", async ({page}) => {
   await setup(page,{exact:true});
   await page.locator("#wf-l").click();

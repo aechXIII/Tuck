@@ -268,8 +268,9 @@ export function renderKeyframeGuides(
   near: readonly number[],
   landing: number | null,
   duration: number,
+  lateBy = 0,
 ): void {
-  const key = `${duration}|${near.join(",")}|${landing}`;
+  const key = `${duration}|${near.join(",")}|${landing}|${lateBy}`;
   if (layer.dataset.guideKey === key) return;
   layer.dataset.guideKey = key;
   const doc = layer.ownerDocument;
@@ -285,6 +286,13 @@ export function renderKeyframeGuides(
     const guide = doc.createElement("i");
     guide.className = "kf-guide landing";
     guide.style.left = percent(landing, duration);
+    // the dragged edge shows the time asked for; the export starts here, so say so here
+    if (lateBy > 0) {
+      const note = doc.createElement("span");
+      note.className = "kf-landing-note";
+      note.textContent = chipText("moved", lateBy);
+      guide.append(note);
+    }
     guides.append(guide);
   }
   layer.replaceChildren(guides);
