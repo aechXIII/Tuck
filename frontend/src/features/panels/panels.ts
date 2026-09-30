@@ -430,19 +430,20 @@ export function installPanels(host: PanelsHost): PanelsApi {
       });
   }
 
+  // This video shows the Transform and Audio sections together; a saved "audio" opens it too
   function setInspectorTab(tab: string, remember?: boolean): void {
-    const shown = visibleInspectorTab(tab === "audio" || tab === "export" ? tab : "edit", hiddenUi);
-    inspectorTab = shown === "audio" || shown === "export" ? shown : "edit";
-    (["edit", "audio", "export"] as const).forEach((t) => {
-      const isActive = t === inspectorTab;
-      const tabButton = byId("insp-tab-" + t);
-      const panel = byId("insp-" + t);
-      tabButton?.classList.toggle("on", isActive);
-      tabButton?.setAttribute("aria-pressed", String(isActive));
-      panel?.classList.toggle("hid", !isActive);
-    });
-    byId("right-foot")?.classList.toggle("hid", inspectorTab !== "export");
-    if (inspectorTab === "audio") renderAudioMixerList();
+    inspectorTab = visibleInspectorTab(tab === "export" ? "export" : "edit", hiddenUi) === "export" ? "export" : "edit";
+    const video = inspectorTab === "edit";
+    for (const [id, active] of [["insp-tab-edit", video], ["insp-tab-export", !video]] as const) {
+      byId(id)?.classList.toggle("on", active);
+      byId(id)?.setAttribute("aria-pressed", String(active));
+    }
+    byId("insp-edit")?.classList.toggle("hid", !video || hiddenUi.has("panel_video"));
+    byId("insp-edit")?.classList.toggle("no-video", !host.selPath());
+    byId("insp-audio")?.classList.toggle("hid", !video || hiddenUi.has("panel_audio"));
+    byId("insp-export")?.classList.toggle("hid", video);
+    byId("right-foot")?.classList.toggle("hid", video);
+    if (video) renderAudioMixerList();
     if (remember !== false) rememberInspectorTab(inspectorTab);
   }
 
@@ -451,11 +452,10 @@ export function installPanels(host: PanelsHost): PanelsApi {
     hiddenUi = hidden;
     const video = hidden.has("panel_video");
     const audio = hidden.has("panel_audio");
-    byId("insp-tab-edit")?.classList.toggle("user-hidden", video);
-    byId("insp-tab-audio")?.classList.toggle("user-hidden", audio);
+    byId("insp-tab-edit")?.classList.toggle("user-hidden", video && audio);
     // Export on its own needs no tab row
     byId("insp-tabs")?.classList.toggle("user-hidden", video && audio);
-    if (visibleInspectorTab(inspectorTab, hidden) !== inspectorTab) setInspectorTab("export", false);
+    setInspectorTab(inspectorTab, false);
     const noAudioEditing = hidden.has("audio_editing");
     byId("lib-tab-audio")?.classList.toggle("user-hidden", noAudioEditing);
     doc.querySelector(".lib-tabs")?.classList.toggle("user-hidden", noAudioEditing);
@@ -479,6 +479,8 @@ export function installPanels(host: PanelsHost): PanelsApi {
     const selectionMeta = byId("video-selection-meta");
     if (empty) empty.classList.toggle("hid", Boolean(clip));
     if (content) content.classList.toggle("hid", !clip);
+    // with no video, This video says so once instead of once per section
+    byId("insp-edit")?.classList.toggle("no-video", !clip);
     // the card only shows for a file Tuck could not read; the header line covers the rest
     card?.classList.toggle("hid", !clip?.error);
     if (selectionMeta) delete selectionMeta.dataset.tip;

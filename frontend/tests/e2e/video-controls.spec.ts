@@ -43,7 +43,7 @@ for (const width of [1240, 960]) {
     await expect(fpsPreset).toHaveValue("custom");
     await expect(fps).toBeFocused();
     await fps.fill("");
-    await expect(page.getByRole("button", {name:"Compress selected",exact:true})).toBeDisabled();
+    await expect(page.getByRole("button", {name:"Compress this video",exact:true})).toBeDisabled();
     await expect(page.locator("#video-error")).toContainText("FPS");
     await fps.fill("59.94");
     await page.getByLabel("Custom width", {exact:true}).fill("1");
@@ -53,7 +53,7 @@ for (const width of [1240, 960]) {
     await panel.screenshot({path:`frontend/.scratch/video-controls-${width}.png`});
     await page.screenshot({path:`frontend/.scratch/video-layout-${width}.png`});
     expect(await panel.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
-    await page.getByRole("button", {name:"Compress selected",exact:true}).click();
+    await page.getByRole("button", {name:"Compress this video",exact:true}).click();
     const request = await page.evaluate(() => (window.__tuckFakeBackendCalls ?? []).find(c => c.method === "enqueueWithOptions")?.args[0]);
     expect(request).toMatchObject({resolution_mode:"custom",custom_width:1600,custom_height:900,fps_mode:"custom",custom_fps:59.94});
     await resolution.selectOption("source");
@@ -65,7 +65,7 @@ for (const width of [1240, 960]) {
     await fpsPreset.selectOption("60");
     await resolution.selectOption("3840x2160");
     await expect(page.getByLabel("Custom width", {exact:true})).toHaveValue("3840");
-    await expect(page.getByRole("button", {name:"Upscale selected",exact:true})).toBeEnabled();
+    await expect(page.getByRole("button", {name:"Upscale this video",exact:true})).toBeEnabled();
     expect(errors).toEqual([]);
   });
 }

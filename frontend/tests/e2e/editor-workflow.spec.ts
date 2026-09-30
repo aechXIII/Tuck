@@ -248,8 +248,8 @@ test("queue progress becomes visible after compressing the selected video", asyn
   await page.goto("/");
 
   await page.getByRole("button", { name: "Add videos" }).click();
-  await expect(page.getByRole("button", { name: "Compress selected" })).toBeEnabled();
-  await page.getByRole("button", { name: "Compress selected" }).click();
+  await expect(page.getByRole("button", { name: "Compress this video" })).toBeEnabled();
+  await page.getByRole("button", { name: "Compress this video" }).click();
 
   await expect(page.locator("#qbar")).toBeVisible();
   await expect(page.locator("#qprog")).toHaveAttribute("value", "42");
@@ -419,7 +419,7 @@ test("the audio source range picker sizes its window to the selection and stays 
   await page.getByRole("button", { name: "Add videos" }).click();
   await expect(page.locator(".c2").getByText("Morning clip.mp4", { exact: true })).toBeVisible();
 
-  await page.locator("#insp-tab-audio").click();
+  await page.locator("#insp-tab-edit").click();
   await page.locator("#lib-tab-audio").click();
   await page.locator("#btn-add-audio").click();
   await expect(page.locator("#audio-lib-list")).toContainText("Score – café.wav");
@@ -493,14 +493,16 @@ test("Inspector content aligns with tabs and footer without empty scrolling", as
     await page.setViewportSize({ width, height: width === 960 ? 640 : 800 });
     if (width === 960) await page.getByRole("button", { name: "Inspector", exact: true }).click();
     await page.locator("#insp-tab-edit").click();
-    const overflow = await page.locator("#right-scroll").evaluate(el => el.scrollHeight - el.clientHeight);
-    expect(overflow).toBeLessThanOrEqual(1);
+    // This video may scroll when Transform and Audio are taller than the panel, but never past its content
+    const trailing = await page.locator("#right-scroll").evaluate(el => {
+      const audio = el.querySelector("#insp-audio")!.getBoundingClientRect();
+      return el.scrollHeight - (audio.bottom - el.getBoundingClientRect().top + el.scrollTop);
+    });
+    expect(trailing).toBeLessThanOrEqual(16);
     // a readable file is summed up in the header, with no second details block
     await expect(page.locator("#video-selection-meta")).toHaveText(/1920×1080 · .*fps · 0:12/);
     await expect(page.locator("#clip-details-card")).toBeHidden();
     await page.screenshot({ path: testInfo.outputPath(`transform-${width}.png`) });
-    await page.locator("#insp-tab-audio").click();
-    expect(await page.locator("#right-scroll").evaluate(el => el.scrollHeight - el.clientHeight)).toBeLessThanOrEqual(1);
     await page.locator("#insp-tab-export").click();
     await expect(async () => {
       const edges = await page.evaluate(() => {
@@ -633,7 +635,7 @@ test("Audio cards and headings share the Inspector edges", async ({ page }) => {
   await installFakeBackend(page, editorFixture());
   await page.goto("/");
   await page.getByRole("button", { name: "Add videos" }).click();
-  await page.locator("#insp-tab-audio").click();
+  await page.locator("#insp-tab-edit").click();
   const edges = await page.evaluate(() => ["#audio-master-card", ".audio-section-heading", "#audio-track-mixer"].map(s => {
     const r = document.querySelector(s)!.getBoundingClientRect();
     return [r.left, r.right];

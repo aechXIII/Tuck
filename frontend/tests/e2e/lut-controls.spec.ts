@@ -58,7 +58,7 @@ for (const width of [1240, 960]) {
     for (const difference of bounds) expect(Math.abs(difference)).toBeLessThan(1);
     await page.screenshot({path:`frontend/.scratch/lut-editor-${width}.png`});
     await panel.screenshot({path:`frontend/.scratch/lut-loaded-${width}.png`});
-    await page.getByRole("button", {name:"Compress selected",exact:true}).click();
+    await page.getByRole("button", {name:"Compress this video",exact:true}).click();
     const request = await page.evaluate(() => window.__tuckFakeBackendCalls?.filter(c=>c.method==="enqueueWithOptions").at(-1)?.args[0]);
     expect(request).toMatchObject({lut:{enabled:true,path:"C:/managed/abc.cube",name:"Warm.cube",strength:.35}});
     await panel.getByRole("button", {name:"Import",exact:true}).click();
@@ -69,7 +69,7 @@ for (const width of [1240, 960]) {
     await page.getByRole("button", {name:"Upscale",exact:true}).click();
     await page.getByLabel("Apply LUT", {exact:true}).uncheck();
     await expect(strength).toBeDisabled();
-    await page.getByRole("button", {name:"Upscale selected",exact:true}).click();
+    await page.getByRole("button", {name:"Upscale this video",exact:true}).click();
     const disabled = await page.evaluate(() => window.__tuckFakeBackendCalls?.filter(c=>c.method==="enqueueWithOptions").at(-1)?.args[0]);
     expect(disabled).toMatchObject({lut:{enabled:false,strength:.35}});
     expect(await panel.evaluate(el=>el.scrollWidth <= el.clientWidth)).toBe(true);

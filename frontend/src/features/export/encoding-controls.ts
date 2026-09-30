@@ -260,7 +260,10 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     const allReady = allProbesReady(session.clips);
     const one = el<HTMLButtonElement>("btn-one");
     const all = el<HTMLButtonElement>("btn-all");
-    one.textContent = up ? "Upscale selected" : "Compress selected";
+    // the settings are shared; this button acts on the selected video only
+    one.textContent = up ? "Upscale this video" : "Compress this video";
+    el("export-scope-count").textContent = `all ${count} videos`;
+    el("export-scope").hidden = count < 2;
     one.disabled = !selReady || !blending.valid() || !lut.valid() || !videoSettingsValid();
     all.textContent = (up ? "Upscale all" : "Compress all") + (count ? ` (${count})` : "");
     all.disabled = !allReady || !blending.valid() || !lut.valid() || !videoSettingsValid();

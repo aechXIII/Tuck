@@ -28,9 +28,10 @@ test("task names and workflow indexes map both ways", () => {
   for (const task of ["compression", "upscale", "cut"] as const) assert.equal(taskAt(taskIndex(task)), task);
 });
 
-test("a hidden Inspector panel falls back to Export", () => {
-  assert.equal(visibleInspectorTab("edit", hiddenParts(["panel_video"])), "export");
-  assert.equal(visibleInspectorTab("audio", hiddenParts(["panel_audio"])), "export");
-  assert.equal(visibleInspectorTab("edit", hiddenParts(["panel_audio"])), "edit");
+test("This video falls back to Export only when Transform and Audio are both hidden", () => {
+  assert.equal(visibleInspectorTab("edit", hiddenParts(["panel_video"])), "edit");
+  assert.equal(visibleInspectorTab("audio", hiddenParts(["panel_audio"])), "audio");
+  assert.equal(visibleInspectorTab("edit", hiddenParts(["panel_video", "panel_audio"])), "export");
+  assert.equal(visibleInspectorTab("audio", hiddenParts(["panel_video", "panel_audio"])), "export");
   assert.equal(visibleInspectorTab("export", hiddenParts(["panel_video", "panel_audio"])), "export");
 });

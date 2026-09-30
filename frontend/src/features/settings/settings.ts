@@ -878,8 +878,9 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         .map(([value, label]) => `<option value="${value}" ${value === current ? "selected" : ""}>${label}</option>`)
         .join("");
     const inspectorOptions = choices(
-      [["last", "Last used"], ["video", "Transform"], ["audio", "Audio"], ["export", "Export"]],
-      String(s.inspector_start_panel || "export"),
+      [["last", "Last used"], ["video", "This video"], ["export", "Export"]],
+      // "audio" was its own panel; it now opens This video
+      s.inspector_start_panel === "audio" ? "video" : String(s.inspector_start_panel || "export"),
     );
     const taskOptions = choices(
       [["last", "Last used"], ["compression", "Compress"], ["upscale", "Upscale"], ["cut", "Lossless cut"]],
@@ -928,7 +929,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         ${part("cut", "Lossless cut")}
       </div>
       <div class="settings-visibility-group" role="group" aria-labelledby="vis-panels">
-        <h4 id="vis-panels">Inspector panels</h4>
+        <h4 id="vis-panels">This video</h4>
         ${part("panel_video", "Transform")}
         ${part("panel_audio", "Audio")}
       </div>
@@ -1408,7 +1409,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     };
     offer("set-start-task", "last", (value) => value === "last" || !isTaskName(value) || visible.includes(value));
     offer("set-inspector-start", "export", (value) =>
-      !(value === "video" && hidden.has("panel_video")) && !(value === "audio" && hidden.has("panel_audio")));
+      !(value === "video" && hidden.has("panel_video") && hidden.has("panel_audio")));
   }
 
   async function saveOutputSettings(): Promise<void> {

@@ -9,7 +9,7 @@ function probe(size: number) {
   return { ok: true, data: { duration: 12, width: 1920, height: 1080, fps: 30, has_audio: true, file_size: size } };
 }
 
-async function open(page: Page, options: { queue?: unknown[]; width?: number; holdPlans?: boolean; hidden?: string[]; lastTask?: string } = {}) {
+async function open(page: Page, options: { queue?: unknown[]; width?: number; holdPlans?: boolean; lastPanel?: string; hidden?: string[]; lastTask?: string } = {}) {
   const fixture = healthyBackendFixture();
   fixture.startup.files = [MORNING, KITCHEN, TRAIL];
   fixture.responses.probeFile = probe(15_000_000);
@@ -17,6 +17,7 @@ async function open(page: Page, options: { queue?: unknown[]; width?: number; ho
   if (options.queue) fixture.responses.getQueueState = { items: options.queue };
   if (options.lastTask) fixture.responses.getSettings = { ...fixture.responses.getSettings as object, last_task: options.lastTask };
   if (options.hidden) fixture.responses.getSettings = { ...fixture.responses.getSettings as object, hidden_ui: options.hidden };
+  if (options.lastPanel) fixture.responses.getSettings = { ...fixture.responses.getSettings as object, last_inspector_panel: options.lastPanel, inspector_start_panel: "last" };
   // Lossless cut reads keyframes; the real client only passes a complete analysis on
   const time = (seconds: number) => ({ ticks: String(seconds * 10), time_base_num: 1, time_base_den: 10 });
   const analysis = { work_id: "scan", status: "ready", progress: 1, coverage_end: time(12), keyframes: [time(0), time(4), time(8)], issue: null,
@@ -168,4 +169,33 @@ test("at 960 wide the drawers stop above the bottom bar, which stays usable", as
   expect(geometry.drawer).toBeLessThanOrEqual(geometry.bar + 1);
   await page.locator("#wf-u").click();
   await expect(page.locator("#wf-u")).toHaveAttribute("aria-pressed", "true");
+});
+
+test("Export says its settings cover every video while the button acts on the selected one", async ({ page }) => {
+  await open(page, { holdPlans: true });
+  await expect(page.locator("#export-scope")).toHaveText("Settings for all 3 videos");
+  await expect(page.locator("#btn-one")).toHaveText("Compress this video");
+  await page.locator("#wf-u").click();
+  await expect(page.locator("#btn-one")).toHaveText("Upscale this video");
+  // a cut keeps segments per video, so the shared-settings note does not apply
+  await page.locator("#wf-l").click();
+  await expect(page.locator("#export-scope")).toBeHidden();
+});
+
+test("This video holds the transform and the audio of the selected video together", async ({ page }) => {
+  await open(page, { holdPlans: true });
+  await expect(page.locator("#insp-tab-edit")).toHaveText("This video");
+  await page.locator("#insp-tab-edit").click();
+  await expect(page.locator("#insp-edit")).toBeVisible();
+  await expect(page.locator("#insp-audio")).toBeVisible();
+  await expect(page.locator("#right-foot")).toBeHidden();
+  await page.locator("#insp-tab-export").click();
+  await expect(page.locator("#insp-audio")).toBeHidden();
+  await expect(page.locator("#right-foot")).toBeVisible();
+});
+
+test("an Inspector last left on the old Audio panel opens This video", async ({ page }) => {
+  await open(page, { holdPlans: true, lastPanel: "audio" });
+  await expect(page.locator("#insp-tab-edit")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("#insp-audio")).toBeVisible();
 });

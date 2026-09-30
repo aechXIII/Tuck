@@ -32,13 +32,16 @@ async function start(page: Page, settings: Record<string, unknown> = {}, profile
 test("hidden parts leave the editor", async ({page}) => {
   await start(page, {hidden_ui:["upscale", "cut", "panel_audio", "audio_editing", "frame_blending", "lut"]});
   await expect(page.locator("#task-wf")).toBeHidden();
-  await expect(page.locator("#insp-tab-audio")).toBeHidden();
-  await expect(page.locator("#insp-tab-edit")).toBeVisible();
+  // This video keeps Transform and leaves out the hidden Audio section
+  await page.locator("#insp-tab-edit").click();
+  await expect(page.locator("#insp-edit")).toBeVisible();
+  await expect(page.locator("#insp-audio")).toBeHidden();
+  await page.locator("#insp-tab-export").click();
   await expect(page.locator(".lib-tabs")).toBeHidden();
   await expect(page.locator("#audio-add")).toBeHidden();
   await expect(page.locator("#frame-blending-panel")).toBeHidden();
   await expect(page.locator("#lut-panel")).toBeHidden();
-  await expect(page.getByRole("button", {name:"Compress selected", exact:true})).toBeVisible();
+  await expect(page.getByRole("button", {name:"Compress this video", exact:true})).toBeVisible();
 });
 
 test("an effect a profile turns on stays visible while hidden", async ({page}) => {
@@ -60,10 +63,13 @@ test("Settings keeps one task on and applies what is hidden", async ({page}) => 
   await expect(page.locator('#set-start-task option[value="cut"]')).toBeDisabled();
   await page.locator("#set-start-task").selectOption("compression");
   await page.getByRole("switch", {name:"Transform"}).uncheck();
+  // This video still holds Audio, so it can still open on launch
+  await expect(page.locator('#set-inspector-start option[value="video"]')).toBeEnabled();
+  await page.getByRole("switch", {name:"Audio", exact:true}).uncheck();
   await expect(page.locator('#set-inspector-start option[value="video"]')).toBeDisabled();
   await expect(page.locator("#settings-unsaved")).toHaveText("Saved");
   const saved = await page.evaluate(() => window.__tuckFakeBackendCalls?.filter(call => call.method === "saveSettings").at(-1)?.args[0]);
-  expect(saved).toMatchObject({hidden_ui:["upscale", "cut", "panel_video"], start_task:"compression"});
+  expect(saved).toMatchObject({hidden_ui:["upscale", "cut", "panel_video", "panel_audio"], start_task:"compression"});
   await page.keyboard.press("Escape");
   await expect(page.locator("#task-wf")).toBeHidden();
   await expect(page.locator("#insp-tab-edit")).toBeHidden();

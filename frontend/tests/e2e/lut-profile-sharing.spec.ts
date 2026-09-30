@@ -87,13 +87,13 @@ for (const width of [1240, 960]) {
     await expect(error).toContainText("File not found: film.cube");
     await expect(error).toContainText("turn off “Apply LUT”");
     await expect(page.locator("#lut-panel")).toHaveAttribute("open", "");
-    await expect(page.getByRole("button", { name: "Compress selected", exact: true })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Compress this video", exact: true })).toBeDisabled();
     await error.scrollIntoViewIfNeeded();
     await page.screenshot({ path: testInfo.outputPath("missing-lut.png") });
     expect(await page.locator("#lut-panel").evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
     await page.getByRole("switch", { name: "Apply LUT", exact: true }).uncheck();
     await expect(error).toContainText("The LUT is off.");
-    await page.getByRole("button", { name: "Compress selected", exact: true }).click();
+    await page.getByRole("button", { name: "Compress this video", exact: true }).click();
     const request = await page.evaluate(() => window.__tuckFakeBackendCalls?.find(c => c.method === "enqueueWithOptions")?.args[0]);
     expect(request).toMatchObject({ lut: { ...lut, enabled: false }, target_size_bytes: 20971520 });
     await page.locator("#lut-import").click();

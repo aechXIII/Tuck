@@ -403,11 +403,7 @@
         <div id="insp-tabs" class="insp-tabs" role="group" aria-label="Inspector section">
           <button type="button" id="insp-tab-edit" class="insp-tab" aria-pressed="false" data-action-click="inspector-tab" data-action-value="edit">
             <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 1v9.5a1 1 0 0 0 1 1H15"></path><path d="M11.5 15V5.5a1 1 0 0 0-1-1H1"></path></svg>
-            Transform
-          </button>
-          <button type="button" id="insp-tab-audio" class="insp-tab" aria-pressed="false" data-action-click="inspector-tab" data-action-value="audio">
-            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 6h2.3l3.4-3v10l-3.4-3H1.5z"></path><path d="M11 5.3a3 3 0 0 1 0 5.4M13.1 3.3a6 6 0 0 1 0 9.4"></path></svg>
-            Audio
+            This video
           </button>
           <button type="button" id="insp-tab-export" class="insp-tab on" aria-pressed="true" data-action-click="inspector-tab" data-action-value="export">
             <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v7.8M5.2 6.7 8 9.5l2.8-2.8"></path><path d="M2.5 11v1.7a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V11"></path></svg>
@@ -418,7 +414,7 @@
           <div id="insp-edit" class="hid">
           <div id="video-inspector-empty" class="inspector-empty">
             <strong>Select a video</strong>
-            <span>Choose a video from the Library to crop, rotate, flip, or resize it.</span>
+            <span>Choose a video from the Library to crop, rotate or flip it, or to adjust its audio.</span>
           </div>
           <div id="video-inspector-content" class="inspector-content hid">
             <div class="inspector-summary video-summary">
@@ -669,6 +665,10 @@
             <div id="audio-clip-range" class="hid"></div>
           </div>
           <div id="insp-export">
+            <p id="export-scope" class="export-scope">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="5.5" width="11" height="8" rx="1.3"></rect><path d="M4 3.5h8M5.5 1.5h5"></path></svg>
+              <span>Settings for <strong id="export-scope-count">all videos</strong></span>
+            </p>
             <div id="insp-cut">
               <div class="cut-notice" id="cut-conflict" hidden>
                 <h4 id="conflict-title"></h4>

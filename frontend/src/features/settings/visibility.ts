@@ -64,9 +64,9 @@ export function taskAt(index: number): TaskName {
   return index === 2 ? "cut" : index === 1 ? "upscale" : "compression";
 }
 
-// Inspector tabs are "edit", "audio" and "export"; Export is never hidden
+// This video holds Transform and Audio, so it only goes when both are hidden; "audio" is an
+// older name for it. Export is never hidden.
 export function visibleInspectorTab(tab: string, hidden: ReadonlySet<HideablePart>): string {
-  if (tab === "edit" && hidden.has("panel_video")) return "export";
-  if (tab === "audio" && hidden.has("panel_audio")) return "export";
+  if ((tab === "edit" || tab === "audio") && hidden.has("panel_video") && hidden.has("panel_audio")) return "export";
   return tab;
 }

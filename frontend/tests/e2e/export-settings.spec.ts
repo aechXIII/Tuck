@@ -45,7 +45,7 @@ function pageErrors(page: Page): string[] {
 
 async function addVideo(page: Page): Promise<void> {
   await page.getByRole("button", { name: "Add videos" }).click();
-  await expect(page.getByRole("button", { name: "Compress selected" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Compress this video" })).toBeEnabled();
 }
 
 async function calls(page: Page, method: string): Promise<Array<{ args: readonly unknown[] }>> {
@@ -62,7 +62,7 @@ test("compress selected builds a typed plan request from the export form", async
   await page.goto("/");
   await addVideo(page);
 
-  await page.getByRole("button", { name: "Compress selected" }).click();
+  await page.getByRole("button", { name: "Compress this video" }).click();
 
   await expect.poll(async () => (await calls(page, "enqueueWithOptions")).length).toBe(1);
   const [enqueue] = await calls(page, "enqueueWithOptions");
@@ -93,10 +93,10 @@ test("a rejected enqueue surfaces the backend error without an unhandled failure
   await page.goto("/");
   await addVideo(page);
 
-  await page.getByRole("button", { name: "Compress selected" }).click();
+  await page.getByRole("button", { name: "Compress this video" }).click();
 
   await expect(page.getByRole("alert")).toContainText("Queue is full right now");
-  await expect(page.getByRole("button", { name: "Compress selected" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Compress this video" })).toBeEnabled();
   expect(errors).toEqual([]);
 });
 
@@ -207,7 +207,7 @@ test("a running job drives the queue bar count, progress, eta, and controls", as
   await page.goto("/");
   await addVideo(page);
 
-  await page.getByRole("button", { name: "Compress selected" }).click();
+  await page.getByRole("button", { name: "Compress this video" }).click();
   await expect(page.locator("#qbar")).toBeVisible();
   await expect(page.locator("#qprog")).toHaveAttribute("value", "40");
   await expect(page.locator("#qfname")).toHaveText("Clip one.mp4");
@@ -241,7 +241,7 @@ test("stop-after-current failure keeps the queue controls usable", async ({ page
   await installFakeBackend(page, fixture);
   await page.goto("/");
   await addVideo(page);
-  await page.getByRole("button", { name: "Compress selected" }).click();
+  await page.getByRole("button", { name: "Compress this video" }).click();
 
   await page.locator("#qstatus").click();
   const stop = page.getByRole("button", { name: "Stop after this" });
