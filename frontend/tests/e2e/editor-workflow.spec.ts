@@ -493,13 +493,11 @@ test("Inspector content aligns with tabs and footer without empty scrolling", as
     await page.setViewportSize({ width, height: width === 960 ? 640 : 800 });
     if (width === 960) await page.getByRole("button", { name: "Inspector", exact: true }).click();
     await page.locator("#insp-tab-edit").click();
-    const transform = await page.evaluate(() => {
-      const scroll = document.querySelector<HTMLElement>("#right-scroll")!;
-      const details = document.querySelector("#clip-details-card")!.getBoundingClientRect();
-      return { overflow: scroll.scrollHeight - scroll.clientHeight, bottomGap: scroll.getBoundingClientRect().bottom - details.bottom };
-    });
-    expect(transform.overflow).toBeLessThanOrEqual(1);
-    expect(transform.bottomGap).toBeCloseTo(12, 0);
+    const overflow = await page.locator("#right-scroll").evaluate(el => el.scrollHeight - el.clientHeight);
+    expect(overflow).toBeLessThanOrEqual(1);
+    // a readable file is summed up in the header, with no second details block
+    await expect(page.locator("#video-selection-meta")).toHaveText(/1920×1080 · .*fps · 0:12/);
+    await expect(page.locator("#clip-details-card")).toBeHidden();
     await page.screenshot({ path: testInfo.outputPath(`transform-${width}.png`) });
     await page.locator("#insp-tab-audio").click();
     expect(await page.locator("#right-scroll").evaluate(el => el.scrollHeight - el.clientHeight)).toBeLessThanOrEqual(1);

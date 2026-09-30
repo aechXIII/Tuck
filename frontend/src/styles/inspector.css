@@ -242,16 +242,6 @@
 #clip-details-card > .grt {
   margin-bottom: 8px;
 }
-.cd-row {
-  font-size: 11px;
-}
-.cd-k {
-  color: var(--dim);
-}
-.cd-v {
-  color: var(--muted);
-  font-family: var(--mono);
-}
 
 #clips {
   padding-left: max(0px, calc(var(--panel-inset) - var(--scroll-gutter-left, 0px)));

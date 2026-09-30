@@ -62,7 +62,7 @@ test("workspace resize is safe before the later timeline script loads", () => {
     retryProbeClip() {},
     clipDetails: {
       render() {},
-      sourceFileRows: () => [],
+      sourceSummary: () => "",
     },
   });
 
@@ -112,7 +112,7 @@ test("selecting an Inspector tab remembers the user-facing panel name", async ()
     retryProbeClip() {},
     clipDetails: {
       render() {},
-      sourceFileRows: () => [],
+      sourceSummary: () => "",
     },
   });
 

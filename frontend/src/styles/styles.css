@@ -812,24 +812,6 @@ body.workspace-overlay .panel-heading {
   flex-direction: column;
   gap: 6px;
 }
-.cd-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  font-size: 11px;
-}
-.cd-k {
-  color: var(--muted);
-  flex-shrink: 0;
-}
-.cd-v {
-  color: var(--text);
-  text-align: right;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-}
 .cd-empty {
   color: var(--muted);
   font-size: 11px;

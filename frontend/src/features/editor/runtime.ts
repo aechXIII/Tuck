@@ -277,7 +277,7 @@ export function installEditorRuntime(
     },
     clipDetails: {
       render: ClipDetails.render,
-      sourceFileRows: ClipDetails.sourceFileRows,
+      sourceSummary: ClipDetails.sourceSummary,
     },
     AudioTimeline: {
       selectTrack: audio.selectTrack,

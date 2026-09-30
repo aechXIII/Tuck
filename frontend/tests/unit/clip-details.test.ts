@@ -80,21 +80,13 @@ test("probe errors render as text and retry with the exact source path", () => {
   assert.equal((globalThis as { pwned?: unknown }).pwned, undefined);
 });
 
-test("source file rows match the compact Inspector order without repeating the filename", () => {
-  assert.deepEqual(
-    clipDetails.sourceFileRows({
-      duration: "0:19.20",
-      resolution: "2560×1440",
-      frameRate: "59.94 fps",
-      format: "H.264 / AAC",
-      size: "177.4 MB",
-    }),
-    [
-      ["Duration", "0:19.20"],
-      ["Resolution", "2560×1440"],
-      ["Frame rate", "59.94 fps"],
-      ["Format", "H.264 / AAC"],
-      ["Size", "177.4 MB"],
-    ],
+test("the Inspector header sums up the file on one line and skips what is unknown", () => {
+  assert.equal(
+    clipDetails.sourceSummary({ resolution: "2560×1440", frameRate: "59.94 fps", duration: "0:19", size: "177.4 MB" }),
+    "2560×1440 · 59.94 fps · 0:19 · 177.4 MB",
+  );
+  assert.equal(
+    clipDetails.sourceSummary({ resolution: "", frameRate: "", duration: "0:19", size: "" }),
+    "0:19",
   );
 });

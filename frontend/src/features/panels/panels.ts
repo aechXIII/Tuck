@@ -7,7 +7,7 @@ import type {
   ClipDetailsDocument,
   ClipDetailsElement,
   ClipDetailsView as LibraryClipDetailsView,
-  SourceFileRowValues,
+  SourceSummaryValues,
 } from "../library/clip-details.ts";
 import * as ClipDetails from "../library/clip-details.ts";
 import { visibleInspectorTab, type HideablePart } from "../settings/visibility.ts";
@@ -21,7 +21,7 @@ export type ClipDetailsView = LibraryClipDetailsView;
 
 export interface ClipDetailsApi {
   render: typeof ClipDetails.render;
-  sourceFileRows: (values: SourceFileRowValues) => ReturnType<typeof ClipDetails.sourceFileRows>;
+  sourceSummary: (values: SourceSummaryValues) => string;
 }
 
 export interface AudioClipRangeInfo {
@@ -477,17 +477,21 @@ export function installPanels(host: PanelsHost): PanelsApi {
     const clip = path ? host.clips()[path] : null;
     const empty = byId("video-inspector-empty");
     const content = byId("video-inspector-content");
+    const card = byId("clip-details-card");
     const selection = byId("video-selection-name");
     const selectionMeta = byId("video-selection-meta");
     if (empty) empty.classList.toggle("hid", Boolean(clip));
     if (content) content.classList.toggle("hid", !clip);
+    // the card only shows for a file Tuck could not read; the header line covers the rest
+    card?.classList.toggle("hid", !clip?.error);
+    if (selectionMeta) delete selectionMeta.dataset.tip;
     if (!clip) {
       host.clipDetails.render(detailsDoc, detailsEl, { state: "empty" }, host.retryProbeClip);
       return;
     }
     if (selection) selection.textContent = clip.name || "Selected video";
-    if (selectionMeta) selectionMeta.textContent = "Reading clip details…";
     if (clip.error) {
+      if (selectionMeta) selectionMeta.textContent = "";
       host.clipDetails.render(
         detailsDoc,
         detailsEl,
@@ -500,21 +504,12 @@ export function installPanels(host: PanelsHost): PanelsApi {
       );
       return;
     }
+    host.clipDetails.render(detailsDoc, detailsEl, { state: "empty" }, host.retryProbeClip);
     if (!clip.probed || !clip.probeData) {
-      host.clipDetails.render(
-        detailsDoc,
-        detailsEl,
-        { state: "loading" },
-        host.retryProbeClip,
-      );
+      if (selectionMeta) selectionMeta.textContent = "Reading clip details…";
       return;
     }
     const d = clip.probeData;
-    if (selectionMeta) {
-      selectionMeta.textContent =
-        (d.width && d.height ? d.width + "×" + d.height + " · " : "") +
-        host.formatTime(d.duration || 0);
-    }
     const format = [
       formatCodec(typeof d.video_codec === "string" ? d.video_codec : ""),
       d.has_audio
@@ -523,19 +518,15 @@ export function installPanels(host: PanelsHost): PanelsApi {
     ]
       .filter(Boolean)
       .join(" / ");
-    const rows = host.clipDetails.sourceFileRows({
-      duration: host.formatTime(d.duration || 0),
-      resolution: d.width && d.height ? d.width + "×" + d.height : "—",
-      frameRate: d.fps ? Math.round(d.fps * 100) / 100 + " fps" : "—",
-      format: format || "—",
-      size: clip._fileSize ? host.formatBytes(clip._fileSize) : "—",
-    });
-    host.clipDetails.render(
-      detailsDoc,
-      detailsEl,
-      { state: "ready", rows },
-      host.retryProbeClip,
-    );
+    if (selectionMeta) {
+      selectionMeta.textContent = host.clipDetails.sourceSummary({
+        resolution: d.width && d.height ? d.width + "×" + d.height : "",
+        frameRate: d.fps ? Math.round(d.fps * 100) / 100 + " fps" : "",
+        duration: host.formatTime(d.duration || 0),
+        size: clip._fileSize ? host.formatBytes(clip._fileSize) : "",
+      });
+      if (format) selectionMeta.dataset.tip = format;
+    }
   }
 
   function appendMixerRow(hostEl: HTMLElement, row: MixerRowModel): HTMLElement {
