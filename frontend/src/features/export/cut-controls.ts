@@ -230,8 +230,14 @@ export function installCutControls(deps: CutControlsDeps) {
       button.children[0]!.textContent = String(index+1);
       button.children[1]!.textContent = rangeText;
       button.children[2]!.textContent = segment ? formatTimeToHundredths(mediaSeconds(segment.resolved.end)-mediaSeconds(segment.resolved.start)) : "";
+      const kind = !segment ? "pending" : segment.start_kind === "collapsed" ? "collapsed" : encodedSeconds(segment, planned) > 0 ? "exact" : segment.start_kind === "moved" ? "moved" : "ok";
+      // a clean start needs no note; a few frames off the end stay in the tooltip
+      const quiet = kind === "ok" && !status.includes("Start not checked");
       button.children[3]!.textContent = status;
-      button.children[3]!.className = `cut-status ${!segment ? "pending" : segment.start_kind === "collapsed" ? "collapsed" : encodedSeconds(segment, planned) > 0 ? "exact" : segment.start_kind === "moved" || segment.end_frames_moved ? "moved" : "ok"}`;
+      button.children[3]!.className = `cut-status ${kind}`;
+      (button.children[3] as HTMLElement).hidden = quiet;
+      if (quiet) button.dataset.tip = status;
+      else delete button.dataset.tip;
       button.setAttribute("aria-label",`Segment ${index+1}, ${rangeText}. ${status}`);
       button.setAttribute("aria-pressed",String(index === clip?.activeSegment));
     }

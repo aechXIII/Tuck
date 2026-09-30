@@ -607,6 +607,7 @@ label.export-toggle {
 .cut-range { grid-area: range; font: 600 11px var(--mono); color: var(--text); font-variant-numeric: tabular-nums; }
 .cut-dur { grid-area: dur; font: 500 10.5px var(--mono); color: var(--dim); font-variant-numeric: tabular-nums; }
 .cut-status { grid-area: status; display: flex; align-items: center; gap: 6px; font-size: 10.5px; color: var(--muted); }
+.cut-status[hidden] { display: none; }
 .cut-status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--dim); flex: 0 0 auto; }
 .cut-status.ok::before { background: var(--good); }
 .cut-status.moved::before { background: var(--warn); }

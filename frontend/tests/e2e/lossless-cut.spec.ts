@@ -82,7 +82,10 @@ async function setup(page: Page, options: {pending?:boolean; collapsed?:boolean;
 test("lossless Inspector shows measured boundaries and exports only cut intent", async ({page}) => {
   await setup(page);
   await page.locator("#wf-l").click();
-  await expect(page.locator("#cut-list")).toContainText("Ends 3 frames early");
+  // a clean start needs no note; the frames lost at the end stay in the tooltip
+  const row = page.locator('#cut-list [data-cut-index="0"]');
+  await expect(row.locator(".cut-status")).toBeHidden();
+  await expect(row).toHaveAttribute("data-tip","Starts at the beginning · Ends 3 frames early");
   await expect(page.getByRole("radio",{name:/Exact/})).toBeDisabled();
   await expect(page.locator("#profile-card")).toBeHidden();
   await page.getByRole("button",{name:"Export cut",exact:true}).click();
