@@ -1448,44 +1448,41 @@
         </div>
       </div>
     </section>
-    <div id="qbar" class="hid">
-      <span class="qlabel">Export queue</span>
-      <span id="qidle">No exports queued</span>
+    <div id="qbar" class="hid" role="region" aria-label="Export queue">
       <div id="q-active" class="hid">
-        <span id="qcnt">0/0</span
-        ><progress
+        <span id="qfname"></span>
+        <span id="qeta"></span>
+        <progress
           id="qprog"
           value="0"
           max="100"
-          aria-label="Queue progress"
+          aria-label="Export progress"
         ></progress>
-        <span id="qeta">ETA --</span><span id="qfname"></span>
+        <span id="qcnt"></span>
+        <span class="q-spacer"></span>
         <button
           class="qbtn"
           id="btn-stop-after"
           data-action-click="queue-stop-after-current"
-          aria-label="Stop after current job"
           disabled
         >
-          Stop after current
+          Stop after this
         </button>
         <button
           class="qbtn danger"
           id="btn-cancel"
           data-action-click="queue-cancel-all"
-          aria-label="Cancel processing"
           disabled
         >
-          Cancel
+          Cancel all
         </button>
         <button
           class="qbtn"
           id="btn-clear"
           data-action-click="queue-clear-completed"
-          aria-label="Clear completed"
           disabled
         >
-          Clear completed
+          Clear done
         </button>
       </div>
     </div>

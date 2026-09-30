@@ -79,7 +79,7 @@ test("running queue snapshots update progress and ETA throughout an export", asy
     }, progress);
     await expect(page.locator("#qprog")).toHaveAttribute("value", String(progress));
   }
-  await expect(page.locator("#qeta")).toHaveText("ETA 00:05");
+  await expect(page.locator("#qeta")).toHaveText("Pass 1 of 2 · 95% · 0:05 left");
   await page.screenshot({ path: "build/queue-progress.png" });
 });
 
@@ -145,9 +145,8 @@ for (const width of [1240, 960]) {
       if (index === 1 || index === 2) {
         await expect(page.locator("#qprog")).not.toHaveAttribute("value");
         await expect(page.locator("#clips [role=progressbar]")).not.toHaveAttribute("aria-valuenow");
-        await expect(page.locator("#qfname")).toHaveText(`${status} · clip.mp4 · 1 segment`);
-        await expect(page.locator("#qeta")).toHaveText("");
-        await expect(page.locator("#qfname")).not.toContainText("%");
+        await expect(page.locator("#qfname")).toHaveText("clip.mp4");
+        await expect(page.locator("#qeta")).toHaveText(status);
       } else {
         await expect(page.locator("#qprog")).toHaveAttribute("value", index === 0 ? "45" : "100");
       }

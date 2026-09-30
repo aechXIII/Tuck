@@ -210,11 +210,12 @@ test("a running job drives the queue bar count, progress, eta, and controls", as
   await page.getByRole("button", { name: "Compress selected" }).click();
   await expect(page.locator("#qbar")).toBeVisible();
   await expect(page.locator("#qprog")).toHaveAttribute("value", "40");
-  await expect(page.locator("#qcnt")).toHaveText("1/1");
-  await expect(page.locator("#qeta")).toContainText("ETA 00:12");
-  await expect(page.locator("#qfname")).toContainText("Clip one.mp4");
-  await expect(page.getByRole("button", { name: "Cancel processing" })).toBeEnabled();
-  await expect(page.getByRole("button", { name: "Stop after current job" })).toBeEnabled();
+  await expect(page.locator("#qfname")).toHaveText("Clip one.mp4");
+  await expect(page.locator("#qeta")).toHaveText("40% · 0:12 left");
+  // nothing is waiting or failed, so the bar does not say so
+  await expect(page.locator("#qcnt")).toHaveText("");
+  await expect(page.getByRole("button", { name: "Cancel all" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Stop after this" })).toBeEnabled();
 });
 
 test("stop-after-current failure keeps the queue controls usable", async ({ page }) => {
@@ -238,7 +239,7 @@ test("stop-after-current failure keeps the queue controls usable", async ({ page
   await addVideo(page);
   await page.getByRole("button", { name: "Compress selected" }).click();
 
-  const stop = page.getByRole("button", { name: "Stop after current job" });
+  const stop = page.getByRole("button", { name: "Stop after this" });
   await expect(stop).toBeEnabled();
   await stop.click();
   await page.locator("#confirm-accept").click();

@@ -32,9 +32,12 @@ export interface QueueViewState {
   readonly stopAfterDisabled: boolean;
   readonly cancelDisabled: boolean;
   readonly clearDisabled: boolean;
-  readonly count: string;
-  readonly eta: string;
+  /** The export running now, or "Done" once nothing is left. */
   readonly fname: string;
+  /** How far the running export is, e.g. "42% · 1:23 left". */
+  readonly detail: string;
+  readonly waiting: number;
+  readonly failed: number;
   /** Non-empty when a batch just finished and the toast should fire. */
   readonly finishedToast: { readonly message: string; readonly kind: "ok" | "err" } | null;
   /** Result path to reveal when the automatic show-export setting is on. */
@@ -53,9 +56,10 @@ export function emptyQueueView(): QueueViewState {
     stopAfterDisabled: true,
     cancelDisabled: true,
     clearDisabled: true,
-    count: "0/0",
-    eta: "ETA --",
     fname: "",
+    detail: "",
+    waiting: 0,
+    failed: 0,
     finishedToast: null,
     outputToOpen: "",
   };
@@ -120,6 +124,18 @@ export function queueCompletionOutput(
   return latest?.result_path ?? "";
 }
 
+// plain encoding needs no verb; other steps such as a second pass or a cut's joining say theirs
+function runningDetail(item: QueueItem, progress: number, formatDuration: (seconds: number) => string): string {
+  const info = item.progress_info ?? {};
+  const parts: string[] = [];
+  if (item.status_text && item.status_text !== "Encoding") parts.push(item.status_text);
+  if (!info.indeterminate) {
+    if (progress > 0) parts.push(`${progress}%`);
+    if (info.eta_seconds != null && info.eta_seconds >= 0) parts.push(`${formatDuration(info.eta_seconds)} left`);
+  }
+  return parts.join(" · ") || "Starting";
+}
+
 /**
  * Pure reducer from a backend queue snapshot to the queue-bar view model.
  * `previous` carries forward the had-active flag, the active-id set, and the
@@ -133,12 +149,9 @@ export function reduceQueueSnapshot(
   const items = snapshot.items ?? [];
   const running = items.filter((item) => item.state === "running");
   const pending = items.filter((item) => item.state === "pending");
-  const terminal = new Set(["completed", "failed", "cancelled"]);
-  const done = items.filter((item) => terminal.has(item.state ?? "")).length;
   const completedCount = items.filter((item) => item.state === "completed").length;
   const failed = items.filter((item) => item.state === "failed").length;
   const active = running.length + pending.length;
-  const total = done + active;
 
   const activeItemIds: Record<string, true> = { ...previous.activeItemIds };
   for (const item of [...running, ...pending]) if (item.id) activeItemIds[item.id] = true;
@@ -157,10 +170,9 @@ export function reduceQueueSnapshot(
 
   const nextActiveItemIds = queueFinished ? {} : activeItemIds;
 
-  let count = "0/0";
   let progress = 0;
   let indeterminate = false;
-  let eta = "ETA --";
+  let detail = "";
   let fname = "";
   let runningItemId = "";
 
@@ -174,26 +186,11 @@ export function reduceQueueSnapshot(
         : raw;
     const pi = first.progress_info ?? {};
     indeterminate = pi.indeterminate === true;
-    count = `${done + 1}/${total}`;
-    eta = indeterminate ? "" : pi.eta_seconds != null ? `ETA ${formatEta(pi.eta_seconds)}` : "ETA --";
-    const segmentCount = first.segment_count || 1;
-    const selection =
-      `${segmentCount}${segmentCount === 1 ? " segment" : " segments"}` +
-      (first.duration ? ` · ${formatDuration(first.duration)}` : "");
-    const status = formatQueueStatus(first);
-    fname = first.operation === "cut"
-      ? `${status} · ${first.source ?? "?"} · ${selection}`
-      : `${first.source ?? "?"} · ${selection}${status ? ` · ${status}` : ""}`;
-  } else if (pending.length) {
-    count = `${done}/${total}`;
-    progress = 0;
-    eta = "ETA --";
-    fname = `${pending.length} pending`;
-  } else if (items.length) {
-    count = `${done}/${total}`;
+    fname = first.source ?? "?";
+    detail = runningDetail(first, progress, formatDuration);
+  } else if (!pending.length && items.length) {
     progress = 100;
-    eta = "";
-    fname = "Queue idle";
+    fname = "Done";
   }
 
   return {
@@ -207,9 +204,10 @@ export function reduceQueueSnapshot(
     stopAfterDisabled: active === 0,
     cancelDisabled: active === 0,
     clearDisabled: completedCount === 0,
-    count,
-    eta,
     fname,
+    detail,
+    waiting: pending.length,
+    failed,
     finishedToast,
     outputToOpen,
   };

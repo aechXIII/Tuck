@@ -9,20 +9,6 @@
   gap: 12px;
 }
 
-.qlabel {
-  color: var(--muted);
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  flex-shrink: 0;
-}
-#qidle {
-  flex: 1;
-  text-align: right;
-  color: var(--dim);
-  font-size: 11px;
-}
 #q-active {
   display: flex;
   align-items: center;
@@ -30,16 +16,38 @@
   flex: 1;
   min-width: 0;
 }
-#qcnt {
-  color: var(--accent-light);
-  font-weight: 700;
+/* the name and how far it is read first; the bar only shows the same progress */
+#qfname {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
   font-size: 12px;
-  font-family: var(--mono);
-  min-width: 42px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#qeta {
   flex-shrink: 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-family: var(--mono);
+  white-space: nowrap;
+}
+#qcnt {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+#qcnt .q-failed {
+  color: color-mix(in srgb, var(--warn) 80%, var(--text));
+}
+.q-spacer {
+  flex: 1;
 }
 #qprog {
-  flex: 1;
+  flex: 0 1 260px;
+  min-width: 60px;
   height: 6px;
   border: none;
   border-radius: 3px;
@@ -56,30 +64,11 @@
 #qprog:indeterminate::-webkit-progress-bar {
   background: linear-gradient(to right, var(--sink) 34%, var(--accent) 34%, var(--accent) 66%, var(--sink) 66%);
 }
-#qeta {
-  color: var(--dim);
-  font-size: 11px;
-  font-family: var(--mono);
-  min-width: 70px;
-  text-align: right;
-  flex-shrink: 0;
-}
-#qfname {
-  color: var(--dim);
-  font-size: 11px;
-  font-family: var(--mono);
-  max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
 #btn-stop-after,
 #btn-clear,
 #btn-cancel {
-  color: var(--dim);
+  color: var(--muted);
   font-size: 11px;
-  font-family: var(--mono);
 }
 .qbtn {
   background: transparent;

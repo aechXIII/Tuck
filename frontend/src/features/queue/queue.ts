@@ -52,6 +52,22 @@ export function installQueue(deps: QueueDeps): QueueApi {
     if (node) node.disabled = disabled;
   };
 
+  // "1 waiting · 1 failed", with the failures in warning colour
+  const paintQueueCounts = (waiting: number, failed: number): void => {
+    const counts = byId("qcnt");
+    if (!counts) return;
+    const parts: Node[] = [];
+    if (waiting) parts.push(counts.ownerDocument.createTextNode(`${waiting} waiting`));
+    if (failed) {
+      if (parts.length) parts.push(counts.ownerDocument.createTextNode(" · "));
+      const failures = counts.ownerDocument.createElement("span");
+      failures.className = "q-failed";
+      failures.textContent = `${failed} failed`;
+      parts.push(failures);
+    }
+    counts.replaceChildren(...parts);
+  };
+
   let queueItemsById: Record<string, QueueItem> = {};
   const queueActiveItemIds: Record<string, true> = {};
   const retryInFlight: Record<string, true> = {};
@@ -124,19 +140,18 @@ export function installQueue(deps: QueueDeps): QueueApi {
 
       toggleHidden("qbar", !queueView.barVisible);
       toggleHidden("q-active", !queueView.barVisible);
-      toggleHidden("qidle", queueView.barVisible);
       setDisabled("btn-stop-after", queueView.stopAfterDisabled);
       setDisabled("btn-cancel", queueView.cancelDisabled);
       setDisabled("btn-clear", queueView.clearDisabled);
       if (!items.length) return;
-      text("qcnt", queueView.count);
+      paintQueueCounts(queueView.waiting, queueView.failed);
       const progress = byId<HTMLProgressElement>("qprog");
       if (progress) {
         if (queueView.indeterminate) progress.removeAttribute("value");
         else progress.value = queueView.progress;
-        progress.setAttribute("aria-valuetext", queueView.fname);
+        progress.setAttribute("aria-valuetext", [queueView.fname, queueView.detail].filter(Boolean).join(" · "));
       }
-      text("qeta", queueView.eta);
+      text("qeta", queueView.detail);
       text("qfname", queueView.fname);
       const filename = byId("qfname");
       if (filename) filename.title = queueView.fname;
@@ -198,9 +213,8 @@ export function installQueue(deps: QueueDeps): QueueApi {
     confirmToast("Cancel all processing?", () => {
       void (async (): Promise<void> => {
         await client().cancelAllItems();
-        toggleHidden("q-active", true);
-        toggleHidden("qidle", false);
         toast("Processing cancelled.", "ok");
+        await pollQueue();
       })();
     });
   }

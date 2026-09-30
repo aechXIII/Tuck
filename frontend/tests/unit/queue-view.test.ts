@@ -40,7 +40,7 @@ test("empty snapshot yields a hidden bar and disabled controls", () => {
   assert.equal(next.finishedToast, null);
 });
 
-test("a running item drives count, progress, eta, and filename", () => {
+test("a running item shows its name, how far it is and what is left", () => {
   const next = reduceQueueSnapshot(emptyQueueView(), {
     items: [
       {
@@ -52,14 +52,35 @@ test("a running item drives count, progress, eta, and filename", () => {
         segment_count: 1,
         duration: 12,
       },
+      { id: "b", source: "next.mp4", state: "pending" },
+      { id: "c", source: "old.mp4", state: "completed" },
+      { id: "d", source: "bad.mp4", state: "failed" },
     ],
   }, (seconds) => `${seconds}s`);
   assert.equal(next.barVisible, true);
   assert.equal(next.active, true);
-  assert.equal(next.count, "1/1");
   assert.equal(next.progress, 42);
-  assert.equal(next.eta, "ETA 00:18");
-  assert.equal(next.fname, "clip.mp4 · 1 segment · 12s · Encoding · 42%");
+  assert.equal(next.fname, "clip.mp4");
+  assert.equal(next.detail, "42% · 18s left");
+  assert.equal(next.waiting, 1);
+  assert.equal(next.failed, 1);
+  // a second pass or other named step says so; plain encoding does not
+  const pass = reduceQueueSnapshot(emptyQueueView(), {
+    items: [{ id: "a", source: "clip.mp4", state: "running", progress: 0, status_text: "Pass 2" }],
+  });
+  assert.equal(pass.detail, "Pass 2");
+  const starting = reduceQueueSnapshot(emptyQueueView(), {items: [{ id: "a", source: "clip.mp4", state: "running" }]});
+  assert.equal(starting.detail, "Starting");
+});
+
+test("a finished queue says it is done and keeps its failures", () => {
+  const view = reduceQueueSnapshot(emptyQueueView(), {
+    items: [{ id: "c", state: "completed" }, { id: "d", state: "failed" }],
+  });
+  assert.equal(view.fname, "Done");
+  assert.equal(view.detail, "");
+  assert.equal(view.failed, 1);
+  assert.equal(view.waiting, 0);
 });
 
 test("displayed progress never regresses while the same item runs", () => {
@@ -129,7 +150,7 @@ test("cut finalization has no percentage, speed or ETA", () => {
     assert.equal(formatQueueStatus(item), status);
     const view = reduceQueueSnapshot(emptyQueueView(), {items: [item]});
     assert.equal(view.indeterminate, true);
-    assert.equal(view.eta, "");
+    assert.equal(view.detail, status);
   }
   assert.equal(formatQueueStatus({state: "running", progress: 50, status_text: "Copying", progress_info: {indeterminate: false}}), "Copying · 50%");
 });
