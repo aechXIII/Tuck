@@ -46,13 +46,135 @@
   display: flex;
 }
 
+/* Play sits in the middle column, so it stays put when the cut controls open around it */
 #stage-controls {
   flex-shrink: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: 12px;
+  padding: 0;
+  border: 0;
+}
+.stage-side {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 0;
+  min-width: 0;
+}
+.stage-side.end {
+  justify-content: flex-end;
+}
+.stage-center {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+#stage-controls [data-cut-only] {
+  flex-shrink: 0;
+  max-width: 200px;
+  overflow: hidden;
+  opacity: 1;
+  transition:
+    max-width var(--workspace-motion),
+    opacity var(--workspace-motion),
+    margin var(--workspace-motion),
+    visibility 0s;
+}
+/* outside the cut task the controls fold away and leave the tab order once folded */
+body:not(.task-cut) #stage-controls [data-cut-only] {
+  max-width: 0;
+  margin: 0;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    max-width var(--workspace-motion),
+    opacity var(--workspace-motion),
+    margin var(--workspace-motion),
+    visibility 0s linear 180ms;
+}
+.cut-point {
+  display: flex;
+  align-items: stretch;
+  height: 30px;
+  margin-right: 8px;
+  border-radius: var(--r-ctl);
+  background: var(--sink);
+  white-space: nowrap;
+}
+.cut-point.end {
+  margin-right: 0;
+  margin-left: 8px;
+}
+.cut-point-set,
+.cut-point-time {
+  display: inline-flex;
+  align-items: center;
   border: 0;
+  background: transparent;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
+}
+.cut-point-set {
+  justify-content: center;
+  width: 30px;
+  padding: 0;
+  color: var(--accent-light);
+}
+.cut-point-set svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.cut-point-time {
+  gap: 6px;
+  padding: 0 10px;
+  color: var(--text);
+  font: 600 11px/1 var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+.cut-point-set:hover:not(:disabled) {
+  background: var(--raised);
+  color: var(--text);
+}
+.cut-point-time:hover:not(:disabled) {
+  background: var(--sel);
+}
+.cut-point-set:disabled,
+.cut-point-time:disabled {
+  color: var(--dim);
+  cursor: default;
+}
+.cut-point-set:focus-visible,
+.cut-point-time:focus-visible {
+  outline: 2px solid var(--accent-light);
+  outline-offset: -2px;
+}
+/* copying begins later than the chosen start, on the next keyframe */
+.cut-point-late {
+  display: none;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--warn);
+}
+.cut-point.late .cut-point-late {
+  display: inline-block;
+}
+@media (prefers-reduced-motion: reduce) {
+  #stage-controls [data-cut-only],
+  body:not(.task-cut) #stage-controls [data-cut-only],
+  .cut-point-set,
+  .cut-point-time {
+    transition: none;
+  }
 }
 .pbtn {
   background: transparent;
@@ -87,6 +209,7 @@
 #btn-play {
   width: 30px;
   height: 30px;
+  margin: 0 4px;
   background: var(--action);
   color: var(--on-accent);
   font-size: 11px;
@@ -107,53 +230,6 @@
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
-}
-#stage-scrub {
-  -webkit-appearance: none;
-  appearance: none;
-  flex: 1 1 auto;
-  min-width: 24px;
-  height: 4px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.22);
-  outline: none;
-  cursor: pointer;
-}
-#stage-scrub::-webkit-slider-runnable-track {
-  height: 4px;
-  border-radius: 999px;
-  background: transparent;
-}
-#stage-scrub::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 12px;
-  height: 12px;
-  margin-top: -4px;
-  border-radius: 50%;
-  background: #fff;
-  border: none;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
-  cursor: pointer;
-}
-#stage-scrub::-moz-range-track {
-  height: 4px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.22);
-  border: none;
-}
-#stage-scrub::-moz-range-progress {
-  height: 4px;
-  border-radius: 999px;
-  background: var(--accent-light);
-}
-#stage-scrub::-moz-range-thumb {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: #fff;
-  border: none;
-  cursor: pointer;
 }
 #vbar {
   -webkit-appearance: none;

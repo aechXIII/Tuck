@@ -47,6 +47,12 @@ function collectPageErrors(page: Page): string[] {
   return errors;
 }
 
+// the timeline ruler is where a click seeks, now that the player bar has no seek slider
+async function seekOnRuler(page: Page, ratio: number): Promise<void> {
+  const ruler = (await page.locator("#sequence-ruler").boundingBox())!;
+  await page.mouse.click(ruler.x + ruler.width * ratio, ruler.y + ruler.height / 2);
+}
+
 async function textContrast(page: Page, textSelector: string, fillSelector: string): Promise<number> {
   return page.locator(textSelector).first().evaluate((textEl, fillSel) => {
     const fillEl = document.querySelector(fillSel);
@@ -127,7 +133,7 @@ test("selected segment and library card text stays readable on the accent fill",
   expect(await textContrast(page, ".clip.sel .c2", ".clip.sel")).toBeGreaterThanOrEqual(4.5);
   expect(await textContrast(page, ".clip.sel .c-meta", ".clip.sel")).toBeGreaterThanOrEqual(4.5);
 
-  await page.locator("#stage-scrub").fill("400");
+  await seekOnRuler(page, 0.4);
   await page.getByRole("button", { name: "Split at playhead" }).click();
   await expect(page.locator(".tl-segment")).toHaveCount(2);
   expect(
@@ -348,7 +354,7 @@ test("crop, rotation, and segment edits update the selected clip and undo restor
     "true",
   );
 
-  await page.locator("#stage-scrub").fill("500");
+  await seekOnRuler(page, 0.5);
   const split = page.getByRole("button", { name: "Split at playhead" });
   await expect(split).toBeEnabled();
   await split.click();

@@ -209,100 +209,181 @@
         </div>
         <div id="player-bar">
           <div id="stage-controls">
-            <button
-              type="button"
-              class="pbtn"
-              id="btn-frame-prev"
-              data-shortcut-commands="playback.step-backward"
-              data-shortcut-label="Previous frame"
-              data-action-click="player-step-frame"
-              data-action-value="-1"
-              aria-label="Previous frame"
-              aria-keyshortcuts="ArrowLeft"
-              data-tip="Previous frame (Left arrow)"
-            >
-              <svg viewBox="0 0 16 16" aria-hidden="true">
-                <rect x="2" y="3" width="2" height="10"></rect>
-                <path d="M14 3 6 8l8 5z"></path>
-              </svg>
-            </button>
-            <button
-              type="button"
-              class="pbtn"
-              id="btn-play"
-              data-shortcut-commands="playback.toggle"
-              data-shortcut-label="Play / pause"
-              data-action-click="player-toggle-play"
-              aria-label="Play/Pause"
-              aria-keyshortcuts="Space"
-              data-tip="Play / pause (Space)"
-            >
-              <svg class="play-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M5 2.5 13 8 5 13.5Z"/></svg>
-              <svg class="pause-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3h4v10H3zM9 3h4v10H9z"/></svg>
-            </button>
-            <button
-              type="button"
-              class="pbtn"
-              id="btn-frame-next"
-              data-shortcut-commands="playback.step-forward"
-              data-shortcut-label="Next frame"
-              data-action-click="player-step-frame"
-              data-action-value="1"
-              aria-label="Next frame"
-              aria-keyshortcuts="ArrowRight"
-              data-tip="Next frame (Right arrow)"
-            >
-              <svg viewBox="0 0 16 16" aria-hidden="true">
-                <rect x="12" y="3" width="2" height="10"></rect>
-                <path d="M2 3l8 5-8 5z"></path>
-              </svg>
-            </button>
-            <span id="ptime">0:00 / 0:00</span>
-            <input
-              type="range"
-              id="stage-scrub"
-              min="0"
-              max="1000"
-              step="1"
-              value="0"
-              data-action-input="player-scrub"
-              aria-label="Seek"
-              data-tip="Seek"
-            />
-            <div id="player-vol">
+            <div class="stage-side">
+              <span id="ptime">0:00 / 0:00</span>
+            </div>
+            <div class="stage-center">
+              <div class="cut-point" id="cut-point-start" data-cut-only>
+                <button
+                  type="button"
+                  class="cut-point-set"
+                  id="btn-cut-set-start"
+                  data-shortcut-commands="timeline.set-selection-start"
+                  data-shortcut-label="Set start at the playhead"
+                  data-action-click="cut-set-point"
+                  data-action-value="start"
+                  aria-label="Set start at the playhead"
+                  data-tip="Set start at the playhead"
+                >
+                  <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7 3H4v10h3"></path><path d="M11 2v12"></path></svg>
+                </button>
+                <button
+                  type="button"
+                  class="cut-point-time"
+                  id="btn-cut-go-start"
+                  data-action-click="cut-go-point"
+                  data-action-value="start"
+                  aria-label="Go to the start"
+                  data-tip="Go to the start"
+                >
+                  <span class="cut-point-value">0:00.00</span><i class="cut-point-late" aria-hidden="true"></i>
+                </button>
+              </div>
               <button
                 type="button"
                 class="pbtn"
-                id="btn-mute"
-                data-action-click="player-toggle-mute"
-                aria-label="Mute preview"
-                data-tip="Mute preview"
-              ></button>
-              <input
-                type="range"
-                id="vbar"
-                min="0"
-                max="100"
-                value="80"
-                data-action-input="player-volume"
-                aria-label="Preview volume"
-                data-tip="Preview volume"
-              />
+                id="btn-kf-prev"
+                data-cut-only
+                data-shortcut-commands="timeline.previous-keyframe"
+                data-shortcut-label="Previous keyframe"
+                data-action-click="timeline-keyframe"
+                data-action-value="-1"
+                aria-label="Previous keyframe"
+                data-tip="Previous keyframe"
+              >
+                <svg viewBox="0 0 16 16" aria-hidden="true">
+                  <path d="M4 5.5 6.5 8 4 10.5 1.5 8Z"></path>
+                  <path d="M14.5 3 8.5 8l6 5z"></path>
+                </svg>
+              </button>
+              <button
+                type="button"
+                class="pbtn"
+                id="btn-frame-prev"
+                data-shortcut-commands="playback.step-backward"
+                data-shortcut-label="Previous frame"
+                data-action-click="player-step-frame"
+                data-action-value="-1"
+                aria-label="Previous frame"
+                aria-keyshortcuts="ArrowLeft"
+                data-tip="Previous frame (Left arrow)"
+              >
+                <svg viewBox="0 0 16 16" aria-hidden="true">
+                  <rect x="2" y="3" width="2" height="10"></rect>
+                  <path d="M14 3 6 8l8 5z"></path>
+                </svg>
+              </button>
+              <button
+                type="button"
+                class="pbtn"
+                id="btn-play"
+                data-shortcut-commands="playback.toggle"
+                data-shortcut-label="Play / pause"
+                data-action-click="player-toggle-play"
+                aria-label="Play/Pause"
+                aria-keyshortcuts="Space"
+                data-tip="Play / pause (Space)"
+              >
+                <svg class="play-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M5 2.5 13 8 5 13.5Z"/></svg>
+                <svg class="pause-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3h4v10H3zM9 3h4v10H9z"/></svg>
+              </button>
+              <button
+                type="button"
+                class="pbtn"
+                id="btn-frame-next"
+                data-shortcut-commands="playback.step-forward"
+                data-shortcut-label="Next frame"
+                data-action-click="player-step-frame"
+                data-action-value="1"
+                aria-label="Next frame"
+                aria-keyshortcuts="ArrowRight"
+                data-tip="Next frame (Right arrow)"
+              >
+                <svg viewBox="0 0 16 16" aria-hidden="true">
+                  <rect x="12" y="3" width="2" height="10"></rect>
+                  <path d="M2 3l8 5-8 5z"></path>
+                </svg>
+              </button>
+              <button
+                type="button"
+                class="pbtn"
+                id="btn-kf-next"
+                data-cut-only
+                data-shortcut-commands="timeline.next-keyframe"
+                data-shortcut-label="Next keyframe"
+                data-action-click="timeline-keyframe"
+                data-action-value="1"
+                aria-label="Next keyframe"
+                data-tip="Next keyframe"
+              >
+                <svg viewBox="0 0 16 16" aria-hidden="true">
+                  <path d="M1.5 3l6 5-6 5z"></path>
+                  <path d="M12 5.5 14.5 8 12 10.5 9.5 8Z"></path>
+                </svg>
+              </button>
+              <div class="cut-point end" id="cut-point-end" data-cut-only>
+                <button
+                  type="button"
+                  class="cut-point-time"
+                  id="btn-cut-go-end"
+                  data-action-click="cut-go-point"
+                  data-action-value="end"
+                  aria-label="Go to the end"
+                  data-tip="Go to the end"
+                >
+                  <span class="cut-point-value">0:00.00</span>
+                </button>
+                <button
+                  type="button"
+                  class="cut-point-set"
+                  id="btn-cut-set-end"
+                  data-shortcut-commands="timeline.set-selection-end"
+                  data-shortcut-label="Set end at the playhead"
+                  data-action-click="cut-set-point"
+                  data-action-value="end"
+                  aria-label="Set end at the playhead"
+                  data-tip="Set end at the playhead"
+                >
+                  <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9 3h3v10H9"></path><path d="M5 2v12"></path></svg>
+                </button>
+              </div>
             </div>
-            <button
-              type="button"
-              class="pbtn"
-              id="btn-fullscreen"
-              data-action-click="player-fullscreen"
-              aria-label="Fullscreen"
-              data-tip="Fullscreen"
-            >
-              <svg viewBox="0 0 16 16" aria-hidden="true">
-                <path
-                  d="M1.5 5.5v-3a1 1 0 0 1 1-1h3M14.5 5.5v-3a1 1 0 0 0-1-1h-3M1.5 10.5v3a1 1 0 0 0 1 1h3M14.5 10.5v3a1 1 0 0 1-1 1h-3"
-                ></path>
-              </svg>
-            </button>
+            <div class="stage-side end">
+              <div id="player-vol">
+                <button
+                  type="button"
+                  class="pbtn"
+                  id="btn-mute"
+                  data-action-click="player-toggle-mute"
+                  aria-label="Mute preview"
+                  data-tip="Mute preview"
+                ></button>
+                <input
+                  type="range"
+                  id="vbar"
+                  min="0"
+                  max="100"
+                  value="80"
+                  data-action-input="player-volume"
+                  aria-label="Preview volume"
+                  data-tip="Preview volume"
+                />
+              </div>
+              <button
+                type="button"
+                class="pbtn"
+                id="btn-fullscreen"
+                data-action-click="player-fullscreen"
+                aria-label="Fullscreen"
+                data-tip="Fullscreen"
+              >
+                <svg viewBox="0 0 16 16" aria-hidden="true">
+                  <path
+                    d="M1.5 5.5v-3a1 1 0 0 1 1-1h3M14.5 5.5v-3a1 1 0 0 0-1-1h-3M1.5 10.5v3a1 1 0 0 0 1 1h3M14.5 10.5v3a1 1 0 0 1-1 1h-3"
+                  ></path>
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -638,7 +719,7 @@
               </div>
               <div class="gr" id="cuts-card">
                 <div class="inspector-label-row">
-                  <div class="grt" id="cuts-title">Cuts</div>
+                  <div class="grt" id="cuts-title">Segments</div>
                   <div class="inspector-label-actions">
                     <button type="button" class="inspector-text-action" id="snap-all" hidden>Move to keyframes</button>
                   </div>
@@ -1123,7 +1204,7 @@
             <span class="timeline-command-label">Reset</span>
           </button>
         </div>
-        <div class="timeline-tool-group" role="group" aria-label="Audio actions">
+        <div class="timeline-tool-group" id="timeline-audio-tools" role="group" aria-label="Audio actions">
           <span class="timeline-tool-label" aria-hidden="true">Audio</span>
           <button
             type="button"

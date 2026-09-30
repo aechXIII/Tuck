@@ -253,6 +253,34 @@ body.tl-segment-dragging * {
   background: var(--timeline-line);
 }
 
+/* a lossless cut copies the source audio as it is, so its audio tools fold away */
+#timeline-audio-tools {
+  max-width: 480px;
+  overflow: hidden;
+  transition:
+    max-width var(--workspace-motion),
+    opacity var(--workspace-motion),
+    padding var(--workspace-motion),
+    visibility 0s;
+}
+body.task-cut #timeline-audio-tools {
+  max-width: 0;
+  padding-inline: 0;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    max-width var(--workspace-motion),
+    opacity var(--workspace-motion),
+    padding var(--workspace-motion),
+    visibility 0s linear 180ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  #timeline-audio-tools,
+  body.task-cut #timeline-audio-tools {
+    transition: none;
+  }
+}
+
 .timeline-tool-label {
   margin-right: 1px;
   color: var(--dim);

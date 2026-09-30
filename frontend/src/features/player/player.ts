@@ -45,14 +45,12 @@ export interface PlayerApi {
   seekBy: (seconds: number) => void;
   stepFrame: (direction: number) => void;
   toggleFullscreen: () => void;
-  onStageScrub: (value: string | number) => void;
   updateTime: () => void;
   seekPreview: (sec: number) => void;
   seekToRatio: (ratio: number) => void;
   toggleMute: () => void;
   setVol: (value: string | number) => void;
   updateMuteIcon: () => void;
-  paintStageScrub: (pct: number) => void;
   continuePlaybackAt: (target: number | null | undefined) => void;
   setPreviewSec: (sec: number | null) => void;
   getPreviewSec: () => number | null;
@@ -171,22 +169,6 @@ export function installPlayer(host: PlayerHost): PlayerApi {
     const segments = host.playbackSegments();
     const first = segments[0];
     if (first) continuePlaybackAt(first.start);
-  }
-
-  function paintStageScrub(pct: number): void {
-    const scrub = byId<HTMLInputElement>("stage-scrub");
-    if (!scrub) return;
-    if (doc.activeElement !== scrub) scrub.value = String(Math.round(pct * 10));
-    scrub.style.background =
-      "linear-gradient(to right, var(--accent-light) " +
-      pct +
-      "%, rgba(255,255,255,0.22) " +
-      pct +
-      "%)";
-  }
-
-  function onStageScrub(value: string | number): void {
-    seekToRatio(Number(value) / 1000);
   }
 
   function updateTime(): void {
@@ -339,14 +321,12 @@ export function installPlayer(host: PlayerHost): PlayerApi {
     seekBy,
     stepFrame,
     toggleFullscreen,
-    onStageScrub,
     updateTime,
     seekPreview,
     seekToRatio,
     toggleMute,
     setVol,
     updateMuteIcon,
-    paintStageScrub,
     continuePlaybackAt,
     setPreviewSec: (sec) => {
       previewSec = sec;
@@ -387,9 +367,6 @@ export function stepFrame(direction: number): void {
 export function toggleFullscreen(): void {
   requireActive().toggleFullscreen();
 }
-export function onStageScrub(value: string | number): void {
-  requireActive().onStageScrub(value);
-}
 export function updateTime(): void {
   requireActive().updateTime();
 }
@@ -407,9 +384,6 @@ export function setVol(value: string | number): void {
 }
 export function updateMuteIcon(): void {
   requireActive().updateMuteIcon();
-}
-export function paintStageScrub(pct: number): void {
-  requireActive().paintStageScrub(pct);
 }
 export function continuePlaybackAt(target: number | null | undefined): void {
   requireActive().continuePlaybackAt(target);

@@ -202,7 +202,7 @@ export function installCutControls(deps: CutControlsDeps) {
     element("cut-exact-note").textContent = !exactAvailable && exactReason && precision !== "exact"
       ? exactReason : "Re-encodes a little video at each cut.";
     const ranges = request?.segments ?? [];
-    element("cuts-title").textContent = ranges.length ? `Cuts · ${ranges.length} kept` : "Cuts";
+    element("cuts-title").textContent = ranges.length ? `Segments · ${ranges.length} kept` : "Segments";
     const list = element<HTMLOListElement>("cut-list");
     const count = message ? 0 : ranges.length;
     while (list.children.length > count) list.lastElementChild?.remove();

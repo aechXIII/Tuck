@@ -198,7 +198,6 @@ export function installEditorRuntime(
     updateTime: () => player?.updateTime(),
     seekPreview: (seconds) => player?.seekPreview(seconds),
     seekToRatio: (ratio) => player?.seekToRatio(ratio),
-    paintStageScrub: (percentage) => player?.paintStageScrub(percentage),
     renderClips: () => library?.renderClips(),
     reqPreview: requestPreview,
     paintCropOverlay: () => transform?.paintCropOverlay(),
@@ -543,6 +542,10 @@ export function installEditorRuntime(
         "encoding-run-selected": () => void encoding.compressOne(),
         "encoding-run-all": () => void encoding.compressAll(),
         "timeline-add-segment": () => timeline.addSegment(),
+        "timeline-keyframe": (target) => timeline.seekToKeyframe(numericValue(target) < 0 ? -1 : 1),
+        "cut-set-point": (target) =>
+          timeline.trimActiveSegmentToPlayhead(target.dataset.actionValue === "end" ? "end" : "start"),
+        "cut-go-point": (target) => timeline.goToCutPoint(target.dataset.actionValue === "end" ? "end" : "start"),
         "timeline-split": () => timeline.splitAtPlayhead(),
         "timeline-remove-segment": () => timeline.removeActiveSegment(),
         "timeline-reset-segments": () => timeline.resetSegments(),
@@ -561,7 +564,6 @@ export function installEditorRuntime(
       },
       input: {
         "encoding-resolution": () => encoding.onResolutionGeometryChanged(),
-        "player-scrub": (target) => player.onStageScrub((target as HTMLInputElement).value),
         "player-volume": (target) => player.setVol((target as HTMLInputElement).value),
         "encoding-target-size": (target) =>
           encoding.onSize((target as HTMLInputElement).value),

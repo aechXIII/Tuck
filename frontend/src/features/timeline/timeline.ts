@@ -20,7 +20,6 @@ export interface TimelineHost {
   updateTime?: () => void;
   seekPreview?: (sec: number) => void;
   seekToRatio?: (ratio: number) => void;
-  paintStageScrub?: (pct: number) => void;
   renderClips?: () => void;
   reqPreview?: () => void;
   paintCropOverlay?: () => void;
@@ -260,6 +259,7 @@ function paintCutOverlay() {
     if (marks) Keyframes.renderCutMarks(marks, [], 1);
     tlIn?.removeAttribute("aria-valuetext");
     tlOut?.removeAttribute("aria-valuetext");
+    paintCutPoints(null);
     return;
   }
   const { clip, full, strip, plan } = overlay;
@@ -287,6 +287,7 @@ function paintCutOverlay() {
     tlIn?.setAttribute("aria-valuetext", Keyframes.handleValueText("start", bounds.start, current));
     tlOut?.setAttribute("aria-valuetext", Keyframes.handleValueText("end", bounds.end, current));
   }
+  paintCutPoints(slivers.find((sliver) => sliver.index === active) ?? null);
 }
 
 // the keyframe the playhead sits on, or the two either side, are lit; a dragged start lights
@@ -304,6 +305,44 @@ function paintKeyframeGuides(sec?: number) {
     return;
   }
   Keyframes.renderKeyframeGuides(layer, Keyframes.keyframesAround(overlay.strip.times, time, overlay.tolerance), null, overlay.full);
+}
+
+// the player bar's start and end follow the selected segment, even before keyframes are read
+function paintCutPoints(sliver: Keyframes.CutSliver | null) {
+  if (!host.cutTask?.()) return;
+  const clip = selectedClip(session);
+  const full = videoDuration() || clip?.probeData?.duration || 0;
+  const segments = clip && full > 0 ? clipSegments(clip, full) : [];
+  const bounds = clip ? arrayItem(segments, activeSegmentIndex(clip, segments)) : null;
+  const canSet = canTrimActiveSegmentToPlayhead();
+  for (const endpoint of ["start", "end"] as const) {
+    const go = byId(endpoint === "start" ? "btn-cut-go-start" : "btn-cut-go-end");
+    const set = byId(endpoint === "start" ? "btn-cut-set-start" : "btn-cut-set-end");
+    const value = go?.querySelector(".cut-point-value");
+    if (value) value.textContent = bounds ? formatTimelineTime(bounds[endpoint]) : "–:––.––";
+    if (isButtonElement(go)) go.disabled = !bounds;
+    if (isButtonElement(set)) set.disabled = !canSet;
+  }
+  const late = !!bounds && sliver?.kind === "moved";
+  byId("cut-point-start")?.classList.toggle("late", late);
+  const go = byId("btn-cut-go-start");
+  if (go) {
+    const label = late && sliver ? `Go to the start. ${Keyframes.chipLabel(sliver)}` : "Go to the start";
+    go.dataset.tip = label;
+    go.setAttribute("aria-label", label);
+  }
+}
+
+// the end is where the removed part begins, so going there shows the last kept frame
+function goToCutPoint(endpoint: "start" | "end") {
+  const clip = selectedClip(session);
+  const full = videoDuration() || clip?.probeData?.duration || 0;
+  if (!clip || !(full > 0)) return;
+  const segments = clipSegments(clip, full);
+  const bounds = arrayItem(segments, activeSegmentIndex(clip, segments));
+  if (!bounds) return;
+  const frame = 1 / (clip.probeData?.fps || 30);
+  host.seekPreview?.(endpoint === "start" ? bounds.start : Math.max(bounds.start, bounds.end - frame));
 }
 
 // the clip's time line says how late the cut starts when the whole line fits; narrow clips
@@ -675,7 +714,6 @@ function setPlayheadUI(sec: number, full?: number) {
       formatTimelineTime(sec) + " / " + formatTimelineTime(full || 0);
   let playheadTime = byId("seq-playhead-time");
   if (playheadTime) playheadTime.textContent = formatTimelineTime(sec);
-  host.paintStageScrub?.(pct);
   _previewSecLocal = sec;
   host.setPreviewSec?.(sec);
   paintKeyframeGuides(sec);
@@ -1506,6 +1544,8 @@ function initTimelineResizer() {
     paintTrimChrome: paintTrimChrome,
     playbackSegments: playbackSegments,
     removeActiveSegment: removeActiveSegment,
+    goToCutPoint: goToCutPoint,
+    seekToKeyframe: seekToKeyframe,
     resetTimelineHeight: resetTimelineHeight,
     resetSegments: resetSegments,
     restoreTimelineHeight: restoreTimelineHeight,

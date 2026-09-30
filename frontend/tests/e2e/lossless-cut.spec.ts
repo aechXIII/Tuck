@@ -437,6 +437,38 @@ test("a start that moves shows its sliver and note, and the chip opens its cut",
   await expect(page.locator("#tl-in")).not.toHaveAttribute("aria-valuetext",/./);
 });
 
+test("the player bar marks the selected segment and steps between keyframes", async ({page}) => {
+  await setup(page);
+  const setStart = page.getByRole("button", {name: "Set start at the playhead"});
+  await expect(setStart).toBeHidden();
+  await page.locator("#wf-l").click();
+  await expect(page.locator("#btn-one")).toBeEnabled();
+  await expect(page.locator("#btn-cut-go-start .cut-point-value")).toHaveText("0:00.00");
+  await expect(page.locator("#btn-cut-go-end .cut-point-value")).toHaveText("0:12.00");
+  await page.getByRole("button", {name: "Next keyframe"}).click();
+  await expect(page.locator("#ptime")).toHaveText("0:04.00 / 0:12.00");
+  // on a keyframe only that one is lit
+  await expect(page.locator("#kf-guides .kf-guide")).toHaveCount(1);
+  await setStart.click();
+  await expect(page.locator("#btn-cut-go-start .cut-point-value")).toHaveText("0:04.00");
+  await expect(page.locator("#tl-in")).toHaveAttribute("aria-valuenow","4");
+  await page.getByRole("button", {name: "Go to the end"}).click();
+  await expect(page.locator("#ptime")).toHaveText("0:11.97 / 0:12.00");
+  await page.keyboard.press("Control+z");
+  await expect(page.locator("#btn-cut-go-start .cut-point-value")).toHaveText("0:00.00");
+  await page.locator("#wf-c").click();
+  await expect(setStart).toBeHidden();
+  await expect(page.getByRole("button", {name: "Next keyframe"})).toBeHidden();
+  await expect(page.getByRole("button", {name: "Next frame"})).toBeVisible();
+});
+
+test("a start that copies from a later keyframe is marked in the player bar", async ({page}) => {
+  await setup(page,{moved:true});
+  await page.locator("#wf-l").click();
+  await expect(page.locator("#cut-point-start")).toHaveClass(/late/);
+  await expect(page.locator("#btn-cut-go-start")).toHaveAttribute("aria-label",/Starts at 0:04\.000, the next keyframe/);
+});
+
 test("dragging a start snaps to keyframes and lights the keyframe it copies from", async ({page}) => {
   await setup(page);
   await page.locator("#wf-l").click();
