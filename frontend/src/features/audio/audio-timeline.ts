@@ -33,6 +33,7 @@ export interface AudioTimelineHost {
   setInspectorTab?: (tab: string, persist?: boolean) => void;
   renderClips?: () => void;
   reqPreview?: () => void;
+  getPreviewSec?: () => number | null;
   setClipSegments?: (clip: EditorClip, segments: unknown[], active?: number) => void;
   paintTrimChrome?: () => void;
   syncTimelineTrackCount?: (count: number) => void;
@@ -264,7 +265,10 @@ export function installAudioTimeline(host: AudioTimelineHost) {
     return clip && clip.probeData ? Number(clip.probeData.duration) || 0 : 0;
   }
 
+  // the playhead can be ahead of the video while a seek is still settling
   function sourceTime() {
+    const preview = host.getPreviewSec?.();
+    if (preview != null) return preview;
     let candidate = byId("vid");
     let video = isVideoElement(candidate) ? candidate : null;
     return video ? Number(video.currentTime) || 0 : 0;
@@ -1197,7 +1201,8 @@ export function installAudioTimeline(host: AudioTimelineHost) {
     let state = ensureState(videoClip);
     if (!state) return;
     let total = sourceDuration(videoClip);
-    let time = Number(video.currentTime) || 0;
+    // playing video is the clock; paused, the playhead can be ahead of a seek still settling
+    let time = video.paused ? sourceTime() : Number(video.currentTime) || 0;
     updatePlayheads(time, total);
     let base = previewBaseVolume();
     let sourceAudible =

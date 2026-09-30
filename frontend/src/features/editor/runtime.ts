@@ -165,6 +165,7 @@ export function installEditorRuntime(
     setInspectorTab: (tab, persist) => panels?.setInspectorTab(tab, persist),
     renderClips: () => library?.renderClips(),
     reqPreview: requestPreview,
+    getPreviewSec: () => player?.getPreviewSec() ?? null,
     setClipSegments: (clip, segments, active) =>
       timeline?.setClipSegments(clip, segments.filter(isSegment), active),
     paintTrimChrome: () => timeline?.paintTrimChrome(),
