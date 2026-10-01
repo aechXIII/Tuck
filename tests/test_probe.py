@@ -6,8 +6,48 @@ from types import SimpleNamespace
 
 import pytest
 
-from tuck.media_tools import find_ffmpeg
-from tuck.probe import _parse_display_rotation, probe, probe_audio
+from tuck.media_tools import find_ffmpeg, find_ffprobe
+from tuck.probe import (
+    _parse_display_rotation,
+    _run_ffprobe_json,
+    _video_info,
+    probe,
+    probe_audio,
+)
+
+_VIDEO = ["-f", "lavfi", "-i", "testsrc2=size=320x240:rate=30:duration=2"]
+_AUDIO = ["-f", "lavfi", "-i", "sine=sample_rate=48000:duration=2"]
+_X264 = ["-c:v", "libx264", "-preset", "ultrafast"]
+
+# files whose details the in-process reader must describe exactly as ffprobe does; the second
+# list remuxes the first file, as phones and editors tag rotation after encoding
+_PARITY_CASES: dict[str, tuple[list[str], list[str] | None]] = {
+    "plain.mp4": ([*_VIDEO, *_AUDIO, *_X264, "-c:a", "aac"], None),
+    "matroska.mkv": ([*_VIDEO, *_AUDIO, *_X264, "-c:a", "aac"], None),
+    "transport.ts": ([*_VIDEO, *_X264, "-output_ts_offset", "3600"], None),
+    "variable_rate.mp4": ([*_VIDEO, "-vf", "select='not(mod(n\\,3))+eq(n\\,1)'",
+                           "-fps_mode", "vfr", *_X264], None),
+    "ntsc.mp4": (["-f", "lavfi", "-i", "testsrc2=size=320x240:rate=30000/1001:duration=2",
+                  *_X264], None),
+    "anamorphic.mp4": ([*_VIDEO, "-vf", "setsar=16/11", *_X264], None),
+    "full_range_bt2020.mp4": ([*_VIDEO, *_X264, "-pix_fmt", "yuvj420p", "-color_range", "pc",
+                               "-color_primaries", "bt2020", "-color_trc", "smpte2084",
+                               "-colorspace", "bt2020nc"], None),
+    "audio_first.mp4": ([*_AUDIO, *_VIDEO, "-map", "0:a", "-map", "1:v", *_X264, "-c:a", "aac"],
+                        None),
+    "display_matrix.mp4": ([*_VIDEO, *_X264], ["-display_rotation:v:0", "270"]),
+    "rotate_tag.mov": ([*_VIDEO, *_X264], ["-metadata:s:v:0", "rotate=90"]),
+}  # fmt: skip
+
+
+def _ffmpeg(ffmpeg: str, args: list[str]) -> bool:
+    result = subprocess.run(
+        [ffmpeg, "-y", "-v", "error", *args],
+        capture_output=True,
+        timeout=60,
+        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+    )
+    return result.returncode == 0
 
 
 def test_probe_audio_accepts_audio_only_files(tmp_path, monkeypatch) -> None:
@@ -100,3 +140,58 @@ def test_probe_reports_display_oriented_dimensions(tmp_path) -> None:
     assert (info.coded_width, info.coded_height) == (320, 240)
     assert (info.width, info.height) == (240, 320)
     assert info.display_rotation == 90
+
+
+@pytest.mark.parametrize("name", sorted(_PARITY_CASES))
+def test_probe_reads_the_same_details_as_ffprobe_without_starting_it(
+    tmp_path, monkeypatch, name
+) -> None:
+    ffmpeg = find_ffmpeg()
+    ffprobe = find_ffprobe()
+    if not ffmpeg or not ffprobe:
+        pytest.skip("ffmpeg and ffprobe are needed to compare the readers")
+    encode, remux = _PARITY_CASES[name]
+    source = tmp_path / name
+    if remux is None:
+        made = _ffmpeg(ffmpeg, [*encode, str(source)])
+    else:
+        base = tmp_path / f"base{source.suffix}"
+        made = _ffmpeg(ffmpeg, [*encode, str(base)])
+        if name.startswith("display_matrix"):
+            made = made and _ffmpeg(ffmpeg, [*remux, "-i", str(base), "-c", "copy", str(source)])
+        else:
+            made = made and _ffmpeg(ffmpeg, ["-i", str(base), "-c", "copy", *remux, str(source)])
+    if not made:
+        pytest.skip(f"ffmpeg cannot create {name}")
+    expected = _video_info(
+        source, source.stat().st_size, _run_ffprobe_json(ffprobe, source, "probing")
+    )
+
+    def no_ffprobe(*_args, **_kwargs):
+        raise AssertionError("probe started ffprobe")
+
+    monkeypatch.setattr("tuck.probe._run_ffprobe_json", no_ffprobe)
+
+    assert probe(source) == expected
+
+
+def test_probe_falls_back_to_ffprobe_when_pyav_cannot_read(tmp_path, monkeypatch) -> None:
+    source = tmp_path / "clip.mp4"
+    source.write_bytes(b"not a video")
+    monkeypatch.setattr("tuck.media_tools.find_ffprobe", lambda: "ffprobe")
+    monkeypatch.setattr(
+        "tuck.probe.subprocess.run",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            returncode=0,
+            stdout=(
+                '{"format":{"duration":"8.0","bit_rate":"2000000"},"streams":['
+                '{"codec_type":"video","codec_name":"h264","width":1280,"height":720,'
+                '"r_frame_rate":"30/1","avg_frame_rate":"30/1"}]}'
+            ),
+            stderr="",
+        ),
+    )
+
+    info = probe(source)
+
+    assert (info.width, info.height, info.duration, info.video_codec) == (1280, 720, 8.0, "h264")
