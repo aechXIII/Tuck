@@ -227,11 +227,10 @@ body.tl-segment-dragging * {
 }
 #audio-editor {
   --timeline-head-width: 192px;
-  --timeline-surface: var(--bg);
+  --timeline-surface: var(--panel);
   --timeline-line: var(--border);
   --timeline-purple: var(--accent-light);
   background: var(--timeline-surface);
-  border-top-color: var(--border);
   gap: 4px;
   padding: 8px 16px 10px;
 }
@@ -447,7 +446,7 @@ body.task-cut #timeline-audio-tools {
 }
 
 #sequence-frame {
-  scrollbar-color: var(--border2) var(--sink);
+  scrollbar-color: var(--border2) var(--timeline-surface);
   scrollbar-width: thin;
 }
 
@@ -736,10 +735,6 @@ body.task-cut #timeline-audio-tools {
   width: 1px;
   background: var(--timeline-cut-seam, var(--bg));
   pointer-events: none;
-}
-
-#timeline-resizer::after {
-  background: var(--border);
 }
 
 @media (max-width: 1100px) {
@@ -1042,12 +1037,11 @@ body.task-cut #timeline-audio-tools {
 
 /* shared palette for timeline surfaces */
 #audio-editor {
-  --timeline-surface: var(--bg);
+  --timeline-surface: var(--panel);
   --timeline-line: var(--border);
   --timeline-purple: var(--accent);
-  --timeline-cut-seam: var(--bg);
-  background: var(--bg);
-  border-top-color: var(--border);
+  --timeline-cut-seam: var(--panel);
+  background: var(--panel);
 }
 #timeline-row.seq-toolbar,
 .seq-row,
@@ -1145,10 +1139,6 @@ body.task-cut #timeline-audio-tools {
   color: var(--text);
   box-shadow: 0 4px 12px rgb(0 0 0 / 0.36);
 }
-#timeline-resizer::after {
-  background: var(--border);
-}
-
 #source-audio-track.selected .seq-audio-clip.selected,
 .seq-row.audio.imported .seq-audio-clip.selected,
 .audio-clip.selected {

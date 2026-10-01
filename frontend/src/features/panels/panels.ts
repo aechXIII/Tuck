@@ -404,6 +404,7 @@ export function installPanels(host: PanelsHost): PanelsApi {
     // the card only shows for a file Tuck could not read; the header line covers the rest
     card?.classList.toggle("hid", !clip?.error);
     if (selectionMeta) delete selectionMeta.dataset.tip;
+    renderTopBarTitle(clip);
     if (!clip) {
       host.clipDetails.render(detailsDoc, detailsEl, { state: "empty" }, host.retryProbeClip);
       return;
@@ -446,6 +447,18 @@ export function installPanels(host: PanelsHost): PanelsApi {
       });
       if (format) selectionMeta.dataset.tip = format;
     }
+  }
+
+  // the top bar names the selected video and its length; the Inspector has the rest
+  function renderTopBarTitle(clip: EditorClip | null | undefined): void {
+    const title = byId("tb-title");
+    const name = byId("tb-title-name");
+    const length = byId("tb-title-length");
+    if (!title || !name || !length) return;
+    title.hidden = !clip;
+    name.textContent = clip ? clip.name || "Selected video" : "";
+    const duration = clip?.probed && !clip.error ? clip.probeData?.duration : undefined;
+    length.textContent = duration ? host.formatTime(duration) : "";
   }
 
   function appendMixerRow(hostEl: HTMLElement, row: MixerRowModel): HTMLElement {

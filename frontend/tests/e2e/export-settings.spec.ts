@@ -391,7 +391,12 @@ test("Inspector content keeps its right edge aligned while resizing", async ({ p
   await page.goto("/");
   await addVideo(page);
   const edge = async (selector: string) => page.locator(selector).evaluate(el => el.getBoundingClientRect().right);
-  expect(Math.abs(await edge("#sz-grp") - await edge("#panel-toggle-inspector"))).toBeLessThanOrEqual(1);
+  // the Inspector button sits over the Inspector card's edge, and the content keeps the card's inset
+  const aligned = async () => {
+    expect(Math.abs(await edge("#right") - await edge("#panel-toggle-inspector"))).toBeLessThanOrEqual(1);
+    expect(Math.abs(await edge("#right") - 12 - await edge("#sz-grp"))).toBeLessThanOrEqual(1);
+  };
+  await aligned();
   await page.setViewportSize({ width: 960, height: 640 });
   await expect(page.locator("#panel-toggle-inspector")).toHaveAttribute("aria-expanded", "false");
   await page.locator("#panel-toggle-inspector").click();
@@ -413,6 +418,6 @@ test("Inspector content keeps its right edge aligned while resizing", async ({ p
       return values;
     });
     expect(new Set(widths.slice(4)).size).toBe(1);
-    expect(Math.abs(await edge("#sz-grp") - await edge("#panel-toggle-inspector"))).toBeLessThanOrEqual(1);
+    await aligned();
   }
 });

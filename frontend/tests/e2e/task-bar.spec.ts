@@ -195,3 +195,31 @@ test("an Inspector last left on the old Audio panel opens This video", async ({ 
   await expect(page.locator("#insp-tab-edit")).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator("#insp-audio")).toBeVisible();
 });
+test("the top bar is icons with names, and the selected video's name and length sit over the player", async ({ page }) => {
+  await open(page, { holdPlans: true });
+  for (const name of ["Library", "Undo", "Redo", "Keyboard shortcuts", "Settings", "Inspector"]) {
+    await expect(page.locator("#tb").getByRole("button", { name, exact: true })).toBeVisible();
+  }
+  await page.locator(".clip").filter({ hasText: "Kitchen.mov" }).click();
+  await expect(page.locator("#tb-title-name")).toHaveText("Kitchen.mov");
+  await expect(page.locator("#tb-title-length")).toHaveText("0:12");
+  // centred over the player, also once a panel beside it is hidden
+  const offCentre = async () => {
+    const title = (await page.locator("#tb-title").boundingBox())!;
+    const player = (await page.locator("#center").boundingBox())!;
+    return Math.abs(title.x + title.width / 2 - (player.x + player.width / 2));
+  };
+  expect(await offCentre()).toBeLessThanOrEqual(1);
+  await page.locator("#panel-toggle-library").click();
+  await expect(page.locator("#left")).toBeHidden();
+  expect(await offCentre()).toBeLessThanOrEqual(1);
+  await page.locator("#panel-toggle-inspector").click();
+  await expect(page.locator("#right")).toBeHidden();
+  expect(await offCentre()).toBeLessThanOrEqual(1);
+  // below 1440 wide the Inspector takes its width from a different rule
+  await page.setViewportSize({ width: 1240, height: 800 });
+  await page.locator("#panel-toggle-library").click();
+  await page.locator("#panel-toggle-inspector").click();
+  await expect(page.locator("#right")).toBeVisible();
+  expect(await offCentre()).toBeLessThanOrEqual(1);
+});

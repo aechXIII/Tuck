@@ -8,8 +8,9 @@
   flex-direction: column;
   gap: 4px;
   min-width: 0;
-  background: var(--sink);
-  border-top: 1px solid var(--border);
+  margin: 0 var(--gutter);
+  background: var(--panel);
+  border-radius: var(--r-card);
   padding: 8px 16px 10px;
   overflow: hidden;
 }
@@ -17,9 +18,8 @@
 #timeline-resizer {
   position: relative;
   z-index: 8;
-  flex: 0 0 8px;
-  height: 8px;
-  margin: -4px 0;
+  flex: 0 0 var(--gutter);
+  height: var(--gutter);
   cursor: ns-resize;
   touch-action: none;
   outline: none;
@@ -30,7 +30,7 @@
   inset: 3px 16px auto;
   height: 1px;
   border-radius: 1px;
-  background: var(--border);
+  background: transparent;
   transition:
     height 100ms ease,
     background 100ms ease,
