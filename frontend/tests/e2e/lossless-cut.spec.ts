@@ -241,7 +241,8 @@ test("task switching keeps encoding settings, segments and per-video audio choic
 test("entering Upscale from Lossless cut restores the last Upscale profile", async ({page}) => {
   await setup(page);
   await page.locator("#wf-u").click();
-  await page.locator("#prof-sel").selectOption("up-two");
+  await page.locator("#prof-pick").click();
+  await page.locator('#prof-options [data-profile-id="up-two"]').click();
   await page.locator("#wf-c").click();
   await page.locator("#wf-l").click();
   await page.locator("#wf-u").click();

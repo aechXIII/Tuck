@@ -14,12 +14,10 @@ test("export summary presents the current output decision in one compact line", 
       videoEncoder: "libx264",
       audioBitrateKbps: 128,
       keepAudio: false,
-      modified: true,
     }),
     {
       title: "50 MB",
       detail: "2560×1440 · 60 fps · H.264 · AAC 128k",
-      modified: true,
     },
   );
 });
@@ -76,12 +74,10 @@ test("upscale summary describes the output without inventing a target size", () 
       fps: 30,
       videoEncoder: "hevc_nvenc",
       audioBitrateKbps: 0,
-      modified: false,
     }),
     {
       title: "Upscale output",
       detail: "3840×2160 · 30 fps · H.265 · No audio",
-      modified: false,
     },
   );
 });

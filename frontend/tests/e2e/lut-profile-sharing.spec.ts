@@ -81,7 +81,8 @@ for (const width of [1240, 960]) {
     if (width === 960) await page.getByRole("button", { name: "Library", exact: true }).click();
     await page.getByRole("button", { name: "Add videos", exact: true }).click();
     if (width === 960) await page.getByRole("button", { name: "Inspector", exact: true }).click();
-    await page.locator("#prof-sel").selectOption("look");
+    await page.locator("#prof-pick").click();
+    await page.locator('#prof-options [data-profile-id="look"]').click();
     const error = page.locator("#lut-error");
     await expect(error).toContainText("This profile’s LUT could not be loaded.");
     await expect(error).toContainText("File not found: film.cube");
@@ -101,7 +102,8 @@ for (const width of [1240, 960]) {
     await expect(page.getByRole("switch", { name: "Apply LUT", exact: true })).toBeChecked();
     await expect(page.locator("#lut-current-name")).toHaveText("Replacement");
     await expect(page.locator("#lut-strength-value")).toHaveText("40%");
-    await page.locator("#prof-sel").selectOption("plain");
+    await page.locator("#prof-pick").click();
+    await page.locator('#prof-options [data-profile-id="plain"]').click();
     await expect(error).toBeHidden();
     await expect(page.locator("#lut-current-name")).toHaveText("No LUT selected");
   });

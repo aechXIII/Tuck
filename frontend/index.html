@@ -636,10 +636,6 @@
             <div id="audio-clip-range" class="hid"></div>
           </div>
           <div id="insp-export">
-            <p id="export-scope" class="export-scope">
-              <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="5.5" width="11" height="8" rx="1.3"></rect><path d="M4 3.5h8M5.5 1.5h5"></path></svg>
-              <span>Settings for <strong id="export-scope-count">all videos</strong></span>
-            </p>
             <div id="insp-cut">
               <div class="cut-notice" id="cut-conflict" hidden>
                 <h4 id="conflict-title"></h4>
@@ -702,72 +698,47 @@
             </div>
             <div id="insp-compress">
               <div class="gr" id="profile-card">
-                <div class="inspector-label-row">
-                  <div class="grt">Profile</div>
-                  <div class="inspector-label-actions">
-                    <button
-                      type="button"
-                      class="inspector-text-action"
-                      data-action-click="settings-open-profiles"
-                      aria-label="Manage profiles"
-                    >
-                      Manage
-                    </button>
-                    <button
-                      type="button"
-                      class="inspector-text-action"
-                      data-action-click="encoding-save-profile"
-                    >
-                      Save changes
-                    </button>
-                  </div>
-                </div>
-                <div class="profile-select-row">
-                  <select
-                    id="prof-sel"
-                    data-action-change="encoding-profile"
-                    aria-label="Select profile"
-                  ></select>
+                <!-- the profiles for the current task; the card and its menu are how people choose one -->
+                <select id="prof-sel" data-action-change="encoding-profile" aria-label="Profile" hidden></select>
+                <div class="profile-card" id="prof-card">
                   <button
                     type="button"
-                    class="profile-reset-button"
-                    data-action-click="encoding-reset-profile"
-                    aria-label="Reset to profile"
-                    data-tip="Reset to profile"
+                    id="prof-pick"
+                    class="profile-pick"
+                    aria-haspopup="listbox"
+                    aria-expanded="false"
+                    aria-controls="prof-menu"
+                    aria-describedby="prof-sub"
+                    data-action-click="profile-menu-toggle"
                   >
-                    <svg viewBox="0 0 16 16" aria-hidden="true">
-                      <polyline points="1.5 3 1.5 6.5 5 6.5"></polyline>
-                      <path d="M3 9.5a5.5 5.5 0 1 0 1.3-5.7L1.5 6.5"></path>
-                    </svg>
+                    <span id="prof-name" class="profile-name"></span>
+                    <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5"></path></svg>
                   </button>
-                </div>
-                <div class="prof-meta">
-                  <span class="mod-badge" id="mod-badge">Modified</span>
-                </div>
-                <details class="profile-options">
-                  <summary>Profile options</summary>
-                  <div class="profile-options-body">
-                    <div class="prof-row">
-                      <button class="btn2" data-action-click="encoding-save-profile-as">
-                        Save as new…
-                      </button>
-                    </div>
-                    <div id="prof-reset-row" class="hid">
-                      <button class="btn2" data-action-click="encoding-reset-profile">
-                        Reset to profile
-                      </button>
-                    </div>
+                  <button
+                    type="button"
+                    class="inspector-text-action profile-manage"
+                    data-action-click="settings-open-profiles"
+                    aria-label="Manage profiles"
+                  >
+                    Manage
+                  </button>
+                  <p id="prof-sub" class="profile-sub"></p>
+                  <div id="prof-changed" class="profile-changed" hidden>
+                    <button type="button" class="btn2" data-action-click="encoding-reset-profile">Discard</button>
+                    <button type="button" class="btn1" data-action-click="encoding-save-profile">Save to profile</button>
                   </div>
-                </details>
+                </div>
+                <div id="prof-menu" class="profile-menu" hidden>
+                  <div id="prof-menu-title" class="profile-menu-title"></div>
+                  <div id="prof-options" role="listbox" aria-labelledby="prof-menu-title"></div>
+                  <div class="profile-menu-sep" role="separator"></div>
+                  <button type="button" class="profile-menu-cmd" data-action-click="encoding-save-profile-as">Save current settings as new…</button>
+                  <button type="button" class="profile-menu-cmd" data-action-click="settings-open-profiles">Manage profiles…</button>
+                </div>
               </div>
               <div class="gr" id="sz-grp">
                 <div class="sz-head">
                   <span class="sz-cap">Target size</span>
-                  <span
-                    id="export-summary-modified"
-                    class="export-modified-dot"
-                    aria-label="Modified settings"
-                  ></span>
                 </div>
                 <div class="sz-fig">
                   <span class="sz-est">

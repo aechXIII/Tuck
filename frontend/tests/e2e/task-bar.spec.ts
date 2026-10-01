@@ -171,15 +171,11 @@ test("at 960 wide the drawers stop above the bottom bar, which stays usable", as
   await expect(page.locator("#wf-u")).toHaveAttribute("aria-pressed", "true");
 });
 
-test("Export says its settings cover every video while the button acts on the selected one", async ({ page }) => {
+test("the export button says it acts on the selected video", async ({ page }) => {
   await open(page, { holdPlans: true });
-  await expect(page.locator("#export-scope")).toHaveText("Settings for all 3 videos");
   await expect(page.locator("#btn-one")).toHaveText("Compress this video");
   await page.locator("#wf-u").click();
   await expect(page.locator("#btn-one")).toHaveText("Upscale this video");
-  // a cut keeps segments per video, so the shared-settings note does not apply
-  await page.locator("#wf-l").click();
-  await expect(page.locator("#export-scope")).toBeHidden();
 });
 
 test("This video holds the transform and the audio of the selected video together", async ({ page }) => {

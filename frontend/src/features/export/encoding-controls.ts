@@ -11,6 +11,7 @@ import { SegmentEditing } from "../timeline/segments.ts";
 import { hiddenParts, launchTask, taskAt, taskIndex, visibleTasks } from "../settings/visibility.ts";
 import { legacyBackendResult } from "../editor/backend-compat.ts";
 import { closeMod, showMod, toast } from "../editor/toast.ts";
+import { profileChangeSummary, profileSummary } from "../profiles/profile-summary.ts";
 import type { EditorClip } from "../editor/types.ts";
 import type { EditorSession } from "../editor/session.ts";
 import {
@@ -64,6 +65,9 @@ export interface EncodingControlsApi {
   applySelectedProfileTransform: (clip: EditorClip | null | undefined, force?: boolean) => void;
   refilter: () => void;
   onProfileChange: () => void;
+  toggleProfileMenu: () => void;
+  // switches profile; unsaved changes to the old one can be brought back from the note
+  chooseProfile: (profileId: string) => void;
   loadSettings: () => Promise<void>;
   // picks the task on launch, or when a Send To shortcut asks for one while Tuck is open
   openTask: (launch: unknown, atStart: boolean) => void;
@@ -267,8 +271,6 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     const all = el<HTMLButtonElement>("btn-all");
     // the settings are shared; this button acts on the selected video only
     one.textContent = up ? "Upscale this video" : "Compress this video";
-    el("export-scope-count").textContent = `all ${count} videos`;
-    el("export-scope").hidden = count < 2;
     one.disabled = !selReady || !blending.valid() || !lut.valid() || !videoSettingsValid();
     all.textContent = (up ? "Upscale all" : "Compress all") + (count ? ` (${count})` : "");
     all.disabled = !allReady || !blending.valid() || !lut.valid() || !videoSettingsValid();
@@ -298,14 +300,12 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
       audioEnabled: keepAudio || Number(audioBitrateKbps) > 0,
       keepAudio,
       speed,
-      modified: el("mod-badge").classList.contains("show"),
     });
     if (document.activeElement !== input("sz-badge")) {
       input("sz-badge").value = input("sz-slider").value;
       resizeSizeInput();
     }
     el("export-summary-detail").textContent = summary.detail;
-    el("export-summary-modified").classList.toggle("show", summary.modified);
     el("export-audio-summary").textContent = InspectorUi.audioSummary({
       audioEnabled: keepAudio || Number(audioBitrateKbps) > 0,
       keepAudio,
@@ -497,6 +497,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     const sel = select("prof-sel");
     sel.replaceChildren();
     if (!matching.length) {
+      renderProfileCard();
       updateActionButtons();
       return;
     }
@@ -573,10 +574,11 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     applyProfileTransformToClip(selectedProfile(), clip, !!force);
   }
 
-  function applyProfile(forceTransform?: boolean): void {
+  // applies the chosen profile, or the given settings in its place
+  function applyProfile(forceTransform?: boolean, settings?: ProfileRecord): void {
     const pid = select("prof-sel").value;
     if (!pid) return;
-    const p = profiles().find((profile) => profile.profile_id === pid);
+    const p = settings ?? profiles().find((profile) => profile.profile_id === pid);
     if (!p) return;
     for (const path of Object.keys(session.clips)) {
       applyProfileTransformToClip(p, session.clips[path], !!forceTransform);
@@ -1162,15 +1164,17 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     const clip = session.selPath ? session.clips[session.selPath] : undefined;
     const value = (id: string): string => byId<HTMLInputElement | HTMLSelectElement>(id)?.value ?? "";
     const checked = (id: string): boolean => byId<HTMLInputElement>(id)?.checked ?? false;
+    // while size and frame rate follow the source they come from the video, not the profile
+    const sourceSize = value("res-mode") === "source";
     return {
       pid: value("prof-sel"),
       blending: JSON.stringify(blending.read()),
       lut: JSON.stringify(lut.read()),
       size: value("sz-slider"),
       rm: value("res-mode"),
-      rw: value("res-w"),
-      rh: value("res-h"),
-      fps: value("fps-val"),
+      rw: sourceSize ? "" : value("res-w"),
+      rh: sourceSize ? "" : value("res-h"),
+      fps: checked("use-source-fps") ? "source" : value("fps-val"),
       ka: checked("keep-audio"),
       abr: value("audio-br"),
       tp: value("two-pass"),
@@ -1187,17 +1191,181 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     };
   }
 
+  function isProfileChanged(): boolean {
+    return !!profileSnapshot && profileSnapshot !== JSON.stringify(profileControlState());
+  }
+
   function updateDirty(): void {
-    if (!profileSnapshot) {
-      byId("mod-badge")?.classList.remove("show");
-      byId("prof-reset-row")?.classList.add("hid");
-      syncExportSummary();
-      return;
-    }
-    const dirty = profileSnapshot !== JSON.stringify(profileControlState());
-    byId("mod-badge")?.classList.toggle("show", dirty);
-    byId("prof-reset-row")?.classList.toggle("hid", !dirty);
+    renderProfileCard();
     syncExportSummary();
+  }
+
+  // the card names the profile in use and says what it does, or what was changed from it
+  function renderProfileCard(): void {
+    const profile = selectedProfile();
+    const name = currentProfileName() || "No profile";
+    const changed = isProfileChanged();
+    el("prof-name").textContent = name;
+    el("prof-pick").setAttribute("aria-label", `Profile: ${name}`);
+    el("prof-card").classList.toggle("changed", changed);
+    el("prof-sub").textContent = changed
+      ? profileChangeSummary(JSON.parse(profileSnapshot) as Record<string, unknown>, profileControlState())
+      : profile ? profileSummary(profile) : "";
+    el("prof-changed").hidden = !changed;
+  }
+
+  const profileMenu = el("prof-menu");
+  const profilePick = el("prof-pick");
+
+  function profileOptionRows(): HTMLElement[] {
+    return [...el("prof-options").querySelectorAll<HTMLElement>('[role="option"]')];
+  }
+
+  function renderProfileMenu(): void {
+    el("prof-menu-title").textContent = wf === 1 ? "Upscale" : "Compress";
+    const current = select("prof-sel").value;
+    const changed = isProfileChanged();
+    const rows = [...select("prof-sel").options].map((option, index) => {
+      const row = document.createElement("div");
+      row.className = "profile-option";
+      row.id = `prof-option-${index}`;
+      row.setAttribute("role", "option");
+      row.tabIndex = -1;
+      row.dataset.actionClick = "profile-choose";
+      row.dataset.profileId = option.value;
+      const selected = option.value === current;
+      row.setAttribute("aria-selected", String(selected));
+      const name = document.createElement("span");
+      name.className = "profile-option-name";
+      name.textContent = option.textContent ?? "";
+      const note = document.createElement("span");
+      note.className = "profile-option-note";
+      const profile = profiles().find((entry) => entry.profile_id === option.value);
+      if (selected && changed) {
+        row.classList.add("changed");
+        note.textContent = "Changed, not saved";
+      } else {
+        note.textContent = profile ? profileSummary(profile) : "";
+      }
+      row.append(name, note);
+      return row;
+    });
+    el("prof-options").replaceChildren(...rows);
+  }
+
+  function openProfileMenu(): void {
+    if (!profileMenu.hidden) return;
+    renderProfileMenu();
+    profileMenu.hidden = false;
+    profilePick.setAttribute("aria-expanded", "true");
+    const rows = profileOptionRows();
+    (rows.find((row) => row.getAttribute("aria-selected") === "true") ?? rows[0])?.focus();
+  }
+
+  function closeProfileMenu(returnFocus: boolean): void {
+    if (profileMenu.hidden) return;
+    profileMenu.hidden = true;
+    profilePick.setAttribute("aria-expanded", "false");
+    if (returnFocus) profilePick.focus();
+  }
+
+  function toggleProfileMenu(): void {
+    if (profileMenu.hidden) openProfileMenu();
+    else closeProfileMenu(true);
+  }
+
+  profilePick.addEventListener("keydown", (event) => {
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+    event.preventDefault();
+    openProfileMenu();
+  });
+  profileMenu.addEventListener("keydown", (event) => {
+    const rows = profileOptionRows();
+    const index = rows.indexOf(document.activeElement as HTMLElement);
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      closeProfileMenu(true);
+    } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      const step = event.key === "ArrowDown" ? 1 : -1;
+      rows[(Math.max(index, 0) + step + rows.length) % rows.length]?.focus();
+    } else if (event.key === "Home" || event.key === "End") {
+      event.preventDefault();
+      rows[event.key === "Home" ? 0 : rows.length - 1]?.focus();
+    } else if ((event.key === "Enter" || event.key === " ") && index >= 0) {
+      event.preventDefault();
+      chooseProfile(rows[index]?.dataset.profileId ?? "");
+    }
+  });
+  // a command closes the menu; choosing a profile closes it in chooseProfile
+  profileMenu.addEventListener("click", (event) => {
+    if (event.target instanceof Element && event.target.closest(".profile-menu-cmd")) closeProfileMenu(false);
+  });
+  profileMenu.addEventListener("focusout", (event) => {
+    const next = event.relatedTarget;
+    if (!(next instanceof Node) || profileMenu.contains(next) || next === profilePick) return;
+    closeProfileMenu(false);
+  });
+  document.addEventListener("pointerdown", (event) => {
+    const target = event.target;
+    if (profileMenu.hidden || !(target instanceof Node)) return;
+    if (profileMenu.contains(target) || profilePick.contains(target)) return;
+    closeProfileMenu(false);
+  }, true);
+
+  interface UnsavedProfile {
+    readonly pid: string;
+    readonly name: string;
+    readonly settings: ProfileRecord;
+    readonly snapshot: string;
+  }
+
+  function unsavedProfile(): UnsavedProfile | null {
+    const pid = select("prof-sel").value;
+    const saved = selectedProfile();
+    if (!pid || !saved || !isProfileChanged()) return null;
+    const name = currentProfileName();
+    const payload = profilePayload(name);
+    return {
+      pid,
+      name,
+      snapshot: profileSnapshot,
+      // the payload is shaped for saving; applying reads a stored profile's byte and bit rates
+      settings: {
+        ...saved,
+        ...payload,
+        profile_id: pid,
+        target_size_bytes: num(payload.target_size_mb) * 1024 * 1024,
+        audio_bitrate: num(payload.audio_bitrate_kbps) * 1000,
+      },
+    };
+  }
+
+  function chooseProfile(pid: string): void {
+    closeProfileMenu(true);
+    const sel = select("prof-sel");
+    if (!pid || pid === sel.value || ![...sel.options].some((option) => option.value === pid)) return;
+    const unsaved = unsavedProfile();
+    sel.value = pid;
+    onProfileChange();
+    if (unsaved) {
+      toast(`Changes to ${unsaved.name} discarded.`, "", { label: "Undo", run: () => restoreUnsaved(unsaved) });
+    }
+  }
+
+  function restoreUnsaved(unsaved: UnsavedProfile): void {
+    const sel = select("prof-sel");
+    // after a task switch that profile is not on offer here, so there is nothing to bring back
+    if (![...sel.options].some((option) => option.value === unsaved.pid)) return;
+    sel.value = unsaved.pid;
+    if (wf === 0) lastComp = unsaved.pid;
+    else lastUpscale = unsaved.pid;
+    applyProfile(false, unsaved.settings);
+    profileSnapshot = unsaved.snapshot;
+    updateDirty();
+    void reqPreview();
+    void persistSession();
   }
 
   function snapProf(): void {
@@ -1208,7 +1376,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
   function resetToProfile(): void {
     applyProfile(true);
     snapProf();
-    toast("Settings reset to profile.", "ok");
+    toast("Changes discarded.", "ok");
   }
 
   function resizeSizeInput(): void {
@@ -1237,6 +1405,8 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     applySelectedProfileTransform,
     refilter,
     onProfileChange,
+    toggleProfileMenu,
+    chooseProfile,
     loadSettings,
     openTask,
     reqPreview,

@@ -536,6 +536,8 @@ export function installEditorRuntime(
         "encoding-save-profile": () => void encoding.saveProfileChanges(),
         "encoding-save-profile-as": () => void encoding.saveProfileAs(),
         "encoding-reset-profile": () => encoding.resetToProfile(),
+        "profile-menu-toggle": () => encoding.toggleProfileMenu(),
+        "profile-choose": (target) => encoding.chooseProfile(target.dataset.profileId ?? ""),
         "encoding-toggle-advanced": () => encoding.toggleAdvanced(),
         "encoding-run-selected": () => void encoding.compressOne(),
         "encoding-run-all": () => void encoding.compressAll(),

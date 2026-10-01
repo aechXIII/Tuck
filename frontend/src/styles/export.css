@@ -109,13 +109,6 @@
 #right-foot .export-actions-menu .btn2 {
   background: transparent !important;
 }
-#profile-card {
-  padding-top: 4px;
-}
-#profile-card .prof-meta {
-  min-height: 14px;
-  margin-top: 2px;
-}
 #sz-grp {
   padding-block: 8px;
 }
@@ -143,48 +136,187 @@
 #insp-export {
   min-height: 0;
 }
+/* the profile as a card: its name opens the list, the line under it says what it does, and
+   Discard and Save appear only while the settings differ from it */
 #profile-card {
+  position: relative;
   padding: 12px 0 0;
 }
-#profile-card .inspector-label-row {
-  margin-bottom: 7px;
+.profile-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1px 10px;
+  padding: 9px 8px 10px 12px;
+  border-radius: var(--r-surf);
+  background: var(--raised);
 }
-.profile-select-row {
-  display: flex;
-  gap: 4px;
-}
-.profile-select-row #prof-sel {
-  min-width: 0;
-  height: 28px;
-  padding: 0 7px;
-  border-radius: 5px;
-  font-size: 11.5px;
-}
-.profile-reset-button {
-  width: 28px;
-  height: 28px;
-  flex: 0 0 28px;
+.profile-pick {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  justify-self: start;
+  max-width: 100%;
+  margin: -3px 0 -3px -6px;
+  padding: 3px 6px;
   border: 0;
-  border-radius: 5px;
-  background: var(--raised);
-  color: var(--dim);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: 600 14px/20px var(--font);
+  text-align: left;
   cursor: pointer;
 }
-.profile-reset-button svg {
+.profile-pick:hover,
+.profile-pick[aria-expanded="true"] {
+  background: var(--raised-2);
+}
+.profile-pick:focus-visible {
+  outline: 2px solid var(--accent-light);
+  outline-offset: -2px;
+}
+.profile-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.profile-pick svg {
   width: 12px;
   height: 12px;
+  flex: 0 0 auto;
   fill: none;
-  stroke: currentColor;
-  stroke-width: 1.6;
+  stroke: var(--muted);
+  stroke-width: 1.8;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-#profile-card .prof-meta,
-#profile-card .profile-options {
+.profile-manage {
+  align-self: start;
+}
+.profile-sub {
+  grid-column: 1 / -1;
+  margin: 2px 0 0;
+  color: var(--dim);
+  font: 500 11.5px/16px var(--font);
+}
+.profile-card.changed .profile-sub {
+  color: var(--accent-light);
+}
+.profile-changed {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-top: 8px;
+}
+.profile-changed[hidden] {
   display: none;
+}
+.profile-changed .btn1,
+.profile-changed .btn2 {
+  width: 100%;
+  min-height: 28px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+.profile-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  left: 0;
+  z-index: 30;
+  padding: 5px;
+  border: 1px solid var(--border2);
+  border-radius: var(--r-surf);
+  background: #242428;
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.5);
+}
+.profile-menu[hidden] {
+  display: none;
+}
+.profile-menu-title {
+  padding: 6px 8px 4px;
+  color: var(--dim);
+  font: 600 10px var(--font);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.profile-option {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: 1px 8px;
+  align-items: center;
+  padding: 7px 8px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.profile-option:hover,
+.profile-option:focus {
+  background: var(--raised);
+  outline: none;
+}
+.profile-option[aria-selected="true"] {
+  background: var(--raised-2);
+}
+.profile-option::before {
+  content: "";
+  grid-row: 1;
+  justify-self: center;
+  width: 4px;
+  height: 8px;
+  margin-top: -2px;
+  border-right: 2px solid transparent;
+  border-bottom: 2px solid transparent;
+  transform: rotate(45deg);
+}
+.profile-option[aria-selected="true"]::before {
+  border-color: var(--accent-light);
+}
+.profile-option-name {
+  overflow: hidden;
+  color: var(--text);
+  font: 600 12.5px/17px var(--font);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.profile-option-note {
+  grid-column: 2;
+  overflow: hidden;
+  color: var(--dim);
+  font: 500 11px/15px var(--font);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.profile-option.changed .profile-option-note {
+  color: var(--accent-light);
+}
+.profile-menu-sep {
+  height: 1px;
+  margin: 5px 4px;
+  background: var(--hair-2);
+}
+.profile-menu-cmd {
+  display: block;
+  width: 100%;
+  padding: 7px 8px 7px 32px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font: 500 12px var(--font);
+  text-align: left;
+  cursor: pointer;
+}
+.profile-menu-cmd:hover {
+  background: var(--raised);
+  color: var(--text);
+}
+.profile-menu-cmd:focus-visible {
+  outline: 2px solid var(--accent-light);
+  outline-offset: -2px;
 }
 /* Size: the target you chose is the panel's headline number — Tuck can't
    promise the exact output size, so this shows only what you actually set,
@@ -205,9 +337,6 @@
   font-size: 11px;
   font-weight: 600;
   color: var(--dim);
-}
-#sz-grp .export-modified-dot {
-  margin-left: auto;
 }
 #sz-grp .sz-fig {
   display: flex;

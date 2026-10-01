@@ -15,7 +15,6 @@ export interface InspectorExportState extends InspectorAudioState, InspectorEnco
   width?: number;
   height?: number;
   fps?: number;
-  modified?: boolean;
 }
 
 export interface ChoiceOption {
@@ -70,7 +69,6 @@ export function encoderPanelSummary(state: InspectorEncoderState): string {
 export function exportSummary(state: InspectorExportState): {
   title: string;
   detail: string;
-  modified: boolean;
 } {
   const width = Math.max(0, Math.round(Number(state.width) || 0));
   const height = Math.max(0, Math.round(Number(state.height) || 0));
@@ -90,7 +88,6 @@ export function exportSummary(state: InspectorExportState): {
       videoCodec(state.videoEncoder) +
       " · " +
       audioSummary(state),
-    modified: !!state.modified,
   };
 }
 

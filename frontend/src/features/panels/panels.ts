@@ -942,8 +942,8 @@ export function installPanels(host: PanelsHost): PanelsApi {
   });
 
   const onKeyDown = (event: KeyboardEvent): void => {
-    // let an open picker handle Escape before closing its Inspector
-    if (event.key === "Escape" && event.target instanceof Element && event.target.closest("[popover]:popover-open")) return;
+    // let an open picker or profile menu handle Escape before closing its Inspector
+    if (event.key === "Escape" && event.target instanceof Element && event.target.closest("[popover]:popover-open, #prof-menu:not([hidden])")) return;
     if (trapWorkspaceDrawerFocus(event)) return;
     if (event.key !== "Escape" || workspaceViewportMode !== "overlay") return;
     if (!workspacePanels.libraryOpen && !workspacePanels.inspectorOpen) return;

@@ -31,17 +31,6 @@
   justify-content: space-between;
   gap: 8px;
 }
-.export-modified-dot {
-  display: none;
-  width: 6px;
-  height: 6px;
-  flex: 0 0 6px;
-  border-radius: 50%;
-  background: var(--warn);
-}
-.export-modified-dot.show {
-  display: block;
-}
 .inspector-label-row .grt {
   margin-bottom: 0;
 }
@@ -264,34 +253,4 @@
   margin-top: 18px;
   padding-top: 14px;
   border-top: 1px solid var(--border);
-}
-
-/* the Export settings are shared by every video; the button acts on the selected one */
-.export-scope {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin: 12px 0 2px;
-  color: var(--dim);
-  font: 500 11px var(--font);
-}
-.export-scope[hidden] {
-  display: none;
-}
-.export-scope svg {
-  width: 14px;
-  height: 14px;
-  flex: 0 0 auto;
-  fill: none;
-  stroke: var(--muted);
-  stroke-width: 1.5;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-.export-scope strong {
-  color: var(--muted);
-  font-weight: 600;
-}
-body.task-cut .export-scope {
-  display: none;
 }

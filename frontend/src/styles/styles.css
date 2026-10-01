@@ -1438,59 +1438,6 @@ label.toggle-row {
   .toggle-row input:checked + .toggle-track { background: Highlight; border-color: Highlight; }
   .toggle-row input:checked + .toggle-track::after { background: HighlightText; }
 }
-.prof-meta {
-  font-size: 10px;
-  color: var(--muted);
-  margin-top: -4px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.prof-meta .mod-badge {
-  color: var(--warn);
-  font-weight: 600;
-  display: none;
-}
-.prof-meta .mod-badge.show {
-  display: inline;
-}
-.prof-row {
-  display: flex;
-  gap: 6px;
-}
-.prof-row .btn2 {
-  flex: 1;
-  font-size: 11px;
-  padding: 5px 8px;
-}
-.profile-options {
-  padding-top: 6px;
-  border-top: 1px solid var(--border);
-}
-.profile-options summary {
-  color: var(--muted);
-  cursor: pointer;
-  font: 600 10.5px var(--font);
-}
-.profile-options summary:hover {
-  color: var(--text);
-}
-.profile-options summary:focus-visible {
-  outline: 2px solid var(--accent-light);
-  outline-offset: 2px;
-  border-radius: 3px;
-}
-.profile-options-body {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding-top: 8px;
-}
-.profile-options-body > .btn2,
-.profile-options-body #prof-reset-row .btn2 {
-  width: 100%;
-  text-align: center;
-}
 .mod-overlay {
   position: fixed;
   inset: 0;
@@ -1789,6 +1736,23 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
   min-width: 0;
   line-height: 1.35;
   overflow-wrap: anywhere;
+}
+.toast .tact {
+  flex: 0 0 auto;
+  padding: 3px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--accent-light);
+  font: 600 12px var(--font);
+  cursor: pointer;
+}
+.toast .tact:hover {
+  background: var(--raised-2);
+}
+.toast .tact:focus-visible {
+  outline: 2px solid var(--accent-light);
+  outline-offset: -2px;
 }
 .toast .tcls {
   position: relative;

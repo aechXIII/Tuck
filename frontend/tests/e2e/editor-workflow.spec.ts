@@ -505,7 +505,7 @@ test("Inspector content aligns with tabs and footer without empty scrolling", as
     await expect(async () => {
       const edges = await page.evaluate(() => {
         const rect = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
-        return { tab: rect("#insp-tab-export").right, field: rect(".profile-select-row").right, footer: rect(".export-actions").right, start: rect("#insp-tab-edit").left, contentStart: rect("#profile-card").left };
+        return { tab: rect("#insp-tab-export").right, field: rect("#prof-card").right, footer: rect(".export-actions").right, start: rect("#insp-tab-edit").left, contentStart: rect("#profile-card").left };
       });
       expect(edges.tab).toBeCloseTo(edges.field, 0);
       expect(edges.footer).toBeCloseTo(edges.field, 0);

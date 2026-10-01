@@ -4,9 +4,15 @@ import {
 } from "../../ui/notifications.ts";
 import { byId } from "./session.ts";
 
+export interface ToastAction {
+  label: string;
+  run: () => void;
+}
+
 interface ToastQueueItem {
   message: string;
   kind: string;
+  action?: ToastAction | undefined;
 }
 
 interface ActiveToast {
@@ -79,8 +85,8 @@ export function closeActiveModal(): void {
   closeMod();
 }
 
-export function toast(msg: string, kind = ""): void {
-  toastQueue.push({ message: msg, kind: kind || "" });
+export function toast(msg: string, kind = "", action?: ToastAction): void {
+  toastQueue.push({ message: msg, kind: kind || "", action });
   showNextToast();
 }
 
@@ -99,6 +105,18 @@ function showNextToast(): void {
   div.setAttribute("aria-live", presentation.live);
   div.setAttribute("aria-atomic", "true");
   div.appendChild(createNotificationMessage(document, item.message));
+  const action = item.action;
+  if (action) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "tact";
+    button.textContent = action.label;
+    button.addEventListener("click", () => {
+      dismissToast(id);
+      action.run();
+    });
+    div.appendChild(button);
+  }
   const close = document.createElement("button");
   close.type = "button";
   close.className = "tcls";
