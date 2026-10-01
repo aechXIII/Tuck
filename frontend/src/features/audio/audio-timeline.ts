@@ -38,7 +38,6 @@ export interface AudioTimelineHost {
   paintTrimChrome?: () => void;
   syncTimelineTrackCount?: (count: number) => void;
   renderAudioMixerList?: () => void;
-  renderAudioLibraryPanel?: () => void;
   segmentColor?: (index: number) => string;
   snapCandidateTime?: (time: number, candidates: number[], pxPerSecond: number) => number;
   applyTrimStart?: (sec: number, snap?: boolean) => number | null;
@@ -759,7 +758,6 @@ export function installAudioTimeline(host: AudioTimelineHost) {
       let fragMuteEmpty = byId("audio-fragment-mute");
       if (fragMuteEmpty) fragMuteEmpty.classList.add("hid");
       if (typeof host.renderAudioMixerList === "function") host.renderAudioMixerList();
-      if (typeof host.renderAudioLibraryPanel === "function") host.renderAudioLibraryPanel();
       return;
     }
     if (!ensureState(clip)) return;
@@ -799,7 +797,6 @@ export function installAudioTimeline(host: AudioTimelineHost) {
       fragMute.dataset.tip = fragMuteLabel;
     }
     if (typeof host.renderAudioMixerList === "function") host.renderAudioMixerList();
-    if (typeof host.renderAudioLibraryPanel === "function") host.renderAudioLibraryPanel();
   }
 
   function updatePlayheads(time: number, total: number) {

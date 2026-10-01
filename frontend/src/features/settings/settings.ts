@@ -935,7 +935,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       </div>
       <div class="settings-visibility-group" role="group" aria-labelledby="vis-tools">
         <h4 id="vis-tools">Tools</h4>
-        ${part("audio_editing", "Audio editing", "The Library's Audio tab and Add audio.")}
+        ${part("audio_editing", "Audio editing", "Adding audio tracks to a video.")}
         ${part("frame_blending", "Frame Blending")}
         ${part("lut", "Color LUT")}
         <p class="settings-visibility-note">Frame Blending and Color LUT still show while a profile uses them.</p>

@@ -173,7 +173,6 @@ export function installEditorRuntime(
     paintTrimChrome: () => timeline?.paintTrimChrome(),
     syncTimelineTrackCount: (count) => timeline?.syncTimelineTrackCount(count),
     renderAudioMixerList: () => panels?.renderAudioMixerList(),
-    renderAudioLibraryPanel: () => panels?.renderAudioLibraryPanel(),
     segmentColor: (index) => timeline?.segmentColor(index) ?? "#3f3a58",
     snapCandidateTime: (time, candidates, pixelsPerSecond) =>
       timeline?.snapCandidateTime(time, candidates, pixelsPerSecond) ?? time,
@@ -327,7 +326,6 @@ export function installEditorRuntime(
     syncTransformControls: () => transform.syncTransformControls(),
     paintCropOverlay: () => transform.paintCropOverlay(),
     renderClipDetails: () => panels.renderClipDetails(),
-    renderAudioLibraryPanel: () => panels.renderAudioLibraryPanel(),
     syncTimelineUI: () => timeline.syncTimelineUI(),
     togglePlay: () => player.togglePlay(),
     openResult: (path) => {
@@ -339,7 +337,6 @@ export function installEditorRuntime(
     pollQueue: async () => {
       await queue?.pollQueue();
     },
-    libraryTab: () => panels.getLibraryTab(),
     setInspectorTab: (tab, persist) => panels.setInspectorTab(tab, persist),
   });
 
@@ -513,7 +510,6 @@ export function installEditorRuntime(
         "shortcuts-open": () => shortcutDialog.openDialog(),
         "settings-toggle": () => settings.toggle(),
         "settings-open-profiles": () => void settings.open("profiles"),
-        "library-tab": (target) => panels.setLibraryTab(target.dataset.actionValue ?? ""),
         "inspector-tab": (target) => panels.setInspectorTab(target.dataset.actionValue ?? ""),
         "browse-videos": () => void library.browse(),
         "remove-all-clips": () => library.removeAllClips(),

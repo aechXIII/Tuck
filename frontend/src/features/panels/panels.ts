@@ -13,7 +13,6 @@ import * as ClipDetails from "../library/clip-details.ts";
 import { visibleInspectorTab, type HideablePart } from "../settings/visibility.ts";
 export type { InspectorExportState } from "./inspector-ui.ts";
 
-export type LibraryTab = "media" | "audio";
 export type InspectorTab = "edit" | "audio" | "export";
 export type WorkspacePanelName = "library" | "inspector";
 
@@ -115,17 +114,14 @@ export interface PanelsHost {
 export interface PanelsApi {
   toggleWorkspacePanel: (panel: WorkspacePanelName) => void;
   closeWorkspacePanels: (restoreFocus?: boolean) => void;
-  setLibraryTab: (tab: string) => void;
   setInspectorTab: (tab: string, remember?: boolean) => void;
   applyVisibility: (hidden: ReadonlySet<HideablePart>) => void;
   applyWorkspacePanels: (restoreFocus?: boolean) => void;
   syncWorkspaceForViewport: () => void;
   renderClipDetails: () => void;
-  renderAudioLibraryPanel: () => void;
   renderAudioMixerList: () => void;
   renderAudioClipRange: () => void;
   trapWorkspaceDrawerFocus: (event: KeyboardEvent) => boolean;
-  getLibraryTab: () => LibraryTab;
   getInspectorTab: () => InspectorTab;
   getWorkspaceViewportMode: () => string;
   readonly inspectorSettingsSave: Promise<void>;
@@ -179,7 +175,6 @@ export function installPanels(host: PanelsHost): PanelsApi {
   const doc = host.document;
   const win = host.window;
 
-  let libraryTab: LibraryTab = "media";
   let inspectorTab: InspectorTab = "export";
   let hiddenUi: ReadonlySet<HideablePart> = new Set();
   let inspectorSettingsSave: Promise<void> = Promise.resolve();
@@ -273,13 +268,7 @@ export function installPanels(host: PanelsHost): PanelsApi {
         panel === "library" ? "library-panel-close" : "inspector-panel-close",
       );
       const visibleClose = close && close.offsetParent !== null ? close : null;
-      const activeTab = byId(
-        panel === "library"
-          ? libraryTab === "audio"
-            ? "lib-tab-audio"
-            : "lib-tab-media"
-          : "insp-tab-" + inspectorTab,
-      );
+      const activeTab = byId(panel === "library" ? "btn-add" : "insp-tab-" + inspectorTab);
       if (visibleClose) visibleClose.focus();
       else if (activeTab) activeTab.focus();
     }
@@ -342,72 +331,6 @@ export function installPanels(host: PanelsHost): PanelsApi {
     applyWorkspacePanels(false);
   }
 
-  function setLibraryTab(tab: string): void {
-    libraryTab = tab === "audio" && !hiddenUi.has("audio_editing") ? "audio" : "media";
-    const mediaTab = byId("lib-tab-media");
-    const audioTab = byId("lib-tab-audio");
-    mediaTab?.classList.toggle("on", libraryTab === "media");
-    mediaTab?.setAttribute("aria-pressed", String(libraryTab === "media"));
-    audioTab?.classList.toggle("on", libraryTab === "audio");
-    audioTab?.setAttribute("aria-pressed", String(libraryTab === "audio"));
-    byId("lib-add-row-media")?.classList.toggle("hid", libraryTab !== "media");
-    byId("lib-add-row-audio")?.classList.toggle("hid", libraryTab !== "audio");
-    byId("lib-panel-media")?.classList.toggle("hid", libraryTab !== "media");
-    byId("lib-panel-audio")?.classList.toggle("hid", libraryTab !== "audio");
-    if (libraryTab === "audio") renderAudioLibraryPanel();
-  }
-
-  function renderAudioLibraryPanel(): void {
-    const list = byId("audio-lib-list");
-    const empty = byId("audio-lib-empty");
-    if (!list || !empty) return;
-    const path = host.selPath();
-    const clip = path ? host.clips()[path] : null;
-    if (!clip) {
-      list.replaceChildren();
-      empty.textContent = "Choose a video to see its audio tracks.";
-      empty.classList.remove("hid");
-      return;
-    }
-    const tracks: readonly AudioTrack[] =
-      (clip.audioTimeline && clip.audioTimeline.tracks) || [];
-    if (!tracks.length) {
-      list.replaceChildren();
-      empty.textContent = "No audio yet.";
-      empty.classList.remove("hid");
-      return;
-    }
-    empty.classList.add("hid");
-    list.replaceChildren();
-    tracks.forEach((track) => {
-      const div = doc.createElement("div");
-      div.className = "clip audio-lib-item";
-      div.tabIndex = 0;
-      const c1 = doc.createElement("div");
-      c1.className = "c1";
-      const c2 = doc.createElement("div");
-      c2.className = "c2";
-      c2.textContent = track.name || "";
-      const c3 = doc.createElement("div");
-      c3.className = "c3";
-      const meta = doc.createElement("span");
-      meta.className = "c-meta";
-      const codec =
-        typeof track.codec === "string" && track.codec ? track.codec : "audio";
-      meta.textContent = codec.toUpperCase();
-      const time = doc.createElement("span");
-      time.className = "c-time";
-      time.textContent = host.formatTime(track.sourceDuration || 0);
-      c3.append(meta, time);
-      c1.append(c2, c3);
-      div.appendChild(c1);
-      div.addEventListener("click", () => {
-        host.AudioTimeline?.selectTrack(track.id);
-      });
-      list.appendChild(div);
-    });
-  }
-
   function rememberInspectorTab(tab: InspectorTab): void {
     const panel = tab === "edit" ? "video" : tab;
     host.appSettings.last_inspector_panel = panel;
@@ -457,12 +380,9 @@ export function installPanels(host: PanelsHost): PanelsApi {
     byId("insp-tabs")?.classList.toggle("user-hidden", video && audio);
     setInspectorTab(inspectorTab, false);
     const noAudioEditing = hidden.has("audio_editing");
-    byId("lib-tab-audio")?.classList.toggle("user-hidden", noAudioEditing);
-    doc.querySelector(".lib-tabs")?.classList.toggle("user-hidden", noAudioEditing);
     for (const add of doc.querySelectorAll('[data-action-click="browse-audio"]')) {
       add.classList.toggle("user-hidden", noAudioEditing);
     }
-    if (noAudioEditing && libraryTab === "audio") setLibraryTab("media");
   }
 
   function renderClipDetails(): void {
@@ -1043,17 +963,14 @@ export function installPanels(host: PanelsHost): PanelsApi {
   const api = {
     toggleWorkspacePanel,
     closeWorkspacePanels,
-    setLibraryTab,
     setInspectorTab,
     applyVisibility,
     applyWorkspacePanels,
     syncWorkspaceForViewport,
     renderClipDetails,
-    renderAudioLibraryPanel,
     renderAudioMixerList,
     renderAudioClipRange,
     trapWorkspaceDrawerFocus,
-    getLibraryTab: () => libraryTab,
     getInspectorTab: () => inspectorTab,
     getWorkspaceViewportMode: () => workspaceViewportMode,
     get inspectorSettingsSave() {
@@ -1077,9 +994,6 @@ export function toggleWorkspacePanel(panel: WorkspacePanelName): void {
 export function closeWorkspacePanels(restoreFocus?: boolean): void {
   requireActive().closeWorkspacePanels(restoreFocus);
 }
-export function setLibraryTab(tab: string): void {
-  requireActive().setLibraryTab(tab);
-}
 export function setInspectorTab(tab: string, remember?: boolean): void {
   requireActive().setInspectorTab(tab, remember);
 }
@@ -1091,9 +1005,6 @@ export function syncWorkspaceForViewport(): void {
 }
 export function renderClipDetails(): void {
   requireActive().renderClipDetails();
-}
-export function renderAudioLibraryPanel(): void {
-  requireActive().renderAudioLibraryPanel();
 }
 export function renderAudioMixerList(): void {
   requireActive().renderAudioMixerList();

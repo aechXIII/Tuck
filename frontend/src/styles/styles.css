@@ -286,45 +286,13 @@ body.workspace-overlay .panel-heading {
   flex-direction: column;
   gap: 8px;
 }
-.lib-tabs {
-  display: flex;
-  flex: 0 0 40px;
-  gap: 0;
-  padding: 0;
-  border-bottom: 1px solid var(--border);
-}
-.lib-tab {
-  flex: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: 0;
-  border-radius: var(--r-ctl);
-  color: var(--dim);
-  font: 600 12px var(--font);
-  padding: 6px 8px;
-  cursor: pointer;
-}
-.lib-tab:hover:not(.on) {
-  color: var(--text);
-}
-.lib-tab.on {
-  color: var(--text);
-}
-.lib-tab:focus-visible {
-  outline: 2px solid var(--accent-light);
-  outline-offset: -2px;
-  color: var(--text);
-}
 .lib-add-row {
   min-height: 32px;
   display: grid;
   grid-template-columns: 28px minmax(0, 1fr) 28px;
   align-items: center;
 }
-#btn-add,
-#btn-add-audio {
+#btn-add {
   grid-column: 2;
   min-height: 30px;
   display: inline-flex;
@@ -340,8 +308,7 @@ body.workspace-overlay .panel-heading {
   cursor: pointer;
   font-family: var(--font);
 }
-#btn-add::before,
-#btn-add-audio::before {
+#btn-add::before {
   content: "";
   width: 12px;
   height: 12px;
@@ -351,51 +318,20 @@ body.workspace-overlay .panel-heading {
     linear-gradient(var(--accent-light), var(--accent-light)) center / 2px 12px no-repeat,
     linear-gradient(var(--accent-light), var(--accent-light)) center / 12px 2px no-repeat;
 }
-#btn-add:hover,
-#btn-add-audio:hover {
+#btn-add:hover {
   background: var(--raised);
   color: var(--text);
 }
-#btn-add:focus-visible,
-#btn-add-audio:focus-visible {
+#btn-add:focus-visible {
   outline: 2px solid var(--accent-light);
   outline-offset: 1px;
 }
-#lib-panel-media,
-#lib-panel-audio {
+#lib-panel-media {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-}
-#audio-lib-list {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 0 10px 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-#audio-lib-list:empty {
-  display: none;
-}
-.lib-empty {
-  padding: 24px 14px;
-  text-align: center;
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 1.5;
-}
-.audio-lib-item {
-  cursor: pointer;
-}
-.audio-lib-item .c1 {
-  padding-left: 0;
-}
-.audio-lib-item .c2 {
-  padding-right: 0;
 }
 #btn-rmall {
   grid-column: 3;
@@ -721,9 +657,6 @@ body.workspace-overlay .panel-heading {
   color: var(--dim);
   font-size: 11px;
   line-height: 1.5;
-}
-#lib-panel-audio .lib-empty {
-  text-align: left;
 }
 .inspector-content {
   display: flex;
@@ -2175,7 +2108,6 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
 }
 /* section tabs are marked by ink and a rule rather than a fill, so they never read as another
    segmented control next to the choices inside a section */
-.lib-tabs,
 .insp-tabs {
   flex: 0 0 40px;
   align-items: stretch;
@@ -2183,12 +2115,10 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
   padding: 0 var(--panel-inset);
   border-bottom: 1px solid var(--hair);
 }
-.lib-tab,
 .insp-tab {
   position: relative;
   border-radius: 0;
 }
-.lib-tab.on::after,
 .insp-tab.on::after {
   content: "";
   position: absolute;

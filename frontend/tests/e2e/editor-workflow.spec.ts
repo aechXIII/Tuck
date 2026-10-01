@@ -392,10 +392,9 @@ test("keyboard shortcuts, compact drawers, and audio import stay usable at 960 b
   await expect(libraryToggle).toBeFocused();
   await expect(libraryToggle).toHaveAttribute("aria-expanded", "false");
 
-  await page.getByRole("button", { name: "Library" }).click();
-  await page.locator("#lib-tab-audio").click();
-  await page.locator("#btn-add-audio").click();
-  await expect(page.locator("#audio-lib-list")).toContainText("Score – café.wav");
+  // audio is added from the timeline and listed with the video's own tracks
+  await page.locator("#audio-add").click();
+  await expect(page.locator("#audio-track-mixer")).toContainText("Score – café.wav");
 
   await page.keyboard.press("Control+/");
   await expect(page.getByRole("dialog", { name: "Keyboard shortcuts" })).toBeVisible();
@@ -421,9 +420,8 @@ test("the audio source range picker sizes its window to the selection and stays 
   await expect(page.locator(".c2").getByText("Morning clip.mp4", { exact: true })).toBeVisible();
 
   await page.locator("#insp-tab-edit").click();
-  await page.locator("#lib-tab-audio").click();
-  await page.locator("#btn-add-audio").click();
-  await expect(page.locator("#audio-lib-list")).toContainText("Score – café.wav");
+  await page.locator("#audio-add").click();
+  await expect(page.locator("#audio-track-mixer")).toContainText("Score – café.wav");
 
   const rangeHost = page.locator("#audio-clip-range");
   await expect(rangeHost).not.toHaveClass(/hid/);
@@ -486,10 +484,9 @@ test("Inspector content aligns with tabs and footer without empty scrolling", as
   await page.getByRole("button", { name: "Add videos" }).click();
   const libraryEdges = await page.evaluate(() => {
     const rect = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
-    return { card: rect(".clip").left, tab: rect("#lib-tab-media").left, add: rect("#btn-add").left };
+    return { card: rect(".clip").left, add: rect("#btn-add").left };
   });
-  expect(libraryEdges.card).toBeCloseTo(libraryEdges.tab, 0);
-  expect(libraryEdges.add).toBeCloseTo(libraryEdges.tab, 0);
+  expect(libraryEdges.card).toBeCloseTo(libraryEdges.add, 0);
   for (const width of [1240, 960]) {
     await page.setViewportSize({ width, height: width === 960 ? 640 : 800 });
     if (width === 960) await page.getByRole("button", { name: "Inspector", exact: true }).click();

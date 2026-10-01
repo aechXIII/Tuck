@@ -40,13 +40,11 @@ export interface LibraryEncodingHooks {
   syncTransformControls?: () => void;
   paintCropOverlay?: () => void;
   renderClipDetails?: () => void;
-  renderAudioLibraryPanel?: () => void;
   syncTimelineUI?: () => void;
   togglePlay?: () => void;
   openResult?: (path: string) => void;
   retryQueueItem?: (itemId: string) => void | Promise<void>;
   pollQueue?: () => void | Promise<void>;
-  libraryTab?: () => string;
   setInspectorTab?: (tab: string, persist?: boolean) => void;
 }
 
@@ -634,7 +632,6 @@ export function createLibrary(host: LibraryHost): LibraryApi {
     host.syncTransformControls?.();
     host.paintCropOverlay?.();
     host.renderClipDetails?.();
-    if (host.libraryTab?.() === "audio") host.renderAudioLibraryPanel?.();
     if (!clip.probed && !clip.error) void probe.probe(path);
     else if (clip.probed) {
       host.syncFpsToClip?.();

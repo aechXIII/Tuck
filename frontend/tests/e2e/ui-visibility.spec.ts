@@ -37,7 +37,7 @@ test("hidden parts leave the editor", async ({page}) => {
   await expect(page.locator("#insp-edit")).toBeVisible();
   await expect(page.locator("#insp-audio")).toBeHidden();
   await page.locator("#insp-tab-export").click();
-  await expect(page.locator(".lib-tabs")).toBeHidden();
+  await expect(page.locator("#audio-add")).toBeHidden();
   await expect(page.locator("#audio-add")).toBeHidden();
   await expect(page.locator("#frame-blending-panel")).toBeHidden();
   await expect(page.locator("#lut-panel")).toBeHidden();

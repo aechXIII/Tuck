@@ -248,7 +248,6 @@ const AudioTimeline = installAudioTimeline({
   paintTrimChrome() {},
   syncTimelineTrackCount() {},
   renderAudioMixerList() {},
-  renderAudioLibraryPanel() {},
   segmentColor: () => "#6D28D9",
   canTrimActiveSegmentToPlayhead: () => canTrim,
   trimActiveSegmentToPlayhead(endpoint) {

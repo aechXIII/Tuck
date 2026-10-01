@@ -122,28 +122,6 @@
             </svg>
           </button>
         </div>
-        <div class="lib-tabs" role="group" aria-label="Library section">
-          <button
-            type="button"
-            id="lib-tab-media"
-            class="lib-tab on"
-            aria-pressed="true"
-            data-action-click="library-tab"
-            data-action-value="media"
-          >
-            Video
-          </button>
-          <button
-            type="button"
-            id="lib-tab-audio"
-            class="lib-tab"
-            aria-pressed="false"
-            data-action-click="library-tab"
-            data-action-value="audio"
-          >
-            Audio
-          </button>
-        </div>
         <div id="left-hdr">
           <div id="lib-add-row-media" class="lib-add-row">
             <button id="btn-add" data-action-click="browse-videos">Add videos</button
@@ -161,9 +139,6 @@
               </svg>
             </button>
           </div>
-          <div id="lib-add-row-audio" class="lib-add-row hid">
-            <button id="btn-add-audio" data-action-click="browse-audio">Add audio</button>
-          </div>
         </div>
         <div id="lib-panel-media">
           <div id="clips">
@@ -172,10 +147,6 @@
               <span>Drop videos here, or select Add videos.</span>
             </div>
           </div>
-        </div>
-        <div id="lib-panel-audio" class="hid">
-          <div id="audio-lib-list"></div>
-          <div id="audio-lib-empty" class="lib-empty"></div>
         </div>
       </div>
       <div id="center">
