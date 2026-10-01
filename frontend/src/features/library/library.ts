@@ -23,6 +23,7 @@ import {
   type ClipCardModel,
   type ClipResult,
 } from "./clip-card.ts";
+import { createClipLoader } from "./clip-loader.ts";
 import { createProbeCoordinator, type ProbeCoordinator } from "./probe-coordinator.ts";
 
 export interface LibraryEncodingHooks {
@@ -192,7 +193,6 @@ export function createLibrary(host: LibraryHost): LibraryApi {
         );
         host.audio?.onProbe?.(clip);
         host.applySelectedProfileTransform?.(clip, false);
-        queueThumbnail(path);
       }
       renderClips();
       if (session.selPath === path) {
@@ -209,39 +209,32 @@ export function createLibrary(host: LibraryHost): LibraryApi {
     },
   });
 
-  // thumbnails are made one at a time so a large batch never crowds out playback or plans
-  const thumbnailQueue: string[] = [];
-  let thumbnailsLoading = false;
+  const thumbnailsLoading = new Set<string>();
 
-  function queueThumbnail(path: string): void {
+  async function loadThumbnail(path: string): Promise<void> {
     const clip = session.clips[path];
-    if (!clip || clip._thumbnail !== undefined || thumbnailQueue.includes(path)) return;
-    thumbnailQueue.push(path);
-    void loadThumbnails();
+    if (!clip || clip._thumbnail !== undefined || thumbnailsLoading.has(path)) return;
+    if (!hasBackendClient()) return;
+    thumbnailsLoading.add(path);
+    let thumbnail = "";
+    try {
+      const response = await legacyBackendResult(getBackendClient().getThumbnail(path));
+      if (response.ok && typeof response.thumbnail === "string") thumbnail = response.thumbnail;
+    } catch {
+      // a video without a picture still lists fine
+    } finally {
+      thumbnailsLoading.delete(path);
+    }
+    if (session.clips[path] !== clip) return;
+    clip._thumbnail = thumbnail;
+    renderClips();
   }
 
-  async function loadThumbnails(): Promise<void> {
-    if (thumbnailsLoading || !hasBackendClient()) return;
-    thumbnailsLoading = true;
-    try {
-      for (let path = thumbnailQueue.shift(); path !== undefined; path = thumbnailQueue.shift()) {
-        const clip = session.clips[path];
-        if (!clip || clip._thumbnail !== undefined) continue;
-        let thumbnail = "";
-        try {
-          const response = await legacyBackendResult(getBackendClient().getThumbnail(path));
-          if (response.ok && typeof response.thumbnail === "string") thumbnail = response.thumbnail;
-        } catch {
-          // a video without a picture still lists fine
-        }
-        if (session.clips[path] !== clip) continue;
-        clip._thumbnail = thumbnail;
-        renderClips();
-      }
-    } finally {
-      thumbnailsLoading = false;
-    }
-  }
+  // pictures take a few milliseconds and probes far longer, so each has its own queue and a
+  // large batch shows every picture before its details; two of each leaves backend workers
+  // free for the selected video's preview and plan
+  const thumbnails = createClipLoader(loadThumbnail, 2);
+  const probes = createClipLoader((path) => probe.probe(path), 2);
 
   function orderedClipKeys(): string[] {
     session.clipOrder = session.clipOrder.filter((path) => !!session.clips[path]);
@@ -557,7 +550,7 @@ export function createLibrary(host: LibraryHost): LibraryApi {
         probeError: !!clip.error,
         fileSize: clip._fileSize || 0,
         meta: metaStr(clip),
-        thumbnail: clip._thumbnail || "",
+        thumbnail: clip.error ? "" : clip._thumbnail || "",
         duration: full ? formatTime(full) : "",
         result: clipResult(clip),
         resultSize: clip._queueState === "completed" && clip._resultSize ? formatBytes(clip._resultSize) : "",
@@ -632,7 +625,8 @@ export function createLibrary(host: LibraryHost): LibraryApi {
     host.syncTransformControls?.();
     host.paintCropOverlay?.();
     host.renderClipDetails?.();
-    if (!clip.probed && !clip.error) void probe.probe(path);
+    if (clip._thumbnail === undefined) thumbnails.prioritize(path);
+    if (!clip.probed && !clip.error) probes.prioritize(path);
     else if (clip.probed) {
       host.syncFpsToClip?.();
       host.syncResolutionToClip?.();
@@ -734,10 +728,14 @@ export function createLibrary(host: LibraryHost): LibraryApi {
       added += 1;
     }
     renderClips();
-    for (const path of Object.keys(session.clips)) {
-      const clip = session.clips[path];
-      if (clip && !clip.probed && !clip.probing) void probe.probe(path);
-    }
+    const order = orderedClipKeys();
+    thumbnails.add(order.filter((path) => session.clips[path]?._thumbnail === undefined));
+    probes.add(
+      order.filter((path) => {
+        const clip = session.clips[path];
+        return !!clip && !clip.probed && !clip.probing;
+      }),
+    );
     if (added && !session.selPath) {
       selectClip(firstAdded || session.clipOrder[0] || Object.keys(session.clips)[0] || "");
     }
@@ -769,7 +767,10 @@ export function createLibrary(host: LibraryHost): LibraryApi {
   }
 
   async function retryProbeClip(path: string): Promise<void> {
-    await probe.retry(path);
+    const clip = session.clips[path];
+    // a file that could not be read earlier may have a picture now
+    if (clip && !clip._thumbnail) delete clip._thumbnail;
+    await Promise.all([probe.retry(path), loadThumbnail(path)]);
   }
 
   function libraryClipTarget(event: Event | undefined): HTMLElement | null {

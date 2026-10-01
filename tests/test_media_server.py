@@ -1,12 +1,16 @@
 import hashlib
+import subprocess
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
+import av
 import pytest
 
 from tuck.media_server import MediaServer, _waveform_gain_db, get_media_server
+from tuck.media_tools import find_ffmpeg
 
 
 class TestMediaServer:
@@ -457,6 +461,141 @@ class TestMediaServer:
         server.set_thumbnail_cache_dir(cache)
         result = server.generate_thumbnail(str(tmp_path / "no_file.mp4"))
         assert result is None
+
+    @pytest.mark.parametrize(
+        ("rotation", "upright_size"),
+        [(None, (480, 270)), ("90", (270, 480)), ("-90", (270, 480)), ("180", (480, 270))],
+    )
+    def test_generate_thumbnail_reads_the_picture_without_starting_ffmpeg(
+        self, tmp_path, monkeypatch, rotation, upright_size
+    ):
+        ffmpeg = find_ffmpeg()
+        if not ffmpeg:
+            pytest.skip("ffmpeg not available for generating test video")
+        source = tmp_path / "clip.mp4"
+        subprocess.run(
+            [ffmpeg, "-y", "-v", "error", "-f", "lavfi", "-i",
+             "testsrc2=size=640x360:rate=30:duration=4", "-c:v", "libx264", "-preset",
+             "ultrafast", "-pix_fmt", "yuv420p", str(tmp_path / "plain.mp4")],
+            check=True,
+        )  # fmt: skip
+        rotate = ["-display_rotation", rotation] if rotation else []
+        subprocess.run(
+            [ffmpeg, "-y", "-v", "error", *rotate, "-i", str(tmp_path / "plain.mp4"),
+             "-c", "copy", str(source)],
+            check=True,
+        )  # fmt: skip
+        server = MediaServer()
+        server.set_thumbnail_cache_dir(tmp_path / "thumbs")
+
+        def no_process(*_args, **_kwargs):
+            raise AssertionError("the thumbnail started a process")
+
+        monkeypatch.setattr("tuck.media_server.subprocess.run", no_process)
+
+        result = server.generate_thumbnail(source)
+
+        assert result is not None
+        with av.open(result) as picture:
+            frame = next(picture.decode(video=0))
+            assert (frame.width, frame.height) == upright_size
+        assert not list((tmp_path / "thumbs").glob("*.partial"))
+
+    def test_generate_thumbnail_reads_av1_without_starting_ffmpeg(self, tmp_path, monkeypatch):
+        # OBS records AV1; its decoder returns no picture when told to skip non-keyframes
+        ffmpeg = find_ffmpeg()
+        if not ffmpeg:
+            pytest.skip("ffmpeg not available for generating test video")
+        source = tmp_path / "clip.mp4"
+        for encoder in ("libsvtav1", "libaom-av1"):
+            made = subprocess.run(
+                [ffmpeg, "-y", "-v", "error", "-f", "lavfi", "-i",
+                 "testsrc2=size=640x360:rate=30:duration=4", "-c:v", encoder, "-g", "60",
+                 "-pix_fmt", "yuv420p", str(source)],
+                capture_output=True,
+            )  # fmt: skip
+            if made.returncode == 0:
+                break
+        else:
+            pytest.skip("ffmpeg has no AV1 encoder for generating test video")
+        server = MediaServer()
+        server.set_thumbnail_cache_dir(tmp_path / "thumbs")
+
+        def no_process(*_args, **_kwargs):
+            raise AssertionError("the thumbnail started a process")
+
+        monkeypatch.setattr("tuck.media_server.subprocess.run", no_process)
+        # the picture must come straight after the keyframe the seek lands on; skipping
+        # non-keyframes here only delays it, but in OBS recordings it never comes at all
+        monkeypatch.setattr("tuck.media_server._THUMBNAIL_MAX_PACKETS", 20)
+
+        result = server.generate_thumbnail(source)
+
+        assert result is not None
+        with av.open(result) as picture:
+            frame = next(picture.decode(video=0))
+            assert (frame.width, frame.height) == (480, 270)
+
+    def test_generate_thumbnail_falls_back_to_ffmpeg_when_pyav_cannot_read(
+        self, tmp_path, monkeypatch
+    ):
+        source = tmp_path / "clip.mp4"
+        source.write_bytes(b"not a video")
+        server = MediaServer()
+        server.set_thumbnail_cache_dir(tmp_path / "thumbs")
+        calls = []
+
+        monkeypatch.setattr("tuck.media_server.find_ffmpeg", lambda: "ffmpeg")
+        monkeypatch.setattr("tuck.media_server.find_ffprobe", lambda: None)
+
+        def fake_run(command, **_kwargs):
+            calls.append(command)
+            Path(command[-1]).write_bytes(b"jpg")
+            return SimpleNamespace(returncode=0, stderr=b"")
+
+        monkeypatch.setattr("tuck.media_server.subprocess.run", fake_run)
+
+        result = server.generate_thumbnail(source)
+
+        assert result is not None and Path(result).read_bytes() == b"jpg"
+        assert [command[0] for command in calls] == ["ffmpeg"]
+
+    def test_generate_thumbnail_runs_ffmpeg_once_for_requests_at_the_same_time(
+        self, tmp_path, monkeypatch
+    ):
+        source = tmp_path / "clip.mp4"
+        source.write_bytes(b"video")
+        server = MediaServer()
+        server.set_thumbnail_cache_dir(tmp_path / "thumbs")
+        calls = []
+        entered = threading.Event()
+        release = threading.Event()
+
+        # PyAV cannot read the dummy file, so both requests reach the ffmpeg fallback
+        monkeypatch.setattr("tuck.media_server.find_ffmpeg", lambda: "ffmpeg")
+        monkeypatch.setattr("tuck.media_server.find_ffprobe", lambda: None)
+
+        def fake_run(command, **_kwargs):
+            calls.append(command)
+            entered.set()
+            release.wait(timeout=5)
+            Path(command[-1]).write_bytes(b"jpg")
+            return SimpleNamespace(returncode=0, stderr=b"")
+
+        monkeypatch.setattr("tuck.media_server.subprocess.run", fake_run)
+
+        results: list[str | None] = []
+        first = threading.Thread(target=lambda: results.append(server.generate_thumbnail(source)))
+        second = threading.Thread(target=lambda: results.append(server.generate_thumbnail(source)))
+        first.start()
+        assert entered.wait(timeout=5)
+        second.start()
+        release.set()
+        first.join(timeout=5)
+        second.join(timeout=5)
+
+        assert len(calls) == 1
+        assert len(results) == 2 and results[0] == results[1] is not None
 
     def test_generate_waveform_uses_cache(self, tmp_path, monkeypatch):
         source = tmp_path / "music.mp3"

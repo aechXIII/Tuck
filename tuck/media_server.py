@@ -10,11 +10,20 @@ import secrets
 import subprocess
 import threading
 import time
+from fractions import Fraction
 from functools import lru_cache
 from pathlib import Path
 from socketserver import ThreadingTCPServer
 
+import av
+from av.codec.context import CodecContext
+from av.error import FFmpegError
+from av.filter import Graph
+from av.video.codeccontext import VideoCodecContext
+from av.video.frame import VideoFrame
+
 from .media_tools import find_ffmpeg, find_ffprobe
+from .probe import first_video_frame
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +66,17 @@ for ext, mime in [
 _MAX_THUMBNAIL_DIM = 480  # Maximum width/height for thumbnails
 _THUMBNAIL_TIMEOUT = 15  # seconds
 _THUMBNAIL_SEEK = 0.5  # seek to this fraction of duration (50%)
+_THUMBNAIL_SCALE = (
+    f"'min({_MAX_THUMBNAIL_DIM},iw)':'min({_MAX_THUMBNAIL_DIM},ih)':"
+    "force_original_aspect_ratio=decrease"
+)
+_THUMBNAIL_MAX_PACKETS = 1000
+# filters that turn a picture upright, by its counter-clockwise display rotation in degrees
+_UPRIGHT_FILTERS: dict[int, tuple[tuple[str, str], ...]] = {
+    90: (("transpose", "cclock"),),
+    180: (("hflip", ""), ("vflip", "")),
+    270: (("transpose", "clock"),),
+}
 _WAVEFORM_WIDTH = 8192
 _WAVEFORM_HEIGHT = 96
 _WAVEFORM_TIMEOUT = 60
@@ -261,6 +281,65 @@ def _cached_file_or_none(path: Path) -> str | None:
     return None
 
 
+def _write_thumbnail_in_process(file_path: Path, thumb_path: Path, timeout: float) -> bool:
+    """Write the thumbnail with PyAV, so no ffmpeg process has to start.
+
+    Starting ffmpeg takes far longer than decoding one picture. Returns False when no picture
+    is found near the middle.
+    """
+    with av.open(str(file_path), timeout=timeout) as container:
+        if not container.streams.video:
+            return False
+        stream = container.streams.video[0]
+        # the seek lands on a keyframe, so the first picture out is that keyframe; asking the
+        # decoder to skip other frames is not needed, and the AV1 decoder then returns nothing
+        if container.duration and container.duration > 0:
+            start = container.start_time or 0
+            container.seek(start + int(container.duration * _THUMBNAIL_SEEK), backward=True)
+        frame = first_video_frame(container, stream, _THUMBNAIL_MAX_PACKETS)
+        if frame is None or stream.time_base is None:
+            return False
+
+        # the ffmpeg command turns phone videos upright by itself; PyAV leaves that to us
+        graph = Graph()
+        nodes = [
+            graph.add_buffer(
+                width=frame.width,
+                height=frame.height,
+                format=frame.format,
+                time_base=stream.time_base,
+            )
+        ]
+        for name, args in _UPRIGHT_FILTERS.get(round(frame.rotation) % 360, ()):
+            nodes.append(graph.add(name, args))
+        nodes.append(graph.add("scale", _THUMBNAIL_SCALE))
+        nodes.append(graph.add("format", "yuvj420p"))
+        nodes.append(graph.add("buffersink"))
+        graph.link_nodes(*nodes).configure()
+        graph.push(frame)
+        picture = graph.pull()
+    if not isinstance(picture, VideoFrame):
+        return False
+
+    encoder = CodecContext.create("mjpeg", "w")
+    if not isinstance(encoder, VideoCodecContext):
+        return False
+    encoder.width = picture.width
+    encoder.height = picture.height
+    encoder.pix_fmt = "yuvj420p"
+    encoder.time_base = Fraction(1, 1)
+    picture.pts = 0
+    picture.time_base = Fraction(1, 1)
+    data = b"".join(bytes(packet) for packet in [*encoder.encode(picture), *encoder.encode(None)])
+    if not data:
+        return False
+    # a half-written file would be served from the cache forever, so publish it whole
+    partial = thumb_path.with_suffix(".partial")
+    partial.write_bytes(data)
+    os.replace(partial, thumb_path)
+    return True
+
+
 def _thumbnail_seek_time(file_path: Path) -> str:
     candidate = find_ffprobe()
     if not candidate:
@@ -300,11 +379,7 @@ def _thumbnail_seek_time(file_path: Path) -> str:
 def _run_thumbnail_ffmpeg(
     ffmpeg: str, file_path: Path, duration_str: str, thumb_path: Path, timeout: float
 ) -> None:
-    vf_filter = (
-        f"scale='min({_MAX_THUMBNAIL_DIM},iw)':"
-        f"'min({_MAX_THUMBNAIL_DIM},ih)':"
-        f"force_original_aspect_ratio=decrease"
-    )
+    vf_filter = f"scale={_THUMBNAIL_SCALE}"
     cmd = [
         ffmpeg,
         "-y",
@@ -347,6 +422,7 @@ class MediaServer:
         self._running = False
 
         self._thumb_dir: Path | None = None
+        self._thumb_locks: dict[str, threading.Lock] = {}
 
     @property
     def port(self) -> int:
@@ -434,22 +510,33 @@ class MediaServer:
         ).hexdigest()[:32]
         thumb_path = self._thumb_dir / f"thumb_{cache_key}.jpg"
 
-        cached = _cached_file_or_none(thumb_path)
-        if cached:
-            return cached
+        # the Library and the player can ask for the same picture at once; the second waits
+        # for the first and reuses its file instead of writing the same output again
+        with self._lock:
+            thumb_lock = self._thumb_locks.setdefault(cache_key, threading.Lock())
+        with thumb_lock:
+            cached = _cached_file_or_none(thumb_path)
+            if cached:
+                return cached
 
-        ffmpeg = find_ffmpeg()
-        if not ffmpeg:
-            logger.warning("Cannot generate thumbnail: ffmpeg not found")
-            return None
+            try:
+                if _write_thumbnail_in_process(file_path, thumb_path, timeout):
+                    return _cached_file_or_none(thumb_path)
+            except (FFmpegError, OSError, ValueError) as e:
+                logger.debug("PyAV thumbnail failed for %s: %s", file_path.name, e)
 
-        try:
-            duration_str = _thumbnail_seek_time(file_path)
-            _run_thumbnail_ffmpeg(ffmpeg, file_path, duration_str, thumb_path, timeout)
-            return _cached_file_or_none(thumb_path)
-        except Exception as e:
-            logger.warning("Thumbnail generation failed for %s: %s", file_path.name, e)
-            return None
+            ffmpeg = find_ffmpeg()
+            if not ffmpeg:
+                logger.warning("Cannot generate thumbnail: ffmpeg not found")
+                return None
+
+            try:
+                duration_str = _thumbnail_seek_time(file_path)
+                _run_thumbnail_ffmpeg(ffmpeg, file_path, duration_str, thumb_path, timeout)
+                return _cached_file_or_none(thumb_path)
+            except Exception as e:
+                logger.warning("Thumbnail generation failed for %s: %s", file_path.name, e)
+                return None
 
     def generate_waveform(
         self, file_path: str | Path, timeout: float = _WAVEFORM_TIMEOUT

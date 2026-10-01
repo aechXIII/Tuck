@@ -10,7 +10,7 @@ function probe(width: number, height: number, size: number) {
   return { ok: true, data: { duration: 182, width, height, fps: 30, has_audio: true, file_size: size } };
 }
 
-async function open(page: Page) {
+async function open(page: Page, { holdProbes = false } = {}) {
   const fixture = healthyBackendFixture();
   fixture.startup.files = [BEACH, TRAIL, BROKEN];
   fixture.responseSequences = { probeFile: [probe(1920, 1080, 1_288_490_189), probe(2704, 1520, 1_210_000_000), { ok: false, error: "moov atom not found" }] };
@@ -22,7 +22,7 @@ async function open(page: Page) {
   fixture.responses.getCutAnalysis = analysis;
   fixture.responses.analyzeCut = analysis;
   // plans answer by hand, so each can echo its request and carry the task's numbers
-  fixture.holdMethods = ["createPlan"];
+  fixture.holdMethods = holdProbes ? ["createPlan", "probeFile"] : ["createPlan"];
   await installFakeBackend(page, fixture);
   await page.goto("/");
   await expect(page.locator(".clip")).toHaveCount(3);
@@ -51,10 +51,23 @@ test("each readable video gets its own picture and length; an unreadable one get
   await expect(row(page, "Trail run.mp4").locator(".c-thumb img")).toHaveAttribute("src", PICTURE);
   await expect(row(page, "Beach day.mp4").locator(".c-dur")).toHaveText("3:02");
   await expect(row(page, "Broken.mp4").locator(".c-thumb")).toHaveClass(/unreadable/);
+  // the picture is asked for alongside the probe, but an unreadable row never shows one
   await expect(row(page, "Broken.mp4").locator(".c-thumb img")).toHaveCount(0);
-  // the player may ask again for the selected video; nobody asks for the unreadable one
-  const asked = await page.evaluate(() => (window.__tuckFakeBackendCalls ?? []).filter((call) => call.method === "getThumbnail").map((call) => call.args[0]));
-  expect([...new Set(asked)].sort()).toEqual([BEACH, TRAIL].sort());
+});
+
+test("every picture appears while the videos are still being read", async ({ page }) => {
+  await open(page, { holdProbes: true });
+  const calls = (method: string) =>
+    page.evaluate((name) => (window.__tuckFakeBackendCalls ?? []).filter((call) => call.method === name).map((call) => call.args[0]), method);
+  await expect(row(page, "Beach day.mp4").locator(".c-thumb img")).toHaveAttribute("src", PICTURE);
+  await expect(row(page, "Trail run.mp4").locator(".c-thumb img")).toHaveAttribute("src", PICTURE);
+  await expect.poll(async () => [...new Set(await calls("getThumbnail"))].sort()).toEqual([BEACH, BROKEN, TRAIL].sort());
+  // probes go two at a time, so the third video waits for a free slot
+  expect(await calls("probeFile")).toEqual([BEACH, TRAIL]);
+
+  // Beach day's finished slot goes to the next video
+  await page.evaluate((data) => window.__tuckReleaseHeld?.("probeFile", data), probe(1920, 1080, 1_288_490_189));
+  await expect.poll(() => calls("probeFile")).toEqual([BEACH, TRAIL, BROKEN]);
 });
 
 test("the second line says what each task makes of every video", async ({ page }) => {
