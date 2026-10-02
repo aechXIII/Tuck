@@ -43,6 +43,17 @@
 #player-bar.on {
   display: flex;
 }
+#player-bar {
+  container: player-bar / inline-size;
+}
+/* in Lossless cut the start and end chips widen the middle; on a narrow player the timeline's
+   own time readout and the mute button stand in for the time and the volume slider */
+@container player-bar (max-width: 700px) {
+  body.task-cut #ptime,
+  body.task-cut #vbar {
+    display: none;
+  }
+}
 
 /* Play sits in the middle column, so it stays put when the cut controls open around it */
 #stage-controls {
@@ -95,55 +106,61 @@ body:not(.task-cut) #stage-controls [data-cut-only] {
 .cut-point {
   display: flex;
   align-items: stretch;
-  height: 30px;
-  margin-right: 8px;
+  height: 28px;
+  margin-right: 6px;
   border-radius: var(--r-ctl);
   background: var(--sink);
   white-space: nowrap;
+  transition: background 120ms ease;
 }
 .cut-point.end {
   margin-right: 0;
-  margin-left: 8px;
+  margin-left: 6px;
 }
 .cut-point-set,
 .cut-point-time {
   display: inline-flex;
   align-items: center;
   border: 0;
+  border-radius: var(--r-ctl);
   background: transparent;
   cursor: pointer;
-  transition:
-    background 120ms ease,
-    color 120ms ease;
+  transition: color 120ms ease;
 }
 .cut-point-set {
   justify-content: center;
-  width: 30px;
+  width: 24px;
   padding: 0;
   color: var(--accent-light);
 }
 .cut-point-set svg {
-  width: 14px;
-  height: 14px;
+  width: 13px;
+  height: 13px;
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.6;
+  stroke-width: 1.5;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 .cut-point-time {
   gap: 6px;
-  padding: 0 10px;
+  padding: 0 9px 0 2px;
   color: var(--text);
-  font: 600 11px/1 var(--mono);
+  font: 500 11px/1 var(--mono);
   font-variant-numeric: tabular-nums;
 }
+.cut-point.end .cut-point-time {
+  padding: 0 2px 0 9px;
+}
+/* the chip lightens as one piece; colour shows which half the pointer is on */
+.cut-point:has(:hover:not(:disabled)) {
+  background: color-mix(in srgb, var(--sink) 92%, #fff);
+}
 .cut-point-set:hover:not(:disabled) {
-  background: var(--raised);
   color: var(--text);
 }
 .cut-point-time:hover:not(:disabled) {
-  background: var(--sel);
+  color: var(--accent-light);
 }
 .cut-point-set:disabled,
 .cut-point-time:disabled {
@@ -169,6 +186,7 @@ body:not(.task-cut) #stage-controls [data-cut-only] {
 @media (prefers-reduced-motion: reduce) {
   #stage-controls [data-cut-only],
   body:not(.task-cut) #stage-controls [data-cut-only],
+  .cut-point,
   .cut-point-set,
   .cut-point-time {
     transition: none;
@@ -178,9 +196,9 @@ body:not(.task-cut) #stage-controls [data-cut-only] {
   background: transparent;
   border: none;
   color: var(--muted);
-  border-radius: 50%;
-  width: 26px;
-  height: 26px;
+  border-radius: var(--r-ctl);
+  width: 30px;
+  height: 30px;
   cursor: pointer;
   font-size: 12px;
   line-height: 1;
@@ -204,16 +222,27 @@ body:not(.task-cut) #stage-controls [data-cut-only] {
   display: block;
   fill: currentColor;
 }
+.pbtn svg.line {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 #btn-play {
-  width: 30px;
-  height: 30px;
+  width: 34px;
+  height: 34px;
   margin: 0 4px;
+  border-radius: 50%;
   background: var(--action);
   color: var(--on-accent);
   font-size: 11px;
 }
 #btn-play:hover {
   background: var(--action-hover);
+  color: var(--on-accent);
 }
 #ptime {
   color: var(--muted);

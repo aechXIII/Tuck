@@ -219,7 +219,7 @@
                   aria-label="Set start at the playhead"
                   data-tip="Set start at the playhead"
                 >
-                  <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7 3H4v10h3"></path><path d="M11 2v12"></path></svg>
+                  <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3H7v10h3"></path></svg>
                 </button>
                 <button
                   type="button"
@@ -245,9 +245,9 @@
                 aria-label="Previous keyframe"
                 data-tip="Previous keyframe"
               >
-                <svg viewBox="0 0 16 16" aria-hidden="true">
-                  <path d="M4 5.5 6.5 8 4 10.5 1.5 8Z"></path>
-                  <path d="M14.5 3 8.5 8l6 5z"></path>
+                <svg class="line" viewBox="0 0 16 16" aria-hidden="true">
+                  <path d="M3.5 4v8"></path>
+                  <path d="M9.5 4.5 6 8l3.5 3.5L13 8Z"></path>
                 </svg>
               </button>
               <button
@@ -262,9 +262,8 @@
                 aria-keyshortcuts="ArrowLeft"
                 data-tip="Previous frame (Left arrow)"
               >
-                <svg viewBox="0 0 16 16" aria-hidden="true">
-                  <rect x="2" y="3" width="2" height="10"></rect>
-                  <path d="M14 3 6 8l8 5z"></path>
+                <svg class="line" viewBox="0 0 16 16" aria-hidden="true">
+                  <path d="M10 4 6 8l4 4"></path>
                 </svg>
               </button>
               <button
@@ -278,7 +277,7 @@
                 aria-keyshortcuts="Space"
                 data-tip="Play / pause (Space)"
               >
-                <svg class="play-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M5 2.5 13 8 5 13.5Z"/></svg>
+                <svg class="play-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 3.2v9.6L13 8Z"/></svg>
                 <svg class="pause-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3h4v10H3zM9 3h4v10H9z"/></svg>
               </button>
               <button
@@ -293,9 +292,8 @@
                 aria-keyshortcuts="ArrowRight"
                 data-tip="Next frame (Right arrow)"
               >
-                <svg viewBox="0 0 16 16" aria-hidden="true">
-                  <rect x="12" y="3" width="2" height="10"></rect>
-                  <path d="M2 3l8 5-8 5z"></path>
+                <svg class="line" viewBox="0 0 16 16" aria-hidden="true">
+                  <path d="M6 4l4 4-4 4"></path>
                 </svg>
               </button>
               <button
@@ -310,9 +308,9 @@
                 aria-label="Next keyframe"
                 data-tip="Next keyframe"
               >
-                <svg viewBox="0 0 16 16" aria-hidden="true">
-                  <path d="M1.5 3l6 5-6 5z"></path>
-                  <path d="M12 5.5 14.5 8 12 10.5 9.5 8Z"></path>
+                <svg class="line" viewBox="0 0 16 16" aria-hidden="true">
+                  <path d="M12.5 4v8"></path>
+                  <path d="M6.5 4.5 3 8l3.5 3.5L10 8Z"></path>
                 </svg>
               </button>
               <div class="cut-point end" id="cut-point-end" data-cut-only>
@@ -338,7 +336,7 @@
                   aria-label="Set end at the playhead"
                   data-tip="Set end at the playhead"
                 >
-                  <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9 3h3v10H9"></path><path d="M5 2v12"></path></svg>
+                  <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3h3v10H6"></path></svg>
                 </button>
               </div>
             </div>
