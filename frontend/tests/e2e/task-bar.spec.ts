@@ -286,3 +286,24 @@ test("a modal stops under the title bar, so the window buttons stay in reach", a
   await page.keyboard.press("Escape");
   await expect(page.locator("#tb-editor-end")).not.toHaveAttribute("inert", "");
 });
+
+test("the bottom bar is a card on the floor, a gutter from the timeline and the window edge", async ({ page }) => {
+  await open(page, { holdPlans: true });
+  const geometry = await page.evaluate(() => {
+    const bar = document.getElementById("task-bar")!;
+    const box = bar.getBoundingClientRect();
+    const timeline = document.getElementById("audio-editor")!.getBoundingClientRect();
+    return {
+      height: box.height,
+      fromBottom: window.innerHeight - box.bottom,
+      fromTimeline: box.top - timeline.bottom,
+      left: box.left,
+      radius: getComputedStyle(bar).borderTopLeftRadius,
+    };
+  });
+  expect(geometry.height).toBe(44);
+  expect(geometry.fromBottom).toBe(8);
+  expect(geometry.fromTimeline).toBe(8);
+  expect(geometry.left).toBe(8);
+  expect(geometry.radius).toBe("12px");
+});

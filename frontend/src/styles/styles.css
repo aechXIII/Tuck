@@ -52,7 +52,9 @@
   --radius: var(--r-ctl);
   --gutter: 8px;
   --topbar-height: 40px;
-  --task-bar-height: 48px;
+  /* the status card plus the gutters above and below it */
+  --task-bar-height: 60px;
+  --status-card-height: 44px;
   /* full-window layers start under Tuck's own title bar, so the window stays movable */
   --chrome-top: 0px;
   --library-width: 232px;

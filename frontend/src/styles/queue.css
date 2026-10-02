@@ -1,16 +1,17 @@
-/* The bottom bar: the Library total on the left, the task in the middle and exports on the right,
-   each its own island on the floor. The task sits in the middle so switching it never moves,
-   however much the sides say. */
+/* The status card: the Library total on the left, the task in the middle and exports on the
+   right. The task sits in the middle so switching it never moves, however much the sides say. */
 #task-bar {
-  --island-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 6px 16px rgba(0, 0, 0, 0.35);
-  flex: 0 0 var(--task-bar-height);
+  flex: 0 0 var(--status-card-height);
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   gap: 16px;
-  min-height: var(--task-bar-height);
-  padding: 0 var(--gutter);
-  background: var(--floor);
+  min-height: var(--status-card-height);
+  margin: var(--gutter);
+  /* even sides keep the task switch on the window's centre */
+  padding: 0 7px;
+  border-radius: var(--r-card);
+  background: var(--panel);
 }
 .task-bar-side {
   display: flex;
@@ -23,14 +24,9 @@
 #library-summary {
   overflow: hidden;
   max-width: 100%;
-  height: 30px;
-  padding: 0 13px;
-  border: 1px solid var(--hair);
-  border-radius: 999px;
-  background: var(--panel);
-  box-shadow: var(--island-shadow);
+  padding-left: 9px;
   color: var(--dim);
-  font: 500 11px/28px var(--font);
+  font: 500 12px var(--font);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -52,12 +48,12 @@
   grid-auto-flow: column;
   gap: 2px;
   align-self: center;
-  height: 34px;
-  padding: 3px;
+  height: 32px;
+  padding: 2px;
   border-radius: 999px;
-  background: var(--panel);
-  /* a ring rather than a border, so the thumb measures from the same edge as the tabs */
-  box-shadow: inset 0 0 0 1px var(--hair), var(--island-shadow);
+  /* inside the card it needs no fill or shadow; a ring rather than a border, so the thumb
+     measures from the same edge as the tabs */
+  box-shadow: inset 0 0 0 1px var(--hair-2);
 }
 #task-wf:has(> .user-hidden) {
   --slots: 2;
@@ -71,13 +67,12 @@
 #task-wf::before {
   content: "";
   position: absolute;
-  top: 3px;
-  bottom: 3px;
-  left: 3px;
-  width: calc((100% - 6px - (var(--slots) - 1) * 2px) / var(--slots));
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  width: calc((100% - 4px - (var(--slots) - 1) * 2px) / var(--slots));
   border-radius: 999px;
   background: var(--raised-2);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
   transform: translateX(calc(var(--slot) * (100% + 2px)));
 }
 #task-wf.thumb-slides::before {
@@ -138,11 +133,10 @@
   display: inline-flex;
   align-items: center;
   gap: 9px;
-  padding: 0 11px 0 13px;
-  border: 1px solid var(--hair);
-  border-radius: 999px;
-  background: var(--panel);
-  box-shadow: var(--island-shadow);
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--r-ctl);
+  background: transparent;
   color: var(--text);
   font: 600 12px var(--font);
   cursor: pointer;
@@ -155,7 +149,7 @@
   outline-offset: 1px;
 }
 #qstatus[aria-expanded="true"] {
-  border-color: color-mix(in srgb, var(--accent-light) 50%, var(--border2));
+  background: var(--raised);
 }
 #qstatus svg {
   flex: 0 0 auto;
