@@ -17,6 +17,9 @@ use commands::startup::{
 use commands::updates::{
     check_for_updates, download_update, get_download_progress, install_update, UpdaterState,
 };
+use commands::window::{
+    minimize_window, set_caption_maximize_area, show_window_menu, toggle_maximize_window,
+};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
@@ -86,6 +89,19 @@ fn packaged_resource_paths(
     }
 }
 
+#[cfg(windows)]
+fn notify_window_resized(window: &tauri::Window) {
+    use tauri::Emitter;
+    platform::windows_caption::reposition(window);
+    let state = platform::window_chrome::WindowChromeState {
+        maximized: platform::windows_caption::is_maximized(window),
+    };
+    let _ = window.emit(platform::window_chrome::MAXIMIZED_EVENT, state);
+}
+
+#[cfg(not(windows))]
+fn notify_window_resized(_window: &tauri::Window) {}
+
 pub fn run() {
     // must happen before the WebView starts so child WebKit processes inherit it
     platform::prepare_runtime_environment();
@@ -115,6 +131,9 @@ pub fn run() {
             #[cfg(windows)]
             if let Some(window) = app.get_webview_window("main") {
                 window.with_webview(platform::configure_webview)?;
+                // the page draws the title bar; Linux keeps its desktop's frame
+                window.set_decorations(false)?;
+                platform::windows_caption::remember_app(app.handle());
             }
             let state = match resolve_backend_config(&app.handle().clone()) {
                 Ok(config) => tauri::async_runtime::block_on(BackendState::launch(config))
@@ -145,12 +164,19 @@ pub fn run() {
         download_update,
         install_update,
         get_download_progress,
-        get_startup_files
+        get_startup_files,
+        minimize_window,
+        toggle_maximize_window,
+        set_caption_maximize_area,
+        show_window_menu
     ]);
 
     let closing = Arc::new(AtomicBool::new(false));
     builder
         .on_window_event(move |window, event| {
+            if let tauri::WindowEvent::Resized(_) = event {
+                notify_window_resized(window);
+            }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 // keep the shell alive until its backend has released the installed files
                 api.prevent_close();

@@ -195,14 +195,14 @@ test("an Inspector last left on the old Audio panel opens This video", async ({ 
   await expect(page.locator("#insp-tab-edit")).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator("#insp-audio")).toBeVisible();
 });
-test("the top bar is icons with names, and the selected video's name and length sit over the player", async ({ page }) => {
+test("the top bar is icons with names, and the selected video's name sits over the player", async ({ page }) => {
   await open(page, { holdPlans: true });
-  for (const name of ["Library", "Undo", "Redo", "Keyboard shortcuts", "Settings", "Inspector"]) {
+  for (const name of ["Window menu", "Library", "Undo", "Redo", "Settings", "Inspector", "Minimize", "Maximize", "Close"]) {
     await expect(page.locator("#tb").getByRole("button", { name, exact: true })).toBeVisible();
   }
+  await expect(page.locator("#tb").getByRole("button", { name: "Keyboard shortcuts" })).toHaveCount(0);
   await page.locator(".clip").filter({ hasText: "Kitchen.mov" }).click();
   await expect(page.locator("#tb-title-name")).toHaveText("Kitchen.mov");
-  await expect(page.locator("#tb-title-length")).toHaveText("0:12");
   // centred over the player, also once a panel beside it is hidden
   const offCentre = async () => {
     const title = (await page.locator("#tb-title").boundingBox())!;
@@ -222,4 +222,67 @@ test("the top bar is icons with names, and the selected video's name and length 
   await page.locator("#panel-toggle-inspector").click();
   await expect(page.locator("#right")).toBeVisible();
   expect(await offCentre()).toBeLessThanOrEqual(1);
+});
+
+
+test("Windows gets Tuck's own title bar with the window buttons at the right edge", async ({ page }) => {
+  await open(page, { holdPlans: true, width: 960 });
+  await expect(page.locator("body")).toHaveClass(/custom-titlebar/);
+  await expect(page.locator("#tb")).toHaveAttribute("data-tauri-drag-region", "");
+  const layout = await page.evaluate(() => {
+    const box = (id: string) => document.getElementById(id)!.getBoundingClientRect();
+    return {
+      inspectorRight: box("panel-toggle-inspector").right,
+      minimizeLeft: box("window-minimize").left,
+      closeRight: box("window-close").right,
+      closeTop: box("window-close").top,
+      closeHeight: box("window-close").height,
+      viewport: window.innerWidth,
+    };
+  });
+  // a gap keeps the Inspector toggle off Minimize
+  expect(layout.minimizeLeft - layout.inspectorRight).toBeGreaterThanOrEqual(14);
+  expect(Math.abs(layout.closeRight - layout.viewport)).toBeLessThanOrEqual(0.5);
+  expect(layout.closeTop).toBe(0);
+  expect(layout.closeHeight).toBe(40);
+});
+
+test("Undo and Redo name their keys, and an open panel fills its half of the toggle", async ({ page }) => {
+  await open(page, { holdPlans: true });
+  await expect(page.locator("#btn-undo")).toHaveAttribute("data-tip", "Undo (Ctrl+Z)");
+  await expect(page.locator("#btn-redo")).toHaveAttribute("data-tip", "Redo (Ctrl+Shift+Z or Ctrl+Y)");
+  const toggle = page.locator("#panel-toggle-library");
+  const look = () => toggle.evaluate((button) => ({
+    background: getComputedStyle(button).backgroundColor,
+    fill: getComputedStyle(button.querySelector(".tb-panel-fill")!).fill,
+  }));
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  const shown = await look();
+  expect(shown.background).toBe("rgba(0, 0, 0, 0)");
+  expect(shown.fill).not.toBe("rgba(0, 0, 0, 0)");
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  expect((await look()).fill).toBe("rgba(0, 0, 0, 0)");
+});
+
+test("a modal stops under the title bar, so the window buttons stay in reach", async ({ page }) => {
+  await open(page, { holdPlans: true });
+  await page.locator("#settings-toggle").click();
+  await expect(page.getByRole("dialog", { name: "Settings" })).toBeVisible();
+  const hits = await page.evaluate(() => {
+    const at = (id: string) => {
+      const box = document.getElementById(id)!.getBoundingClientRect();
+      return document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)?.closest("button")?.id ?? null;
+    };
+    return {
+      close: at("window-close"),
+      menu: at("window-menu"),
+    };
+  });
+  expect(hits.close).toBe("window-close");
+  expect(hits.menu).toBe("window-menu");
+  // the editor's own buttons in the bar wait until the modal closes
+  await expect(page.locator("#tb-editor-end")).toHaveAttribute("inert", "");
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#tb-editor-end")).not.toHaveAttribute("inert", "");
 });

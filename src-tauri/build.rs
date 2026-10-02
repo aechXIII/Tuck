@@ -20,6 +20,10 @@ fn main() {
             "install_update",
             "get_download_progress",
             "get_startup_files",
+            "minimize_window",
+            "toggle_maximize_window",
+            "set_caption_maximize_area",
+            "show_window_menu",
         ]),
     ))
     .expect("failed to build Tauri permissions");

@@ -1,6 +1,6 @@
 .settings-workspace {
   position: fixed;
-  inset: 0;
+  inset: var(--chrome-top) 0 0;
   z-index: 180;
   display: none;
   align-items: center;
@@ -14,7 +14,7 @@ body.settings-open .settings-workspace {
 .settings-dialog {
   position: relative;
   width: min(920px, 100%);
-  height: min(672px, calc(100dvh - 48px));
+  height: min(672px, calc(100dvh - var(--chrome-top) - 48px));
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);

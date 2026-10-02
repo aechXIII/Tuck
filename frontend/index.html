@@ -5,8 +5,31 @@
     <title>Tuck</title>
   </head>
   <body>
-    <div id="editor-shell">
     <div id="tb">
+      <button
+        type="button"
+        class="tb-window-menu window-chrome"
+        id="window-menu"
+        aria-label="Window menu"
+        aria-haspopup="menu"
+        aria-keyshortcuts="Alt+Space"
+        data-tip="Window menu (Alt+Space)"
+        hidden
+      >
+        <svg viewBox="112 119.5 800 800" aria-hidden="true">
+          <defs>
+            <linearGradient id="tb-mark-centre" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#c7b0ff" />
+              <stop offset="1" stop-color="#b594ff" />
+            </linearGradient>
+          </defs>
+          <path fill="#7d39fc" d="M392 402H246c-68.5 0-124 55.5-124 124v96c0 68.5 55.5 124 124 124h146c13.3 0 24-10.7 24-24V426c0-13.3-10.7-24-24-24Z" />
+          <path fill="#7d39fc" d="M632 402h146c68.5 0 124 55.5 124 124v96c0 68.5-55.5 124-124 124H632c-13.3 0-24-10.7-24-24V426c0-13.3 10.7-24 24-24Z" />
+          <path fill="url(#tb-mark-centre)" d="M480 358h64v407c0 17.7-14.3 32-32 32s-32-14.3-32-32V358Z" />
+          <path fill="url(#tb-mark-centre)" d="M480 242h64c17.7 0 32 14.3 32 32v64l-64 60-64-60v-64c0-17.7 14.3-32 32-32Z" />
+        </svg>
+      </button>
+      <div class="tb-editor" id="tb-editor-start">
       <button
         type="button"
         class="tb-workspace-btn"
@@ -19,6 +42,7 @@
         data-tip="Show or hide library"
       >
         <svg viewBox="0 0 16 16" aria-hidden="true">
+          <path class="tb-panel-fill" d="M3 2h2.25v12H3A1.5 1.5 0 0 1 1.5 12.5v-9A1.5 1.5 0 0 1 3 2Z"></path>
           <rect x="1.5" y="2" width="13" height="12" rx="1.5"></rect>
           <path d="M5.25 2v12"></path>
         </svg>
@@ -31,6 +55,8 @@
         data-action-click="history-undo"
         disabled
         data-tip="Undo"
+        data-shortcut-commands="edit.undo"
+        data-shortcut-label="Undo"
         aria-label="Undo"
       >
         <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -45,6 +71,8 @@
         data-action-click="history-redo"
         disabled
         data-tip="Redo"
+        data-shortcut-commands="edit.redo"
+        data-shortcut-label="Redo"
         aria-label="Redo"
       >
         <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -52,27 +80,12 @@
           <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
         </svg>
       </button>
+      </div>
       <span class="tb-flex-spacer"></span>
       <div id="tb-title" class="tb-title" hidden>
         <span id="tb-title-name" class="tb-title-name"></span>
-        <span id="tb-title-length" class="tb-title-length"></span>
       </div>
-      <button
-        type="button"
-        class="tb-command-btn"
-        id="shortcuts-toggle"
-        data-shortcut-commands="help.shortcuts"
-        data-shortcut-label="Keyboard shortcuts"
-        data-action-click="shortcuts-open"
-        data-tip="Keyboard shortcuts (? or Ctrl+/)"
-        aria-label="Keyboard shortcuts"
-        aria-keyshortcuts="? Control+/"
-      >
-        <svg class="tb-help-icon" viewBox="0 0 18 14" aria-hidden="true">
-          <rect x="1" y="1" width="16" height="12" rx="2"></rect>
-          <path d="M4 4h1M7 4h1M10 4h1M13 4h1M4 7h1M7 7h1M10 7h1M13 7h1M5 10h8"></path>
-        </svg>
-      </button>
+      <div class="tb-editor" id="tb-editor-end">
       <button
         type="button"
         class="tb-command-btn"
@@ -98,11 +111,26 @@
         data-tip="Show or hide inspector"
       >
         <svg viewBox="0 0 16 16" aria-hidden="true">
+          <path class="tb-panel-fill" d="M10.75 2H13a1.5 1.5 0 0 1 1.5 1.5v9A1.5 1.5 0 0 1 13 14h-2.25Z"></path>
           <rect x="1.5" y="2" width="13" height="12" rx="1.5"></rect>
           <path d="M10.75 2v12"></path>
         </svg>
       </button>
+      </div>
+      <div class="tb-caption window-chrome" id="window-caption" role="group" aria-label="Window" hidden>
+        <button type="button" class="tb-caption-btn" id="window-minimize" aria-label="Minimize" data-tip="Minimize">
+          <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M0 5.5h10"></path></svg>
+        </button>
+        <button type="button" class="tb-caption-btn" id="window-maximize" aria-label="Maximize" data-tip="Maximize">
+          <svg class="caption-maximize-glyph" viewBox="0 0 10 10" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9" rx="0.5"></rect></svg>
+          <svg class="caption-restore-glyph" viewBox="0 0 10 10" aria-hidden="true"><rect x="0.5" y="2.5" width="7" height="7" rx="0.5"></rect><path d="M2.5 2.5V1a.5.5 0 0 1 .5-.5h6a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-.5.5H7.5"></path></svg>
+        </button>
+        <button type="button" class="tb-caption-btn close" id="window-close" aria-label="Close" data-tip="Close">
+          <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M0.5 0.5l9 9M9.5 0.5l-9 9"></path></svg>
+        </button>
+      </div>
     </div>
+    <div id="editor-shell">
     <div id="main">
       <div id="left">
         <div class="panel-heading">

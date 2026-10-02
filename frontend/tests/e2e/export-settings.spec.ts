@@ -391,9 +391,14 @@ test("Inspector content keeps its right edge aligned while resizing", async ({ p
   await page.goto("/");
   await addVideo(page);
   const edge = async (selector: string) => page.locator(selector).evaluate(el => el.getBoundingClientRect().right);
-  // the Inspector button sits over the Inspector card's edge, and the content keeps the card's inset
+  // the Inspector button sits over the Inspector card, and the content keeps the card's inset
   const aligned = async () => {
-    expect(Math.abs(await edge("#right") - await edge("#panel-toggle-inspector"))).toBeLessThanOrEqual(1);
+    const over = await page.evaluate(() => {
+      const toggle = document.getElementById("panel-toggle-inspector")!.getBoundingClientRect();
+      const card = document.getElementById("right")!.getBoundingClientRect();
+      return toggle.left >= card.left && toggle.right <= card.right;
+    });
+    expect(over).toBe(true);
     expect(Math.abs(await edge("#right") - 12 - await edge("#sz-grp"))).toBeLessThanOrEqual(1);
   };
   await aligned();

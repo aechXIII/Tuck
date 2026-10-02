@@ -68,7 +68,6 @@ test("Esc cancels choosing keys and reserved keys are refused", async ({page}) =
 test("saved keys apply on launch and the guide links to the Keyboard page", async ({page}) => {
   await start(page, {shortcut_overrides:{"timeline.split":["X"], "help.shortcuts":["F1"]}});
   await expect(page.locator("#btn-seq-split")).toHaveAttribute("data-tip", "Split (X)");
-  await expect(page.locator("#shortcuts-toggle")).toHaveAttribute("aria-keyshortcuts", "F1");
   await page.keyboard.press("F1");
   const guide = page.getByRole("dialog", {name:"Keyboard shortcuts"});
   await expect(guide).toBeVisible();

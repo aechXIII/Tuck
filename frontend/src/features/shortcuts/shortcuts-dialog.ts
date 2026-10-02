@@ -243,11 +243,12 @@ export function installShortcutDialog(host: ShortcutDialogHost): ShortcutDialogA
     input!.addEventListener("input", () => {
       renderResults(input!.value);
     });
+    // opened by keyboard from nowhere in particular, focus goes back to the page
     returnFocus =
       host.document.activeElement &&
       host.document.activeElement !== host.document.body
         ? host.document.activeElement
-        : (byId("shortcuts-toggle") as FocusTarget | null);
+        : null;
     byId("mod-overlay")!.classList.add("open");
     renderResults("");
     if (input) input.focus();

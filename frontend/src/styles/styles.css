@@ -53,6 +53,8 @@
   --gutter: 8px;
   --topbar-height: 40px;
   --task-bar-height: 48px;
+  /* full-window layers start under Tuck's own title bar, so the window stays movable */
+  --chrome-top: 0px;
   --library-width: 232px;
   --inspector-width: 316px;
   --inspector-wide-width: 344px;
@@ -112,6 +114,9 @@ textarea,
 .tb-flex-spacer {
   flex: 1;
 }
+.tb-editor {
+  display: contents;
+}
 .tb-workspace-btn,
 .tb-command-btn {
   flex: 0 0 auto;
@@ -141,9 +146,16 @@ textarea,
   background: var(--raised);
   color: var(--text);
 }
+/* an open panel fills its half of the icon rather than greying the button */
 .tb-workspace-btn.on {
-  background: var(--raised);
   color: var(--text);
+}
+.tb-workspace-btn .tb-panel-fill {
+  fill: transparent;
+  stroke: none;
+}
+.tb-workspace-btn.on .tb-panel-fill {
+  fill: currentColor;
 }
 .tb-workspace-btn:focus-visible,
 .tb-command-btn:focus-visible {
@@ -184,6 +196,7 @@ textarea,
 }
 .tb-icon-btn:disabled {
   color: var(--dim);
+  opacity: 0.4;
   cursor: default;
 }
 .tb-icon-btn:focus-visible {
@@ -222,10 +235,127 @@ textarea,
   font: 600 12.5px var(--font);
   text-overflow: ellipsis;
 }
-.tb-title-length {
-  flex: none;
-  color: var(--dim);
-  font: 500 11px var(--mono);
+
+/* Windows: Tuck draws the title bar. The logo opens the window menu and the caption buttons
+   run to the right edge, a gap away from the Inspector toggle */
+body.custom-titlebar {
+  --chrome-top: var(--topbar-height);
+}
+body.custom-titlebar #tb {
+  padding-left: 6px;
+  padding-right: 0;
+}
+.tb-window-menu {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-ctl);
+  background: transparent;
+  cursor: pointer;
+}
+.tb-window-menu[hidden],
+.tb-caption[hidden] {
+  display: none;
+}
+.tb-window-menu svg {
+  width: 18px;
+  height: 18px;
+}
+.tb-window-menu:hover {
+  background: var(--raised);
+}
+.tb-window-menu:focus-visible {
+  outline: 2px solid var(--accent-light);
+  outline-offset: -2px;
+}
+.tb-caption {
+  flex: 0 0 auto;
+  align-self: stretch;
+  display: flex;
+  margin-left: 14px;
+}
+.tb-caption-btn {
+  width: 46px;
+  height: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: default;
+}
+.tb-caption-btn svg {
+  width: 10px;
+  height: 10px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
+}
+.tb-caption-btn:hover,
+.tb-caption-btn.hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text);
+}
+.tb-caption-btn:active,
+.tb-caption-btn.pressed {
+  background: rgba(255, 255, 255, 0.11);
+}
+/* Windows' own close red, so it reads as the system button */
+.tb-caption-btn.close:hover {
+  background: #c42b1c;
+  color: #fff;
+}
+.tb-caption-btn.close:active {
+  background: #b22a1d;
+  color: #fff;
+}
+.tb-caption-btn:focus-visible {
+  outline: 2px solid var(--accent-light);
+  outline-offset: -2px;
+  color: var(--text);
+}
+.caption-restore-glyph,
+body.window-maximized .caption-maximize-glyph {
+  display: none;
+}
+body.window-maximized .caption-restore-glyph {
+  display: block;
+}
+/* like a native title bar, the window's own parts fade when another window has focus */
+body.window-inactive .tb-window-menu svg {
+  filter: grayscale(1);
+  opacity: 0.5;
+}
+body.window-inactive .tb-title,
+body.window-inactive .tb-caption-btn:not(:hover):not(.hover) {
+  opacity: 0.5;
+}
+/* a modal leaves the title bar showing, so the window can be moved and closed, but the editor's
+   own buttons in it wait until the modal closes */
+.tb-editor[inert] > *,
+body.custom-titlebar:has(.mod-overlay.open) .tb-editor > * {
+  pointer-events: none;
+  opacity: 0.4;
+}
+@media (forced-colors: active) {
+  .tb-caption-btn {
+    color: ButtonText;
+  }
+  .tb-caption-btn:hover,
+  .tb-caption-btn.hover,
+  .tb-caption-btn.close:hover {
+    background: Highlight;
+    color: HighlightText;
+    forced-color-adjust: none;
+  }
 }
 /* the Library, the player and the Inspector are cards on the floor, a gutter apart */
 #main {
@@ -1459,7 +1589,7 @@ label.toggle-row {
 }
 .mod-overlay {
   position: fixed;
-  inset: 0;
+  inset: var(--chrome-top) 0 0;
   background: rgba(0, 0, 0, 0.6);
   z-index: 200;
   display: none;

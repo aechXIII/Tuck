@@ -38,6 +38,7 @@ const linuxCapabilities = {
   publicCli: false,
   automaticUpdater: false,
   hardwareAcceleration: false,
+  customTitleBar: false,
   packaged: false,
 };
 

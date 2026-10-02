@@ -10,6 +10,7 @@ export interface PlatformCapabilities {
   publicCli: boolean;
   automaticUpdater: boolean;
   hardwareAcceleration: boolean;
+  customTitleBar: boolean;
   packaged: boolean;
 }
 
@@ -23,6 +24,7 @@ const NON_TAURI_CAPABILITIES: PlatformCapabilities = {
   publicCli: true,
   automaticUpdater: true,
   hardwareAcceleration: true,
+  customTitleBar: true,
   packaged: false,
 };
 
@@ -35,6 +37,7 @@ const DEGRADED_CAPABILITIES: PlatformCapabilities = {
   publicCli: false,
   automaticUpdater: false,
   hardwareAcceleration: false,
+  customTitleBar: false,
   packaged: false,
 };
 
@@ -50,6 +53,7 @@ function isPlatformCapabilities(value: unknown): value is PlatformCapabilities {
     typeof caps.publicCli === "boolean" &&
     typeof caps.automaticUpdater === "boolean" &&
     typeof caps.hardwareAcceleration === "boolean" &&
+    typeof caps.customTitleBar === "boolean" &&
     typeof caps.packaged === "boolean"
   );
 }
@@ -79,6 +83,10 @@ export function shouldShowSendTo(caps: PlatformCapabilities): boolean {
 
 export function shouldShowUpdater(caps: PlatformCapabilities): boolean {
   return caps.automaticUpdater;
+}
+
+export function usesCustomTitleBar(caps: PlatformCapabilities): boolean {
+  return caps.customTitleBar;
 }
 
 export function supportsHardwareEncoders(caps: PlatformCapabilities): boolean {

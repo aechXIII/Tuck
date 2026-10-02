@@ -37,4 +37,8 @@ fn main_window_has_only_the_permissions_needed_for_native_commands_and_events() 
     assert!(has_permission("core:event:allow-unlisten"));
     assert!(has_permission("allow-backend-request"));
     assert!(has_permission("allow-native-commands"));
+    assert!(has_permission("allow-window-chrome"));
+    // the title bar drags the window and maximizes it on double-click through Tauri's drag region
+    assert!(has_permission("core:window:allow-start-dragging"));
+    assert!(has_permission("core:window:allow-internal-toggle-maximize"));
 }

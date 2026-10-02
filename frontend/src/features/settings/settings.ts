@@ -145,8 +145,9 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     const previousFocus = document.activeElement;
     if (opening) {
       settingsReturnFocus = document.activeElement;
-      // keep modal focus separate from the editor's responsive drawer state
-      el("editor-shell").inert = true;
+      // keep modal focus separate from the editor's responsive drawer state; the window's own
+      // title bar buttons stay usable
+      setEditorInert(true);
     }
     document.body.classList.add("settings-open");
     const titles: Record<string, string> = {
@@ -1287,10 +1288,15 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     });
   }
 
+  function setEditorInert(inert: boolean): void {
+    el("editor-shell").inert = inert;
+    for (const group of document.querySelectorAll<HTMLElement>("#tb .tb-editor")) group.inert = inert;
+  }
+
   function closeSettingsWorkspace(): void {
     stopCapture();
     document.body.classList.remove("settings-open");
-    el("editor-shell").inert = false;
+    setEditorInert(false);
     if (
       settingsReturnFocus &&
       settingsReturnFocus.isConnected &&

@@ -92,6 +92,10 @@ test("missing desktop backend is a visible startup error", async ({ page }) => {
   await expect(page.getByRole("alert")).toContainText("Desktop backend unavailable");
   await expect(page.getByRole("alert")).toContainText("reopen Tuck");
   await expect(page.locator("#editor-shell")).toHaveAttribute("inert", "");
+  // the window's own title bar controls stay usable so the window can still be moved and closed
+  await expect(page.locator("#window-caption")).toBeVisible();
+  await expect(page.locator("#window-caption")).not.toHaveAttribute("inert", "");
+  await expect(page.locator("#tb-editor-start")).toHaveAttribute("inert", "");
 });
 
 test("rejected file selection is visible, recoverable, and rendered as text", async ({

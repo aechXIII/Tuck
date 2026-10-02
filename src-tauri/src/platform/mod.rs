@@ -1,11 +1,14 @@
 pub mod capabilities;
 pub mod opener;
 pub mod startup;
+pub mod window_chrome;
 
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "windows")]
 mod windows;
+#[cfg(target_os = "windows")]
+pub mod windows_caption;
 
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
 use tokio::process::Child;

@@ -12,6 +12,9 @@
     "dialog:default",
     "clipboard-manager:allow-write-text",
     "allow-backend-request",
-    "allow-native-commands"
+    "allow-native-commands",
+    "allow-window-chrome",
+    "core:window:allow-start-dragging",
+    "core:window:allow-internal-toggle-maximize"
   ]
 }

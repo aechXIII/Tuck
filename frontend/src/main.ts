@@ -17,6 +17,7 @@ import {
   mergeLaunches,
   type StartupLaunch,
 } from "./platform/second-instance.ts";
+import { installWindowChrome } from "./platform/window-chrome.ts";
 import "./styles/index.ts";
 
 export { backendUnavailableMessage, hasDesktopBackend };
@@ -70,13 +71,23 @@ function showBackendUnavailable(reason?: string): void {
   content.append(heading, detail);
   alert.append(content);
   document.body.append(alert);
-  blockedSiblings = Array.from(document.body.children).filter(
-    (element): element is HTMLElement =>
-      element instanceof HTMLElement && element !== alert && !element.inert,
-  );
+  blockedSiblings = blockingTargets(alert);
   blockedSiblings.forEach((element) => {
     element.inert = true;
   });
+}
+
+// everything but the alert goes inert, except the window's own title bar controls, so the window
+// can still be moved, resized and closed
+function blockingTargets(alert: HTMLElement): HTMLElement[] {
+  const bar = document.getElementById("tb");
+  const candidates = [
+    ...Array.from(document.body.children).filter((element) => element !== alert && element !== bar),
+    ...Array.from(bar?.querySelectorAll(".tb-editor") ?? []),
+  ];
+  return candidates.filter(
+    (element): element is HTMLElement => element instanceof HTMLElement && !element.inert,
+  );
 }
 
 function markDesktopBackendReady(): void {
@@ -168,6 +179,9 @@ function bootstrapFrontend(): void {
   window.attachBackendClient = attachDesktopBackend;
 
   editorRuntime.start();
+  void installWindowChrome(window).catch((error: unknown) => {
+    console.error("Could not set up the title bar", error);
+  });
 
   if (document.readyState === "complete") waitForDesktopBackend();
   else window.addEventListener("load", waitForDesktopBackend, { once: true });

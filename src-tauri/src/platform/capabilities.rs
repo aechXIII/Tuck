@@ -12,6 +12,9 @@ pub struct PlatformCapabilities {
     pub automatic_updater: bool,
     #[serde(rename = "hardwareAcceleration")]
     pub hardware_acceleration: bool,
+    // Windows draws Tuck's own title bar; Linux keeps the desktop's frame
+    #[serde(rename = "customTitleBar")]
+    pub custom_title_bar: bool,
     pub packaged: bool,
 }
 
@@ -36,6 +39,7 @@ pub fn capabilities_for_target(platform: &str, packaged: bool) -> PlatformCapabi
         public_cli,
         automatic_updater: updater,
         hardware_acceleration,
+        custom_title_bar: platform == "windows",
         packaged,
     }
 }
@@ -62,6 +66,7 @@ mod tests {
         assert!(caps.public_cli);
         assert!(caps.automatic_updater);
         assert!(caps.hardware_acceleration);
+        assert!(caps.custom_title_bar);
         assert!(!caps.packaged);
     }
 
@@ -74,6 +79,7 @@ mod tests {
         assert!(!caps.public_cli);
         assert!(caps.automatic_updater);
         assert!(!caps.hardware_acceleration);
+        assert!(!caps.custom_title_bar);
     }
 
     #[test]

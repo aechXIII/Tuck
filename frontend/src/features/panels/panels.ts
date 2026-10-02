@@ -449,16 +449,13 @@ export function installPanels(host: PanelsHost): PanelsApi {
     }
   }
 
-  // the top bar names the selected video and its length; the Inspector has the rest
+  // the top bar names the selected video; its length is already in the Library and the timeline
   function renderTopBarTitle(clip: EditorClip | null | undefined): void {
     const title = byId("tb-title");
     const name = byId("tb-title-name");
-    const length = byId("tb-title-length");
-    if (!title || !name || !length) return;
+    if (!title || !name) return;
     title.hidden = !clip;
     name.textContent = clip ? clip.name || "Selected video" : "";
-    const duration = clip?.probed && !clip.error ? clip.probeData?.duration : undefined;
-    length.textContent = duration ? host.formatTime(duration) : "";
   }
 
   function appendMixerRow(hostEl: HTMLElement, row: MixerRowModel): HTMLElement {
