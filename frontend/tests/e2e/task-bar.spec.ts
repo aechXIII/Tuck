@@ -367,3 +367,19 @@ test("a timeline taller than its tracks grows the Video and Source audio rows in
   await page.keyboard.press("End");
   await expect.poll(async () => (await fill()).empty).toBe(0);
 });
+
+test("the Inspector's This video and Export switch slides its thumb under the chosen view", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await open(page, { holdPlans: true });
+  const offset = (id: string) => page.evaluate((tabId) => {
+    const group = document.getElementById("insp-tabs")!, tab = document.getElementById(tabId)!.getBoundingClientRect();
+    const thumb = getComputedStyle(group, "::before");
+    const left = group.getBoundingClientRect().left + parseFloat(thumb.left) + new DOMMatrix(thumb.transform).m41;
+    return Math.max(Math.abs(left - tab.left), Math.abs(parseFloat(thumb.width) - tab.width));
+  }, id);
+  for (const id of ["insp-tab-edit", "insp-tab-export"]) {
+    await page.locator(`#${id}`).click();
+    await expect(page.locator(`#${id}`)).toHaveAttribute("aria-pressed", "true");
+    expect(await offset(id)).toBeLessThanOrEqual(1);
+  }
+});

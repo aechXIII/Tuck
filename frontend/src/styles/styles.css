@@ -715,40 +715,60 @@ body.workspace-overlay .panel-heading {
   flex-direction: column;
   overflow: hidden;
 }
+/* This video and Export are one choice, like the task switch, so they share its pill: a hairline
+   ring with a thumb that slides under the chosen half. It is ringed rather than filled, so it
+   does not read as one of the option buttons inside a section */
 .insp-tabs {
-  display: flex;
-  flex: 0 0 40px;
-  gap: 12px;
-  padding: 0 12px;
-  border-bottom: 1px solid var(--border);
+  --slot: 0;
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  flex: 0 0 auto;
+  gap: 2px;
+  margin: 10px var(--inspector-content-inset) 6px;
+  padding: 2px;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px var(--hair-2);
+}
+.insp-tabs:has(> #insp-tab-export.on) {
+  --slot: 1;
+}
+.insp-tabs::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  width: calc((100% - 6px) / 2);
+  border-radius: 999px;
+  background: var(--raised-2);
+  transform: translateX(calc(var(--slot) * (100% + 2px)));
+}
+/* it only slides when someone is using it, never when a view is restored on launch */
+.insp-tabs:hover::before,
+.insp-tabs:focus-within::before {
+  transition: transform 0.24s cubic-bezier(0.3, 0.7, 0.2, 1);
 }
 .insp-tab {
-  flex: 1;
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  height: 28px;
+  padding: 0 8px;
   border: 0;
-  border-radius: var(--r-ctl);
+  border-radius: 999px;
   background: transparent;
   color: var(--dim);
-  font: 600 11px var(--font);
-  padding: 6px 4px;
+  font: 600 11.5px var(--font);
   cursor: pointer;
+  transition: color 0.12s ease;
 }
 .insp-tab svg {
-  width: 13px;
-  height: 13px;
-  stroke: currentColor;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  fill: none;
-  flex-shrink: 0;
+  display: none;
 }
-.insp-tab:hover:not(.on) {
-  color: var(--text);
-}
+.insp-tab:hover:not(.on),
 .insp-tab.on {
   color: var(--text);
 }
@@ -756,6 +776,11 @@ body.workspace-overlay .panel-heading {
   outline: 2px solid var(--accent-light);
   outline-offset: -2px;
   color: var(--text);
+}
+@media (prefers-reduced-motion: reduce) {
+  .insp-tabs::before {
+    transition: none !important;
+  }
 }
 #right-scroll {
   display: flex;
@@ -2219,29 +2244,6 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
 #left,
 #right {
   background: var(--panel);
-}
-/* section tabs are marked by ink and a rule rather than a fill, so they never read as another
-   segmented control next to the choices inside a section */
-.insp-tabs {
-  flex: 0 0 40px;
-  align-items: stretch;
-  gap: 3px;
-  padding: 0 var(--panel-inset);
-  border-bottom: 1px solid var(--hair);
-}
-.insp-tab {
-  position: relative;
-  border-radius: 0;
-}
-.insp-tab.on::after {
-  content: "";
-  position: absolute;
-  left: 12px;
-  right: 12px;
-  bottom: -1px;
-  height: 2px;
-  border-radius: 2px 2px 0 0;
-  background: var(--text);
 }
 
 /* visually hidden, still read by assistive technology */

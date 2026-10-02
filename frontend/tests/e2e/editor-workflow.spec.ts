@@ -506,7 +506,8 @@ test("Inspector content aligns with tabs and footer without empty scrolling", as
     await expect(async () => {
       const edges = await page.evaluate(() => {
         const rect = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
-        return { tab: rect("#insp-tab-export").right, field: rect("#prof-card").right, footer: rect(".export-actions").right, start: rect("#insp-tab-edit").left, contentStart: rect("#profile-card").left };
+        // the pill's ring is the visible edge of the tabs
+        return { tab: rect("#insp-tabs").right, field: rect("#prof-card").right, footer: rect(".export-actions").right, start: rect("#insp-tabs").left, contentStart: rect("#profile-card").left };
       });
       expect(edges.tab).toBeCloseTo(edges.field, 0);
       expect(edges.footer).toBeCloseTo(edges.field, 0);
@@ -534,9 +535,9 @@ test("export controls have balanced insets and timeline text shares a baseline",
       footerInsets: [button.top-footer.top,footer.bottom-button.bottom,button.left-footer.left,footer.right-actions.right],
     };
   });
-  // tabs fill their row down to its hairline, where the selected tab's rule sits
-  expect(geometry.tabInsets.top).toBeCloseTo(0, 0);
-  expect(geometry.tabInsets.bottom).toBeCloseTo(1, 0);
+  // the pill rings the chosen view evenly
+  expect(geometry.tabInsets.top).toBeCloseTo(2, 0);
+  expect(geometry.tabInsets.bottom).toBeCloseTo(2, 0);
   // the task switch sits in the middle of the window, centred in the bottom bar's height
   expect(Math.abs(geometry.taskCentre)).toBeLessThanOrEqual(1);
   expect(Math.abs(geometry.taskInsets[0]! - geometry.taskInsets[1]!)).toBeLessThanOrEqual(1);
@@ -651,7 +652,7 @@ test("panel edges stay aligned when scrollbars reserve no space", async ({ page 
   await page.getByRole("button", { name: "Add videos" }).click();
   await expect.poll(() => page.evaluate(() => {
     const rect = (s: string) => document.querySelector(s)!.getBoundingClientRect();
-    return Math.abs(rect("#profile-card").left - rect("#insp-tab-edit").left)
+    return Math.abs(rect("#profile-card").left - rect("#insp-tabs").left)
       + Math.abs(rect("#profile-card").right - rect(".export-actions").right)
       + Math.abs(rect(".clip").left - rect("#btn-add").left);
   })).toBeLessThan(1);

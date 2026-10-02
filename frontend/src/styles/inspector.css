@@ -77,18 +77,6 @@
   background: var(--panel);
 }
 
-.insp-tabs {
-  gap: 0;
-  padding-inline: var(--inspector-content-inset);
-}
-.insp-tab {
-  gap: 0;
-  font-size: 11.5px;
-}
-.insp-tab svg {
-  display: none;
-}
-
 #right-scroll {
   padding: 0 var(--panel-inset) var(--panel-inset);
 }
