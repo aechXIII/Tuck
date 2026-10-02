@@ -16,6 +16,32 @@ test("timeline height bounds preserve a usable preview at supported window sizes
   });
 });
 
+test("a 16:9 video fills the player at the timeline height measured from the stage", () => {
+  // a 612 wide stage needs 344 px for 16:9; at 431 px tall the timeline can take 87 more
+  assert.equal(layout.timelineHeightForFrame(191, 612, 431), 278);
+  // a wide, short stage would need a negative timeline: no 16:9 fit
+  assert.equal(layout.timelineHeightForFrame(191, 924, 271) < 170, true);
+  assert.equal(layout.timelineHeightForFrame(191, 0, 431), null);
+  assert.equal(layout.timelineHeightForFrame(Number.NaN, 612, 431), null);
+});
+
+test("the automatic height keeps every track and grows for a 16:9 fit within the bounds", () => {
+  assert.equal(layout.automaticTimelineHeight(191, 278, 800), 278);
+  // tracks win when 16:9 would hide part of them
+  assert.equal(layout.automaticTimelineHeight(191, 175, 1080), 191);
+  assert.equal(layout.automaticTimelineHeight(191, null, 800), 191);
+  // a tall window adds at most 100 px of empty timeline, keeping the side panels' height
+  assert.equal(layout.automaticTimelineHeight(191, 578, 1100), 291);
+  // and never past the bounds that keep the preview usable
+  assert.equal(layout.automaticTimelineHeight(400, 600, 800), 440);
+});
+
+test("dragging the timeline near the automatic height lands on it", () => {
+  assert.equal(layout.snapTimelineHeight(270, 278), 278);
+  assert.equal(layout.snapTimelineHeight(250, 278), 250);
+  assert.equal(layout.snapTimelineHeight(250, null), 250);
+});
+
 test("automatic timeline height fits the default tracks and grows for imported audio", () => {
   assert.equal(layout.timelineAutoHeight(0, 900), 190);
   assert.equal(layout.timelineAutoHeight(2, 900), 190);

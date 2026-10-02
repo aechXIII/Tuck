@@ -458,7 +458,8 @@ test("the audio source range picker sizes its window to the selection and stays 
 });
 
 test("track additions and removals resize a manually sized timeline", async ({ page }) => {
-  await page.setViewportSize({ width: 1240, height: 800 });
+  // wide enough that the player cannot reach 16:9, so the automatic height follows the tracks alone
+  await page.setViewportSize({ width: 1920, height: 1080 });
   await installFakeBackend(page, editorFixture());
   await page.goto("/");
   await page.getByRole("button", { name: "Add videos" }).click();

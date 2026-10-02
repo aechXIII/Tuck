@@ -1,6 +1,7 @@
 import { getBackendClient, hasBackendClient } from "../../backend/client.ts";
 import { probeStatus } from "../../state/probe.ts";
 import * as TuckLayout from "../../ui/layout.ts";
+import { applyPlayerFit, displayAspect, stageBaseSize } from "../player/player-fit.ts";
 import { formatTime } from "../editor/format.ts";
 import type { EditorClip, EditorSession } from "../editor/session.ts";
 import { toast } from "../editor/toast.ts";
@@ -1369,7 +1370,12 @@ function fitTimeline() {
   applyTimelineZoom(0);
 }
 
-let timelineResizeState: { pointerId: number; startY: number; startHeight: number } | null = null;
+let timelineResizeState: {
+  pointerId: number;
+  startY: number;
+  startHeight: number;
+  snapTarget: number;
+} | null = null;
 let timelineHeightSetting = 0;
 let timelineTrackCount = 2;
 
@@ -1385,12 +1391,39 @@ function updateTimelineResizeA11y(height: number) {
 
 function refreshAfterTimelineResize() {
   applyTimelineZoom();
+  applyPlayerFit(documentRef);
   host.paintCropOverlay?.();
+}
+
+// measured before the height changes, while the stage and the timeline still describe one layout;
+// the stage is taken without the player fit, so the fit never feeds back into this choice
+function frameFitHeight(): number | null {
+  const editor = byId("audio-editor");
+  const base = stageBaseSize(documentRef);
+  if (!editor || !base) return null;
+  return TuckLayout.timelineHeightForFrame(
+    editor.getBoundingClientRect().height,
+    base.width,
+    base.height,
+    displayAspect(documentRef),
+  );
+}
+
+// height the tracks do not need goes to the Video and Source audio rows instead of sitting empty
+// under them; measured with the rows at their own size
+function stretchTracks(editor: HTMLElement) {
+  const frame = byId("sequence-frame");
+  const stack = byId("sequence-stack");
+  if (!frame || !stack) return;
+  const spare = Math.floor(frame.clientHeight - stack.offsetHeight);
+  if (spare > 0) editor.style.setProperty("--track-stretch", spare + "px");
 }
 
 function applyTimelineHeight(value: number) {
   let editor = byId("audio-editor");
   if (!editor || !TuckLayout) return 0;
+  const frameHeight = value <= 0 ? frameFitHeight() : null;
+  editor.style.removeProperty("--track-stretch");
   let height = TuckLayout.clampTimelineHeight(
     value,
     windowRef.innerHeight,
@@ -1407,9 +1440,11 @@ function applyTimelineHeight(value: number) {
         windowRef.innerHeight,
         timelineTrackCount,
       );
-      editor.style.height = height + "px";
     }
+    height = TuckLayout.automaticTimelineHeight(height, frameHeight, windowRef.innerHeight);
+    editor.style.height = height + "px";
   }
+  stretchTracks(editor);
   updateTimelineResizeA11y(height);
   refreshAfterTimelineResize();
   return height;
@@ -1459,10 +1494,15 @@ function beginTimelineResize(event: PointerEvent) {
   let separator = byId("timeline-resizer");
   if (!editor || !separator) return;
   event.preventDefault();
+  const startHeight = editor.getBoundingClientRect().height;
+  // the automatic height is the snap point; finding it means laying it out once, in the same frame
+  const snapTarget = applyTimelineHeight(0);
+  applyTimelineHeight(startHeight);
   timelineResizeState = {
     pointerId: event.pointerId,
     startY: event.clientY,
-    startHeight: editor.getBoundingClientRect().height,
+    startHeight,
+    snapTarget,
   };
   documentRef.body.classList.add("timeline-resizing");
   if (separator.setPointerCapture && event.pointerId != null) {
@@ -1476,7 +1516,10 @@ function moveTimelineResize(event: PointerEvent) {
   if (!timelineResizeState || event.pointerId !== timelineResizeState.pointerId) return;
   event.preventDefault();
   applyTimelineHeight(
-    timelineResizeState.startHeight + timelineResizeState.startY - event.clientY,
+    TuckLayout.snapTimelineHeight(
+      timelineResizeState.startHeight + timelineResizeState.startY - event.clientY,
+      timelineResizeState.snapTarget,
+    ),
   );
 }
 
@@ -1484,6 +1527,7 @@ function endTimelineResize(event: PointerEvent) {
   if (!timelineResizeState || event.pointerId !== timelineResizeState.pointerId) return;
   let separator = byId("timeline-resizer");
   let editor = byId("audio-editor");
+  const snapTarget = timelineResizeState.snapTarget;
   timelineResizeState = null;
   documentRef.body.classList.remove("timeline-resizing");
   if (
@@ -1494,7 +1538,10 @@ function endTimelineResize(event: PointerEvent) {
   ) {
     separator.releasePointerCapture(event.pointerId);
   }
-  if (editor) saveTimelineHeight(editor.getBoundingClientRect().height);
+  if (!editor) return;
+  const height = Math.round(editor.getBoundingClientRect().height);
+  // landing on the snap point keeps the height automatic, so it keeps following the panels
+  saveTimelineHeight(height === snapTarget ? 0 : height);
 }
 
 function handleTimelineResizeKey(event: KeyboardEvent) {
@@ -1530,6 +1577,31 @@ function initTimelineResizer() {
   windowRef.addEventListener("pointercancel", endTimelineResize);
   separator.addEventListener("keydown", handleTimelineResizeKey);
   separator.addEventListener("dblclick", resetTimelineHeight);
+  // a new video, a new crop or rotation, or a panel opening changes what the player has to fit
+  const refit = function () {
+    if (timelineResizeState) return;
+    applyTimelineHeight(timelineHeightSetting);
+  };
+  const stage = byId("stage");
+  const viewport = byId("media-viewport");
+  byId("vid")?.addEventListener("loadedmetadata", refit);
+  documentRef.addEventListener("fullscreenchange", refit);
+  if (stage && viewport && typeof ResizeObserver !== "undefined") {
+    let fittedWidth = -1;
+    let fittedAspect: number | null = null;
+    new ResizeObserver(function () {
+      const width = Math.round(stage.getBoundingClientRect().width);
+      if (width === fittedWidth) return;
+      fittedWidth = width;
+      refit();
+    }).observe(stage);
+    new ResizeObserver(function () {
+      const aspect = displayAspect(documentRef);
+      if (aspect === null || (fittedAspect !== null && Math.abs(aspect - fittedAspect) < 0.001)) return;
+      fittedAspect = aspect;
+      refit();
+    }).observe(viewport);
+  }
   restoreTimelineHeight(TuckLayout.initialTimelineHeightSetting(session.appSettings));
 }
 

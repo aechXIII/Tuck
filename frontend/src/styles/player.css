@@ -1,6 +1,9 @@
+/* the card hugs the picture: width it gives up is split as margins so it stays centred, height
+   it gives up is left below it */
 #center {
   flex: 1 1 0;
-  height: 100%;
+  height: calc(100% - var(--fit-center-shrink-y, 0px));
+  margin-inline: calc(var(--fit-center-shrink-x, 0px) / 2);
   min-height: 0;
   background: var(--panel);
   border-radius: var(--r-card);
@@ -22,14 +25,23 @@
   font-size: 18px;
   font-weight: 600;
 }
+/* bars around a video that is not the player's shape take the card's colour, so the video sits
+   on the card instead of in a black box; full screen stays black */
 #stage {
   flex: 1 1 0;
   min-height: 0;
-  background: #000;
+  background: var(--panel);
   border-radius: 8px 8px 0 0;
   overflow: hidden;
   position: relative;
   display: none;
+}
+#center:fullscreen {
+  height: 100%;
+  margin: 0;
+}
+#center:fullscreen #stage {
+  background: #000;
 }
 #player-bar {
   display: none;

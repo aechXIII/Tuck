@@ -591,17 +591,19 @@ body.task-cut #timeline-audio-tools {
   color: var(--danger);
 }
 
+/* --track-stretch is the timeline height the tracks do not need; the Video and Source audio
+   rows share it, so a tall timeline has bigger rows instead of empty space */
 .seq-row.video .seq-head {
-  height: 60px;
+  height: calc(60px + var(--track-stretch, 0px) * 0.6);
 }
 
 .seq-row.video .seq-lane {
-  height: 48px;
+  height: calc(48px + var(--track-stretch, 0px) * 0.6);
   transform: none;
 }
 
 #video-track #timeline.seq-lane {
-  height: 48px;
+  height: calc(48px + var(--track-stretch, 0px) * 0.6);
 }
 
 .seq-row.audio .seq-head {
@@ -611,6 +613,14 @@ body.task-cut #timeline-audio-tools {
 .seq-row.audio .seq-lane {
   height: 24px;
   transform: none;
+}
+
+#source-audio-track .seq-head {
+  height: calc(42px + var(--track-stretch, 0px) * 0.4);
+}
+
+#source-audio-track .seq-lane {
+  height: calc(24px + var(--track-stretch, 0px) * 0.4);
 }
 
 /* separator between rows only, so the last row adds no trailing height and
