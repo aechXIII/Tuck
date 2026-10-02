@@ -582,7 +582,13 @@ test("Exact is chosen by pointer or keyboard and shows what is re-encoded", asyn
 
 test("changing precision keeps the Inspector steady and does not read keyframes again", async ({page}) => {
   await setup(page,{exact:true,holdExportPlan:true});
+  // a Compress preview plan may or may not land before the switch, so only cut plans are counted
+  const cutPlans = () => page.evaluate(() => window.__tuckFakeBackendCalls
+    ?.filter(call => call.method === "createPlan" && (call.args[0] as {operation?:string}).operation === "cut")
+    .map(call => (call.args[0] as {precision?:string}).precision));
   await page.locator("#wf-l").click();
+  await expect.poll(cutPlans).toEqual(["keyframes"]);
+  await expect(page.locator("#cut-list .cut-status")).toHaveText("Starts at the beginning · Ends 3 frames early");
   await expect(page.locator("#btn-one")).toBeEnabled();
   const before = await page.locator("#insp-cut").boundingBox();
   await page.evaluate(() => {
@@ -591,7 +597,7 @@ test("changing precision keeps the Inspector steady and does not read keyframes 
       .observe(button,{attributes:true,attributeFilter:["disabled"]});
   });
   await page.getByRole("radio",{name:/Exact/}).click();
-  await expect.poll(() => page.evaluate(() => window.__tuckFakeBackendCalls?.filter(call => call.method === "createPlan").length)).toBe(2);
+  await expect.poll(cutPlans).toEqual(["keyframes","exact"]);
   // the new plan is held; the last one stays on screen and the button stays usable
   await expect(page.locator("#btn-one")).toHaveText("Export cut");
   await expect(page.locator("#btn-one")).toBeEnabled();
@@ -600,6 +606,7 @@ test("changing precision keeps the Inspector steady and does not read keyframes 
   await expect(page.locator("#out-name")).toHaveText("Morning ride_cut.mp4");
   expect((await page.locator("#insp-cut").boundingBox())?.height).toBe(before?.height);
   expect(await page.evaluate(() => document.body.dataset.exportBlinked)).toBeUndefined();
+  expect(await cutPlans()).toEqual(["keyframes","exact"]);
   // an export clicked now waits for the new plan and sends that one
   await page.locator("#btn-one").click();
   await page.evaluate(() => window.__tuckReleaseHeld?.("cut-plan"));
