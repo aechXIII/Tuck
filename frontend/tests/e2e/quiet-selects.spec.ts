@@ -1,5 +1,52 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { healthyBackendFixture, installFakeBackend } from "../fixtures/fake-backend";
+
+async function expectTriggerToggle(page: Page, id: string) {
+  const trigger = page.locator(`#${id}-trigger`);
+  const popup = page.locator(`#${id}-popup`);
+  const value = await page.locator(`#${id}`).inputValue();
+  await trigger.click();
+  await expect(popup).toBeVisible();
+  const bounds = (await trigger.boundingBox())!;
+  const x = bounds.x + bounds.width / 2;
+  const y = bounds.y + bounds.height / 2;
+  for (let index = 0; index < 2; index++) {
+    await page.mouse.click(x, y);
+    await expect(popup).toBeHidden();
+    await expect(trigger).toHaveAttribute("aria-expanded", "false");
+    await expect(trigger).toBeFocused();
+    await expect(page.locator(`#${id}`)).toHaveValue(value);
+    await page.mouse.click(x, y);
+    await expect(popup).toBeVisible();
+    await expect(trigger).toHaveAttribute("aria-expanded", "true");
+  }
+  await page.keyboard.press("Escape");
+  await expect(popup).toBeHidden();
+  await expect(trigger).toBeFocused();
+}
+
+for (const width of [1240, 960]) {
+  test(`clicking the same dropdown trigger toggles its menu at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: width === 960 ? 640 : 800 });
+    const fixture = healthyBackendFixture();
+    fixture.responses.getSettings = {
+      ...fixture.responses.getSettings as object,
+      default_profile_id: "profile-0",
+      profiles: Array.from({ length: 8 }, (_, index) => ({
+        profile_id: `profile-${index}`, name: `Profile ${index}`, workflow: "compression",
+        resolution_mode: "source", fps_mode: "source",
+      })),
+    };
+    await installFakeBackend(page, fixture);
+    await page.goto("/");
+    if (width === 960) await page.getByRole("button", { name: "Inspector", exact: true }).click();
+    await expectTriggerToggle(page, "export-res-select");
+    await expectTriggerToggle(page, "export-fps-select");
+    await page.getByRole("button", { name: "Settings", exact: true }).click();
+    await expectTriggerToggle(page, "set-ds");
+    await expectTriggerToggle(page, "set-dp");
+  });
+}
 
 test("Quiet dropdowns show compact labels and a neutral selection", async ({ page }) => {
   await installFakeBackend(page, healthyBackendFixture());

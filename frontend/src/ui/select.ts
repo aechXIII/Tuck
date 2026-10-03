@@ -62,6 +62,8 @@ export function installSelectControls(
     popup.id = `${id}-popup`;
     popup.className = "select-popup";
     popup.setAttribute("popover", "auto");
+    // the trigger belongs to the popover, so clicking it must not dismiss before toggling
+    trigger.setAttribute("popovertarget", popup.id);
     const searchRow = doc.createElement("div");
     searchRow.className = "select-search";
     const search = doc.createElement("input");
@@ -225,7 +227,10 @@ export function installSelectControls(
       }
     }
 
-    trigger.addEventListener("click", () => { if (isOpen()) close(); else open(); });
+    trigger.addEventListener("click", event => {
+      event.preventDefault();
+      if (isOpen()) close(); else open();
+    });
     trigger.addEventListener("keydown", keydown);
     popup.addEventListener("keydown", keydown);
     popup.addEventListener("toggle", () => { if (!isOpen()) close(); });
