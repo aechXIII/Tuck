@@ -285,12 +285,6 @@ body.task-cut #timeline-audio-tools {
     padding var(--workspace-motion),
     visibility 0s linear 180ms;
 }
-@media (prefers-reduced-motion: reduce) {
-  #timeline-audio-tools,
-  body.task-cut #timeline-audio-tools {
-    transition: none;
-  }
-}
 
 .timeline-tool-label {
   margin-right: 1px;
@@ -1007,20 +1001,6 @@ body.task-cut #timeline-audio-tools {
 .edge-chip.in-clip:not(:focus-visible) {
   opacity: 0;
   pointer-events: none;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .tl-segment,
-  .seq-track-mute,
-  .seq-track-remove,
-  .timeline-tool-group button {
-    transition: none;
-  }
-
-  .timeline-switch,
-  .timeline-switch-thumb {
-    transition: none;
-  }
 }
 
 .tl-handle.sr-handle {

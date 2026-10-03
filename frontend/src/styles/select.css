@@ -24,4 +24,3 @@
 .select-empty { margin: 10px; color: var(--muted); font: 400 11px/1.5 var(--font); }
 .select-popup [hidden] { display: none; }
 @keyframes select-enter { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
-@media (prefers-reduced-motion: reduce) { .select-popup:popover-open { animation: none; } }

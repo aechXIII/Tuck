@@ -77,14 +77,14 @@ test("the thumb sits under the chosen task, also when a task is hidden", async (
   await open(page, { holdPlans: true });
   for (const id of ["wf-c", "wf-u", "wf-l"]) {
     await page.locator(`#${id}`).click();
-    expect(await thumbOver(page, id)).toBeLessThanOrEqual(1);
+    await expect.poll(() => thumbOver(page, id)).toBeLessThanOrEqual(1);
   }
 
   await open(page, { holdPlans: true, hidden: ["upscale"] });
   await expect(page.locator("#wf-u")).toBeHidden();
   for (const id of ["wf-l", "wf-c"]) {
     await page.locator(`#${id}`).click();
-    expect(await thumbOver(page, id)).toBeLessThanOrEqual(1);
+    await expect.poll(() => thumbOver(page, id)).toBeLessThanOrEqual(1);
   }
 });
 
@@ -380,6 +380,6 @@ test("the Inspector's This video and Export switch slides its thumb under the ch
   for (const id of ["insp-tab-edit", "insp-tab-export"]) {
     await page.locator(`#${id}`).click();
     await expect(page.locator(`#${id}`)).toHaveAttribute("aria-pressed", "true");
-    expect(await offset(id)).toBeLessThanOrEqual(1);
+    await expect.poll(() => offset(id)).toBeLessThanOrEqual(1);
   }
 });

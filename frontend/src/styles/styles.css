@@ -777,11 +777,6 @@ body.workspace-overlay .panel-heading {
   outline-offset: -2px;
   color: var(--text);
 }
-@media (prefers-reduced-motion: reduce) {
-  .insp-tabs::before {
-    transition: none !important;
-  }
-}
 #right-scroll {
   display: flex;
   flex-direction: column;
@@ -1606,9 +1601,6 @@ label.toggle-row {
 .toggle-row input:disabled + .toggle-track {
   opacity: .4;
 }
-@media (prefers-reduced-motion: reduce) {
-  .toggle-track, .toggle-track::after { transition: none; }
-}
 @media (forced-colors: active) {
   .toggle-track { background: Canvas; border-color: ButtonText; }
   .toggle-track::after { background: ButtonText; }
@@ -2150,15 +2142,6 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
   #insp-audio,
   #insp-export {
     overflow: visible;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .toast {
-    animation: none;
-  }
-  * {
-    transition: none !important;
-    animation: none !important;
   }
 }
 .settings-sec {

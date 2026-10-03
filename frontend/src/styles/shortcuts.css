@@ -319,9 +319,3 @@
     height: 36px;
   }
 }
-@media (prefers-reduced-motion: reduce) {
-  .kbs-key,
-  .kbs-search {
-    transition: none;
-  }
-}

@@ -157,7 +157,7 @@ test("long profile lists support search, empty results, and repeated Settings na
     return bounds.top >= 8 && bounds.bottom <= innerHeight - 8 && bounds.left >= 8 && bounds.right <= innerWidth - 8;
   });
   expect(fits).toBe(true);
-  expect(await popup.evaluate(element => getComputedStyle(element).animationName)).toBe("none");
+  expect(await popup.evaluate(element => getComputedStyle(element).animationName)).toBe("select-enter");
   await search.press("Escape");
   for (let index = 0; index < 3; index++) {
     await page.getByRole("button", { name: "Output & naming", exact: true }).click();

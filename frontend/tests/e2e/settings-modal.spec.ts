@@ -64,7 +64,7 @@ test("settings keeps a visible sidebar and footer at the minimum window size", a
   await expect(page.locator("#settings-nav-general")).toBeInViewport();
   expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   await page.emulateMedia({ reducedMotion: "reduce" });
-  expect(await dialog.evaluate((element) => getComputedStyle(element).animationName)).toBe("none");
+  expect(await dialog.evaluate((element) => getComputedStyle(element).animationName)).toBe("settings-enter");
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
   await expect(page.getByRole("button", { name: "Settings", exact: true })).toBeFocused();

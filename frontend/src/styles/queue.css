@@ -395,9 +395,3 @@
     display: none;
   }
 }
-@media (prefers-reduced-motion: reduce) {
-  .task-tab,
-  #task-wf.thumb-slides::before {
-    transition: none;
-  }
-}

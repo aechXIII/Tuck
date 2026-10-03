@@ -117,6 +117,9 @@ for (const width of [1240, 960]) {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await open(page);
     if (width === 960) await page.getByRole("button", { name: "Inspector", exact: true }).click();
+    await page.locator("#right").evaluate(async element => {
+      await Promise.all(element.getAnimations().map(animation => animation.finished));
+    });
     const cardBounds = (await page.locator("#prof-card").boundingBox())!;
     const widgetBounds = (await page.locator("#profile-card").boundingBox())!;
     const triggerBounds = (await page.locator("#prof-pick").boundingBox())!;

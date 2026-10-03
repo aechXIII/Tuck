@@ -195,15 +195,6 @@ body:not(.task-cut) #stage-controls [data-cut-only] {
 .cut-point.late .cut-point-late {
   display: inline-block;
 }
-@media (prefers-reduced-motion: reduce) {
-  #stage-controls [data-cut-only],
-  body:not(.task-cut) #stage-controls [data-cut-only],
-  .cut-point,
-  .cut-point-set,
-  .cut-point-time {
-    transition: none;
-  }
-}
 .pbtn {
   background: transparent;
   border: none;

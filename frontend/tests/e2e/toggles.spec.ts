@@ -21,7 +21,7 @@ for (const width of [1240, 960]) {
     await expect(blend).toBeChecked();
     await expect(linear).toBeEnabled();
     await expect(page.locator("#blend-enabled + .toggle-track")).toHaveCSS("outline-style", "solid");
-    await expect(page.locator("#blend-enabled + .toggle-track")).toHaveCSS("transition-duration", "0s");
+    await expect(page.locator("#blend-enabled + .toggle-track")).toHaveCSS("transition-duration", "0.16s, 0.16s");
     await page.getByText("Blend in linear light", { exact: true }).click();
     await expect(linear).toBeChecked();
     await page.screenshot({ path: testInfo.outputPath(`effects-${width}.png`) });

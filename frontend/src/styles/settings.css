@@ -723,12 +723,10 @@ label.settings-option {
 .settings-output-location .btn2 {
   background: var(--raised);
 }
-@media (prefers-reduced-motion: no-preference) {
-  body.settings-open .settings-dialog {
-    animation: settings-enter 160ms cubic-bezier(0.22, 1, 0.36, 1);
-  }
-  @keyframes settings-enter {
-    from { opacity: 0.8; transform: translateY(6px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
+body.settings-open .settings-dialog {
+  animation: settings-enter 160ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes settings-enter {
+  from { opacity: 0.8; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
