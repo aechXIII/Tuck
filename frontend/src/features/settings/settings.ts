@@ -52,6 +52,7 @@ import type { EditorSession } from "../editor/session.ts";
 const esc = escapeHtml;
 
 export interface SettingsDeps {
+  syncSelects: () => void;
   session: EditorSession;
   byId: <T extends HTMLElement = HTMLElement>(id: string) => T | null;
   getBackendClient: () => BackendClient;
@@ -585,10 +586,12 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       select("pe-speed").value,
       select("pe-enc").value,
     );
+    deps.syncSelects();
   }
 
   function pePresetChanged(): void {
     select("pe-speed").value = speedForNativePreset(select("pe-preset").value);
+    deps.syncSelects();
   }
 
   function peVisibility(): void {
@@ -616,6 +619,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     el("pe-tune-row").classList.toggle("hid", !(up && cpu));
     el("pe-transform-fields").classList.toggle("hid", !input("pe-transform-enabled").checked);
     el("pe-quality-label").textContent = rc === "CRF" ? "CRF" : "CQ";
+    deps.syncSelects();
   }
 
   function peToggleAdvanced(): void {
@@ -898,7 +902,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     <div class="settings-grid">
       <div class="settings-field">
         <label for="set-dp">Default profile</label>
-        <select id="set-dp" data-settings-change="mark-dirty">${options}</select>
+        <select id="set-dp" data-search="Search profiles" data-empty-label="No profiles available" data-settings-change="mark-dirty">${options}</select>
       </div>
       <div class="settings-field">
         <label for="set-ds">Default scaler</label>
@@ -1254,6 +1258,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     if (settingsPage === "system")
       select("set-encoder-cache-days").value = String(s.encoder_cache_days || 0);
     if (["general", "output", "system"].indexOf(settingsPage) >= 0) captureSettingsSnapshot();
+    deps.syncSelects();
   }
 
   function navigateSettings(page: string): void {
@@ -1416,6 +1421,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     offer("set-start-task", "last", (value) => value === "last" || !isTaskName(value) || visible.includes(value));
     offer("set-inspector-start", "export", (value) =>
       !(value === "video" && hidden.has("panel_video") && hidden.has("panel_audio")));
+    deps.syncSelects();
   }
 
   async function saveOutputSettings(): Promise<void> {

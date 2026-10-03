@@ -1,3 +1,4 @@
+import { chooseSelect } from "../fixtures/select";
 import { expect, test } from "@playwright/test";
 import { healthyBackendFixture, installFakeBackend } from "../fixtures/fake-backend";
 
@@ -142,11 +143,11 @@ test("blending errors leave the LUT preview enabled and FPS controls stay synchr
   await expect(page.getByLabel("Apply LUT",{exact:true})).toBeChecked();
   const blendFps = page.getByLabel("Frame blending output frame rate",{exact:true});
   const videoFps = page.getByLabel("Output frame rate",{exact:true});
-  await blendFps.selectOption("60");
-  await expect(videoFps).toHaveValue("60");
-  await videoFps.selectOption("30");
-  await expect(blendFps).toHaveValue("30");
-  await blendFps.selectOption("custom");
+  await chooseSelect(page, blendFps, "60");
+  await expect(page.locator("#export-fps-select")).toHaveValue("60");
+  await chooseSelect(page, videoFps, "30");
+  await expect(page.locator("#blend-fps-select")).toHaveValue("30");
+  await chooseSelect(page, blendFps, "custom");
   const custom = page.getByLabel("Frame blending custom frame rate",{exact:true});
   await expect(custom).toBeFocused();
   await custom.fill("59.94");

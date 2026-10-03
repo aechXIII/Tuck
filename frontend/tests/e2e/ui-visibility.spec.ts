@@ -1,3 +1,4 @@
+import { chooseSelect } from "../fixtures/select";
 import {expect, test, type Page} from "@playwright/test";
 import {healthyBackendFixture, installFakeBackend} from "../fixtures/fake-backend";
 
@@ -61,7 +62,7 @@ test("Settings keeps one task on and applies what is hidden", async ({page}) => 
   await cut.uncheck();
   await expect(compress).toBeDisabled();
   await expect(page.locator('#set-start-task option[value="cut"]')).toBeDisabled();
-  await page.locator("#set-start-task").selectOption("compression");
+  await chooseSelect(page, page.locator("#set-start-task-trigger"), "compression");
   await page.getByRole("switch", {name:"Transform"}).uncheck();
   // This video still holds Audio, so it can still open on launch
   await expect(page.locator('#set-inspector-start option[value="video"]')).toBeEnabled();

@@ -1,5 +1,7 @@
 import { installPanelScrollSpacing } from "../../ui/panel-scroll-spacing.ts";
 import { installFocusRings } from "../../ui/focus-rings.ts";
+import { installSelectControls } from "../../ui/select.ts";
+import { selectGuidance } from "../export/select-guidance.ts";
 import { getBackendClient, hasBackendClient } from "../../backend/client.ts";
 import { hasTauriInvoke } from "../../backend/index.ts";
 import type { BackendClient } from "../../backend/types.ts";
@@ -94,6 +96,7 @@ export function installEditorRuntime(
 ): EditorRuntime {
   installPanelScrollSpacing(windowRef.document);
   installFocusRings(windowRef.document);
+  const selects = installSelectControls(windowRef.document, selectGuidance);
   const session = createEditorSession();
   let started = false;
   let shellReady = false;
@@ -358,6 +361,7 @@ export function installEditorRuntime(
     session,
     byId,
     getBackendClient,
+    syncSelects: () => selects.sync(windowRef.document),
     syncTransformControls: () => transform.syncTransformControls(),
     paintCropOverlay: () => transform.paintCropOverlay(),
     cropTransformForRequest: (clip) => transform.cropTransformForRequest(clip),
@@ -396,6 +400,7 @@ export function installEditorRuntime(
     session,
     byId,
     getBackendClient,
+    syncSelects: () => selects.sync(windowRef.document),
     reloadEditorSettings: async () => {
       await encoding.loadSettings();
       panels.applyVisibility(hiddenParts(session.appSettings.hidden_ui));
@@ -404,6 +409,8 @@ export function installEditorRuntime(
     copyDiagnostics: () => queue.copyDiagnostics(),
     checkForUpdates: () => checkUpdatesFromSettings(),
   });
+
+  selects.sync(windowRef.document);
 
   shortcutDialog = installShortcutDialog({
     document: {

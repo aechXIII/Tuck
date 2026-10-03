@@ -5,6 +5,7 @@ import "./inspector.css";
 import "./export.css";
 import "./shortcuts.css";
 import "./settings.css";
+import "./select.css";
 import "./player.css";
 import "./audio.css";
 import "./timeline.css";

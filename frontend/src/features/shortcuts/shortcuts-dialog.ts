@@ -66,13 +66,15 @@ export function installShortcutDialog(host: ShortcutDialogHost): ShortcutDialogA
     const target =
       ((event as { target?: FocusTarget | null } | null | undefined)?.target) ||
       (host.document.activeElement as FocusTarget | null);
-    const textEntryFocused = !!(
+    const choiceFocused = !!(target && typeof target.matches === "function" &&
+      target.matches('.select-trigger, #prof-pick, #lut-name, [popover]:popover-open *'));
+    const textEntryFocused = choiceFocused || !!(
       target &&
       ((typeof target.matches === "function" &&
-        target.matches("input, select, textarea")) ||
+        target.matches('input, select, textarea, [role="combobox"]')) ||
         target.isContentEditable)
     );
-    const formControlFocused = !!(
+    const formControlFocused = choiceFocused || !!(
       target &&
       ((typeof target.matches === "function" &&
         target.matches("input, select, textarea, button")) ||

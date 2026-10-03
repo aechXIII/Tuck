@@ -15,11 +15,12 @@ test("control icons load under the packaged content security policy", async ({ p
   await installFakeBackend(page, healthyBackendFixture());
   await page.goto("/");
   await page.getByRole("button", { name: "Settings", exact: true }).click();
-  const select = page.locator(".settings-dialog select").first();
-  const background = await select.evaluate(el => getComputedStyle(el).backgroundImage);
-  expect(background).toContain("select-chevron");
-  expect(background).not.toContain("data:");
-  const url = background.slice(5, -2);
-  expect((await page.request.get(url)).ok()).toBe(true);
+  const select = page.locator("#set-ds-trigger");
+  await expect(select.locator("svg path")).toHaveAttribute("d", "m3 4.5 3 3 3-3");
+  const icon = await select.locator("svg").boundingBox();
+  expect(icon!.width).toBe(12);
+  expect(icon!.height).toBe(12);
+  await select.click();
+  await expect(page.locator(".select-popup:popover-open")).toBeVisible();
   expect(blocked).toEqual([]);
 });

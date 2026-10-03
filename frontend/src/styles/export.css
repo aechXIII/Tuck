@@ -467,20 +467,21 @@
   color: var(--dim);
   font-size: 10.5px;
 }
-/* every input inside a group body is the same quiet raised pill */
+/* keep custom dropdowns and number fields aligned */
 .adjust-panel-body select,
 .adjust-panel-body input[type="number"],
 .adjust-panel-body input[type="text"] {
   flex: 1;
   min-width: 0;
-  height: 26px;
+  height: 33px;
   padding: 0 10px;
   border: 0;
   border-radius: var(--r-ctl);
   background: var(--raised);
   color: var(--text);
-  font-size: 10.5px;
+  font-size: 12px;
 }
+#right .adjust-panel-body :is(input[type="number"], input[type="text"]) { border-radius: var(--r-ctl); }
 .export-video-body { display: grid; gap: 8px; }
 .video-control-group { display: grid; grid-template-columns: 80px minmax(0, 1fr); gap: 8px 10px; align-items: center; min-width: 0; }
 .video-control-group > label { color: var(--text); font-size: 11px; }
@@ -492,7 +493,7 @@
 .video-fps-controls { display: grid; gap: 8px; min-width: 0; }
 .video-fps-value { display: flex; align-items: center; min-width: 0; background: var(--raised); border-radius: var(--r-ctl); padding-right: 8px; color: var(--muted); font-size: 10px; }
 .video-fps-value input { width: 100%; }
-.export-video-body :is(input[type="number"], select) { height: 28px; min-width: 0; }
+.export-video-body input[type="number"] { height: 33px; min-width: 0; }
 .export-video-body :is(input, select, summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .export-video-body [hidden] { display: none; }
 #right-foot {
@@ -568,19 +569,6 @@
   transform: rotate(180deg);
 }
 
-#right select,
-.settings-dialog select {
-  appearance: none;
-  background-image: url("../assets/select-chevron.svg?no-inline");
-  background-repeat: no-repeat;
-  background-position: right 10px center;
-  background-size: 12px;
-}
-#right select[id],
-.settings-dialog select {
-  padding-right: 30px;
-}
-
 .blend-body fieldset {
   border: 0;
   padding: 0;
@@ -632,7 +620,7 @@ label.export-toggle {
 #blend-options > .export-setting-line + .export-setting-line { margin-top: 8px; }
 .blend-body .export-setting-line > label,
 .lut-strength-row > label { color: var(--text); font-size: 11px; }
-.blend-body :is(input[type="number"], input[type="text"], select) { height: 28px; }
+.blend-body :is(input[type="number"], input[type="text"]) { height: 33px; }
 
 .lut-body { display: grid; gap: 12px; }
 .lut-body [hidden] { display: none; }

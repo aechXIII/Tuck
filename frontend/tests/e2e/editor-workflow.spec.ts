@@ -1,3 +1,4 @@
+import { chooseSelect } from "../fixtures/select";
 import { expect, test, type Page } from "@playwright/test";
 
 import {
@@ -577,15 +578,15 @@ test("custom export fields share edges and selected clips have matching handles"
   await installFakeBackend(page, editorFixture());
   await page.goto("/");
   await page.getByRole("button", { name: "Add videos" }).click();
-  await page.locator("#export-res-select").selectOption({ label: "Custom…" });
+  await chooseSelect(page, page.locator("#export-res-select-trigger"), { label: "Custom…" });
   await expect(page.getByLabel("Scaler algorithm")).toBeVisible();
   const geometry = await page.evaluate(() => {
     const rect = (s: string) => document.querySelector(s)!.getBoundingClientRect();
-    const select = document.querySelector("#export-res-select")!;
+    const select = document.querySelector("#export-res-select-trigger")!;
     return {
-      starts: [rect("#export-res-select").left, rect("#res-cust input").left, rect("#scaler-row select").left],
-      ends: [rect("#export-res-select").right, rect("#res-h").right, rect("#scaler-row select").right],
-      arrow: getComputedStyle(select).backgroundPosition,
+      starts: [rect("#export-res-select-trigger").left, rect("#res-cust input").left, rect("#scaler-sel-trigger").left],
+      ends: [rect("#export-res-select-trigger").right, rect("#res-h").right, rect("#scaler-sel-trigger").right],
+      arrowInset: select.getBoundingClientRect().right - select.querySelector("svg")!.getBoundingClientRect().right,
       selection: getComputedStyle(document.querySelector(".tl-segment.active .tl-segment-surface")!).boxShadow,
       handles: [".tl-segment.active .clip-edge.start", ".seq-audio-clip .clip-edge.start"].map(s => {
         const c = getComputedStyle(document.querySelector(s)!, "::before");
@@ -595,7 +596,7 @@ test("custom export fields share edges and selected clips have matching handles"
   });
   for (const x of geometry.starts) expect(x).toBeCloseTo(geometry.starts[0]!, 0);
   for (const x of geometry.ends) expect(x).toBeCloseTo(geometry.ends[0]!, 0);
-  expect(geometry.arrow).toContain("10px");
+  expect(geometry.arrowInset).toBeCloseTo(10, 0);
   expect(geometry.selection).toContain("inset");
   expect(geometry.handles[0]).toEqual(geometry.handles[1]);
   await page.screenshot({ path: testInfo.outputPath("aligned-fields-and-handles.png") });

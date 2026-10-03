@@ -1,3 +1,4 @@
+import { chooseSelect } from "../fixtures/select";
 import { expect, test } from "@playwright/test";
 import { healthyBackendFixture, installFakeBackend } from "../fixtures/fake-backend";
 
@@ -37,11 +38,11 @@ test("show-export preference saves through the existing settings key", async ({ 
 
 test("the default profile picker only offers profiles that can be saved", async ({ page }) => {
   const picker = page.getByLabel("Default profile", { exact: true });
-  await expect(picker).toHaveValue("everyday");
-  expect(await picker.locator("option").evaluateAll((options) =>
+  await expect(page.locator("#set-dp")).toHaveValue("everyday");
+  expect(await page.locator("#set-dp option").evaluateAll((options) =>
     options.map((option) => (option as HTMLOptionElement).value),
   )).toEqual(["everyday", "sharing"]);
-  await picker.selectOption("sharing");
+  await chooseSelect(page, picker, "sharing");
   await expect(page.locator("#settings-unsaved")).toHaveText("Saved");
   await expect.poll(() => page.evaluate(() =>
     window.__tuckFakeBackendCalls?.filter((call) => call.method === "saveSettings")
@@ -137,16 +138,18 @@ test("discard confirmation text stays readable in normal and hover states", asyn
 });
 
 
-test("Settings selects have inset arrows and room for their text", async ({ page }) => {
-  const styles = await page.locator(".settings-dialog select").evaluateAll(elements => elements.map(el => {
-    const c = getComputedStyle(el);
-    return { appearance: c.appearance, position: c.backgroundPosition, padding: c.paddingRight, image: c.backgroundImage };
+test("Settings dropdowns have inset arrows and room for their text", async ({ page }) => {
+  const styles = await page.locator(".settings-dialog .select-trigger").evaluateAll(elements => elements.map(el => {
+    const bounds = el.getBoundingClientRect();
+    const icon = el.querySelector("svg")!.getBoundingClientRect();
+    const text = el.querySelector("span")!.getBoundingClientRect();
+    return { inset: bounds.right - icon.right, iconWidth: icon.width, gap: icon.left - text.right, height: bounds.height };
   }));
   expect(styles.length).toBeGreaterThan(0);
   for (const style of styles) {
-    expect(style.appearance).toBe("none");
-    expect(style.position).toContain("10px");
-    expect(style.padding).toBe("30px");
-    expect(style.image).not.toBe("none");
+    expect(style.inset).toBeCloseTo(10, 0);
+    expect(style.iconWidth).toBe(12);
+    expect(style.gap).toBeGreaterThanOrEqual(10);
+    expect(style.height).toBeCloseTo(33, 2);
   }
 });

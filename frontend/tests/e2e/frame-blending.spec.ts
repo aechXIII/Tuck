@@ -1,3 +1,4 @@
+import { chooseSelect } from "../fixtures/select";
 import { expect, test } from "@playwright/test";
 import { healthyBackendFixture, installFakeBackend } from "../fixtures/fake-backend";
 
@@ -35,10 +36,10 @@ for (const size of [{width:1240,height:800}, {width:960,height:640}]) {
     await page.getByLabel("Blur amount").fill("1.23");
     await expect(page.getByRole("button", {name:"Compress this video", exact:true})).toBeEnabled();
     await page.getByLabel("Blur amount").fill("1");
-    await page.getByLabel("Output frame rate", {exact:true}).selectOption("30");
+    await chooseSelect(page, page.getByLabel("Output frame rate", {exact:true}), "30");
     await expect(page.locator("#blend-readout")).toHaveCount(0);
     await expect(page.locator("#blend-amount-help")).toHaveCount(0);
-    await page.getByLabel("Weighting", {exact:true}).selectOption("vegas");
+    await chooseSelect(page, page.getByLabel("Weighting", {exact:true}), "vegas");
     await expect(page.locator("#blend-chart")).toHaveAttribute("aria-label", /vegas/);
     const preview = await page.locator(".blend-preview").evaluate(figure => {
       const bars = Array.from(figure.querySelectorAll("rect"));
@@ -53,19 +54,19 @@ for (const size of [{width:1240,height:800}, {width:960,height:640}]) {
     expect(Math.abs(preview.left)).toBeLessThan(1);
     expect(Math.abs(preview.right)).toBeLessThan(1);
     await panel.screenshot({path:`frontend/.scratch/blend-vegas-${size.width}.png`});
-    await page.getByLabel("Weighting", {exact:true}).selectOption("equal");
-    await page.getByLabel("Output frame rate", {exact:true}).selectOption("custom");
+    await chooseSelect(page, page.getByLabel("Weighting", {exact:true}), "equal");
+    await chooseSelect(page, page.getByLabel("Output frame rate", {exact:true}), "custom");
     await page.getByLabel("Target frame rate", {exact:true}).fill("29.97");
     const equalChart = await page.locator("#blend-chart").innerHTML();
-    await page.getByLabel("Weighting", {exact:true}).selectOption("gaussian");
+    await chooseSelect(page, page.getByLabel("Weighting", {exact:true}), "gaussian");
     expect(await page.locator("#blend-chart").innerHTML()).not.toBe(equalChart);
     await page.getByText("Advanced settings", {exact:true}).click();
     await expect(page.getByLabel("Gaussian width", {exact:true})).toBeVisible();
     await page.getByLabel("Gaussian width", {exact:true}).fill("");
     await expect(page.getByRole("button", {name:"Compress this video", exact:true})).toBeDisabled();
-    await page.getByLabel("Weighting", {exact:true}).selectOption("equal");
+    await chooseSelect(page, page.getByLabel("Weighting", {exact:true}), "equal");
     await expect(page.getByRole("button", {name:"Compress this video", exact:true})).toBeEnabled();
-    await page.getByLabel("Weighting", {exact:true}).selectOption("gaussian");
+    await chooseSelect(page, page.getByLabel("Weighting", {exact:true}), "gaussian");
     await page.getByLabel("Gaussian width", {exact:true}).fill("0.3");
     await page.getByLabel("Custom weights", {exact:false}).fill("0, 0");
     await expect(page.locator("#blend-error")).toContainText("positive");
@@ -100,7 +101,7 @@ test("Vegas has a weight preview before a video is added", async ({page}) => {
   await page.goto("/");
   await page.locator("#frame-blending-panel > summary").click();
   await page.getByLabel("Enable frame blending").check();
-  await page.getByLabel("Weighting", {exact:true}).selectOption("vegas");
+  await chooseSelect(page, page.getByLabel("Weighting", {exact:true}), "vegas");
   const bars = page.locator("#blend-chart rect");
   await expect(bars).toHaveCount(32);
   expect(await bars.evaluateAll(nodes => nodes.every(node => node.getBoundingClientRect().height > 0))).toBe(true);

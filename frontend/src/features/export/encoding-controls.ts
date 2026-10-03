@@ -42,6 +42,7 @@ import {
 } from "../../platform/capabilities.ts";
 
 export interface EncodingControlsDeps {
+  syncSelects: () => void;
   session: EditorSession;
   byId: <T extends HTMLElement = HTMLElement>(id: string) => T | null;
   getBackendClient: () => BackendClient;
@@ -316,6 +317,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
       speed,
     });
     syncExportVideoFacades();
+    deps.syncSelects();
   }
 
   function replaceInspectorOptions(
