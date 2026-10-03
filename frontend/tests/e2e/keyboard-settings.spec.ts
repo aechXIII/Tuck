@@ -7,7 +7,7 @@ async function start(page: Page, settings: Record<string, unknown> = {}) {
   fixture.responses.saveSettings = {ok:true};
   await installFakeBackend(page, fixture);
   await page.goto("/");
-  await expect(page.getByRole("button", {name:"Add videos"}).first()).toBeVisible();
+  await expect(page.getByRole("button", {name:"Settings", exact:true})).toBeVisible();
 }
 
 async function openKeyboardPage(page: Page) {
@@ -18,6 +18,52 @@ async function openKeyboardPage(page: Page) {
 
 const lastSaved = (page: Page) => page.evaluate(() =>
   window.__tuckFakeBackendCalls?.filter(call => call.method === "saveSettings").at(-1)?.args[0]);
+
+for (const width of [1240, 960]) {
+  test(`the toolbar opens the visual shortcut guide and restores focus at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: width === 960 ? 640 : 800 });
+    await start(page);
+    const opener = page.getByRole("button", { name: "Keyboard shortcuts", exact: true });
+    await expect(opener).toBeVisible();
+    await expect(opener).toHaveAttribute("aria-keyshortcuts", /Control\+\//);
+    await opener.click();
+    const guide = page.getByRole("dialog", { name: "Keyboard shortcuts", exact: true });
+    await expect(guide).toBeVisible();
+    await expect(guide.locator(".kbs-keyboard")).toBeVisible();
+    const search = guide.getByRole("searchbox", { name: "Search keyboard shortcuts" });
+    await expect(search).toBeFocused();
+    await search.fill("split");
+    await expect(guide.locator(".kbs-row")).toHaveCount(1);
+    await expect(guide.locator(".kbs-row")).toContainText("Split at playhead");
+    await page.keyboard.press("Escape");
+    await expect(guide).toHaveCount(0);
+    await expect(opener).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(guide).toBeVisible();
+    await guide.getByRole("button", { name: "Close keyboard shortcuts" }).click();
+    await expect(opener).toBeFocused();
+  });
+
+  test(`Keyboard settings opens the guide without losing its place at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: width === 960 ? 640 : 800 });
+    await start(page);
+    await openKeyboardPage(page);
+    const opener = page.getByRole("button", { name: "View shortcut guide", exact: true });
+    await expect(opener).toBeVisible();
+    await opener.click();
+    const guide = page.getByRole("dialog", { name: "Keyboard shortcuts", exact: true });
+    await expect(guide).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(guide).toHaveCount(0);
+    await expect(page.getByRole("dialog", { name: "Settings", exact: true })).toBeVisible();
+    await expect(opener).toBeFocused();
+    await opener.click();
+    await guide.getByRole("button", { name: "Change shortcuts", exact: true }).click();
+    await expect(guide).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Change keys for Split at playhead" })).toBeVisible();
+    expect(await lastSaved(page)).toBeUndefined();
+  });
+}
 
 test("new keys apply straight away, are saved and update button hints", async ({page}) => {
   await start(page);

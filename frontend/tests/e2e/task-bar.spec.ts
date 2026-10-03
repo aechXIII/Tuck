@@ -197,10 +197,9 @@ test("an Inspector last left on the old Audio panel opens This video", async ({ 
 });
 test("the top bar is icons with names, and the selected video's name sits over the player", async ({ page }) => {
   await open(page, { holdPlans: true });
-  for (const name of ["Window menu", "Library", "Undo", "Redo", "Settings", "Inspector", "Minimize", "Maximize", "Close"]) {
+  for (const name of ["Window menu", "Library", "Undo", "Redo", "Keyboard shortcuts", "Settings", "Inspector", "Minimize", "Maximize", "Close"]) {
     await expect(page.locator("#tb").getByRole("button", { name, exact: true })).toBeVisible();
   }
-  await expect(page.locator("#tb").getByRole("button", { name: "Keyboard shortcuts" })).toHaveCount(0);
   await page.locator(".clip").filter({ hasText: "Kitchen.mov" }).click();
   await expect(page.locator("#tb-title-name")).toHaveText("Kitchen.mov");
   // centred over the player, also once a panel beside it is hidden

@@ -89,6 +89,22 @@
       <button
         type="button"
         class="tb-command-btn"
+        id="shortcuts-toggle"
+        data-shortcut-commands="help.shortcuts"
+        data-shortcut-label="Keyboard shortcuts"
+        data-action-click="shortcuts-open"
+        data-tip="Keyboard shortcuts (? or Ctrl+/)"
+        aria-label="Keyboard shortcuts"
+        aria-keyshortcuts="? Control+/"
+      >
+        <svg class="tb-help-icon" viewBox="0 0 18 14" aria-hidden="true">
+          <rect x="1" y="1" width="16" height="12" rx="2"></rect>
+          <path d="M4 4h1M7 4h1M10 4h1M13 4h1M4 7h1M7 7h1M10 7h1M13 7h1M5 10h8"></path>
+        </svg>
+      </button>
+      <button
+        type="button"
+        class="tb-command-btn"
         id="settings-toggle"
         data-action-click="settings-toggle"
         data-tip="Settings"

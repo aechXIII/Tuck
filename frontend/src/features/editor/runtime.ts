@@ -408,6 +408,7 @@ export function installEditorRuntime(
     setAvailableEncoders: (encoders) => encoding.setAvailableEncoders(encoders),
     copyDiagnostics: () => queue.copyDiagnostics(),
     checkForUpdates: () => checkUpdatesFromSettings(),
+    showShortcutGuide: () => shortcutDialog.openDialog(),
   });
 
   selects.sync(windowRef.document);
@@ -415,10 +416,10 @@ export function installEditorRuntime(
   shortcutDialog = installShortcutDialog({
     document: {
       body: windowRef.document.body,
-      activeElement:
-        windowRef.document.activeElement instanceof HTMLElement
-          ? windowRef.document.activeElement
-          : null,
+      get activeElement() {
+        const active = windowRef.document.activeElement;
+        return active instanceof HTMLElement ? active : null;
+      },
       getElementById: (id) =>
         windowRef.document.getElementById(id) as
           | (HTMLElement & { disabled: boolean })

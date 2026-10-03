@@ -60,6 +60,7 @@ export interface SettingsDeps {
   setAvailableEncoders: (encoders: string[]) => void;
   copyDiagnostics: () => void | Promise<void>;
   checkForUpdates: () => void | Promise<void>;
+  showShortcutGuide: () => void;
 }
 
 export interface SettingsApi {
@@ -1237,7 +1238,10 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       };
     } else if (settingsPage === "keyboard") {
       content = keyboardSettingsHtml();
-      actions = { autosave: true, html: settingButton("Reset all", "reset-shortcuts") };
+      actions = {
+        autosave: true,
+        html: settingButton("View shortcut guide", "show-shortcut-guide") + settingButton("Reset all", "reset-shortcuts"),
+      };
     } else if (settingsPage === "explorer") {
       content = explorerSettingsHtml();
       actions = { html: settingButton("Add profile shortcut", "add-shortcut", true) };
@@ -1824,6 +1828,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         "new-profile": () => void newProfile(),
         "add-shortcut": () => void addShortcutFlow(),
         "reset-shortcuts": () => resetAllShortcuts(),
+        "show-shortcut-guide": () => deps.showShortcutGuide(),
         "open-explorer": () => void open("explorer"),
         "profile-task": (target) => peSetTask((target.dataset.settingsValue as Workflow) ?? "compression"),
         "profile-size": (target) => peSetSize(target.dataset.settingsValue ?? "50"),
