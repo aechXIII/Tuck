@@ -1,9 +1,7 @@
-/* the card hugs the picture: width it gives up is split as margins so it stays centred, height
-   it gives up is left below it */
+/* the workspace owns the panel size; the video fits inside it */
 #center {
   flex: 1 1 0;
-  height: calc(100% - var(--fit-center-shrink-y, 0px));
-  margin-inline: calc(var(--fit-center-shrink-x, 0px) / 2);
+  height: 100%;
   min-height: 0;
   background: var(--panel);
   border-radius: var(--r-card);
@@ -38,7 +36,6 @@
 }
 #center:fullscreen {
   height: 100%;
-  margin: 0;
 }
 #center:fullscreen #stage {
   background: #000;

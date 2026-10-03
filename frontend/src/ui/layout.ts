@@ -9,25 +9,8 @@ export function timelineHeightForTrackCount(setting: unknown, trackCount: unknow
   if (trackCount === previousTrackCount && normalizeTimelineHeightSetting(setting, viewportHeight) !== 0) return null;
   return timelineAutoHeight(trackCount, viewportHeight);
 }
-const FRAME_ASPECT = 16 / 9, TIMELINE_SNAP_DISTANCE = 12, FRAME_FIT_EXTRA_MAX = 100;
-// the timeline height at which the player shows the picture edge to edge; 16:9 until the video
-// says otherwise, as it is the most common shape
-export function timelineHeightForFrame(currentTimeline: unknown, stageWidth: unknown, stageHeight: unknown, aspect: number | null = null): number | null {
-  const timeline = Number(currentTimeline), width = Number(stageWidth), height = Number(stageHeight);
-  if (![timeline, width, height].every(Number.isFinite) || width <= 0 || height <= 0) return null;
-  const shape = aspect && Number.isFinite(aspect) && aspect > 0 ? aspect : FRAME_ASPECT;
-  return Math.round(timeline + height - width / shape);
-}
-// the automatic height always shows every track, and grows further when that lets a 16:9 video
-// fill the player. The growth is capped because the Library and Inspector share the player's
-// row: a tall window should not trade their height for an empty timeline
-export function automaticTimelineHeight(tracksHeight: unknown, frameHeight: number | null, viewportHeight: unknown): number {
-  let tracks = Number(tracksHeight);
-  if (!Number.isFinite(tracks)) tracks = 0;
-  const frame = Math.min(frameHeight ?? 0, tracks + FRAME_FIT_EXTRA_MAX);
-  return clampTimelineHeight(Math.max(tracks, frame), viewportHeight);
-}
-// dragging near the automatic height lands on it, so the 16:9 fit is easy to get back to
+const TIMELINE_SNAP_DISTANCE = 12;
+// dragging near the automatic height lands on it, so fitting the tracks is easy to get back to
 export function snapTimelineHeight(height: number, target: number | null): number {
   return target !== null && Math.abs(height - target) <= TIMELINE_SNAP_DISTANCE ? target : height;
 }

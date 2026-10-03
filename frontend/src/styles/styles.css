@@ -372,11 +372,10 @@ body.custom-titlebar:has(.mod-overlay.open) .tb-editor > * {
   display: none;
 }
 #left {
-  /* plus the width the player hands over so it can hug the picture */
-  width: calc(var(--library-width) + var(--fit-library-extra, 0px));
-  min-width: calc(var(--library-width) + var(--fit-library-extra, 0px));
-  max-width: calc(var(--library-width) + var(--fit-library-extra, 0px));
-  flex: 0 0 calc(var(--library-width) + var(--fit-library-extra, 0px));
+  width: var(--library-width);
+  min-width: var(--library-width);
+  max-width: var(--library-width);
+  flex: 0 0 var(--library-width);
   height: 100%;
   min-height: 0;
   background: var(--panel);
@@ -703,10 +702,10 @@ body.workspace-overlay .panel-heading {
   padding-right: 38px;
 }
 #right {
-  width: calc(var(--inspector-width) + var(--fit-inspector-extra, 0px));
-  min-width: calc(var(--inspector-width) + var(--fit-inspector-extra, 0px));
-  max-width: calc(var(--inspector-width) + var(--fit-inspector-extra, 0px));
-  flex: 0 0 calc(var(--inspector-width) + var(--fit-inspector-extra, 0px));
+  width: var(--inspector-width);
+  min-width: var(--inspector-width);
+  max-width: var(--inspector-width);
+  flex: 0 0 var(--inspector-width);
   height: 100%;
   min-height: 0;
   background: var(--panel);
@@ -2011,21 +2010,21 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
 }
 @media (min-width: 1180px) {
   body.library-panel-open .tb-title {
-    --lib-span: calc(var(--library-width) + var(--fit-library-extra, 0px) + var(--gutter));
+    --lib-span: calc(var(--library-width) + var(--gutter));
   }
   body.inspector-panel-open .tb-title {
-    --insp-span: calc(var(--inspector-width) + var(--fit-inspector-extra, 0px) + var(--gutter));
+    --insp-span: calc(var(--inspector-width) + var(--gutter));
   }
 }
 @media (min-width: 1440px) {
   body.inspector-panel-open .tb-title {
-    --insp-span: calc(var(--inspector-wide-width) + var(--fit-inspector-extra, 0px) + var(--gutter));
+    --insp-span: calc(var(--inspector-wide-width) + var(--gutter));
   }
   #right {
-    width: calc(var(--inspector-wide-width) + var(--fit-inspector-extra, 0px));
-    min-width: calc(var(--inspector-wide-width) + var(--fit-inspector-extra, 0px));
-    max-width: calc(var(--inspector-wide-width) + var(--fit-inspector-extra, 0px));
-    flex-basis: calc(var(--inspector-wide-width) + var(--fit-inspector-extra, 0px));
+    width: var(--inspector-wide-width);
+    min-width: var(--inspector-wide-width);
+    max-width: var(--inspector-wide-width);
+    flex-basis: var(--inspector-wide-width);
   }
 }
 @media (max-width: 1179px) {

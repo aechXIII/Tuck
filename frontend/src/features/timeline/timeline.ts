@@ -1,7 +1,6 @@
 import { getBackendClient, hasBackendClient } from "../../backend/client.ts";
 import { probeStatus } from "../../state/probe.ts";
 import * as TuckLayout from "../../ui/layout.ts";
-import { applyPlayerFit, displayAspect, stageBaseSize } from "../player/player-fit.ts";
 import { formatTime } from "../editor/format.ts";
 import type { EditorClip, EditorSession } from "../editor/session.ts";
 import { toast } from "../editor/toast.ts";
@@ -1391,22 +1390,7 @@ function updateTimelineResizeA11y(height: number) {
 
 function refreshAfterTimelineResize() {
   applyTimelineZoom();
-  applyPlayerFit(documentRef);
   host.paintCropOverlay?.();
-}
-
-// measured before the height changes, while the stage and the timeline still describe one layout;
-// the stage is taken without the player fit, so the fit never feeds back into this choice
-function frameFitHeight(): number | null {
-  const editor = byId("audio-editor");
-  const base = stageBaseSize(documentRef);
-  if (!editor || !base) return null;
-  return TuckLayout.timelineHeightForFrame(
-    editor.getBoundingClientRect().height,
-    base.width,
-    base.height,
-    displayAspect(documentRef),
-  );
 }
 
 // height the tracks do not need goes to the Video and Source audio rows instead of sitting empty
@@ -1422,7 +1406,6 @@ function stretchTracks(editor: HTMLElement) {
 function applyTimelineHeight(value: number) {
   let editor = byId("audio-editor");
   if (!editor || !TuckLayout) return 0;
-  const frameHeight = value <= 0 ? frameFitHeight() : null;
   editor.style.removeProperty("--track-stretch");
   let height = TuckLayout.clampTimelineHeight(
     value,
@@ -1441,7 +1424,6 @@ function applyTimelineHeight(value: number) {
         timelineTrackCount,
       );
     }
-    height = TuckLayout.automaticTimelineHeight(height, frameHeight, windowRef.innerHeight);
     editor.style.height = height + "px";
   }
   stretchTracks(editor);
@@ -1540,7 +1522,7 @@ function endTimelineResize(event: PointerEvent) {
   }
   if (!editor) return;
   const height = Math.round(editor.getBoundingClientRect().height);
-  // landing on the snap point keeps the height automatic, so it keeps following the panels
+  // landing on the snap point keeps the height automatic, so it follows added and removed tracks
   saveTimelineHeight(height === snapTarget ? 0 : height);
 }
 
@@ -1577,31 +1559,6 @@ function initTimelineResizer() {
   windowRef.addEventListener("pointercancel", endTimelineResize);
   separator.addEventListener("keydown", handleTimelineResizeKey);
   separator.addEventListener("dblclick", resetTimelineHeight);
-  // a new video, a new crop or rotation, or a panel opening changes what the player has to fit
-  const refit = function () {
-    if (timelineResizeState) return;
-    applyTimelineHeight(timelineHeightSetting);
-  };
-  const stage = byId("stage");
-  const viewport = byId("media-viewport");
-  byId("vid")?.addEventListener("loadedmetadata", refit);
-  documentRef.addEventListener("fullscreenchange", refit);
-  if (stage && viewport && typeof ResizeObserver !== "undefined") {
-    let fittedWidth = -1;
-    let fittedAspect: number | null = null;
-    new ResizeObserver(function () {
-      const width = Math.round(stage.getBoundingClientRect().width);
-      if (width === fittedWidth) return;
-      fittedWidth = width;
-      refit();
-    }).observe(stage);
-    new ResizeObserver(function () {
-      const aspect = displayAspect(documentRef);
-      if (aspect === null || (fittedAspect !== null && Math.abs(aspect - fittedAspect) < 0.001)) return;
-      fittedAspect = aspect;
-      refit();
-    }).observe(viewport);
-  }
   restoreTimelineHeight(TuckLayout.initialTimelineHeightSetting(session.appSettings));
 }
 

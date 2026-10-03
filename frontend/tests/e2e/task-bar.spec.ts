@@ -308,9 +308,9 @@ test("the bottom bar is a card on the floor, a gutter from the timeline and the 
   expect(geometry.radius).toBe("12px");
 });
 
-test("a 16:9 video fills the player, and dragging the timeline snaps back to that fit", async ({ page }) => {
+test("dragging the timeline snaps back to the height its tracks need", async ({ page }) => {
   await open(page, { holdPlans: true, width: 1440 });
-  const ratio = () => page.locator("#stage").evaluate((stage) => {
+  const ratio = () => page.locator("#media-viewport").evaluate((stage) => {
     const box = stage.getBoundingClientRect();
     return box.width / box.height;
   });
@@ -328,31 +328,11 @@ test("a 16:9 video fills the player, and dragging the timeline snaps back to tha
   await expect(separator).toHaveAttribute("aria-valuenow", String(fitted));
   await page.mouse.up();
   await expect.poll(ratio).toBeCloseTo(16 / 9, 2);
-  // landing on the fit keeps the height automatic, so it follows the panels from here
+  // landing on the fit keeps the height automatic, so it follows the tracks from here
   await expect.poll(async () => (await calls(page, "saveSettings")).at(-1)).toEqual([{ timeline_height: 0 }]);
 });
 
-test("the player takes the picture's shape, so there are no bars around the video", async ({ page }) => {
-  const shape = () => page.evaluate(() => {
-    const stage = document.getElementById("stage")!.getBoundingClientRect();
-    const frame = document.getElementById("media-viewport")!.getBoundingClientRect();
-    return { spareX: stage.width - frame.width, spareY: stage.height - frame.height, inspector: document.getElementById("right")!.getBoundingClientRect().width };
-  });
-  // a wide window: the spare width goes to the side panels
-  const spare = async () => {
-    const { spareX, spareY } = await shape();
-    return Math.max(Math.abs(spareX), Math.abs(spareY));
-  };
-  await open(page, { holdPlans: true, width: 2560 });
-  await page.setViewportSize({ width: 2560, height: 1440 });
-  await expect.poll(spare).toBeLessThanOrEqual(1);
-  expect((await shape()).inspector).toBeGreaterThan(344);
-  // the smallest window: no panel is docked, so the card narrows around the picture
-  await page.setViewportSize({ width: 960, height: 640 });
-  await expect.poll(spare).toBeLessThanOrEqual(1);
-});
-
-test("a timeline taller than its tracks grows the Video and Source audio rows instead of leaving space", async ({ page }) => {
+test("manually enlarging the timeline grows the Video and Source audio rows", async ({ page }) => {
   await open(page, { holdPlans: true, width: 1440 });
   const fill = () => page.evaluate(() => {
     const frame = document.getElementById("sequence-frame")!;
@@ -360,12 +340,12 @@ test("a timeline taller than its tracks grows the Video and Source audio rows in
     return { empty: frame.clientHeight - stack.offsetHeight, video: document.querySelector("#video-track .seq-head")!.getBoundingClientRect().height };
   });
   await expect.poll(async () => (await fill()).empty).toBe(0);
-  expect((await fill()).video).toBeGreaterThan(60);
-  // a manually taller timeline fills the same way
+  expect((await fill()).video).toBe(60);
   const separator = page.getByRole("separator", { name: "Resize timeline" });
   await separator.focus();
   await page.keyboard.press("End");
   await expect.poll(async () => (await fill()).empty).toBe(0);
+  expect((await fill()).video).toBeGreaterThan(60);
 });
 
 test("the Inspector's This video and Export switch slides its thumb under the chosen view", async ({ page }) => {
