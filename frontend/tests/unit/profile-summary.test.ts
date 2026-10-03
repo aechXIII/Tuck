@@ -5,6 +5,17 @@ import { profileChangeSummary, profileSummary } from "../../src/features/profile
 
 const MB = 1024 * 1024;
 
+test("the integrated header omits its separate target value and preserves Upscale details", () => {
+  assert.equal(
+    profileSummary({ workflow: "compression", target_size_bytes: 10 * MB, resolution_mode: "source", fps_mode: "source" }, { includeTargetSize: false }),
+    "source size and frame rate",
+  );
+  assert.equal(
+    profileSummary({ workflow: "upscale", target_size_bytes: 10 * MB, rate_control: "explicit_bitrate", explicit_bitrate_kbps: 25000, resolution_mode: "custom", custom_width: 2560, custom_height: 1440, fps_mode: "source" }, { includeTargetSize: false }),
+    "25 Mbps · 1440p · source frame rate",
+  );
+});
+
 test("a profile sums up its target, size and frame rate in a few words", () => {
   assert.equal(
     profileSummary({ workflow: "compression", target_size_bytes: 10 * MB, resolution_mode: "source", fps_mode: "source" }),

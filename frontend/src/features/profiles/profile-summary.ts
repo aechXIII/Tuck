@@ -43,10 +43,10 @@ function fpsLabel(profile: ProfileFields): string {
 }
 
 // e.g. "Target 10 MB · source size and frame rate", "Target 16 MB · 720p · 30 fps"
-export function profileSummary(profile: ProfileFields): string {
+export function profileSummary(profile: ProfileFields, { includeTargetSize = true } = {}): string {
   const parts: string[] = [];
   const upscale = profile.workflow === "upscale";
-  if (!upscale && num(profile.target_size_bytes) > 0) {
+  if (includeTargetSize && !upscale && num(profile.target_size_bytes) > 0) {
     parts.push(`Target ${trimmed(num(profile.target_size_bytes) / MB)} MB`);
   } else if (upscale && profile.rate_control === "explicit_bitrate") {
     const kbps = num(profile.explicit_bitrate_kbps) || num(profile.explicit_bitrate) / 1000;

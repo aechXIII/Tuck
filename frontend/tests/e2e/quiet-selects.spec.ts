@@ -26,3 +26,89 @@ test("Quiet dropdowns show compact labels and a neutral selection", async ({ pag
   await expect(page.locator("#set-ds")).toHaveValue("Bicubic");
   await expect(trigger).toBeFocused();
 });
+
+for (const count of [7, 8]) {
+  test(`Quiet profile menus show search only for long lists (${count} choices)`, async ({ page }) => {
+    await page.setViewportSize({ width: count === 7 ? 960 : 1240, height: count === 7 ? 640 : 800 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    const fixture = healthyBackendFixture();
+    fixture.responses.getSettings = {
+      ...fixture.responses.getSettings as object,
+      default_profile_id: "profile-0",
+      profiles: Array.from({ length: count }, (_, index) => ({
+        profile_id: `profile-${index}`, name: `Profile ${index}`, workflow: "compression",
+        video_encoder: "libx264", preset: "medium", resolution_mode: "source", fps_mode: "source",
+      })),
+    };
+    await installFakeBackend(page, fixture);
+    await page.goto("/");
+    if (count === 7) await page.getByRole("button", { name: "Inspector", exact: true }).click();
+    const profiles = page.locator("#prof-menu");
+    await page.locator("#prof-pick").click();
+    await expect(profiles).toBeVisible();
+    await expect(page.locator("#prof-options")).toHaveAccessibleName("Compress profiles");
+    if (count === 8) {
+      await expect(page.locator("#prof-search")).toBeFocused();
+      await page.locator("#prof-search").fill("Profile 1");
+    } else {
+      await expect(page.locator("#prof-search")).toBeHidden();
+      await expect(profiles.getByRole("option", { name: "Profile 0", exact: true })).toBeFocused();
+      await page.keyboard.press("ArrowDown");
+    }
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#prof-sel")).toHaveValue("profile-1");
+    await expect(page.locator("#prof-pick")).toBeFocused();
+    await page.getByRole("button", { name: "Settings", exact: true }).click();
+    await page.locator("#set-dp-trigger").click();
+    const defaultProfiles = page.locator("#set-dp-popup");
+    if (count === 8) await expect(defaultProfiles.getByRole("combobox", { name: "Search profiles", exact: true })).toBeFocused();
+    else await expect(defaultProfiles.getByRole("combobox")).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog", { name: "Settings", exact: true })).toBeVisible();
+  });
+}
+
+test("Quiet profile search still finds the settings shown in tooltips", async ({ page }) => {
+  const fixture = healthyBackendFixture();
+  fixture.responses.getSettings = {
+    ...fixture.responses.getSettings as object,
+    profiles: Array.from({ length: 8 }, (_, index) => ({
+      profile_id: `profile-${index}`, name: `Profile ${index}`, workflow: "compression",
+      target_size_bytes: (10 + index * 10) * 1024 * 1024, resolution_mode: "source", fps_mode: "source",
+    })),
+  };
+  await installFakeBackend(page, fixture);
+  await page.goto("/");
+  await page.locator("#prof-pick").click();
+  await page.locator("#prof-search").fill("20 MB");
+  await expect(page.locator("#prof-options").getByRole("option")).toHaveAccessibleName("Profile 1");
+  await page.locator("#prof-search").press("Enter");
+  await expect(page.locator("#prof-sel")).toHaveValue("profile-1");
+});
+
+test("short Quiet profile lists support repeated initials and longer prefixes", async ({ page }) => {
+  const fixture = healthyBackendFixture();
+  fixture.responses.getSettings = {
+    ...fixture.responses.getSettings as object,
+    default_profile_id: "discord",
+    profiles: ["Discord", "Daily", "Email"].map(name => ({
+      profile_id: name.toLowerCase(), name, workflow: "compression", resolution_mode: "source", fps_mode: "source",
+    })),
+  };
+  await installFakeBackend(page, fixture);
+  await page.goto("/");
+  await page.locator("#prof-pick").click();
+  const options = page.locator("#prof-options");
+  await page.keyboard.press("d");
+  await expect(options.getByRole("option", { name: "Daily", exact: true })).toBeFocused();
+  await page.keyboard.press("d");
+  await expect(options.getByRole("option", { name: "Discord", exact: true })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await page.locator("#prof-pick").click();
+  await page.keyboard.press("e");
+  await page.keyboard.press("m");
+  await expect(options.getByRole("option", { name: "Email", exact: true })).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#prof-sel")).toHaveValue("email");
+  await expect(page.locator("#prof-pick")).toBeFocused();
+});

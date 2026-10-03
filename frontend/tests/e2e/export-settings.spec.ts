@@ -399,7 +399,8 @@ test("Inspector content keeps its right edge aligned while resizing", async ({ p
       return toggle.left >= card.left && toggle.right <= card.right;
     });
     expect(over).toBe(true);
-    expect(Math.abs(await edge("#right") - 12 - await edge("#sz-grp"))).toBeLessThanOrEqual(1);
+    expect(Math.abs(await edge("#right") - 12 - await edge("#profile-card"))).toBeLessThanOrEqual(1);
+    expect(Math.abs(await edge("#profile-card") - 12 - await edge("#sz-grp"))).toBeLessThanOrEqual(1);
   };
   await aligned();
   await page.setViewportSize({ width: 960, height: 640 });

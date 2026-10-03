@@ -109,9 +109,6 @@
 #right-foot .export-actions-menu .btn2 {
   background: transparent !important;
 }
-#sz-grp {
-  padding-block: 8px;
-}
 #right input[type="range"]::-webkit-slider-thumb {
   width: 12px;
   height: 12px;
@@ -136,32 +133,38 @@
 #insp-export {
   min-height: 0;
 }
-/* the profile as a card: its name opens the list, the line under it says what it does, and
-   Discard and Save appear only while the settings differ from it */
 #profile-card {
   position: relative;
-  padding: 12px 0 0;
+  margin-top: 12px;
+  padding: 0;
+  border-radius: var(--r-surf);
+  background: var(--sink);
 }
 .profile-card {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 1px 10px;
-  padding: 9px 8px 10px 12px;
-  border-radius: var(--r-surf);
-  background: var(--raised);
+  padding: 4px 0 6px;
+}
+.profile-card[data-menu-side] {
+  background: var(--sink);
+}
+.profile-card[data-menu-side="below"] {
+  border-radius: var(--r-surf) var(--r-surf) 0 0;
+}
+.profile-card[data-menu-side="above"] {
+  border-radius: 0 0 var(--r-surf) var(--r-surf);
 }
 .profile-pick {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: space-between;
+  box-sizing: border-box;
+  gap: 10px;
   min-width: 0;
-  justify-self: start;
-  max-width: 100%;
-  margin: -3px 0 -3px -6px;
-  padding: 3px 6px;
+  width: 100%;
+  min-height: 38px;
+  margin: 0;
+  padding: 8px 12px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--r-surf);
   background: transparent;
   color: var(--text);
   font: 600 14px/20px var(--font);
@@ -170,7 +173,11 @@
 }
 .profile-pick:hover,
 .profile-pick[aria-expanded="true"] {
-  background: var(--raised-2);
+  color: var(--accent-light);
+}
+.profile-pick:hover svg,
+.profile-pick[aria-expanded="true"] svg {
+  stroke: currentColor;
 }
 .profile-pick:focus-visible {
   outline: 2px solid var(--accent-light);
@@ -183,8 +190,8 @@
   white-space: nowrap;
 }
 .profile-pick svg {
-  width: 12px;
-  height: 12px;
+  width: 14px;
+  height: 14px;
   flex: 0 0 auto;
   fill: none;
   stroke: var(--muted);
@@ -192,79 +199,99 @@
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-.profile-manage {
-  align-self: start;
+.profile-meta {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  margin: 0 12px;
 }
 .profile-sub {
-  grid-column: 1 / -1;
-  margin: 2px 0 0;
-  color: var(--dim);
-  font: 500 11.5px/16px var(--font);
-}
-.profile-card.changed .profile-sub {
-  color: var(--accent-light);
+  min-width: 0;
+  min-height: 16px;
+  margin: 0;
+  color: var(--muted);
+  font: 400 12px/16px var(--font);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .profile-changed {
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  display: flex;
+  align-items: center;
   gap: 6px;
-  margin-top: 8px;
 }
 .profile-changed[hidden] {
   display: none;
 }
-.profile-changed .btn1,
 .profile-changed .btn2 {
-  width: 100%;
+  width: auto;
   min-height: 28px;
-  padding: 0 8px;
-  font-size: 12px;
+  padding: 0 6px;
+  border-radius: var(--r-ctl);
+  font: 400 11px/16px var(--font);
+  white-space: nowrap;
+  background: transparent;
+  color: var(--muted);
 }
+.profile-changed .btn2:hover { background: transparent; color: var(--accent-light); }
+.profile-changed .profile-save { color: var(--text); }
+.profile-changed .btn2:focus-visible { outline: 2px solid var(--accent-light); outline-offset: -2px; }
 
 .profile-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  left: 0;
-  z-index: 30;
-  padding: 5px;
-  border: 1px solid var(--border2);
+  position: fixed;
+  inset: auto;
+  box-sizing: border-box;
+  max-width: calc(100vw - 16px);
+  margin: 0;
+  padding: 6px;
+  border: 0;
   border-radius: var(--r-surf);
-  background: #242428;
-  box-shadow: 0 12px 32px rgb(0 0 0 / 0.5);
+  background: var(--sink);
+  color: var(--text);
+  box-shadow: 0 6px 18px rgb(0 0 0 / .25);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
 }
+.profile-menu[data-side="below"] {
+  border-radius: 0 0 var(--r-surf) var(--r-surf);
+}
+.profile-menu[data-side="above"] {
+  border-radius: var(--r-surf) var(--r-surf) 0 0;
+}
+.profile-menu [hidden],
 .profile-menu[hidden] {
   display: none;
 }
-.profile-menu-title {
-  padding: 6px 8px 4px;
-  color: var(--dim);
-  font: 600 10px var(--font);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
+.profile-menu::backdrop { background: transparent; }
+.profile-search-row { padding: 4px 10px 9px; }
+.profile-search-row input { box-sizing: border-box; width: 100%; height: 27px; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--text); font: 400 12px var(--font); outline: none; }
+.profile-search-row:focus-within { box-shadow: inset 0 -2px var(--accent-light); }
+.profile-search-row input::placeholder { color: var(--muted); opacity: 1; }
 .profile-option {
-  display: grid;
-  grid-template-columns: 16px minmax(0, 1fr);
-  gap: 1px 8px;
+  display: flex;
+  gap: 10px;
   align-items: center;
-  padding: 7px 8px;
-  border-radius: 7px;
+  box-sizing: border-box;
+  min-height: 48px;
+  padding: 7px 10px;
+  border-radius: 6px;
   cursor: pointer;
 }
 .profile-option:hover,
 .profile-option:focus {
-  background: var(--raised);
+  background: var(--raised-2);
   outline: none;
 }
 .profile-option[aria-selected="true"] {
-  background: var(--raised-2);
+  background: var(--raised);
 }
+.profile-option:focus-visible { outline: 2px solid var(--accent-light); outline-offset: -2px; }
 .profile-option::before {
   content: "";
-  grid-row: 1;
-  justify-self: center;
+  flex: none;
   width: 4px;
   height: 8px;
   margin-top: -2px;
@@ -275,18 +302,24 @@
 .profile-option[aria-selected="true"]::before {
   border-color: var(--accent-light);
 }
+.profile-option-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
 .profile-option-name {
-  overflow: hidden;
   color: var(--text);
-  font: 600 12.5px/17px var(--font);
+  font: 600 13px/18px var(--font);
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .profile-option-note {
-  grid-column: 2;
+  color: var(--muted);
+  font: 400 12px/16px var(--font);
   overflow: hidden;
-  color: var(--dim);
-  font: 500 11px/15px var(--font);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -301,32 +334,28 @@
 .profile-menu-cmd {
   display: block;
   width: 100%;
-  padding: 7px 8px 7px 32px;
+  padding: 8px 10px;
   border: 0;
   border-radius: 7px;
   background: transparent;
   color: var(--muted);
-  font: 500 12px var(--font);
+  font: 400 12px/18px var(--font);
   text-align: left;
   cursor: pointer;
 }
 .profile-menu-cmd:hover {
-  background: var(--raised);
+  background: var(--raised-2);
   color: var(--text);
 }
 .profile-menu-cmd:focus-visible {
   outline: 2px solid var(--accent-light);
   outline-offset: -2px;
 }
-/* Size: the target you chose is the panel's headline number — Tuck can't
-   promise the exact output size, so this shows only what you actually set,
-   next to the detail line and the target control, in one lifted inset block. */
+/* the target extends the profile card in Compress; Upscale uses just the header */
 #sz-grp {
-  margin-top: 14px;
-  padding: 13px 13px 12px;
-  border: 1px solid var(--hair);
-  border-radius: var(--r-surf);
-  background: var(--sink);
+  margin: 0 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--hair);
 }
 #sz-grp .sz-head {
   display: flex;

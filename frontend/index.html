@@ -730,7 +730,7 @@
                     type="button"
                     id="prof-pick"
                     class="profile-pick"
-                    aria-haspopup="listbox"
+                    aria-haspopup="dialog"
                     aria-expanded="false"
                     aria-controls="prof-menu"
                     aria-describedby="prof-sub"
@@ -739,55 +739,52 @@
                     <span id="prof-name" class="profile-name"></span>
                     <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5"></path></svg>
                   </button>
-                  <button
-                    type="button"
-                    class="inspector-text-action profile-manage"
-                    data-action-click="settings-open-profiles"
-                    aria-label="Manage profiles"
-                  >
-                    Manage
-                  </button>
-                  <p id="prof-sub" class="profile-sub"></p>
-                  <div id="prof-changed" class="profile-changed" hidden>
-                    <button type="button" class="btn2" data-action-click="encoding-reset-profile">Discard</button>
-                    <button type="button" class="btn1" data-action-click="encoding-save-profile">Save to profile</button>
+                  <div class="profile-meta">
+                    <p id="prof-sub" class="profile-sub" role="status"></p>
+                    <div id="prof-changed" class="profile-changed" role="group" aria-label="Unsaved profile changes" hidden>
+                      <button type="button" class="btn2" data-action-click="encoding-reset-profile">Discard</button>
+                      <button type="button" class="btn2 profile-save" data-action-click="encoding-save-profile" aria-label="Save to profile">Save</button>
+                    </div>
                   </div>
                 </div>
-                <div id="prof-menu" class="profile-menu" hidden>
-                  <div id="prof-menu-title" class="profile-menu-title"></div>
-                  <div id="prof-options" role="listbox" aria-labelledby="prof-menu-title"></div>
+                <div id="prof-menu" class="profile-menu" popover="auto" role="dialog" aria-label="Choose profile" hidden>
+                  <div class="profile-search-row" hidden>
+                    <input id="prof-search" type="search" placeholder="Search profiles" aria-label="Search profiles" autocomplete="off" />
+                  </div>
+                  <div id="prof-options" role="listbox" aria-label="Profiles"></div>
+                  <p id="prof-empty" class="select-empty" role="status" hidden>No matching profiles.</p>
                   <div class="profile-menu-sep" role="separator"></div>
                   <button type="button" class="profile-menu-cmd" data-action-click="encoding-save-profile-as">Save current settings as new…</button>
                   <button type="button" class="profile-menu-cmd" data-action-click="settings-open-profiles">Manage profiles…</button>
                 </div>
-              </div>
-              <div class="gr" id="sz-grp">
-                <div class="sz-head">
-                  <span class="sz-cap">Target size</span>
-                </div>
-                <div class="sz-fig">
-                  <span class="sz-est">
-                    <input id="sz-badge" type="number" min="2" step="1" value="10"
-                      data-action-change="encoding-badge-size"
-                      aria-label="Target size in megabytes" />
-                    <span id="sz-unit">MB</span>
-                  </span>
-                  <div class="pset" id="sz-presets"></div>
-                </div>
-                <input
-                  type="range"
-                  id="sz-slider"
-                  min="2"
-                  max="500"
-                  value="10"
-                  data-action-input="encoding-target-size"
-                  aria-label="Target size in megabytes"
-                  aria-valuenow="10"
-                  aria-valuemin="2"
-                  aria-valuemax="500"
-                />
-                <div id="export-summary-detail" class="sz-detail">
-                  1920&times;1080 &middot; 30 fps &middot; H.264 &middot; AAC 128k
+                <div class="gr" id="sz-grp">
+                  <div class="sz-head">
+                    <span class="sz-cap">Target size</span>
+                  </div>
+                  <div class="sz-fig">
+                    <span class="sz-est">
+                      <input id="sz-badge" type="number" min="2" step="1" value="10"
+                        data-action-change="encoding-badge-size"
+                        aria-label="Target size in megabytes" />
+                      <span id="sz-unit">MB</span>
+                    </span>
+                    <div class="pset" id="sz-presets"></div>
+                  </div>
+                  <input
+                    type="range"
+                    id="sz-slider"
+                    min="2"
+                    max="500"
+                    value="10"
+                    data-action-input="encoding-target-size"
+                    aria-label="Target size in megabytes"
+                    aria-valuenow="10"
+                    aria-valuemin="2"
+                    aria-valuemax="500"
+                  />
+                  <div id="export-summary-detail" class="sz-detail">
+                    1920&times;1080 &middot; 30 fps &middot; H.264 &middot; AAC 128k
+                  </div>
                 </div>
               </div>
               <div class="stitle adjust-title">Adjust</div>

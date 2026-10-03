@@ -29,6 +29,7 @@ for (const width of [1240, 960]) {
     };
     await checkWidth("export-res-select-trigger", "export-res-select-popup");
     await checkWidth("export-fps-select-trigger", "export-fps-select-popup");
+    await checkWidth("prof-pick", "prof-menu", "#prof-card");
     await page.locator(".adjust-panel > summary").filter({ has: page.locator("#export-encoder-summary") }).click();
     await checkWidth("enc-sel-trigger", "enc-sel-popup");
     await page.getByRole("button", { name: "Settings", exact: true }).click();
@@ -209,4 +210,79 @@ test("encoder rescans retain unavailable choices without allowing selection", as
   await picker.press("Enter");
   await expect(page.locator("#enc-sel")).toHaveValue("libx265");
   await expect(picker).toHaveAttribute("data-value", "libx265");
+});
+
+test("dropdown focus suppresses editor deletion shortcuts", async ({ page }) => {
+  const fixture = healthyBackendFixture();
+  fixture.responses.getSettings = {
+    ...fixture.responses.getSettings as object,
+    profiles: [{ profile_id: "review", name: "Review", workflow: "compression" }],
+  };
+  fixture.startup.files = ["C:\\media\\dropdown-shortcuts.mp4"];
+  fixture.responses.probeFile = { ok: true, data: { duration: 12, width: 1920, height: 1080, fps: 30, has_audio: true } };
+  fixture.responses.getMediaUrl = { ok: true, url: "https://media.test/v", token: "t" };
+  fixture.responses.getThumbnail = { ok: true, thumbnail: "" };
+  await installFakeBackend(page, fixture);
+  await page.goto("/");
+  await expect(page.locator(".tl-segment")).toHaveCount(1);
+  const ruler = (await page.locator("#sequence-ruler").boundingBox())!;
+  await page.mouse.click(ruler.x + ruler.width / 2, ruler.y + ruler.height / 2);
+  await page.getByRole("button", { name: "Split at playhead", exact: true }).click();
+  await expect(page.locator(".tl-segment")).toHaveCount(2);
+  await page.locator(".adjust-panel > summary").filter({ has: page.locator("#export-encoder-summary") }).click();
+  const encoder = page.locator("#enc-sel-trigger");
+  await expect(encoder).toHaveAttribute("role", "button");
+  await encoder.focus();
+  await encoder.press("Backspace");
+  await encoder.press("Delete");
+  await expect(page.locator(".tl-segment")).toHaveCount(2);
+  await page.locator("#prof-pick").focus();
+  await page.locator("#prof-pick").press("Delete");
+  await expect(page.locator(".tl-segment")).toHaveCount(2);
+  await page.locator("#prof-pick").press("ArrowDown");
+  const profile = page.locator("#prof-options [role=option]").first();
+  await expect(profile).toBeFocused();
+  const mute = page.getByRole("button", { name: "Mute source audio", exact: true });
+  await expect(mute).toHaveAttribute("aria-pressed", "false");
+  await profile.press("m");
+  await expect(mute).toHaveAttribute("aria-pressed", "false");
+  await profile.press("Escape");
+  await page.locator("#lut-panel > summary").click();
+  await page.locator("#lut-name").focus();
+  await page.locator("#lut-name").press("Backspace");
+  await expect(page.locator(".tl-segment")).toHaveCount(2);
+  // the same shortcut still removes a segment once focus returns to the timeline
+  await page.locator("#timeline").focus();
+  await page.keyboard.press("Delete");
+  await expect(page.locator(".tl-segment")).toHaveCount(1);
+});
+
+test("a long profile menu closes when its Inspector anchor scrolls out of view", async ({ page }) => {
+  await page.setViewportSize({ width: 960, height: 640 });
+  const fixture = healthyBackendFixture();
+  fixture.responses.getSettings = {
+    ...fixture.responses.getSettings as object,
+    profiles: Array.from({ length: 20 }, (_, index) => ({
+      profile_id: `profile-${index}`, name: `Profile ${index}`, workflow: "compression",
+    })),
+  };
+  await installFakeBackend(page, fixture);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Inspector", exact: true }).click();
+  await page.locator(".adjust-panel > summary").filter({ has: page.locator("#export-encoder-summary") }).click();
+  await page.locator("#frame-blending-panel > summary").click();
+  await page.locator("#lut-panel > summary").click();
+  await page.locator("#prof-pick").click();
+  const menu = page.locator("#prof-menu");
+  await expect(menu).toBeVisible();
+  expect(await menu.evaluate(element => {
+    const bounds = element.getBoundingClientRect();
+    return bounds.top >= 8 && bounds.bottom <= innerHeight - 8;
+  })).toBe(true);
+  const inspector = (await page.locator("#right-scroll").boundingBox())!;
+  await page.mouse.move(inspector.x + inspector.width - 4, inspector.y + inspector.height / 2);
+  await page.mouse.wheel(0, 2000);
+  await expect.poll(() => page.locator("#prof-card").evaluate(element => element.getBoundingClientRect().bottom)).toBeLessThan(8);
+  await expect(menu).toBeHidden();
+  await expect(page.locator("#prof-pick")).toHaveAttribute("aria-expanded", "false");
 });

@@ -1,4 +1,5 @@
 import { installLutControls } from "./lut-controls.ts";
+import { nextSelectMatch, selectPopupPlacement, selectSearchThreshold, selectTypeaheadPrefix } from "../../ui/select-state.ts";
 import { installFrameBlending } from "./frame-blending.ts";
 import { installCutControls } from "./cut-controls.ts";
 import { createCutState } from "./cut-state.ts";
@@ -1206,25 +1207,46 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
   function renderProfileCard(): void {
     const profile = selectedProfile();
     const name = currentProfileName() || "No profile";
-    const changed = isProfileChanged();
+    const changed = !!profile && isProfileChanged();
+    const changes = el("prof-changed");
+    const returnFocus = !changed && changes.contains(document.activeElement);
     el("prof-name").textContent = name;
     el("prof-pick").setAttribute("aria-label", `Profile: ${name}`);
     el("prof-card").classList.toggle("changed", changed);
-    el("prof-sub").textContent = changed
+    const summary = changed
       ? profileChangeSummary(JSON.parse(profileSnapshot) as Record<string, unknown>, profileControlState())
-      : profile ? profileSummary(profile) : "";
-    el("prof-changed").hidden = !changed;
+      : profile ? profileSummary(profile, { includeTargetSize: false }) : "Current settings";
+    el("prof-sub").textContent = changed ? "Unsaved changes" : summary.charAt(0).toUpperCase() + summary.slice(1);
+    el("prof-sub").title = summary;
+    changes.hidden = !changed;
+    if (returnFocus) el("prof-pick").focus({ preventScroll: true });
   }
 
   const profileMenu = el("prof-menu");
+  const profileHeader = el("prof-card");
   const profilePick = el("prof-pick");
+  const profileSearch = el<HTMLInputElement>("prof-search");
+  const profileSearchRow = profileSearch.parentElement!;
+  let profileTyped = "";
+  let profileLastTyped = 0;
 
   function profileOptionRows(): HTMLElement[] {
-    return [...el("prof-options").querySelectorAll<HTMLElement>('[role="option"]')];
+    return [...el("prof-options").querySelectorAll<HTMLElement>('[role="option"]')].filter(row => !row.hidden);
+  }
+
+  function focusProfileItem(item: HTMLElement | undefined): void {
+    if (!item) return;
+    item.focus({ preventScroll: true });
+    // reveal the focused item without moving the Inspector behind the menu
+    const bounds = item.getBoundingClientRect();
+    const viewport = profileMenu.getBoundingClientRect();
+    if (bounds.top < viewport.top + 6) profileMenu.scrollTop -= viewport.top + 6 - bounds.top;
+    else if (bounds.bottom > viewport.bottom - 6) profileMenu.scrollTop += bounds.bottom - viewport.bottom + 6;
   }
 
   function renderProfileMenu(): void {
-    el("prof-menu-title").textContent = wf === 1 ? "Upscale" : "Compress";
+    el("prof-options").setAttribute("aria-label", wf === 1 ? "Upscale profiles" : "Compress profiles");
+    profileSearchRow.hidden = select("prof-sel").options.length < selectSearchThreshold;
     const current = select("prof-sel").value;
     const changed = isProfileChanged();
     const rows = [...select("prof-sel").options].map((option, index) => {
@@ -1239,67 +1261,138 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
       row.setAttribute("aria-selected", String(selected));
       const name = document.createElement("span");
       name.className = "profile-option-name";
+      name.id = `${row.id}-name`;
       name.textContent = option.textContent ?? "";
       const note = document.createElement("span");
       note.className = "profile-option-note";
+      note.id = `${row.id}-note`;
       const profile = profiles().find((entry) => entry.profile_id === option.value);
+      row.title = profile ? `${option.textContent}: ${profileSummary(profile)}` : option.textContent ?? "";
+      note.textContent = profile ? profileSummary(profile) : "";
       if (selected && changed) {
         row.classList.add("changed");
-        note.textContent = "Changed, not saved";
-      } else {
-        note.textContent = profile ? profileSummary(profile) : "";
+        note.textContent = `Changed, not saved · ${note.textContent}`;
       }
-      row.append(name, note);
+      row.setAttribute("aria-labelledby", name.id);
+      row.setAttribute("aria-describedby", note.id);
+      const copy = document.createElement("span");
+      copy.className = "profile-option-copy";
+      copy.append(name, note);
+      row.append(copy);
       return row;
     });
     el("prof-options").replaceChildren(...rows);
+    filterProfiles();
   }
 
-  function openProfileMenu(): void {
+  function filterProfiles(): void {
+    const query = profileSearchRow.hidden ? "" : profileSearch.value.trim().toLocaleLowerCase();
+    for (const row of el("prof-options").querySelectorAll<HTMLElement>('[role="option"]')) {
+      row.hidden = !`${row.textContent ?? ""} ${row.title}`.toLocaleLowerCase().includes(query);
+    }
+    el("prof-empty").hidden = profileOptionRows().length > 0;
+  }
+
+  function positionProfileMenu(): void {
+    if (!profilePick.getClientRects().length) { closeProfileMenu(false); return; }
+    // cover the target with the menu while keeping the shared header visible
+    const anchor = profileHeader.getBoundingClientRect();
+    if (anchor.bottom < 8 || anchor.top > window.innerHeight - 8) { closeProfileMenu(false); return; }
+    profileMenu.style.width = `${anchor.width}px`;
+    const placement = selectPopupPlacement(anchor,
+      Math.min(profileMenu.scrollHeight, 380), window.innerWidth, window.innerHeight, 0);
+    const side = placement.top < anchor.top ? "above" : "below";
+    profileMenu.dataset.side = side;
+    profileHeader.dataset.menuSide = side;
+    profileMenu.style.left = `${placement.left}px`;
+    profileMenu.style.top = `${placement.top}px`;
+    profileMenu.style.width = `${placement.width}px`;
+    profileMenu.style.maxHeight = `${placement.maxHeight}px`;
+  }
+
+  function openProfileMenu(searchFocus = false): void {
     if (!profileMenu.hidden) return;
+    profileTyped = "";
+    profileLastTyped = 0;
+    profileSearch.value = "";
     renderProfileMenu();
     profileMenu.hidden = false;
+    profileMenu.showPopover();
     profilePick.setAttribute("aria-expanded", "true");
+    positionProfileMenu();
     const rows = profileOptionRows();
-    (rows.find((row) => row.getAttribute("aria-selected") === "true") ?? rows[0])?.focus();
+    if (searchFocus && !profileSearchRow.hidden) focusProfileItem(profileSearch);
+    else focusProfileItem(rows.find((row) => row.getAttribute("aria-selected") === "true") ?? rows[0] ??
+      profileMenu.querySelector<HTMLButtonElement>(".profile-menu-cmd") ?? profilePick);
   }
 
   function closeProfileMenu(returnFocus: boolean): void {
     if (profileMenu.hidden) return;
+    if (profileMenu.matches(":popover-open")) profileMenu.hidePopover();
     profileMenu.hidden = true;
+    delete profileHeader.dataset.menuSide;
     profilePick.setAttribute("aria-expanded", "false");
     if (returnFocus) profilePick.focus();
   }
 
   function toggleProfileMenu(): void {
-    if (profileMenu.hidden) openProfileMenu();
+    if (profileMenu.hidden) openProfileMenu(true);
     else closeProfileMenu(true);
   }
 
   profilePick.addEventListener("keydown", (event) => {
-    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+    if (!["ArrowDown", "ArrowUp", "Enter", " "].includes(event.key)) return;
     event.preventDefault();
+    event.stopPropagation();
     openProfileMenu();
   });
   profileMenu.addEventListener("keydown", (event) => {
     const rows = profileOptionRows();
     const index = rows.indexOf(document.activeElement as HTMLElement);
+    const searching = event.target === profileSearch;
     if (event.key === "Escape") {
       event.preventDefault();
       event.stopPropagation();
       closeProfileMenu(true);
     } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
+      event.stopPropagation();
       const step = event.key === "ArrowDown" ? 1 : -1;
-      rows[(Math.max(index, 0) + step + rows.length) % rows.length]?.focus();
-    } else if (event.key === "Home" || event.key === "End") {
+      const next = index < 0 ? (step === 1 ? 0 : rows.length - 1) : Math.max(0, Math.min(rows.length - 1, index + step));
+      focusProfileItem(rows[next]);
+    } else if (!searching && (event.key === "Home" || event.key === "End")) {
       event.preventDefault();
-      rows[event.key === "Home" ? 0 : rows.length - 1]?.focus();
+      event.stopPropagation();
+      focusProfileItem(rows[event.key === "Home" ? 0 : rows.length - 1]);
     } else if ((event.key === "Enter" || event.key === " ") && index >= 0) {
       event.preventDefault();
+      event.stopPropagation();
       chooseProfile(rows[index]?.dataset.profileId ?? "");
+    } else if (searching && event.key === "Enter") {
+      event.preventDefault();
+      event.stopPropagation();
+      const first = rows[0];
+      if (first) chooseProfile(first.dataset.profileId ?? "");
+    } else if (index >= 0 && event.key.length === 1 && !event.ctrlKey && !event.altKey && !event.metaKey) {
+      event.preventDefault();
+      event.stopPropagation();
+      profileTyped = selectTypeaheadPrefix(profileTyped, profileLastTyped, event.key, event.timeStamp);
+      profileLastTyped = event.timeStamp;
+      const choices = rows.map(row => ({
+        value: row.dataset.profileId ?? "", label: row.querySelector(".profile-option-name")?.textContent ?? "",
+        detail: row.title, disabled: false,
+      }));
+      focusProfileItem(rows[nextSelectMatch(choices, index, profileTyped, profileTyped.length === 1)]);
     }
   });
+  profileSearch.addEventListener("input", () => { filterProfiles(); positionProfileMenu(); });
+  profileMenu.addEventListener("toggle", () => {
+    if (!profileMenu.matches(":popover-open") && !profileMenu.hidden) closeProfileMenu(false);
+  });
+  window.addEventListener("resize", () => closeProfileMenu(false));
+  document.addEventListener("scroll", event => {
+    if (!profileMenu.hidden && event.target instanceof Node && !profileMenu.contains(event.target)) positionProfileMenu();
+  }, true);
   // a command closes the menu; choosing a profile closes it in chooseProfile
   profileMenu.addEventListener("click", (event) => {
     if (event.target instanceof Element && event.target.closest(".profile-menu-cmd")) closeProfileMenu(false);
