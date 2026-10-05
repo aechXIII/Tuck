@@ -1,49 +1,46 @@
 # Third-party notices for Tuck on Linux
 
-Tuck is free software, licensed under the GNU General Public License, version 3.0
-only (`GPL-3.0-only`). See `LICENSE`. This notice applies to the x86-64 Linux
-AppImage. The locked inputs for its media tools are recorded in
-`packaging/ffmpeg-linux-sources.lock.json`.
+Tuck is free software under the GNU GPL version 3.0 only. See `LICENSE`.
+This notice is for the x86-64 AppImage, which also includes the components
+below.
 
 ## FFmpeg and ffprobe
 
-The AppImage builds and bundles `ffmpeg` and `ffprobe` on native Ubuntu 22.04
-from these locked sources:
-
-- FFmpeg 7.1.1, GPL-2.0-or-later when built with the GPL options used here
-- x264 snapshot 20191217-2245-stable, GPL-2.0-or-later
-- x265 3.6 at revision `aa7f602f7592eddb9d87749be7466da005b556ee`, GPL-2.0-or-later
-
-The tools link x264 and x265 statically and use the system's `libc.so.6`.
-Source URLs, hashes, licenses, and the build recipe are recorded in
+`ffmpeg` and `ffprobe` are built on Ubuntu 22.04 from pinned sources:
+FFmpeg 7.1.1, x264 (snapshot 20191217-2245-stable) and x265 3.6, all
+GPL-2.0-or-later. x264 and x265 are linked statically. The lock file is
 `packaging/ffmpeg-linux-sources.lock.json`.
 
-Each AppImage includes `ffmpeg/source/ffmpeg-source.tar.xz`, containing the
-three source archives, build recipe, and source manifest. If the archive is
-missing, request a copy through Tuck's GitHub repository. Corresponding source
-is available on request for at least three years after distribution.
+The AppImage includes `ffmpeg/source/ffmpeg-source.tar.xz` with the three
+source archives, the build recipe and the license files. If it is missing,
+ask for a copy through Tuck's GitHub repository.
 
-Before packaging, the verifier checks the sources, executable hashes, required
-codecs and filters, build options, and library dependencies.
+## Desktop shell
 
-## Tauri desktop shell
+`Tuck` is built with Tauri 2 and the Rust crates in `src-tauri/Cargo.lock`
+(MIT, Apache-2.0, BSD, ISC, Zlib, Unicode-3.0 and MPL-2.0 licenses). The
+AppImage bundles GTK, WebKitGTK, GStreamer and their dependencies from
+Ubuntu 22.04 so video preview works without system packages. Those libraries
+keep their own licenses, mostly LGPL, GPL, MIT and BSD.
 
-The `Tuck` shell uses Tauri 2, WebKitGTK, GTK, and the Rust crates pinned in
-`src-tauri/Cargo.lock`. The AppImage contains the shell and its runtime
-dependencies, not a system Python or FFmpeg installation.
+## Python and media libraries
 
-## Python sidecar
+`tuck-sidecar` embeds CPython (PSF license) and the packages in
+`packaging/sidecar-constraints.txt`: platformdirs, rich, markdown-it-py and
+mdurl (MIT) and Pygments (BSD-2-Clause).
 
-`tuck-sidecar` embeds CPython and the packages pinned in
-`packaging/sidecar-constraints.txt`: platformdirs (MIT), rich (MIT),
-markdown-it-py (MIT), mdurl (MIT), Pygments (BSD-2-Clause), and packaging
-(Apache-2.0 OR BSD-2-Clause). CPython is distributed under the PSF License
-Agreement: <https://docs.python.org/3/license.html>.
+Frame blending and LUTs use PyAV 16.1.0 and NumPy 2.2.6 (both BSD-3-Clause).
+Their license files are in `_internal/licenses/av/` and `_internal/licenses/numpy/`.
 
-Frame blending and LUT processing also use PyAV 16.1.0 and NumPy 2.2.6
-(both BSD-3-Clause). Their license texts are included under `_internal/licenses/av/`
-and `_internal/licenses/numpy/`. The NumPy wheel's license includes its bundled
-numerical libraries. PyAV's wheel includes FFmpeg shared libraries in addition
-to Tuck's separately bundled command-line tools; its build sources and dependency
-recipes are available at <https://github.com/PyAV-Org/PyAV> and
-<https://github.com/PyAV-Org/pyav-ffmpeg>.
+PyAV ships its own FFmpeg 8.0.1 libraries with x264, x265 4.1 and LAME 3.100.
+They are separate from the command-line tools above and are built by
+`pyav-ffmpeg` release `8.0.1-3`, whose sources, patches and build scripts are at
+<https://github.com/PyAV-Org/pyav-ffmpeg/tree/8.0.1-3>.
+
+## Source code
+
+Tuck's source is at <https://github.com/aechXIII/Tuck>. The bundled Ubuntu
+libraries come from Ubuntu 22.04 source packages at <https://launchpad.net/ubuntu>.
+For any GPL, LGPL or MPL component in this package, you can also ask for the
+matching source through Tuck's repository for at least three years after
+release, for no more than the cost of sending it.
