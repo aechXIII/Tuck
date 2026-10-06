@@ -13,6 +13,7 @@ from av.video.stream import VideoStream
 
 from ..models.cutting import Chapter, CutAnalysis, CutPlan, MediaTime
 from ..models.progress import EncodeProgress, EncodeStage
+from ..output_paths import copy_file_dates
 from ..output_transaction import OutputTransaction
 from .analysis import CutAnalysisError
 from .exact import ExactEdges, encode_edges, exact_packets
@@ -210,6 +211,8 @@ class CutRunner:
                 )
                 check_cut_cancel(self._cancel)
                 output = transaction.publish(result)
+                if plan.keep_file_dates:
+                    copy_file_dates(Path(plan.source), output)
             report(EncodeStage.COMPLETED, "Completed", duration)
             return output
         except CutAnalysisError as exc:

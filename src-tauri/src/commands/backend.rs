@@ -83,6 +83,13 @@ pub enum BackendCommand {
         settings: Value,
     },
     RefreshEncoders,
+    ExportSettingsToFile {
+        path: String,
+    },
+    ImportSettingsFromFile {
+        path: String,
+    },
+    ResetSettings,
     GetProfilesJson,
     CreateProfile {
         profile: Value,
@@ -189,6 +196,13 @@ impl BackendCommand {
             Self::GetSettings => ("get_settings", json!({})),
             Self::SaveSettings { settings } => ("save_settings", json!({ "settings": settings })),
             Self::RefreshEncoders => ("refresh_encoders", json!({})),
+            Self::ExportSettingsToFile { path } => {
+                ("export_settings_to_file", json!({ "path": path }))
+            }
+            Self::ImportSettingsFromFile { path } => {
+                ("import_settings_from_file", json!({ "path": path }))
+            }
+            Self::ResetSettings => ("reset_settings", json!({})),
             Self::GetProfilesJson => ("get_profiles_json", json!({})),
             Self::CreateProfile { profile } => ("create_profile", json!({ "profile": profile })),
             Self::UpdateProfile {
@@ -416,6 +430,27 @@ mod tests {
             request["params"],
             json!({"kind": "upscale", "executable_path": "C:\\Tuck\\Tuck.exe"})
         );
+    }
+
+    #[test]
+    fn settings_backup_commands_reach_the_sidecar_with_only_a_path() {
+        for (command, method) in [
+            ("export_settings_to_file", "export_settings_to_file"),
+            ("import_settings_from_file", "import_settings_from_file"),
+        ] {
+            let parsed: BackendCommand = serde_json::from_value(
+                json!({"command": command, "payload": {"path": "backup.json"}}),
+            )
+            .expect("allowlisted backup command");
+            let request = parsed.to_sidecar_request("backup").unwrap();
+            assert_eq!(request["method"], method);
+            assert_eq!(request["params"], json!({ "path": "backup.json" }));
+        }
+        let reset: BackendCommand =
+            serde_json::from_value(json!({"command": "reset_settings"})).expect("reset");
+        let request = reset.to_sidecar_request("reset").unwrap();
+        assert_eq!(request["method"], "reset_settings");
+        assert_eq!(request["params"], json!({}));
     }
 
     #[test]

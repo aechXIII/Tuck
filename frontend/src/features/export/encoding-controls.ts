@@ -179,7 +179,6 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     const analysis = state.analysis?.analysis;
     return buildCutRequest({clip,state,edits,
       ...(analysis ? {frameDuration:analysis.frame_duration,duration:analysis.duration} : {}),
-      ...(typeof appSettings().output_dir === "string" ? {outputDir:String(appSettings().output_dir)} : {}),
     });
   }
 

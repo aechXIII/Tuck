@@ -30,7 +30,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WM_PAINT, WM_SYSCOMMAND, WNDCLASSEXW, WS_CHILD, WS_CLIPSIBLINGS, WS_VISIBLE,
 };
 
-use super::window_chrome::CaptionArea;
+use super::window_chrome::{css_to_physical, CaptionArea};
 
 pub const MAXIMIZE_HOVER_EVENT: &str = "caption-maximize";
 
@@ -92,7 +92,7 @@ pub fn reposition(window: &Window) {
     let Some(parent) = parent_hwnd(window) else {
         return;
     };
-    let scale = window.scale_factor().unwrap_or(1.0);
+    let scale = css_to_physical(window.scale_factor().unwrap_or(1.0));
     OVERLAY.with(|cell| {
         let overlay = cell.borrow();
         let Some(overlay) = overlay.as_ref() else {
@@ -132,7 +132,7 @@ pub fn show_window_menu(window: &Window, x: f64, y: f64) {
     let Some(hwnd) = parent_hwnd(window) else {
         return;
     };
-    let scale = window.scale_factor().unwrap_or(1.0);
+    let scale = css_to_physical(window.scale_factor().unwrap_or(1.0));
     unsafe {
         let menu = GetSystemMenu(hwnd, false);
         if menu.is_invalid() {

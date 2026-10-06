@@ -1453,14 +1453,6 @@ select {
   justify-content: space-between;
   margin-bottom: 6px;
 }
-.sl-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.sl-row input[type="range"] {
-  flex: 1;
-}
 .btn1 {
   width: 100%;
   background: var(--action);
@@ -2109,16 +2101,6 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
   font-size: 26px;
   font-weight: 700;
 }
-.sl-row input[type="number"] {
-  width: 58px;
-  text-align: center;
-  -moz-appearance: textfield;
-}
-.sl-row input[type="number"]::-webkit-inner-spin-button,
-.sl-row input[type="number"]::-webkit-outer-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
-}
 @media (max-height: 700px) {
   #right-scroll {
     overflow-y: auto;
@@ -2152,33 +2134,6 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
   #insp-export {
     overflow: visible;
   }
-}
-.settings-sec {
-  border-top: 1px solid var(--border2);
-  padding-top: 10px;
-  margin-top: 4px;
-}
-.settings-sec h3 {
-  color: var(--dim);
-  font-size: 11px;
-  text-transform: none;
-  letter-spacing: 0;
-  margin-bottom: 8px;
-}
-.example-out {
-  color: var(--muted);
-  font-size: 11px;
-  background: var(--input-bg);
-  padding: 6px 8px;
-  border-radius: var(--radius);
-  border: 1px solid var(--border2);
-  word-break: break-all;
-}
-.help-tip {
-  font-size: 10px;
-  color: var(--muted);
-  margin-top: 2px;
-  display: block;
 }
 .enc-field {
   margin-top: 8px;
@@ -2229,6 +2184,43 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
   --panel-inset: 12px;
   --panel-scrollbar: 10px;
   --inspector-content-inset: var(--panel-inset);
+}
+
+/* accent colors from Settings; each keeps violet's lightness so text contrast holds */
+:root[data-accent="blue"] {
+  --accent: #4d87db; --accent-light: #97bafe; --action: #3268bd; --action-hover: #3a6dc0;
+  --seg-fill: #32578c; --seg-fill-hover: #395f98; --seg-fill-active: #3f65a6;
+  --audio-clip-fill: #2862a8; --audio-clip-fill-hover: #3f65a6;
+}
+:root[data-accent="teal"] {
+  --accent: #0b9b95; --accent-light: #3ad3d3; --action: #097b77; --action-hover: #09807d;
+  --seg-fill: #036460; --seg-fill-hover: #036d6a; --seg-fill-active: #047573;
+  --audio-clip-fill: #05716a; --audio-clip-fill-hover: #047573;
+}
+:root[data-accent="green"] {
+  --accent: #479d4d; --accent-light: #7dd190; --action: #1b782d; --action-hover: #217d33;
+  --seg-fill: #2f6532; --seg-fill-hover: #336e39; --seg-fill-active: #31773f;
+  --audio-clip-fill: #2f732a; --audio-clip-fill-hover: #31773f;
+}
+:root[data-accent="amber"] {
+  --accent: #b97604; --accent-light: #e8af59; --action: #935e01; --action-hover: #986202;
+  --seg-fill: #794b02; --seg-fill-hover: #835304; --seg-fill-active: #8b5a01;
+  --audio-clip-fill: #8a5300; --audio-clip-fill-hover: #8b5a01;
+}
+:root[data-accent="rose"] {
+  --accent: #c95e83; --accent-light: #fd98b0; --action: #aa3f66; --action-hover: #af4569;
+  --seg-fill: #813d55; --seg-fill-hover: #8d435c; --seg-fill-active: #994760;
+  --audio-clip-fill: #983d63; --audio-clip-fill-hover: #994760;
+}
+/* Animations off in Settings: things appear and move instantly */
+:root[data-motion="off"] *,
+:root[data-motion="off"] *::before,
+:root[data-motion="off"] *::after {
+  animation-duration: 0s !important;
+  animation-delay: 0s !important;
+  transition-duration: 0s !important;
+  transition-delay: 0s !important;
+  scroll-behavior: auto !important;
 }
 .panel-heading {
   display: none !important;

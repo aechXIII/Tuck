@@ -68,6 +68,26 @@ export function emptyQueueView(): QueueViewState {
   };
 }
 
+/** What the system notification says when a batch finishes. */
+export function finishedNotification(
+  items: readonly QueueItem[],
+  batchIds: Readonly<Record<string, true>>,
+): { readonly title: string; readonly body: string } | null {
+  const batch = items.filter((item) => item.id && batchIds[item.id]);
+  const saved = batch.filter((item) => item.state === "completed").length;
+  const failed = batch.filter((item) => item.state === "failed").length;
+  const videos = (count: number): string => `${count} ${count === 1 ? "video" : "videos"}`;
+  if (failed) {
+    return {
+      title: "Exports finished with problems",
+      body: saved ? `${videos(saved)} saved, ${failed} failed.` : `${videos(failed)} failed.`,
+    };
+  }
+  // a batch that was cancelled has nothing to report
+  if (!saved) return null;
+  return { title: "Exports finished", body: `${videos(saved)} saved.` };
+}
+
 export function formatEta(seconds: number | null | undefined): string {
   if (seconds == null || !(seconds >= 0)) return "--";
   const total = Math.round(seconds);

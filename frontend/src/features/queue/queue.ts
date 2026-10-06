@@ -8,6 +8,7 @@ import type { EditorSession } from "../editor/session.ts";
 import {
   emptyQueueView,
   exportRows,
+  finishedNotification,
   formatQueueStatus,
   reduceQueueSnapshot,
   type ExportRow,
@@ -280,6 +281,11 @@ export function installQueue(deps: QueueDeps): QueueApi {
 
       if (queueView.finishedToast) {
         toast(queueView.finishedToast.message, queueView.finishedToast.kind);
+        if (session.appSettings.notify_when_done !== false) {
+          const note = finishedNotification(items, previous.activeItemIds);
+          // the system notification only shows while Tuck is in the background
+          if (note) void client().notifyWhenUnfocused(note.title, note.body);
+        }
       }
       if (queueView.outputToOpen && session.appSettings.open_output_folder_after_queue) {
         await openResult(queueView.outputToOpen);

@@ -47,6 +47,32 @@ export interface Settings extends JsonObject {
   readonly timeline_keyframes?: boolean;
   /** command id -> chosen key combos; an empty list means every key was removed */
   readonly shortcut_overrides?: Readonly<Record<string, readonly string[]>>;
+  readonly accent_color?: AccentColor;
+  readonly interface_size?: InterfaceSize;
+  readonly animations?: boolean;
+  readonly time_format?: TimeFormat;
+  readonly output_location?: OutputLocation;
+  readonly output_subfolder?: string;
+  readonly keep_file_dates?: boolean;
+  readonly notify_when_done?: boolean;
+  readonly keep_awake?: boolean;
+  readonly background_exports?: boolean;
+  readonly reopen_last_videos?: boolean;
+  readonly last_session_files?: readonly string[];
+}
+
+export type AccentColor = "violet" | "blue" | "teal" | "green" | "amber" | "rose";
+export type InterfaceSize = "compact" | "default" | "large";
+export type TimeFormat = "seconds" | "timecode" | "frames";
+export type OutputLocation = "source" | "subfolder" | "folder";
+
+export interface SettingsImport extends JsonObject {
+  /** paths from the backup that don't exist on this computer and were left as they were */
+  readonly skipped?: readonly string[];
+}
+
+export interface NotificationResult extends JsonObject {
+  readonly shown: boolean;
 }
 
 export interface Profile extends JsonObject {
@@ -163,6 +189,9 @@ export interface DomainBackendClient {
   deleteProfile(profileId: string): Promise<BackendResult<EmptyPayload>>;
   duplicateProfile(profileId: string): Promise<BackendResult<JsonObject>>;
   importProfilesFromFile(path: string): Promise<BackendResult<JsonObject>>;
+  exportSettingsToFile(path: string): Promise<BackendResult<EmptyPayload>>;
+  importSettingsFromFile(path: string): Promise<BackendResult<SettingsImport>>;
+  resetSettings(): Promise<BackendResult<EmptyPayload>>;
   exportProfileToFile(path: string, profileId: string): Promise<BackendResult<EmptyPayload>>;
   checkForUpdates(): Promise<BackendResult<UpdateCheck>>;
   downloadUpdate(): Promise<BackendResult<JsonObject>>;
@@ -190,6 +219,8 @@ export interface NativeBackendClient {
   pickFfprobeFile(): Promise<BackendResult<PathSelection>>;
   pickImportFile(): Promise<BackendResult<PathSelection>>;
   pickSaveFile(defaultName?: string): Promise<BackendResult<PathSelection>>;
+  setInterfaceSize(size: InterfaceSize): Promise<BackendResult<EmptyPayload>>;
+  notifyWhenUnfocused(title: string, body: string): Promise<BackendResult<NotificationResult>>;
 }
 
 export interface BackendClient extends DomainBackendClient, NativeBackendClient {}

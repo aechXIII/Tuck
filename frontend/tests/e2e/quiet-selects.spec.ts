@@ -43,8 +43,10 @@ for (const width of [1240, 960]) {
     await expectTriggerToggle(page, "export-res-select");
     await expectTriggerToggle(page, "export-fps-select");
     await page.getByRole("button", { name: "Settings", exact: true }).click();
+    await expectTriggerToggle(page, "set-start-task");
+    await expectTriggerToggle(page, "set-inspector-start");
+    await page.getByRole("button", { name: "Profiles", exact: true }).click();
     await expectTriggerToggle(page, "set-ds");
-    await expectTriggerToggle(page, "set-dp");
   });
 }
 
@@ -52,6 +54,7 @@ test("Quiet dropdowns show compact labels and a neutral selection", async ({ pag
   await installFakeBackend(page, healthyBackendFixture());
   await page.goto("/");
   await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: "Profiles", exact: true }).click();
   const trigger = page.locator("#set-ds-trigger");
   await trigger.click();
   const popup = page.locator("#set-ds-popup");
@@ -105,13 +108,6 @@ for (const count of [7, 8]) {
     await page.keyboard.press("Enter");
     await expect(page.locator("#prof-sel")).toHaveValue("profile-1");
     await expect(page.locator("#prof-pick")).toBeFocused();
-    await page.getByRole("button", { name: "Settings", exact: true }).click();
-    await page.locator("#set-dp-trigger").click();
-    const defaultProfiles = page.locator("#set-dp-popup");
-    if (count === 8) await expect(defaultProfiles.getByRole("combobox", { name: "Search profiles", exact: true })).toBeFocused();
-    else await expect(defaultProfiles.getByRole("combobox")).toHaveCount(0);
-    await page.keyboard.press("Escape");
-    await expect(page.getByRole("dialog", { name: "Settings", exact: true })).toBeVisible();
   });
 }
 

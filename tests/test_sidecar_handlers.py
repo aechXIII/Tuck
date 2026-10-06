@@ -30,6 +30,18 @@ class RecordingApi:
         self.calls.append(("get_storage_paths", None))
         return {"ok": True, "config_dir": "C:/Tuck/config", "log_dir": "C:/Tuck/data/logs"}
 
+    def export_settings_to_file(self, path: str) -> dict[str, object]:
+        self.calls.append(("export_settings_to_file", path))
+        return {"ok": True}
+
+    def import_settings_from_file(self, path: str) -> dict[str, object]:
+        self.calls.append(("import_settings_from_file", path))
+        return {"ok": True, "skipped": ["output_dir"]}
+
+    def reset_settings(self) -> dict[str, object]:
+        self.calls.append(("reset_settings", None))
+        return {"ok": True}
+
 
 def _request(method: str, params: dict[str, object], request_id: str = "request-1") -> Request:
     return Request(request_id=request_id, method=method, params=params)
@@ -147,3 +159,33 @@ def test_malformed_legacy_success_flag_cannot_be_promoted_to_a_protocol_success(
     assert response.ok is False
     assert response.error is not None
     assert response.error.code == "INTERNAL_ERROR"
+
+
+def test_settings_backup_handlers_take_only_a_path() -> None:
+    api = RecordingApi()
+
+    exported = dispatch(api, _request("export_settings_to_file", {"path": "C:/backup.json"}))
+    imported = dispatch(api, _request("import_settings_from_file", {"path": "C:/backup.json"}))
+    reset = dispatch(api, _request("reset_settings", {}))
+
+    assert api.calls == [
+        ("export_settings_to_file", "C:/backup.json"),
+        ("import_settings_from_file", "C:/backup.json"),
+        ("reset_settings", None),
+    ]
+    assert exported.ok and reset.ok
+    assert imported.result == {"skipped": ["output_dir"]}
+
+
+def test_settings_backup_handlers_reject_extra_parameters() -> None:
+    api = RecordingApi()
+
+    for method, params in [
+        ("export_settings_to_file", {"path": "C:/a.json", "profile_id": "x"}),
+        ("import_settings_from_file", {"path": 4}),
+        ("reset_settings", {"keep": True}),
+    ]:
+        response = dispatch(api, _request(method, params))
+        assert response.ok is False
+
+    assert api.calls == []

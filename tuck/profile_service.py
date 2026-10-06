@@ -17,7 +17,7 @@ from .models import (
     import_profiles_json,
     merge_imported_profiles,
 )
-from .settings import SettingsManager
+from .settings import ProfilesUnreadableError, SettingsManager
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +25,16 @@ logger = logging.getLogger(__name__)
 class ProfileService:
     def __init__(self, settings: SettingsManager) -> None:
         self._settings = settings
+
+    def _store(self, profiles: list[Profile]) -> BridgeResult | None:
+        """saves the new list, or returns why it can't be saved; a refused list is undone"""
+        with self._settings.lock:
+            self._settings.set_profiles(profiles)
+            try:
+                self._settings.save()
+            except ProfilesUnreadableError as exc:
+                return {"ok": False, "error": str(exc)}
+        return None
 
     def list_profiles(self) -> BridgeResult:
         return [
@@ -42,8 +52,8 @@ class ProfileService:
             return {"ok": False, "error": str(exc)}
 
         merged = merge_imported_profiles(self._settings.get_profiles(), imported)
-        self._settings.set_profiles(merged)
-        self._settings.save()
+        if refused := self._store(merged):
+            return refused
         return {"ok": True, "count": len(imported)}
 
     def export_to_file(self, file_path: str, profile_id: str) -> BridgeResult:
@@ -77,8 +87,8 @@ class ProfileService:
 
         profiles = self._settings.get_profiles()
         profiles.append(validated)
-        self._settings.set_profiles(profiles)
-        self._settings.save()
+        if refused := self._store(profiles):
+            return refused
         return {"ok": True, "profile_id": validated.profile_id}
 
     def duplicate(self, profile_id: str) -> BridgeResult:
@@ -96,8 +106,8 @@ class ProfileService:
             return {"ok": False, "error": str(exc)}
 
         profiles.append(validated)
-        self._settings.set_profiles(profiles)
-        self._settings.save()
+        if refused := self._store(profiles):
+            return refused
         return {"ok": True, "profile_id": validated.profile_id}
 
     def delete(self, profile_id: str) -> BridgeResult:
@@ -108,14 +118,12 @@ class ProfileService:
         if len(profiles) <= 1:
             return {"ok": False, "error": "Cannot delete the last profile"}
 
-        if self._settings.get_setting("default_profile_id", "") == profile_id:
-            remaining = [profile for profile in profiles if profile.profile_id != profile_id]
-            self._settings.set_setting("default_profile_id", pick_surviving_default(remaining))
-
-        self._settings.set_profiles(
-            [profile for profile in profiles if profile.profile_id != profile_id]
-        )
-        self._settings.save()
+        remaining = [profile for profile in profiles if profile.profile_id != profile_id]
+        with self._settings.lock:
+            if self._settings.get_setting("default_profile_id", "") == profile_id:
+                self._settings.set_setting("default_profile_id", pick_surviving_default(remaining))
+            if refused := self._store(remaining):
+                return refused
 
         try:
             from .sendto import uninstall_profile_shortcut
@@ -159,8 +167,8 @@ class ProfileService:
                 profiles[index] = validated
                 break
 
-        self._settings.set_profiles(profiles)
-        self._settings.save()
+        if refused := self._store(profiles):
+            return refused
         if validated.name != found.name or validated.workflow != found.workflow:
             _rename_sendto_shortcut(profile_id, validated)
         return {"ok": True}

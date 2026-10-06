@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import copy
 import json
 import os
 
@@ -55,10 +56,21 @@ from .models import (
     import_profiles_json,
     profiles_to_dicts,
 )
+from .models.export_preferences import (
+    DEFAULT_OUTPUT_SUBFOLDER,
+    OUTPUT_LOCATION_FOLDER,
+    OUTPUT_LOCATION_SOURCE,
+    normalize_output_location,
+    normalize_output_subfolder,
+)
 from .models.ui_preferences import (
+    CHOICE_PREFERENCES,
     DEFAULT_CUT_SUFFIX,
+    FLAG_PREFERENCES,
     START_TASK_LAST,
+    clean_session_files,
     clean_shortcut_overrides,
+    normalize_choice,
     normalize_cut_suffix,
     normalize_hidden_ui,
     normalize_start_task,
@@ -232,6 +244,10 @@ class ProcessLock:
         self.release()
 
 
+class ProfilesUnreadableError(ValueError):
+    """profiles.json holds profiles this version can't read, so changing them would lose them"""
+
+
 class SettingsManager:
     def __init__(self) -> None:
         self._lock = threading.RLock()
@@ -267,38 +283,67 @@ class SettingsManager:
             self._settings.profiles = profiles_to_dicts(self._profiles)
             return self._settings
 
+    @property
+    def lock(self) -> threading.RLock:
+        """held by callers that change several values and must save or undo them together"""
+        return self._lock
+
     def save(self) -> None:
         """acquires the cross-process lock, reloads from disk if another
-        process changed the file, merges, then writes"""
+        process changed the file, merges, then writes; a failed save puts memory
+        back to what was last written, so a later save can't write the failed change"""
         with self._lock:
             if self._settings is None:
                 return
+            try:
+                self._write()
+            except Exception:
+                self._restore_saved_state()
+                raise
 
-            lock_path = _get_lock_path()
-            with ProcessLock(lock_path):
-                sp = settings_path()
-                pp = profiles_path()
+    def _restore_saved_state(self) -> None:
+        if self._settings_snapshot is not None:
+            self._settings = AppSettings.from_dict(copy.deepcopy(self._settings_snapshot))
+        if self._profiles_snapshot is not None:
+            self._profiles = dicts_to_profiles(copy.deepcopy(self._profiles_snapshot))
 
-                if self._settings_snapshot is not None and sp.exists():
-                    self._reload_and_merge_settings_if_stale(sp)
+    def _write(self) -> None:
+        assert self._settings is not None
+        lock_path = _get_lock_path()
+        with ProcessLock(lock_path):
+            sp = settings_path()
+            pp = profiles_path()
 
-                if self._profiles_snapshot is not None and pp.exists():
-                    self._reload_and_merge_profiles_if_stale(pp)
+            if self._settings_snapshot is not None and sp.exists():
+                self._reload_and_merge_settings_if_stale(sp)
 
-                self._settings.profiles = profiles_to_dicts(self._profiles or [])
-                data = json.dumps(self._settings.to_dict(), indent=2, ensure_ascii=False)
-                _atomic_write(sp, data, backup_validator=_is_settings_document)
+            profiles_readable = True
+            if self._profiles_snapshot is not None and pp.exists():
+                profiles_readable = self._reload_and_merge_profiles_if_stale(pp)
 
-                if self._profiles is not None:
-                    wrapped = {
-                        "version": PROFILE_SCHEMA_VERSION,
-                        "profiles": profiles_to_dicts(self._profiles),
-                    }
-                    profiles_data = json.dumps(wrapped, indent=2, ensure_ascii=False)
-                    _atomic_write(pp, profiles_data, backup_validator=_is_profiles_document)
+            # profiles from another Tuck build are left on disk untouched; only a
+            # profile change would overwrite them, so that one is refused up front
+            profiles_changed = profiles_to_dicts(self._profiles or []) != self._profiles_snapshot
+            if not profiles_readable and profiles_changed:
+                raise ProfilesUnreadableError(
+                    "Your saved profiles come from a different version of Tuck or are "
+                    "damaged. Profile changes can't be saved here without losing them."
+                )
 
-                self._settings_snapshot = _dict_without_profiles(self._settings.to_dict())
-                self._profiles_snapshot = profiles_to_dicts(self._profiles or [])
+            self._settings.profiles = profiles_to_dicts(self._profiles or [])
+            data = json.dumps(self._settings.to_dict(), indent=2, ensure_ascii=False)
+            _atomic_write(sp, data, backup_validator=_is_settings_document)
+
+            if self._profiles is not None and profiles_readable:
+                wrapped = {
+                    "version": PROFILE_SCHEMA_VERSION,
+                    "profiles": profiles_to_dicts(self._profiles),
+                }
+                profiles_data = json.dumps(wrapped, indent=2, ensure_ascii=False)
+                _atomic_write(pp, profiles_data, backup_validator=_is_profiles_document)
+
+            self._settings_snapshot = _dict_without_profiles(self._settings.to_dict())
+            self._profiles_snapshot = profiles_to_dicts(self._profiles or [])
 
     def _reload_and_merge_settings_if_stale(self, sp: Path) -> None:
 
@@ -319,26 +364,30 @@ class SettingsManager:
         disk_settings = AppSettings.from_dict(disk_migrated)
         self._settings = self._merge_settings(disk_settings)
 
-    def _reload_and_merge_profiles_if_stale(self, pp: Path) -> None:
-
+    def _reload_and_merge_profiles_if_stale(self, pp: Path) -> bool:
+        """returns False when the file holds profiles this version can't read"""
         try:
             disk_raw = pp.read_text(encoding="utf-8")
             disk_data = json.loads(disk_raw)
         except (OSError, json.JSONDecodeError):
-            return
+            return True
         if not isinstance(disk_data, dict):
-            return
+            return True
 
         disk_profile_dicts: list[dict] = disk_data.get("profiles", [])
         if not isinstance(disk_profile_dicts, list):
-            return
+            return True
 
         if disk_profile_dicts == self._profiles_snapshot:
-            return  # no external change
+            return True  # no external change
 
-        disk_profiles = dicts_to_profiles(disk_profile_dicts)
+        try:
+            disk_profiles = dicts_to_profiles(disk_profile_dicts)
+        except (TypeError, ValueError, KeyError):
+            return False
         disk_profiles = self._migrate_profiles(disk_profiles)
         self._profiles = self._merge_profiles(disk_profiles)
+        return True
 
     def _merge_settings(self, disk: AppSettings) -> AppSettings:
         """keeps our in-memory value if we changed it since loading;
@@ -490,11 +539,37 @@ class SettingsManager:
                 data["cut_suffix"] = normalize_cut_suffix(data["cut_suffix"])
             except ValueError:
                 data["cut_suffix"] = DEFAULT_CUT_SUFFIX
-        for key in ("timeline_snap", "timeline_keyframes"):
+        for key in FLAG_PREFERENCES:
             if key in data and not isinstance(data[key], bool):
-                data[key] = True
+                data.pop(key)
+        for key in CHOICE_PREFERENCES:
+            if key in data:
+                try:
+                    data[key] = normalize_choice(key, data[key])
+                except ValueError:
+                    data.pop(key)
         if "shortcut_overrides" in data:
             data["shortcut_overrides"] = clean_shortcut_overrides(data["shortcut_overrides"])
+        if "last_session_files" in data:
+            data["last_session_files"] = clean_session_files(data["last_session_files"])
+        # files from before the location choice: a chosen folder meant one folder for everything
+        if "output_location" not in data:
+            data["output_location"] = (
+                OUTPUT_LOCATION_FOLDER if data.get("output_dir") else OUTPUT_LOCATION_SOURCE
+            )
+        else:
+            try:
+                data["output_location"] = normalize_output_location(data["output_location"])
+            except ValueError:
+                data["output_location"] = OUTPUT_LOCATION_SOURCE
+        # one folder with no folder chosen saves beside the source anyway; say so in the file
+        if data["output_location"] == OUTPUT_LOCATION_FOLDER and not data.get("output_dir"):
+            data["output_location"] = OUTPUT_LOCATION_SOURCE
+        if "output_subfolder" in data:
+            try:
+                data["output_subfolder"] = normalize_output_subfolder(data["output_subfolder"])
+            except ValueError:
+                data["output_subfolder"] = DEFAULT_OUTPUT_SUBFOLDER
 
         return data
 

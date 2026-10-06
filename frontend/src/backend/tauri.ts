@@ -14,11 +14,13 @@ import type {
   EmptyPayload,
   EncoderPayload,
   FileSelection,
+  InterfaceSize,
   LutPayload,
   LutLibraryPayload,
   LutHistoryClearedPayload,
   JsonObject,
   JsonValue,
+  NotificationResult,
   PathSelection,
   PlanRequest,
   Profile,
@@ -28,6 +30,7 @@ import type {
   SendToShortcut,
   SendToShortcuts,
   Settings,
+  SettingsImport,
   SettingsPatch,
   ThumbnailPayload,
   UpdateCheck,
@@ -79,6 +82,9 @@ type TauriBackendCommand =
   | { command: "duplicate_profile"; payload: { profile_id: string } }
   | { command: "import_profiles_from_file"; payload: { path: string } }
   | { command: "export_profile_to_file"; payload: { path: string; profile_id: string } }
+  | { command: "export_settings_to_file"; payload: { path: string } }
+  | { command: "import_settings_from_file"; payload: { path: string } }
+  | { command: "reset_settings" }
   | { command: "install_generic_sendto"; payload: { kind: SendToKind } }
   | { command: "remove_generic_sendto"; payload: { kind: SendToKind } }
   | { command: "repair_generic_sendto"; payload: { kind: SendToKind } }
@@ -87,6 +93,11 @@ type TauriBackendCommand =
   | { command: "repair_profile_sendto"; payload: { profile_id: string; action?: string; executable_path?: string } }
   | { command: "list_sendto_shortcuts" }
   | { command: "shutdown" };
+
+function isSettingsImport(value: unknown): value is SettingsImport {
+  return isJsonObject(value) && (value.skipped === undefined
+    || (Array.isArray(value.skipped) && value.skipped.every(entry => typeof entry === "string")));
+}
 
 function isLutLibraryPayload(value: unknown): value is LutLibraryPayload {
   return isJsonObject(value) && Array.isArray(value.luts) && value.luts.every(entry =>
@@ -568,6 +579,26 @@ class TauriTransport implements TauriBackendClient {
     );
   }
 
+  exportSettingsToFile(path: string): Promise<BackendResult<EmptyPayload>> {
+    return this.#request(
+      "exportSettingsToFile",
+      { command: "export_settings_to_file", payload: { path } },
+      isJsonObject,
+    );
+  }
+
+  importSettingsFromFile(path: string): Promise<BackendResult<SettingsImport>> {
+    return this.#request(
+      "importSettingsFromFile",
+      { command: "import_settings_from_file", payload: { path } },
+      isSettingsImport,
+    );
+  }
+
+  resetSettings(): Promise<BackendResult<EmptyPayload>> {
+    return this.#request("resetSettings", { command: "reset_settings" }, isJsonObject);
+  }
+
   async checkForUpdates(): Promise<BackendResult<UpdateCheck>> {
     try {
       const result = (await this.#invoke("check_for_updates", {})) as UpdateCheck;
@@ -751,6 +782,26 @@ class TauriTransport implements TauriBackendClient {
     } catch (error) {
       if (isBackendError(error)) return { ok: false, error };
       return backendFailure("TAURI_INVOKE_FAILED", errorMessage(error, "Could not pick import file"), { method: "pickImportFile" });
+    }
+  }
+
+  async setInterfaceSize(size: InterfaceSize): Promise<BackendResult<EmptyPayload>> {
+    try {
+      await this.#invoke("set_interface_size", { size });
+      return { ok: true, value: {} };
+    } catch (error) {
+      if (isBackendError(error)) return { ok: false, error };
+      return backendFailure("TAURI_INVOKE_FAILED", errorMessage(error, "Could not change the interface size"), { method: "setInterfaceSize" });
+    }
+  }
+
+  async notifyWhenUnfocused(title: string, body: string): Promise<BackendResult<NotificationResult>> {
+    try {
+      const shown = (await this.#invoke("notify_when_unfocused", { title, body })) === true;
+      return { ok: true, value: { shown } };
+    } catch (error) {
+      if (isBackendError(error)) return { ok: false, error };
+      return backendFailure("TAURI_INVOKE_FAILED", errorMessage(error, "Could not show the notification"), { method: "notifyWhenUnfocused" });
     }
   }
 

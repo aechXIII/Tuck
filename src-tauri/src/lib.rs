@@ -6,6 +6,7 @@ pub mod platform;
 
 use backend::{BackendLaunchConfig, BackendState};
 use commands::backend::backend_request;
+use commands::desktop::{notify_when_unfocused, set_interface_size};
 use commands::native::{
     close_window, copy_text, open_config_folder, open_logs_folder, open_output_folder,
     pick_audio_files, pick_ffmpeg_file, pick_ffprobe_file, pick_folder, pick_import_file,
@@ -124,6 +125,7 @@ pub fn run() {
         )
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(startup_state)
         .manage(UpdaterState::default())
@@ -168,7 +170,9 @@ pub fn run() {
         minimize_window,
         toggle_maximize_window,
         set_caption_maximize_area,
-        show_window_menu
+        show_window_menu,
+        set_interface_size,
+        notify_when_unfocused
     ]);
 
     let closing = Arc::new(AtomicBool::new(false));

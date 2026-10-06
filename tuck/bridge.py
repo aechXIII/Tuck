@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 import threading
 from collections.abc import Callable
+from dataclasses import replace
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -44,15 +46,25 @@ from .models import (
     find_profile_by_id,
 )
 from .models.encoding_policy import VALID_SCALERS
+from .models.export_preferences import (
+    OUTPUT_LOCATION_FOLDER,
+    normalize_output_location,
+    normalize_output_subfolder,
+)
 from .models.ui_preferences import (
+    CHOICE_PREFERENCES,
     DEFAULT_CUT_SUFFIX,
+    FLAG_PREFERENCES,
+    normalize_choice,
     normalize_cut_suffix,
     normalize_hidden_ui,
+    normalize_session_files,
     normalize_shortcut_overrides,
     normalize_start_task,
     normalize_timeline_toggle,
 )
 from .planner import plan
+from .planner_options import CutOutputOptions, OutputOptions, output_options
 from .probe import is_ffprobe_available, probe_audio
 from .probe import probe as probe_video
 from .probe_cache import ProbeCache
@@ -60,6 +72,7 @@ from .profile_service import ProfileService
 from .queue import get_queue
 from .request_work import RequestWork
 from .settings import get_settings_manager
+from .settings_backup import SettingsBackupService
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +81,9 @@ class BridgeAPI:
     def __init__(self) -> None:
         self._settings = get_settings_manager()
         self._profile_service = ProfileService(self._settings)
+        self._settings_backup = SettingsBackupService(self._settings, self.save_settings)
         self._queue = get_queue()
+        self._apply_run_preferences()
         self._ipc_files: list[str] = []
         self._ipc_lock = threading.Lock()
         self._ipc_metadata: dict[str, str] = {}
@@ -291,7 +306,7 @@ class BridgeAPI:
 
         if raw.get("operation") == "cut":
             try:
-                cut_request = parse_cut_request(raw, name_suffix=self._cut_suffix())
+                cut_request = parse_cut_request(raw, **self._cut_options())
                 analysis = self._cut_analysis.result(Path(cut_request.source))
                 cut_plan = plan_cut(cut_request, analysis)
                 return {"ok": True, "_request_id": req_id, "data": cut_plan_preview_dict(cut_plan)}
@@ -363,8 +378,10 @@ class BridgeAPI:
     def _enqueue_cut(self, raw: object, work: RequestWork) -> dict[str, JsonValue]:
         try:
             check_request(work)
-            request, fingerprint = parse_cut_export(raw, name_suffix=self._cut_suffix())
+            request, fingerprint = parse_cut_export(raw, **self._cut_options())
             cut = self._cut_analysis.plan_for_export(request, fingerprint, work)
+            if self._settings.get_setting("keep_file_dates", False):
+                cut = replace(cut, keep_file_dates=True)
             item = self._queue.enqueue(cut, work=work)
             return {"ok": True, "item_id": item.id}
         except CutPlanChanged as exc:
@@ -713,6 +730,24 @@ class BridgeAPI:
             "shortcut_overrides": {
                 command: list(combos) for command, combos in s.shortcut_overrides.items()
             },
+            "accent_color": s.accent_color,
+            "interface_size": s.interface_size,
+            "animations": s.animations,
+            "time_format": s.time_format,
+            "output_location": s.output_location,
+            "output_subfolder": s.output_subfolder,
+            "keep_file_dates": s.keep_file_dates,
+            "notify_when_done": s.notify_when_done,
+            "keep_awake": s.keep_awake,
+            "background_exports": s.background_exports,
+            "reopen_last_videos": s.reopen_last_videos,
+            # files moved or deleted since the last session are not offered again
+            # checking up to 500 paths can be slow on network drives, so only when they're used
+            "last_session_files": (
+                [path for path in s.last_session_files if Path(path).is_file()]
+                if s.reopen_last_videos
+                else list(s.last_session_files)
+            ),
             "version": __version__,
             "ffmpeg_available": is_ffmpeg_available(),
             "ffprobe_available": is_ffprobe_available(),
@@ -751,22 +786,26 @@ class BridgeAPI:
             "compression_suffix",
             "upscale_suffix",
             "cut_suffix",
-            "timeline_snap",
-            "timeline_keyframes",
             "shortcut_overrides",
+            "output_location",
+            "output_subfolder",
+            "last_session_files",
+            *FLAG_PREFERENCES,
+            *CHOICE_PREFERENCES,
         }
         preference_normalizers: dict[str, Callable[[object], object]] = {
             "hidden_ui": normalize_hidden_ui,
             "start_task": normalize_start_task,
             "cut_suffix": normalize_cut_suffix,
-            "timeline_snap": lambda value: normalize_timeline_toggle("timeline_snap", value),
-            "timeline_keyframes": lambda value: normalize_timeline_toggle(
-                "timeline_keyframes", value
-            ),
             "shortcut_overrides": normalize_shortcut_overrides,
+            "output_location": normalize_output_location,
+            "output_subfolder": normalize_output_subfolder,
+            "last_session_files": normalize_session_files,
+            **{key: partial(normalize_timeline_toggle, key) for key in FLAG_PREFERENCES},
+            **{key: partial(normalize_choice, key) for key in CHOICE_PREFERENCES},
         }
-        # checked before anything is applied, so a rejected value leaves settings untouched
         preferences: dict[str, object] = {}
+        updates: dict[str, object] = {}
         for key, normalize in preference_normalizers.items():
             if key in data:
                 try:
@@ -844,33 +883,54 @@ class BridgeAPI:
                     profiles = self._settings.get_profiles()
                     if find_profile_by_id(profiles, pid) is None:
                         return {"ok": False, "error": f"Profile not found: {pid}"}
+                # pages save every field together, so a saved folder or tool that has since
+                # gone missing is only checked again when it is changed
+                unchanged = data[key] == self._settings.get_setting(key)
                 if key == "output_dir":
                     val = data[key]
-                    if val and not isinstance(val, str):
+                    if not isinstance(val, str):
                         return {"ok": False, "error": "output_dir must be string"}
-                    if val and not Path(val).is_dir():
+                    if val and not unchanged and not Path(val).is_dir():
                         return {"ok": False, "error": f"output_dir does not exist: {val}"}
 
                 if key in ("ffmpeg_path", "ffprobe_path"):
                     val = data[key]
                     if not isinstance(val, str):
                         return {"ok": False, "error": f"{key} must be string"}
-                    if val and not Path(val).is_file():
+                    if val and not unchanged and not Path(val).is_file():
                         return {"ok": False, "error": f"File not found: {val}"}
                 if key in ("compression_suffix", "upscale_suffix"):
                     val = data[key]
                     if not isinstance(val, str) or not val.strip():
                         return {"ok": False, "error": f"{key} must be a non-empty string"}
-                if key in preferences:
-                    self._settings.set_setting(key, preferences[key])
-                    continue
+                updates[key] = preferences.get(key, data[key])
 
-                self._settings.set_setting(key, data[key])
+        # only a change to where exports go is held to this; other saves must not fail on it
+        if "output_location" in updates or "output_dir" in updates:
+            location = updates.get("output_location", self._settings.get_setting("output_location"))
+            folder = updates.get("output_dir", self._settings.get_setting("output_dir", ""))
+            if location == OUTPUT_LOCATION_FOLDER and not folder:
+                return {"ok": False, "error": "Choose a folder for your exports."}
 
-        self._settings.save()
+        # every key is checked before any is applied, so a rejected value changes nothing;
+        # a failed save puts memory back to what is on disk
+        with self._settings.lock:
+            for key, value in updates.items():
+                self._settings.set_setting(key, value)
+            self._settings.save()
+        self._apply_run_preferences()
         if ffmpeg_path_changed:
             clear_encoder_cache(delete_disk=True)
         return {"ok": True}
+
+    def export_settings_to_file(self, file_path: str) -> BridgeResult:
+        return self._settings_backup.export_to_file(file_path)
+
+    def import_settings_from_file(self, file_path: str) -> BridgeResult:
+        return self._settings_backup.import_from_file(file_path)
+
+    def reset_settings(self) -> BridgeResult:
+        return self._settings_backup.reset()
 
     def refresh_encoders(self) -> BridgeResult:
         clear_encoder_cache(delete_disk=True)
@@ -954,28 +1014,29 @@ class BridgeAPI:
 
         return parse_plan_request(raw, self._validate_path)
 
-    def _planning_options(self) -> dict[str, str]:
-        return {
-            "output_dir": str(self._settings.get_setting("output_dir", "") or ""),
-            "compression_suffix": str(
-                self._settings.get_setting("compression_suffix", "_tucked_{size}")
-                or "_tucked_{size}"
-            ),
-            "upscale_suffix": str(
-                self._settings.get_setting("upscale_suffix", "_upscaled_{width}x{height}")
-                or "_upscaled_{width}x{height}"
-            ),
-        }
+    def _planning_options(self) -> OutputOptions:
+        return output_options(self._settings.load())
 
-    def _cut_suffix(self) -> str:
+    def _apply_run_preferences(self) -> None:
+        settings = self._settings.load()
+        self._queue.set_run_preferences(
+            keep_awake=settings.keep_awake, low_priority=settings.background_exports
+        )
+
+    def _cut_options(self) -> CutOutputOptions:
         # read for both preview and export, so a change in between shows up as a changed plan
-        return str(self._settings.get_setting("cut_suffix", DEFAULT_CUT_SUFFIX))
+        options = output_options(self._settings.load())
+        return {
+            "name_suffix": str(self._settings.get_setting("cut_suffix", DEFAULT_CUT_SUFFIX)),
+            "output_folder": options["output_dir"],
+            "output_subfolder": options["output_subfolder"],
+        }
 
     def _build_plan(
         self,
         request: PlanRequest,
         profile: Profile,
-        options: dict[str, str] | None = None,
+        options: OutputOptions | None = None,
     ) -> EncodePlan:
         audio_sources = {
             clip.source for track in request.audio_tracks or [] for clip in track.clips

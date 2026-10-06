@@ -39,7 +39,7 @@ and the command-line tools are available on Windows only.
 
 Download the Windows installer from the [Releases page](https://github.com/aechXIII/Tuck/releases/latest), run it, and open Tuck. FFmpeg and ffprobe are included; no separate installation is needed. Setup installs the WebView2 Runtime if it is missing, which requires an internet connection.
 
-To use your own FFmpeg tools, select them in **Settings > System & support**.
+To use your own FFmpeg tools, select them in **Settings > Media tools**.
 
 ### Linux AppImage
 
@@ -132,7 +132,7 @@ Run `tuck --help` for the complete command list.
 
 ## Support
 
-If an export fails, open **Settings > System & support**, choose **Copy diagnostics**, and
+If an export fails, open **Settings > About**, choose **Copy** next to **Diagnostic report**, and
 include the report in a [GitHub issue](https://github.com/aechXIII/Tuck/issues). Tuck removes local file paths from the report.
 
 ## Build from source

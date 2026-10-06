@@ -78,6 +78,86 @@ def normalize_timeline_toggle(key: str, value: object) -> bool:
     return value
 
 
+# on/off preferences; a stored value that isn't a boolean falls back to the default
+FLAG_PREFERENCES: tuple[str, ...] = (
+    "timeline_snap",
+    "timeline_keyframes",
+    "animations",
+    "reopen_last_videos",
+    "keep_file_dates",
+    "notify_when_done",
+    "keep_awake",
+    "background_exports",
+)
+
+ACCENT_COLORS: tuple[str, ...] = ("violet", "blue", "teal", "green", "amber", "rose")
+INTERFACE_SIZES: tuple[str, ...] = ("compact", "default", "large")
+TIME_FORMATS: tuple[str, ...] = ("seconds", "timecode", "frames")
+
+# the frontend owns what each choice looks like; Python only keeps the stored value known
+CHOICE_PREFERENCES: dict[str, tuple[str, ...]] = {
+    "accent_color": ACCENT_COLORS,
+    "interface_size": INTERFACE_SIZES,
+    "time_format": TIME_FORMATS,
+}
+
+
+def normalize_choice(key: str, value: object) -> str:
+    choices = CHOICE_PREFERENCES[key]
+    if not isinstance(value, str) or value not in choices:
+        raise ValueError(f"{key} must be one of: {', '.join(choices)}")
+    return value
+
+
+SESSION_FILES_MAX = 500
+SESSION_PATH_MAX_LENGTH = 4096
+
+
+def _session_path(value: object) -> str | None:
+    if (
+        not isinstance(value, str)
+        or not value
+        or len(value) > SESSION_PATH_MAX_LENGTH
+        or "\x00" in value
+    ):
+        return None
+    return value
+
+
+def normalize_session_files(value: object) -> list[str]:
+    """Check the Library list kept for the next launch.
+
+    Paths are only checked for shape here; files that are gone by the next
+    launch are skipped when the list is read back.
+    """
+    if not isinstance(value, list):
+        raise ValueError("last_session_files must be a list of file paths")
+    if len(value) > SESSION_FILES_MAX:
+        raise ValueError(f"Only {SESSION_FILES_MAX} videos can be reopened.")
+    clean: list[str] = []
+    for item in value:
+        path = _session_path(item)
+        if path is None:
+            raise ValueError("last_session_files must only list file paths")
+        if path not in clean:
+            clean.append(path)
+    return clean
+
+
+def clean_session_files(value: object) -> list[str]:
+    """Keep the usable paths from a stored value instead of dropping the whole list."""
+    if not isinstance(value, list):
+        return []
+    clean: list[str] = []
+    for item in value:
+        path = _session_path(item)
+        if path is not None and path not in clean:
+            clean.append(path)
+        if len(clean) == SESSION_FILES_MAX:
+            break
+    return clean
+
+
 SHORTCUT_OVERRIDES_MAX_COMMANDS = 64
 SHORTCUT_COMMAND_MAX_LENGTH = 64
 SHORTCUT_KEYS_PER_COMMAND = 3

@@ -7,6 +7,8 @@ export interface ProfileListEntry {
 export interface ProfileListOptions {
   defaultProfileId?: string;
   summarize: (profile: ProfileListEntry) => string;
+  /** shown in place of rows when there are none */
+  empty?: string;
 }
 
 export interface ShortcutChoiceOptions {
@@ -56,30 +58,44 @@ export function renderProfileList(
 ): void {
   list.replaceChildren();
   for (const profile of profiles) {
-    const row = create(documentRef, "div", "settings-list-row");
-    const main = create(documentRef, "div", "settings-list-main");
-    main.appendChild(create(documentRef, "strong", "", profile.name ?? ""));
-    main.appendChild(create(documentRef, "span", "", options.summarize(profile)));
-    if (profile.profile_id === options.defaultProfileId) {
-      main.appendChild(create(documentRef, "span", "settings-badge", "Default"));
-    }
+    const name = String(profile.name ?? "");
+    const isDefault = profile.profile_id === options.defaultProfileId;
+    const row = create(documentRef, "div", "set-row set-profile-row");
+    row.setAttribute("role", "listitem");
+
+    // the whole row opens the editor; the menu holds everything else
+    const main = actionButton(documentRef, "", "edit", profile, "set-profile-main");
+    main.setAttribute("aria-label", `Edit ${name}`);
+    const title = create(documentRef, "span", "set-profile-title");
+    title.appendChild(create(documentRef, "span", "set-label", name));
+    if (isDefault) title.appendChild(create(documentRef, "span", "set-tag default", "Default"));
+    main.appendChild(title);
+    main.appendChild(create(documentRef, "span", "set-desc", options.summarize(profile)));
     row.appendChild(main);
-    row.appendChild(actionButton(documentRef, "Edit", "edit", profile, "btn2"));
 
     const details = create(documentRef, "details", "profile-actions-menu");
-    const summary = create(documentRef, "summary", "mbtn", "•••");
-    summary.setAttribute("aria-label", `More actions for ${String(profile.name ?? "")}`);
+    const summary = create(documentRef, "summary", "set-icon-btn", "⋯");
+    summary.setAttribute("aria-label", `More actions for ${name}`);
     details.appendChild(summary);
     const popover = create(documentRef, "div", "profile-actions-popover");
-    popover.appendChild(actionButton(documentRef, "Export", "export", profile));
-    popover.appendChild(actionButton(documentRef, "Duplicate", "duplicate", profile));
-    popover.appendChild(actionButton(documentRef, "Delete", "delete", profile, "danger"));
+    popover.setAttribute("role", "menu");
+    const items = [
+      actionButton(documentRef, "Edit", "edit", profile),
+      actionButton(documentRef, "Duplicate", "duplicate", profile),
+      ...(isDefault ? [] : [actionButton(documentRef, "Set as default", "default", profile)]),
+      actionButton(documentRef, "Export…", "export", profile),
+      actionButton(documentRef, "Delete", "delete", profile, "danger"),
+    ];
+    for (const item of items) {
+      item.setAttribute("role", "menuitem");
+      popover.appendChild(item);
+    }
     details.appendChild(popover);
     row.appendChild(details);
     list.appendChild(row);
   }
   if (!profiles.length) {
-    list.appendChild(create(documentRef, "div", "settings-empty", "No matching profiles."));
+    list.appendChild(create(documentRef, "p", "set-empty in-card", options.empty ?? "No matching profiles."));
   }
 }
 
@@ -156,6 +172,14 @@ export function bindProfileActions(
   container.addEventListener("click", (event) => {
     const selected = actionFromTarget(event.target, container);
     if (!selected) return;
+    // a chosen menu item closes its menu and hands focus back to the menu button, so a
+    // confirmation that follows returns there instead of to a hidden item
+    const target = event.target as { closest?: (selector: string) => Element | null } | null;
+    const menu = target?.closest?.("details[open]");
+    if (menu) {
+      menu.removeAttribute("open");
+      (menu.querySelector("summary") as HTMLElement | null)?.focus();
+    }
     binding.callback(selected.action, selected.profileId, selected.profileName);
   });
 }

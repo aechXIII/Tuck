@@ -33,9 +33,9 @@ for (const width of [1240, 960]) {
     await page.locator(".adjust-panel > summary").filter({ has: page.locator("#export-encoder-summary") }).click();
     await checkWidth("enc-sel-trigger", "enc-sel-popup");
     await page.getByRole("button", { name: "Settings", exact: true }).click();
-    await checkWidth("set-dp-trigger", "set-dp-popup");
-    await checkWidth("set-ds-trigger", "set-ds-popup");
+    await checkWidth("set-start-task-trigger", "set-start-task-popup");
     await page.getByRole("button", { name: "Profiles", exact: true }).click();
+    await checkWidth("set-ds-trigger", "set-ds-popup");
     await page.getByRole("button", { name: "New profile", exact: true }).click();
     await checkWidth("pe-enc-trigger", "pe-enc-popup");
     await checkWidth("pe-speed-trigger", "pe-speed-popup");
@@ -48,8 +48,6 @@ test("custom dropdowns use the existing settings values and keyboard path", asyn
   await page.goto("/");
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   const trigger = page.locator("#set-start-task-trigger");
-  await expect(page.locator("#set-dp-trigger")).toBeDisabled();
-  await expect(page.locator("#set-dp-trigger")).toHaveText("No profiles available");
   await expect(trigger).toBeVisible();
   await expect(page.locator("#set-start-task")).toBeHidden();
   await trigger.focus();
@@ -80,6 +78,7 @@ test("repeated initials cycle choices while a longer prefix selects its match", 
   await installFakeBackend(page, healthyBackendFixture());
   await page.goto("/");
   await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: "Profiles", exact: true }).click();
   const trigger = page.locator("#set-ds-trigger");
   await trigger.focus();
   await trigger.press("b");
@@ -125,45 +124,28 @@ test("Escape closes a dropdown before the compact Inspector", async ({ page }) =
   await expect(page.getByRole("button", { name: "Inspector", exact: true })).toHaveAttribute("aria-expanded", "true");
 });
 
-test("long profile lists support search, empty results, and repeated Settings navigation", async ({ page }) => {
+test("Settings dropdowns don't linger after moving between pages", async ({ page }) => {
   await page.setViewportSize({ width: 960, height: 640 });
   await page.emulateMedia({ reducedMotion: "reduce" });
-  const fixture = healthyBackendFixture();
-  const profiles = Array.from({ length: 12 }, (_, index) => ({
-    profile_id: `profile-${index}`, name: index === 11 ? "Review <draft> with a long descriptive name" : `Profile ${index}`,
-    workflow: "compression",
-  }));
-  fixture.responses.getSettings = { ...fixture.responses.getSettings as object, profiles, default_profile_id: "profile-0" };
-  await installFakeBackend(page, fixture);
+  await installFakeBackend(page, healthyBackendFixture());
   await page.goto("/");
   await page.getByRole("button", { name: "Settings", exact: true }).click();
-  const picker = page.locator("#set-dp-trigger");
+  const picker = page.locator("#set-start-task-trigger");
   await picker.click();
-  const popup = page.locator("#set-dp-popup");
-  const search = popup.getByRole("combobox", { name: "Search profiles", exact: true });
-  await expect(search).toBeFocused();
-  await search.fill("missing profile");
-  await expect(popup.getByRole("status")).toBeVisible();
-  await search.fill("<draft>");
-  await expect(popup.getByRole("option")).toHaveCount(1);
-  await expect(popup.getByRole("option")).toHaveText(profiles[11]!.name);
-  await search.press("Enter");
-  await expect(picker).toBeFocused();
-  await expect(picker).toHaveText(profiles[11]!.name);
-  await picker.click();
-  await expect(popup.getByRole("option")).toHaveCount(12);
+  const popup = page.locator("#set-start-task-popup");
+  await expect(popup).toBeVisible();
   const fits = await popup.evaluate(element => {
     const bounds = element.getBoundingClientRect();
     return bounds.top >= 8 && bounds.bottom <= innerHeight - 8 && bounds.left >= 8 && bounds.right <= innerWidth - 8;
   });
   expect(fits).toBe(true);
   expect(await popup.evaluate(element => getComputedStyle(element).animationName)).toBe("select-enter");
-  await search.press("Escape");
+  await picker.press("Escape");
   for (let index = 0; index < 3; index++) {
-    await page.getByRole("button", { name: "Output & naming", exact: true }).click();
-    await expect(page.locator("#set-dp-popup")).toHaveCount(0);
+    await page.getByRole("button", { name: "Files & names", exact: true }).click();
+    await expect(page.locator("#set-start-task-popup")).toHaveCount(0);
     await page.getByRole("button", { name: "General", exact: true }).click();
-    await expect(page.locator("#set-dp-trigger")).toHaveCount(1);
+    await expect(page.locator("#set-start-task-trigger")).toHaveCount(1);
     await expect(page.locator("#settings-workspace select:not([hidden])")).toHaveCount(0);
   }
 });
@@ -194,7 +176,7 @@ test("encoder rescans retain unavailable choices without allowing selection", as
   await page.locator(".adjust-panel > summary").filter({ has: page.locator("#export-encoder-summary") }).click();
   await chooseSelect(page, page.locator("#enc-sel-trigger"), "h264_nvenc");
   await page.getByRole("button", { name: "Settings", exact: true }).click();
-  await page.getByRole("button", { name: "System & support", exact: true }).click();
+  await page.getByRole("button", { name: "Media tools", exact: true }).click();
   await page.getByRole("button", { name: "Rescan", exact: true }).click();
   await expect(page.locator(".toast")).toContainText("Encoder detection refreshed.");
   await page.getByRole("button", { name: "Close settings", exact: true }).click();

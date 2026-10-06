@@ -5,6 +5,7 @@ import logging
 import sys
 from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from rich import box
 from rich.console import Console
@@ -21,6 +22,9 @@ from rich.table import Table
 from rich.theme import Theme
 
 from . import __version__
+
+if TYPE_CHECKING:
+    from .planner_options import OutputOptions
 
 _THEME = Theme(
     {
@@ -286,7 +290,7 @@ def _resolve_profile(args, profiles):
     return profile
 
 
-def _process_single_file(args, profile, output_dir: str) -> int:
+def _process_single_file(args, profile, options: OutputOptions) -> int:
     from .planner import plan as create_plan
 
     try:
@@ -294,7 +298,7 @@ def _process_single_file(args, profile, output_dir: str) -> int:
             args.files[0],
             profile,
             output=args.output,
-            output_dir=output_dir,
+            **options,
         )
         if args.review:
             _print_plan(p)
@@ -309,7 +313,7 @@ def _process_single_file(args, profile, output_dir: str) -> int:
         return 1
 
 
-def _process_file_batch(args, profile, output_dir: str) -> int:
+def _process_file_batch(args, profile, options: OutputOptions) -> int:
     from .planner import plan as create_plan
 
     errors = 0
@@ -318,7 +322,7 @@ def _process_file_batch(args, profile, output_dir: str) -> int:
             p = create_plan(
                 f,
                 profile,
-                output_dir=output_dir,
+                **options,
             )
             if args.review:
                 _print_plan(p)
@@ -358,19 +362,25 @@ def _cmd_process(args) -> int:
         print("Error: FFmpeg/ffprobe not found. Install FFmpeg.", file=sys.stderr)
         return 2
 
-    output_dir = str(mgr.get_setting("output_dir", "") or "")
+    from .planner_options import output_options
+
+    options = output_options(mgr.load())
 
     if len(args.files) == 1 and args.output:
-        return _process_single_file(args, profile, output_dir)
+        return _process_single_file(args, profile, options)
 
-    return _process_file_batch(args, profile, output_dir)
+    return _process_file_batch(args, profile, options)
 
 
 def _do_encode(plan) -> int:
     from .engine import FFmpegEngine
     from .models import EncodeProgress
+    from .power import keep_awake
+    from .settings import get_settings_manager
 
+    preferences = get_settings_manager().load()
     engine = FFmpegEngine()
+    engine.set_low_priority(preferences.background_exports)
     target = (
         f"{plan.target_size / (1024 * 1024):.1f} MB"
         if plan.workflow == "compression"
@@ -397,13 +407,14 @@ def _do_encode(plan) -> int:
     try:
         with progress:
             task = progress.add_task("Processing", total=100)
-            result = engine.encode(
-                plan,
-                on_progress=lambda value: progress.update(
-                    task,
-                    completed=value.percent if isinstance(value, EncodeProgress) else value,
-                ),
-            )
+            with keep_awake(preferences.keep_awake):
+                result = engine.encode(
+                    plan,
+                    on_progress=lambda value: progress.update(
+                        task,
+                        completed=value.percent if isinstance(value, EncodeProgress) else value,
+                    ),
+                )
         size_mb = result.stat().st_size / (1024 * 1024)
         console.print(f"[success]Complete[/success] [muted]{result} | {size_mb:.1f} MB[/muted]")
         return 0
@@ -451,7 +462,7 @@ def _resolve_console_upscale_profile(mgr, profile_id: str | None):
 
 
 def _encode_queue(
-    valid: list[str], profile, output_dir: str
+    valid: list[str], profile, options: OutputOptions
 ) -> tuple[list[tuple[str, str, float]], int]:
     from .planner import plan as create_plan
 
@@ -463,7 +474,7 @@ def _encode_queue(
         name = Path(path).name
         console.print(f"[accent]{idx:02d}[/accent] [muted]of {total:02d}[/muted]  {name}")
         try:
-            enc_plan = create_plan(path, profile, output_dir=output_dir)
+            enc_plan = create_plan(path, profile, **options)
             code = _do_encode(enc_plan)
             if code != 0:
                 errors += 1
@@ -526,8 +537,9 @@ def run_console_encode(
     _print_queue_header(profile, total)
     console.print()
 
-    output_dir = str(mgr.get_setting("output_dir", "") or "")
-    results, errors = _encode_queue(valid, profile, output_dir)
+    from .planner_options import output_options
+
+    results, errors = _encode_queue(valid, profile, output_options(mgr.load()))
     _print_queue_summary(results, errors, total)
 
     return 0 if errors == 0 else 3
@@ -632,6 +644,7 @@ def _cmd_profiles(args) -> int:
 
 
 def _cmd_settings(args) -> int:
+    from .planner_options import output_options
     from .settings import get_settings_manager
 
     mgr = get_settings_manager()
@@ -648,7 +661,14 @@ def _cmd_settings(args) -> int:
         table.add_column(style="cyan")
         table.add_column()
         table.add_row("Default profile", s.default_profile_id)
-        table.add_row("Output directory", s.output_dir or "Source directory")
+        options = output_options(s)
+        if options["output_dir"]:
+            saves_to = options["output_dir"]
+        elif options["output_subfolder"]:
+            saves_to = f"{options['output_subfolder']} folder next to each video"
+        else:
+            saves_to = "Next to each video"
+        table.add_row("Saves to", saves_to)
         table.add_row("Check for updates", "yes" if s.check_updates else "no")
         table.add_row("FFmpeg", s.ffmpeg_path or "Auto-detect")
         table.add_row("FFprobe", s.ffprobe_path or "Auto-detect")

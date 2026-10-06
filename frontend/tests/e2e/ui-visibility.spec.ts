@@ -55,22 +55,26 @@ test("an effect a profile turns on stays visible while hidden", async ({page}) =
 test("Settings keeps one task on and applies what is hidden", async ({page}) => {
   await start(page);
   await page.getByRole("button", {name:"Settings"}).first().click();
+  await page.getByRole("button", {name:"Tasks & tools", exact:true}).click();
   const compress = page.getByRole("switch", {name:"Compress"});
   const upscale = page.getByRole("switch", {name:"Upscale"});
   const cut = page.getByRole("switch", {name:"Lossless cut"});
   await upscale.uncheck();
   await cut.uncheck();
   await expect(compress).toBeDisabled();
-  await expect(page.locator('#set-start-task option[value="cut"]')).toBeDisabled();
-  await chooseSelect(page, page.locator("#set-start-task-trigger"), "compression");
-  await page.getByRole("switch", {name:"Transform"}).uncheck();
-  // This video still holds Audio, so it can still open on launch
-  await expect(page.locator('#set-inspector-start option[value="video"]')).toBeEnabled();
-  await page.getByRole("switch", {name:"Audio", exact:true}).uncheck();
-  await expect(page.locator('#set-inspector-start option[value="video"]')).toBeDisabled();
-  await expect(page.locator("#settings-unsaved")).toHaveText("Saved");
+  await page.getByRole("switch", {name:"Transform panel"}).uncheck();
+  await page.getByRole("switch", {name:"Audio panel", exact:true}).uncheck();
+  await expect(page.locator("#settings-status")).toHaveText("Saved");
   const saved = await page.evaluate(() => window.__tuckFakeBackendCalls?.filter(call => call.method === "saveSettings").at(-1)?.args[0]);
-  expect(saved).toMatchObject({hidden_ui:["upscale", "cut", "panel_video", "panel_audio"], start_task:"compression"});
+  expect(saved).toMatchObject({hidden_ui:["upscale", "cut", "panel_video", "panel_audio"]});
+  // the launch choices on General only offer what is shown
+  await page.getByRole("button", {name:"General", exact:true}).click();
+  expect(await page.locator("#set-start-task option").evaluateAll(options =>
+    options.map(option => (option as HTMLOptionElement).value))).toEqual(["last", "compression"]);
+  expect(await page.locator("#set-inspector-start option").evaluateAll(options =>
+    options.map(option => (option as HTMLOptionElement).value))).toEqual(["last", "export"]);
+  await chooseSelect(page, page.locator("#set-start-task-trigger"), "compression");
+  await expect.poll(() => page.evaluate(() => window.__tuckFakeBackendCalls?.filter(call => call.method === "saveSettings").at(-1)?.args[0])).toMatchObject({start_task:"compression"});
   await page.keyboard.press("Escape");
   await expect(page.locator("#task-wf")).toBeHidden();
   await expect(page.locator("#insp-tab-edit")).toBeHidden();
@@ -88,32 +92,6 @@ test("a shortcut cannot open a hidden task", async ({page}) => {
   await page.evaluate(path => window.initApp?.({files:[path], task:"cut"}), "C:/videos/Second.mp4");
   await expect(page.locator("#wf-c")).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator("#wf-l")).toBeHidden();
-});
-
-test("Send to shortcuts are added one at a time", async ({page}) => {
-  const fixture = healthyBackendFixture();
-  fixture.responses.getSettings = {...fixture.responses.getSettings as object, hidden_ui:["cut"]};
-  fixture.responses.listSendtoShortcuts = {shortcuts:[
-    {name:"Tuck", type:"generic", kind:"open", status:"ok"},
-    {name:"Tuck Upscale", type:"generic", kind:"upscale", status:"broken"},
-  ]};
-  fixture.responses.installGenericSendto = {ok:true};
-  await installFakeBackend(page, fixture);
-  await page.goto("/");
-  await page.getByRole("button", {name:"Settings"}).first().click();
-  await page.getByRole("button", {name:"File Explorer"}).click();
-  const rows = page.locator("#st-fixed .settings-list-row");
-  await expect(rows).toHaveCount(3);
-  await expect(rows.nth(0)).toContainText("Tuck");
-  await expect(rows.nth(0)).toContainText("Added");
-  await expect(rows.nth(0).getByRole("button")).toHaveText(["Remove"]);
-  await expect(rows.nth(1)).toContainText("Tuck Compress");
-  await expect(rows.nth(1).getByRole("button")).toHaveText(["Add"]);
-  await expect(rows.nth(2)).toContainText("Needs repair");
-  await expect(rows.nth(2).getByRole("button")).toHaveText(["Repair", "Remove"]);
-  await expect(page.locator("#st-fixed")).not.toContainText("Lossless Cut");
-  await rows.nth(1).getByRole("button", {name:"Add"}).click();
-  await expect.poll(() => page.evaluate(() => window.__tuckFakeBackendCalls?.find(call => call.method === "installGenericSendto")?.args)).toEqual(["compress"]);
 });
 
 test("timeline switches start as they were left and are remembered", async ({page}) => {
@@ -141,14 +119,14 @@ test("Add segment stays reachable when there is no room and says why", async ({p
 test("the Lossless cut file name suffix is previewed and saved when the field is left", async ({page}) => {
   await start(page, {cut_suffix:"_cut"});
   await page.getByRole("button", {name:"Settings"}).first().click();
-  await page.getByRole("button", {name:"Output & naming"}).click();
+  await page.getByRole("button", {name:"Files & names"}).click();
   const suffix = page.getByLabel("Lossless cut suffix");
   await suffix.fill("_trimmed");
-  await expect(page.locator("#ex-cut-out")).toHaveText("video_trimmed.mp4");
+  await expect(page.locator('[data-setting="suffix-cut"] .set-desc')).toHaveText("Morning ride_trimmed.mp4");
   expect(await page.evaluate(() => window.__tuckFakeBackendCalls?.some(call =>
     call.method === "saveSettings" && "cut_suffix" in (call.args[0] as Record<string, unknown>)))).toBe(false);
   await suffix.press("Tab");
-  await expect(page.locator("#settings-unsaved")).toHaveText("Saved");
+  await expect(page.locator("#settings-status")).toHaveText("Saved");
   const saved = await page.evaluate(() => window.__tuckFakeBackendCalls?.filter(call => call.method === "saveSettings").at(-1)?.args[0]);
   expect(saved).toMatchObject({cut_suffix:"_trimmed"});
 });

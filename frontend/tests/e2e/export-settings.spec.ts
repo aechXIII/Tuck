@@ -271,8 +271,8 @@ test("profile manager renders an untrusted profile name as inert text", async ({
 
   await page.getByRole("button", { name: "Settings" }).click();
   await page.locator("#settings-nav-profiles").click();
-  await expect(page.locator("#pm-list")).toContainText(hostile);
-  await expect(page.locator("#pm-list img")).toHaveCount(0);
+  await expect(page.locator("#pm-own")).toContainText(hostile);
+  await expect(page.locator("#settings-page img")).toHaveCount(0);
   expect(await page.evaluate(() => Reflect.get(window, "__tuckProfilePwned"))).toBeUndefined();
   expect(errors).toEqual([]);
 });
@@ -287,7 +287,7 @@ test("failed profile import reports the backend error", async ({ page }) => {
 
   await page.getByRole("button", { name: "Settings" }).click();
   await page.locator("#settings-nav-profiles").click();
-  await page.locator("#settings-actions").getByRole("button", { name: "Import" }).click();
+  await page.locator("#settings-page").getByRole("button", { name: "Import…" }).click();
   await expect(page.getByRole("alert")).toContainText("File is not valid JSON");
 });
 
@@ -309,8 +309,8 @@ test("the update check renders release notes as plain text", async ({ page }) =>
   await page.goto("/");
 
   await page.getByRole("button", { name: "Settings" }).click();
-  await page.locator("#settings-nav-system").click();
-  await page.locator("#settings-page").getByRole("button", { name: "Check now" }).click();
+  await page.locator("#settings-nav-about").click();
+  await page.locator("#settings-page").getByRole("button", { name: "Check for updates" }).click();
 
   const notes = page.locator("#update-notes");
   await expect(notes).toContainText("Fixed the crash and a tracked issue");
@@ -327,8 +327,8 @@ test("update check failures fall back to a visible error toast", async ({ page }
   await page.goto("/");
 
   await page.getByRole("button", { name: "Settings" }).click();
-  await page.locator("#settings-nav-system").click();
-  await page.locator("#settings-page").getByRole("button", { name: "Check now" }).click();
+  await page.locator("#settings-nav-about").click();
+  await page.locator("#settings-page").getByRole("button", { name: "Check for updates" }).click();
   await expect(page.getByRole("alert")).toContainText("Update check failed: GitHub unreachable");
 });
 

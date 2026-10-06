@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TypedDict
 
-from .models import AudioTrack, PlanRequest, Profile, Segment
+from .models import AppSettings, AudioTrack, PlanRequest, Profile, Segment
 from .models.encoding_policy import (
     RCM_CBR,
     native_preset_for_encoder,
@@ -12,6 +13,38 @@ from .models.encoding_policy import (
     validate_rc_method_for_encoder,
     validate_tune_for_encoder,
 )
+from .models.export_preferences import output_targets
+
+
+class OutputOptions(TypedDict):
+    output_dir: str
+    output_subfolder: str
+    compression_suffix: str
+    upscale_suffix: str
+    keep_file_dates: bool
+
+
+class CutOutputOptions(TypedDict):
+    name_suffix: str
+    output_folder: str
+    output_subfolder: str
+
+
+def output_options(settings: AppSettings) -> OutputOptions:
+    """Where and how exports are written, read the same way by the editor, CLI, and Send To."""
+    # a hand-edited settings file can hold any JSON type, so text values are read as text
+    folder, subfolder = output_targets(
+        str(settings.output_location),
+        str(settings.output_dir or ""),
+        str(settings.output_subfolder or ""),
+    )
+    return {
+        "output_dir": folder,
+        "output_subfolder": subfolder,
+        "compression_suffix": str(settings.compression_suffix or "_tucked_{size}"),
+        "upscale_suffix": str(settings.upscale_suffix or "_upscaled_{width}x{height}"),
+        "keep_file_dates": settings.keep_file_dates is True,
+    }
 
 
 @dataclass(frozen=True)

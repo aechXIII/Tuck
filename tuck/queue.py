@@ -16,6 +16,7 @@ from .models import EncodePlan, QueueItem, QueueState
 from .models.cutting import CutPlan
 from .models.progress import EncodeProgress, EncodeStage
 from .output_paths import resolve_output_collision
+from .power import keep_awake
 from .request_work import RequestWork
 
 logger = logging.getLogger(__name__)
@@ -27,6 +28,7 @@ class ProcessingQueue:
         self._pending: deque[str] = deque()
         self._condition = threading.Condition()
         self._engine = FFmpegEngine()
+        self._keep_awake = True
         self._running = False
         self._current_item: QueueItem | None = None
         self._worker_thread: threading.Thread | None = None
@@ -193,6 +195,12 @@ class ProcessingQueue:
                 self._running = False
             self._condition.notify_all()
 
+    def set_run_preferences(self, *, keep_awake: bool, low_priority: bool) -> None:
+        """Apply the user's export choices; they take effect from the next export."""
+        with self._condition:
+            self._keep_awake = keep_awake
+        self._engine.set_low_priority(low_priority)
+
     def start(self) -> None:
         with self._condition:
             if self._running and self._worker_thread and self._worker_thread.is_alive():
@@ -215,6 +223,17 @@ class ProcessingQueue:
 
     def _worker(self) -> None:
         logger.info("Queue worker started")
+        # the sleep lock is held from the first export until the queue runs dry, so the
+        # computer can't fall asleep in the gap between two exports
+        awake = contextlib.ExitStack()
+        try:
+            self._work(awake)
+        finally:
+            awake.close()
+        logger.info("Queue worker stopped")
+
+    def _work(self, awake: contextlib.ExitStack) -> None:
+        holding_awake = False
         while True:
             with self._condition:
                 # a late cancel must finish before the next job resets the engine
@@ -259,6 +278,14 @@ class ProcessingQueue:
                     attempt_plan.output = str(resolve_output_collision(Path(attempt_plan.output)))
 
                 source = attempt_plan.source
+                with self._condition:
+                    stay_awake = self._keep_awake
+                if stay_awake and not holding_awake:
+                    awake.enter_context(keep_awake(True))
+                    holding_awake = True
+                elif not stay_awake and holding_awake:
+                    awake.close()
+                    holding_awake = False
                 result_path = self._engine.encode(
                     attempt_plan,
                     on_progress=lambda p, _item=item: self._on_progress(_item, p),
@@ -311,12 +338,15 @@ class ProcessingQueue:
                 if stop_now:
                     self._running = False
                     self._stop_after_current = False
+                idle = not self._pending
 
+            # released outside the queue lock; on Linux it waits for the helper to exit
+            if holding_awake and (idle or stop_now):
+                awake.close()
+                holding_awake = False
             self._check_terminal()
             if stop_now:
                 break
-
-        logger.info("Queue worker stopped")
 
     def _on_progress(self, item: QueueItem, progress: EncodeProgress | float) -> None:
         with self._condition:

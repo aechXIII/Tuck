@@ -498,7 +498,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
     if (segment.muted) block.dataset.tip = "Source audio muted for this segment";
     block.dataset.audioKind = "source";
     block.dataset.segmentIndex = String(index);
-    block.style.setProperty("--segment-color", host.segmentColor?.(index) ?? "#3f3a58");
+    block.style.setProperty("--segment-color", host.segmentColor?.(index) ?? "var(--seg-fill)");
     block.style.setProperty(
       "--clip-fill",
       TimelineCore.clipFill("source", selected, !!segment.muted),

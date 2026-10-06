@@ -238,3 +238,54 @@ test("Send To listing is typed and carries the generic kind", async () => {
     assert.equal((await malformed.listSendtoShortcuts()).ok, false);
   }
 });
+
+test("settings backups go through the finite backend command with only a path", async () => {
+  const calls: Array<{ command: string; args: Record<string, unknown> }> = [];
+  const client = createTauriBackendClient(async (command, args) => {
+    calls.push({ command, args });
+    return { skipped: ["output_dir"] };
+  });
+
+  assert.deepEqual(await client.exportSettingsToFile("C:\backup.json"), { ok: true, value: { skipped: ["output_dir"] } });
+  assert.deepEqual(await client.importSettingsFromFile("C:\backup.json"), { ok: true, value: { skipped: ["output_dir"] } });
+  assert.deepEqual(await client.resetSettings(), { ok: true, value: { skipped: ["output_dir"] } });
+  assert.deepEqual(calls.map((call) => call.args.command), [
+    { command: "export_settings_to_file", payload: { path: "C:\backup.json" } },
+    { command: "import_settings_from_file", payload: { path: "C:\backup.json" } },
+    { command: "reset_settings" },
+  ]);
+});
+
+test("a settings import keeps the backend's message and rejects a malformed reply", async () => {
+  const failing = createTauriBackendClient(async () => {
+    throw { code: "BACKEND_REJECTED", message: "This file isn't a Tuck settings backup.", details: {} };
+  });
+  const failed = await failing.importSettingsFromFile("C:\notes.json");
+  assert.equal(failed.ok, false);
+  assert.equal(!failed.ok && failed.error.message, "This file isn't a Tuck settings backup.");
+
+  const malformed = createTauriBackendClient(async () => ({ skipped: "output_dir" }));
+  assert.equal((await malformed.importSettingsFromFile("C:\backup.json")).ok, false);
+});
+
+test("interface size and notifications are native commands", async () => {
+  const calls: Array<{ command: string; args: Record<string, unknown> }> = [];
+  const client = createTauriBackendClient(async (command, args) => {
+    calls.push({ command, args });
+    return command === "notify_when_unfocused" ? true : null;
+  });
+
+  assert.deepEqual(await client.setInterfaceSize("large"), { ok: true, value: {} });
+  assert.deepEqual(await client.notifyWhenUnfocused("Exports finished", "2 videos saved."), { ok: true, value: { shown: true } });
+  assert.deepEqual(calls, [
+    { command: "set_interface_size", args: { size: "large" } },
+    { command: "notify_when_unfocused", args: { title: "Exports finished", body: "2 videos saved." } },
+  ]);
+
+  const failing = createTauriBackendClient(async () => {
+    throw { code: "INVALID_REQUEST", message: "The notification text is empty.", details: {} };
+  });
+  const result = await failing.notifyWhenUnfocused("", "");
+  assert.equal(result.ok, false);
+  assert.equal(!result.ok && result.error.code, "INVALID_REQUEST");
+});

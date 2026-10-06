@@ -45,7 +45,7 @@ from .models.encoding_policy import (
     AMF_ENCODERS,
     NVENC_ENCODERS,
 )
-from .output_paths import resolve_output_collision
+from .output_paths import export_directory, resolve_output_collision
 from .planner_options import resolve_plan_options
 
 logger = logging.getLogger(__name__)
@@ -61,6 +61,8 @@ def plan(
     upscale_suffix: str = "_upscaled_{width}x{height}",
     source_info: VideoInfo | None = None,
     audio_source_durations: dict[str, float] | None = None,
+    output_subfolder: str = "",
+    keep_file_dates: bool = False,
 ) -> EncodePlan:
     from .probe import probe
 
@@ -171,7 +173,7 @@ def plan(
 
     if output is None:
         stem = source.stem
-        out_parent = Path(output_dir) if output_dir else source.parent
+        out_parent = export_directory(source, output_dir, output_subfolder)
         suffix_template = upscale_suffix if workflow == WORKFLOW_UPSCALE else compression_suffix
         target_w_for_name, target_h_for_name = _make_even(info.width, info.height)
         if res_mode == RES_MODE_CUSTOM:
@@ -424,6 +426,7 @@ def plan(
         trim_end=float(segments[0].end) if len(segments) == 1 else 0.0,
         segments=segments,
         transform=transform,
+        keep_file_dates=keep_file_dates,
     )
 
     logger.info(

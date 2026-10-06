@@ -108,3 +108,32 @@ test("profile shortcut choices dispatch exact profile data without inline handle
   assert.deepEqual(calls, [["install-profile-shortcut", profile.profile_id, profile.name]]);
   assert.equal(Reflect.get(globalThis, "pwned"), undefined);
 });
+
+test("profile rows open the editor and offer Set as default only for other profiles", () => {
+  const list = new FakeElement("div");
+  const profiles = [
+    { profile_id: "default", name: "Everyday", workflow: "compression" },
+    { profile_id: "clips", name: "Clips", workflow: "compression" },
+  ];
+  renderProfileList(fakeDocument, list as unknown as HTMLElement, profiles, {
+    defaultProfileId: "default",
+    summarize: () => "Compress · 20 MB",
+  });
+  const rows = list.children;
+  assert.equal(rows.length, 2);
+  const actions = (row: FakeElement) => descendants(row).map((element) => element.dataset.profileAction).filter(Boolean);
+  assert.deepEqual(actions(rows[0]!), ["edit", "edit", "duplicate", "export", "delete"]);
+  assert.deepEqual(actions(rows[1]!), ["edit", "edit", "duplicate", "default", "export", "delete"]);
+  assert.ok(descendants(rows[0]!).some((element) => element.textContent === "Default"));
+  assert.ok(!descendants(rows[1]!).some((element) => element.textContent === "Default"));
+});
+
+test("an empty profile list says so in its own words", () => {
+  const list = new FakeElement("div");
+  renderProfileList(fakeDocument, list as unknown as HTMLElement, [], {
+    summarize: () => "",
+    empty: "None yet.",
+  });
+  assert.equal(list.children.length, 1);
+  assert.equal(list.children[0]!.textContent, "None yet.");
+});

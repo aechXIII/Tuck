@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from .models import (
+    BUILTIN_PROFILE_IDS,
     AudioInfo,
     EncodePlan,
     Profile,
@@ -92,6 +93,7 @@ def profile_ui_dict(
         "transform_intent": (
             profile.transform_intent.to_dict() if profile.transform_intent is not None else None
         ),
+        "builtin": profile.profile_id in BUILTIN_PROFILE_IDS,
     }
     if include_explicit_bitrate:
         data["explicit_bitrate"] = profile.explicit_bitrate

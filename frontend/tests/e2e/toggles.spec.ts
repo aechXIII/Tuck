@@ -43,7 +43,8 @@ for (const width of [1240, 960]) {
         const text = label.querySelector("span")!.getBoundingClientRect();
         return { right: track.right, edge: label.getBoundingClientRect().right, gap: track.left - text.right };
       });
-      expect(bounds.right).toBeCloseTo(bounds.edge, 0);
+      // the switch sits at the row's inner edge, where every other control ends
+      expect(bounds.edge - bounds.right).toBeCloseTo(16, 0);
       expect(bounds.gap).toBeGreaterThanOrEqual(11);
     }
     await page.screenshot({ path: testInfo.outputPath(`profile-${width}.png`) });

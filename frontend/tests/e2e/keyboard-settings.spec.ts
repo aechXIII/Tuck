@@ -48,7 +48,7 @@ for (const width of [1240, 960]) {
     await page.setViewportSize({ width, height: width === 960 ? 640 : 800 });
     await start(page);
     await openKeyboardPage(page);
-    const opener = page.getByRole("button", { name: "View shortcut guide", exact: true });
+    const opener = page.getByRole("button", { name: "Shortcut guide", exact: true });
     await expect(opener).toBeVisible();
     await opener.click();
     const guide = page.getByRole("dialog", { name: "Keyboard shortcuts", exact: true });
@@ -92,7 +92,7 @@ test("taking keys from another action asks first and leaves that action without 
   await conflict.getByRole("button", {name:"Use here"}).click();
   expect(await lastSaved(page)).toEqual({shortcut_overrides:{"file.add-videos":["Ctrl+Q"], "app.exit":[]}});
   await expect(page.locator('[data-command="app.exit"]')).toContainText("No keys");
-  await page.locator("#settings-actions").getByRole("button", {name:"Reset all"}).click();
+  await page.locator("#settings-page").getByRole("button", {name:"Reset all"}).click();
   await page.getByRole("dialog", {name:"Reset keyboard shortcuts?"}).getByRole("button", {name:"Reset all"}).click();
   await expect.poll(() => lastSaved(page)).toEqual({shortcut_overrides:{}});
   await expect(page.locator('[data-command="app.exit"]')).not.toContainText("No keys");

@@ -170,6 +170,9 @@ export async function installFakeBackend(
         importProfilesFromFile: (path: string) => respond("importProfilesFromFile", [path]),
         exportProfileToFile: (path: string, profileId: string) =>
           respond("exportProfileToFile", [path, profileId]),
+        exportSettingsToFile: (path: string) => respond("exportSettingsToFile", [path]),
+        importSettingsFromFile: (path: string) => respond("importSettingsFromFile", [path]),
+        resetSettings: () => respond("resetSettings", []),
         checkForUpdates: () => respond("checkForUpdates", []),
         downloadUpdate: () => respond("downloadUpdate", []),
         getDownloadProgress: () => respond("getDownloadProgress", []),
@@ -194,6 +197,9 @@ export async function installFakeBackend(
         pickFfprobeFile: () => respond("pickFfprobeFile", []),
         pickImportFile: () => respond("pickImportFile", []),
         pickSaveFile: (defaultName = "profiles.json") => respond("pickSaveFile", [defaultName]),
+        setInterfaceSize: (size: string) => respond("setInterfaceSize", [size]),
+        notifyWhenUnfocused: (title: string, body: string) =>
+          respond("notifyWhenUnfocused", [title, body]),
       };
       window.__tuckFakeBackendCalls = calls;
       // the app takes window.tuckBackendClient as a ready BackendClient before it

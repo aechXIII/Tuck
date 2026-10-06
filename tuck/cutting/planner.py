@@ -20,6 +20,7 @@ from ..models.cutting import (
     TrackSegment,
 )
 from ..models.ui_preferences import DEFAULT_CUT_SUFFIX
+from ..output_paths import export_directory
 from .analysis import CutAnalysisError
 from .exact import exact_media_reason
 from .tracks import plan_tracks
@@ -48,7 +49,11 @@ class CutPlanChanged(CutAnalysisError):
 
 
 def parse_cut_export(
-    raw: object, *, name_suffix: str = DEFAULT_CUT_SUFFIX
+    raw: object,
+    *,
+    name_suffix: str = DEFAULT_CUT_SUFFIX,
+    output_folder: str = "",
+    output_subfolder: str = "",
 ) -> tuple[CutRequest, str]:
     if not isinstance(raw, dict):
         raise ValueError("Expected a cut request object")
@@ -62,14 +67,22 @@ def parse_cut_export(
     return parse_cut_request(
         {key: value for key, value in raw.items() if key != "plan_fingerprint"},
         name_suffix=name_suffix,
+        output_folder=output_folder,
+        output_subfolder=output_subfolder,
     ), fingerprint
 
 
-def parse_cut_request(raw: object, *, name_suffix: str = DEFAULT_CUT_SUFFIX) -> CutRequest:
+def parse_cut_request(
+    raw: object,
+    *,
+    name_suffix: str = DEFAULT_CUT_SUFFIX,
+    output_folder: str = "",
+    output_subfolder: str = "",
+) -> CutRequest:
     """Validate a cut request from the bridge.
 
-    name_suffix comes from the user's settings and names the output when the
-    request does not; the caller has already checked it.
+    name_suffix, output_folder and output_subfolder come from the user's settings
+    and place the output when the request does not; the caller has already checked them.
     """
     if not isinstance(raw, dict):
         raise ValueError("Expected a cut request object")
@@ -118,7 +131,9 @@ def parse_cut_request(raw: object, *, name_suffix: str = DEFAULT_CUT_SUFFIX) -> 
             raise ValueError("Kept segments must be in order and must not overlap")
         segments.append(CutRange(start, end))
         previous_end = end.seconds
-    directory = raw.get("output_dir", str(source_path.parent))
+    directory = raw.get(
+        "output_dir", str(export_directory(source_path, output_folder, output_subfolder))
+    )
     # the cut keeps the source's container, so it keeps its extension too
     extension = source_path.suffix.lower() or ".mp4"
     name = raw.get("output_name", source_path.stem + name_suffix + extension)

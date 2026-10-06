@@ -15,7 +15,7 @@ test("control icons load under the packaged content security policy", async ({ p
   await installFakeBackend(page, healthyBackendFixture());
   await page.goto("/");
   await page.getByRole("button", { name: "Settings", exact: true }).click();
-  const select = page.locator("#set-ds-trigger");
+  const select = page.locator("#set-start-task-trigger");
   await expect(select.locator("svg path")).toHaveAttribute("d", "m3 4.5 3 3 3-3");
   const icon = await select.locator("svg").boundingBox();
   expect(icon!.width).toBe(12);

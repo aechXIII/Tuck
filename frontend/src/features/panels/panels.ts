@@ -554,7 +554,7 @@ export function installPanels(host: PanelsHost): PanelsApi {
         muted: state.sourceMuted,
         gain: state.sourceGainDb,
         removable: false,
-        color: "#5B469B",
+        color: "var(--audio-clip-fill)",
       });
       trackNumber = 2;
     }
@@ -570,7 +570,7 @@ export function installPanels(host: PanelsHost): PanelsApi {
             ? track.gainDb
             : Number(track.gainDb) || 0,
         removable: true,
-        color: host.AudioTimeline ? host.AudioTimeline.trackColor(index) : "#5B469B",
+        color: host.AudioTimeline ? host.AudioTimeline.trackColor(index) : "var(--audio-clip-fill)",
       });
     });
     if (count) count.textContent = String(rows.length);

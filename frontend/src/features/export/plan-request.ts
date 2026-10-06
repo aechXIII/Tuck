@@ -211,10 +211,10 @@ export interface CutRequestContext {
   edits: readonly string[];
   frameDuration?: MediaTime;
   duration?: MediaTime;
-  outputDir?: string;
 }
 
-export function buildCutRequest({clip,state,edits,frameDuration,duration,outputDir}: CutRequestContext): CutPlanRequest {
+// Python places the cut from the user's export location, the same way it places encodes
+export function buildCutRequest({clip,state,edits,frameDuration,duration}: CutRequestContext): CutPlanRequest {
   const toTime = (seconds: number): MediaTime => {
     if (duration && Math.abs(seconds - mediaSeconds(duration)) < 0.00001) return duration;
     if (frameDuration) {
@@ -242,6 +242,5 @@ export function buildCutRequest({clip,state,edits,frameDuration,duration,outputD
       // container duration can include audio padding beyond the last video frame
       end:duration && Math.abs(segment.end-full) < 0.000001 ? duration : toTime(segment.end),
     })),
-    ...(outputDir ? {output_dir:outputDir} : {}),
   };
 }

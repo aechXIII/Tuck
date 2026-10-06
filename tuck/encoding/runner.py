@@ -5,6 +5,7 @@ import copy
 import logging
 import os
 import subprocess
+import sys
 import threading
 import time
 from collections.abc import Callable
@@ -35,6 +36,7 @@ from ..models import (
 from ..models.cutting import CutPlan
 from ..models.encoding_policy import validate_encoder_supported_on_desktop
 from ..models.progress import EncodeProgress, EncodeStage
+from ..output_paths import copy_file_dates
 from ..output_transaction import OutputTransaction
 from .capabilities import (
     auto_encoder_candidates,
@@ -121,10 +123,15 @@ class FFmpegEngine:
         self._prepared_video: Path | None = None
         self._tmix: TmixBlend | None = None
         self._cut_runner = CutRunner()
+        self._low_priority = False
 
     @property
     def last_stderr(self) -> str:
         return self._last_stderr
+
+    def set_low_priority(self, enabled: bool) -> None:
+        """Run the next FFmpeg processes below normal priority, so other apps stay smooth."""
+        self._low_priority = enabled
 
     @property
     def resolved_encoder(self) -> str:
@@ -290,6 +297,8 @@ class FFmpegEngine:
                     raise EncodeCancelled("Encoding cancelled by user")
                 output = transaction.publish(result)
                 plan.output = str(output)
+                if plan.keep_file_dates:
+                    copy_file_dates(source, output)
 
                 _emit(
                     on_progress,
@@ -699,6 +708,8 @@ class FFmpegEngine:
                 _emit(on_progress, progress)
 
     def _spawn_ffmpeg(self, cmd: list[str], creationflags: int) -> subprocess.Popen:
+        if self._low_priority and sys.platform == "win32":
+            creationflags |= subprocess.BELOW_NORMAL_PRIORITY_CLASS
         with self._lock:
             proc = subprocess.Popen(
                 cmd,
@@ -712,6 +723,11 @@ class FFmpegEngine:
                 creationflags=creationflags,
             )
             self._process = proc
+        if self._low_priority and sys.platform != "win32":
+            try:
+                os.setpriority(os.PRIO_PROCESS, proc.pid, 10)
+            except OSError as exc:
+                logger.warning("Could not lower the export priority: %s", exc)
         return proc
 
     def _run_pass(

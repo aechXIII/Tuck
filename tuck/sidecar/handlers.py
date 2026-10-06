@@ -283,6 +283,19 @@ def _refresh_encoders(api: BridgeAPI, params: dict[str, object]) -> object:
     return api.refresh_encoders()
 
 
+def _export_settings_to_file(api: BridgeAPI, params: dict[str, object]) -> object:
+    return api.export_settings_to_file(_string(params, "path"))
+
+
+def _import_settings_from_file(api: BridgeAPI, params: dict[str, object]) -> object:
+    return api.import_settings_from_file(_string(params, "path"))
+
+
+def _reset_settings(api: BridgeAPI, params: dict[str, object]) -> object:
+    _empty(params)
+    return api.reset_settings()
+
+
 def _get_profiles_json(api: BridgeAPI, params: dict[str, object]) -> object:
     _empty(params)
     return api.get_profiles_json()
@@ -454,6 +467,9 @@ _HANDLERS: dict[str, Handler] = {
     "get_storage_paths": _get_storage_paths,
     "save_settings": _save_settings,
     "refresh_encoders": _refresh_encoders,
+    "export_settings_to_file": _export_settings_to_file,
+    "import_settings_from_file": _import_settings_from_file,
+    "reset_settings": _reset_settings,
     "get_profiles_json": _get_profiles_json,
     "create_profile": _create_profile,
     "update_profile": _update_profile,

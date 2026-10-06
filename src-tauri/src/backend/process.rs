@@ -736,6 +736,9 @@ impl BackendCommand {
             | Self::GetSettings
             | Self::SaveSettings { .. }
             | Self::RefreshEncoders
+            | Self::ExportSettingsToFile { .. }
+            | Self::ImportSettingsFromFile { .. }
+            | Self::ResetSettings
             | Self::GetProfilesJson
             | Self::CreateProfile { .. }
             | Self::UpdateProfile { .. }

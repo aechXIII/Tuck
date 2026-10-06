@@ -47,6 +47,8 @@ export interface LibraryEncodingHooks {
   retryQueueItem?: (itemId: string) => void | Promise<void>;
   pollQueue?: () => void | Promise<void>;
   setInspectorTab?: (tab: string, persist?: boolean) => void;
+  // every Library change ends in a render, so this sees each new list of videos
+  libraryChanged?: (paths: readonly string[]) => void;
 }
 
 export interface LibraryAudioHooks {
@@ -509,6 +511,7 @@ export function createLibrary(host: LibraryHost): LibraryApi {
   function renderClips(): void {
     if (clipReorder.active) return;
     const keys = orderedClipKeys();
+    host.libraryChanged?.(keys);
     const cdiv = byId("clips");
     const el = byId("drop-z");
     if (!cdiv || !el) return;

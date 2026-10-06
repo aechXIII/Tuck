@@ -5,6 +5,7 @@ import type {
   BackendResult,
   DiagnosticsContext,
   DataPayload,
+  InterfaceSize,
   PlanRequest,
   ProfileInput,
   SendToKind,
@@ -349,6 +350,26 @@ class DeterministicFakeBackend implements BackendClient {
     );
   }
 
+  exportSettingsToFile(path: string) {
+    return this.#record(
+      "exportSettingsToFile",
+      [path],
+      this.#responses.exportSettingsToFile ?? success({}),
+    );
+  }
+
+  importSettingsFromFile(path: string) {
+    return this.#record(
+      "importSettingsFromFile",
+      [path],
+      this.#responses.importSettingsFromFile ?? success({ skipped: [] }),
+    );
+  }
+
+  resetSettings() {
+    return this.#record("resetSettings", [], this.#responses.resetSettings ?? success({}));
+  }
+
   checkForUpdates() {
     return this.#record(
       "checkForUpdates",
@@ -522,6 +543,18 @@ class DeterministicFakeBackend implements BackendClient {
       "pickSaveFile",
       [defaultName],
       this.#responses.pickSaveFile ?? success({ path: "" }),
+    );
+  }
+
+  setInterfaceSize(size: InterfaceSize) {
+    return this.#record("setInterfaceSize", [size], this.#responses.setInterfaceSize ?? success({}));
+  }
+
+  notifyWhenUnfocused(title: string, body: string) {
+    return this.#record(
+      "notifyWhenUnfocused",
+      [title, body],
+      this.#responses.notifyWhenUnfocused ?? success({ shown: false }),
     );
   }
 }

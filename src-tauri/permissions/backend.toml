@@ -12,3 +12,8 @@ commands.allow = ["platform_capabilities", "pick_video_files", "pick_lut_file", 
 identifier = "allow-window-chrome"
 description = "Allows the custom title bar to minimize, maximize, open the window menu and place the Snap Layouts target."
 commands.allow = ["minimize_window", "toggle_maximize_window", "set_caption_maximize_area", "show_window_menu"]
+
+[[permission]]
+identifier = "allow-desktop-preferences"
+description = "Allows the interface size setting and the queue-finished notification."
+commands.allow = ["set_interface_size", "notify_when_unfocused"]

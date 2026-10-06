@@ -132,6 +132,7 @@ from .encoding_policy import (
 from .encoding_policy import (
     validate_rate_control_matrix as validate_rate_control_matrix,
 )
+from .export_preferences import DEFAULT_OUTPUT_SUBFOLDER, OUTPUT_LOCATION_SOURCE
 from .frame_blending import FrameBlending
 from .lut import LutSettings
 from .progress import EncodeProgress as EncodeProgress
@@ -852,6 +853,7 @@ class EncodePlan:
     trim_end: float = 0.0
     segments: list[Segment] = field(default_factory=list)
     transform: VideoTransform = field(default_factory=VideoTransform)
+    keep_file_dates: bool = False
 
     @property
     def effective_segments(self) -> list[Segment]:
@@ -1206,6 +1208,18 @@ class AppSettings:
     timeline_snap: bool = True
     timeline_keyframes: bool = True
     shortcut_overrides: dict[str, list[str]] = field(default_factory=dict)
+    accent_color: str = "violet"
+    interface_size: str = "default"
+    animations: bool = True
+    time_format: str = "seconds"
+    output_location: str = OUTPUT_LOCATION_SOURCE
+    output_subfolder: str = DEFAULT_OUTPUT_SUBFOLDER
+    keep_file_dates: bool = False
+    notify_when_done: bool = True
+    keep_awake: bool = True
+    background_exports: bool = False
+    reopen_last_videos: bool = False
+    last_session_files: list[str] = field(default_factory=list)
     window_width: int = 1240
     window_height: int = 800
     profiles: list[dict[str, Any]] = field(default_factory=list)

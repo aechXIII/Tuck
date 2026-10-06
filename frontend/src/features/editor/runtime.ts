@@ -55,6 +55,9 @@ import { createEditorSession, type EditorSession } from "./session.ts";
 import type { EditorClip } from "./types.ts";
 import type { Segment } from "../../types/foundation.ts";
 import { hiddenParts } from "../settings/visibility.ts";
+import { applyAppearance, createInterfaceSizer } from "../appearance/appearance.ts";
+import { createSessionFiles } from "../library/session-files.ts";
+import { timeFormat } from "./time-format.ts";
 import { onShortcutsChanged, setShortcutOverrides, syncShortcutHints } from "../shortcuts/shortcuts.ts";
 
 interface LaunchData {
@@ -118,6 +121,24 @@ export function installEditorRuntime(
     void encoding?.reqPreview();
   };
 
+  const resizeInterface = createInterfaceSizer((size) => getBackendClient().setInterfaceSize(size));
+  const sessionFiles = createSessionFiles({
+    enabled: () => session.appSettings.reopen_last_videos === true,
+    save: async (paths) => {
+      const result = await getBackendClient().saveSettings({ last_session_files: [...paths] });
+      if (result.ok) session.appSettings.last_session_files = [...paths];
+    },
+    schedule: (run, delay) => windowRef.setTimeout(run, delay),
+    cancel: (handle) => windowRef.clearTimeout(handle as number),
+  });
+
+  // the look, size, and time format come from Settings and apply as soon as they are saved
+  function applyPreferences(): void {
+    applyAppearance(windowRef.document.documentElement, session.appSettings);
+    void resizeInterface(session.appSettings.interface_size);
+    player?.updateTime();
+  }
+
   function panelAudioRange(): AudioClipRangeInfo | null {
     const range = audio.getSelectedClipRange();
     if (!range) return null;
@@ -176,7 +197,7 @@ export function installEditorRuntime(
     paintTrimChrome: () => timeline?.paintTrimChrome(),
     syncTimelineTrackCount: (count) => timeline?.syncTimelineTrackCount(count),
     renderAudioMixerList: () => panels?.renderAudioMixerList(),
-    segmentColor: (index) => timeline?.segmentColor(index) ?? "#3f3a58",
+    segmentColor: (index) => timeline?.segmentColor(index) ?? "var(--seg-fill)",
     snapCandidateTime: (time, candidates, pixelsPerSecond) =>
       timeline?.snapCandidateTime(time, candidates, pixelsPerSecond) ?? time,
     applyTrimStart: (seconds, snap) => timeline?.applyTrimStart(seconds, snap) ?? null,
@@ -210,6 +231,7 @@ export function installEditorRuntime(
     getPreviewSec: () => player?.getPreviewSec() ?? null,
     flushVideoSeek: () => player?.flushVideoSeek(),
     cutTask: () => encoding?.workflow() === 2,
+    timeFormat: () => timeFormat(session.appSettings.time_format),
     showCutRow: (index, time) => {
       timeline.selectSegment(index, false);
       player.seekPreview(time);
@@ -316,6 +338,9 @@ export function installEditorRuntime(
     windowRef,
     audio,
     history,
+    libraryChanged: (paths) => {
+      if (started) sessionFiles.track(paths);
+    },
     applyProfile: (force) => encoding?.applyProfile(force),
     applySelectedProfileTransform: (clip, force) =>
       encoding?.applySelectedProfileTransform(clip, force),
@@ -404,6 +429,8 @@ export function installEditorRuntime(
     reloadEditorSettings: async () => {
       await encoding.loadSettings();
       panels.applyVisibility(hiddenParts(session.appSettings.hidden_ui));
+      applyPreferences();
+      sessionFiles.sync(library.orderedClipKeys());
     },
     setAvailableEncoders: (encoders) => encoding.setAvailableEncoders(encoders),
     copyDiagnostics: () => queue.copyDiagnostics(),
@@ -759,6 +786,7 @@ export function installEditorRuntime(
       encoding.openTask(launch.task, true);
       timeline.setSnap(session.appSettings.timeline_snap !== false);
       timeline.setKeyframes(session.appSettings.timeline_keyframes !== false);
+      applyPreferences();
       panels.setInspectorTab(
         InspectorUi.startupTab(
           String(session.appSettings.inspector_start_panel ?? ""),
@@ -782,8 +810,20 @@ export function installEditorRuntime(
     }
     const files =
       launch.files?.filter((file): file is string => typeof file === "string") ?? [];
+    const reopen = reopenFiles(files, launch.sendto);
+    sessionFiles.remember(reopen);
     if (files.length) library.addFiles(files);
+    else if (reopen.length) library.addFiles(reopen);
     if (launch.sendto !== undefined && launch.sendto !== null) handleSendto(launch.sendto);
+  }
+
+  // last session's videos come back only for a plain launch; files sent to Tuck win
+  function reopenFiles(files: readonly string[], sendto: unknown): string[] {
+    if (session.appSettings.reopen_last_videos !== true) return [];
+    const stored = session.appSettings.last_session_files;
+    if (!Array.isArray(stored)) return [];
+    const paths = stored.filter((path): path is string => typeof path === "string");
+    return files.length || (sendto !== undefined && sendto !== null) ? [] : paths;
   }
 
   function initApp(data: unknown): void {

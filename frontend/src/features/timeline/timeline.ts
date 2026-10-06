@@ -1,7 +1,9 @@
 import { getBackendClient, hasBackendClient } from "../../backend/client.ts";
 import { probeStatus } from "../../state/probe.ts";
 import * as TuckLayout from "../../ui/layout.ts";
+import type { TimeFormat } from "../../backend/types.ts";
 import { formatTime } from "../editor/format.ts";
+import { formatClockTime } from "../editor/time-format.ts";
 import type { EditorClip, EditorSession } from "../editor/session.ts";
 import { toast } from "../editor/toast.ts";
 import { mediaSeconds } from "../export/cut-state.ts";
@@ -17,6 +19,7 @@ export interface TimelineHost {
   windowRef?: Window & typeof globalThis;
   toast?: (msg: string, kind?: string) => void;
   formatTime?: (seconds: number) => string;
+  timeFormat?: () => TimeFormat;
   updateTime?: () => void;
   seekPreview?: (sec: number) => void;
   seekToRatio?: (ratio: number) => void;
@@ -137,17 +140,13 @@ let _segmentDragOffset = 0;
 let _segmentPointerX = 0;
 let _segmentClickTime = 0;
 let _SEGMENT_DRAG_THRESHOLD = 5;
-let _SEGMENT_COLORS = [
-  "#3f3a58",
-  "#35344a",
-  "#3f3d56",
-  "#2e2c3c",
-  "#4a4560",
-  "#322f42",
-];
+// shades of the accent's segment fill, so neighbouring segments stay apart in any accent color
+let _SEGMENT_COLORS = [50, 36, 44, 20, 60, 28].map(
+  (share) => `color-mix(in srgb, var(--seg-fill) ${share}%, var(--raised))`,
+);
 
  function segmentColor(index: number) {
-   return _SEGMENT_COLORS[index % _SEGMENT_COLORS.length] ?? _SEGMENT_COLORS[0] ?? "#3f3a58";
+   return _SEGMENT_COLORS[index % _SEGMENT_COLORS.length] ?? "var(--seg-fill)";
  }
 
 function formatSelectedDuration(seconds: number) {
@@ -762,16 +761,14 @@ function paintTimelineReadout(sec: number, full: number) {
 function paintPlayerTime(sec: number, full: number) {
   const timeDisplay = byId("ptime");
   if (!timeDisplay) return;
-  timeDisplay.textContent = host.cutTask?.()
+  // seconds read coarsely under the video; frames and timecode stay exact everywhere
+  timeDisplay.textContent = host.cutTask?.() || (host.timeFormat?.() ?? "seconds") !== "seconds"
     ? formatTimelineTime(sec) + " / " + formatTimelineTime(full)
     : fmtt(sec) + " / " + fmtt(full);
 }
 
 function formatTimelineTime(seconds: number) {
-  let centiseconds = Math.round(Math.max(0, seconds) * 100);
-  let whole = Math.floor(centiseconds / 100);
-  let fraction = centiseconds % 100;
-  return fmtt(whole) + "." + String(fraction).padStart(2, "0");
+  return formatClockTime(seconds, host.timeFormat?.() ?? "seconds", selectedClip(session)?.probeData?.fps);
 }
 
 

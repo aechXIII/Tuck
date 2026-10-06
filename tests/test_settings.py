@@ -33,6 +33,7 @@ from tuck.models.ui_preferences import (
 )
 from tuck.settings import (
     ProcessLock,
+    ProfilesUnreadableError,
     SettingsManager,
     _atomic_write,
     _get_lock_path,
@@ -1066,6 +1067,63 @@ class TestStaleConcurrentMerge:
         mgr2 = SettingsManager()
         s = mgr2.load()
         assert s.compression_suffix == "_local_{size}"
+
+
+class TestProfilesFromAnotherBuild:
+    def _write_foreign_profiles(self, tmp_path, monkeypatch) -> str:
+        import tuck.settings as settings_mod
+
+        monkeypatch.setattr(settings_mod, "_config_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
+        SettingsManager().save()
+        profiles = [p.to_dict() for p in DEFAULT_PROFILES]
+        for profile in profiles:
+            profile["motion_exposure"] = {"enabled": False}
+        raw = json.dumps({"version": PROFILE_SCHEMA_VERSION, "profiles": profiles})
+        profiles_path().write_text(raw, encoding="utf-8")
+        return raw
+
+    def test_settings_save_keeps_unreadable_profiles_untouched(self, tmp_path, monkeypatch):
+        raw = self._write_foreign_profiles(tmp_path, monkeypatch)
+        manager = SettingsManager()
+        manager.load()
+
+        manager.set_setting("accent_color", "teal")
+        manager.save()
+
+        assert SettingsManager().load().accent_color == "teal"
+        assert profiles_path().read_text(encoding="utf-8") == raw
+
+    def test_profile_change_is_refused_instead_of_overwriting(self, tmp_path, monkeypatch):
+        raw = self._write_foreign_profiles(tmp_path, monkeypatch)
+        manager = SettingsManager()
+        profiles = manager.get_profiles()
+        profiles[0].name = "Renamed"
+        manager.set_profiles(profiles)
+
+        with pytest.raises(ProfilesUnreadableError):
+            manager.save()
+
+        assert profiles_path().read_text(encoding="utf-8") == raw
+        # the refused change is undone, so later settings saves still work
+        assert manager.get_profiles()[0].name != "Renamed"
+        manager.set_setting("accent_color", "teal")
+        manager.save()
+        assert profiles_path().read_text(encoding="utf-8") == raw
+
+    def test_profile_actions_explain_the_refusal(self, tmp_path, monkeypatch):
+        from tuck.profile_service import ProfileService
+
+        raw = self._write_foreign_profiles(tmp_path, monkeypatch)
+        manager = SettingsManager()
+        service = ProfileService(manager)
+        profile_id = manager.get_profiles()[0].profile_id
+        for result in (service.duplicate(profile_id), service.delete(profile_id)):
+            assert result["ok"] is False
+            assert "different version of Tuck" in result["error"]
+        assert profiles_path().read_text(encoding="utf-8") == raw
+        assert len(manager.get_profiles()) == len(DEFAULT_PROFILES)
 
 
 class TestIndependentManagers:

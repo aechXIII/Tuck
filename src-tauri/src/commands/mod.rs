@@ -1,4 +1,5 @@
 pub mod backend;
+pub mod desktop;
 pub mod native;
 pub mod startup;
 pub mod updates;

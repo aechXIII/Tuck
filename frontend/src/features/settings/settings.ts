@@ -1,9 +1,10 @@
 import type { BackendClient, SendToKind } from "../../backend/types.ts";
 import { bindDelegatedEvents } from "../../ui/delegated-events.ts";
 import { escapeHtml } from "../../ui/dom.ts";
-import { settingsAreDirty, settingsSnapshot } from "../../state/settings-state.ts";
+import { settingsSnapshot } from "../../state/settings-state.ts";
 import {
   encoderDisplaySummary,
+  encoderLabel,
   isCpuEncoder,
   nativePresetForSpeed,
   speedForNativePreset,
@@ -48,6 +49,28 @@ import {
   type EditableCommand,
 } from "../shortcuts/shortcuts.ts";
 import type { EditorSession } from "../editor/session.ts";
+import {
+  button,
+  card,
+  choiceGroup,
+  ICONS,
+  row,
+  section,
+  select as selectControl,
+  switchRow,
+  textInput,
+  toolbar,
+} from "./settings-markup.ts";
+import {
+  highlightParts,
+  pageTitle,
+  searchSettings,
+  SETTINGS_INDEX,
+  SETTINGS_PAGES,
+  settingsPage,
+  type SettingsEntry,
+  type SettingsPage,
+} from "./settings-search.ts";
 
 const esc = escapeHtml;
 
@@ -71,6 +94,31 @@ export interface SettingsApi {
 }
 
 type SettingsRecord = Record<string, unknown>;
+type View = "page" | "editor" | "shortcut-choices" | "search";
+
+const DEFAULT_COMPRESSION_SUFFIX = "_tucked_{size}";
+const DEFAULT_UPSCALE_SUFFIX = "_upscaled_{width}x{height}";
+const DEFAULT_CUT_SUFFIX = "_cut";
+const EXAMPLE_NAME = "Morning ride";
+
+// the page heading can say more than the short name in the sidebar
+const HEADINGS: Partial<Record<SettingsPage, string>> = { keyboard: "Keyboard shortcuts" };
+
+const ACCENTS: readonly { value: string; label: string }[] = [
+  { value: "violet", label: "Violet" },
+  { value: "blue", label: "Blue" },
+  { value: "teal", label: "Teal" },
+  { value: "green", label: "Green" },
+  { value: "amber", label: "Amber" },
+  { value: "rose", label: "Rose" },
+];
+
+const SCALERS = ["Bilinear", "Bicubic", "Lanczos", "Point", "Neighbor"] as const;
+
+const NAMING_TOKENS: Readonly<Record<string, readonly string[]>> = {
+  "set-cs": ["{size}"],
+  "set-us": ["{width}", "{height}"],
+};
 
 export function installSettings(deps: SettingsDeps): SettingsApi {
   const { session, byId, getBackendClient } = deps;
@@ -84,18 +132,18 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
   const select = (id: string): HTMLSelectElement => el<HTMLSelectElement>(id);
   const appSettings = (): SettingsRecord => session.appSettings;
 
-  let settingsPage = "general";
-  let settingsView: "page" | "editor" = "page";
+  let page: SettingsPage = "general";
+  let view: View = "page";
   let settingsProfileId = "";
-  let settingsFilter = "all";
+  let profileFilter = "all";
+  let searchQuery = "";
   let editorOriginal: SettingsRecord = {};
   let editorSnapshot = "";
   let snapshot = "";
   let settingsDirty = false;
-  const AUTOSAVE_NOTE = "Changes save automatically.";
-  let savedNoteTimer: ReturnType<typeof setTimeout> | undefined;
+  let statusTimer: ReturnType<typeof setTimeout> | undefined;
   let settingsReturnFocus: Element | null = null;
-  let editorCapabilities: PlatformCapabilities | null = null;
+  let capabilities: PlatformCapabilities | null = null;
 
   function valueOr<T>(value: T | undefined | null, fallback: T): T {
     return value === undefined || value === null ? fallback : value;
@@ -105,8 +153,16 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     return typeof value === "number" && Number.isFinite(value) ? value : Number(value) || 0;
   }
 
+  function str(value: unknown, fallback = ""): string {
+    return typeof value === "string" ? value : fallback;
+  }
+
+  function isOpen(): boolean {
+    return document.body.classList.contains("settings-open");
+  }
+
   function trapSettingsFocus(event: KeyboardEvent): void {
-    if (event.key !== "Tab" || !document.body.classList.contains("settings-open")) return;
+    if (event.key !== "Tab" || !isOpen()) return;
     // a confirmation above settings owns focus until it is dismissed
     const dialog = byId("mod-overlay")?.classList.contains("open")
       ? byId("mod-box")
@@ -114,36 +170,59 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     if (!dialog) return;
     const focusable = Array.from(
       dialog.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
+        'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], summary, [tabindex]:not([tabindex="-1"])',
       ),
     ).filter((element) => element.getClientRects().length > 0);
     if (!focusable.length) return;
     const first = focusable[0]!;
     const last = focusable[focusable.length - 1]!;
-    if (
-      event.shiftKey &&
-      (document.activeElement === first || !dialog.contains(document.activeElement))
-    ) {
+    if (event.shiftKey && (document.activeElement === first || !dialog.contains(document.activeElement))) {
       event.preventDefault();
       last.focus();
-    } else if (
-      !event.shiftKey &&
-      (document.activeElement === last || !dialog.contains(document.activeElement))
-    ) {
+    } else if (!event.shiftKey && (document.activeElement === last || !dialog.contains(document.activeElement))) {
       event.preventDefault();
       first.focus();
     }
   }
   document.addEventListener("keydown", trapSettingsFocus);
 
-  function settingsShell(
-    page: string,
-    content: string,
-    actions: { html?: string; split?: boolean; plain?: boolean; autosave?: boolean },
-    caps: PlatformCapabilities,
-  ): void {
-    const actionBar = el("settings-actions");
-    const opening = !document.body.classList.contains("settings-open");
+  function setEditorInert(inert: boolean): void {
+    el("editor-shell").inert = inert;
+    for (const group of document.querySelectorAll<HTMLElement>("#tb .tb-editor")) group.inert = inert;
+  }
+
+  function pageAvailable(candidate: SettingsPage): boolean {
+    return candidate !== "explorer" || !capabilities || shouldShowSendTo(capabilities);
+  }
+
+  function paintNav(current: SettingsPage | null, counts?: ReadonlyMap<SettingsPage, number>): void {
+    for (const info of SETTINGS_PAGES) {
+      const nav = byId(`settings-nav-${info.id}`);
+      if (!nav) continue;
+      nav.hidden = !pageAvailable(info.id);
+      const active = info.id === current;
+      nav.classList.toggle("on", active);
+      nav.setAttribute("aria-current", active ? "page" : "false");
+      const count = counts?.get(info.id) ?? 0;
+      nav.classList.toggle("dimmed", !!counts && !count);
+      const badge = nav.querySelector<HTMLElement>(".settings-nav-count");
+      if (badge) badge.textContent = counts && count ? String(count) : "";
+    }
+  }
+
+  interface ShellOptions {
+    readonly title: string;
+    readonly back?: { readonly action: string; readonly label: string };
+    readonly footer?: string;
+    readonly navPage: SettingsPage | null;
+    readonly counts?: ReadonlyMap<SettingsPage, number>;
+    readonly headExtra?: string;
+    /** pages whose changes save as they are made say so in the header */
+    readonly autosaves?: boolean;
+  }
+
+  function renderShell(content: string, options: ShellOptions): void {
+    const opening = !isOpen();
     const previousFocus = document.activeElement;
     if (opening) {
       settingsReturnFocus = document.activeElement;
@@ -152,91 +231,938 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       setEditorInert(true);
     }
     document.body.classList.add("settings-open");
-    const titles: Record<string, string> = {
-      general: "General",
-      output: "Output & naming",
-      profiles: "Profiles",
-      keyboard: "Keyboard shortcuts",
-      explorer: "File Explorer",
-      system: "System & support",
-    };
-    const heading = settingsView === "editor"
-      ? settingsTitle(settingsProfileId ? "Edit profile" : "New profile", "back-profiles")
-      : settingsTitle(titles[page] || "General");
-    el("settings-content-header").innerHTML = heading;
+    const back = el<HTMLButtonElement>("settings-back");
+    back.hidden = !options.back;
+    if (options.back) {
+      back.dataset.settingsClick = options.back.action;
+      back.setAttribute("aria-label", options.back.label);
+      back.title = options.back.label;
+    }
+    el("settings-page-title").textContent = options.title;
+    el("settings-head-extra").innerHTML = options.headExtra ?? "";
+    const status = el("settings-status");
+    status.textContent = "";
+    status.classList.remove("on");
+    clearTimeout(statusTimer);
+    el("settings-autosave").hidden = !options.autosaves;
+    // the profile editor has its own Back and Save, so search can't replace it mid-edit
+    el<HTMLInputElement>("settings-search").disabled = view === "editor";
     el("settings-page").innerHTML = `<div class="settings-page-inner">${content}</div>`;
     el("settings-page").scrollTop = 0;
-    actionBar.className = `settings-actions ${actions.split ? "split" : ""}`;
-    actionBar.innerHTML = actions.autosave
-      ? `<span class="settings-autosave" id="settings-unsaved" role="status">${AUTOSAVE_NOTE}</span>${
-        actions.html ? `<span class="settings-action-spacer"></span>${actions.html}` : ""}`
-      : actions.html
-      ? actions.plain
-        ? actions.html
-        : `<span class="settings-unsaved" id="settings-unsaved" role="status">
-          Unsaved changes
-        </span>
-        <span class="settings-action-spacer"></span>
-        ${actions.html}`
-      : "";
-    const integrations = byId("settings-integrations");
-    if (integrations) integrations.hidden = !shouldShowSendTo(caps);
-    for (const name of ["general", "output", "profiles", "keyboard", "explorer", "system"]) {
-      const button = byId(`settings-nav-${name}`);
-      if (!button) continue;
-      const active = name === page;
-      button.classList.toggle("on", active);
-      button.setAttribute("aria-current", active ? "page" : "false");
-    }
+    const footer = el("settings-actions");
+    footer.innerHTML = options.footer ?? "";
+    paintNav(options.navPage, options.counts);
     if (opening) {
-      byId(`settings-nav-${page}`)?.focus();
-    } else if (previousFocus && !previousFocus.isConnected && settingsView !== "editor") {
+      if (options.navPage) byId(`settings-nav-${options.navPage}`)?.focus();
+    } else if (previousFocus && !previousFocus.isConnected && view !== "editor") {
       el("settings-page-title").focus();
     }
   }
 
-  function settingButton(label: string, action: string, primary?: boolean): string {
-    return `<button type="button" class="${primary ? "btn1" : "btn2"}" data-settings-click="${action}">${label}</button>`;
+  function showSaved(): void {
+    const status = byId("settings-status");
+    const note = byId("settings-autosave");
+    if (!status || !note) return;
+    const autosaves = !note.hidden || status.classList.contains("on");
+    status.textContent = "Saved";
+    status.classList.add("on");
+    note.hidden = true;
+    clearTimeout(statusTimer);
+    statusTimer = setTimeout(() => {
+      status.textContent = "";
+      status.classList.remove("on");
+      note.hidden = !autosaves;
+    }, 1600);
   }
 
-  function settingsTitle(title: string, action?: string): string {
-    const backButton = action
-      ? `<button type="button" class="settings-title-back" aria-label="Back to profiles" data-settings-click="${action}">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 5-7 7 7 7M5 12h14" /></svg>
-      </button>`
+  function generalHtml(s: SettingsRecord): string {
+    const hidden = hiddenParts(s.hidden_ui);
+    const visible = visibleTasks(hidden);
+    const taskOptions: (readonly [string, string])[] = [
+      ["last", "Last used task"],
+      ...([["compression", "Compress"], ["upscale", "Upscale"], ["cut", "Lossless cut"]] as const)
+        .filter(([value]) => visible.includes(value)),
+    ];
+    const videoHidden = hidden.has("panel_video") && hidden.has("panel_audio");
+    const inspectorOptions: (readonly [string, string])[] = [
+      ["last", "Last used tab"],
+      ...(videoHidden ? [] : [["video", "This video"] as const]),
+      ["export", "Export"],
+    ];
+    // a stored "audio" choice opens This video, which holds the audio controls
+    const inspector = s.inspector_start_panel === "audio" ? "video" : str(s.inspector_start_panel, "export");
+    const startTask = str(s.start_task, "last");
+    return section("Startup", card(
+      row({
+        setting: "start-task",
+        label: "Start with",
+        labelFor: "set-start-task",
+        control: selectControl("set-start-task", taskOptions,
+          taskOptions.some(([value]) => value === startTask) ? startTask : "last",
+          { "data-settings-change": "save" }),
+      }),
+      row({
+        setting: "inspector-start",
+        label: "Inspector opens on",
+        labelFor: "set-inspector-start",
+        control: selectControl("set-inspector-start", inspectorOptions,
+          inspectorOptions.some(([value]) => value === inspector) ? inspector : "export",
+          { "data-settings-change": "save" }),
+      }),
+      switchRow({
+        setting: "reopen",
+        id: "set-reopen",
+        label: "Reopen last videos",
+        description: "Bring back the Library from your last session.",
+        checked: s.reopen_last_videos === true,
+        attributes: { "data-settings-change": "save" },
+      }),
+    )) + section("Timeline", card(
+      row({
+        setting: "time-format",
+        label: "Time format",
+        description: "Used in the player and the timeline.",
+        control: choiceGroup("set-time-format", "Time format", [
+          { value: "seconds", label: "1:03.40", mono: true },
+          { value: "timecode", label: "00:01:03:12", mono: true },
+          { value: "frames", label: "1902 f", mono: true },
+        ], str(s.time_format, "seconds"), { "data-settings-change": "save" }),
+      }),
+    ));
+  }
+
+  function appearanceHtml(s: SettingsRecord): string {
+    const accent = str(s.accent_color, "violet");
+    const swatches = ACCENTS.map((option) =>
+      `<label class="set-swatch" data-accent-swatch="${option.value}" title="${option.label}"><input type="radio" name="set-accent" value="${option.value}" aria-label="${option.label}" data-settings-change="save"${option.value === accent ? " checked" : ""}></label>`).join("");
+    const preview = `<div class="set-accent-preview" aria-hidden="true">
+      <span class="set-btn primary">Compress this video</span>
+      <span class="set-preview-play"><svg viewBox="0 0 16 16"><path d="M6 4.5v7l5.5-3.5Z"></path></svg></span>
+      <span class="set-preview-switch"></span>
+      <span class="set-preview-slider"><span></span></span>
+      <span class="set-preview-clip">S1 · ${EXAMPLE_NAME}.mp4</span>
+    </div>`;
+    return section("Color", preview + card(
+      row({
+        setting: "accent",
+        label: "Accent color",
+        description: "Used for the main button, selection, and focus.",
+        control: `<span class="set-swatches" role="radiogroup" aria-label="Accent color">${swatches}</span>`,
+      }),
+    )) + section("Layout", card(
+      row({
+        setting: "interface-size",
+        label: "Interface size",
+        description: "Compact fits more timeline on small screens.",
+        control: choiceGroup("set-interface-size", "Interface size", [
+          { value: "compact", label: "Compact" },
+          { value: "default", label: "Default" },
+          { value: "large", label: "Large" },
+        ], str(s.interface_size, "default"), { "data-settings-change": "save" }),
+      }),
+      switchRow({
+        setting: "animations",
+        id: "set-animations",
+        label: "Animations",
+        description: "Turn off to make panels and menus appear instantly.",
+        checked: s.animations !== false,
+        attributes: { "data-settings-change": "save" },
+      }),
+    ));
+  }
+
+  function toolsHtml(s: SettingsRecord): string {
+    const hidden = hiddenParts(s.hidden_ui);
+    const visible = visibleTasks(hidden);
+    const part = (id: HideablePart, setting: string, label: string, description?: string, icon?: "compress" | "upscale" | "cut") =>
+      switchRow({
+        setting,
+        id: `set-show-${id}`,
+        label,
+        ...(description ? { description } : {}),
+        ...(icon ? { icon } : {}),
+        checked: !hidden.has(id),
+        // one task always stays on
+        disabled: isTaskName(id) && visible.length === 1 && visible[0] === id,
+        attributes: { "data-hide-part": id, "data-settings-change": "visibility" },
+      });
+    return section("Tasks", card(
+      part("compression", "task-compression", "Compress", undefined, "compress"),
+      part("upscale", "task-upscale", "Upscale", undefined, "upscale"),
+      part("cut", "task-cut", "Lossless cut", undefined, "cut"),
+    ), { description: "Turn off tasks you never use. At least one stays on." })
+      + section("Editing tools", card(
+        part("panel_video", "panel-video", "Transform panel"),
+        part("panel_audio", "panel-audio", "Audio panel"),
+        part("audio_editing", "audio-editing", "Audio editing", "Add audio tracks to a video."),
+        part("frame_blending", "frame-blending", "Frame blending", "Still shown when a profile uses it."),
+        part("lut", "lut", "Color LUT", "Still shown when a profile uses it."),
+      ));
+  }
+
+  function tokenButton(target: string): string {
+    const tokens = NAMING_TOKENS[target];
+    if (!tokens) return "";
+    const items = tokens
+      .map((token) => `<button type="button" role="menuitem" data-settings-click="insert-token" data-settings-target="${target}" data-settings-token="${token}">${token}</button>`)
+      .join("");
+    return `<details class="set-token-menu"><summary aria-label="Insert a name token" title="Insert a name token">${ICONS.braces}</summary><span class="set-token-popover" role="menu">${items}</span></details>`;
+  }
+
+  function filesHtml(s: SettingsRecord): string {
+    const location = str(s.output_location, s.output_dir ? "folder" : "source");
+    const folder = str(s.output_dir);
+    const naming = (setting: string, id: string, label: string, value: string, icon: "compress" | "upscale" | "cut") =>
+      row({
+        setting,
+        label,
+        labelFor: id,
+        icon,
+        description: exampleName(id, value),
+        descriptionMono: true,
+        control: textInput(id, value, `${label} suffix`, {
+          mono: true,
+          width: 264,
+          extra: tokenButton(id),
+          attributes: { "data-settings-input": "preview-output", "data-settings-change": "save" },
+        }) + `<span class="set-row-error" id="${id}-error" role="alert" hidden></span>`,
+      });
+    return section("Where exports go", card(
+      row({
+        setting: "save-to",
+        label: "Save to",
+        control: choiceGroup("set-location", "Save exports", [
+          { value: "source", label: "Next to source" },
+          { value: "subfolder", label: "In a subfolder" },
+          { value: "folder", label: "One folder" },
+        ], location, { "data-settings-change": "location" }),
+      }),
+      row({
+        setting: "subfolder",
+        label: "Folder name",
+        labelFor: "set-subfolder",
+        description: "Made next to each source file.",
+        sub: true,
+        hidden: location !== "subfolder",
+        control: textInput("set-subfolder", str(s.output_subfolder, "Tucked"), "Folder name", {
+          width: 200,
+          attributes: { "data-settings-change": "save" },
+        }) + `<span class="set-row-error" id="set-subfolder-error" role="alert" hidden></span>`,
+      }),
+      row({
+        setting: "folder",
+        label: "Folder",
+        description: folder || "Not chosen yet",
+        descriptionMono: !!folder,
+        sub: true,
+        hidden: location !== "folder",
+        control: `<span id="set-od" data-path="${esc(folder)}" hidden></span>`
+          + button("Change…", { action: "browse-output", icon: "folder" }),
+      }),
+      switchRow({
+        setting: "keep-dates",
+        id: "set-keep-dates",
+        label: "Keep original file dates",
+        description: "Exports sort next to their source.",
+        checked: s.keep_file_dates === true,
+        attributes: { "data-settings-change": "save" },
+      }),
+    )) + section("File names", card(
+      naming("suffix-compression", "set-cs", "Compress", str(s.compression_suffix, DEFAULT_COMPRESSION_SUFFIX) || DEFAULT_COMPRESSION_SUFFIX, "compress"),
+      naming("suffix-upscale", "set-us", "Upscale", str(s.upscale_suffix, DEFAULT_UPSCALE_SUFFIX) || DEFAULT_UPSCALE_SUFFIX, "upscale"),
+      naming("suffix-cut", "set-cuts", "Lossless cut", str(s.cut_suffix, DEFAULT_CUT_SUFFIX) || DEFAULT_CUT_SUFFIX, "cut"),
+    ), { description: "Added to the source name. If a file exists, Tuck adds a number." });
+  }
+
+  function queueHtml(s: SettingsRecord): string {
+    const flag = (setting: string, id: string, label: string, checked: boolean, description?: string) =>
+      switchRow({
+        setting,
+        id,
+        label,
+        ...(description ? { description } : {}),
+        checked,
+        attributes: { "data-settings-change": "save" },
+      });
+    return section("When the queue finishes", card(
+      flag("show-folder", "set-open-output-folder", "Show the last export in its folder", s.open_output_folder_after_queue === true),
+      flag("clear-finished", "set-auto-clear", "Clear finished jobs", s.clear_completed_automatically === true,
+        "Failed and cancelled jobs stay so you can retry them."),
+      flag("notify", "set-notify", "Notify me", s.notify_when_done !== false,
+        "Shows a notification when Tuck is in the background."),
+    )) + section("While exporting", card(
+      flag("keep-awake", "set-keep-awake", "Keep the PC awake", s.keep_awake !== false,
+        "Sleep waits until the queue is done."),
+      flag("background", "set-background", "Run exports in the background", s.background_exports === true,
+        "Keeps games smooth. Exports take a bit longer."),
+    ));
+  }
+
+  function profilesHtml(s: SettingsRecord): string {
+    const scaler = str(s.default_scaler, "neighbor");
+    const filters = choiceGroup("set-profile-filter", "Filter profiles", [
+      { value: "all", label: "All" },
+      { value: "compression", label: "Compress" },
+      { value: "upscale", label: "Upscale" },
+    ], profileFilter, { "data-settings-change": "filter-profiles" });
+    return toolbar(
+      filters,
+      '<span class="set-toolbar-spacer"></span>',
+      button("Import…", { action: "import-profiles", kind: "quiet" }),
+      button("New profile", { action: "new-profile", kind: "primary", icon: "plus" }),
+    ) + `<div data-setting="profiles">`
+      + section("Your profiles", `<div id="pm-own" class="set-card set-profile-list" role="list" aria-label="Your profiles"></div>`, { id: "pm-own-section" })
+      + section("Built in", `<div id="pm-builtin" class="set-card set-profile-list" role="list" aria-label="Built-in profiles"></div>`, { id: "pm-builtin-section" })
+      + `</div>`
+      + section("When a profile doesn’t choose", card(
+        row({
+          setting: "default-scaler",
+          label: "Scaler",
+          labelFor: "set-ds",
+          control: selectControl("set-ds", SCALERS.map((name) => [name, name] as const),
+            SCALERS.find((name) => name.toLowerCase() === scaler) ?? "Neighbor",
+            { "data-settings-change": "save" }),
+        }),
+      ));
+  }
+
+  function mediaHtml(s: SettingsRecord, caps: PlatformCapabilities): string {
+    const tool = (setting: string, id: string, name: string, custom: string, detected: string, ready: boolean, browse: string, clear: string) => {
+      const where = custom || detected;
+      const state = ready
+        ? `<span class="set-state ok">Ready</span>`
+        : `<span class="set-state warn">${ICONS.warn}Not found</span>`;
+      const path = where ? `<span class="set-desc-sep">·</span><span class="mono set-path">${esc(where)}</span>` : "";
+      return row({
+        setting,
+        label: name,
+        descriptionHtml: state + path,
+        control: `<span id="${id}" data-path="${esc(custom)}" hidden></span>`
+          + (custom ? button("Use automatic", { action: clear, kind: "quiet" }) : "")
+          + button(ready ? "Change…" : "Choose file…", { action: browse, ...(ready ? {} : { kind: "primary" as const }) }),
+      });
+    };
+    const encoders = encodersForPlatform(toStringArray(s.available_encoders), caps);
+    const chips = encoders.length
+      ? `<span class="set-chips">${encoders.map((name) => `<span class="set-chip">${esc(encoderLabel(name))}</span>`).join("")}</span>`
+      : `<span>${esc(encoderDisplaySummary(encoders))}</span>`;
+    return section("Tools", card(
+      tool("ffmpeg", "set-ffmpeg", "FFmpeg", str(s.ffmpeg_path), str(s.detected_ffmpeg_path), !!s.ffmpeg_available, "browse-ffmpeg", "clear-ffmpeg"),
+      tool("ffprobe", "set-ffprobe", "FFprobe", str(s.ffprobe_path), str(s.detected_ffprobe_path), !!s.ffprobe_available, "browse-ffprobe", "clear-ffprobe"),
+    )) + section("Encoding", card(
+      row({
+        setting: "encoders",
+        label: "Available encoders",
+        descriptionHtml: chips,
+        control: button("Rescan", { action: "refresh-encoders", icon: "refresh" }),
+      }),
+      row({
+        setting: "encoder-check",
+        label: "Encoder check",
+        labelFor: "set-encoder-cache-days",
+        description: "Remembering what was found saves time at startup.",
+        control: selectControl("set-encoder-cache-days", [
+          ["0", "Every launch"],
+          ["1", "Every day"],
+          ["7", "Every 7 days"],
+          ["30", "Every 30 days"],
+          ["90", "Every 90 days"],
+        ], String(num(s.encoder_cache_days)), { "data-settings-change": "save" }),
+      }),
+    ));
+  }
+
+  function aboutHtml(s: SettingsRecord, caps: PlatformCapabilities): string {
+    const version = str(s.version);
+    const updater = shouldShowUpdater(caps);
+    const checked = str(s.last_update_check);
+    const hero = `<div class="set-row set-about" data-setting="updates">
+      <span class="set-row-text"><span class="set-logo">${ICONS.logo}</span><span class="set-row-words">
+        <span class="set-label set-about-name">Tuck <span class="mono">${esc(version)}</span></span>
+        <span class="set-desc">${updater ? (checked ? `Last checked ${esc(checked)}` : "Not checked yet") : "Updates aren’t available in this build."}</span>
+      </span></span>
+      <span class="set-row-control">${updater ? button("Check for updates", { action: "check-updates", icon: "refresh" }) : ""}</span>
+    </div>`;
+    const updates = updater
+      ? switchRow({
+        setting: "auto-updates",
+        id: "set-check-updates",
+        label: "Check for updates automatically",
+        checked: s.check_updates !== false,
+        attributes: { "data-settings-change": "save" },
+      })
       : "";
-    return `<div class="settings-title-row">
-    ${backButton}
-    <h2 class="settings-title" id="settings-page-title" tabindex="-1">${esc(title)}</h2>
-  </div>`;
+    return section(updater ? "Updates" : "Version", card(hero, updates))
+      + section("Help", card(
+        row({
+          setting: "diagnostics",
+          label: "Diagnostic report",
+          description: "Versions, encoders, and recent errors. Folder paths are removed.",
+          control: button("Copy", { action: "copy-diagnostics", label: "Copy diagnostic report" }),
+        }),
+        row({
+          setting: "logs",
+          label: "Logs",
+          control: button("Open folder", { action: "open-support", value: "logs", icon: "folder", label: "Open logs folder" }),
+        }),
+        row({
+          setting: "settings-folder",
+          label: "Settings folder",
+          control: button("Open folder", { action: "open-support", value: "config", icon: "folder", label: "Open settings folder" }),
+        }),
+      ))
+      + section("Your settings", card(
+        row({
+          setting: "backup",
+          label: "Back up",
+          description: "Settings, profiles, and shortcuts in one file.",
+          control: button("Export…", { action: "export-settings", label: "Export settings to a file" })
+            + button("Import…", { action: "import-settings", label: "Import settings from a file" }),
+        }),
+        row({
+          setting: "reset",
+          label: "Reset settings",
+          description: "Your profiles are kept.",
+          control: button("Reset…", { action: "reset-settings", kind: "danger", label: "Reset settings" }),
+        }),
+      ));
+  }
+
+  function keyboardHtml(): string {
+    const search = `<span class="set-input set-search-shortcuts">${ICONS.search}<input type="search" id="kb-search" placeholder="Search shortcuts" aria-label="Search shortcuts" autocomplete="off" data-settings-input="filter-shortcuts"></span>`;
+    return toolbar(
+      search,
+      '<span class="set-toolbar-spacer"></span>',
+      button("Shortcut guide", { action: "show-shortcut-guide", kind: "quiet" }),
+      button("Reset all", { action: "reset-shortcuts", kind: "quiet", id: "kb-reset-all" }),
+    ) + `<div id="kb-list" class="kb-list" data-setting="keyboard"></div><span id="kb-status" class="sr-only" role="status"></span>`;
+  }
+
+  function explorerHtml(): string {
+    return section("Send to", `<div id="st-fixed" class="set-card"></div>`, {
+      description: "Right-click videos in File Explorer, then choose Send to.",
+    }) + `<div data-setting="profile-shortcuts">` + section("Profile shortcuts", `<div id="st-list" class="set-card"></div>`, {
+      description: "One Send to entry per profile.",
+      aside: button("Add", { action: "add-shortcut", icon: "plus", label: "Add profile shortcut" }),
+    }) + `</div>`;
+  }
+
+  function checked(id: string): boolean {
+    return byId<HTMLInputElement>(id)?.checked ?? false;
+  }
+
+  function radio(name: string, fallback: string): string {
+    return document.querySelector<HTMLInputElement>(`#settings-page input[name="${name}"]:checked`)?.value ?? fallback;
+  }
+
+  function chosenHiddenParts(): HideablePart[] {
+    const switches = Array.from(document.querySelectorAll<HTMLInputElement>("#settings-page [data-hide-part]"));
+    return HIDEABLE_PARTS.filter((id) => switches.some((node) => node.dataset.hidePart === id && !node.checked));
+  }
+
+  /** What the open page would save; pages without autosaved fields return null. */
+  function pagePatch(): SettingsRecord | null {
+    if (view !== "page") return null;
+    switch (page) {
+      case "general":
+        return {
+          start_task: select("set-start-task").value,
+          inspector_start_panel: select("set-inspector-start").value,
+          reopen_last_videos: checked("set-reopen"),
+          time_format: radio("set-time-format", "seconds"),
+        };
+      case "appearance":
+        return {
+          accent_color: radio("set-accent", "violet"),
+          interface_size: radio("set-interface-size", "default"),
+          animations: checked("set-animations"),
+        };
+      case "tools":
+        return { hidden_ui: chosenHiddenParts() };
+      case "files": {
+        const location = radio("set-location", "source");
+        return {
+          output_location: location,
+          output_dir: el("set-od").dataset.path || "",
+          ...(location === "subfolder" ? { output_subfolder: input("set-subfolder").value.trim() } : {}),
+          keep_file_dates: checked("set-keep-dates"),
+          compression_suffix: input("set-cs").value.trim() || DEFAULT_COMPRESSION_SUFFIX,
+          upscale_suffix: input("set-us").value.trim() || DEFAULT_UPSCALE_SUFFIX,
+          cut_suffix: input("set-cuts").value.trim() || DEFAULT_CUT_SUFFIX,
+        };
+      }
+      case "queue":
+        return {
+          open_output_folder_after_queue: checked("set-open-output-folder"),
+          clear_completed_automatically: checked("set-auto-clear"),
+          notify_when_done: checked("set-notify"),
+          keep_awake: checked("set-keep-awake"),
+          background_exports: checked("set-background"),
+        };
+      case "profiles":
+        return { default_scaler: select("set-ds").value.toLowerCase() };
+      case "media":
+        return {
+          ffmpeg_path: el("set-ffmpeg").dataset.path || "",
+          ffprobe_path: el("set-ffprobe").dataset.path || "",
+          encoder_cache_days: parseInt(select("set-encoder-cache-days").value, 10) || 0,
+        };
+      case "about": {
+        const updates = byId<HTMLInputElement>("set-check-updates");
+        return updates ? { check_updates: updates.checked } : null;
+      }
+      default:
+        return null;
+    }
+  }
+
+  function markSettingsDirty(): void {
+    const patch = pagePatch();
+    settingsDirty = !!patch && settingsSnapshot(patch) !== snapshot;
+  }
+
+  function captureSettingsSnapshot(): void {
+    const patch = pagePatch();
+    snapshot = patch ? settingsSnapshot(patch) : "";
+    settingsDirty = false;
+  }
+
+  // the field a rejected save most likely came from, so its message shows beside it
+  function errorTarget(patch: SettingsRecord, error: string): string | null {
+    const lower = error.toLowerCase();
+    if (lower.includes("lossless cut suffix") || lower.includes("cut_suffix")) return "set-cuts";
+    if (lower.includes("compression_suffix")) return "set-cs";
+    if (lower.includes("upscale_suffix")) return "set-us";
+    if ((lower.includes("folder name") || lower.includes("export folder")) && "output_subfolder" in patch)
+      return "set-subfolder";
+    return null;
+  }
+
+  function clearFieldErrors(): void {
+    for (const node of document.querySelectorAll<HTMLElement>("#settings-page .set-row-error")) {
+      node.hidden = true;
+      node.textContent = "";
+      const field = node.id ? byId<HTMLInputElement>(node.id.replace(/-error$/, "")) : null;
+      field?.removeAttribute("aria-invalid");
+      field?.closest(".set-input")?.classList.remove("invalid");
+    }
+  }
+
+  async function persistSettings(patch: SettingsRecord): Promise<boolean> {
+    const savedPage = page;
+    const result = await legacyBackendResult(client().saveSettings(patch as never));
+    if (result.ok) {
+      clearFieldErrors();
+      Object.assign(session.appSettings, patch);
+      // remember what was written, not what the page shows now: a change made while the save
+      // was running must still count as unsaved so the next queued save picks it up
+      if (view === "page" && page === savedPage) {
+        snapshot = settingsSnapshot(patch);
+        markSettingsDirty();
+      }
+      await deps.reloadEditorSettings();
+      showSaved();
+      return true;
+    }
+    const message = result.error ?? "Could not save settings.";
+    const target = errorTarget(patch, message);
+    const note = target ? byId(`${target}-error`) : null;
+    if (target && note) {
+      note.textContent = message;
+      note.hidden = false;
+      byId<HTMLInputElement>(target)?.setAttribute("aria-invalid", "true");
+      byId(target)?.closest(".set-input")?.classList.add("invalid");
+    } else {
+      toast(message, "err");
+    }
+    return false;
+  }
+
+  // changes save as they are made; saves run one at a time and read the page when they start,
+  // so quick changes cannot land out of order
+  let saving: Promise<unknown> = Promise.resolve();
+  function autosave(): Promise<unknown> {
+    markSettingsDirty();
+    if (!settingsDirty) return saving;
+    const savingPage = page;
+    saving = saving.then(() => {
+      markSettingsDirty();
+      const patch = pagePatch();
+      return settingsDirty && patch && page === savingPage ? persistSettings(patch) : undefined;
+    });
+    return saving;
+  }
+
+  async function loadSettings(): Promise<SettingsRecord> {
+    return (await legacyBackendResult(client().getSettings())) as SettingsRecord;
+  }
+
+  async function open(requested?: string, requestedView?: string, profileId?: string): Promise<void> {
+    if (requested) page = settingsPage(requested);
+    view = requestedView === "editor" ? "editor" : "page";
+    if (profileId !== undefined) settingsProfileId = profileId;
+    const caps = await fetchPlatformCapabilities();
+    capabilities = caps;
+    if (!pageAvailable(page)) page = "general";
+    clearSearchField();
+    stopCapture();
+    if (page === "profiles" && view === "editor") {
+      renderShell(profileEditorHtml(), {
+        title: settingsProfileId ? "Edit profile" : "New profile",
+        back: { action: "back-profiles", label: "Back to profiles" },
+        navPage: "profiles",
+        footer: `<span class="settings-editor-note" id="settings-editor-note" role="status"></span>
+          <span class="set-toolbar-spacer"></span>
+          ${button("Cancel", { action: "back-profiles" })}
+          ${button("Save profile", { action: "save-profile", kind: "primary" })}`,
+      });
+      await hydrateEditor(caps);
+      const name = input("pe-name").value.trim();
+      if (name) el("settings-page-title").textContent = name;
+      input("pe-name").focus();
+      deps.syncSelects();
+      return;
+    }
+    const s = await loadSettings();
+    const builders: Record<SettingsPage, () => string> = {
+      general: () => generalHtml(s),
+      appearance: () => appearanceHtml(s),
+      tools: () => toolsHtml(s),
+      keyboard: () => keyboardHtml(),
+      files: () => filesHtml(s),
+      queue: () => queueHtml(s),
+      profiles: () => profilesHtml(s),
+      explorer: () => explorerHtml(),
+      media: () => mediaHtml(s, caps),
+      about: () => aboutHtml(s, caps),
+    };
+    renderShell(builders[page](), {
+      title: HEADINGS[page] ?? pageTitle(page),
+      navPage: page,
+      autosaves: true,
+    });
+    if (page === "profiles") await refreshProfileManagerList();
+    if (page === "explorer") await refreshShortcutList();
+    if (page === "keyboard") renderKeyboardList();
+    captureSettingsSnapshot();
+    deps.syncSelects();
+  }
+
+  function toggle(): void {
+    if (isOpen()) close();
+    else void open();
+  }
+
+  function navigateSettings(target: string): void {
+    const go = (): void => void open(target);
+    if (view === "editor") {
+      if (editorDirty()) confirmToast("Discard unsaved profile changes?", go);
+      else go();
+      return;
+    }
+    void autosave().then(() => {
+      if (!settingsDirty) return go();
+      confirmToast("Discard unsaved settings?", () => {
+        settingsDirty = false;
+        go();
+      });
+    });
+  }
+
+  function close(): void {
+    if (view === "editor" && editorDirty())
+      return confirmToast("Discard unsaved profile changes?", () => {
+        view = "page";
+        settingsProfileId = "";
+        closeSettingsWorkspace();
+      });
+    void autosave().then(() => {
+      if (!settingsDirty) return closeSettingsWorkspace();
+      confirmToast("Discard unsaved settings?", () => {
+        settingsDirty = false;
+        closeSettingsWorkspace();
+      });
+    });
+  }
+
+  function closeSettingsWorkspace(): void {
+    stopCapture();
+    clearSearchField();
+    document.body.classList.remove("settings-open");
+    setEditorInert(false);
+    if (settingsReturnFocus && settingsReturnFocus.isConnected && settingsReturnFocus instanceof HTMLElement)
+      settingsReturnFocus.focus();
+    settingsReturnFocus = null;
+  }
+
+  function searchEntries(): SettingsEntry[] {
+    const shortcuts = editableCommands().map((command) => ({
+      id: `kb-${command.id}`,
+      page: "keyboard" as const,
+      label: command.label,
+      keywords: "shortcut keys",
+    }));
+    return [...SETTINGS_INDEX, ...shortcuts];
+  }
+
+  function clearSearchField(): void {
+    searchQuery = "";
+    const field = byId<HTMLInputElement>("settings-search");
+    if (field) field.value = "";
+    const clear = byId("settings-search-clear");
+    if (clear) clear.hidden = true;
+  }
+
+  function resultLabel(label: string, query: string): string {
+    return highlightParts(label, query)
+      .map((part) => (part.match ? `<mark>${esc(part.text)}</mark>` : esc(part.text)))
+      .join("");
+  }
+
+  function renderSearch(query: string): void {
+    if (view === "editor") return;
+    stopCapture();
+    view = "search";
+    const results = searchSettings(query, searchEntries(), pageAvailable);
+    const counts = new Map<SettingsPage, number>();
+    for (const entry of results) counts.set(entry.page, (counts.get(entry.page) ?? 0) + 1);
+    const groups = SETTINGS_PAGES.filter((info) => counts.has(info.id)).map((info) => {
+      const rows = results.filter((entry) => entry.page === info.id).map((entry) =>
+        `<button type="button" class="set-row set-result" data-settings-click="search-result" data-settings-value="${esc(entry.page)}|${esc(entry.id)}">
+          <span class="set-row-text"><span class="set-row-words"><span class="set-label">${resultLabel(entry.label, query)}</span></span></span>
+          <span class="set-row-control">${ICONS.chevron}</span>
+        </button>`).join("");
+      return `<section class="set-section"><header class="set-section-head"><span><h3 class="set-crumb">${esc(info.title)}</h3></span></header><div class="set-card">${rows}</div></section>`;
+    }).join("");
+    const empty = `<p class="set-empty">No settings match “${esc(query.trim())}”.</p>`;
+    renderShell(groups || empty, {
+      title: `Results for “${query.trim()}”`,
+      navPage: null,
+      counts,
+      headExtra: results.length ? `<span class="settings-head-count">${results.length} ${results.length === 1 ? "setting" : "settings"}</span>` : "",
+    });
+    snapshot = "";
+    settingsDirty = false;
+  }
+
+  function onSearchInput(field: HTMLInputElement): void {
+    const query = field.value;
+    const clear = byId("settings-search-clear");
+    if (clear) clear.hidden = !query;
+    if (query.trim() === searchQuery.trim()) return;
+    searchQuery = query;
+    if (!query.trim()) {
+      leaveSearch();
+      return;
+    }
+    // a page with a change that hasn't saved yet saves before it is replaced by results
+    void autosave().then(() => {
+      if (searchQuery === query) renderSearch(query);
+    });
+  }
+
+  // only the results view goes back to its page; any other view stays as it is
+  function leaveSearch(): void {
+    if (view === "search") void open(page);
+  }
+
+  async function openSearchResult(value: string): Promise<void> {
+    const [target, setting] = value.split("|");
+    if (!target || !setting) return;
+    await open(target);
+    const anchor = document.querySelector<HTMLElement>(`#settings-page [data-setting="${CSS.escape(setting)}"]`)
+      ?? document.querySelector<HTMLElement>(`#settings-page [data-command="${CSS.escape(setting.replace(/^kb-/, ""))}"]`);
+    if (!anchor) return;
+    anchor.scrollIntoView({ block: "center" });
+    anchor.classList.add("set-flash");
+    setTimeout(() => anchor.classList.remove("set-flash"), 1400);
+    const control = anchor.matches("input, select, button")
+      ? anchor
+      : anchor.querySelector<HTMLElement>("input:not([type=hidden]), select, button, summary");
+    (control ?? el("settings-page-title")).focus();
+  }
+
+  function syncVisibilityChoices(): void {
+    const switches = Array.from(document.querySelectorAll<HTMLInputElement>("#settings-page [data-hide-part]"));
+    const hidden = hiddenParts(chosenHiddenParts());
+    const visible = visibleTasks(hidden);
+    for (const node of switches) {
+      node.disabled = visible.length === 1 && node.dataset.hidePart === visible[0];
+    }
+  }
+
+  function exampleName(id: string, value: string): string {
+    const suffix = value.trim();
+    if (id === "set-cs")
+      return `${EXAMPLE_NAME}${(suffix || DEFAULT_COMPRESSION_SUFFIX).replace("{size}", "20MB")}.mp4`;
+    if (id === "set-us")
+      return `${EXAMPLE_NAME}${(suffix || DEFAULT_UPSCALE_SUFFIX).replace("{width}", "2560").replace("{height}", "1440")}.mp4`;
+    return `${EXAMPLE_NAME}${suffix || DEFAULT_CUT_SUFFIX}.mp4`;
+  }
+
+  function updateExampleOutput(field: HTMLInputElement): void {
+    const description = field.closest(".set-row")?.querySelector(".set-desc");
+    if (description) description.textContent = exampleName(field.id, field.value);
+  }
+
+  function insertNamingToken(id: string, token: string, from: HTMLElement): void {
+    const field = input(id);
+    if (!field.value.includes(token)) {
+      const start = field.selectionStart ?? field.value.length;
+      const end = field.selectionEnd ?? start;
+      field.value = field.value.slice(0, start) + token + field.value.slice(end);
+    }
+    from.closest("details")?.removeAttribute("open");
+    updateExampleOutput(field);
+    field.focus();
+    void autosave();
+  }
+
+  function showLocation(location: string): void {
+    const subfolder = document.querySelector<HTMLElement>('#settings-page [data-setting="subfolder"]');
+    const folder = document.querySelector<HTMLElement>('#settings-page [data-setting="folder"]');
+    if (subfolder) subfolder.hidden = location !== "subfolder";
+    if (folder) folder.hidden = location !== "folder";
+  }
+
+  function setOutputFolder(path: string): void {
+    const node = el("set-od");
+    node.dataset.path = path;
+    const description = node.closest(".set-row")?.querySelector<HTMLElement>(".set-desc");
+    if (description) {
+      description.textContent = path || "Not chosen yet";
+      description.classList.toggle("mono", !!path);
+    }
+  }
+
+  async function chooseLocation(target: HTMLInputElement): Promise<void> {
+    if (target.value === "folder" && !el("set-od").dataset.path) {
+      // one folder needs a folder; keep the previous choice if none is picked
+      const picked = await legacyBackendResult(client().pickFolder());
+      if (!(picked.ok && typeof picked.path === "string" && picked.path)) {
+        const previous = str(appSettings().output_location, "source");
+        const restore = document.querySelector<HTMLInputElement>(`#settings-page input[name="set-location"][value="${previous}"]`);
+        if (restore) restore.checked = true;
+        showLocation(previous);
+        return;
+      }
+      setOutputFolder(picked.path);
+    }
+    showLocation(target.value);
+    void autosave();
+  }
+
+  async function browseOutput(): Promise<void> {
+    const picked = await legacyBackendResult(client().pickFolder());
+    if (picked.ok && typeof picked.path === "string" && picked.path) {
+      setOutputFolder(picked.path);
+      void autosave();
+    }
+  }
+
+  async function browseTool(id: "set-ffmpeg" | "set-ffprobe"): Promise<void> {
+    const picked = await legacyBackendResult(
+      id === "set-ffmpeg" ? client().pickFfmpegFile() : client().pickFfprobeFile(),
+    );
+    if (picked.ok && typeof picked.path === "string" && picked.path) {
+      el(id).dataset.path = picked.path;
+      await saveAndReload();
+    }
+  }
+
+  async function clearTool(id: "set-ffmpeg" | "set-ffprobe"): Promise<void> {
+    el(id).dataset.path = "";
+    await saveAndReload();
+  }
+
+  // the Media tools page shows what Python found, so it is drawn again after a path changes
+  async function saveAndReload(): Promise<boolean> {
+    await autosave();
+    if (settingsDirty) return false;
+    await open("media");
+    showSaved();
+    return true;
+  }
+
+  async function refreshEncoders(): Promise<void> {
+    // a new FFmpeg path must be saved before encoders are detected with it
+    await autosave();
+    if (settingsDirty) {
+      toast("Save a working FFmpeg path before refreshing encoders.", "err");
+      return;
+    }
+    const result = await legacyBackendResult(client().refreshEncoders());
+    if (result.ok) {
+      deps.setAvailableEncoders(toStringArray(result.available_encoders));
+      toast("Encoder detection refreshed.", "ok");
+      void open("media");
+    } else {
+      toast(result.error ?? "Could not refresh encoders.", "err");
+    }
+  }
+
+  async function openSupportFolder(kind: string): Promise<void> {
+    const result = kind === "logs"
+      ? await legacyBackendResult(client().openLogsFolder())
+      : await legacyBackendResult(client().openConfigFolder());
+    if (!result.ok) toast(result.error ?? "Could not open folder.", "err");
+  }
+
+  async function exportSettings(): Promise<void> {
+    const picked = await legacyBackendResult(client().pickSaveFile("tuck-settings.json"));
+    if (!picked.ok || typeof picked.path !== "string" || !picked.path) return;
+    const result = await legacyBackendResult(client().exportSettingsToFile(picked.path));
+    if (result.ok) toast("Settings exported.", "ok");
+    else toast(result.error ?? "Could not export your settings.", "err");
+  }
+
+  async function importSettings(): Promise<void> {
+    const picked = await legacyBackendResult(client().pickImportFile());
+    if (!picked.ok || typeof picked.path !== "string" || !picked.path) return;
+    const result = await legacyBackendResult(client().importSettingsFromFile(picked.path));
+    if (!result.ok) {
+      toast(result.error ?? "Could not import those settings.", "err");
+      return;
+    }
+    await afterSettingsReplaced();
+    const skipped = toStringArray(result.skipped);
+    toast(skipped.length
+      ? "Settings imported. Folders and tools that aren’t on this computer were left as they were."
+      : "Settings imported.", "ok");
+  }
+
+  function resetSettings(): void {
+    confirmToast("Every setting goes back to how Tuck started. Your profiles are kept.", () => {
+      void legacyBackendResult(client().resetSettings()).then(async (result) => {
+        if (!result.ok) {
+          toast(result.error ?? "Could not reset your settings.", "err");
+          return;
+        }
+        await afterSettingsReplaced();
+        toast("Settings reset.", "ok");
+      });
+    }, { title: "Reset settings?", confirmLabel: "Reset", cancelLabel: "Keep my settings" });
+  }
+
+  async function afterSettingsReplaced(): Promise<void> {
+    await deps.reloadEditorSettings();
+    setShortcutOverrides(session.appSettings.shortcut_overrides);
+    await open(page);
   }
 
   function profileSummary(p: ProfileListEntry): string {
     const up = (p.workflow || "compression") === "upscale";
-    const res =
-      p.resolution_mode === "custom"
-        ? `${num(p.custom_width) || num(p.max_width)} × ${num(p.custom_height) || num(p.max_height)}`
-        : "Source resolution";
-    const fps =
-      p.fps_mode === "custom"
-        ? `${(num(p.custom_fps) || num(p.max_fps) || 30)} FPS`
-        : "Source FPS";
-    const audio = p.keep_audio
-      ? "Keep audio"
-      : `${num(p.audio_bitrate_kbps) || 128} kbps audio`;
+    const res = p.resolution_mode === "custom"
+      ? `${num(p.custom_width) || num(p.max_width)} × ${num(p.custom_height) || num(p.max_height)}`
+      : "Source resolution";
+    const fps = p.fps_mode === "custom" ? `${num(p.custom_fps) || num(p.max_fps) || 30} FPS` : "Source FPS";
+    const audio = p.keep_audio ? "Keep audio" : `${num(p.audio_bitrate_kbps) || 128} kbps audio`;
     const transform = p.transform_intent as SettingsRecord | undefined;
     const transformSummary = transform
-      ? ` · ${
-          transform.crop_aspect === "free" ? "Free aspect" : String(transform.crop_aspect)
-        } · ${String(transform.sizing_mode || "fit").replace(/^./, (v) => v.toUpperCase())}${
-          transform.rotation ? ` · ${String(transform.rotation)}°` : ""
-        }`
+      ? ` · ${transform.crop_aspect === "free" ? "Free aspect" : String(transform.crop_aspect)} · ${String(transform.sizing_mode || "fit").replace(/^./, (v) => v.toUpperCase())}${
+        transform.rotation ? ` · ${String(transform.rotation)}°` : ""}`
       : "";
-    return (
-      `${up ? "Upscale" : "Compress"} · ${
-        up ? "" : `${Math.round(num(p.target_size_bytes) / (1024 * 1024))} MB · `
-      }${res} · ${fps} · ${audio}${transformSummary}`
-    );
+    return `${up ? "Upscale" : "Compress"} · ${up ? "" : `${Math.round(num(p.target_size_bytes) / (1024 * 1024))} MB · `}${res} · ${fps} · ${audio}${transformSummary}`;
   }
 
   function profileShortcutName(id: string): string {
@@ -244,43 +1170,75 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     return profile ? profile.name ?? "Profile shortcut" : "Profile shortcut";
   }
 
-  async function refreshProfileManagerList(filter?: string): Promise<void> {
-    settingsFilter = filter || settingsFilter;
-    const list = byId("pm-list");
-    if (!list) return;
-    const profiles = (await legacyBackendResult(client().getProfilesJson())) as unknown as
-      | ProfileListEntry[]
-      | { ok: false };
+  async function refreshProfileManagerList(): Promise<void> {
+    const own = byId("pm-own");
+    const builtin = byId("pm-builtin");
+    if (!own || !builtin) return;
+    const profiles = (await legacyBackendResult(client().getProfilesJson())) as unknown as ProfileListEntry[] | { ok: false };
     const rows = Array.isArray(profiles) ? profiles : [];
-    for (const key of ["all", "compression", "upscale"]) {
-      byId(`pm-${key}`)?.setAttribute("aria-pressed", String(key === settingsFilter));
+    const visible = rows.filter((p) => profileFilter === "all" || (p.workflow || "compression") === profileFilter);
+    const defaultProfileId = str(appSettings().default_profile_id);
+    const options = { defaultProfileId, summarize: profileSummary };
+    renderProfileList(document, own, visible.filter((p) => !p.builtin), {
+      ...options,
+      empty: profileFilter === "all" ? "None yet. Duplicate a built-in profile or select New profile." : "None of yours for this task.",
+    });
+    renderProfileList(document, builtin, visible.filter((p) => !!p.builtin), { ...options, empty: "No built-in profiles for this task." });
+    for (const list of [own, builtin]) {
+      bindProfileActions(list, (action, profileId, name) => {
+        if (action === "edit") void editProfile(profileId);
+        else if (action === "default") void setDefaultProfile(profileId, name);
+        else if (action === "export") {
+          const profile = rows.find((entry) => entry.profile_id === profileId);
+          const lut = lutSettings(profile?.lut);
+          if (lut.path) {
+            const selection = lut.name ? `“${lut.name}”` : "a color LUT";
+            confirmToast(
+              `This profile references ${selection}. To use it on another computer, import that LUT separately and select it in the profile.`,
+              () => void exportProfile(profileId),
+              { title: "LUT file isn’t included", confirmLabel: "Export profile", cancelLabel: "Cancel" },
+            );
+          } else void exportProfile(profileId);
+        } else if (action === "duplicate") void duplicateProfile(profileId);
+        else if (action === "delete") deleteProfile(profileId, name);
+      });
     }
-    const visible = rows.filter(
-      (p) => !(settingsFilter !== "all" && (p.workflow || "compression") !== settingsFilter),
-    );
-    renderProfileList(document, list, visible, {
-      ...(typeof appSettings().default_profile_id === "string"
-        ? { defaultProfileId: appSettings().default_profile_id as string }
-        : {}),
-      summarize: profileSummary,
-    });
-    bindProfileActions(list, (action, profileId, name) => {
-      if (action === "edit") void editProfile(profileId);
-      else if (action === "export") {
-        const profile = rows.find(row => row.profile_id === profileId);
-        const lut = lutSettings(profile?.lut);
-        if (lut.path) {
-          const selection = lut.name ? `“${lut.name}”` : "a color LUT";
-          confirmToast(
-            `This profile references ${selection}. To use it on another computer, import that LUT separately and select it in the profile.`,
-            () => void exportProfile(profileId),
-            {title: "LUT file isn’t included", confirmLabel: "Export profile", cancelLabel: "Cancel"},
-          );
-        } else void exportProfile(profileId);
-      }
-      else if (action === "duplicate") void duplicateProfile(profileId);
-      else if (action === "delete") deleteProfile(profileId, name);
-    });
+  }
+
+  // where a profile's row sits, so focus can stay in place when the lists are rebuilt
+  function profileRowPlace(profileId: string): { list: HTMLElement; index: number } | null {
+    for (const list of [byId("pm-own"), byId("pm-builtin")]) {
+      if (!list) continue;
+      const rows = Array.from(list.querySelectorAll<HTMLElement>(".set-profile-row"));
+      const index = rows.findIndex((row) => row.querySelector(`[data-profile-id="${CSS.escape(profileId)}"]`));
+      if (index >= 0) return { list, index };
+    }
+    return null;
+  }
+
+  // the profile's menu button, or the row that took a deleted profile's place
+  function focusProfileRow(profileId: string, place: ReturnType<typeof profileRowPlace>): void {
+    if (view !== "page" || page !== "profiles") return;
+    const match = document
+      .querySelector(`#settings-page .set-profile-row [data-profile-id="${CSS.escape(profileId)}"]`)
+      ?.closest<HTMLElement>(".set-profile-row");
+    const rows = place ? Array.from(place.list.querySelectorAll<HTMLElement>(".set-profile-row")) : [];
+    const row = match ?? rows[Math.min(place?.index ?? 0, rows.length - 1)];
+    (row?.querySelector<HTMLElement>("summary") ?? byId("settings-page-title"))?.focus();
+  }
+
+  async function setDefaultProfile(profileId: string, name: string): Promise<void> {
+    const place = profileRowPlace(profileId);
+    const result = await legacyBackendResult(client().saveSettings({ default_profile_id: profileId }));
+    if (!result.ok) {
+      toast(result.error ?? "Could not change the default profile.", "err");
+      return;
+    }
+    session.appSettings.default_profile_id = profileId;
+    await deps.reloadEditorSettings();
+    await refreshProfileManagerList();
+    focusProfileRow(profileId, place);
+    toast(`“${name}” is now the default profile.`, "ok");
   }
 
   async function editProfile(pid: string): Promise<void> {
@@ -292,25 +1250,30 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
   }
 
   async function duplicateProfile(pid: string): Promise<void> {
-    const r = await legacyBackendResult(client().duplicateProfile(pid));
-    if (r.ok) {
+    const place = profileRowPlace(pid);
+    const result = await legacyBackendResult(client().duplicateProfile(pid));
+    if (result.ok) {
       await deps.reloadEditorSettings();
       await refreshProfileManagerList();
+      // the copy is the one the user will want to change next
+      focusProfileRow(typeof result.profile_id === "string" ? result.profile_id : pid, place);
       toast("Profile duplicated.", "ok");
     } else {
-      toast(r.error ?? "Could not duplicate profile.", "err");
+      toast(result.error ?? "Could not duplicate profile.", "err");
     }
   }
 
   function deleteProfile(pid: string, name: string): void {
+    const place = profileRowPlace(pid);
     confirmToast(`Delete "${name}"?`, () => {
-      void legacyBackendResult(client().deleteProfile(pid)).then(async (r) => {
-        if (r.ok) {
+      void legacyBackendResult(client().deleteProfile(pid)).then(async (result) => {
+        if (result.ok) {
           await deps.reloadEditorSettings();
           await refreshProfileManagerList();
+          focusProfileRow(pid, place);
           toast("Profile deleted.", "ok");
         } else {
-          toast(r.error ?? "Could not delete profile.", "err");
+          toast(result.error ?? "Could not delete profile.", "err");
         }
       });
     });
@@ -337,208 +1300,117 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     else toast(result.error ?? "Could not export profile.", "err");
   }
 
-  function profileEditorTaskHtml(): string {
-    return `<div class="settings-field full">
-    <label for="pe-name">Profile name</label>
-    <input id="pe-name" type="text">
-  </div>
-  <div class="settings-field full">
-    <label>Task</label>
-    <div class="profile-editor-task">
-      <button type="button" id="pe-c" data-settings-click="profile-task" data-settings-value="compression">Compress</button>
-      <button type="button" id="pe-u" data-settings-click="profile-task" data-settings-value="upscale">Upscale</button>
-    </div>
-  </div>`;
-  }
-
-  function profileEditorVideoHtml(): string {
-    return `<div class="settings-sec full" id="pe-size-sec">
-    <h3>Target size</h3>
-    <div class="sl-row">
-      <input id="pe-size-range" type="range" min="2" max="500" value="50" data-settings-input="profile-size">
-      <input id="pe-size" type="number" min="2" value="50" aria-label="Target size in MB" data-settings-input="profile-size">
-      <span>MB</span>
-    </div>
-    <div class="pset">
-      <button type="button" data-settings-click="profile-size" data-settings-value="20">20 MB</button>
-      <button type="button" data-settings-click="profile-size" data-settings-value="50">50 MB</button>
-      <button type="button" data-settings-click="profile-size" data-settings-value="100">100 MB</button>
-      <button type="button" data-settings-click="profile-size" data-settings-value="500">500 MB</button>
-    </div>
-  </div>
-  <div class="settings-sec full">
-    <h3>Resolution</h3>
-    <div class="info-row" id="pe-source-res-row">
-      <label class="toggle-row">
-        <span>Use source resolution</span>
-        <input id="pe-source-res" type="checkbox" role="switch" data-settings-change="profile-visibility">
-        <span class="toggle-track" aria-hidden="true"></span>
-      </label>
-    </div>
-    <div class="row" id="pe-dim">
-      <input id="pe-w" type="number" min="1" aria-label="Custom width">
-      <span>×</span>
-      <input id="pe-h" type="number" min="1" aria-label="Custom height">
-    </div>
-    <div id="pe-scaler-row" class="settings-field">
-      <label for="pe-scaler">Scaler</label>
-      <select id="pe-scaler">
-        <option>Bilinear</option>
-        <option>Bicubic</option>
-        <option>Lanczos</option>
-        <option>Point</option>
-        <option>Neighbor</option>
-      </select>
-    </div>
-  </div>
-  <div class="settings-sec full">
-    <h3>Frame rate</h3>
-    <div class="info-row">
-      <label class="toggle-row">
-        <span>Use source frame rate</span>
-        <input id="pe-source-fps" type="checkbox" role="switch" data-settings-change="profile-visibility">
-        <span class="toggle-track" aria-hidden="true"></span>
-      </label>
-    </div>
-    <div id="pe-fps-row" class="sl-row">
-      <input id="pe-fps-range" type="range" step="0.001" min="0.1" max="240" value="30" data-settings-input="profile-fps">
-      <input id="pe-fps" type="number" step="any" min="0.1" max="240" value="30" aria-label="Custom frame rate" data-settings-input="profile-fps">
-      <span>fps</span>
-    </div>
-  </div>`;
-  }
-
-  function profileEditorTransformHtml(): string {
-    return `<div class="settings-sec full">
-    <h3>Transform defaults</h3>
-    <div class="info-row">
-      <label class="toggle-row">
-        <span>Apply transform settings from this profile</span>
-        <input id="pe-transform-enabled" type="checkbox" role="switch" data-settings-change="profile-visibility">
-        <span class="toggle-track" aria-hidden="true"></span>
-      </label>
-    </div>
-    <div id="pe-transform-fields">
-      <div class="settings-field">
-        <label for="pe-aspect">Target aspect</label>
-        <select id="pe-aspect">
-          <option value="free">Free</option>
-          <option value="16:9">16:9</option>
-          <option value="9:16">9:16</option>
-          <option value="1:1">1:1</option>
-          <option value="4:3">4:3</option>
-        </select>
-      </div>
-      <div class="settings-field">
-        <label for="pe-sizing">Sizing</label>
-        <select id="pe-sizing">
-          <option value="fit">Fit</option>
-          <option value="fill">Fill</option>
-          <option value="stretch">Stretch</option>
-        </select>
-      </div>
-      <div class="settings-field">
-        <label for="pe-rotation">Rotation</label>
-        <select id="pe-rotation">
-          <option value="0">None</option>
-          <option value="90">90° clockwise</option>
-          <option value="180">180°</option>
-          <option value="270">90° counterclockwise</option>
-        </select>
-      </div>
-      <span class="setting-note">Profiles save the crop shape, but not its exact position or size.</span>
-    </div>
-  </div>`;
-  }
-
-  function profileEditorAudioHtml(): string {
-    return `<div class="settings-sec full">
-    <h3>Audio</h3>
-    <div class="info-row">
-      <label class="toggle-row">
-        <span>Keep source audio</span>
-        <input id="pe-audio-source" type="checkbox" role="switch" data-settings-change="profile-visibility">
-        <span class="toggle-track" aria-hidden="true"></span>
-      </label>
-    </div>
-    <div class="settings-field">
-      <label for="pe-audio">Audio bitrate (kbps)</label>
-      <input id="pe-audio" type="number" min="0" max="320">
-    </div>
-  </div>`;
-  }
-
-  function profileEditorEncodingHtml(): string {
-    return `<div class="settings-sec full">
-    <h3>Encoding</h3>
-    <div class="settings-field">
-      <label for="pe-enc">Encoder</label>
-      <select id="pe-enc" data-settings-change="profile-encoder"></select>
-    </div>
-    <span class="setting-note">Hardware is faster; software can produce smaller files.</span>
-    <div class="settings-field">
-      <label for="pe-speed">Encoding speed</label>
-      <select id="pe-speed" data-settings-change="profile-speed">
-        <option value="fast">Fast</option>
-        <option value="balanced">Balanced</option>
-        <option value="best">Best compression</option>
-      </select>
-    </div>
-    <div id="pe-two-pass-row" class="settings-field">
-      <label for="pe-two-pass">Two-pass encoding</label>
-      <select id="pe-two-pass">
-        <option value="on">On</option>
-        <option value="off">Off</option>
-      </select>
-      <span id="pe-two-pass-note" class="help-tip">Two-pass is available only for software compression.</span>
-    </div>
-    <button type="button" class="advanced-toggle" id="pe-advanced-button" data-settings-click="toggle-advanced" aria-expanded="false">
-      <span>Advanced encoding</span>
-      <span class="advanced-arrow">⌄</span>
-    </button>
-    <div id="pe-advanced" class="hid">
-      <div class="settings-field">
-        <label for="pe-preset">Native FFmpeg preset</label>
-        <select id="pe-preset" data-settings-change="profile-preset"></select>
-      </div>
-      <div class="settings-field" id="pe-rc-row">
-        <label for="pe-rc">Quality method</label>
-        <select id="pe-rc" data-settings-change="profile-visibility"></select>
-      </div>
-      <div class="settings-field" id="pe-quality-row">
-        <label id="pe-quality-label" for="pe-quality">CQ</label>
-        <input id="pe-quality" type="number" min="0" max="51">
-        <span class="help-tip">Lower value = higher quality.</span>
-      </div>
-      <div class="settings-field" id="pe-bitrate-row">
-        <label for="pe-bitrate">Bitrate (kbps)</label>
-        <input id="pe-bitrate" type="number" min="50" max="50000">
-      </div>
-      <div class="settings-field" id="pe-tune-row">
-        <label for="pe-tune">Tune</label>
-        <select id="pe-tune"></select>
-      </div>
-    </div>
-  </div>`;
+  function editorSwitch(id: string, label: string, setting: string, change = "profile-visibility", description?: string): string {
+    return switchRow({
+      setting,
+      id,
+      label,
+      ...(description ? { description } : {}),
+      checked: false,
+      attributes: { "data-settings-change": change },
+    });
   }
 
   function profileEditorHtml(): string {
-    return `<div class="settings-grid">
-      ${profileEditorTaskHtml()}
-      ${profileEditorVideoHtml()}
-      ${profileEditorTransformHtml()}
-      ${profileEditorAudioHtml()}
-      ${profileEditorEncodingHtml()}
-    </div>`;
+    const sizePresets = [20, 50, 100, 500]
+      .map((size) => `<button type="button" class="set-choice-btn mono" data-settings-click="profile-size" data-settings-value="${size}" aria-label="${size} MB">${size}</button>`)
+      .join("");
+    const task = `<span class="set-choice" role="group" aria-label="Task">
+      <button type="button" id="pe-c" class="set-choice-btn" data-settings-click="profile-task" data-settings-value="compression">Compress</button>
+      <button type="button" id="pe-u" class="set-choice-btn" data-settings-click="profile-task" data-settings-value="upscale">Upscale</button>
+    </span>`;
+    const scalers = SCALERS.map((name) => [name, name] as const);
+    return section("Profile", card(
+      row({ setting: "pe-name", label: "Profile name", labelFor: "pe-name", control: textInput("pe-name", "", "Profile name", { width: 280, attributes: { "data-settings-input": "editor-name" } }) }),
+      row({ setting: "pe-task", label: "Task", control: task }),
+    )) + `<div id="pe-size-sec">` + section("Size", card(
+      row({
+        setting: "pe-size",
+        label: "Target size",
+        labelFor: "pe-size",
+        control: `<span class="set-choice" role="group" aria-label="Size presets">${sizePresets}</span>`
+          + textInput("pe-size", "50", "Target size in MB", { mono: true, width: 96, unit: "MB", attributes: { type: "number", min: "2", "data-settings-input": "profile-size" } }),
+      }),
+    )) + `</div>` + section("Video", card(
+      `<div id="pe-source-res-row">${editorSwitch("pe-source-res", "Use source resolution", "pe-source-res")}</div>`,
+      `<div class="set-row sub" id="pe-dim" data-setting="pe-dim"><span class="set-row-text"><span class="set-row-words"><span class="set-label">Resolution</span></span></span><span class="set-row-control">`
+        + textInput("pe-w", "1920", "Custom width", { mono: true, width: 88, attributes: { type: "number", min: "1" } })
+        + `<span class="set-times" aria-hidden="true">×</span>`
+        + textInput("pe-h", "1080", "Custom height", { mono: true, width: 88, attributes: { type: "number", min: "1" } })
+        + `</span></div>`,
+      `<div id="pe-scaler-row">${row({ setting: "pe-scaler", label: "Scaler", labelFor: "pe-scaler", sub: true, control: selectControl("pe-scaler", scalers, "Neighbor") })}</div>`,
+      editorSwitch("pe-source-fps", "Use source frame rate", "pe-source-fps"),
+      `<div id="pe-fps-row">${row({
+        setting: "pe-fps",
+        label: "Frame rate",
+        labelFor: "pe-fps",
+        sub: true,
+        control: textInput("pe-fps", "30", "Custom frame rate", { mono: true, width: 96, unit: "fps", attributes: { type: "number", step: "any", min: "0.1", max: "240", "data-settings-input": "profile-fps" } }),
+      })}</div>`,
+    )) + section("Transform", card(
+      editorSwitch("pe-transform-enabled", "Apply transform settings from this profile", "pe-transform", "profile-visibility",
+        "Saves the crop shape, not its exact position or size."),
+      `<div id="pe-transform-fields">`
+        + row({ setting: "pe-aspect", label: "Target aspect", labelFor: "pe-aspect", sub: true, control: selectControl("pe-aspect", [["free", "Free"], ["16:9", "16:9"], ["9:16", "9:16"], ["1:1", "1:1"], ["4:3", "4:3"]], "free") })
+        + row({ setting: "pe-sizing", label: "Sizing", labelFor: "pe-sizing", sub: true, control: selectControl("pe-sizing", [["fit", "Fit"], ["fill", "Fill"], ["stretch", "Stretch"]], "fit") })
+        + row({ setting: "pe-rotation", label: "Rotation", labelFor: "pe-rotation", sub: true, control: selectControl("pe-rotation", [["0", "None"], ["90", "90° clockwise"], ["180", "180°"], ["270", "90° counterclockwise"]], "0") })
+        + `</div>`,
+    )) + section("Audio", card(
+      editorSwitch("pe-audio-source", "Keep source audio", "pe-audio-source"),
+      row({
+        setting: "pe-audio",
+        label: "Audio bitrate",
+        labelFor: "pe-audio",
+        sub: true,
+        control: textInput("pe-audio", "128", "Audio bitrate in kbps", { mono: true, width: 104, unit: "kbps", attributes: { type: "number", min: "0", max: "320" } }),
+      }),
+    )) + section("Encoding", card(
+      row({
+        setting: "pe-enc",
+        label: "Encoder",
+        labelFor: "pe-enc",
+        description: "Hardware is faster; software can make smaller files.",
+        control: `<select id="pe-enc" class="set-select" data-settings-change="profile-encoder"></select>`,
+      }),
+      row({
+        setting: "pe-speed",
+        label: "Encoding speed",
+        labelFor: "pe-speed",
+        control: selectControl("pe-speed", [["fast", "Fast"], ["balanced", "Balanced"], ["best", "Best compression"]], "balanced", { "data-settings-change": "profile-speed" }),
+      }),
+      `<div id="pe-two-pass-row">${switchRow({
+        setting: "pe-two-pass",
+        id: "pe-two-pass",
+        label: "Two-pass encoding",
+        description: "Two-pass is available only for software compression.",
+        descriptionId: "pe-two-pass-note",
+        checked: false,
+      })}</div>`,
+      `<button type="button" class="set-row set-disclosure" id="pe-advanced-button" data-settings-click="toggle-advanced" aria-expanded="false" aria-controls="pe-advanced">
+        <span class="set-row-text"><span class="set-row-words"><span class="set-label">Advanced encoding</span><span class="set-desc">Preset, quality method, bitrate, and tune</span></span></span>
+        <span class="set-row-control">${ICONS.chevron}</span>
+      </button>`,
+      `<div id="pe-advanced" class="hid">`
+        + row({ setting: "pe-preset", label: "Native FFmpeg preset", labelFor: "pe-preset", sub: true, control: `<select id="pe-preset" class="set-select" data-settings-change="profile-preset"></select>` })
+        + `<div id="pe-rc-row">${row({ setting: "pe-rc", label: "Quality method", labelFor: "pe-rc", sub: true, control: `<select id="pe-rc" class="set-select" data-settings-change="profile-visibility"></select>` })}</div>`
+        + `<div id="pe-quality-row" class="set-row sub" data-setting="pe-quality"><span class="set-row-text"><span class="set-row-words"><label class="set-label" id="pe-quality-label" for="pe-quality">CQ</label><span class="set-desc">Lower value means higher quality.</span></span></span><span class="set-row-control">${textInput("pe-quality", "23", "Quality value", { mono: true, width: 88, attributes: { type: "number", min: "0", max: "51" } })}</span></div>`
+        + `<div id="pe-bitrate-row">${row({ setting: "pe-bitrate", label: "Bitrate", labelFor: "pe-bitrate", sub: true, control: textInput("pe-bitrate", "2000", "Bitrate in kbps", { mono: true, width: 112, unit: "kbps", attributes: { type: "number", min: "50", max: "50000" } }) })}</div>`
+        + `<div id="pe-tune-row">${row({ setting: "pe-tune", label: "Tune", labelFor: "pe-tune", sub: true, control: `<select id="pe-tune" class="set-select"></select>` })}</div>`
+        + `</div>`,
+    ));
   }
+
+  let editorCapabilities: PlatformCapabilities | null = null;
 
   function peTask(): Workflow {
     return el("pe-u").classList.contains("on") ? "upscale" : "compression";
   }
 
   function peSetTask(task: Workflow): void {
-    el("pe-c").classList.toggle("on", task === "compression");
-    el("pe-u").classList.toggle("on", task === "upscale");
+    for (const [id, value] of [["pe-c", "compression"], ["pe-u", "upscale"]] as const) {
+      el(id).classList.toggle("on", task === value);
+      el(id).setAttribute("aria-pressed", String(task === value));
+    }
     el("pe-size-sec").classList.toggle("hid", task === "upscale");
     el("pe-source-res-row").classList.toggle("hid", task === "upscale");
     if (task === "upscale") input("pe-source-res").checked = false;
@@ -546,17 +1418,20 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     peVisibility();
   }
 
-  function peSetSize(value: string | number): void {
+  function peSetSize(value: string | number, fromField = false): void {
     const n = Math.max(2, parseInt(String(value), 10) || 2);
-    input("pe-size").value = String(n);
-    input("pe-size-range").max = String(Math.max(500, n));
-    input("pe-size-range").value = String(n);
+    if (!fromField) input("pe-size").value = String(n);
+    for (const preset of document.querySelectorAll<HTMLElement>('#settings-page [data-settings-click="profile-size"]')) {
+      const on = Number(preset.dataset.settingsValue) === n;
+      preset.classList.toggle("on", on);
+      preset.setAttribute("aria-pressed", String(on));
+    }
+    updateEditorNote();
   }
 
   function peSetFps(value: string | number): void {
     const n = Math.max(0.1, Math.min(240, parseFloat(String(value)) || 30));
     input("pe-fps").value = String(n);
-    input("pe-fps-range").value = String(n);
   }
 
   function pePresets(): void {
@@ -574,7 +1449,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
   function peEncoderChanged(): void {
     pePresets();
     if (select("pe-enc").value === "auto_compression") {
-      select("pe-two-pass").value = "on";
+      input("pe-two-pass").checked = true;
       select("pe-preset").value = "veryslow";
     }
     peTunes();
@@ -583,10 +1458,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
   }
 
   function peSpeedChanged(): void {
-    select("pe-preset").value = nativePresetForSpeed(
-      select("pe-speed").value,
-      select("pe-enc").value,
-    );
+    select("pe-preset").value = nativePresetForSpeed(select("pe-speed").value, select("pe-enc").value);
     deps.syncSelects();
   }
 
@@ -601,19 +1473,18 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     const sourceFps = input("pe-source-fps").checked;
     const keep = input("pe-audio-source").checked;
     const rc = select("pe-rc").value;
-    const cpu =
-      !["auto", "auto_compression", "auto_fast"].includes(select("pe-enc").value) &&
-      isCpuEncoder(select("pe-enc").value);
+    const cpu = !["auto", "auto_compression", "auto_fast"].includes(select("pe-enc").value) && isCpuEncoder(select("pe-enc").value);
     const twoPass = twoPassEligible(peTask(), select("pe-enc").value);
     const quality = up && (rc === "CRF" || rc === "CQ");
     el("pe-dim").classList.toggle("hid", source);
     el("pe-scaler-row").classList.toggle("hid", source);
     el("pe-fps-row").classList.toggle("hid", sourceFps);
     input("pe-audio").disabled = keep;
+    el("pe-audio").closest(".set-row")?.classList.toggle("hid", keep);
     el("pe-two-pass-row").classList.toggle("hid", up);
     el("pe-two-pass-note").classList.toggle("hid", !(!up && !twoPass));
-    select("pe-two-pass").disabled = !twoPass;
-    if (!twoPass) select("pe-two-pass").value = "off";
+    input("pe-two-pass").disabled = !twoPass;
+    if (!twoPass) input("pe-two-pass").checked = false;
     el("pe-rc-row").classList.toggle("hid", !up);
     el("pe-quality-row").classList.toggle("hid", !quality);
     el("pe-bitrate-row").classList.toggle("hid", !(up && (rc === "CBR" || rc === "VBR")));
@@ -621,15 +1492,14 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     el("pe-transform-fields").classList.toggle("hid", !input("pe-transform-enabled").checked);
     el("pe-quality-label").textContent = rc === "CRF" ? "CRF" : "CQ";
     deps.syncSelects();
+    updateEditorNote();
   }
 
   function peToggleAdvanced(): void {
     const element = el("pe-advanced");
-    const open = element.classList.contains("hid");
-    element.classList.toggle("hid", !open);
-    el("pe-advanced-button").setAttribute("aria-expanded", String(open));
-    const arrow = el("pe-advanced-button").querySelector(".advanced-arrow");
-    if (arrow) arrow.textContent = open ? "⌃" : "⌄";
+    const opening = element.classList.contains("hid");
+    element.classList.toggle("hid", !opening);
+    el("pe-advanced-button").setAttribute("aria-expanded", String(opening));
   }
 
   function peInt(id: string, fallback: number): number {
@@ -652,9 +1522,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     if (!Number.isFinite(quality)) quality = 23;
     if (original.rate_control_method === "cqp" && rcDisplay === "CQ") rc = "cqp";
     const selectedEncoder = select("pe-enc").value;
-    const encoder = editorCapabilities
-      ? encoderForPlatform(selectedEncoder, editorCapabilities)
-      : selectedEncoder;
+    const encoder = editorCapabilities ? encoderForPlatform(selectedEncoder, editorCapabilities) : selectedEncoder;
     const data: SettingsRecord = {
       name: input("pe-name").value.trim() || "Profile",
       target_size_mb: peInt("pe-size", 50),
@@ -668,66 +1536,47 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       max_fps: peFloat("pe-fps", 30),
       audio_bitrate_kbps: peInt("pe-audio", 0),
       keep_audio: input("pe-audio-source").checked,
-      two_pass:
-        twoPassEligible(task, encoder) && select("pe-two-pass").value === "on",
+      two_pass: twoPassEligible(task, encoder) && input("pe-two-pass").checked,
       preset: select("pe-preset").value,
       scaler: select("pe-scaler").value.toLowerCase(),
       video_encoder: encoder,
       workflow: task,
       rate_control_method: rc,
-      rate_control:
-        task === "upscale" && (rc === "cbr" || rc === "vbr")
-          ? "explicit_bitrate"
-          : "target_size",
+      rate_control: task === "upscale" && (rc === "cbr" || rc === "vbr") ? "explicit_bitrate" : "target_size",
       crf: rc === "crf" ? quality : valueOr(original.crf as number, 23),
       cq: rc === "cq" ? quality : valueOr(original.cq as number, 23),
       qp: rc === "cqp" ? quality : valueOr(original.qp as number, 23),
-      tune:
-        task === "upscale" &&
-        isCpuEncoder(encoder) &&
-        select("pe-tune").value !== "none"
-          ? select("pe-tune").value
-          : "",
+      tune: task === "upscale" && isCpuEncoder(encoder) && select("pe-tune").value !== "none" ? select("pe-tune").value : "",
       transform_intent: input("pe-transform-enabled").checked
         ? {
-            crop_aspect: select("pe-aspect").value,
-            sizing_mode: select("pe-sizing").value,
-            rotation: parseInt(select("pe-rotation").value, 10) || 0,
-          }
+          crop_aspect: select("pe-aspect").value,
+          sizing_mode: select("pe-sizing").value,
+          rotation: parseInt(select("pe-rotation").value, 10) || 0,
+        }
         : null,
     };
-    if (task === "upscale" && (rc === "cbr" || rc === "vbr"))
-      data.explicit_bitrate_kbps = peInt("pe-bitrate", 2000);
+    if (task === "upscale" && (rc === "cbr" || rc === "vbr")) data.explicit_bitrate_kbps = peInt("pe-bitrate", 2000);
     return data;
   }
 
   async function hydrateEditor(caps: PlatformCapabilities): Promise<void> {
     editorCapabilities = caps;
-    populateEncoderSelect(
-      select("pe-enc"),
-      encodersForPlatform(session.availEncoders, caps),
-      supportsHardwareEncoders(caps),
-    );
+    editorSnapshot = "";
+    populateEncoderSelect(select("pe-enc"), encodersForPlatform(session.availEncoders, caps), supportsHardwareEncoders(caps));
     let p: ProfileListEntry | undefined;
     if (settingsProfileId) {
-      const profiles = (await legacyBackendResult(client().getProfilesJson())) as unknown as
-        | ProfileListEntry[]
-        | { ok: false };
+      const profiles = (await legacyBackendResult(client().getProfilesJson())) as unknown as ProfileListEntry[] | { ok: false };
       if (Array.isArray(profiles)) p = profiles.find((x) => x.profile_id === settingsProfileId);
     }
     editorOriginal = (p as SettingsRecord | undefined) ?? {};
     const scaler = p ? String(p.scaler) : String(appSettings().default_scaler || "neighbor");
-    const fps = p ? (valueOr(num(p.custom_fps), valueOr(num(p.max_fps), 30))) : 30;
+    const fps = p ? valueOr(num(p.custom_fps), valueOr(num(p.max_fps), 30)) : 30;
     input("pe-name").value = p ? p.name ?? "" : "";
-    peSetSize(
-      p ? Math.round(valueOr(num(p.target_size_bytes), 50 * 1024 * 1024) / (1024 * 1024)) : 50,
-    );
+    peSetSize(p ? Math.round(valueOr(num(p.target_size_bytes), 50 * 1024 * 1024) / (1024 * 1024)) : 50);
     input("pe-w").value = String(p ? valueOr(num(p.custom_width), valueOr(num(p.max_width), 1920)) : 1920);
-    input("pe-h").value = String(
-      p ? valueOr(num(p.custom_height), valueOr(num(p.max_height), 1080)) : 1080,
-    );
-    select("pe-scaler").value =
-      scaler === "neighbor" ? "Neighbor" : scaler[0]!.toUpperCase() + scaler.slice(1);
+    input("pe-h").value = String(p ? valueOr(num(p.custom_height), valueOr(num(p.max_height), 1080)) : 1080);
+    const scalerName = (value: string): string | undefined => SCALERS.find((name) => name.toLowerCase() === value);
+    select("pe-scaler").value = scalerName(scaler) ?? scalerName(String(appSettings().default_scaler || "neighbor")) ?? "Neighbor";
     input("pe-source-res").checked = p ? p.resolution_mode !== "custom" : true;
     input("pe-source-fps").checked = p ? p.fps_mode !== "custom" : true;
     peSetFps(fps);
@@ -738,19 +1587,15 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     select("pe-aspect").value = intent ? String(intent.crop_aspect || "free") : "free";
     select("pe-sizing").value = intent ? String(intent.sizing_mode || "fit") : "fit";
     select("pe-rotation").value = String(intent ? intent.rotation || 0 : 0);
-    select("pe-enc").value = encoderForPlatform(
-      p ? String(valueOr(p.video_encoder as string, "libx264")) : "libx264",
-      caps,
-    );
+    select("pe-enc").value = encoderForPlatform(p ? String(valueOr(p.video_encoder as string, "libx264")) : "libx264", caps);
     if (!select("pe-enc").value) select("pe-enc").selectedIndex = 0;
     peEncoderChanged();
     select("pe-preset").value = p
       ? String(valueOr(p.preset as string, nativePresetForSpeed("balanced", select("pe-enc").value)))
       : nativePresetForSpeed("balanced", select("pe-enc").value);
-    if (!select("pe-preset").value)
-      select("pe-preset").value = nativePresetForSpeed("balanced", select("pe-enc").value);
+    if (!select("pe-preset").value) select("pe-preset").value = nativePresetForSpeed("balanced", select("pe-enc").value);
     pePresetChanged();
-    select("pe-two-pass").value = p && p.two_pass ? "on" : "off";
+    input("pe-two-pass").checked = !!(p && p.two_pass);
     input("pe-quality").value = String(
       p
         ? p.rate_control_method === "crf"
@@ -762,27 +1607,29 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     );
     input("pe-bitrate").value = String(p ? valueOr(num(p.explicit_bitrate_kbps), 2000) : 2000);
     peSetTask(p && p.workflow === "upscale" ? "upscale" : "compression");
-    const rcMap: Record<string, string> = {
-      crf: "CRF",
-      cq: "CQ",
-      cqp: "CQ",
-      cbr: "CBR",
-      vbr: "VBR",
-    };
+    const rcMap: Record<string, string> = { crf: "CRF", cq: "CQ", cqp: "CQ", cbr: "CBR", vbr: "VBR" };
     const rateControl = rcMap[String(p ? p.rate_control_method : "cbr")] ?? "CRF";
-    if (Array.from(select("pe-rc").options).some((option) => option.value === rateControl))
-      select("pe-rc").value = rateControl;
+    if (Array.from(select("pe-rc").options).some((option) => option.value === rateControl)) select("pe-rc").value = rateControl;
     peVisibility();
     editorSnapshot = JSON.stringify(pePayload());
+    updateEditorNote();
   }
 
   function editorDirty(): boolean {
-    return !!editorSnapshot && JSON.stringify(pePayload()) !== editorSnapshot;
+    return view === "editor" && !!editorSnapshot && !!byId("pe-name") && JSON.stringify(pePayload()) !== editorSnapshot;
+  }
+
+  function updateEditorNote(): void {
+    const note = byId("settings-editor-note");
+    if (!note || !editorSnapshot) return;
+    const dirty = editorDirty();
+    note.textContent = dirty ? "Unsaved changes" : "";
+    note.classList.toggle("on", dirty);
   }
 
   function backToProfiles(): void {
     const goBack = (): void => {
-      settingsView = "page";
+      view = "page";
       settingsProfileId = "";
       void open("profiles");
     };
@@ -791,723 +1638,22 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
   }
 
   async function saveProfileEditor(): Promise<void> {
-    const r = settingsProfileId
+    const result = settingsProfileId
       ? await legacyBackendResult(client().updateProfile(settingsProfileId, pePayload() as never))
       : await legacyBackendResult(client().createProfile(pePayload() as never));
-    if (r.ok) {
+    if (result.ok) {
       await deps.reloadEditorSettings();
-      settingsView = "page";
+      view = "page";
       settingsProfileId = "";
       await open("profiles");
       toast("Profile saved.", "ok");
     } else {
-      toast(r.error ?? "Could not save profile.", "err");
+      toast(result.error ?? "Could not save profile.", "err");
     }
   }
 
-  // only the pages with form fields can hold unsaved changes
-  function markSettingsDirty(): void {
-    settingsDirty = !!pageSave() && settingsAreDirty(snapshot, settingsPageState());
-  }
-
-  function pageSave(): (() => Promise<void>) | null {
-    if (settingsView !== "page") return null;
-    if (settingsPage === "general") return saveGeneralSettings;
-    if (settingsPage === "output") return saveOutputSettings;
-    if (settingsPage === "system") return saveSystemSettings;
-    return null;
-  }
-
-  // General, Output and System save each change as it is made; saves run one at a time
-  // and read the page when they start, so quick changes cannot land out of order
-  let saving: Promise<void> = Promise.resolve();
-  function autosave(): Promise<void> {
-    markSettingsDirty();
-    const save = pageSave();
-    if (!settingsDirty || !save) return saving;
-    saving = saving.then(() => {
-      markSettingsDirty();
-      return settingsDirty && pageSave() === save ? save() : undefined;
-    });
-    return saving;
-  }
-
-  function settingsPageState(): SettingsRecord {
-    if (settingsPage === "general")
-      return {
-        defaultProfile: select("set-dp").value,
-        defaultScaler: select("set-ds").value,
-        inspectorStartPanel: select("set-inspector-start").value,
-        startTask: select("set-start-task").value,
-        hiddenUi: chosenHiddenParts().join(","),
-        openOutput: input("set-open-output-folder").checked,
-        autoClear: input("set-auto-clear").checked,
-      };
-    if (settingsPage === "output")
-      return {
-        outputDirectory: el("set-od").dataset.path || "",
-        compressionSuffix: input("set-cs").value,
-        upscaleSuffix: input("set-us").value,
-        cutSuffix: input("set-cuts").value,
-      };
-    if (settingsPage === "system")
-      return {
-        ffmpegPath: el("set-ffmpeg").dataset.path || "",
-        ffprobePath: el("set-ffprobe").dataset.path || "",
-        encoderCacheDays: select("set-encoder-cache-days").value,
-        checkUpdates: byId<HTMLInputElement>("set-check-updates")?.checked ?? false,
-      };
-    return {};
-  }
-
-  function captureSettingsSnapshot(): void {
-    snapshot = settingsSnapshot(settingsPageState());
-    settingsDirty = false;
-    markSettingsDirty();
-  }
-
-  function generalSettingsHtml(s: SettingsRecord, profiles: readonly ProfileListEntry[]): string {
-    const options = profiles
-      .map((p) => `<option value="${esc(p.profile_id)}">${esc(p.name)}</option>`)
-      .join("");
-    const scalers = ["Bilinear", "Bicubic", "Lanczos", "Point", "Neighbor"]
-      .map((x) => {
-        const selected = x.toLowerCase() === String(s.default_scaler || "neighbor") ? "selected" : "";
-        return `<option ${selected}>${x}</option>`;
-      })
-      .join("");
-    const autoClear = s.clear_completed_automatically ? "checked" : "";
-    const openOutput = s.open_output_folder_after_queue ? "checked" : "";
-    const hidden = hiddenParts(s.hidden_ui);
-    const choices = (items: readonly (readonly [string, string])[], current: string) =>
-      items
-        .map(([value, label]) => `<option value="${value}" ${value === current ? "selected" : ""}>${label}</option>`)
-        .join("");
-    const inspectorOptions = choices(
-      [["last", "Last used"], ["video", "This video"], ["export", "Export"]],
-      // "audio" was its own panel; it now opens This video
-      s.inspector_start_panel === "audio" ? "video" : String(s.inspector_start_panel || "export"),
-    );
-    const taskOptions = choices(
-      [["last", "Last used"], ["compression", "Compress"], ["upscale", "Upscale"], ["cut", "Lossless cut"]],
-      String(s.start_task || "last"),
-    );
-    const part = (id: HideablePart, title: string, note = "") => `<label class="toggle-row settings-option">
-        <input type="checkbox" role="switch" data-hide-part="${id}" ${hidden.has(id) ? "" : "checked"} data-settings-change="visibility">
-        <span class="toggle-track" aria-hidden="true"></span>
-        <span class="settings-option-copy"><strong>${title}</strong>${note ? `<small>${note}</small>` : ""}</span>
-      </label>`;
-    return `<div class="settings-card">
-    <h3 class="settings-card-title">Task defaults</h3>
-    <p class="settings-card-copy">Use these when a profile does not specify a setting.</p>
-    <div class="settings-grid">
-      <div class="settings-field">
-        <label for="set-dp">Default profile</label>
-        <select id="set-dp" data-search="Search profiles" data-empty-label="No profiles available" data-settings-change="mark-dirty">${options}</select>
-      </div>
-      <div class="settings-field">
-        <label for="set-ds">Default scaler</label>
-        <select id="set-ds" data-settings-change="mark-dirty">${scalers}</select>
-      </div>
-    </div>
-  </div>
-  <div class="settings-card">
-    <h3 class="settings-card-title">On launch</h3>
-    <div class="settings-grid">
-      <div class="settings-field">
-        <label for="set-start-task">Export task</label>
-        <select id="set-start-task" data-settings-change="mark-dirty">${taskOptions}</select>
-      </div>
-      <div class="settings-field">
-        <label for="set-inspector-start">Inspector panel</label>
-        <select id="set-inspector-start" data-settings-change="mark-dirty">${inspectorOptions}</select>
-      </div>
-    </div>
-  </div>
-  <div class="settings-card">
-    <h3 class="settings-card-title">Show in Tuck</h3>
-    <p class="settings-card-copy">Turn off what you never use. It comes back when you turn it on here.</p>
-    <div class="settings-visibility">
-      <div class="settings-visibility-group" role="group" aria-labelledby="vis-tasks">
-        <h4 id="vis-tasks">Export tasks</h4>
-        ${part("compression", "Compress")}
-        ${part("upscale", "Upscale")}
-        ${part("cut", "Lossless cut")}
-      </div>
-      <div class="settings-visibility-group" role="group" aria-labelledby="vis-panels">
-        <h4 id="vis-panels">This video</h4>
-        ${part("panel_video", "Transform")}
-        ${part("panel_audio", "Audio")}
-      </div>
-      <div class="settings-visibility-group" role="group" aria-labelledby="vis-tools">
-        <h4 id="vis-tools">Tools</h4>
-        ${part("audio_editing", "Audio editing", "Adding audio tracks to a video.")}
-        ${part("frame_blending", "Frame Blending")}
-        ${part("lut", "Color LUT")}
-        <p class="settings-visibility-note">Frame Blending and Color LUT still show while a profile uses them.</p>
-      </div>
-    </div>
-  </div>
-  <div class="settings-card">
-    <h3 class="settings-card-title">When the queue finishes</h3>
-    <div class="settings-option-list">
-      <label class="toggle-row settings-option">
-        <input id="set-open-output-folder" type="checkbox" role="switch" ${openOutput} data-settings-change="mark-dirty">
-        <span class="toggle-track" aria-hidden="true"></span>
-        <span class="settings-option-copy">
-          <strong>Show the last export in its folder</strong>
-          <small>Selects the last successful export in your file manager.</small>
-        </span>
-      </label>
-      <label class="toggle-row settings-option">
-        <input id="set-auto-clear" type="checkbox" role="switch" ${autoClear} data-settings-change="mark-dirty">
-        <span class="toggle-track" aria-hidden="true"></span>
-        <span class="settings-option-copy">
-          <strong>Clear completed jobs automatically</strong>
-          <small>Keep failed and cancelled jobs so you can retry them.</small>
-        </span>
-      </label>
-    </div>
-  </div>`;
-  }
-
-  function outputSettingsHtml(s: SettingsRecord): string {
-    const outputDir = esc(s.output_dir || "");
-    const outputLabel = esc(s.output_dir || "Next to each source file");
-    const compressionSuffix = esc(s.compression_suffix || "_tucked_{size}");
-    const upscaleSuffix = esc(s.upscale_suffix || "_upscaled_{width}x{height}");
-    const cutSuffix = esc(s.cut_suffix || "_cut");
-    return `<div class="settings-card">
-    <h3 class="settings-card-title">Output folder</h3>
-    <div class="settings-card-copy">Save beside each source file, or choose one folder for every completed export.</div>
-    <div class="settings-output-location">
-      <div id="set-od" class="settings-readonly selectable" data-path="${outputDir}">${outputLabel}</div>
-      <button type="button" class="btn2" data-settings-click="browse-output">Browse…</button>
-      <button type="button" class="btn2" data-settings-click="clear-output">Use source folder</button>
-    </div>
-  </div>
-  <section class="file-naming">
-    <h3>File names</h3>
-    <div class="settings-grid">
-      <div class="settings-field">
-        <label for="set-cs">Compress suffix</label>
-        <input id="set-cs" value="${compressionSuffix}" data-settings-input="preview-output" data-settings-change="mark-dirty">
-        <div class="settings-token-row">
-          <button type="button" class="settings-token" data-settings-click="insert-token" data-settings-target="set-cs" data-settings-token="{size}">{size}</button>
-        </div>
-      </div>
-      <div class="settings-field">
-        <label for="set-us">Upscale suffix</label>
-        <input id="set-us" value="${upscaleSuffix}" data-settings-input="preview-output" data-settings-change="mark-dirty">
-        <div class="settings-token-row">
-          <button type="button" class="settings-token" data-settings-click="insert-token" data-settings-target="set-us" data-settings-token="{width}">{width}</button>
-          <button type="button" class="settings-token" data-settings-click="insert-token" data-settings-target="set-us" data-settings-token="{height}">{height}</button>
-        </div>
-      </div>
-      <div class="settings-field">
-        <label for="set-cuts">Lossless cut suffix</label>
-        <input id="set-cuts" value="${cutSuffix}" data-settings-input="preview-output" data-settings-change="mark-dirty">
-      </div>
-      <div class="file-naming-example full">
-        <span>Compress preview</span>
-        <div class="example-out" id="ex-out"></div>
-      </div>
-      <div class="file-naming-example full">
-        <span>Upscale preview</span>
-        <div class="example-out" id="ex-up-out"></div>
-      </div>
-      <div class="file-naming-example full">
-        <span>Lossless cut preview</span>
-        <div class="example-out" id="ex-cut-out"></div>
-      </div>
-    </div>
-  </section>`;
-  }
-
-  function profilesSettingsHtml(): string {
-    return `<div class="settings-profile-filterbar">
-    <div class="profile-filters" role="group" aria-label="Filter profiles">
-      <button type="button" id="pm-all" aria-pressed="true" data-settings-click="filter-profiles" data-settings-value="all">All</button>
-      <button type="button" id="pm-compression" aria-pressed="false" data-settings-click="filter-profiles" data-settings-value="compression">Compress</button>
-      <button type="button" id="pm-upscale" aria-pressed="false" data-settings-click="filter-profiles" data-settings-value="upscale">Upscale</button>
-    </div>
-  </div>
-  <div id="pm-list" class="settings-list"></div>`;
-  }
-
-  function explorerSettingsHtml(): string {
-    return `<div class="settings-card">
-    <h3 class="settings-card-title">Send to shortcuts</h3>
-    <div class="settings-card-copy">Right-click videos in File Explorer and choose Send to. Add only the ones you use.</div>
-    <div id="st-fixed" class="settings-list"></div>
-  </div>
-  <div class="settings-card">
-    <h3 class="settings-card-title">Profile shortcuts</h3>
-    <div class="settings-card-copy">Compress or upscale in the background with one profile.</div>
-    <div id="st-list" class="settings-list"></div>
-  </div>`;
-  }
-
-  function systemStatusHtml(s: SettingsRecord, caps: PlatformCapabilities): string {
-    const ffmpegReady = !!s.ffmpeg_available;
-    const ffprobeReady = !!s.ffprobe_available;
-    const ffmpegPath = esc(s.ffmpeg_path || s.detected_ffmpeg_path || "Automatic detection");
-    const ffprobePath = esc(s.ffprobe_path || s.detected_ffprobe_path || "Automatic detection");
-    const encoders = esc(encoderDisplaySummary(encodersForPlatform(toStringArray(s.available_encoders), caps)));
-    const webViewStatus =
-      caps.platform === "windows"
-        ? `<div class="settings-status-row">
-        <div>WebView2</div>
-        <div class="settings-status-value">
-          <span class="status-good">Ready</span> · Edge runtime
-        </div>
-        <div class="settings-status-actions"></div>
-      </div>`
-        : "";
-    return `<div class="settings-card">
-    <h3 class="settings-card-title">System status</h3>
-    <div class="settings-status-table" aria-label="System readiness">
-      <div class="settings-status-row">
-        <div>FFmpeg</div>
-        <div class="settings-status-value">
-          <span class="${ffmpegReady ? "status-good" : "status-warn"}">
-            ${ffmpegReady ? "Ready" : "Missing"}
-          </span>
-          · ${ffmpegPath}
-        </div>
-        <div class="settings-status-actions">
-          <button type="button" class="btn2" data-settings-click="browse-ffmpeg">Change</button>
-        </div>
-      </div>
-      <div class="settings-status-row">
-        <div>FFprobe</div>
-        <div class="settings-status-value">
-          <span class="${ffprobeReady ? "status-good" : "status-warn"}">
-            ${ffprobeReady ? "Ready" : "Missing"}
-          </span>
-          · ${ffprobePath}
-        </div>
-        <div class="settings-status-actions">
-          <button type="button" class="btn2" data-settings-click="browse-ffprobe">Change</button>
-        </div>
-      </div>
-      <div class="settings-status-row">
-        <div>Encoders</div>
-        <div class="settings-status-value">${encoders}</div>
-        <div class="settings-status-actions">
-          <button type="button" class="btn2" data-settings-click="refresh-encoders">Rescan</button>
-        </div>
-      </div>
-      ${webViewStatus}
-    </div>
-  </div>`;
-  }
-
-  function systemUpdatesHtml(s: SettingsRecord, caps: PlatformCapabilities): string {
-    if (!shouldShowUpdater(caps)) return "";
-    const updateStatus = s.last_update_check
-      ? `Last checked: ${esc(s.last_update_check)}`
-      : "Not checked yet.";
-    const checkUpdates = s.check_updates ? "checked" : "";
-    return `<div class="settings-card">
-    <h3 class="settings-card-title">Updates</h3>
-    <div class="settings-list-row">
-      <div class="settings-list-main">
-        <strong>Tuck ${esc(s.version || "")}</strong>
-        <span>${updateStatus}</span>
-      </div>
-      <button type="button" class="btn2" data-settings-click="check-updates">Check now</button>
-    </div>
-    <label class="toggle-row" style="margin-top:12px">
-      <input id="set-check-updates" type="checkbox" role="switch" ${checkUpdates} data-settings-change="mark-dirty">
-      <span class="toggle-track" aria-hidden="true"></span>
-      <span>Check automatically at startup</span>
-    </label>
-  </div>`;
-  }
-
-  function systemSupportHtml(): string {
-    return `<div class="settings-card">
-    <h3 class="settings-card-title">Support</h3>
-    <div class="settings-card-copy">
-      Copy a diagnostic report with app versions, encoder status, and recent errors.
-      Personal folder paths are removed.
-    </div>
-    <div class="settings-support-actions">
-      <button type="button" class="btn1" data-settings-click="copy-diagnostics">Copy diagnostics</button>
-      <button type="button" class="btn2" data-settings-click="open-support" data-settings-value="logs">Open logs folder</button>
-      <button type="button" class="btn2" data-settings-click="open-support" data-settings-value="config">Open configuration folder</button>
-    </div>
-  </div>`;
-  }
-
-  function systemAdvancedHtml(s: SettingsRecord): string {
-    const ffmpegPath = esc(s.ffmpeg_path || "");
-    const ffprobePath = esc(s.ffprobe_path || "");
-    const ffmpegLabel = esc(s.ffmpeg_path || "Use PATH or automatic detection");
-    const ffprobeLabel = esc(s.ffprobe_path || "Use PATH or automatic detection");
-    return `<details class="settings-advanced">
-    <summary>Advanced system settings</summary>
-    <div class="settings-advanced-body settings-grid">
-      <div class="settings-field full">
-        <label for="set-ffmpeg">Custom FFmpeg path</label>
-        <div class="row">
-          <div id="set-ffmpeg" class="settings-readonly" style="flex:1" data-path="${ffmpegPath}">
-            ${ffmpegLabel}
-          </div>
-          <button type="button" class="btn2" data-settings-click="clear-ffmpeg">Use automatic</button>
-        </div>
-      </div>
-      <div class="settings-field full">
-        <label for="set-ffprobe">Custom FFprobe path</label>
-        <div class="row">
-          <div id="set-ffprobe" class="settings-readonly" style="flex:1" data-path="${ffprobePath}">
-            ${ffprobeLabel}
-          </div>
-          <button type="button" class="btn2" data-settings-click="clear-ffprobe">Use automatic</button>
-        </div>
-      </div>
-      <div class="settings-field full">
-        <label for="set-encoder-cache-days">Encoder detection cache</label>
-        <select id="set-encoder-cache-days" data-settings-change="mark-dirty">
-          <option value="0">Disabled</option>
-          <option value="1">1 day</option>
-          <option value="7">7 days</option>
-          <option value="30">30 days</option>
-          <option value="90">90 days</option>
-        </select>
-        <span class="help-tip">Caching hardware probes makes startup faster.</span>
-      </div>
-    </div>
-  </details>`;
-  }
-
-  function systemSettingsHtml(s: SettingsRecord, caps: PlatformCapabilities): string {
-    return (
-      systemStatusHtml(s, caps) +
-      systemUpdatesHtml(s, caps) +
-      systemSupportHtml() +
-      systemAdvancedHtml(s)
-    );
-  }
-
-  function toggle(): void {
-    if (document.body.classList.contains("settings-open")) close();
-    else void open();
-  }
-
-  async function open(page?: string, view?: string, profileId?: string): Promise<void> {
-    settingsPage = page || settingsPage;
-    settingsView = view === "editor" ? "editor" : "page";
-    if (profileId !== undefined) settingsProfileId = profileId;
-    const caps = await fetchPlatformCapabilities();
-    if (!shouldShowSendTo(caps) && settingsPage === "explorer") settingsPage = "general";
-    const s = (await legacyBackendResult(client().getSettings())) as SettingsRecord;
-    const profiles = (Array.isArray(s.profiles) ? s.profiles : []) as ProfileListEntry[];
-    if (settingsPage === "profiles" && settingsView === "editor") {
-      settingsShell(
-        "profiles",
-        profileEditorHtml(),
-        {
-          html:
-            settingButton("Cancel", "back-profiles") +
-            settingButton("Save profile", "save-profile", true),
-        },
-        caps,
-      );
-      await hydrateEditor(caps);
-      input("pe-name").focus();
-      return;
-    }
-    let content = "";
-    let actions: { html?: string; split?: boolean; plain?: boolean; autosave?: boolean } = { html: "" };
-    if (settingsPage === "general") {
-      content = generalSettingsHtml(s, profiles);
-      actions = { autosave: true };
-    } else if (settingsPage === "output") {
-      content = outputSettingsHtml(s);
-      actions = { autosave: true };
-    } else if (settingsPage === "profiles") {
-      content = profilesSettingsHtml();
-      actions = {
-        plain: true,
-        html:
-          settingButton("Import", "import-profiles") +
-          '<span class="settings-action-spacer"></span>' +
-          settingButton("New profile", "new-profile", true),
-      };
-    } else if (settingsPage === "keyboard") {
-      content = keyboardSettingsHtml();
-      actions = {
-        autosave: true,
-        html: settingButton("View shortcut guide", "show-shortcut-guide") + settingButton("Reset all", "reset-shortcuts"),
-      };
-    } else if (settingsPage === "explorer") {
-      content = explorerSettingsHtml();
-      actions = { html: settingButton("Add profile shortcut", "add-shortcut", true) };
-    } else {
-      content = systemSettingsHtml(s, caps);
-      actions = { autosave: true };
-    }
-    settingsShell(settingsPage, content, actions, caps);
-    settingsDirty = false;
-    if (settingsPage === "general") {
-      select("set-dp").value = String(s.default_profile_id || "");
-      syncVisibilityChoices();
-    }
-    if (settingsPage === "output") updateExampleOutput();
-    if (settingsPage === "profiles") await refreshProfileManagerList(settingsFilter);
-    if (settingsPage === "explorer" && shouldShowSendTo(caps)) await refreshShortcutList();
-    if (settingsPage === "keyboard") renderKeyboardList();
-    if (settingsPage === "system")
-      select("set-encoder-cache-days").value = String(s.encoder_cache_days || 0);
-    if (["general", "output", "system"].indexOf(settingsPage) >= 0) captureSettingsSnapshot();
-    deps.syncSelects();
-  }
-
-  function navigateSettings(page: string): void {
-    if (settingsView === "editor") {
-      if (editorDirty()) {
-        confirmToast("Discard unsaved profile changes?", () => void open(page));
-      } else void open(page);
-      return;
-    }
-    void autosave().then(() => {
-      if (!settingsDirty) return void open(page);
-      confirmToast("Discard unsaved settings?", () => {
-        settingsDirty = false;
-        void open(page);
-      });
-    });
-  }
-
-  function close(): void {
-    if (settingsView === "editor" && editorDirty())
-      return confirmToast("Discard unsaved profile changes?", () => {
-        settingsView = "page";
-        settingsProfileId = "";
-        closeSettingsWorkspace();
-      });
-    void autosave().then(() => {
-      if (!settingsDirty) return closeSettingsWorkspace();
-      confirmToast("Discard unsaved settings?", () => {
-        settingsDirty = false;
-        closeSettingsWorkspace();
-      });
-    });
-  }
-
-  function setEditorInert(inert: boolean): void {
-    el("editor-shell").inert = inert;
-    for (const group of document.querySelectorAll<HTMLElement>("#tb .tb-editor")) group.inert = inert;
-  }
-
-  function closeSettingsWorkspace(): void {
-    stopCapture();
-    document.body.classList.remove("settings-open");
-    setEditorInert(false);
-    if (
-      settingsReturnFocus &&
-      settingsReturnFocus.isConnected &&
-      settingsReturnFocus instanceof HTMLElement
-    )
-      settingsReturnFocus.focus();
-    settingsReturnFocus = null;
-  }
-
-  function clearPath(id: string, placeholder: string): void {
-    const node = el(id);
-    node.dataset.path = "";
-    node.textContent = placeholder;
-  }
-
-  async function browseOutput(): Promise<void> {
-    const r = await legacyBackendResult(client().pickFolder());
-    if (r.ok && typeof r.path === "string" && r.path) {
-      const node = el("set-od");
-      node.dataset.path = r.path;
-      node.textContent = r.path;
-      void autosave();
-    }
-  }
-
-  function clearOutput(): void {
-    clearPath("set-od", "Next to each source file");
-    void autosave();
-  }
-
-  async function browseFfmpeg(): Promise<void> {
-    const r = await legacyBackendResult(client().pickFfmpegFile());
-    if (r.ok && typeof r.path === "string" && r.path) {
-      const node = el("set-ffmpeg");
-      node.dataset.path = r.path;
-      node.textContent = r.path;
-      void autosave();
-    }
-  }
-
-  async function browseFfprobe(): Promise<void> {
-    const r = await legacyBackendResult(client().pickFfprobeFile());
-    if (r.ok && typeof r.path === "string" && r.path) {
-      const node = el("set-ffprobe");
-      node.dataset.path = r.path;
-      node.textContent = r.path;
-      void autosave();
-    }
-  }
-
-  function clearFfmpeg(): void {
-    clearPath("set-ffmpeg", "Use PATH or automatic detection");
-    void autosave();
-  }
-
-  function clearFfprobe(): void {
-    clearPath("set-ffprobe", "Use PATH or automatic detection");
-    void autosave();
-  }
-
-  async function persistSettings(data: SettingsRecord): Promise<boolean> {
-    const r = await legacyBackendResult(client().saveSettings(data as never));
-    if (r.ok) {
-      Object.assign(session.appSettings, data);
-      snapshot = settingsSnapshot(settingsPageState());
-      settingsDirty = false;
-      await deps.reloadEditorSettings();
-      const indicator = byId("settings-unsaved");
-      if (indicator) {
-        indicator.textContent = "Saved";
-        clearTimeout(savedNoteTimer);
-        savedNoteTimer = setTimeout(() => {
-          if (indicator.isConnected) indicator.textContent = AUTOSAVE_NOTE;
-        }, 1500);
-      }
-      return true;
-    }
-    toast(r.error ?? "Could not save settings.", "err");
-    return false;
-  }
-
-  async function saveGeneralSettings(): Promise<void> {
-    await persistSettings({
-      default_profile_id: select("set-dp").value,
-      default_scaler: select("set-ds").value.toLowerCase(),
-      inspector_start_panel: select("set-inspector-start").value,
-      start_task: select("set-start-task").value,
-      hidden_ui: chosenHiddenParts(),
-      clear_completed_automatically: input("set-auto-clear").checked,
-      open_output_folder_after_queue: input("set-open-output-folder").checked,
-    });
-  }
-
-  function chosenHiddenParts(): HideablePart[] {
-    const switches = document.querySelectorAll<HTMLInputElement>("[data-hide-part]");
-    return HIDEABLE_PARTS.filter((id) =>
-      Array.from(switches).some((node) => node.dataset.hidePart === id && !node.checked),
-    );
-  }
-
-  // one task always stays on, and the launch choices only offer what is shown
-  function syncVisibilityChoices(): void {
-    const hidden = hiddenParts(chosenHiddenParts());
-    const visible = visibleTasks(hidden);
-    for (const node of document.querySelectorAll<HTMLInputElement>("[data-hide-part]")) {
-      const part = node.dataset.hidePart;
-      node.disabled = visible.length === 1 && part === visible[0];
-    }
-    const offer = (id: string, fallback: string, shown: (value: string) => boolean) => {
-      const menu = byId<HTMLSelectElement>(id);
-      if (!menu) return;
-      for (const option of Array.from(menu.options)) {
-        option.hidden = option.disabled = !shown(option.value);
-      }
-      if (menu.selectedOptions[0]?.disabled) menu.value = fallback;
-    };
-    offer("set-start-task", "last", (value) => value === "last" || !isTaskName(value) || visible.includes(value));
-    offer("set-inspector-start", "export", (value) =>
-      !(value === "video" && hidden.has("panel_video") && hidden.has("panel_audio")));
-    deps.syncSelects();
-  }
-
-  async function saveOutputSettings(): Promise<void> {
-    await persistSettings({
-      output_dir: el("set-od").dataset.path || "",
-      compression_suffix: input("set-cs").value.trim() || "_tucked_{size}",
-      upscale_suffix: input("set-us").value.trim() || "_upscaled_{width}x{height}",
-      cut_suffix: input("set-cuts").value.trim() || "_cut",
-    });
-  }
-
-  async function saveSystemSettings(): Promise<void> {
-    const data: SettingsRecord = {
-      ffmpeg_path: el("set-ffmpeg").dataset.path || "",
-      ffprobe_path: el("set-ffprobe").dataset.path || "",
-      encoder_cache_days: parseInt(select("set-encoder-cache-days").value, 10),
-    };
-    const checkUpdates = byId<HTMLInputElement>("set-check-updates");
-    if (checkUpdates) data.check_updates = checkUpdates.checked;
-    await persistSettings(data);
-  }
-
-  async function refreshEncoders(): Promise<void> {
-    // a new FFmpeg path must be saved before encoders are detected with it
-    await autosave();
-    if (settingsDirty) {
-      toast("Save a working FFmpeg path before refreshing encoders.", "err");
-      return;
-    }
-    const r = await legacyBackendResult(client().refreshEncoders());
-    if (r.ok) {
-      deps.setAvailableEncoders(toStringArray(r.available_encoders));
-      toast("Encoder detection refreshed.", "ok");
-      void open("system");
-    } else {
-      toast(r.error ?? "Could not refresh encoders.", "err");
-    }
-  }
-
-  function insertNamingToken(id: string, token: string): void {
-    const field = input(id);
-    if (!field.value.includes(token)) field.value += token;
-    void autosave();
-    updateExampleOutput();
-    field.focus();
-  }
-
-  async function openSupportFolder(kind: string): Promise<void> {
-    const r =
-      kind === "logs"
-        ? await legacyBackendResult(client().openLogsFolder())
-        : await legacyBackendResult(client().openConfigFolder());
-    if (!r.ok) toast(r.error ?? "Could not open folder.", "err");
-  }
-
-  function updateExampleOutput(): void {
-    const compress = byId<HTMLInputElement>("set-cs");
-    const upscale = byId<HTMLInputElement>("set-us");
-    if (compress && byId("ex-out")) {
-      el("ex-out").textContent =
-        `video${(compress.value.trim() || "_tucked_{size}").replace("{size}", "20MB")}.mp4`;
-    }
-    if (upscale && byId("ex-up-out")) {
-      el("ex-up-out").textContent =
-        `video${(upscale.value.trim() || "_upscaled_{width}x{height}")
-          .replace("{width}", "1920")
-          .replace("{height}", "1080")}.mp4`;
-    }
-    const cut = byId<HTMLInputElement>("set-cuts");
-    if (cut && byId("ex-cut-out")) el("ex-cut-out").textContent = `video${cut.value.trim() || "_cut"}.mp4`;
-  }
-
-  // Keyboard page: each action can take new keys; they apply and are saved straight away
+  // each action can take new keys; they apply and are saved straight away
   let stopCapture: () => void = () => {};
-
-  function keyboardSettingsHtml(): string {
-    return `<div class="settings-card">
-    <p class="settings-card-copy">Choose Change, then press the keys you want. Esc cancels.</p>
-    <div id="kb-list" class="kb-list"></div>
-    <span id="kb-status" class="sr-only" role="status"></span>
-  </div>`;
-  }
 
   function keycaps(bindings: readonly string[]): HTMLElement {
     const keys = document.createElement("span");
@@ -1530,41 +1676,62 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     return wrap;
   }
 
+  function shortcutFilter(): string {
+    return (byId<HTMLInputElement>("kb-search")?.value ?? "").trim().toLowerCase();
+  }
+
   function renderKeyboardList(): void {
     stopCapture();
     const list = byId("kb-list");
     if (!list) return;
     list.replaceChildren();
+    const filter = shortcutFilter();
     const byCategory = new Map<string, EditableCommand[]>();
     for (const command of editableCommands()) {
+      if (filter && !`${command.label} ${command.category} ${displayShortcut(command.bindings)}`.toLowerCase().includes(filter)) continue;
       byCategory.set(command.category, [...(byCategory.get(command.category) ?? []), command]);
     }
     for (const [category, items] of byCategory) {
-      const section = document.createElement("section");
-      section.className = "kb-section";
-      section.appendChild(elementWithText("h3", category, "settings-card-title"));
+      const sectionNode = document.createElement("section");
+      sectionNode.className = "set-section kb-section";
+      const head = document.createElement("header");
+      head.className = "set-section-head";
+      head.appendChild(elementWithText("h3", category));
+      sectionNode.appendChild(head);
+      const group = document.createElement("div");
+      group.className = "set-card";
       for (const command of items) {
-        const row = document.createElement("div");
-        row.className = "kb-row";
-        row.dataset.command = command.id;
-        row.appendChild(elementWithText("span", command.label, "kb-label"));
-        row.appendChild(keycaps(command.bindings));
+        const rowNode = document.createElement("div");
+        rowNode.className = "set-row kb-row";
+        rowNode.dataset.command = command.id;
+        rowNode.dataset.setting = `kb-${command.id}`;
+        const text = document.createElement("span");
+        text.className = "set-row-text";
+        text.appendChild(elementWithText("span", command.label, "set-label kb-label"));
+        rowNode.appendChild(text);
         const actions = document.createElement("span");
-        actions.className = "kb-actions";
-        const change = shortcutButton("Change", () => captureShortcut(command, row, change));
-        change.setAttribute("aria-label", `Change keys for ${command.label}`);
-        actions.appendChild(change);
+        actions.className = "set-row-control kb-actions";
         if (command.changed) {
-          const reset = shortcutButton("Reset", () => void saveShortcuts(withoutOverride(command.id), `${command.label} is back to its default keys.`));
-          reset.setAttribute("aria-label", `Reset ${command.label} to its default keys`);
+          const reset = iconButton(ICONS.reset, `Reset ${command.label} to its default keys`, () =>
+            void saveShortcuts(withoutOverride(command.id), `${command.label} is back to its default keys.`, command.id));
           actions.appendChild(reset);
         }
-        row.appendChild(actions);
-        section.appendChild(row);
+        const change = document.createElement("button");
+        change.type = "button";
+        change.className = "kb-change";
+        change.setAttribute("aria-label", `Change keys for ${command.label}`);
+        change.title = "Change keys";
+        change.appendChild(keycaps(command.bindings));
+        change.addEventListener("click", () => captureShortcut(command, rowNode, change));
+        actions.appendChild(change);
+        rowNode.appendChild(actions);
+        group.appendChild(rowNode);
       }
-      list.appendChild(section);
+      sectionNode.appendChild(group);
+      list.appendChild(sectionNode);
     }
-    const resetAll = document.querySelector<HTMLButtonElement>('[data-settings-click="reset-shortcuts"]');
+    if (!byCategory.size) list.appendChild(elementWithText("p", "No shortcuts match.", "set-empty"));
+    const resetAll = byId<HTMLButtonElement>("kb-reset-all");
     if (resetAll) resetAll.disabled = !Object.keys(shortcutOverrides()).length;
   }
 
@@ -1579,11 +1746,11 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     if (status) status.textContent = message;
   }
 
-  function captureShortcut(command: EditableCommand, row: HTMLElement, button: HTMLButtonElement): void {
+  function captureShortcut(command: EditableCommand, rowNode: HTMLElement, change: HTMLButtonElement): void {
     stopCapture();
-    row.classList.add("capturing");
-    button.textContent = "Press keys…";
-    button.setAttribute("aria-pressed", "true");
+    rowNode.classList.add("capturing");
+    change.replaceChildren(elementWithText("span", "Press keys…", "kb-capture-label"), elementWithText("span", "Esc cancels", "kb-capture-hint"));
+    change.setAttribute("aria-pressed", "true");
     announceShortcut(`Press the new keys for ${command.label}. Esc cancels.`);
     const onKey = (event: KeyboardEvent): void => {
       // the page keeps these keys; nothing else in Tuck reacts while keys are being chosen
@@ -1592,7 +1759,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       if (event.key === "Escape") {
         renderKeyboardList();
         announceShortcut("Keys unchanged.");
-        row.ownerDocument.querySelector<HTMLButtonElement>(`[data-command="${command.id}"] button`)?.focus();
+        document.querySelector<HTMLButtonElement>(`[data-command="${command.id}"] .kb-change`)?.focus();
         return;
       }
       const binding = bindingFromEvent(event);
@@ -1602,7 +1769,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         return;
       }
       stopCapture();
-      offerShortcut(command, binding, row);
+      offerShortcut(command, binding, rowNode, change);
     };
     window.addEventListener("keydown", onKey, true);
     stopCapture = () => {
@@ -1611,7 +1778,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     };
   }
 
-  function offerShortcut(command: EditableCommand, binding: string, row: HTMLElement): void {
+  function offerShortcut(command: EditableCommand, binding: string, rowNode: HTMLElement, change: HTMLButtonElement): void {
     const keys = displayShortcut([binding]);
     const next = shortcutOverrides();
     const taken = commandsUsing(binding, command.id);
@@ -1625,23 +1792,20 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       return;
     }
     // the keys already belong to something else; ask before moving them
-    row.classList.remove("capturing");
-    const change = row.querySelector<HTMLButtonElement>(".kb-actions button");
-    if (change) {
-      change.textContent = "Change";
-      change.setAttribute("aria-pressed", "false");
-    }
+    change.replaceChildren(keycaps([binding]));
+    change.setAttribute("aria-pressed", "false");
     const note = document.createElement("div");
     note.className = "kb-conflict";
     note.setAttribute("role", "alert");
+    note.insertAdjacentHTML("afterbegin", ICONS.warn);
     note.appendChild(elementWithText("span", `${keys} is used by ${taken.map((item) => item.label).join(", ")}.`));
     const use = shortcutButton("Use here", () => void saveShortcuts(next, `${done} ${taken.map((item) => item.label).join(", ")} lost it.`, command.id));
     const cancel = shortcutButton("Cancel", () => {
       renderKeyboardList();
       announceShortcut("Keys unchanged.");
-    });
+    }, "quiet");
     note.append(use, cancel);
-    row.after(note);
+    rowNode.after(note);
     use.focus();
   }
 
@@ -1655,16 +1819,17 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       }
     }
     setShortcutOverrides(next);
-    const r = await legacyBackendResult(client().saveSettings({ shortcut_overrides: next } as never));
-    if (r.ok) {
+    const result = await legacyBackendResult(client().saveSettings({ shortcut_overrides: next } as never));
+    if (result.ok) {
       session.appSettings.shortcut_overrides = next;
       announceShortcut(message);
+      showSaved();
     } else {
       setShortcutOverrides(previous);
-      toast(r.error ?? "Could not save the keyboard shortcuts.", "err");
+      toast(result.error ?? "Could not save the keyboard shortcuts.", "err");
     }
     renderKeyboardList();
-    if (focusId) document.querySelector<HTMLButtonElement>(`[data-command="${focusId}"] button`)?.focus();
+    if (focusId) document.querySelector<HTMLButtonElement>(`[data-command="${focusId}"] .kb-change`)?.focus();
   }
 
   function resetAllShortcuts(): void {
@@ -1694,93 +1859,145 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     { kind: "cut", name: "Tuck Lossless Cut", note: "Opens the videos in Tuck, ready to cut.", task: "cut" },
   ];
 
-  function shortcutButton(label: string, run: () => void, danger = false): HTMLButtonElement {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "btn2";
-    if (danger) button.style.color = "var(--danger)";
-    button.textContent = label;
-    button.addEventListener("click", run);
-    return button;
+  const SEND_TO_ICONS: Readonly<Record<SendToKind, string>> = {
+    open: `<span class="set-icon set-icon-logo">${ICONS.logo}</span>`,
+    compress: ICONS.compress,
+    upscale: ICONS.upscale,
+    cut: ICONS.cut,
+  };
+
+  function shortcutButton(label: string, run: () => void, kind?: "quiet" | "danger" | "primary"): HTMLButtonElement {
+    const node = document.createElement("button");
+    node.type = "button";
+    node.className = `set-btn${kind ? ` ${kind}` : ""}`;
+    node.textContent = label;
+    node.addEventListener("click", run);
+    return node;
   }
 
-  function shortcutRow(title: string, note: string, status: string | undefined): HTMLElement {
-    const row = document.createElement("div");
-    row.className = "settings-list-row";
-    const main = document.createElement("div");
-    main.className = "settings-list-main";
-    main.appendChild(elementWithText("strong", title));
-    main.appendChild(elementWithText("span", note));
-    if (status) {
-      const badge = elementWithText("span", status === "ok" ? "Added" : "Needs repair");
-      badge.className = status === "ok" ? "settings-badge" : "status-warn";
-      main.appendChild(badge);
+  function iconButton(icon: string, label: string, run: () => void): HTMLButtonElement {
+    const node = document.createElement("button");
+    node.type = "button";
+    node.className = "set-icon-btn";
+    node.setAttribute("aria-label", label);
+    node.title = label;
+    node.insertAdjacentHTML("afterbegin", icon);
+    node.addEventListener("click", run);
+    return node;
+  }
+
+  function sendToRow(item: (typeof SEND_TO_SHORTCUTS)[number], installed: ShortcutRecord | undefined): HTMLElement {
+    const broken = !!installed && installed.status !== "ok";
+    const id = `st-${item.kind}`;
+    const wrapper = document.createElement("div");
+    if (broken) {
+      wrapper.className = "set-row has-icon";
+      wrapper.dataset.setting = id;
+      wrapper.insertAdjacentHTML("afterbegin", `<span class="set-row-text">${SEND_TO_ICONS[item.kind]}<span class="set-row-words"><span class="set-label"></span><span class="set-desc"></span></span></span>`);
+      wrapper.querySelector(".set-label")!.textContent = item.name;
+      wrapper.querySelector(".set-desc")!.textContent = item.note;
+      const control = document.createElement("span");
+      control.className = "set-row-control";
+      control.insertAdjacentHTML("afterbegin", `<span class="set-state warn">${ICONS.warn}Needs repair</span>`);
+      control.append(
+        shortcutButton("Repair", () => void repairShortcut(installed)),
+        shortcutButton("Remove", () => removeShortcut(installed, item.name), "quiet"),
+      );
+      wrapper.appendChild(control);
+      return wrapper;
     }
-    row.appendChild(main);
-    return row;
+    wrapper.innerHTML = switchRow({
+      setting: id,
+      id,
+      label: item.name,
+      description: item.note,
+      checked: !!installed,
+      attributes: { "data-sendto-kind": item.kind },
+    });
+    const rowNode = wrapper.firstElementChild as HTMLElement;
+    rowNode.classList.add("has-icon");
+    rowNode.querySelector(".set-row-text")?.insertAdjacentHTML("afterbegin", SEND_TO_ICONS[item.kind]);
+    const toggle = rowNode.querySelector<HTMLInputElement>("input");
+    toggle?.addEventListener("change", () => {
+      if (toggle.checked) {
+        void installGenericShortcut(item.kind, item.name);
+      } else if (installed) {
+        // it stays on until the removal is confirmed; the list redraws afterwards
+        toggle.checked = true;
+        removeShortcut(installed, item.name);
+      }
+    });
+    return rowNode;
   }
 
-  async function refreshShortcutList(): Promise<void> {
+  /** `focusId` names the Send to switch to keep focus on once the rows are rebuilt */
+  async function refreshShortcutList(focusId = ""): Promise<void> {
     const fixed = byId("st-fixed");
     const list = byId("st-list");
     if (!fixed || !list) return;
-    const r = await legacyBackendResult(client().listSendtoShortcuts());
-    const shortcuts = (Array.isArray(r.shortcuts) ? r.shortcuts : []) as ShortcutRecord[];
+    const active = document.activeElement;
+    const keep = focusId || (active instanceof HTMLElement && fixed.contains(active) ? active.id : "");
+    const result = await legacyBackendResult(client().listSendtoShortcuts());
+    const shortcuts = (Array.isArray(result.shortcuts) ? result.shortcuts : []) as ShortcutRecord[];
     const hidden = hiddenParts(session.appSettings.hidden_ui);
     fixed.replaceChildren();
     for (const item of SEND_TO_SHORTCUTS) {
       const installed = shortcuts.find((shortcut) => shortcut.type === "generic" && shortcut.kind === item.kind);
       if (!installed && item.task && hidden.has(item.task)) continue;
-      const row = shortcutRow(item.name, item.note, installed ? installed.status || "broken" : undefined);
-      if (!installed) row.appendChild(shortcutButton("Add", () => void installGenericShortcut(item.kind, item.name)));
-      else {
-        if (installed.status !== "ok") row.appendChild(shortcutButton("Repair", () => void repairShortcut(installed)));
-        row.appendChild(shortcutButton("Remove", () => removeShortcut(installed, item.name), true));
-      }
-      fixed.appendChild(row);
+      fixed.appendChild(sendToRow(item, installed));
     }
     list.replaceChildren();
     for (const shortcut of shortcuts.filter((item) => item.type === "profile")) {
       const name = profileShortcutName(shortcut.profile_id || shortcut.name || "");
-      const row = shortcutRow(shortcut.name || name, name, shortcut.status || "broken");
-      row.appendChild(shortcutButton("Repair", () => void repairShortcut(shortcut)));
-      row.appendChild(shortcutButton("Remove", () => removeShortcut(shortcut, name), true));
-      list.appendChild(row);
+      const rowNode = document.createElement("div");
+      rowNode.className = "set-row has-icon";
+      rowNode.insertAdjacentHTML("afterbegin", `<span class="set-row-text">${ICONS.compress}<span class="set-row-words"><span class="set-label"></span><span class="set-desc"></span></span></span>`);
+      rowNode.querySelector(".set-label")!.textContent = shortcut.name || name;
+      rowNode.querySelector(".set-desc")!.textContent = shortcut.status === "ok"
+        ? `Runs ${name} in the background.`
+        : "This shortcut needs repair.";
+      const control = document.createElement("span");
+      control.className = "set-row-control";
+      if (shortcut.status !== "ok") control.appendChild(shortcutButton("Repair", () => void repairShortcut(shortcut)));
+      control.appendChild(shortcutButton("Remove", () => removeShortcut(shortcut, name), "quiet"));
+      rowNode.appendChild(control);
+      list.appendChild(rowNode);
     }
-    if (!list.children.length) {
-      list.appendChild(elementWithText("div", "No profile shortcuts yet.", "settings-empty"));
+    if (!list.children.length) list.appendChild(elementWithText("p", "No profile shortcuts yet.", "set-empty in-card"));
+    if (keep && fixed.isConnected) {
+      const target = byId(keep) ?? fixed.querySelector<HTMLElement>(`[data-setting="${CSS.escape(keep)}"] button`);
+      target?.focus();
     }
   }
 
   async function addShortcutFlow(): Promise<void> {
     const caps = await fetchPlatformCapabilities();
     if (!shouldShowSendTo(caps)) return;
-    const profiles = (await legacyBackendResult(client().getProfilesJson())) as unknown as
-      | ProfileListEntry[]
-      | { ok: false };
-    const content = `${settingsTitle("Add profile shortcut", "open-explorer")}
-    <div id="profile-shortcut-choices" style="display:flex;flex-direction:column;gap:6px"></div>`;
-    settingsShell("explorer", content, { html: "" }, caps);
-    const choices = el("profile-shortcut-choices");
-    renderShortcutChoices(document, choices, Array.isArray(profiles) ? profiles : [], {
-      summarize: profileSummary,
+    view = "shortcut-choices";
+    const profiles = (await legacyBackendResult(client().getProfilesJson())) as unknown as ProfileListEntry[] | { ok: false };
+    renderShell(`<p class="set-section-desc set-lead">Choose a profile. It appears in Send to and runs in the background.</p><div id="profile-shortcut-choices" class="set-card"></div>`, {
+      title: "Add profile shortcut",
+      back: { action: "open-explorer", label: "Back to File Explorer" },
+      navPage: "explorer",
     });
+    const choices = el("profile-shortcut-choices");
+    renderShortcutChoices(document, choices, Array.isArray(profiles) ? profiles : [], { summarize: profileSummary });
     bindProfileActions(choices, (action, profileId, name) => {
       if (action === "install-profile-shortcut") void installProfileShortcut(profileId, name);
     });
   }
 
   async function installGenericShortcut(kind: SendToKind, name: string): Promise<void> {
-    const r = await legacyBackendResult(client().installGenericSendto(kind));
-    if (r.ok) toast(`Added "${name}" to Send to.`, "ok");
-    else toast(r.error ?? `Could not add "${name}".`, "err");
-    void refreshShortcutList();
+    const result = await legacyBackendResult(client().installGenericSendto(kind));
+    if (result.ok) toast(`Added "${name}" to Send to.`, "ok");
+    else toast(result.error ?? `Could not add "${name}".`, "err");
+    void refreshShortcutList(`st-${kind}`);
   }
 
   async function installProfileShortcut(pid: string, name: string): Promise<void> {
-    const r = await legacyBackendResult(client().installProfileSendto(pid, "start"));
-    if (r.ok) toast(`Added "${name}" to Explorer.`, "ok");
-    else toast(r.error ?? "Could not add the profile shortcut.", "err");
+    const result = await legacyBackendResult(client().installProfileSendto(pid, "start"));
+    if (result.ok) toast(`Added "${name}" to Explorer.`, "ok");
+    else toast(result.error ?? "Could not add the profile shortcut.", "err");
     void open("explorer");
   }
 
@@ -1792,24 +2009,22 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     const kind = genericKind(data);
     confirmToast(`Remove "${name}" from Send to?`, () => {
       void legacyBackendResult(
-        kind
-          ? client().removeGenericSendto(kind)
-          : client().removeProfileSendto(data.profile_id || data.name || ""),
-      ).then((r) => {
-        if (r.ok) toast("Shortcut removed.", "ok");
-        else toast(r.error ?? "Could not remove the shortcut.", "err");
-        void refreshShortcutList();
+        kind ? client().removeGenericSendto(kind) : client().removeProfileSendto(data.profile_id || data.name || ""),
+      ).then((result) => {
+        if (result.ok) toast("Shortcut removed.", "ok");
+        else toast(result.error ?? "Could not remove the shortcut.", "err");
+        void refreshShortcutList(kind ? `st-${kind}` : "");
       });
     });
   }
 
   async function repairShortcut(data: ShortcutRecord): Promise<void> {
     const kind = genericKind(data);
-    const r = kind
+    const result = kind
       ? await legacyBackendResult(client().repairGenericSendto(kind))
       : await legacyBackendResult(client().repairProfileSendto(data.profile_id || data.name || ""));
-    if (r.ok) toast("Shortcut repaired.", "ok");
-    else toast(r.error ?? "Could not repair the shortcut.", "err");
+    if (result.ok) toast("Shortcut repaired.", "ok");
+    else toast(result.error ?? "Could not repair the shortcut.", "err");
     void refreshShortcutList();
   }
 
@@ -1822,6 +2037,12 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         },
         close: () => close(),
         navigate: (target) => navigateSettings(target.dataset.settingsValue ?? ""),
+        "clear-search": () => {
+          clearSearchField();
+          leaveSearch();
+          byId("settings-search")?.focus();
+        },
+        "search-result": (target) => void openSearchResult(target.dataset.settingsValue ?? ""),
         "back-profiles": () => backToProfiles(),
         "save-profile": () => void saveProfileEditor(),
         "import-profiles": () => void importProfiles(),
@@ -1830,52 +2051,92 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         "reset-shortcuts": () => resetAllShortcuts(),
         "show-shortcut-guide": () => deps.showShortcutGuide(),
         "open-explorer": () => void open("explorer"),
-        "profile-task": (target) => peSetTask((target.dataset.settingsValue as Workflow) ?? "compression"),
+        "profile-task": (target) => {
+          peSetTask((target.dataset.settingsValue as Workflow) ?? "compression");
+          updateEditorNote();
+        },
         "profile-size": (target) => peSetSize(target.dataset.settingsValue ?? "50"),
         "toggle-advanced": () => peToggleAdvanced(),
         "browse-output": () => void browseOutput(),
-        "clear-output": () => clearOutput(),
         "insert-token": (target) =>
-          insertNamingToken(
-            target.dataset.settingsTarget ?? "",
-            target.dataset.settingsToken ?? "",
-          ),
-        "filter-profiles": (target) =>
-          void refreshProfileManagerList(target.dataset.settingsValue ?? "all"),
-        "browse-ffmpeg": () => void browseFfmpeg(),
-        "browse-ffprobe": () => void browseFfprobe(),
+          insertNamingToken(target.dataset.settingsTarget ?? "", target.dataset.settingsToken ?? "", target),
+        "browse-ffmpeg": () => void browseTool("set-ffmpeg"),
+        "browse-ffprobe": () => void browseTool("set-ffprobe"),
+        "clear-ffmpeg": () => void clearTool("set-ffmpeg"),
+        "clear-ffprobe": () => void clearTool("set-ffprobe"),
         "refresh-encoders": () => void refreshEncoders(),
         "check-updates": () => void deps.checkForUpdates(),
         "copy-diagnostics": () => void deps.copyDiagnostics(),
         "open-support": (target) => void openSupportFolder(target.dataset.settingsValue ?? "logs"),
-        "clear-ffmpeg": () => clearFfmpeg(),
-        "clear-ffprobe": () => clearFfprobe(),
+        "export-settings": () => void exportSettings(),
+        "import-settings": () => void importSettings(),
+        "reset-settings": () => resetSettings(),
       },
       input: {
-        "profile-size": (target) => peSetSize((target as HTMLInputElement).value),
-        "profile-fps": (target) => peSetFps((target as HTMLInputElement).value),
-        "preview-output": () => updateExampleOutput(),
+        search: (target) => onSearchInput(target as HTMLInputElement),
+        "profile-size": (target) => peSetSize((target as HTMLInputElement).value, true),
+        "profile-fps": () => updateEditorNote(),
+        "editor-name": () => updateEditorNote(),
+        "preview-output": (target) => updateExampleOutput(target as HTMLInputElement),
+        "filter-shortcuts": () => renderKeyboardList(),
       },
       change: {
         "profile-visibility": () => peVisibility(),
         "profile-encoder": () => peEncoderChanged(),
         "profile-speed": () => peSpeedChanged(),
         "profile-preset": () => pePresetChanged(),
-        "mark-dirty": () => void autosave(),
+        save: () => void autosave(),
+        location: (target) => void chooseLocation(target as HTMLInputElement),
         visibility: () => {
           syncVisibilityChoices();
           void autosave();
+        },
+        "filter-profiles": (target) => {
+          profileFilter = (target as HTMLInputElement).value;
+          void refreshProfileManagerList();
         },
       },
     },
     "settings",
   );
 
+  // the editor tracks every field, including the ones without their own handler
+  el("settings-page").addEventListener("input", () => updateEditorNote());
+  el("settings-page").addEventListener("change", () => updateEditorNote());
+
+  // Esc in the search field clears it first, then closes Settings
+  byId("settings-search")?.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || !(event.target as HTMLInputElement).value) return;
+    event.preventDefault();
+    event.stopPropagation();
+    clearSearchField();
+    leaveSearch();
+  });
+
+  // Esc closes an open menu first and keeps Settings open
+  el("settings-workspace").addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    const menu = (event.target as HTMLElement).closest?.<HTMLDetailsElement>(".set-token-menu[open], .profile-actions-menu[open]")
+      ?? document.querySelector<HTMLDetailsElement>("#settings-page .set-token-menu[open], #settings-page .profile-actions-menu[open]");
+    if (!menu) return;
+    event.preventDefault();
+    event.stopPropagation();
+    menu.removeAttribute("open");
+    menu.querySelector<HTMLElement>("summary")?.focus();
+  });
+
+  // a token menu closes when focus or a click goes elsewhere
+  document.addEventListener("click", (event) => {
+    for (const menu of document.querySelectorAll<HTMLDetailsElement>(".set-token-menu[open], .profile-actions-menu[open]")) {
+      if (!menu.contains(event.target as Node)) menu.removeAttribute("open");
+    }
+  });
+
   return {
     toggle,
     open,
     close,
-    isOpen: () => document.body.classList.contains("settings-open"),
+    isOpen,
   };
 }
 

@@ -1,6 +1,21 @@
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use serde::{Deserialize, Serialize};
 
 pub const MAXIMIZED_EVENT: &str = "window-maximized";
+
+// the page's zoom from the interface size setting; CSS pixels from the page are this many
+// logical pixels, so native positions taken from the page must include it
+static PAGE_ZOOM_BITS: AtomicU64 = AtomicU64::new(0x3FF0_0000_0000_0000); // 1.0
+
+pub fn set_page_zoom(zoom: f64) {
+    PAGE_ZOOM_BITS.store(zoom.to_bits(), Ordering::Relaxed);
+}
+
+/// Physical pixels per CSS pixel for a display `scale`.
+pub fn css_to_physical(scale: f64) -> f64 {
+    scale * f64::from_bits(PAGE_ZOOM_BITS.load(Ordering::Relaxed))
+}
 
 /// Where the HTML maximize button sits, in CSS pixels, measured from the window's right edge.
 #[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
@@ -59,6 +74,14 @@ mod tests {
             width,
             height,
         }
+    }
+
+    #[test]
+    fn page_zoom_scales_css_pixels_with_the_display() {
+        set_page_zoom(1.1);
+        assert!((css_to_physical(1.5) - 1.65).abs() < 1e-9);
+        set_page_zoom(1.0);
+        assert!((css_to_physical(1.5) - 1.5).abs() < 1e-9);
     }
 
     #[test]

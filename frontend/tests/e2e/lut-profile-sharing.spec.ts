@@ -43,16 +43,17 @@ for (const width of [1240, 960]) {
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
     await expect(page.locator("#mod-box")).not.toHaveAttribute("aria-describedby");
-    await expect(exportButton).toBeFocused();
+    // choosing an item closed the menu, so focus comes back to the menu button
+    await expect(page.getByLabel("More actions for Look", { exact: true })).toBeFocused();
+    await expect(exportButton).toBeHidden();
+    await page.getByLabel("More actions for Look", { exact: true }).click();
     await exportButton.click();
     await dialog.getByRole("button", { name: "Export profile" }).click();
     await expect.poll(() => page.evaluate(() => window.__tuckFakeBackendCalls?.filter(c => c.method === "exportProfileToFile").length)).toBe(1);
-    await page.getByLabel("More actions for Look", { exact: true }).click();
     await page.getByLabel("More actions for Disabled look", { exact: true }).click();
     await page.locator('[data-profile-action="export"][data-profile-id="off"]').click();
     await expect(dialog).toBeVisible();
     await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
-    await page.getByLabel("More actions for Disabled look", { exact: true }).click();
     await page.getByLabel("More actions for Plain", { exact: true }).click();
     await page.locator('[data-profile-action="export"][data-profile-id="plain"]').click();
     await expect(dialog).toBeHidden();
