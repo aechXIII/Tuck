@@ -15,7 +15,7 @@ async function expectPlayerLayout(page: Page, aspect: number) {
   await expect.poll(() => page.evaluate((ratio) => {
     const box = (id: string) => document.getElementById(id)!.getBoundingClientRect();
     const main = box("main"), center = box("center"), stage = box("stage");
-    const frame = box("media-viewport"), bar = box("player-bar");
+    const frame = box("media-viewport"), bar = box("player-bar"), play = box("btn-play");
     const library = document.body.classList.contains("library-panel-open") && window.innerWidth >= 1180;
     const inspector = document.body.classList.contains("inspector-panel-open") && window.innerWidth >= 1180;
     return Math.max(
@@ -24,7 +24,10 @@ async function expectPlayerLayout(page: Page, aspect: number) {
       Math.abs(center.right - (inspector ? box("right").left - 8 : window.innerWidth - 8)),
       library ? Math.abs(box("left").width - 232) : 0,
       inspector ? Math.abs(box("right").width - 344) : 0,
-      Math.abs(bar.bottom - (center.bottom - 10)),
+      Math.abs(bar.bottom - center.bottom),
+      // the screen keeps the same inset from the card on every side, controls included
+      Math.abs(stage.top - center.top - 8), Math.abs(stage.left - center.left - 8),
+      Math.abs(center.right - stage.right - 8), Math.abs(play.top - stage.bottom - 8),
       Math.abs(frame.left + frame.width / 2 - stage.left - stage.width / 2),
       Math.abs(frame.top + frame.height / 2 - stage.top - stage.height / 2),
       Math.abs(frame.width - frame.height * ratio),

@@ -1,5 +1,7 @@
-/* the workspace owns the panel size; the video fits inside it */
+/* the workspace owns the panel size, so nothing moves when a video's shape changes; inside the
+   card the picture sits on a recessed screen with the same small inset on every side */
 #center {
+  --player-inset: 8px;
   flex: 1 1 0;
   height: 100%;
   min-height: 0;
@@ -8,7 +10,7 @@
   display: flex;
   flex-direction: column;
   min-width: 320px;
-  padding: 10px;
+  padding: var(--player-inset) var(--player-inset) 0;
 }
 #empty {
   flex: 1;
@@ -23,31 +25,36 @@
   font-size: 18px;
   font-weight: 600;
 }
-/* bars around a video that is not the player's shape take the card's colour, so the video sits
-   on the card instead of in a black box; full screen stays black */
+/* the screen is darker than the card, so bars beside a video of another shape read as part of
+   the screen rather than as a frame; the picture is centred, so they split evenly */
 #stage {
   flex: 1 1 0;
   min-height: 0;
-  background: var(--panel);
-  border-radius: 8px 8px 0 0;
+  background: var(--sink);
+  border-radius: calc(var(--r-card) - var(--player-inset));
   overflow: hidden;
   position: relative;
   display: none;
 }
 #center:fullscreen {
   height: 100%;
+  padding: 0;
+  border-radius: 0;
 }
 #center:fullscreen #stage {
   background: #000;
+  border-radius: 0;
 }
+/* the controls sit on the card, one inset below the screen and one above the card's edge */
 #player-bar {
   display: none;
-  background: var(--raised);
-  border-radius: 0 0 8px 8px;
   flex-shrink: 0;
-  padding: 8px 12px;
+  padding: var(--player-inset) 4px;
   gap: 0;
   flex-direction: column;
+}
+#center:fullscreen #player-bar {
+  padding-inline: 12px;
 }
 #player-bar.on {
   display: flex;
@@ -232,8 +239,8 @@ body:not(.task-cut) #stage-controls [data-cut-only] {
   stroke-linejoin: round;
 }
 #btn-play {
-  width: 34px;
-  height: 34px;
+  width: 30px;
+  height: 30px;
   margin: 0 4px;
   border-radius: 50%;
   background: var(--action);
