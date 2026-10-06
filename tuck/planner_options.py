@@ -13,7 +13,7 @@ from .models.encoding_policy import (
     validate_rc_method_for_encoder,
     validate_tune_for_encoder,
 )
-from .models.export_preferences import output_targets
+from .models.export_preferences import NAME_TAKEN_REPLACE, output_targets
 
 
 class OutputOptions(TypedDict):
@@ -22,6 +22,7 @@ class OutputOptions(TypedDict):
     compression_suffix: str
     upscale_suffix: str
     keep_file_dates: bool
+    replace_existing: bool
 
 
 class CutOutputOptions(TypedDict):
@@ -44,6 +45,7 @@ def output_options(settings: AppSettings) -> OutputOptions:
         "compression_suffix": str(settings.compression_suffix or "_tucked_{size}"),
         "upscale_suffix": str(settings.upscale_suffix or "_upscaled_{width}x{height}"),
         "keep_file_dates": settings.keep_file_dates is True,
+        "replace_existing": settings.name_taken == NAME_TAKEN_REPLACE,
     }
 
 

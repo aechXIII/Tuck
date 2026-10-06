@@ -62,6 +62,11 @@ def normalize_output_subfolder(value: object) -> str:
     return name
 
 
+NAME_TAKEN_NUMBER = "number"
+NAME_TAKEN_REPLACE = "replace"
+NAME_TAKEN_CHOICES: tuple[str, ...] = (NAME_TAKEN_NUMBER, NAME_TAKEN_REPLACE)
+
+
 def output_targets(location: str, output_dir: str, subfolder: str) -> tuple[str, str]:
     """Return the (folder, subfolder) pair the planners use for a stored location.
 

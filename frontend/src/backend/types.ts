@@ -59,6 +59,14 @@ export interface Settings extends JsonObject {
   readonly background_exports?: boolean;
   readonly reopen_last_videos?: boolean;
   readonly last_session_files?: readonly string[];
+  readonly loop_playback?: boolean;
+  /** how far Shift with an arrow key skips: "1", "3", "5", or "10" seconds */
+  readonly skip_seconds?: string;
+  readonly name_taken?: "number" | "replace";
+  /** profiles listed first in the profile picker */
+  readonly pinned_profile_ids?: readonly string[];
+  /** profiles left out of the profile picker */
+  readonly hidden_profile_ids?: readonly string[];
 }
 
 export type AccentColor = "violet" | "blue" | "teal" | "green" | "amber" | "rose";

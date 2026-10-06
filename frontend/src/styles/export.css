@@ -282,6 +282,19 @@
   border-radius: 6px;
   cursor: pointer;
 }
+.profile-option.pinned-last {
+  position: relative;
+  margin-bottom: 9px;
+}
+.profile-option.pinned-last::after {
+  content: "";
+  position: absolute;
+  right: 10px;
+  bottom: -5px;
+  left: 10px;
+  border-bottom: 1px solid var(--hair-2);
+  pointer-events: none;
+}
 .profile-option:hover,
 .profile-option:focus {
   background: var(--raised-2);

@@ -63,6 +63,7 @@ def plan(
     audio_source_durations: dict[str, float] | None = None,
     output_subfolder: str = "",
     keep_file_dates: bool = False,
+    replace_existing: bool = False,
 ) -> EncodePlan:
     from .probe import probe
 
@@ -203,7 +204,9 @@ def plan(
     if output.resolve() == source.resolve():
         raise ValueError("Output path must differ from source path")
 
-    output = resolve_output_collision(output, respect_reservation=False)
+    # replacing keeps the chosen name; the old file is only swapped out once the export is done
+    if not replace_existing:
+        output = resolve_output_collision(output, respect_reservation=False)
 
     oriented_width, oriented_height = oriented_dimensions(transform, info.width, info.height)
     resolution_width, resolution_height = oriented_width, oriented_height
@@ -427,6 +430,7 @@ def plan(
         segments=segments,
         transform=transform,
         keep_file_dates=keep_file_dates,
+        replace_existing=replace_existing,
     )
 
     logger.info(

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import re
 
+from .export_preferences import NAME_TAKEN_CHOICES
+
 EXPORT_TASKS: tuple[str, ...] = ("compression", "upscale", "cut")
 
 # order here is the stored order, so saved lists stay stable across edits
@@ -88,17 +90,22 @@ FLAG_PREFERENCES: tuple[str, ...] = (
     "notify_when_done",
     "keep_awake",
     "background_exports",
+    "loop_playback",
 )
 
 ACCENT_COLORS: tuple[str, ...] = ("violet", "blue", "teal", "green", "amber", "rose")
 INTERFACE_SIZES: tuple[str, ...] = ("compact", "default", "large")
 TIME_FORMATS: tuple[str, ...] = ("seconds", "timecode", "frames")
+# how far Shift with the arrow keys skips, in seconds
+SKIP_LENGTHS: tuple[str, ...] = ("1", "3", "5", "10")
 
 # the frontend owns what each choice looks like; Python only keeps the stored value known
 CHOICE_PREFERENCES: dict[str, tuple[str, ...]] = {
     "accent_color": ACCENT_COLORS,
     "interface_size": INTERFACE_SIZES,
     "time_format": TIME_FORMATS,
+    "skip_seconds": SKIP_LENGTHS,
+    "name_taken": NAME_TAKEN_CHOICES,
 }
 
 
@@ -107,6 +114,37 @@ def normalize_choice(key: str, value: object) -> str:
     if not isinstance(value, str) or value not in choices:
         raise ValueError(f"{key} must be one of: {', '.join(choices)}")
     return value
+
+
+# pinned and hidden profiles in the picker; ids only, so profiles.json keeps its format
+PROFILE_LIST_PREFERENCES: tuple[str, ...] = ("pinned_profile_ids", "hidden_profile_ids")
+PROFILE_LIST_MAX = 200
+_PROFILE_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
+
+
+def normalize_profile_ids(key: str, value: object) -> list[str]:
+    if not isinstance(value, list):
+        raise ValueError(f"{key} must be a list of profile ids")
+    if len(value) > PROFILE_LIST_MAX:
+        raise ValueError(f"{key} can list at most {PROFILE_LIST_MAX} profiles")
+    clean: list[str] = []
+    for item in value:
+        if not isinstance(item, str) or not _PROFILE_ID.match(item):
+            raise ValueError(f"{key} must only list profile ids")
+        if item not in clean:
+            clean.append(item)
+    return clean
+
+
+def clean_profile_ids(value: object) -> list[str]:
+    """Keep the usable ids from a stored value instead of dropping the whole list."""
+    if not isinstance(value, list):
+        return []
+    clean: list[str] = []
+    for item in value:
+        if isinstance(item, str) and _PROFILE_ID.match(item) and item not in clean:
+            clean.append(item)
+    return clean[:PROFILE_LIST_MAX]
 
 
 SESSION_FILES_MAX = 500

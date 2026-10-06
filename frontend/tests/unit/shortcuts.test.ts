@@ -65,6 +65,10 @@ test("production commands are the source of the existing shortcut guide", () => 
     "playback.seek-forward": ["Shift+ArrowRight"],
     "playback.seek-start": ["Ctrl+ArrowLeft"],
     "playback.seek-end": ["Ctrl+ArrowRight"],
+    "timeline.previous-cut": [","],
+    "timeline.next-cut": ["."],
+    "playback.slower": ["<"],
+    "playback.faster": [">"],
     "media.select-previous": ["ArrowUp"],
     "media.select-next": ["ArrowDown"],
     "timeline.add-segment": ["A"],
@@ -124,13 +128,15 @@ test("production commands are the source of the existing shortcut guide", () => 
             bindings: "← or →",
           },
           {
-            label: "Skip 3 seconds",
+            label: "Skip back / forward",
             bindings: "Shift + ← or Shift + →",
           },
           {
             label: "Go to beginning / end",
             bindings: "Ctrl + ← or Ctrl + →",
           },
+          { label: "Previous / next cut point", bindings: ", or ." },
+          { label: "Slower / faster playback", bindings: "< or >" },
           {
             label: "Previous / next Library video",
             bindings: "↑ or ↓",
@@ -806,7 +812,7 @@ test("the production guide renders every physical key with one base keycap style
     ),
   );
 
-  assert.equal(shortcuts.search(shortcuts.sections, "").total, 20);
+  assert.equal(shortcuts.search(shortcuts.sections, "").total, 22);
   assert.deepEqual(
     Array.from(shortcutIds).filter((id) => !renderedIds.has(id)),
     [],

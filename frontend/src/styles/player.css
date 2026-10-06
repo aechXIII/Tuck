@@ -252,6 +252,27 @@ body:not(.task-cut) #stage-controls [data-cut-only] {
   flex-shrink: 0;
   letter-spacing: 0.02em;
 }
+.speed-chip {
+  flex-shrink: 0;
+  height: 20px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--r-chip);
+  background: var(--raised);
+  color: var(--accent-light);
+  font: 600 11px var(--mono);
+  cursor: pointer;
+}
+.speed-chip[hidden] {
+  display: none;
+}
+.speed-chip:hover {
+  background: var(--raised-2);
+}
+.speed-chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 #player-vol {
   display: flex;
   align-items: center;

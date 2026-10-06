@@ -53,3 +53,47 @@ test("changing source or disposing abandons a queued seek", () => {
     player.dispose();
   }
 });
+
+function loopSetup(loop: boolean) {
+  const calls: string[] = [];
+  const video = Object.assign(new EventTarget(), {
+    currentTime: 5,
+    paused: false,
+    duration: 10,
+    pause() { calls.push("pause"); this.paused = true; },
+    play() { calls.push("play"); this.paused = false; return Promise.resolve(); },
+  });
+  const segments = [{ start: 2, end: 4 }];
+  const host: PlayerHost = {
+    byId: <T extends HTMLElement>(id: string) => id === "vid" ? video as unknown as T : null,
+    clips: () => ({ a: {} as never }), selPath: () => "a",
+    getMuted: () => false, setMuted: () => {}, getVolBefore: () => 80, setVolBefore: () => {},
+    playbackSegments: () => segments, clipSegments: () => segments, videoDuration: () => 10,
+    setPlayheadUI: () => {}, document: {} as Document,
+    loopPlayback: () => loop,
+    clock: {
+      setTimeout: () => 0, clearTimeout: () => {},
+      requestAnimationFrame: () => 0, cancelAnimationFrame: () => {},
+    },
+  };
+  return { video, calls, player: installPlayer(host) };
+}
+
+test("past the last segment, playback loops back or stops as chosen", () => {
+  const looping = loopSetup(true);
+  try {
+    looping.player.updateTime();
+    assert.deepEqual(looping.calls, ["play"]);
+    assert.equal(looping.video.currentTime, 2);
+  } finally { looping.player.dispose(); }
+
+  const stopping = loopSetup(false);
+  try {
+    stopping.player.updateTime();
+    assert.deepEqual(stopping.calls, ["pause"]);
+    assert.equal(stopping.video.currentTime, 5);
+    // the end of the video doesn't start it again either
+    stopping.video.dispatchEvent(new Event("ended"));
+    assert.deepEqual(stopping.calls, ["pause"]);
+  } finally { stopping.player.dispose(); }
+});

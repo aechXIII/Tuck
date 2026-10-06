@@ -697,3 +697,57 @@ test("editor suppresses browser context menus but keeps text editing menus", asy
   const editingAllowed = await page.locator("#sz-badge").evaluate(el => el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })));
   expect(editingAllowed).toBe(true);
 });
+
+test("comma and period jump between cut points, and < > change the playback speed", async ({ page }) => {
+  const errors = collectPageErrors(page);
+  await installFakeBackend(page, editorFixture());
+  await page.goto("/");
+  await page.getByRole("button", { name: "Add videos" }).click();
+  await expect(page.locator(".tl-segment")).toHaveCount(1);
+  await seekOnRuler(page, 0.5);
+  await page.getByRole("button", { name: "Split at playhead" }).click();
+  await expect(page.locator(".tl-segment")).toHaveCount(2);
+  // the test video has no media, so finish each seek the way a loaded video would
+  const time = () => page.evaluate(() => {
+    const video = document.getElementById("vid") as HTMLVideoElement;
+    video.dispatchEvent(new Event("seeked"));
+    return video.currentTime;
+  });
+  await page.locator("body").click({ position: { x: 5, y: 5 } });
+
+  await page.keyboard.press("Control+ArrowLeft");
+  await expect.poll(time).toBe(0);
+  await page.keyboard.press(".");
+  await expect.poll(time).toBeCloseTo(6, 0);
+  await page.keyboard.press(".");
+  await expect.poll(time).toBeCloseTo(12, 0);
+  await page.keyboard.press(",");
+  await expect.poll(time).toBeCloseTo(6, 0);
+
+  const chip = page.locator("#btn-speed");
+  await expect(chip).toBeHidden();
+  await page.keyboard.press(">");
+  await expect(chip).toHaveText("1.5×");
+  await page.keyboard.press("<");
+  await page.keyboard.press("<");
+  await expect(chip).toHaveText("0.5×");
+  expect(await page.evaluate(() => (document.getElementById("vid") as HTMLVideoElement).playbackRate)).toBe(0.5);
+  await chip.click();
+  await expect(chip).toBeHidden();
+  expect(await page.evaluate(() => (document.getElementById("vid") as HTMLVideoElement).playbackRate)).toBe(1);
+  expect(errors).toEqual([]);
+});
+
+test("the skip length setting changes how far Shift with the arrows jumps", async ({ page }) => {
+  const fixture = editorFixture();
+  fixture.responses.getSettings = { ...fixture.responses.getSettings as object, skip_seconds: "5" };
+  await installFakeBackend(page, fixture);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Add videos" }).click();
+  await expect(page.locator(".tl-segment")).toHaveCount(1);
+  // a loaded video knows its length; the test video has no media to read it from
+  await page.evaluate(() => Object.defineProperty(document.getElementById("vid"), "duration", { value: 12 }));
+  await page.locator("body").click({ position: { x: 5, y: 5 } });
+  await page.keyboard.press("Shift+ArrowRight");
+  await expect.poll(() => page.evaluate(() => (document.getElementById("vid") as HTMLVideoElement).currentTime)).toBeCloseTo(5, 0);
+});

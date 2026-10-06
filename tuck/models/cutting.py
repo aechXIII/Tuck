@@ -278,6 +278,7 @@ class CutPlan:
     analysis: CutAnalysis | None = field(default=None, compare=False, repr=False)
     # a setting applied when the cut is saved; it doesn't change what is cut
     keep_file_dates: bool = field(default=False, compare=False)
+    replace_existing: bool = field(default=False, compare=False)
 
     @property
     def source(self) -> str:

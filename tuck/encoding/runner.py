@@ -253,7 +253,7 @@ class FFmpegEngine:
             plan.original_video_bitrate = plan.video_bitrate
 
         try:
-            with OutputTransaction(output) as transaction:
+            with OutputTransaction(output, replace=plan.replace_existing) as transaction:
                 plan.output = str(transaction.output)
                 tmp_output = transaction.workspace / "result.mp4"
                 if self._cancel_event.is_set():

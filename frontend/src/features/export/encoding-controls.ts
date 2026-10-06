@@ -13,6 +13,7 @@ import { hiddenParts, launchTask, taskAt, taskIndex, visibleTasks } from "../set
 import { legacyBackendResult } from "../editor/backend-compat.ts";
 import { closeMod, showMod, toast } from "../editor/toast.ts";
 import { profileChangeSummary, profileSummary } from "../profiles/profile-summary.ts";
+import { pickerProfiles } from "../profiles/profile-list.ts";
 import type { EditorClip } from "../editor/types.ts";
 import type { EditorSession } from "../editor/session.ts";
 import {
@@ -492,10 +493,17 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     if (wf === 2) { cutting.refresh(); return; }
     const up = wf === 1;
     const targetWf = up ? "upscale" : "compression";
-    const matching = profiles().filter(
-      (p) => (p.workflow || "compression") === targetWf,
-    );
     const lastId = up ? lastUpscale : lastComp;
+    const s = appSettings();
+    const ids = (value: unknown): string[] =>
+      Array.isArray(value) ? value.filter((id): id is string => typeof id === "string") : [];
+    const pinned = ids(s.pinned_profile_ids);
+    const matching = pickerProfiles(
+      profiles().filter((p) => (p.workflow || "compression") === targetWf),
+      pinned,
+      ids(s.hidden_profile_ids),
+      lastId ?? "",
+    );
     const sel = select("prof-sel");
     sel.replaceChildren();
     if (!matching.length) {
@@ -1248,6 +1256,8 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     profileSearchRow.hidden = select("prof-sel").options.length < selectSearchThreshold;
     const current = select("prof-sel").value;
     const changed = isProfileChanged();
+    const pinnedValue = appSettings().pinned_profile_ids;
+    const pinnedIds = new Set(Array.isArray(pinnedValue) ? pinnedValue : []);
     const rows = [...select("prof-sel").options].map((option, index) => {
       const row = document.createElement("div");
       row.className = "profile-option";
@@ -1258,6 +1268,8 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
       row.dataset.profileId = option.value;
       const selected = option.value === current;
       row.setAttribute("aria-selected", String(selected));
+      // pinned profiles lead the list; a rule sets them apart from the rest
+      row.classList.toggle("pinned", pinnedIds.has(option.value));
       const name = document.createElement("span");
       name.className = "profile-option-name";
       name.id = `${row.id}-name`;
@@ -1281,6 +1293,9 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
       return row;
     });
     el("prof-options").replaceChildren(...rows);
+    // the rule only shows when there are profiles on both sides of it
+    const lastPinned = rows.filter((row) => row.classList.contains("pinned")).at(-1);
+    if (lastPinned && lastPinned !== rows.at(-1)) lastPinned.classList.add("pinned-last");
     filterProfiles();
   }
 

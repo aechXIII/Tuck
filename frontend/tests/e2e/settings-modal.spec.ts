@@ -514,3 +514,44 @@ test("an empty export folder name is explained beside the field", async ({ page 
   await expect(page.locator("#set-subfolder-error")).toHaveText("Enter a name for the export folder.");
   await expect(name).toHaveAttribute("aria-invalid", "true");
 });
+
+test("loop, skip length and what happens to a taken name are saved", async ({ page }) => {
+  await start(page);
+  await openSettings(page);
+  const loop = page.getByRole("switch", { name: "Loop playback" });
+  await expect(loop).toBeChecked();
+  await page.getByText("Loop playback", { exact: true }).click();
+  await savedWith(page, "loop_playback", false);
+  await page.getByRole("radio", { name: "10 s" }).check();
+  await savedWith(page, "skip_seconds", "10");
+  await page.locator("#settings-nav-files").click();
+  await expect(page.getByRole("radio", { name: "Add a number" })).toBeChecked();
+  await page.getByRole("radio", { name: "Replace the old file" }).check();
+  await savedWith(page, "name_taken", "replace");
+});
+
+test("pinned profiles lead the picker and hidden ones leave it", async ({ page }) => {
+  const many = [
+    { profile_id: "everyday", name: "Everyday", workflow: "compression", builtin: true },
+    { profile_id: "sharing", name: "Sharing", workflow: "compression", builtin: false },
+    { profile_id: "archive", name: "Archive", workflow: "compression", builtin: false },
+  ];
+  await start(page, { profiles: many }, { getProfilesJson: many });
+  await openSettings(page, "profiles");
+  await page.getByLabel("More actions for Archive", { exact: true }).click();
+  await page.getByRole("menuitem", { name: "Pin to top of picker" }).click();
+  await savedWith(page, "pinned_profile_ids", ["archive"]);
+  await expect(page.getByRole("list", { name: "Your profiles" }).locator(".set-profile-row").filter({ hasText: "Archive" }))
+    .toContainText("Pinned");
+  await expect(page.getByLabel("More actions for Archive", { exact: true })).toBeFocused();
+  await page.getByLabel("More actions for Sharing", { exact: true }).click();
+  await page.getByRole("menuitem", { name: "Hide from picker" }).click();
+  await savedWith(page, "hidden_profile_ids", ["sharing"]);
+  await page.getByRole("button", { name: "Close settings" }).click();
+
+  await page.getByRole("button", { name: "Inspector", exact: true }).click();
+  await page.locator("#prof-pick").click();
+  const names = page.locator("#prof-options .profile-option-name");
+  await expect(names).toHaveText(["Archive", "Everyday"]);
+  await expect(page.locator("#prof-options .profile-option.pinned-last")).toHaveCount(1);
+});

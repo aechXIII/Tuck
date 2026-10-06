@@ -5,6 +5,8 @@ import { accentColor, applyAppearance, createInterfaceSizer, interfaceSize } fro
 import { formatClockTime, timeFormat } from "../../src/features/editor/time-format.ts";
 import { createSessionFiles, SESSION_FILES_MAX } from "../../src/features/library/session-files.ts";
 import { finishedNotification } from "../../src/features/queue/queue-view.ts";
+import { nextPlaybackSpeed, PLAYBACK_SPEEDS } from "../../src/features/player/player.ts";
+import { cutPointNear } from "../../src/features/timeline/segments.ts";
 import {
   highlightParts,
   searchSettings,
@@ -216,4 +218,26 @@ test("the finished notification counts only the batch that just ran", () => {
   });
   // cancelling everything is not news
   assert.equal(finishedNotification([...items, { id: "d", state: "cancelled" }], { d: true }), null);
+});
+
+test("playback speed steps through the list and stops at both ends", () => {
+  assert.equal(nextPlaybackSpeed(1, 1), 1.5);
+  assert.equal(nextPlaybackSpeed(1, -1), 0.5);
+  assert.equal(nextPlaybackSpeed(4, 1), 4);
+  assert.equal(nextPlaybackSpeed(0.25, -1), 0.25);
+  // a speed set elsewhere snaps to the nearest step first
+  assert.equal(nextPlaybackSpeed(1.1, 1), 1.5);
+  assert.deepEqual([...PLAYBACK_SPEEDS], [0.25, 0.5, 1, 1.5, 2, 4]);
+});
+
+test("cut points are segment edges and the video's own start and end", () => {
+  const segments = [{ start: 2, end: 4 }, { start: 6, end: 8 }];
+  assert.equal(cutPointNear(segments, 5, 1, 10), 6);
+  assert.equal(cutPointNear(segments, 5, -1, 10), 4);
+  // already on a cut point, the next press moves on
+  assert.equal(cutPointNear(segments, 6, 1, 10), 8);
+  assert.equal(cutPointNear(segments, 8, 1, 10), 10);
+  assert.equal(cutPointNear(segments, 10, 1, 10), null);
+  assert.equal(cutPointNear(segments, 0, -1, 10), null);
+  assert.equal(cutPointNear([], 3, -1, 10), 0);
 });

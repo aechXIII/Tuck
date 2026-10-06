@@ -317,6 +317,24 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         checked: s.reopen_last_videos === true,
         attributes: { "data-settings-change": "save" },
       }),
+    )) + section("Playback", card(
+      switchRow({
+        setting: "loop",
+        id: "set-loop",
+        label: "Loop playback",
+        description: "Start again from the first segment after the last one ends.",
+        checked: s.loop_playback !== false,
+        attributes: { "data-settings-change": "save" },
+      }),
+      row({
+        setting: "skip-length",
+        label: "Skip length",
+        description: "How far Shift with ← or → jumps.",
+        control: choiceGroup("set-skip", "Skip length", ["1", "3", "5", "10"].map((value) => ({
+          value,
+          label: `${value} s`,
+        })), str(s.skip_seconds, "3"), { "data-settings-change": "save" }),
+      }),
     )) + section("Timeline", card(
       row({
         setting: "time-format",
@@ -471,7 +489,16 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       naming("suffix-compression", "set-cs", "Compress", str(s.compression_suffix, DEFAULT_COMPRESSION_SUFFIX) || DEFAULT_COMPRESSION_SUFFIX, "compress"),
       naming("suffix-upscale", "set-us", "Upscale", str(s.upscale_suffix, DEFAULT_UPSCALE_SUFFIX) || DEFAULT_UPSCALE_SUFFIX, "upscale"),
       naming("suffix-cut", "set-cuts", "Lossless cut", str(s.cut_suffix, DEFAULT_CUT_SUFFIX) || DEFAULT_CUT_SUFFIX, "cut"),
-    ), { description: "Added to the source name. If a file exists, Tuck adds a number." });
+      row({
+        setting: "name-taken",
+        label: "If the name is taken",
+        description: "A replaced file is swapped out only once the new one is finished.",
+        control: choiceGroup("set-name-taken", "If the name is taken", [
+          { value: "number", label: "Add a number" },
+          { value: "replace", label: "Replace the old file" },
+        ], str(s.name_taken, "number"), { "data-settings-change": "save" }),
+      }),
+    ), { description: "Added to the source name." });
   }
 
   function queueHtml(s: SettingsRecord): string {
@@ -669,6 +696,8 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
           start_task: select("set-start-task").value,
           inspector_start_panel: select("set-inspector-start").value,
           reopen_last_videos: checked("set-reopen"),
+          loop_playback: checked("set-loop"),
+          skip_seconds: radio("set-skip", "3"),
           time_format: radio("set-time-format", "seconds"),
         };
       case "appearance":
@@ -689,6 +718,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
           compression_suffix: input("set-cs").value.trim() || DEFAULT_COMPRESSION_SUFFIX,
           upscale_suffix: input("set-us").value.trim() || DEFAULT_UPSCALE_SUFFIX,
           cut_suffix: input("set-cuts").value.trim() || DEFAULT_CUT_SUFFIX,
+          name_taken: radio("set-name-taken", "number"),
         };
       }
       case "queue":
@@ -1178,7 +1208,12 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     const rows = Array.isArray(profiles) ? profiles : [];
     const visible = rows.filter((p) => profileFilter === "all" || (p.workflow || "compression") === profileFilter);
     const defaultProfileId = str(appSettings().default_profile_id);
-    const options = { defaultProfileId, summarize: profileSummary };
+    const options = {
+      defaultProfileId,
+      summarize: profileSummary,
+      pinned: new Set(profileIdList("pinned_profile_ids")),
+      hidden: new Set(profileIdList("hidden_profile_ids")),
+    };
     renderProfileList(document, own, visible.filter((p) => !p.builtin), {
       ...options,
       empty: profileFilter === "all" ? "None yet. Duplicate a built-in profile or select New profile." : "None of yours for this task.",
@@ -1188,6 +1223,10 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       bindProfileActions(list, (action, profileId, name) => {
         if (action === "edit") void editProfile(profileId);
         else if (action === "default") void setDefaultProfile(profileId, name);
+        else if (action === "pin" || action === "unpin")
+          void setPickerChoice("pinned_profile_ids", profileId, action === "pin", name);
+        else if (action === "hide" || action === "show")
+          void setPickerChoice("hidden_profile_ids", profileId, action === "hide", name);
         else if (action === "export") {
           const profile = rows.find((entry) => entry.profile_id === profileId);
           const lut = lutSettings(profile?.lut);
@@ -1225,6 +1264,33 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     const rows = place ? Array.from(place.list.querySelectorAll<HTMLElement>(".set-profile-row")) : [];
     const row = match ?? rows[Math.min(place?.index ?? 0, rows.length - 1)];
     (row?.querySelector<HTMLElement>("summary") ?? byId("settings-page-title"))?.focus();
+  }
+
+  type PickerList = "pinned_profile_ids" | "hidden_profile_ids";
+
+  function profileIdList(key: PickerList): string[] {
+    const value = appSettings()[key];
+    return Array.isArray(value) ? value.filter((id): id is string => typeof id === "string") : [];
+  }
+
+  // pinning and hiding only change how the editor's profile picker lists profiles
+  async function setPickerChoice(key: PickerList, profileId: string, on: boolean, name: string): Promise<void> {
+    const place = profileRowPlace(profileId);
+    const current = profileIdList(key);
+    const next = on ? [...current.filter((id) => id !== profileId), profileId] : current.filter((id) => id !== profileId);
+    const result = await legacyBackendResult(client().saveSettings({ [key]: next }));
+    if (!result.ok) {
+      toast(result.error ?? "Could not change the profile picker.", "err");
+      return;
+    }
+    session.appSettings[key] = next;
+    await deps.reloadEditorSettings();
+    await refreshProfileManagerList();
+    focusProfileRow(profileId, place);
+    const done = key === "pinned_profile_ids"
+      ? on ? "is pinned to the top of the picker" : "is no longer pinned"
+      : on ? "is hidden from the picker" : "is back in the picker";
+    toast(`“${name}” ${done}.`, "ok");
   }
 
   async function setDefaultProfile(profileId: string, name: string): Promise<void> {

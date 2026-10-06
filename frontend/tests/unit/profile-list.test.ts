@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   bindProfileActions,
+  pickerProfiles,
   renderProfileList,
   renderShortcutChoices,
 } from "../../src/features/profiles/profile-list.ts";
@@ -118,14 +119,30 @@ test("profile rows open the editor and offer Set as default only for other profi
   renderProfileList(fakeDocument, list as unknown as HTMLElement, profiles, {
     defaultProfileId: "default",
     summarize: () => "Compress · 20 MB",
+    pinned: new Set(["clips"]),
+    hidden: new Set(["default"]),
   });
   const rows = list.children;
   assert.equal(rows.length, 2);
   const actions = (row: FakeElement) => descendants(row).map((element) => element.dataset.profileAction).filter(Boolean);
-  assert.deepEqual(actions(rows[0]!), ["edit", "edit", "duplicate", "export", "delete"]);
-  assert.deepEqual(actions(rows[1]!), ["edit", "edit", "duplicate", "default", "export", "delete"]);
-  assert.ok(descendants(rows[0]!).some((element) => element.textContent === "Default"));
-  assert.ok(!descendants(rows[1]!).some((element) => element.textContent === "Default"));
+  assert.deepEqual(actions(rows[0]!), ["edit", "edit", "duplicate", "pin", "show", "export", "delete"]);
+  assert.deepEqual(actions(rows[1]!), ["edit", "edit", "duplicate", "default", "unpin", "hide", "export", "delete"]);
+  const tags = (row: FakeElement) => descendants(row).map((element) => element.textContent);
+  assert.ok(tags(rows[0]!).includes("Default") && tags(rows[0]!).includes("Hidden"));
+  assert.ok(!tags(rows[1]!).includes("Default") && tags(rows[1]!).includes("Pinned"));
+});
+
+test("the picker lists pinned profiles first and leaves hidden ones out", () => {
+  const all = ["a", "b", "c", "d"].map((profile_id) => ({ profile_id }));
+  const ids = (list: readonly { profile_id: string }[]) => list.map((profile) => profile.profile_id);
+  assert.deepEqual(ids(pickerProfiles(all, [], [], "")), ["a", "b", "c", "d"]);
+  // pinned in the order they were pinned, the rest in their own order
+  assert.deepEqual(ids(pickerProfiles(all, ["d", "b"], [], "")), ["d", "b", "a", "c"]);
+  assert.deepEqual(ids(pickerProfiles(all, [], ["b", "c"], "")), ["a", "d"]);
+  // the profile in use stays, so the picker never loses the current choice
+  assert.deepEqual(ids(pickerProfiles(all, [], ["b", "c"], "c")), ["a", "c", "d"]);
+  // hiding everything hides nothing
+  assert.deepEqual(ids(pickerProfiles(all, [], ["a", "b", "c", "d"], "")), ["a", "b", "c", "d"]);
 });
 
 test("an empty profile list says so in its own words", () => {

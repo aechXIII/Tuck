@@ -620,3 +620,130 @@ class TestSettingsBackup:
         settings = api.get_settings()
         assert settings["time_format"] == "seconds"
         assert any(p["profile_id"] == profile_id for p in api.get_profiles_json())
+
+
+class TestWhenANameIsTaken:
+    def _transaction(self, tmp_path, *, replace: bool):
+        from tuck.output_transaction import OutputTransaction
+
+        return OutputTransaction(tmp_path / "clip_tucked.mp4", replace=replace)
+
+    def _finish(self, transaction) -> Path:
+        result = transaction.workspace / "result.mp4"
+        result.write_bytes(b"new")
+        return transaction.publish(result)
+
+    def test_by_default_a_number_is_added(self, tmp_path):
+        (tmp_path / "clip_tucked.mp4").write_bytes(b"old")
+        with self._transaction(tmp_path, replace=False) as transaction:
+            output = self._finish(transaction)
+        assert output.name == "clip_tucked_1.mp4"
+        assert (tmp_path / "clip_tucked.mp4").read_bytes() == b"old"
+
+    def test_replacing_swaps_the_old_file_only_when_the_export_is_done(self, tmp_path):
+        old = tmp_path / "clip_tucked.mp4"
+        old.write_bytes(b"old")
+        with self._transaction(tmp_path, replace=True) as transaction:
+            # the old file is still there while the export runs
+            assert old.read_bytes() == b"old"
+            output = self._finish(transaction)
+        assert output == old.absolute()
+        assert old.read_bytes() == b"new"
+        assert sorted(path.name for path in tmp_path.iterdir()) == ["clip_tucked.mp4"]
+
+    def test_a_cancelled_export_leaves_the_old_file(self, tmp_path):
+        old = tmp_path / "clip_tucked.mp4"
+        old.write_bytes(b"old")
+        with pytest.raises(RuntimeError), self._transaction(tmp_path, replace=True):
+            raise RuntimeError("cancelled")
+        assert old.read_bytes() == b"old"
+        assert sorted(path.name for path in tmp_path.iterdir()) == ["clip_tucked.mp4"]
+
+    def test_a_file_that_cant_be_replaced_keeps_both(self, tmp_path, monkeypatch):
+        import tuck.output_transaction as transaction_mod
+
+        old = tmp_path / "clip_tucked.mp4"
+        old.write_bytes(b"old")
+
+        def locked(src, dst):
+            raise PermissionError("in use by another program")
+
+        monkeypatch.setattr(transaction_mod.os, "replace", locked)
+        with self._transaction(tmp_path, replace=True) as transaction:
+            output = self._finish(transaction)
+        assert output.name == "clip_tucked_1.mp4"
+        assert output.read_bytes() == b"new"
+        assert old.read_bytes() == b"old"
+
+    def test_another_export_writing_the_same_name_gets_a_number(self, tmp_path):
+        with (
+            self._transaction(tmp_path, replace=True) as first,
+            self._transaction(tmp_path, replace=True) as second,
+        ):
+            assert first.output.name == "clip_tucked.mp4"
+            assert second.output.name == "clip_tucked_1.mp4"
+
+    def test_the_choice_reaches_encode_and_cut_plans(self, tmp_path):
+        source = tmp_path / "a.mp4"
+        source.write_bytes(b"x")
+        (tmp_path / "a_tucked_10MB.mp4").write_bytes(b"old")
+        info = VideoInfo(
+            path=str(source), duration=10.0, width=1280, height=720, fps=30.0, video_codec="h264"
+        )
+        profile = Profile(name="t", profile_id="t", target_size_bytes=10 * 1024 * 1024)
+        api = BridgeAPI()
+        assert api.save_settings({"name_taken": "replace"}) == {"ok": True}
+        options = output_options(api._settings.load())
+        assert options["replace_existing"] is True
+        result = plan(source, profile, source_info=info, **options)
+        assert result.replace_existing is True
+        assert not Path(result.output).name.endswith("_1.mp4")
+        assert api.save_settings({"name_taken": "ask"})["ok"] is False
+
+
+class TestPickerAndPlayback:
+    def test_new_preferences_have_defaults_and_save(self):
+        api = BridgeAPI()
+        settings = api.get_settings()
+        assert settings["loop_playback"] is True
+        assert settings["skip_seconds"] == "3"
+        assert settings["name_taken"] == "number"
+        assert settings["pinned_profile_ids"] == []
+        assert settings["hidden_profile_ids"] == []
+        patch = {
+            "loop_playback": False,
+            "skip_seconds": "10",
+            "pinned_profile_ids": ["sharing", "discord-10mb", "sharing"],
+            "hidden_profile_ids": ["4k-upscale"],
+        }
+        assert api.save_settings(patch) == {"ok": True}
+        settings = api.get_settings()
+        assert settings["skip_seconds"] == "10"
+        assert settings["pinned_profile_ids"] == ["sharing", "discord-10mb"]
+
+    @pytest.mark.parametrize(
+        "patch",
+        [
+            {"skip_seconds": "7"},
+            {"skip_seconds": 3},
+            {"pinned_profile_ids": "sharing"},
+            {"pinned_profile_ids": ["../escape"]},
+            {"hidden_profile_ids": [1]},
+            {"hidden_profile_ids": ["x"] * 201},
+        ],
+    )
+    def test_bad_values_are_rejected(self, patch):
+        assert BridgeAPI().save_settings(patch)["ok"] is False
+
+    def test_a_hand_edited_list_keeps_what_it_can(self, tmp_path):
+        _write_settings(
+            tmp_path,
+            {
+                "version": 1,
+                "pinned_profile_ids": ["ok-id", 5, "Bad Id", "ok-id"],
+                "skip_seconds": 9,
+            },
+        )
+        settings = BridgeAPI().get_settings()
+        assert settings["pinned_profile_ids"] == ["ok-id"]
+        assert settings["skip_seconds"] == "3"

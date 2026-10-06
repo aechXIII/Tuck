@@ -9,6 +9,10 @@ export interface ProfileListOptions {
   summarize: (profile: ProfileListEntry) => string;
   /** shown in place of rows when there are none */
   empty?: string;
+  /** profiles listed first in the profile picker */
+  pinned?: ReadonlySet<string>;
+  /** profiles left out of the profile picker */
+  hidden?: ReadonlySet<string>;
 }
 
 export interface ShortcutChoiceOptions {
@@ -59,7 +63,10 @@ export function renderProfileList(
   list.replaceChildren();
   for (const profile of profiles) {
     const name = String(profile.name ?? "");
-    const isDefault = profile.profile_id === options.defaultProfileId;
+    const id = String(profile.profile_id ?? "");
+    const isDefault = id === options.defaultProfileId;
+    const pinned = options.pinned?.has(id) ?? false;
+    const hidden = options.hidden?.has(id) ?? false;
     const row = create(documentRef, "div", "set-row set-profile-row");
     row.setAttribute("role", "listitem");
 
@@ -69,6 +76,8 @@ export function renderProfileList(
     const title = create(documentRef, "span", "set-profile-title");
     title.appendChild(create(documentRef, "span", "set-label", name));
     if (isDefault) title.appendChild(create(documentRef, "span", "set-tag default", "Default"));
+    if (pinned) title.appendChild(create(documentRef, "span", "set-tag", "Pinned"));
+    if (hidden) title.appendChild(create(documentRef, "span", "set-tag", "Hidden"));
     main.appendChild(title);
     main.appendChild(create(documentRef, "span", "set-desc", options.summarize(profile)));
     row.appendChild(main);
@@ -83,6 +92,12 @@ export function renderProfileList(
       actionButton(documentRef, "Edit", "edit", profile),
       actionButton(documentRef, "Duplicate", "duplicate", profile),
       ...(isDefault ? [] : [actionButton(documentRef, "Set as default", "default", profile)]),
+      pinned
+        ? actionButton(documentRef, "Unpin", "unpin", profile)
+        : actionButton(documentRef, "Pin to top of picker", "pin", profile),
+      hidden
+        ? actionButton(documentRef, "Show in picker", "show", profile)
+        : actionButton(documentRef, "Hide from picker", "hide", profile),
       actionButton(documentRef, "Export…", "export", profile),
       actionButton(documentRef, "Delete", "delete", profile, "danger"),
     ];
@@ -182,4 +197,28 @@ export function bindProfileActions(
     }
     binding.callback(selected.action, selected.profileId, selected.profileName);
   });
+}
+
+/**
+ * The profiles the editor's picker offers, pinned ones first in the order they were pinned.
+ * Hidden profiles are left out, except the one in use, and hiding every profile hides none.
+ */
+export function pickerProfiles<T extends ProfileListEntry>(
+  profiles: readonly T[],
+  pinned: readonly string[],
+  hidden: readonly string[],
+  inUse: string,
+): T[] {
+  const hiddenIds = new Set(hidden);
+  const id = (profile: T): string => String(profile.profile_id ?? "");
+  let shown = profiles.filter((profile) => !hiddenIds.has(id(profile)) || id(profile) === inUse);
+  if (!shown.length) shown = [...profiles];
+  const rank = (profile: T): number => {
+    const index = pinned.indexOf(id(profile));
+    return index < 0 ? pinned.length : index;
+  };
+  return shown
+    .map((profile, index) => ({ profile, index }))
+    .sort((a, b) => rank(a.profile) - rank(b.profile) || a.index - b.index)
+    .map((entry) => entry.profile);
 }

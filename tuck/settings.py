@@ -67,7 +67,9 @@ from .models.ui_preferences import (
     CHOICE_PREFERENCES,
     DEFAULT_CUT_SUFFIX,
     FLAG_PREFERENCES,
+    PROFILE_LIST_PREFERENCES,
     START_TASK_LAST,
+    clean_profile_ids,
     clean_session_files,
     clean_shortcut_overrides,
     normalize_choice,
@@ -552,6 +554,9 @@ class SettingsManager:
             data["shortcut_overrides"] = clean_shortcut_overrides(data["shortcut_overrides"])
         if "last_session_files" in data:
             data["last_session_files"] = clean_session_files(data["last_session_files"])
+        for key in PROFILE_LIST_PREFERENCES:
+            if key in data:
+                data[key] = clean_profile_ids(data[key])
         # files from before the location choice: a chosen folder meant one folder for everything
         if "output_location" not in data:
             data["output_location"] = (

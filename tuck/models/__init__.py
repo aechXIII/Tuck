@@ -854,6 +854,7 @@ class EncodePlan:
     segments: list[Segment] = field(default_factory=list)
     transform: VideoTransform = field(default_factory=VideoTransform)
     keep_file_dates: bool = False
+    replace_existing: bool = False
 
     @property
     def effective_segments(self) -> list[Segment]:
@@ -1220,6 +1221,11 @@ class AppSettings:
     background_exports: bool = False
     reopen_last_videos: bool = False
     last_session_files: list[str] = field(default_factory=list)
+    loop_playback: bool = True
+    skip_seconds: str = "3"
+    name_taken: str = "number"
+    pinned_profile_ids: list[str] = field(default_factory=list)
+    hidden_profile_ids: list[str] = field(default_factory=list)
     window_width: int = 1240
     window_height: int = 800
     profiles: list[dict[str, Any]] = field(default_factory=list)

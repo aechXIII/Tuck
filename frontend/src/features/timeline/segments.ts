@@ -408,6 +408,25 @@ export function playbackTarget(
   return first ? first.start : null;
 }
 
+/**
+ * The nearest segment start or end before (-1) or after (1) the playhead, or null when there
+ * is none that way. The video's own start and end count too.
+ */
+export function cutPointNear(
+  segments: readonly SegmentRange[],
+  time: number,
+  direction: number,
+  duration: number,
+): number | null {
+  // a playhead already on a cut point moves on to the next one
+  const tolerance = 0.01;
+  const points = [0, duration, ...segments.flatMap((segment) => [segment.start, segment.end])]
+    .filter((point) => Number.isFinite(point) && point >= 0 && point <= duration)
+    .sort((a, b) => a - b);
+  if (direction < 0) return points.filter((point) => point < time - tolerance).at(-1) ?? null;
+  return points.find((point) => point > time + tolerance) ?? null;
+}
+
 export const SegmentEditing = {
   MIN_DURATION,
   fullSegment,

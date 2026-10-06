@@ -274,7 +274,7 @@ class ProcessingQueue:
                     raise ValueError("No plan associated with queue item")
 
                 attempt_plan = copy.deepcopy(plan)
-                if isinstance(attempt_plan, EncodePlan):
+                if isinstance(attempt_plan, EncodePlan) and not attempt_plan.replace_existing:
                     attempt_plan.output = str(resolve_output_collision(Path(attempt_plan.output)))
 
                 source = attempt_plan.source

@@ -1231,6 +1231,9 @@ export function installAudioTimeline(host: AudioTimelineHost) {
       let local = Math.max(0, time - active.timelineStart);
       let span = Math.max(_MIN_TRIM, active.sourceOut - active.sourceIn);
       let sourcePos = active.sourceIn + (active.loop ? local % span : local);
+      // imported audio plays at the video's speed, or the drift check below would keep seeking it
+      const rate = video.playbackRate || 1;
+      if (element.playbackRate !== rate) element.playbackRate = rate;
       if (!Number.isFinite(element.currentTime) || Math.abs(element.currentTime - sourcePos) > 0.12) {
         try {
           element.currentTime = sourcePos;

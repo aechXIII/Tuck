@@ -55,9 +55,11 @@ from .models.ui_preferences import (
     CHOICE_PREFERENCES,
     DEFAULT_CUT_SUFFIX,
     FLAG_PREFERENCES,
+    PROFILE_LIST_PREFERENCES,
     normalize_choice,
     normalize_cut_suffix,
     normalize_hidden_ui,
+    normalize_profile_ids,
     normalize_session_files,
     normalize_shortcut_overrides,
     normalize_start_task,
@@ -380,8 +382,12 @@ class BridgeAPI:
             check_request(work)
             request, fingerprint = parse_cut_export(raw, **self._cut_options())
             cut = self._cut_analysis.plan_for_export(request, fingerprint, work)
-            if self._settings.get_setting("keep_file_dates", False):
-                cut = replace(cut, keep_file_dates=True)
+            options = self._planning_options()
+            cut = replace(
+                cut,
+                keep_file_dates=options["keep_file_dates"],
+                replace_existing=options["replace_existing"],
+            )
             item = self._queue.enqueue(cut, work=work)
             return {"ok": True, "item_id": item.id}
         except CutPlanChanged as exc:
@@ -748,6 +754,11 @@ class BridgeAPI:
                 if s.reopen_last_videos
                 else list(s.last_session_files)
             ),
+            "loop_playback": s.loop_playback,
+            "skip_seconds": s.skip_seconds,
+            "name_taken": s.name_taken,
+            "pinned_profile_ids": list(s.pinned_profile_ids),
+            "hidden_profile_ids": list(s.hidden_profile_ids),
             "version": __version__,
             "ffmpeg_available": is_ffmpeg_available(),
             "ffprobe_available": is_ffprobe_available(),
@@ -792,6 +803,7 @@ class BridgeAPI:
             "last_session_files",
             *FLAG_PREFERENCES,
             *CHOICE_PREFERENCES,
+            *PROFILE_LIST_PREFERENCES,
         }
         preference_normalizers: dict[str, Callable[[object], object]] = {
             "hidden_ui": normalize_hidden_ui,
@@ -803,6 +815,7 @@ class BridgeAPI:
             "last_session_files": normalize_session_files,
             **{key: partial(normalize_timeline_toggle, key) for key in FLAG_PREFERENCES},
             **{key: partial(normalize_choice, key) for key in CHOICE_PREFERENCES},
+            **{key: partial(normalize_profile_ids, key) for key in PROFILE_LIST_PREFERENCES},
         }
         preferences: dict[str, object] = {}
         updates: dict[str, object] = {}

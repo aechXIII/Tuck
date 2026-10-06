@@ -36,6 +36,8 @@ export interface PlayerHost {
     ) => number | null;
   };
   syncTimelineUI?: () => void;
+  /** whether playback starts again from the first segment after the last one ends */
+  loopPlayback?: () => boolean;
   document?: Document;
   clock?: PlayerClock;
 }
@@ -55,7 +57,23 @@ export interface PlayerApi {
   setPreviewSec: (sec: number | null) => void;
   getPreviewSec: () => number | null;
   flushVideoSeek: () => void;
+  /** one step slower (-1) or faster (1) through the playback speeds */
+  changeSpeed: (direction: number) => void;
+  resetSpeed: () => void;
   dispose: () => void;
+}
+
+export const PLAYBACK_SPEEDS: readonly number[] = [0.25, 0.5, 1, 1.5, 2, 4];
+
+/** The speed one step away from `current` in `direction`, staying within the list. */
+export function nextPlaybackSpeed(current: number, direction: number): number {
+  const distance = (speed: number): number => Math.abs(speed - current);
+  let index = 0;
+  PLAYBACK_SPEEDS.forEach((speed, at) => {
+    if (distance(speed) < distance(PLAYBACK_SPEEDS[index] ?? 1)) index = at;
+  });
+  const next = Math.max(0, Math.min(PLAYBACK_SPEEDS.length - 1, index + Math.sign(direction)));
+  return PLAYBACK_SPEEDS[next] ?? 1;
 }
 
 const ICON_VOL =
@@ -165,7 +183,12 @@ export function installPlayer(host: PlayerHost): PlayerApi {
     }
   }
 
+  function loopEnabled(): boolean {
+    return host.loopPlayback?.() ?? true;
+  }
+
   function loopPlayback(): void {
+    if (!loopEnabled()) return;
     const segments = host.playbackSegments();
     const first = segments[0];
     if (first) continuePlaybackAt(first.start);
@@ -184,7 +207,9 @@ export function installPlayer(host: PlayerHost): PlayerApi {
     const clip = path ? host.clips()[path] : undefined;
     if (v && !v.paused && !looping && path && clip && full > 0) {
       const target = playbackTarget(host.clipSegments(clip, full), time, 0.04);
-      if (target != null) continuePlaybackAt(target);
+      // a target behind the playhead means the last segment has ended
+      if (target != null && target < time && !loopEnabled()) v.pause();
+      else if (target != null) continuePlaybackAt(target);
     }
   }
 
@@ -303,6 +328,31 @@ export function installPlayer(host: PlayerHost): PlayerApi {
     host.syncTimelineUI?.();
   }
 
+  function setSpeed(rate: number): void {
+    const v = byId<HTMLVideoElement>("vid");
+    if (v) {
+      v.playbackRate = rate;
+      // a newly loaded video keeps the chosen speed
+      v.defaultPlaybackRate = rate;
+    }
+    const badge = byId<HTMLButtonElement>("btn-speed");
+    if (badge) {
+      badge.hidden = rate === 1;
+      badge.textContent = `${rate}×`;
+      badge.setAttribute("aria-label", `Playing at ${rate}×. Back to normal speed`);
+      badge.dataset.tip = "Back to normal speed";
+    }
+  }
+
+  function changeSpeed(direction: number): void {
+    const v = byId<HTMLVideoElement>("vid");
+    setSpeed(nextPlaybackSpeed(v?.playbackRate || 1, direction));
+  }
+
+  function resetSpeed(): void {
+    setSpeed(1);
+  }
+
   const vid = byId<HTMLVideoElement>("vid");
   if (vid) {
     vid.addEventListener("emptied", resetSeek);
@@ -328,6 +378,8 @@ export function installPlayer(host: PlayerHost): PlayerApi {
     setVol,
     updateMuteIcon,
     continuePlaybackAt,
+    changeSpeed,
+    resetSpeed,
     setPreviewSec: (sec) => {
       previewSec = sec;
     },

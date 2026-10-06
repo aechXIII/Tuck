@@ -30,7 +30,7 @@ import {
 } from "../shortcuts/shortcuts-dialog.ts";
 import { installShortcuts, type ShortcutsApi } from "../shortcuts/shortcuts.ts";
 import { installTimeline } from "../timeline/timeline.ts";
-import { SegmentEditing } from "../timeline/segments.ts";
+import { cutPointNear, SegmentEditing } from "../timeline/segments.ts";
 import { installTransform, type TransformApi } from "../transform/transform.ts";
 import {
   installEncodingControls,
@@ -261,6 +261,7 @@ export function installEditorRuntime(
     Timeline: timeline,
     AudioTimeline: audio,
     syncTimelineUI: () => timeline.syncTimelineUI(),
+    loopPlayback: () => session.appSettings.loop_playback !== false,
     document: windowRef.document,
   });
 
@@ -576,6 +577,7 @@ export function installEditorRuntime(
         "encoding-toggle-advanced": () => encoding.toggleAdvanced(),
         "encoding-run-selected": () => void encoding.compressOne(),
         "encoding-run-all": () => void encoding.compressAll(),
+        "playback-speed-reset": () => player.resetSpeed(),
         "timeline-add-segment": () => timeline.addSegment(),
         "timeline-keyframe": (target) => timeline.seekToKeyframe(numericValue(target) < 0 ? -1 : 1),
         "cut-set-point": (target) =>
@@ -671,14 +673,37 @@ export function installEditorRuntime(
       enabled: () => session.selPath !== null,
       execute: () => player.stepFrame(1),
     });
+    // the skip length is a setting; anything unexpected falls back to 3 seconds
+    const skipSeconds = (): number => {
+      const value = Number(session.appSettings.skip_seconds);
+      return [1, 3, 5, 10].includes(value) ? value : 3;
+    };
     shortcuts.registerAction("playback.seek-backward", {
       enabled: () => session.selPath !== null,
-      execute: () => player.seekBy(-3),
+      execute: () => player.seekBy(-skipSeconds()),
     });
     shortcuts.registerAction("playback.seek-forward", {
       enabled: () => session.selPath !== null,
-      execute: () => player.seekBy(3),
+      execute: () => player.seekBy(skipSeconds()),
     });
+    for (const [command, direction] of [["playback.slower", -1], ["playback.faster", 1]] as const) {
+      shortcuts.registerAction(command, {
+        enabled: () => session.selPath !== null,
+        execute: () => player.changeSpeed(direction),
+      });
+    }
+    for (const [command, direction] of [["timeline.previous-cut", -1], ["timeline.next-cut", 1]] as const) {
+      shortcuts.registerAction(command, {
+        enabled: () => session.selPath !== null,
+        execute: () => {
+          const video = byId<HTMLVideoElement>("vid");
+          const duration = timeline.videoDuration() ?? 0;
+          if (!video || !duration) return;
+          const point = cutPointNear(timeline.playbackSegments(), video.currentTime, direction, duration);
+          if (point != null) player.seekPreview(point);
+        },
+      });
+    }
     shortcuts.registerAction("playback.seek-start", {
       enabled: () => session.selPath !== null,
       execute: () => player.seekPreview(0),

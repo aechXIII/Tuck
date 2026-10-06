@@ -185,7 +185,9 @@ class CutRunner:
         try:
             report(EncodeStage.PREPARING, "Preparing")
             analysis = prepare_cut(plan, self._cancel, self._ffprobe)
-            with OutputTransaction(Path(plan.output_path)) as transaction:
+            with OutputTransaction(
+                Path(plan.output_path), replace=plan.replace_existing
+            ) as transaction:
                 extension = "." + plan.container
                 result = transaction.workspace / ("result" + extension)
                 edges = None
