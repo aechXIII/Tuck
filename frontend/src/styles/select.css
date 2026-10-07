@@ -17,9 +17,10 @@
 .select-option { display: flex; align-items: center; justify-content: space-between; gap: 12px; box-sizing: border-box; min-height: 33px; padding: 6px 10px; border-radius: 6px; cursor: pointer; }
 .select-option-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 400 12px/1.4 var(--font); }
 .select-option > svg { flex: none; visibility: hidden; color: var(--accent-light); }
-.select-option[aria-selected="true"] { background: var(--raised-2); }
+/* the checkmark marks the chosen option; the fill only follows the pointer and the arrow keys, so
+   one row is highlighted at a time */
 .select-option[aria-selected="true"] > svg { visibility: visible; }
-.select-option:hover:not([aria-disabled="true"]), .select-option[data-active] { background: var(--raised-2); }
+.select-option[data-active] { background: var(--raised-2); }
 .select-option[aria-disabled="true"] { opacity: .55; cursor: default; }
 .select-empty { margin: 10px; color: var(--muted); font: 400 11px/1.5 var(--font); }
 .select-popup [hidden] { display: none; }
