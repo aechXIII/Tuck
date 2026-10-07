@@ -904,9 +904,9 @@ body.task-cut #timeline-audio-tools {
   }
 }
 
-/* keyframes: faint dividers through the clip, so a segment reads as the pieces a copy can start
-   between. The strip is blended over the timeline, which leaves the dividers faint on the empty
-   lane and clearer on clips; the lit keyframes sit in their own layer so their colour stays true. */
+/* keyframes: thin dividers through the clip, so a segment reads as the pieces a copy can start
+   between. They are at least 3:1 against every clip fill; a mask from the segments keeps them
+   faint over the removed parts. The lit keyframes sit in their own layer above. */
 .kf-lane,
 .kf-guides {
   position: absolute;
@@ -918,7 +918,13 @@ body.task-cut #timeline-audio-tools {
   z-index: 2;
 }
 .kf-lane {
-  mix-blend-mode: overlay;
+  -webkit-mask-image: var(--kf-mask, none);
+  mask-image: var(--kf-mask, none);
+}
+/* a dragged start can land on any keyframe, so every one shows in full */
+.kf-lane.dragging {
+  -webkit-mask-image: none;
+  mask-image: none;
 }
 .kf-lane[hidden],
 .kf-guides[hidden] {
@@ -933,11 +939,11 @@ body.task-cut #timeline-audio-tools {
 .kf-lane .kf::before {
   content: "";
   position: absolute;
-  top: 1px;
-  bottom: 1px;
+  top: var(--tl-inset);
+  bottom: var(--tl-inset);
   left: -0.5px;
   width: 1px;
-  background: rgb(255 255 255 / 0.28);
+  background: rgb(255 255 255 / 0.5);
 }
 /* a solid comb would hide the clip, so dense keyframes fade to a texture */
 .kf-lane.dense .kf::before {
@@ -948,17 +954,17 @@ body.task-cut #timeline-audio-tools {
 }
 .kf-guides .kf-guide {
   position: absolute;
-  top: 1px;
-  bottom: 1px;
+  top: var(--tl-inset);
+  bottom: var(--tl-inset);
   left: 0;
-  width: 1px;
-  margin-left: -0.5px;
-  background: var(--accent-light);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-light) 22%, transparent);
-}
-.kf-guides .kf-guide.landing {
+  /* twice the width of a plain divider, so a lit keyframe stands out by shape as well as colour */
   width: 2px;
   margin-left: -1px;
+  background: var(--accent-light);
+}
+.kf-guides .kf-guide.landing {
+  width: 3px;
+  margin-left: -1.5px;
   background: var(--accent-light);
 }
 /* drawn like the cut chip it turns into once the drag ends */

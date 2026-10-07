@@ -157,3 +157,13 @@ test("a wholly encoded segment is drawn across its full width", () => {
 test("exact segments that start on a keyframe draw nothing at their start", () => {
   assert.equal(Keyframes.sliverFor(0, { start: 44, end: 120 }, exactSegment(44, 120, [44, 119], "keyframe")), null);
 });
+
+test("the keyframe mask shows dividers in full over kept segments and faintly between them", () => {
+  assert.equal(
+    Keyframes.keyframeLaneMask([{ start: 2, end: 4 }, { start: 6, end: 8 }], 10),
+    "linear-gradient(90deg, rgb(0 0 0 / 0.3) 0% 20%, #000 20% 40%, rgb(0 0 0 / 0.3) 40% 60%, #000 60% 80%, rgb(0 0 0 / 0.3) 80% 100%)",
+  );
+  // one segment over the whole video still makes a valid gradient
+  assert.equal(Keyframes.keyframeLaneMask([{ start: 0, end: 10 }], 10), "linear-gradient(90deg, #000 0% 100%, #000 0% 100%)");
+  assert.equal(Keyframes.keyframeLaneMask([], 0), "none");
+});

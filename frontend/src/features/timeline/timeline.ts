@@ -263,8 +263,11 @@ function paintCutOverlay() {
     return;
   }
   const { clip, full, strip, plan } = overlay;
-  if (lane && keyframesOn) Keyframes.renderKeyframeStrip(lane, strip, full);
   const segments = clipSegments(clip, full);
+  if (lane && keyframesOn) {
+    Keyframes.renderKeyframeStrip(lane, strip, full);
+    lane.style.setProperty("--kf-mask", Keyframes.keyframeLaneMask(segments, full));
+  }
   const active = activeSegmentIndex(clip, segments);
   const slivers: Keyframes.CutSliver[] = [];
   const inClip = new Set<number>();

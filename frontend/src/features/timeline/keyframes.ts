@@ -225,6 +225,32 @@ function percent(time: number, duration: number): string {
   return `${Math.max(0, Math.min(100, (time / duration) * 100))}%`;
 }
 
+// the dividers are drawn strong enough to read on every clip, so the mask lets them through in
+// full over the kept segments and only faintly over the removed parts between them
+export function keyframeLaneMask(
+  segments: readonly { start: number; end: number }[],
+  duration: number,
+): string {
+  if (!(duration > 0)) return "none";
+  const faint = "rgb(0 0 0 / 0.3)";
+  const stops: string[] = [];
+  let from = 0;
+  for (const segment of [...segments].sort((a, b) => a.start - b.start)) {
+    const start = Math.max(from, Math.min(duration, segment.start));
+    const end = Math.max(start, Math.min(duration, segment.end));
+    if (end <= start) continue;
+    const a = (from / duration) * 100;
+    const b = (start / duration) * 100;
+    const c = (end / duration) * 100;
+    if (b > a) stops.push(`${faint} ${a}% ${b}%`);
+    stops.push(`#000 ${b}% ${c}%`);
+    from = end;
+  }
+  if (from < duration) stops.push(`${faint} ${(from / duration) * 100}% 100%`);
+  if (stops.length === 1) stops.push(stops[0]!);
+  return `linear-gradient(90deg, ${stops.join(", ")})`;
+}
+
 // ticks are only rebuilt when the analysis changes; drags repaint the guides alone
 export function renderKeyframeStrip(
   lane: HTMLElement,
