@@ -56,7 +56,8 @@ export function createLutPicker(root: HTMLElement, select: (path: string) => voi
   }
   function position(): void {
     const bounds = row.getBoundingClientRect();
-    popup.style.width = `${Math.min(window.innerWidth - 16, Math.max(280, bounds.width))}px`;
+    // the menu opens over the file row, so it takes the row's width like the other dropdowns
+    popup.style.width = `${Math.min(window.innerWidth - 16, bounds.width)}px`;
     const top = Math.max(8, bounds.top);
     const available = Math.max(80, window.innerHeight - top - 8);
     popup.style.maxHeight = `${available}px`;

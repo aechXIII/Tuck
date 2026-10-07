@@ -20,6 +20,8 @@
   --hair-2: rgba(255, 255, 255, 0.1);
   --text: #edecee;
   --muted: #a7a6ac;
+  /* unavailable controls: dimmer than --muted but still 4.5:1 on panels, fields and button fills */
+  --disabled-text: #93929a;
   --dim: #a3a2aa;
   --sel: #232326;
   /* timeline fills stay in the violet-graphite family, not the action chip */
@@ -2155,11 +2157,11 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
   border: 0;
   border-top: 1px solid var(--border2);
   background: transparent;
-  color: var(--accent-light);
+  color: var(--text);
   cursor: pointer;
   display: flex;
   justify-content: space-between;
-  font: 600 12px var(--font);
+  font: 500 12px var(--font);
 }
 .advanced-toggle:focus-visible {
   outline: 2px solid var(--accent-light);

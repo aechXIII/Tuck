@@ -5,7 +5,7 @@
 .select-trigger > svg { flex: 0 0 12px; color: var(--muted); }
 .select-trigger:hover:not(:disabled), .select-trigger[aria-expanded="true"] { background: var(--raised-2); }
 .select-trigger:focus-visible { outline: 2px solid var(--accent-light); outline-offset: 2px; }
-.select-trigger:disabled { color: var(--muted); opacity: .55; cursor: default; }
+.select-trigger:disabled { color: var(--disabled-text); opacity: 1; cursor: default; }
 :is(.select-trigger, .select-popup) svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
 .select-popup { position: fixed; inset: auto; box-sizing: border-box; max-width: calc(100vw - 16px); margin: 0; padding: 6px; border: 0; border-radius: var(--r-surf); background: var(--raised); color: var(--text); box-shadow: 0 6px 18px rgb(0 0 0 / .25); overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--raised-2) transparent; }
 .select-popup:popover-open { animation: select-enter 110ms ease-out; }

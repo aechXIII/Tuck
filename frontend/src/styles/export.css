@@ -38,8 +38,8 @@
 .adjust-panel > summary > span:last-child {
   min-width: 0;
   overflow: hidden;
-  color: var(--dim);
-  font: 500 9px var(--mono);
+  color: var(--muted);
+  font: 400 11px var(--font);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -52,7 +52,7 @@
   border-top: 1px solid var(--border);
 }
 .adjust-panel-body .gr {
-  padding-block: 9px;
+  padding-block: 2px 9px;
 }
 .adjust-panel-body .gr + .gr {
   border-top: 1px solid var(--border);
@@ -471,16 +471,12 @@
   min-height: 32px;
   height: 32px;
   padding: 0;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--muted);
 }
 .adjust-panel[open] > summary {
   color: var(--text);
-}
-.adjust-panel > summary > span:last-child {
-  color: var(--dim);
-  font: 400 9px var(--mono);
 }
 .adjust-panel-body {
   position: relative;
@@ -506,10 +502,11 @@
   align-items: center;
   gap: 10px;
 }
+/* every Adjust section uses the same row: a 104 px label column, then the control */
 .export-setting-line > label {
-  flex: 0 0 80px;
-  color: var(--dim);
-  font-size: 10.5px;
+  flex: 0 0 104px;
+  color: var(--text);
+  font-size: 12px;
 }
 /* keep custom dropdowns and number fields aligned */
 .adjust-panel-body select,
@@ -527,8 +524,12 @@
 }
 #right .adjust-panel-body :is(input[type="number"], input[type="text"]) { border-radius: var(--r-ctl); }
 .export-video-body { display: grid; gap: 8px; }
-.video-control-group { display: grid; grid-template-columns: 80px minmax(0, 1fr); gap: 8px 10px; align-items: center; min-width: 0; }
-.video-control-group > label { color: var(--text); font-size: 11px; }
+.video-control-group { display: grid; grid-template-columns: 104px minmax(0, 1fr); gap: 8px 10px; align-items: center; min-width: 0; }
+.video-control-group > label { color: var(--text); font-size: 12px; }
+.adjust-panel-body .enc-field { display: grid; grid-template-columns: 104px minmax(0, 1fr); column-gap: 10px; align-items: center; }
+.adjust-panel-body .enc-field > label { margin: 0; color: var(--text); font-size: 12px; }
+.adjust-panel-body .setting-note { font-size: 11px; }
+#encoder-note { margin-left: 114px; }
 .video-control-group > select { width: 100%; }
 .video-dimensions { grid-column: 2; display: grid; grid-template-columns: minmax(0, 1fr) 12px minmax(0, 1fr); gap: 7px; align-items: end; }
 .video-dimensions label { display: grid; gap: 5px; font-size: 10px; color: var(--muted); min-width: 0; }
@@ -622,7 +623,7 @@
 .blend-body [hidden] { display: none; }
 label.export-toggle {
   color: var(--text);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 400;
 }
 .blend-help {
@@ -646,7 +647,7 @@ label.export-toggle {
 .blend-advanced[open] > summary::before { transform: rotate(90deg); }
 .blend-advanced[open] > summary { margin-bottom: 8px; }
 .blend-curve-setting { margin-bottom: 12px; }
-.blend-label { display: block; color: var(--text); font-size: 11px; margin-bottom: 6px; }
+.blend-label { display: block; color: var(--text); font-size: 12px; margin-bottom: 6px; }
 .blend-label span { color: var(--muted); margin-left: 6px; }
 #blend-weights { width: 100%; box-sizing: border-box; }
 .blend-error { color: var(--red); font-size: 11px; line-height: 1.5; }
@@ -658,15 +659,18 @@ label.export-toggle {
 .blend-preview { margin: 12px 0 0; }
 #blend-chart { display: block; width: 100%; height: 48px; fill: var(--accent); }
 #blend-chart[data-disabled="true"] { fill: var(--muted); opacity: .4; }
-.blend-preview figcaption { display: flex; justify-content: space-between; color: var(--muted); font-size: 10px; margin-top: 4px; }
-.blend-body fieldset:disabled :is(input, select) { color: var(--muted); cursor: not-allowed; }
+.blend-preview figcaption { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; margin-top: 4px; }
+/* with blending off its settings dim together, labels included, and stay readable */
+.blend-body fieldset:disabled :is(input, select) { color: var(--disabled-text); cursor: not-allowed; }
+.blend-body fieldset:disabled .export-setting-line > label { color: var(--disabled-text); }
 
 #blend-options > .export-setting-line + .export-setting-line { margin-top: 8px; }
-.blend-body .export-setting-line > label,
-.lut-strength-row > label { color: var(--text); font-size: 11px; }
+.lut-strength-row > label { color: var(--text); font-size: 12px; }
 .blend-body :is(input[type="number"], input[type="text"]) { height: 33px; }
 
 .lut-body { display: grid; gap: 12px; }
+.lut-body .enc-field { margin-top: 0; }
+.lut-body .lut-file-row { min-width: 0; }
 .lut-body [hidden] { display: none; }
 .lut-adjustments { display: grid; gap: 8px; }
 .lut-help { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
@@ -674,7 +678,9 @@ label.export-toggle {
 #lut-clear-history { margin-left: auto; }
 .lut-file-row { display: flex; align-items: center; gap: 0; min-width: 0; background: var(--raised); border-radius: 4px; }
 .lut-file-row:has(button:hover:not(:disabled)) { background: var(--raised-2); }
-:is(.lut-file-row, .lut-picker-head) > #lut-import { flex: none; align-self: stretch; padding: 0 12px; border: 0; border-radius: 0; background: transparent; color: var(--muted); font-size: 11px; font-weight: 400; }
+:is(.lut-file-row, .lut-picker-head) > #lut-import { position: relative; flex: none; align-self: stretch; padding: 0 12px; border: 0; border-radius: 0; background: transparent; color: var(--text); font-size: 12px; font-weight: 500; }
+/* a thin divider keeps Import reading as its own button inside the file row */
+.lut-file-row > #lut-import::before { content: ""; position: absolute; left: 0; top: 8px; bottom: 8px; width: 1px; background: var(--raised-2); }
 :is(.lut-file-row, .lut-picker-head) > #lut-import:hover:not(:disabled) { background: transparent; color: var(--text); }
 .lut-strength-row input { min-width: 40px; flex: 1; margin: 0; accent-color: var(--accent); }
 .lut-strength-row output { width: 36px; flex: none; text-align: right; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }

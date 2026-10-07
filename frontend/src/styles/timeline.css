@@ -239,8 +239,7 @@ body.tl-segment-dragging * {
    and the accent only where something is on */
 #audio-editor {
   --tl-tool-text: var(--muted);
-  /* dimmer than the other buttons but still 4.5:1, so an unavailable action stays readable */
-  --tl-tool-disabled: #8a8991;
+  --tl-tool-disabled: var(--disabled-text);
   --tl-tool-divider: #34353a;
   --tl-tool-fill: #2b2c31;
 }
