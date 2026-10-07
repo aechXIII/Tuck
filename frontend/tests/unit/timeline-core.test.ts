@@ -28,7 +28,11 @@ test("ruler density responds to pixels per second", () => {
   assert.equal(timeline.rulerStep(36, 160), 0.25);
   assert.equal(timeline.rulerStep(600, 0), 30);
   assert.equal(timeline.rulerMajorEvery(1, 40), 5);
-  assert.equal(timeline.rulerMajorEvery(0.25, 160), 5);
+  // every 2 s, not every 1.25 s, so labels never round to uneven numbers
+  assert.equal(timeline.rulerMajorEvery(0.25, 160), 8);
+  assert.equal(timeline.rulerMajorEvery(0.5, 60), 10);
+  assert.equal(timeline.rulerMajorEvery(2, 30), 5);
+  assert.equal(timeline.rulerMajorEvery(15, 0.5), 40);
 });
 
 test("timeline edit keys identify focused segments and trim handles", () => {

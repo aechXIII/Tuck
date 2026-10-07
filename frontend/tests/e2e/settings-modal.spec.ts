@@ -318,11 +318,13 @@ test("time format changes the timeline readout", async ({ page }) => {
   await installFakeBackend(page, fixture);
   await keepSavedSettings(page);
   await page.goto("/");
-  await expect(page.locator("#tl-time")).toHaveText("0 f / 360 f");
+  await expect(page.locator("#tl-corner-time")).toHaveText("0 f");
+  await expect(page.locator("#tl-corner-time")).toHaveAttribute("aria-label", "Playhead at 0 f of 360 f");
   await openSettings(page);
   await page.getByRole("radio", { name: "00:01:03:12" }).check();
   await savedWith(page, "time_format", "timecode");
-  await expect(page.locator("#tl-time")).toHaveText("00:00:00:00 / 00:00:12:00");
+  await expect(page.locator("#tl-corner-time")).toHaveText("00:00:00:00");
+  await expect(page.locator("#tl-corner-time")).toHaveAttribute("aria-label", "Playhead at 00:00:00:00 of 00:00:12:00");
 });
 
 test("a setting that could not be saved asks before leaving the section", async ({ page }) => {
@@ -554,4 +556,16 @@ test("pinned profiles lead the picker and hidden ones leave it", async ({ page }
   const names = page.locator("#prof-options .profile-option-name");
   await expect(names).toHaveText(["Archive", "Everyday"]);
   await expect(page.locator("#prof-options .profile-option.pinned-last")).toHaveCount(1);
+});
+
+test("the timeline style is Graphite by default and Violet when chosen", async ({ page }) => {
+  await start(page);
+  await expect(page.locator("html")).toHaveAttribute("data-timeline", "graphite");
+  await openSettings(page, "appearance");
+  // the accent swatches have a Violet too, so look inside the Timeline row
+  const timeline = page.locator('[data-setting="timeline-style"]');
+  await expect(timeline.getByRole("radio", { name: "Graphite" })).toBeChecked();
+  await timeline.getByRole("radio", { name: "Violet" }).check();
+  await savedWith(page, "timeline_style", "violet");
+  await expect(page.locator("html")).toHaveAttribute("data-timeline", "violet");
 });

@@ -14,6 +14,7 @@ from fractions import Fraction
 from functools import lru_cache
 from pathlib import Path
 from socketserver import ThreadingTCPServer
+from typing import NamedTuple
 
 import av
 from av.codec.context import CodecContext
@@ -77,12 +78,23 @@ _UPRIGHT_FILTERS: dict[int, tuple[tuple[str, str], ...]] = {
     180: (("hflip", ""), ("vflip", "")),
     270: (("transpose", "clock"),),
 }
-_WAVEFORM_WIDTH = 8192
-_WAVEFORM_HEIGHT = 96
+# long files get more columns so they don't turn into stair steps when zoomed in. The cap stays
+# within the GPU texture limit, past which browsers quietly shrink the mask image
+_WAVEFORM_MIN_WIDTH = 8192
+_WAVEFORM_MAX_WIDTH = 16384
+_WAVEFORM_COLUMNS_PER_SECOND = 96
+# tall enough to stay sharp in the tallest timeline rows
+_WAVEFORM_HEIGHT = 192
 _WAVEFORM_TIMEOUT = 60
-_WAVEFORM_CACHE_VERSION = 8
+_WAVEFORM_CACHE_VERSION = 10
 _WAVEFORM_TARGET_PEAK_DB = -1.0
 _WAVEFORM_MAX_GAIN_DB = 60.0
+# audio this dense (peak close to its average, like mastered music) fills the whole row when its
+# peaks are drawn, so it is drawn from its average level instead, raised to a set loudness, which
+# shows the beat and leaves room above it. Sparser audio such as game sound or speech keeps the
+# square-root peak drawing, which keeps its quiet parts visible
+_WAVEFORM_DENSE_CREST_DB = 16.0
+_WAVEFORM_DENSE_TARGET_MEAN_DB = -8.0
 _TOKEN_BYTES = 32  # bytes for each token
 
 
@@ -570,11 +582,18 @@ class MediaServer:
         return None
 
 
+class _WaveformLevels(NamedTuple):
+    gain_db: float
+    scale: str
+    filter: str
+    width: int
+
+
 def _run_waveform_ffmpeg(ffmpeg: str, file_path: Path, waveform_path: Path, timeout: float) -> bool:
     started = time.monotonic()
-    gain_db = _waveform_gain_db(ffmpeg, file_path, timeout)
+    levels = _waveform_levels(ffmpeg, file_path, timeout)
     remaining_timeout = max(0.1, timeout - (time.monotonic() - started))
-    gain_filter = f"volume={gain_db:g}dB," if gain_db > 0 else ""
+    gain_filter = f"volume={levels.gain_db:g}dB," if levels.gain_db > 0 else ""
     command = [
         ffmpeg,
         "-y",
@@ -586,8 +605,9 @@ def _run_waveform_ffmpeg(ffmpeg: str, file_path: Path, waveform_path: Path, time
         (
             "aformat=channel_layouts=mono,"
             f"{gain_filter}"
-            f"showwavespic=s={_WAVEFORM_WIDTH}x{_WAVEFORM_HEIGHT}:"
-            "colors=0xa78bfa:scale=sqrt:filter=peak"
+            # a solid white shape on transparency; the timeline uses it as a mask and colours it
+            f"showwavespic=s={levels.width}x{_WAVEFORM_HEIGHT}:"
+            f"colors=0xffffff:scale={levels.scale}:filter={levels.filter}:draw=full"
         ),
         "-frames:v",
         "1",
@@ -611,7 +631,11 @@ def _run_waveform_ffmpeg(ffmpeg: str, file_path: Path, waveform_path: Path, time
     return True
 
 
-def _waveform_gain_db(ffmpeg: str, file_path: Path, timeout: float) -> float:
+def _waveform_levels(ffmpeg: str, file_path: Path, timeout: float) -> _WaveformLevels:
+    """Measures the audio once to pick how its waveform is drawn and how wide it is.
+
+    A failed measurement falls back to the square-root peak drawing at the smallest width.
+    """
     command = [
         ffmpeg,
         "-hide_banner",
@@ -635,17 +659,43 @@ def _waveform_gain_db(ffmpeg: str, file_path: Path, timeout: float) -> float:
         creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
     )
     if result.returncode != 0:
-        return 0.0
-
-    match = re.search(rb"max_volume:\s*([-+]?\d+(?:\.\d+)?)\s*dB", result.stderr)
-    if not match:
-        return 0.0
-
-    peak_db = float(match.group(1))
-    return max(
-        0.0,
-        min(_WAVEFORM_MAX_GAIN_DB, _WAVEFORM_TARGET_PEAK_DB - peak_db),
+        return _WaveformLevels(0.0, "sqrt", "peak", _WAVEFORM_MIN_WIDTH)
+    width = _waveform_width(_input_duration(result.stderr))
+    peak_db = _detected_db(rb"max_volume", result.stderr)
+    mean_db = _detected_db(rb"mean_volume", result.stderr)
+    if peak_db is None:
+        return _WaveformLevels(0.0, "sqrt", "peak", width)
+    if mean_db is not None and peak_db - mean_db <= _WAVEFORM_DENSE_CREST_DB:
+        return _WaveformLevels(
+            _clamped_gain_db(_WAVEFORM_DENSE_TARGET_MEAN_DB - mean_db), "lin", "average", width
+        )
+    return _WaveformLevels(
+        _clamped_gain_db(_WAVEFORM_TARGET_PEAK_DB - peak_db), "sqrt", "peak", width
     )
+
+
+def _detected_db(name: bytes, stderr: bytes) -> float | None:
+    match = re.search(name + rb":\s*([-+]?\d+(?:\.\d+)?)\s*dB", stderr)
+    return float(match.group(1)) if match else None
+
+
+def _input_duration(stderr: bytes) -> float | None:
+    match = re.search(rb"Duration:\s*(\d+):(\d{2}):(\d{2}(?:\.\d+)?)", stderr)
+    if not match:
+        return None
+    hours, minutes, seconds = match.groups()
+    return int(hours) * 3600 + int(minutes) * 60 + float(seconds)
+
+
+def _clamped_gain_db(gain_db: float) -> float:
+    return max(0.0, min(_WAVEFORM_MAX_GAIN_DB, gain_db))
+
+
+def _waveform_width(duration: float | None) -> int:
+    if duration is None:
+        return _WAVEFORM_MIN_WIDTH
+    columns = round(duration * _WAVEFORM_COLUMNS_PER_SECOND)
+    return max(_WAVEFORM_MIN_WIDTH, min(_WAVEFORM_MAX_WIDTH, columns))
 
 
 @lru_cache(maxsize=1)

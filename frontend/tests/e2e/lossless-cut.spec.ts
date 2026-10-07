@@ -464,7 +464,10 @@ test("the player bar marks the selected segment and steps between keyframes", as
   await expect(page.locator("#btn-cut-go-start .cut-point-value")).toHaveText("0:00.00");
   await page.locator("#wf-c").click();
   await expect(setStart).toBeHidden();
-  await expect(page.locator("#tl-time")).toHaveText(/^0:\d\d\.\d\d \/ 0:12\.00$/);
+  // outside the cut task the toolbar has no summary; the time is in the corner over the tracks
+  await expect(page.locator("#tl-time")).toBeHidden();
+  await expect(page.locator("#tl-corner-time")).toHaveText(/^0:\d\d\.\d\d$/);
+  await expect(page.locator("#tl-corner-time")).toHaveAttribute("aria-label", /^Playhead at 0:\d\d\.\d\d of 0:12\.00$/);
   await expect(page.getByRole("button", {name: "Next keyframe"})).toBeHidden();
   await expect(page.getByRole("button", {name: "Next frame"})).toBeVisible();
 });
@@ -483,8 +486,9 @@ test("I past the end of a segment starts a new segment at the playhead", async (
   await expect(page.locator(".tl-segment")).toHaveCount(2);
   await expect(page.locator("#btn-cut-go-start .cut-point-value")).toHaveText("0:08.00");
   await expect(page.locator("#btn-cut-go-end .cut-point-value")).toHaveText("0:12.00");
-  // the player bar has the time, so the toolbar says how much of the video is kept
+  // the corner has the time, so the toolbar says how much of the video is kept
   await expect(page.locator("#tl-time")).toHaveText("Keeping 0:08.00 of 0:12.00");
+  await expect(page.locator("#tl-corner-time")).toHaveText("0:08.00");
   // the test video never finishes seeking, so redrawing must not pull the playhead back to it
   await expect(page.locator("#seq-playhead-layer")).toHaveAttribute("style",/--playhead: 66\.66/);
 });

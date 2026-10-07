@@ -1,5 +1,5 @@
 #audio-editor {
-  --timeline-head-width: 180px;
+  --timeline-head-width: 124px;
   flex-shrink: 0;
   height: 190px;
   min-height: 170px;
@@ -243,13 +243,10 @@ body.timeline-resizing * {
   height: 100%;
   margin: 0;
   border: 0;
-  border-radius: 5px;
   background: transparent;
   box-shadow: none;
   cursor: ew-resize;
   touch-action: none;
-  transition:
-    background 0.1s ease;
 }
 .clip-edge.start {
   left: 0;
@@ -257,44 +254,46 @@ body.timeline-resizing * {
 .clip-edge.end {
   right: 0;
 }
+/* the handle is the clip's own end: a light strip with a dark grip line. Both are measured to
+   stay at least 3:1 against every clip fill in both timeline styles and every accent; the
+   timeline style picks the strip's colour */
 .clip-edge::before {
   content: "";
   position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  background: var(--tl-edge, #b4b3bb);
+  transition: background 0.1s ease;
+}
+.clip-edge::after {
+  content: "";
+  position: absolute;
   top: 50%;
-  width: 5px;
-  height: calc(100% - 8px);
-  min-height: 10px;
-  max-height: 28px;
-  border: 0;
-  background: var(--text);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
-  transform: translateY(-50%);
-  transition:
-    width 0.1s ease,
-    background 0.1s ease,
-    box-shadow 0.1s ease;
+  width: 2px;
+  height: 12px;
+  margin-top: -6px;
+  border-radius: 1px;
+  background: #1c1c1f;
 }
 .clip-edge.start::before {
-  left: 4px;
-  border-radius: 3px;
+  left: 0;
+  border-radius: 4px 0 0 4px;
 }
 .clip-edge.end::before {
-  right: 4px;
-  border-radius: 3px;
+  right: 0;
+  border-radius: 0 4px 4px 0;
 }
-.clip-edge:hover,
-.clip-edge:focus-visible,
-.clip-edge.dragging {
-  background: color-mix(in srgb, var(--segment-color, var(--accent)) 22%, transparent);
+.clip-edge.start::after {
+  left: 2px;
+}
+.clip-edge.end::after {
+  right: 2px;
 }
 .clip-edge:hover::before,
 .clip-edge:focus-visible::before,
 .clip-edge.dragging::before {
-  width: 5px;
-  background: var(--text);
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--segment-color, var(--accent)) 48%, white),
-    0 2px 6px rgba(0, 0, 0, 0.58);
+  background: var(--accent-light);
 }
 .clip-edge:focus-visible {
   outline: 2px solid var(--accent-light);
@@ -369,20 +368,6 @@ body.timeline-resizing * {
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--segment-color, var(--accent)) 65%, white);
   opacity: 1;
 }
-.audio-clip-label {
-  position: relative;
-  z-index: 1;
-  padding: 1px 4px;
-  border-radius: 3px;
-  /* a solid patch keeps the filename readable over every waveform peak */
-  background-color: inherit;
-  font: 700 10px var(--font);
-  color: var(--text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  pointer-events: none;
-}
 .audio-source-range-readout {
   position: absolute;
   z-index: 12;
@@ -420,7 +405,8 @@ body.timeline-resizing * {
 .seq-audio-clip.muted .audio-waveform,
 .audio-clip.muted .audio-waveform {
   filter: grayscale(1);
-  opacity: 0.24;
+  /* dim enough to read as off, but the shape stays recognisable */
+  opacity: 0.36;
 }
 .audio-muted-indicator {
   position: absolute;
@@ -432,7 +418,7 @@ body.timeline-resizing * {
   background-color: inherit;
   transform: translate(-50%, -50%);
   color: var(--muted);
-  font: 650 9px/1 var(--font);
+  font: 650 10px/1 var(--font);
   text-shadow: 0 1px 2px var(--sink);
   white-space: nowrap;
   pointer-events: none;
@@ -448,7 +434,7 @@ body.timeline-resizing * {
 #source-audio-track.muted .seq-audio-clip .audio-waveform,
 .seq-row.audio.imported.muted .seq-audio-clip .audio-waveform {
   filter: grayscale(1);
-  opacity: 0.26;
+  opacity: 0.36;
 }
 #source-audio-track.muted .audio-muted-indicator,
 .seq-row.audio.imported.muted .audio-muted-indicator {
@@ -568,12 +554,6 @@ body.timeline-scrubbing * {
 .timeline-toolbar-spacer {
   flex: 1;
   min-width: 12px;
-}
-@media (max-width: 1100px) {
-  #audio-editor {
-    --timeline-head-width: 148px;
-    padding-inline: 12px;
-  }
 }
 @media (max-width: 719px) {
   #audio-editor {

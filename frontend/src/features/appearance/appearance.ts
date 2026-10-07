@@ -1,10 +1,14 @@
-import type { AccentColor, InterfaceSize } from "../../backend/types.ts";
+import type { AccentColor, InterfaceSize, TimelineStyle } from "../../backend/types.ts";
 
 export const ACCENT_COLORS: readonly AccentColor[] = ["violet", "blue", "teal", "green", "amber", "rose"];
 export const INTERFACE_SIZES: readonly InterfaceSize[] = ["compact", "default", "large"];
 
 export function accentColor(value: unknown): AccentColor {
   return ACCENT_COLORS.includes(value as AccentColor) ? (value as AccentColor) : "violet";
+}
+
+export function timelineStyle(value: unknown): TimelineStyle {
+  return value === "violet" ? "violet" : "graphite";
 }
 
 export function interfaceSize(value: unknown): InterfaceSize {
@@ -18,6 +22,7 @@ export function applyAppearance(root: HTMLElement, settings: Readonly<Record<str
   else root.dataset.accent = accent;
   if (settings.animations === false) root.dataset.motion = "off";
   else delete root.dataset.motion;
+  root.dataset.timeline = timelineStyle(settings.timeline_style);
 }
 
 /**

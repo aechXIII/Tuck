@@ -357,10 +357,10 @@ function goToCutPoint(endpoint: "start" | "end") {
   host.seekPreview?.(endpoint === "start" ? bounds.start : Math.max(bounds.start, bounds.end - frame));
 }
 
-// the clip's time line says how late the cut starts when the whole line fits; narrow clips
+// the clip's length line says how late the cut starts when the whole line fits; narrow clips
 // hide or cut that line short, so their chip above the cut says it instead
 function showCutNote(range: HTMLElement, sliver: Keyframes.CutSliver): boolean {
-  const line = range.querySelector<HTMLElement>(".tl-segment-range");
+  const line = range.querySelector<HTMLElement>(".tl-segment-label");
   if (!line) return false;
   const note = documentRef.createElement("span");
   note.className = sliver.kind === "exact" ? "tl-cut-note exact" : "tl-cut-note";
@@ -468,6 +468,7 @@ function paintTrimChrome() {
     ruler.classList.toggle("hid", !ready);
     if (ready) paintSequenceRuler(full);
   }
+  byId("tl-corner-time")?.classList.toggle("hid", !ready);
   let segmentsLayer = byId("tl-segments");
   if (segmentsLayer) segmentsLayer.replaceChildren();
   let timeline = byId("timeline");
@@ -587,20 +588,18 @@ function paintTrimChrome() {
     badgeLabel.textContent = segment.badge ?? "";
     let copy = documentRef.createElement("span");
     copy.className = "tl-segment-copy";
+    // every segment comes from the selected video, so the clip says how long it is rather than
+    // repeating the file name; the full range is in the hover tip and the accessible name
     let nameLabel = documentRef.createElement("span");
     nameLabel.className = "tl-segment-label";
-    nameLabel.textContent = c ? c.name : "";
-    let rangeLabel = documentRef.createElement("span");
-    rangeLabel.className = "tl-segment-range";
-    rangeLabel.setAttribute("aria-hidden", "true");
+    nameLabel.textContent = formatSelectedDuration(segment.end - segment.start);
     let timeText =
       formatSegmentTime(segment.start) +
       "–" +
       formatSegmentTime(segment.end) +
       " · " +
       formatSelectedDuration(segment.end - segment.start);
-    rangeLabel.textContent = timeText;
-    copy.append(nameLabel, rangeLabel);
+    copy.append(nameLabel);
     surface.append(badgeLabel, copy);
     range.appendChild(surface);
     let timeLabel = documentRef.createElement("span");
@@ -728,17 +727,24 @@ function setPlayheadUI(sec: number, full?: number) {
   paintKeyframeGuides(sec);
 }
 
-// the player bar already shows the time in the cut task, so the toolbar shows how much is kept
+// the playhead time sits in the corner over the track names, next to the ruler; the length is in
+// its accessible name and the player bar. In the cut task the toolbar also says how much is kept
 function paintTimelineReadout(sec: number, full: number) {
+  const corner = byId("tl-corner-time");
+  if (corner) {
+    corner.textContent = formatTimelineTime(sec);
+    corner.setAttribute("aria-label", "Playhead at " + formatTimelineTime(sec) + " of " + formatTimelineTime(full));
+  }
   const readout = byId("tl-time");
   if (!readout) return;
   const clip = host.cutTask?.() ? selectedClip(session) : null;
   if (!clip || !(full > 0)) {
     delete readout.dataset.kept;
-    readout.setAttribute("aria-label", "Timeline position");
-    readout.textContent = formatTimelineTime(sec) + " / " + formatTimelineTime(full);
+    readout.hidden = true;
+    readout.replaceChildren();
     return;
   }
+  readout.hidden = false;
   const kept = clipSegments(clip, full).reduce((total, segment) => total + segment.end - segment.start, 0);
   // this runs with every playhead move, and only the kept length changes it
   const key = formatTimelineTime(kept) + "|" + formatTimelineTime(full);
@@ -753,7 +759,6 @@ function paintTimelineReadout(sec: number, full: number) {
   const value = documentRef.createElement("span");
   value.className = "tl-time-kept";
   value.textContent = formatTimelineTime(kept);
-  readout.setAttribute("aria-label", "Kept length");
   readout.replaceChildren(words("Keeping "), value, words(" of "), formatTimelineTime(full));
 }
 

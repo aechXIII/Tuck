@@ -68,6 +68,10 @@ export function rulerStep(duration: unknown, pixelsPerSecond: unknown): number {
   return 30;
 }
 
+// labels only land on round seconds, so a ruler never reads 0:02, 0:05, 0:07
+const RULER_LABEL_STEPS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600] as const;
+
+/** How many ticks apart the labelled ticks are: at least 170 px, on a round number of seconds. */
 export function rulerMajorEvery(
   step: unknown,
   pixelsPerSecond: unknown,
@@ -76,7 +80,14 @@ export function rulerMajorEvery(
   const pps = Number(pixelsPerSecond);
   if (!Number.isFinite(minor) || minor <= 0) return 1;
   if (!Number.isFinite(pps) || pps <= 0) return 5;
-  return Math.max(1, Math.ceil(170 / (minor * pps)));
+  const wanted = 170 / pps;
+  const fits = (seconds: number): boolean =>
+    seconds >= minor && Math.abs(seconds / minor - Math.round(seconds / minor)) < 1e-6;
+  const label =
+    RULER_LABEL_STEPS.find((seconds) => seconds >= wanted && fits(seconds)) ??
+    [...RULER_LABEL_STEPS].reverse().find(fits) ??
+    minor;
+  return Math.max(1, Math.round(label / minor));
 }
 
 export function editKeyIntent(

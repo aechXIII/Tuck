@@ -60,7 +60,7 @@ test("source waveform appears after audio state changes during loading", async (
   await releaseWaveform(page);
 
   await expect(waveform).toBeVisible();
-  await expect(waveform).toHaveCSS("background-image", `url("${WAVEFORM}")`);
+  await expect(waveform).toHaveCSS("mask-image", `url("${WAVEFORM}")`);
   await page.locator("#source-audio-label").click();
   await expect(waveform).toBeVisible();
 });
@@ -70,7 +70,7 @@ test("imported waveform appears after undo replaces its track during loading", a
   await page.getByRole("button", { name: "Add audio", exact: true }).click();
   await waitForWaveformRequest(page, AUDIO);
   const waveform = page.locator("#imported-audio-tracks .audio-waveform");
-  await expect(waveform).toHaveCSS("background-image", "none");
+  await expect(waveform).toHaveCSS("mask-image", "none");
 
   await page.locator("#imported-audio-tracks .seq-track-mute").click();
   await page.getByRole("button", { name: "Undo", exact: true }).click();
@@ -78,7 +78,7 @@ test("imported waveform appears after undo replaces its track during loading", a
   await releaseWaveform(page);
 
   await expect(waveform).toBeVisible();
-  await expect(waveform).toHaveCSS("background-image", `url("${WAVEFORM}")`);
+  await expect(waveform).toHaveCSS("mask-image", `url("${WAVEFORM}")`);
   await page.locator("#imported-audio-tracks .seq-track-mute").click();
   await expect(waveform).toBeVisible();
 });

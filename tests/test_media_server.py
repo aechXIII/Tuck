@@ -9,7 +9,7 @@ from urllib.request import Request, urlopen
 import av
 import pytest
 
-from tuck.media_server import MediaServer, _waveform_gain_db, get_media_server
+from tuck.media_server import MediaServer, _waveform_levels, get_media_server
 from tuck.media_tools import find_ffmpeg
 
 
@@ -17,14 +17,33 @@ class TestMediaServer:
     @pytest.mark.parametrize(
         ("returncode", "stderr", "expected"),
         [
-            (0, b"[Parsed_volumedetect] max_volume: -21.0 dB", 20.0),
-            (0, b"[Parsed_volumedetect] max_volume: -120.0 dB", 60.0),
-            (0, b"[Parsed_volumedetect] max_volume: 0.0 dB", 0.0),
-            (0, b"volumedetect produced no peak", 0.0),
-            (1, b"max_volume: -21.0 dB", 0.0),
+            (0, b"[Parsed_volumedetect] max_volume: -21.0 dB", (20.0, "sqrt", "peak", 8192)),
+            (0, b"[Parsed_volumedetect] max_volume: -120.0 dB", (60.0, "sqrt", "peak", 8192)),
+            (0, b"[Parsed_volumedetect] max_volume: 0.0 dB", (0.0, "sqrt", "peak", 8192)),
+            (0, b"volumedetect produced no peak", (0.0, "sqrt", "peak", 8192)),
+            (1, b"max_volume: -21.0 dB", (0.0, "sqrt", "peak", 8192)),
+            # mastered music: loud and dense, so it is drawn from its average level, and a long
+            # song gets the widest image
+            (
+                0,
+                b"Duration: 00:04:17.25, start: 0.0\nmean_volume: -13.7 dB\nmax_volume: 0.0 dB",
+                (5.7, "lin", "average", 16384),
+            ),
+            # game sound: quiet with loud moments keeps the square-root scale
+            (
+                0,
+                b"Duration: 00:00:11.25, start: 0.0\nmean_volume: -31.9 dB\nmax_volume: -10.1 dB",
+                (9.1, "sqrt", "peak", 8192),
+            ),
+            # a two-minute file gets more columns than the smallest width
+            (
+                0,
+                b"Duration: 00:02:00.00, start: 0.0\nmean_volume: -30.0 dB\nmax_volume: -3.0 dB",
+                (2.0, "sqrt", "peak", 11520),
+            ),
         ],
     )
-    def test_waveform_gain_handles_detection_results(
+    def test_waveform_levels_follow_the_measured_audio(
         self, tmp_path, monkeypatch, returncode, stderr, expected
     ):
         source = tmp_path / "source.wav"
@@ -37,7 +56,8 @@ class TestMediaServer:
 
         monkeypatch.setattr("tuck.media_server.subprocess.run", fake_run)
 
-        assert _waveform_gain_db("ffmpeg", source, 3.5) == expected
+        levels = _waveform_levels("ffmpeg", source, 3.5)
+        assert (round(levels.gain_db, 3), levels.scale, levels.filter, levels.width) == expected
         assert len(calls) == 1
         command, kwargs = calls[0]
         assert "volumedetect" in command[command.index("-af") + 1]
@@ -626,9 +646,12 @@ class TestMediaServer:
         assert len(calls) == 2
         waveform_filter = calls[1][calls[1].index("-filter_complex") + 1]
         assert "volume=20dB" in waveform_filter
-        assert "showwavespic=s=8192x96" in waveform_filter
+        assert "showwavespic=s=8192x192" in waveform_filter
         assert "scale=sqrt" in waveform_filter
         assert "filter=peak" in waveform_filter
+        # a solid white shape, which the timeline colours through a mask
+        assert "colors=0xffffff" in waveform_filter
+        assert "draw=full" in waveform_filter
 
     def test_generate_waveform_ignores_legacy_linear_cache(self, tmp_path, monkeypatch):
         source = tmp_path / "quiet-video.mp4"

@@ -378,6 +378,15 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
           { value: "large", label: "Large" },
         ], str(s.interface_size, "default"), { "data-settings-change": "save" }),
       }),
+      row({
+        setting: "timeline-style",
+        label: "Timeline",
+        description: "Graphite keeps clips grey. Violet tints them with the accent color.",
+        control: choiceGroup("set-timeline-style", "Timeline", [
+          { value: "graphite", label: "Graphite" },
+          { value: "violet", label: "Violet" },
+        ], str(s.timeline_style, "graphite"), { "data-settings-change": "save" }),
+      }),
       switchRow({
         setting: "animations",
         id: "set-animations",
@@ -704,6 +713,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         return {
           accent_color: radio("set-accent", "violet"),
           interface_size: radio("set-interface-size", "default"),
+          timeline_style: radio("set-timeline-style", "graphite"),
           animations: checked("set-animations"),
         };
       case "tools":

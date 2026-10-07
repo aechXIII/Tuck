@@ -60,6 +60,7 @@ export interface Settings extends JsonObject {
   readonly reopen_last_videos?: boolean;
   readonly last_session_files?: readonly string[];
   readonly loop_playback?: boolean;
+  readonly timeline_style?: TimelineStyle;
   /** how far Shift with an arrow key skips: "1", "3", "5", or "10" seconds */
   readonly skip_seconds?: string;
   readonly name_taken?: "number" | "replace";
@@ -71,6 +72,7 @@ export interface Settings extends JsonObject {
 
 export type AccentColor = "violet" | "blue" | "teal" | "green" | "amber" | "rose";
 export type InterfaceSize = "compact" | "default" | "large";
+export type TimelineStyle = "graphite" | "violet";
 export type TimeFormat = "seconds" | "timecode" | "frames";
 export type OutputLocation = "source" | "subfolder" | "folder";
 

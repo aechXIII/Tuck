@@ -7,12 +7,12 @@ test("timeline height bounds preserve a usable preview at supported window sizes
   assert.deepEqual(layout.timelineHeightBounds(900), {
     min: 170,
     max: 495,
-    defaultHeight: 190,
+    defaultHeight: 230,
   });
   assert.deepEqual(layout.timelineHeightBounds(640), {
     min: 170,
     max: 310,
-    defaultHeight: 190,
+    defaultHeight: 230,
   });
 });
 
@@ -23,28 +23,28 @@ test("dragging the timeline near the automatic height lands on it", () => {
 });
 
 test("automatic timeline height fits the default tracks and grows for imported audio", () => {
-  assert.equal(layout.timelineAutoHeight(0, 900), 190);
-  assert.equal(layout.timelineAutoHeight(2, 900), 190);
-  assert.equal(layout.timelineAutoHeight(3, 900), 232);
-  assert.equal(layout.timelineAutoHeight(5, 900), 316);
+  assert.equal(layout.timelineAutoHeight(0, 900), 230);
+  assert.equal(layout.timelineAutoHeight(2, 900), 230);
+  assert.equal(layout.timelineAutoHeight(3, 900), 286);
+  assert.equal(layout.timelineAutoHeight(5, 900), 398);
   assert.equal(layout.timelineAutoHeight(20, 900), 495);
-  assert.equal(layout.timelineAutoHeight(4, 640), 274);
+  assert.equal(layout.timelineAutoHeight(4, 640), 310);
 });
 
 test("track changes fit added and removed tracks while unchanged tracks preserve manual height", () => {
-  assert.equal(layout.timelineHeightForTrackCount(200, 3, 900, 2), 232);
-  assert.equal(layout.timelineHeightForTrackCount(300, 2, 900, 3), 190);
+  assert.equal(layout.timelineHeightForTrackCount(200, 3, 900, 2), 286);
+  assert.equal(layout.timelineHeightForTrackCount(300, 2, 900, 3), 230);
   assert.equal(layout.timelineHeightForTrackCount(200, 3, 900, 3), null);
-  assert.equal(layout.timelineHeightForTrackCount(0, 3, 900), 232);
+  assert.equal(layout.timelineHeightForTrackCount(0, 3, 900), 286);
 });
 
 test("timeline heights clamp invalid and out-of-range persisted values", () => {
   assert.equal(layout.clampTimelineHeight(100, 900), 170);
   assert.equal(layout.clampTimelineHeight(700, 900), 495);
   assert.equal(layout.clampTimelineHeight(260, 900), 260);
-  assert.equal(layout.clampTimelineHeight(0, 900), 190);
-  assert.equal(layout.clampTimelineHeight(0, 900, 4), 274);
-  assert.equal(layout.clampTimelineHeight("broken", 900), 190);
+  assert.equal(layout.clampTimelineHeight(0, 900), 230);
+  assert.equal(layout.clampTimelineHeight(0, 900, 4), 342);
+  assert.equal(layout.clampTimelineHeight("broken", 900), 230);
 });
 
 test("compact persisted timeline heights remain valid", () => {

@@ -755,6 +755,7 @@ class BridgeAPI:
                 else list(s.last_session_files)
             ),
             "loop_playback": s.loop_playback,
+            "timeline_style": s.timeline_style,
             "skip_seconds": s.skip_seconds,
             "name_taken": s.name_taken,
             "pinned_profile_ids": list(s.pinned_profile_ids),

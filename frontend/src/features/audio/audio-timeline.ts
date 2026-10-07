@@ -369,12 +369,13 @@ export function installAudioTimeline(host: AudioTimelineHost) {
         core.waveformPositionPct(audioClip.sourceIn, sourceSpan, track.sourceDuration),
       ),
     );
+    // the image is a mask; the timeline style decides its colour
     return (
-      "background-image:url('" +
+      "--wave-image:url('" +
       track.waveformUrl.replace(/'/g, "%27") +
-      "');background-size:" +
+      "');--wave-size:" +
       size +
-      "% 100%;background-position:" +
+      "% 100%;--wave-position:" +
       position +
       "% center"
     );
@@ -508,14 +509,20 @@ export function installAudioTimeline(host: AudioTimelineHost) {
     if (state.sourceWaveformUrl) {
       let wave = documentRef.createElement("div");
       wave.className = "audio-waveform";
-      wave.style.backgroundImage =
-        "url('" + state.sourceWaveformUrl.replace(/'/g, "%27") + "')";
-      wave.style.backgroundSize =
+      wave.style.setProperty(
+        "--wave-image",
+        "url('" + state.sourceWaveformUrl.replace(/'/g, "%27") + "')",
+      );
+      wave.style.setProperty(
+        "--wave-size",
         Math.max(100, (total / Math.max(segment.end - segment.start, _MIN_TRIM)) * 100) +
-        "% 100%";
-      wave.style.backgroundPosition =
+          "% 100%",
+      );
+      wave.style.setProperty(
+        "--wave-position",
         core.waveformPositionPct(segment.start, segment.end - segment.start, total) +
-        "% center";
+          "% center",
+      );
       block.appendChild(wave);
     }
     if (segment.muted) {
@@ -659,11 +666,8 @@ export function installAudioTimeline(host: AudioTimelineHost) {
       let wave = documentRef.createElement("div");
       wave.className = "audio-waveform";
       wave.setAttribute("style", waveformStyle(track, audioClip));
+      // the track header already names the file, so the clip shows only its waveform
       el.appendChild(wave);
-      let clipLabel = documentRef.createElement("span");
-      clipLabel.className = "audio-clip-label";
-      clipLabel.textContent = track.name;
-      el.appendChild(clipLabel);
       if (audioClip.muted) {
         let clipMutedIndicator = documentRef.createElement("span");
         clipMutedIndicator.className = "audio-muted-indicator";

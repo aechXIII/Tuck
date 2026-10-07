@@ -226,7 +226,7 @@ body.tl-segment-dragging * {
   cursor: ew-resize !important;
 }
 #audio-editor {
-  --timeline-head-width: 192px;
+  --timeline-head-width: 124px;
   --timeline-surface: var(--panel);
   --timeline-line: var(--border);
   --timeline-purple: var(--accent-light);
@@ -235,21 +235,34 @@ body.tl-segment-dragging * {
   padding: 8px 16px 10px;
 }
 
+/* the toolbar: medium labels with one filled button for Split, quiet grey for everything else,
+   and the accent only where something is on */
+#audio-editor {
+  --tl-tool-text: var(--muted);
+  /* dimmer than the other buttons but still 4.5:1, so an unavailable action stays readable */
+  --tl-tool-disabled: #8a8991;
+  --tl-tool-divider: #34353a;
+  --tl-tool-fill: #2b2c31;
+}
+
 #timeline-row.seq-toolbar {
-  min-height: 36px;
-  padding: 2px 0 7px;
-  border-bottom-color: var(--timeline-line);
+  min-height: 46px;
+  padding: 0;
+  align-items: center;
+  border-bottom: 1px solid #26262a;
 }
 
 .timeline-tool-group {
   align-items: baseline;
-  gap: 3px;
-  min-height: 28px;
-  padding-inline: 8px;
+  gap: 0;
+  min-height: 26px;
+  padding-inline: 0;
 }
 
 .timeline-tool-group:not(:first-child) {
   position: relative;
+  margin-left: 8px;
+  padding-left: 9px;
   border-left: 0;
 }
 
@@ -261,7 +274,7 @@ body.tl-segment-dragging * {
   width: 1px;
   height: 16px;
   transform: translateY(-50%);
-  background: var(--timeline-line);
+  background: var(--tl-tool-divider);
 }
 
 /* a lossless cut copies the source audio as it is, so its audio tools fold away */
@@ -276,6 +289,7 @@ body.tl-segment-dragging * {
 }
 body.task-cut #timeline-audio-tools {
   max-width: 0;
+  margin-left: 0;
   padding-inline: 0;
   opacity: 0;
   visibility: hidden;
@@ -287,34 +301,49 @@ body.task-cut #timeline-audio-tools {
 }
 
 .timeline-tool-label {
-  margin-right: 1px;
-  color: var(--dim);
-  font-size: 9px;
-  letter-spacing: 0.09em;
+  margin: 0 6px 0 4px;
+  padding: 0;
+  color: var(--tl-tool-text);
+  font: 700 10px/1 var(--font);
+  letter-spacing: 0.08em;
+}
+
+/* the view controls need no caption; the switches and zoom say what they are */
+.timeline-view-tools {
+  align-items: center;
+  margin-left: 16px;
+}
+.timeline-tool-group.timeline-view-tools {
+  padding-left: 0;
+}
+.timeline-tool-group.timeline-view-tools::before,
+.timeline-view-tools > .timeline-tool-label {
+  display: none;
 }
 
 .timeline-tool-group .dock-text-btn,
 .timeline-tool-group .dock-toggle,
-.dock-fit-btn {
+.dock-fit-btn,
+.dock-zoom-btn {
   min-height: 26px;
   border: 0;
-  border-radius: 4px;
+  border-radius: 6px;
   background: transparent;
-  color: var(--muted);
+  color: var(--tl-tool-text);
 }
 
+/* the label sets the button's baseline, so labels and captions line up across the toolbar */
 .timeline-tool-group .dock-text-btn {
   align-items: baseline;
-  gap: 4px;
-  padding-block: 6px;
-  padding-inline: 8px;
-  font-size: 11px;
-  font-weight: 400;
-  line-height: 14px;
+  gap: 6px;
+  height: 26px;
+  padding: 0 8px;
+  font: 500 12px/26px var(--font);
 }
 
 .timeline-tool-group .dock-text-btn svg,
-.timeline-tool-group .dock-toggle svg {
+.timeline-tool-group .dock-toggle svg,
+.dock-zoom-btn svg {
   align-self: center;
   width: 14px;
   height: 14px;
@@ -323,25 +352,36 @@ body.task-cut #timeline-audio-tools {
   stroke: currentColor;
   stroke-linecap: round;
   stroke-linejoin: round;
-  stroke-width: 1.55;
+  stroke-width: 1.5;
+}
+
+.timeline-tool-group .dock-text-btn:disabled,
+.timeline-tool-group .dock-text-btn[aria-disabled="true"],
+.dock-fit-btn:disabled,
+.dock-zoom-btn:disabled {
+  color: var(--tl-tool-disabled);
+  opacity: 1;
 }
 
 .timeline-tool-group .dock-text-btn:hover:not(:disabled, [aria-disabled="true"]),
 .timeline-tool-group .dock-toggle:hover:not(:disabled),
-.dock-fit-btn:hover:not(:disabled) {
-  background: var(--raised);
+.dock-fit-btn:hover:not(:disabled),
+.dock-zoom-btn:hover:not(:disabled) {
+  background: var(--tl-tool-fill);
   color: var(--text);
 }
 
 .timeline-tool-group .dock-text-btn:focus-visible,
 .timeline-tool-group .dock-toggle:focus-visible,
-.dock-fit-btn:focus-visible {
+.dock-fit-btn:focus-visible,
+.dock-zoom-btn:focus-visible {
   outline: 2px solid var(--timeline-purple);
   outline-offset: 1px;
 }
 
-#btn-segment-add:not(:disabled, [aria-disabled="true"]),
+/* Split is the action people reach for most, so it is the one filled button */
 #btn-seq-split:not(:disabled) {
+  background: var(--tl-tool-fill);
   color: var(--accent-light);
 }
 
@@ -353,47 +393,50 @@ body.task-cut #timeline-audio-tools {
 #btn-kf-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
+  height: 26px;
   padding: 0 6px;
   border-bottom: 0;
-  font-weight: 650;
+  font: 500 12px var(--font);
 }
 
 #btn-kf-toggle[hidden] {
   display: none;
 }
 
+/* the switch alone shows the state, so the label stays grey either way */
 #btn-snap-toggle.on,
 #btn-kf-toggle.on {
   background: transparent;
-  color: var(--accent-light);
+  color: var(--tl-tool-text);
   box-shadow: none;
 }
 
 .timeline-switch {
   display: inline-flex;
   align-items: center;
-  width: 22px;
-  height: 12px;
+  width: 24px;
+  height: 14px;
   padding: 2px;
-  border-radius: 999px;
-  background: var(--border2);
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.08);
+  box-sizing: border-box;
+  border-radius: 7px;
+  background: #4b4c54;
+  box-shadow: none;
   transition: background 160ms ease;
 }
 
 .timeline-switch-thumb {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
-  background: var(--text);
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.42);
+  background: color-mix(in srgb, var(--accent-light) 14%, white);
+  box-shadow: none;
   transition: transform 160ms ease;
 }
 
 #btn-snap-toggle.on .timeline-switch,
 #btn-kf-toggle.on .timeline-switch {
-  background: var(--accent);
+  background: color-mix(in srgb, var(--accent) 80%, var(--panel));
 }
 
 #btn-snap-toggle.on .timeline-switch-thumb,
@@ -401,42 +444,105 @@ body.task-cut #timeline-audio-tools {
   transform: translateX(10px);
 }
 
+/* zoom is one group: Fit, then real buttons either side of the slider */
+.dock-zoom {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  margin-left: 8px;
+  padding-left: 9px;
+}
+.dock-zoom::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 1px;
+  height: 16px;
+  transform: translateY(-50%);
+  background: var(--tl-tool-divider);
+}
+
 .dock-fit-btn {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
   height: 26px;
-  padding: 0 6px;
+  padding: 0 8px;
   cursor: pointer;
-  font: 650 11px/1 var(--font);
+  font: 500 12px/1 var(--font);
 }
-
-.timeline-fit-chevron {
-  width: 10px;
-  height: 10px;
-  fill: none;
-  stroke: currentColor;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 1.5;
-}
-
 .dock-fit-btn:disabled {
   cursor: default;
-  opacity: 0.38;
+}
+
+.dock-zoom-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+}
+
+.dock-zoom #tl-zoom-slider {
+  width: 96px;
+  margin: 0 4px;
+}
+
+/* fitting the height is rarer than zooming, so it is an icon at the end; its name is in the tooltip */
+#btn-timeline-height-fit {
+  position: relative;
+  width: 26px;
+  margin-left: 8px;
+  padding: 0;
+  justify-content: center;
 }
 
 .tl-time-readout {
-  min-width: 82px;
-  color: var(--muted);
-  font-size: 11px;
+  min-width: 0;
+  margin-right: 4px;
+  padding: 0 8px;
+  color: var(--tl-tool-text);
+  font: 500 11.5px var(--mono);
   font-variant-numeric: tabular-nums;
 }
+.tl-time-readout[hidden] {
+  display: none;
+}
 .tl-time-label {
-  font-family: var(--font);
+  font: 500 12px var(--font);
 }
 .tl-time-kept {
   color: var(--text);
+}
+
+/* the timeline's time sits over the track names, level with the ruler, and stays put while the
+   tracks scroll */
+.tl-corner-time {
+  position: sticky;
+  left: 0;
+  top: 0;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: var(--timeline-head-width);
+  height: 26px;
+  margin-bottom: -26px;
+  /* lines up with the track icons below it and shares a baseline with the ruler's numbers */
+  padding: 0 0 8px 8px;
+  box-sizing: border-box;
+  overflow: hidden;
+  color: var(--text);
+  font: 500 12.5px var(--mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+.tl-corner-time.hid {
+  display: none;
 }
 
 #sequence-frame {
@@ -462,7 +568,7 @@ body.task-cut #timeline-audio-tools {
   left: 5px;
   transform: none;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -476,24 +582,31 @@ body.task-cut #timeline-audio-tools {
   column-gap: 8px;
 }
 
+/* two lines: the track icon and name on top, its buttons underneath with mute under the icon, so
+   the icons form one column and long file names get the full width */
 .seq-head {
   display: grid;
-  grid-template-columns: 16px minmax(0, 1fr) 28px 28px;
+  grid-template-columns: 28px 28px minmax(0, 1fr);
+  grid-template-rows: 20px 28px;
+  align-content: center;
   align-items: center;
-  column-gap: 6px;
+  column-gap: 4px;
+  row-gap: 2px;
   min-width: 0;
-  padding: 0 10px 0 2px;
-  border-right: 1px solid var(--timeline-line);
+  padding: 0 0 0 2px;
+  border-right: 0;
 }
 
 .seq-row.video .seq-head {
-  grid-template-columns: 16px minmax(0, 1fr);
+  grid-template-rows: 20px;
 }
 
 .seq-track-icon {
+  grid-row: 1;
   grid-column: 1;
   display: flex;
   align-items: center;
+  justify-content: center;
   color: var(--muted);
 }
 
@@ -502,7 +615,8 @@ body.task-cut #timeline-audio-tools {
 }
 
 .seq-track-name {
-  grid-column: 2;
+  grid-row: 1;
+  grid-column: 2 / 4;
   min-width: 0;
   overflow: hidden;
   color: var(--text);
@@ -532,11 +646,13 @@ body.task-cut #timeline-audio-tools {
 }
 
 .seq-track-mute {
-  grid-column: 3;
+  grid-row: 2;
+  grid-column: 1;
 }
 
 .seq-track-remove {
-  grid-column: 4;
+  grid-row: 2;
+  grid-column: 2;
 }
 
 .seq-track-icon svg,
@@ -601,35 +717,35 @@ body.task-cut #timeline-audio-tools {
 }
 
 .seq-row.audio .seq-head {
-  height: 42px;
+  height: 56px;
 }
 
 .seq-row.audio .seq-lane {
-  height: 24px;
+  height: 44px;
   transform: none;
 }
 
+/* the source audio row is tall enough for a waveform that shows loud and quiet parts */
 #source-audio-track .seq-head {
-  height: calc(42px + var(--track-stretch, 0px) * 0.4);
+  height: calc(76px + var(--track-stretch, 0px) * 0.4);
 }
 
 #source-audio-track .seq-lane {
-  height: calc(24px + var(--track-stretch, 0px) * 0.4);
+  height: calc(64px + var(--track-stretch, 0px) * 0.4);
 }
 
 /* separator between rows only, so the last row adds no trailing height and
    WebKitGTK does not show a phantom vertical scrollbar when the tracks fit */
+/* rows are told apart by their lanes, so the line between them stays clear */
 .seq-row + .seq-row {
   margin-top: 0;
-  border-top: 1px solid var(--timeline-line);
+  border-top: 1px solid transparent;
 }
 
 #imported-audio-tracks:has(.seq-row) {
   margin-top: 0;
   padding-top: 0;
-  /* row separators are border-top now; keep one between the source group and
-     the first imported track since they sit in different containers */
-  border-top: 1px solid var(--timeline-line);
+  border-top: 1px solid transparent;
 }
 
 .tl-segment-surface {
@@ -702,25 +818,13 @@ body.task-cut #timeline-audio-tools {
   background: var(--raised);
 }
 
-.audio-clip-label {
-  font-size: 10px;
-}
-
 .seq-audio-clip.imported {
   align-items: center;
   padding-top: 0;
 }
 
-.seq-audio-clip.imported .audio-clip-label {
-  position: absolute;
-  top: 50%;
-  max-width: calc(100% - 56px);
-  left: 28px;
-  transform: translateY(-50%);
-}
-
 .audio-muted-indicator {
-  font-size: 9px;
+  font-size: 10px;
 }
 
 .seq-audio-clip,
@@ -741,9 +845,9 @@ body.task-cut #timeline-audio-tools {
   pointer-events: none;
 }
 
+/* narrow windows drop the captions so every control still fits on one line */
 @media (max-width: 1100px) {
   #audio-editor {
-    --timeline-head-width: 192px;
     padding-inline: 12px;
   }
 
@@ -751,22 +855,22 @@ body.task-cut #timeline-audio-tools {
     display: none;
   }
 
-  .tl-time-readout {
-    min-width: 82px;
+  .timeline-view-tools {
+    margin-left: 12px;
   }
 
-  /* make room for the Keyframes switch without scrolling the toolbar */
-  body.task-cut #btn-timeline-height-fit,
-  body.task-cut #audio-fragment-mute,
-  body.task-cut #audio-add {
+  .dock-zoom #tl-zoom-slider {
+    width: 72px;
+  }
+
+  /* Reset is the rarest action, so it gives up its word first; the tooltip names it */
+  #btn-segments-reset {
     width: 28px;
     padding: 0;
     justify-content: center;
   }
 
-  body.task-cut #btn-timeline-height-fit .timeline-command-label,
-  body.task-cut #audio-fragment-mute .timeline-command-label,
-  body.task-cut #audio-add .timeline-command-label {
+  #btn-segments-reset .timeline-command-label {
     display: none;
   }
 }
@@ -1033,12 +1137,6 @@ body.task-cut #timeline-audio-tools {
   --timeline-cut-seam: var(--panel);
   background: var(--panel);
 }
-#timeline-row.seq-toolbar,
-.seq-row,
-.seq-head,
-.timeline-tool-group:not(:first-child) {
-  border-color: var(--border);
-}
 #sequence-ruler {
   border-bottom-color: var(--border);
 }
@@ -1049,60 +1147,155 @@ body.task-cut #timeline-audio-tools {
 .seq-tick span {
   color: var(--dim);
 }
-/* keep selection visible independently of the segment color */
+/* the timeline's look. Graphite, the default, keeps clips grey, selected ones included, and
+   only the selected waveform and number take the accent; Violet tints clips with the accent.
+   Either way a selection is a lighter fill, never an outline, and the waveform is a solid mask
+   coloured by the style. A fill change alone can't reach 3:1 without dimming the text on it, so
+   the white trim handles carry the selection too */
+#audio-editor {
+  --tl-inset: 3px;
+  --tl-lane: #161618;
+  --tl-clip: var(--raised);
+  --tl-clip-hover: #2f3035;
+  --tl-clip-selected: #45464e;
+  --tl-audio: #222226;
+  --tl-audio-hover: #27282c;
+  --tl-audio-selected: #36373d;
+  --tl-wave: #8f8e96;
+  --tl-wave-selected: var(--accent-light);
+  --tl-selected-ink: var(--accent-light);
+  --tl-edge: #b4b3bb;
+}
+:root[data-timeline="violet"] #audio-editor {
+  --tl-lane: transparent;
+  --tl-clip: color-mix(in srgb, var(--accent) 24%, #26262a);
+  --tl-clip-hover: color-mix(in srgb, var(--accent) 30%, #26262a);
+  --tl-clip-selected: color-mix(in srgb, var(--accent) 56%, #26262a);
+  --tl-audio: color-mix(in srgb, var(--accent) 14%, #1f1f23);
+  --tl-audio-hover: color-mix(in srgb, var(--accent) 19%, #1f1f23);
+  --tl-audio-selected: color-mix(in srgb, var(--accent) 34%, #1f1f23);
+  --tl-wave: color-mix(in srgb, var(--accent-light) 62%, #6e6d74);
+  --tl-selected-ink: color-mix(in srgb, var(--accent-light) 60%, white);
+  /* a pale tint of the accent, so the handle belongs to the violet clip instead of sitting on it */
+  --tl-edge: color-mix(in srgb, var(--accent-light) 50%, #f2f0f6);
+}
+.seq-lane {
+  border-radius: 6px;
+  background: var(--tl-lane);
+}
+.tl-segment {
+  top: var(--tl-inset);
+  bottom: var(--tl-inset);
+}
 .tl-segment-surface {
   border: 0;
-  background: var(--seg-fill, #35344a);
+  border-radius: 4px;
+  background: var(--tl-clip);
   box-shadow: none;
   opacity: 1;
 }
 .tl-segment:hover .tl-segment-surface {
-  background: var(--seg-fill-hover, #3f3d56);
+  background: var(--tl-clip-hover);
 }
 #video-track.selected .tl-segment.active .tl-segment-surface {
-  background: var(--clip-fill, var(--seg-fill-active));
-  box-shadow: inset 0 0 0 2px var(--accent-light), 0 2px 6px rgb(8 4 20 / 0.4);
+  background: var(--tl-clip-selected);
+  box-shadow: none;
 }
-#video-track.selected .tl-segment.active,
-#video-track.selected .tl-segment.active .tl-segment-label,
-#video-track.selected .tl-segment.active .tl-segment-badge {
-  color: var(--text);
+.tl-segment-copy {
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
 }
-#video-track.selected .tl-segment.active .tl-segment-range {
-  color: var(--on-seg-muted);
+/* in a clip with room, the range shows inside it beside the length, so it never covers the ruler */
+@container (min-width: 201px) {
+  .tl-segment-time,
+  .tl-segment:hover .tl-segment-time,
+  .tl-segment:focus-visible .tl-segment-time,
+  #video-track.selected #timeline.segment-dragging .tl-segment.active .tl-segment-time {
+    top: 50%;
+    bottom: auto;
+    left: auto;
+    right: 14px;
+    padding: 0;
+    transform: translateY(-50%);
+    border: 0;
+    background: none;
+    box-shadow: none;
+    color: var(--muted);
+    font: 500 11px var(--font);
+    font-variant-numeric: tabular-nums;
+  }
 }
 .tl-segment-badge {
+  min-width: 0;
+  margin-left: 12px;
+  padding: 0;
   border: 0;
   background: transparent;
   box-shadow: none;
+  color: var(--text);
+  font: 700 12px var(--font);
+}
+.tl-segment-label {
+  flex: 0 1 auto;
+  min-width: 0;
+  /* a little lighter than muted text, so it stays readable on Violet's hovered clips */
+  color: color-mix(in srgb, var(--muted) 60%, var(--text));
+  font: 500 11.5px/14px var(--font);
+  font-variant-numeric: tabular-nums;
+}
+#video-track.selected .tl-segment.active,
+#video-track.selected .tl-segment.active .tl-segment-label {
+  color: var(--text);
+}
+#video-track.selected .tl-segment.active .tl-segment-badge {
+  color: var(--tl-selected-ink);
 }
 .seq-audio-clip,
 .audio-clip {
-  background-color: var(--audio-clip-fill);
+  top: var(--tl-inset);
+  bottom: var(--tl-inset);
   border: 0;
+  border-radius: 4px;
+  background-color: var(--tl-audio);
   box-shadow: none;
   filter: none;
   opacity: 1;
 }
 .seq-audio-clip:hover,
-.audio-clip:hover,
+.audio-clip:hover {
+  background-color: var(--tl-audio-hover);
+}
 #source-audio-track.selected .seq-audio-clip.selected,
-.seq-audio-clip.imported.selected,
+.seq-row.audio.imported .seq-audio-clip.selected,
 .audio-clip.selected {
-  background-color: var(--audio-clip-fill-hover);
+  background-color: var(--tl-audio-selected);
+  box-shadow: none;
 }
 .audio-waveform {
   z-index: 0;
-  opacity: 0.58;
+  background: var(--tl-wave);
+  -webkit-mask-image: var(--wave-image);
+  mask-image: var(--wave-image);
+  -webkit-mask-size: var(--wave-size, 100% 100%);
+  mask-size: var(--wave-size, 100% 100%);
+  -webkit-mask-position: var(--wave-position, left center);
+  mask-position: var(--wave-position, left center);
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  opacity: 1;
   filter: none;
-  mix-blend-mode: screen;
+  mix-blend-mode: normal;
+}
+#source-audio-track.selected .seq-audio-clip.selected .audio-waveform,
+.seq-row.audio.imported .seq-audio-clip.selected .audio-waveform,
+.audio-clip.selected .audio-waveform {
+  background: var(--tl-wave-selected);
 }
 .seq-audio-clip.muted,
-#source-audio-track.selected .seq-audio-clip.selected.muted,
-.seq-audio-clip.imported.selected.muted,
 .audio-clip.muted,
 #source-audio-track.muted .seq-audio-clip,
-#source-audio-track.muted .seq-audio-clip.selected,
 .seq-row.audio.imported.muted .seq-audio-clip {
   background-color: var(--raised);
   border: 0;
@@ -1110,27 +1303,36 @@ body.task-cut #timeline-audio-tools {
   filter: none;
   opacity: 1;
 }
+/* a muted clip that is selected keeps the selected fill, so the selection doesn't vanish with
+   the sound */
+#source-audio-track.selected .seq-audio-clip.selected.muted,
+#source-audio-track.muted.selected .seq-audio-clip.selected,
+.seq-row.audio.imported .seq-audio-clip.selected.muted,
+.seq-row.audio.imported.muted .seq-audio-clip.selected,
+.audio-clip.selected.muted {
+  background-color: var(--tl-audio-selected);
+  box-shadow: none;
+  filter: none;
+  opacity: 1;
+}
 #seq-playhead {
-  width: 2px;
+  width: 1.5px;
   background: var(--timeline-playhead);
-  box-shadow:
-    0 0 0 1px rgb(0 0 0 / 0.5),
-    0 0 6px rgb(196 169 255 / 0.4);
+  box-shadow: none;
 }
 #seq-playhead::before {
   background: var(--timeline-playhead);
-  box-shadow:
-    0 0 0 1px rgb(0 0 0 / 0.5),
-    0 1px 3px rgb(0 0 0 / 0.66);
+  box-shadow: none;
 }
+/* the time only shows while it is being set, so at rest it never covers the ruler */
 #seq-playhead-time {
   border: 1px solid var(--hair-2);
   background: var(--raised-2);
   color: var(--text);
-  box-shadow: 0 4px 12px rgb(0 0 0 / 0.36);
+  box-shadow: none;
+  visibility: hidden;
 }
-#source-audio-track.selected .seq-audio-clip.selected,
-.seq-row.audio.imported .seq-audio-clip.selected,
-.audio-clip.selected {
-  box-shadow: inset 0 0 0 2px var(--accent-light);
+#audio-editor:has(#timeline.trim-dragging, #timeline.segment-dragging, .clip-edge:focus-visible) #seq-playhead-time,
+body.timeline-scrubbing #seq-playhead-time {
+  visibility: visible;
 }

@@ -1222,6 +1222,7 @@ class AppSettings:
     reopen_last_videos: bool = False
     last_session_files: list[str] = field(default_factory=list)
     loop_playback: bool = True
+    timeline_style: str = "graphite"
     skip_seconds: str = "3"
     name_taken: str = "number"
     pinned_profile_ids: list[str] = field(default_factory=list)

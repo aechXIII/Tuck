@@ -706,6 +706,7 @@ class TestPickerAndPlayback:
         api = BridgeAPI()
         settings = api.get_settings()
         assert settings["loop_playback"] is True
+        assert settings["timeline_style"] == "graphite"
         assert settings["skip_seconds"] == "3"
         assert settings["name_taken"] == "number"
         assert settings["pinned_profile_ids"] == []
@@ -725,6 +726,7 @@ class TestPickerAndPlayback:
         "patch",
         [
             {"skip_seconds": "7"},
+            {"timeline_style": "neon"},
             {"skip_seconds": 3},
             {"pinned_profile_ids": "sharing"},
             {"pinned_profile_ids": ["../escape"]},

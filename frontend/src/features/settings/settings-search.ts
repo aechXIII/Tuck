@@ -63,6 +63,7 @@ export const SETTINGS_INDEX: readonly SettingsEntry[] = [
   { id: "time-format", page: "general", label: "Time format", keywords: "timecode frames seconds timeline player clock" },
   { id: "accent", page: "appearance", label: "Accent color", keywords: "theme colour violet purple blue teal green amber rose" },
   { id: "interface-size", page: "appearance", label: "Interface size", keywords: "zoom scale compact large small big text" },
+  { id: "timeline-style", page: "appearance", label: "Timeline", keywords: "clips colour color graphite violet waveform look" },
   { id: "animations", page: "appearance", label: "Animations", keywords: "motion reduce transitions effects" },
   { id: "task-compression", page: "tools", label: "Compress", keywords: "task show hide" },
   { id: "task-upscale", page: "tools", label: "Upscale", keywords: "task show hide" },

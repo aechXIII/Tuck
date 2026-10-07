@@ -95,6 +95,7 @@ FLAG_PREFERENCES: tuple[str, ...] = (
 
 ACCENT_COLORS: tuple[str, ...] = ("violet", "blue", "teal", "green", "amber", "rose")
 INTERFACE_SIZES: tuple[str, ...] = ("compact", "default", "large")
+TIMELINE_STYLES: tuple[str, ...] = ("graphite", "violet")
 TIME_FORMATS: tuple[str, ...] = ("seconds", "timecode", "frames")
 # how far Shift with the arrow keys skips, in seconds
 SKIP_LENGTHS: tuple[str, ...] = ("1", "3", "5", "10")
@@ -103,6 +104,7 @@ SKIP_LENGTHS: tuple[str, ...] = ("1", "3", "5", "10")
 CHOICE_PREFERENCES: dict[str, tuple[str, ...]] = {
     "accent_color": ACCENT_COLORS,
     "interface_size": INTERFACE_SIZES,
+    "timeline_style": TIMELINE_STYLES,
     "time_format": TIME_FORMATS,
     "skip_seconds": SKIP_LENGTHS,
     "name_taken": NAME_TAKEN_CHOICES,

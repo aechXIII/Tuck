@@ -1110,8 +1110,7 @@
             disabled
           >
             <svg viewBox="0 0 16 16" aria-hidden="true">
-              <rect x="1" y="6" width="8" height="6" rx="1.5"></rect>
-              <path d="M12.5 2v6M9.5 5h6" />
+              <path d="M8 4v8M4 8h8" />
             </svg>
             <span class="timeline-command-label">Add segment</span>
           </button>
@@ -1128,8 +1127,7 @@
             disabled
           >
             <svg viewBox="0 0 16 16" aria-hidden="true">
-              <rect x="2" y="5" width="5" height="6" rx="1"></rect>
-              <rect x="9" y="5" width="5" height="6" rx="1"></rect>
+              <path d="M8 2v12M4 5l-2 3 2 3M12 5l2 3-2 3" />
             </svg>
             <span class="timeline-command-label">Split</span>
           </button>
@@ -1145,10 +1143,7 @@
             disabled
           >
             <svg viewBox="0 0 16 16" aria-hidden="true">
-              <path
-                d="M3.5 4.5h9M6.5 4.5v-1a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v1M4.5 4.5l.6 8a1 1 0 0 0 1 .9h3.8a1 1 0 0 0 1-.9l.6-8"
-              />
-              <path d="M6.7 7v4M9.3 7v4" />
+              <path d="M3 4.5h10M6 4.5V3h4v1.5M5 4.5l.6 8.5h4.8l.6-8.5" />
             </svg>
             <span class="timeline-command-label">Remove</span>
           </button>
@@ -1182,8 +1177,7 @@
             data-tip="Mute this segment's source audio"
           >
             <svg viewBox="0 0 16 16" aria-hidden="true">
-              <path d="M1.5 6h2.3l3.4-3v10l-3.4-3H1.5z"></path>
-              <path d="M10.5 6.2l3.6 3.6M14.1 6.2l-3.6 3.6"></path>
+              <path d="M3 6.5v3h2.5L9 12.5v-9L5.5 6.5ZM11.5 6.5l3 3M14.5 6.5l-3 3" />
             </svg>
             <span class="timeline-command-label">Mute audio</span>
           </button>
@@ -1197,14 +1191,15 @@
             disabled
           >
             <svg viewBox="0 0 16 16" aria-hidden="true">
-              <path d="M2 9.5v-3M4.5 11v-6M7 9.5v-3" />
-              <path d="M12.5 2v6M9.5 5h6" />
+              <path
+                d="M5 12V5l7-1.5v7M5 12a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0ZM12 10.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Z"
+              />
             </svg>
             <span class="timeline-command-label">Add audio</span>
           </button>
         </div>
         <span class="timeline-toolbar-spacer"></span>
-        <span id="tl-time" class="tl-time-readout" aria-label="Timeline position">0:00 / 0:00</span>
+        <span id="tl-time" class="tl-time-readout" aria-label="Kept length" hidden></span>
         <div class="timeline-tool-group timeline-view-tools" role="group" aria-label="View controls">
           <span class="timeline-tool-label" aria-hidden="true">View</span>
           <button
@@ -1238,19 +1233,6 @@
               <span class="timeline-switch-thumb"></span>
             </span>
           </button>
-          <button
-            type="button"
-            id="btn-timeline-height-fit"
-            class="dock-text-btn"
-            data-action-click="timeline-reset-height"
-            data-tip="Fit the timeline to its tracks and the video"
-            aria-label="Fit timeline height to tracks"
-          >
-            <svg viewBox="0 0 16 16" aria-hidden="true">
-              <path d="M3 4h10M3 12h10M8 2v4M6.5 4 8 5.5 9.5 4M8 14v-4M6.5 12 8 10.5 9.5 12"></path>
-            </svg>
-            <span class="timeline-command-label">Fit tracks</span>
-          </button>
           <div class="dock-zoom" role="group" aria-label="Timeline zoom">
             <button
               type="button"
@@ -1265,9 +1247,6 @@
               disabled
             >
               Fit
-              <svg class="timeline-fit-chevron" viewBox="0 0 12 12" aria-hidden="true">
-                <path d="m3.5 4.5 2.5 2.5 2.5-2.5"></path>
-              </svg>
             </button>
             <button
               type="button"
@@ -1281,7 +1260,7 @@
               aria-keyshortcuts="Control+-"
               disabled
             >
-              &#8722;
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 8h8"></path></svg>
             </button>
             <input
               type="range"
@@ -1306,12 +1285,25 @@
               aria-keyshortcuts="Control+="
               disabled
             >
-              +
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 4v8M4 8h8"></path></svg>
             </button>
           </div>
+          <button
+            type="button"
+            id="btn-timeline-height-fit"
+            class="dock-text-btn"
+            data-action-click="timeline-reset-height"
+            data-tip="Fit the timeline to its tracks and the video"
+            aria-label="Fit timeline height to tracks"
+          >
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M3 4h10M3 12h10M8 2v4M6.5 4 8 5.5 9.5 4M8 14v-4M6.5 12 8 10.5 9.5 12"></path>
+            </svg>
+          </button>
         </div>
       </div>
       <div id="sequence-frame">
+        <span id="tl-corner-time" class="tl-corner-time hid" role="timer" aria-label="Playhead position"></span>
         <div id="sequence-stack">
           <div id="sequence-ruler" class="hid" aria-hidden="true"></div>
           <div class="seq-group" id="source-group">

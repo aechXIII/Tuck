@@ -128,7 +128,7 @@ test("selected segment and library card text stays readable on the accent fill",
   expect(
     await textContrast(
       page,
-      ".tl-segment.active .tl-segment-range",
+      ".tl-segment.active .tl-segment-badge",
       "#video-track.selected .tl-segment.active .tl-segment-surface",
     ),
   ).toBeGreaterThanOrEqual(4.5);
@@ -157,7 +157,15 @@ test("selected segment and library card text stays readable on the accent fill",
     await Promise.all(el.getAnimations().map((animation) => animation.finished));
   });
   expect(
-    await textContrast(page, ".tl-segment:not(.active) .tl-segment-range", ".tl-segment:not(.active) .tl-segment-surface"),
+    await textContrast(page, ".tl-segment:not(.active) .tl-segment-label", ".tl-segment:not(.active) .tl-segment-surface"),
+  ).toBeGreaterThanOrEqual(4.5);
+  // the Violet timeline tints clips, so its hovered text is checked too
+  await page.evaluate(() => { document.documentElement.dataset.timeline = "violet"; });
+  expect(
+    await textContrast(page, ".tl-segment:not(.active) .tl-segment-label", ".tl-segment:not(.active) .tl-segment-surface"),
+  ).toBeGreaterThanOrEqual(4.5);
+  expect(
+    await textContrast(page, ".tl-segment.active .tl-segment-badge", "#video-track.selected .tl-segment.active .tl-segment-surface"),
   ).toBeGreaterThanOrEqual(4.5);
 });
 
@@ -175,11 +183,14 @@ test("primary actions and timeline labels retain contrast in normal and hover st
   }
   expect(await textContrast(page, ".seq-tick span", "#audio-editor")).toBeGreaterThanOrEqual(4.5);
   expect(await textContrast(page, "#source-audio-head .seq-track-name", "#audio-editor")).toBeGreaterThanOrEqual(4.5);
+  expect(await textContrast(page, "#tl-corner-time", "#audio-editor")).toBeGreaterThanOrEqual(4.5);
   await page.getByRole("button", { name: "Add audio", exact: true }).click();
   await expect(page.locator(".seq-audio-clip.imported")).toBeVisible();
-  expect(await textContrast(page, ".audio-clip-label", ".seq-audio-clip.imported")).toBeGreaterThanOrEqual(4.5);
-  await page.locator(".seq-audio-clip.imported").hover();
-  expect(await textContrast(page, ".audio-clip-label", ".seq-audio-clip.imported")).toBeGreaterThanOrEqual(4.5);
+  // the added track is named in its header, not again inside the clip
+  const trackName = (await page.locator("#imported-audio-tracks .seq-track-name").textContent()) ?? "";
+  expect(trackName).not.toBe("");
+  await expect(page.locator(".seq-audio-clip.imported")).not.toContainText(trackName);
+  expect(await textContrast(page, "#imported-audio-tracks .seq-track-name", "#audio-editor")).toBeGreaterThanOrEqual(4.5);
 });
 
 test("track header controls stay readable and usable at desktop and compact sizes", async ({ page }) => {
@@ -587,7 +598,16 @@ test("custom export fields share edges and selected clips have matching handles"
       starts: [rect("#export-res-select-trigger").left, rect("#res-cust input").left, rect("#scaler-sel-trigger").left],
       ends: [rect("#export-res-select-trigger").right, rect("#res-h").right, rect("#scaler-sel-trigger").right],
       arrowInset: select.getBoundingClientRect().right - select.querySelector("svg")!.getBoundingClientRect().right,
-      selection: getComputedStyle(document.querySelector(".tl-segment.active .tl-segment-surface")!).boxShadow,
+      selection: (() => {
+        // a selected clip is marked by a stronger fill, never an outline
+        const surface = getComputedStyle(document.querySelector(".tl-segment.active .tl-segment-surface")!);
+        const probe = document.createElement("span");
+        probe.style.background = "var(--tl-clip-selected)";
+        document.getElementById("audio-editor")!.appendChild(probe);
+        const wanted = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        return { shadow: surface.boxShadow, fill: surface.backgroundColor, wanted };
+      })(),
       handles: [".tl-segment.active .clip-edge.start", ".seq-audio-clip .clip-edge.start"].map(s => {
         const c = getComputedStyle(document.querySelector(s)!, "::before");
         return [c.width, c.borderRadius, c.left, c.backgroundColor];
@@ -597,9 +617,63 @@ test("custom export fields share edges and selected clips have matching handles"
   for (const x of geometry.starts) expect(x).toBeCloseTo(geometry.starts[0]!, 0);
   for (const x of geometry.ends) expect(x).toBeCloseTo(geometry.ends[0]!, 0);
   expect(geometry.arrowInset).toBeCloseTo(10, 0);
-  expect(geometry.selection).toContain("inset");
+  expect(geometry.selection.shadow).toBe("none");
+  expect(geometry.selection.fill).toBe(geometry.selection.wanted);
   expect(geometry.handles[0]).toEqual(geometry.handles[1]);
   await page.screenshot({ path: testInfo.outputPath("aligned-fields-and-handles.png") });
+});
+
+test("segment handles stand out from their clips in both timeline styles", async ({ page }) => {
+  await page.setViewportSize({ width: 1240, height: 800 });
+  await installFakeBackend(page, editorFixture());
+  await page.goto("/");
+  await page.getByRole("button", { name: "Add videos" }).click();
+  await expect(page.locator(".tl-segment.active .clip-edge.end")).toBeVisible();
+  // the strip against the clip and the grip line against the strip, as contrast ratios
+  const handleContrast = () => page.evaluate(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 1;
+    canvas.height = 1;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+    const rgb = (color: string): [number, number, number] => {
+      ctx.clearRect(0, 0, 1, 1);
+      ctx.fillStyle = color;
+      ctx.fillRect(0, 0, 1, 1);
+      const d = ctx.getImageData(0, 0, 1, 1).data;
+      return [d[0] ?? 0, d[1] ?? 0, d[2] ?? 0];
+    };
+    const lum = (color: string) => {
+      const lin = (c: number) => (c / 255 <= 0.04045 ? c / 255 / 12.92 : ((c / 255 + 0.055) / 1.055) ** 2.4);
+      const [r, g, b] = rgb(color);
+      return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+    };
+    const ratio = (a: string, b: string) => {
+      const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x) as [number, number];
+      return (hi + 0.05) / (lo + 0.05);
+    };
+    return [
+      [".tl-segment.active .clip-edge.end", ".tl-segment.active .tl-segment-surface"],
+      ["#source-audio-lane .seq-audio-clip.selected .clip-edge.end", "#source-audio-lane .seq-audio-clip.selected"],
+    ].map(([edge, clip]) => {
+      const el = document.querySelector(edge!)!;
+      const strip = getComputedStyle(el, "::before").backgroundColor;
+      const grip = getComputedStyle(el, "::after").backgroundColor;
+      return { strip: ratio(strip, getComputedStyle(document.querySelector(clip!)!).backgroundColor), grip: ratio(grip, strip) };
+    });
+  });
+  for (const style of ["graphite", "violet"]) {
+    await page.evaluate((s) => { document.documentElement.dataset.timeline = s; }, style);
+    for (const result of await handleContrast()) {
+      expect(result.strip, `${style} strip`).toBeGreaterThanOrEqual(3);
+      expect(result.grip, `${style} grip`).toBeGreaterThanOrEqual(3);
+    }
+    // pointing at a handle turns it to the accent, which keeps the same contrast
+    await page.locator(".tl-segment.active .clip-edge.end").hover();
+    const [hovered] = await handleContrast();
+    expect(hovered!.strip, `${style} hovered strip`).toBeGreaterThanOrEqual(3);
+    expect(hovered!.grip, `${style} hovered grip`).toBeGreaterThanOrEqual(3);
+    await page.mouse.move(5, 5);
+  }
 });
 
 test("export label centers across the split button and toolbar dividers are centered", async ({ page }) => {
