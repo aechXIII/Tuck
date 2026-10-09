@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import errno
 from collections.abc import Callable
 from fractions import Fraction
 from math import gcd
@@ -8,6 +9,7 @@ from threading import Event
 
 import av
 from av.container import InputContainer, OutputContainer
+from av.error import FFmpegError
 from av.stream import Stream
 from av.video.stream import VideoStream
 
@@ -158,6 +160,40 @@ def _progress(stage: EncodeStage, message: str, current: float, duration: float)
     )
 
 
+# drives that are full, or over a user's quota, report one of these
+_NO_SPACE = {errno.ENOSPC, getattr(errno, "EDQUOT", errno.ENOSPC)}
+_NOT_ALLOWED = {errno.EACCES, errno.EPERM}
+
+
+def save_error(exc: OSError | ValueError | FFmpegError) -> CutAnalysisError:
+    """Say why a cut could not be saved; the system text, which can name private paths,
+    stays in the details."""
+    if isinstance(exc, OSError) and exc.errno in _NO_SPACE:
+        message = (
+            "The cut could not be saved because the drive is full. "
+            "Free up some space or choose another export folder."
+        )
+    elif isinstance(exc, PermissionError) or (
+        isinstance(exc, OSError) and exc.errno in _NOT_ALLOWED
+    ):
+        message = (
+            "The cut could not be saved because Tuck can't write there. Close any program "
+            "using the file, or choose an export folder you can save to."
+        )
+    elif isinstance(exc, OSError):
+        message = (
+            "The cut could not be saved. Check that the video and the export folder are "
+            "still available, then try again."
+        )
+    else:
+        # PyAV reports damaged packets and timestamps the muxer refuses as value errors
+        message = (
+            "This video's format would not accept the cut. Try moving the cut points, "
+            "or use Compress to re-encode the video instead."
+        )
+    return CutAnalysisError("cut_failed", message, str(exc))
+
+
 class CutRunner:
     def __init__(self, *, ffprobe: str | None = None) -> None:
         self._cancel = Event()
@@ -225,12 +261,8 @@ class CutRunner:
             if on_progress is not None:
                 on_progress(EncodeProgress(stage=EncodeStage.FAILED, message=str(exc)))
             raise
-        except (OSError, ValueError) as exc:
-            error = CutAnalysisError(
-                "cut_failed",
-                "The cut could not be saved. Check that the folder is writable and has free space.",
-                str(exc),
-            )
+        except (OSError, ValueError, FFmpegError) as exc:
+            error = save_error(exc)
             if on_progress is not None:
                 on_progress(EncodeProgress(stage=EncodeStage.FAILED, message=str(error)))
             raise error from exc

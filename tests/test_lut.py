@@ -253,13 +253,17 @@ def test_bridge_import_binary_cors_and_token_release(tmp_path, storage):
         assert response.ok
         result = response.result
         assert set(result) == {"path", "name", "size", "table_url", "token"}
-        with urllib.request.urlopen(result["table_url"], timeout=5) as binary:
-            assert binary.headers["Access-Control-Allow-Origin"] == "*"
+        origin = {"Origin": "http://tauri.localhost"}
+        request = urllib.request.Request(result["table_url"], headers=origin)
+        with urllib.request.urlopen(request, timeout=5) as binary:
+            assert binary.headers["Access-Control-Allow-Origin"] == "http://tauri.localhost"
             assert len(binary.read()) == 3**3 * 3 * 4
-        request = urllib.request.Request(result["table_url"], headers={"Range": "bytes=0-11"})
+        request = urllib.request.Request(
+            result["table_url"], headers={**origin, "Range": "bytes=0-11"}
+        )
         with urllib.request.urlopen(request, timeout=5) as binary:
             assert binary.status == 206
-            assert binary.headers["Access-Control-Allow-Origin"] == "*"
+            assert binary.headers["Access-Control-Allow-Origin"] == "http://tauri.localhost"
             assert len(binary.read()) == 12
         api.release_media_token(result["token"])
         with pytest.raises(urllib.error.HTTPError) as error:

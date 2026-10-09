@@ -1,3 +1,4 @@
+import errno
 import hashlib
 import os
 from dataclasses import replace
@@ -443,3 +444,57 @@ def test_undecodable_audio_at_a_cut_edge_is_not_published(media_tools, tmp_path)
         runner(media_tools).run(plan)
     assert error.value.code == "verification_failed"
     assert not Path(plan.output_path).exists()
+
+
+@pytest.mark.parametrize(
+    ("failure", "says"),
+    [
+        (OSError(errno.ENOSPC, "No space left on device"), "drive is full"),
+        (av.error.OSError(errno.ENOSPC, "No space left on device"), "drive is full"),
+        (PermissionError(errno.EACCES, "Permission denied"), "can't write there"),
+        (OSError(errno.EPERM, "Operation not permitted"), "can't write there"),
+        (OSError(errno.EIO, "Input/output error"), "still available"),
+        (av.error.InvalidDataError(-1094995529, "Invalid data found"), "format would not accept"),
+        (av.error.ValueError(errno.EINVAL, "Invalid argument"), "format would not accept"),
+        (av.error.UndefinedError(-1, "Unknown error"), "format would not accept"),
+        (ValueError("non-monotonic timestamps"), "format would not accept"),
+    ],
+)
+def test_save_errors_name_the_real_problem(failure, says):
+    from tuck.cutting.runner import save_error
+
+    error = save_error(failure)
+    assert error.code == "cut_failed"
+    assert says in str(error)
+    assert error.detail == str(failure)
+    if says != "drive is full":
+        assert "free space" not in str(error)
+
+
+@pytest.mark.parametrize(
+    ("failure", "says"),
+    [
+        (OSError(errno.ENOSPC, "No space left on device"), "drive is full"),
+        (av.error.InvalidDataError(-1094995529, "Invalid data found"), "format would not accept"),
+    ],
+)
+def test_a_failed_cut_explains_itself_and_cleans_up(
+    media_tools, tmp_path, monkeypatch, failure, says
+):
+    from tuck.cutting import runner as module
+
+    source = create_source(media_tools, tmp_path / "source.mp4", duration=4)
+    _, plan = make_plan(media_tools, source, [(0, 2)], tmp_path / "result.mp4")
+    original = module.av.open
+
+    def fail_write(file, mode="r", **kwargs):
+        if mode == "w":
+            raise failure
+        return original(file, mode, **kwargs)
+
+    monkeypatch.setattr(module.av, "open", fail_write)
+    with pytest.raises(CutAnalysisError, match=says):
+        runner(media_tools).run(plan)
+    assert not Path(plan.output_path).exists()
+    assert not list(tmp_path.glob(".tuck-*"))
+    assert not list(tmp_path.glob("*.reserved"))

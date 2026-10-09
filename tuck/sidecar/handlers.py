@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeGuard
 
+from ..cutting.serialization import KeyframeCursor
 from ..models.cutting import CUT_ERROR_CODES
+from ..queue import RETRY_REFUSAL_CODES
 from ..request_work import RequestWork
-from ..sendto import SENDTO_KINDS
 from .protocol import JsonValue, Request, Response
 
 if TYPE_CHECKING:
@@ -99,15 +100,10 @@ def _normalize_result(request: Request, value: object) -> Response:
                     entries = value.get(key)
                     if isinstance(entries, list) and _is_json_value(entries):
                         details[key] = entries
-                cut_code = value.get("code")
-                code = (
-                    cut_code.upper()
-                    if field == "cut" and isinstance(cut_code, str) and cut_code in CUT_ERROR_CODES
-                    else _error_code(request.method, message)
-                )
+                code = _domain_code(request.method, field, value.get("code"))
                 return Response.failure(
                     request.request_id,
-                    code=code,
+                    code=code or _error_code(request.method, message),
                     message=message,
                     details=details,
                 )
@@ -129,6 +125,17 @@ def _normalize_result(request: Request, value: object) -> Response:
         message="The backend returned an invalid response.",
         details={"method": request.method},
     )
+
+
+def _domain_code(method: str, field: object, code: object) -> str | None:
+    """A known domain code the page can act on, or None to derive one from the message."""
+    if not isinstance(code, str):
+        return None
+    if field == "cut" and code in CUT_ERROR_CODES:
+        return code.upper()
+    if method == "retry_item" and code in RETRY_REFUSAL_CODES:
+        return code.upper()
+    return None
 
 
 def _error_code(method: str, message: str) -> str:
@@ -156,6 +163,10 @@ def _is_json_value(value: object) -> bool:
     if isinstance(value, dict):
         return all(isinstance(key, str) and _is_json_value(item) for key, item in value.items())
     return False
+
+
+def _count(value: object) -> TypeGuard[int]:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
 
 
 def _empty(params: dict[str, object]) -> None:
@@ -335,48 +346,41 @@ def _export_profile_to_file(api: BridgeAPI, params: dict[str, object]) -> object
     return api.export_profile_to_file(params["path"], params["profile_id"])
 
 
-def _sendto_kind(params: dict[str, object], *, allow_executable_path: bool) -> str:
-    allowed = {"kind", "executable_path"} if allow_executable_path else {"kind"}
+# Send To targets are resolved from this install, so an executable path is never accepted
+def _sendto_kind(params: dict[str, object]) -> str:
+    # imported here because the Linux sidecar package leaves the Windows-only module out
+    from ..sendto import SENDTO_KINDS
+
     kind = params.get("kind")
-    if set(params) - allowed or not isinstance(kind, str) or kind not in SENDTO_KINDS:
+    if set(params) != {"kind"} or not isinstance(kind, str) or kind not in SENDTO_KINDS:
         raise _ParameterError
     return kind
 
 
-def _executable_path(params: dict[str, object]) -> str | None:
-    exec_path = params.get("executable_path")
-    if exec_path is not None and not isinstance(exec_path, str):
-        raise _ParameterError
-    return exec_path
-
-
-def _install_generic_sendto(api: BridgeAPI, params: dict[str, object]) -> object:
-    kind = _sendto_kind(params, allow_executable_path=True)
-    return api.install_generic_sendto(kind, executable_path=_executable_path(params))
-
-
-def _remove_generic_sendto(api: BridgeAPI, params: dict[str, object]) -> object:
-    return api.remove_generic_sendto(_sendto_kind(params, allow_executable_path=False))
-
-
-def _repair_generic_sendto(api: BridgeAPI, params: dict[str, object]) -> object:
-    kind = _sendto_kind(params, allow_executable_path=True)
-    return api.repair_generic_sendto(kind, executable_path=_executable_path(params))
-
-
-def _install_profile_sendto(api: BridgeAPI, params: dict[str, object]) -> object:
+def _profile_sendto_params(params: dict[str, object]) -> tuple[str, str]:
     profile_id = params.get("profile_id")
-    if set(params) - {"profile_id", "action", "executable_path"} or not isinstance(profile_id, str):
+    if set(params) - {"profile_id", "action"} or not isinstance(profile_id, str):
         raise _ParameterError
     action = params.get("action", "start")
     if not isinstance(action, str):
         raise _ParameterError
-    exec_path = params.get("executable_path")
-    if exec_path is not None and not isinstance(exec_path, str):
-        raise _ParameterError
-    return api.install_profile_sendto(
-        profile_id, action, executable_path=exec_path if isinstance(exec_path, str) else None
-    )
+    return profile_id, action
+
+
+def _install_generic_sendto(api: BridgeAPI, params: dict[str, object]) -> object:
+    return api.install_generic_sendto(_sendto_kind(params))
+
+
+def _remove_generic_sendto(api: BridgeAPI, params: dict[str, object]) -> object:
+    return api.remove_generic_sendto(_sendto_kind(params))
+
+
+def _repair_generic_sendto(api: BridgeAPI, params: dict[str, object]) -> object:
+    return api.repair_generic_sendto(_sendto_kind(params))
+
+
+def _install_profile_sendto(api: BridgeAPI, params: dict[str, object]) -> object:
+    return api.install_profile_sendto(*_profile_sendto_params(params))
 
 
 def _remove_profile_sendto(api: BridgeAPI, params: dict[str, object]) -> object:
@@ -384,18 +388,7 @@ def _remove_profile_sendto(api: BridgeAPI, params: dict[str, object]) -> object:
 
 
 def _repair_profile_sendto(api: BridgeAPI, params: dict[str, object]) -> object:
-    profile_id = params.get("profile_id")
-    if set(params) - {"profile_id", "action", "executable_path"} or not isinstance(profile_id, str):
-        raise _ParameterError
-    action = params.get("action", "start")
-    if not isinstance(action, str):
-        raise _ParameterError
-    exec_path = params.get("executable_path")
-    if exec_path is not None and not isinstance(exec_path, str):
-        raise _ParameterError
-    return api.repair_profile_sendto(
-        profile_id, action, executable_path=exec_path if isinstance(exec_path, str) else None
-    )
+    return api.repair_profile_sendto(*_profile_sendto_params(params))
 
 
 def _list_sendto_shortcuts(api: BridgeAPI, params: dict[str, object]) -> object:
@@ -428,7 +421,19 @@ def _analyze_cut(api: BridgeAPI, params: dict[str, object]) -> object:
 
 
 def _get_cut_analysis(api: BridgeAPI, params: dict[str, object]) -> object:
-    return api.get_cut_analysis(_string(params, "path"))
+    if set(params) == {"path"}:
+        return api.get_cut_analysis(_string(params, "path"))
+    path = params.get("path")
+    revision = params.get("keyframes_revision")
+    held = params.get("keyframes_from")
+    if (
+        set(params) != {"path", "keyframes_revision", "keyframes_from"}
+        or not isinstance(path, str)
+        or not _count(revision)
+        or not _count(held)
+    ):
+        raise _ParameterError
+    return api.get_cut_analysis(path, KeyframeCursor(revision, held))
 
 
 def _cancel_cut_work(api: BridgeAPI, params: dict[str, object]) -> object:

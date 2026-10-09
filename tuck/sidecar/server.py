@@ -14,10 +14,18 @@ from .protocol import (
     Response,
     encode_event,
     encode_response,
+    frame_fits,
     parse_request,
 )
 
 logger = logging.getLogger(__name__)
+
+# probes, pictures and waveforms can take many seconds each, and importing a folder asks for
+# many at once; they get their own workers so settings, queue and status requests never wait
+# behind them and time out in the shell while the work carries on here
+MEDIA_METHODS = frozenset({"probe_file", "probe_audio_file", "get_waveform", "get_thumbnail"})
+_CONTROL_WORKERS = 4
+_MEDIA_WORKERS = 4
 
 
 def run_server(
@@ -28,14 +36,31 @@ def run_server(
 ) -> int:
     lifecycle = lifecycle or BackendLifecycle()
     write_lock = threading.Lock()
-    executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="tuck-sidecar")
+    control = ThreadPoolExecutor(max_workers=_CONTROL_WORKERS, thread_name_prefix="tuck-sidecar")
+    media = ThreadPoolExecutor(max_workers=_MEDIA_WORKERS, thread_name_prefix="tuck-media")
     seen_ids: set[str] = set()
     request_work: set[RequestWork] = set()
     work_lock = threading.Lock()
 
     def write_response(response: Response) -> None:
+        frame = encode_response(response)
+        if not frame_fits(frame):
+            # the shell would drop the whole backend for one oversized line, so only this
+            # request fails
+            logger.error("Response frame of %d characters is over the protocol limit", len(frame))
+            frame = encode_response(
+                Response.failure(
+                    response.request_id,
+                    code="RESPONSE_TOO_LARGE",
+                    message="The backend reply was too large to send.",
+                )
+            )
+            if not frame_fits(frame):
+                # only a request id near the limit gets here; the shell times the request out
+                logger.error("Request id is too long to answer within the protocol limit")
+                return
         with write_lock:
-            stdout.write(encode_response(response) + "\n")
+            stdout.write(frame + "\n")
             stdout.flush()
 
     def write_event(event: Event) -> None:
@@ -63,6 +88,10 @@ def run_server(
         with work_lock:
             for work in request_work:
                 work.set()
+
+    def shutdown_workers(*, wait: bool) -> None:
+        for pool in (control, media):
+            pool.shutdown(wait=wait, cancel_futures=not wait)
 
     try:
         api = lifecycle.start()
@@ -98,13 +127,14 @@ def run_server(
                     )
                     continue
                 cancel_requests()
-                executor.shutdown(wait=True)
+                shutdown_workers(wait=True)
                 lifecycle.shutdown()
                 write_response(Response.success(request.request_id, {"status": "stopped"}))
                 return 0
             work = RequestWork()
             with work_lock:
                 request_work.add(work)
+            executor = media if request.method in MEDIA_METHODS else control
             future = executor.submit(dispatch, api, request, work)
             future.add_done_callback(
                 lambda completed, request_id=request.request_id, work=work: complete(
@@ -112,7 +142,7 @@ def run_server(
                 )
             )
         cancel_requests()
-        executor.shutdown(wait=True)
+        shutdown_workers(wait=True)
         lifecycle.shutdown()
         return 0
     except Exception:
@@ -134,4 +164,4 @@ def run_server(
         return 1
     finally:
         cancel_requests()
-        executor.shutdown(wait=False, cancel_futures=True)
+        shutdown_workers(wait=False)

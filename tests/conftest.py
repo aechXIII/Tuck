@@ -2,11 +2,22 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+
+def wait_until(condition: Callable[[], bool], *, timeout: float = 5.0, what: str = "") -> None:
+    """Wait for state that has no event to wait on, and fail instead of falling through."""
+    deadline = time.monotonic() + timeout
+    while not condition():
+        if time.monotonic() >= deadline:
+            raise AssertionError(f"timed out after {timeout}s waiting for {what or 'condition'}")
+        time.sleep(0.005)
 
 
 @pytest.fixture

@@ -281,7 +281,8 @@ def _resolve_profile(args, profiles):
         )
         return None
 
-    if args.command == "compress" and args.size:
+    # only a missing --size means the profile's size; 0 is refused like any other bad size
+    if args.command == "compress" and args.size is not None:
         if args.size <= 0:
             print("Error: --size must be greater than zero.", file=sys.stderr)
             return None
@@ -373,6 +374,11 @@ def _cmd_process(args) -> int:
 
 
 def _do_encode(plan) -> int:
+    return 0 if _encode_and_report(plan) is not None else 3
+
+
+def _encode_and_report(plan) -> Path | None:
+    """Encode one plan with console progress; the published file, or None on failure."""
     from .engine import FFmpegEngine
     from .models import EncodeProgress
     from .power import keep_awake
@@ -417,10 +423,10 @@ def _do_encode(plan) -> int:
                 )
         size_mb = result.stat().st_size / (1024 * 1024)
         console.print(f"[success]Complete[/success] [muted]{result} | {size_mb:.1f} MB[/muted]")
-        return 0
+        return result
     except Exception as e:
         error_console.print(f"[red]Error:[/red] {e}")
-        return 3
+        return None
 
 
 def _resolve_console_profile(mgr, profile_id: str | None):
@@ -475,11 +481,12 @@ def _encode_queue(
         console.print(f"[accent]{idx:02d}[/accent] [muted]of {total:02d}[/muted]  {name}")
         try:
             enc_plan = create_plan(path, profile, **options)
-            code = _do_encode(enc_plan)
-            if code != 0:
+            # the export can be published under another name than planned, for example
+            # when the planned name was taken or an open file couldn't be replaced
+            out = _encode_and_report(enc_plan)
+            if out is None:
                 errors += 1
             else:
-                out = Path(enc_plan.output)
                 size_mb = out.stat().st_size / (1024 * 1024) if out.is_file() else 0.0
                 results.append((name, str(out), size_mb))
         except Exception as e:

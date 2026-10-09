@@ -6,6 +6,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from .desktop_platform import is_linux_desktop
+from .encoding.capabilities import can_tone_map_hdr
 from .encoding.target_size import (
     MAX_AUDIO_BITRATE,
     MIN_VIDEO_BITRATE,
@@ -166,11 +167,7 @@ def plan(
         validate_segments(source_audio_segments, float(info.duration))
     validate_audio_tracks(audio_tracks, float(info.duration), audio_source_durations)
 
-    target_size = profile.target_size_bytes
-    if request is not None and request.target_size_bytes is not None:
-        target_size = request.target_size_bytes
-    if target_size <= 0:
-        target_size = 100 * 1024 * 1024
+    target_size = resolve_target_size(profile, request)
 
     if output is None:
         stem = source.stem
@@ -201,8 +198,7 @@ def plan(
     else:
         output = Path(output)
 
-    if output.resolve() == source.resolve():
-        raise ValueError("Output path must differ from source path")
+    ensure_output_differs_from_source(output, source)
 
     # replacing keeps the chosen name; the old file is only swapped out once the export is done
     if not replace_existing:
@@ -251,22 +247,7 @@ def plan(
     if target_w <= 0 or target_h <= 0:
         raise ValueError("Resolution scaling resulted in zero dimension")
 
-    if fps_mode == FPS_MODE_SOURCE:
-        target_fps = info.fps
-        apply_fps = False
-    elif fps_mode == FPS_MODE_CUSTOM:
-        cfps = (
-            request.custom_fps
-            if request and request.custom_fps is not None and request.custom_fps > 0
-            else profile.custom_fps
-        )
-        target_fps = min(cfps, info.fps)
-        apply_fps = target_fps < info.fps - 0.001
-    elif fps_mode == FPS_MODE_LIMIT:
-        target_fps = min(info.fps, profile.max_fps) if profile.max_fps > 0 else info.fps
-        apply_fps = target_fps < info.fps - 0.001
-    else:
-        raise ValueError(f"Unknown fps_mode: {fps_mode!r}")
+    target_fps, apply_fps = resolve_frame_rate(fps_mode, info, profile, request)
 
     from .lut import snapshot_lut
 
@@ -337,6 +318,10 @@ def plan(
         # Filtered audio cannot be copied directly
         copy_audio = False
         audio_br = min(info.audio_bitrate or audio_br, MAX_AUDIO_BITRATE)
+
+    tone_map_hdr, warnings = plan_colors(info)
+    warnings += audio_track_warnings(info, source_audio)
+    warnings += subtitle_warnings(info, len(segments))
 
     is_upscale = workflow == WORKFLOW_UPSCALE
 
@@ -431,6 +416,8 @@ def plan(
         transform=transform,
         keep_file_dates=keep_file_dates,
         replace_existing=replace_existing,
+        tone_map_hdr=tone_map_hdr,
+        warnings=warnings,
     )
 
     logger.info(
@@ -454,6 +441,90 @@ def plan(
     )
 
     return enc_plan
+
+
+def resolve_target_size(profile: Profile, request: PlanRequest | None) -> int:
+    """The size budget in bytes. A missing or zero size is an error, never a hidden default."""
+    target_size = profile.target_size_bytes
+    if request is not None and request.target_size_bytes is not None:
+        target_size = request.target_size_bytes
+    if target_size <= 0:
+        raise ValueError("Target size must be greater than zero. Set a size limit and try again.")
+    return target_size
+
+
+def ensure_output_differs_from_source(output: Path, source: Path) -> None:
+    same = output.resolve() == source.resolve()
+    if not same:
+        # a hard link has its own path but the same bytes, so replacing it would replace the source
+        try:
+            same = output.exists() and output.samefile(source)
+        except OSError:
+            same = False
+    if same:
+        raise ValueError("Output path must differ from source path")
+
+
+def resolve_frame_rate(
+    fps_mode: str, info: VideoInfo, profile: Profile, request: PlanRequest | None
+) -> tuple[float, bool]:
+    """The output frame rate and whether an fps filter is needed to reach it."""
+    # a variable-rate video is judged by its average rate, so a limit above it doesn't make
+    # the fps filter duplicate frames up to the nominal rate
+    source_fps = info.decision_fps
+    if fps_mode == FPS_MODE_SOURCE:
+        return source_fps, False
+    if fps_mode == FPS_MODE_CUSTOM:
+        cfps = (
+            request.custom_fps
+            if request and request.custom_fps is not None and request.custom_fps > 0
+            else profile.custom_fps
+        )
+        target_fps = min(cfps, source_fps)
+    elif fps_mode == FPS_MODE_LIMIT:
+        target_fps = min(source_fps, profile.max_fps) if profile.max_fps > 0 else source_fps
+    else:
+        raise ValueError(f"Unknown fps_mode: {fps_mode!r}")
+    return target_fps, target_fps < source_fps - 0.001
+
+
+HDR_NOT_CONVERTED_WARNING = (
+    "This video is HDR, and the FFmpeg Tuck is using can't convert HDR colours, "
+    "so the export may look washed out."
+)
+
+
+def plan_colors(info: VideoInfo) -> tuple[bool, list[str]]:
+    """Whether to tone-map HDR to SDR, and a warning when it can't be done."""
+    if not info.is_hdr:
+        return False, []
+    # exports are 8-bit SDR, so HDR is converted whenever FFmpeg can; without the filters
+    # the export still runs rather than failing on colours alone
+    if can_tone_map_hdr():
+        return True, []
+    return False, [HDR_NOT_CONVERTED_WARNING]
+
+
+def audio_track_warnings(info: VideoInfo, source_audio: bool) -> list[str]:
+    if not source_audio or info.audio_stream_count <= 1:
+        return []
+    return [f"This video has {info.audio_stream_count} audio tracks. Only the first is kept."]
+
+
+def subtitle_warnings(info: VideoInfo, segment_count: int) -> list[str]:
+    """What happens to the source's subtitles; the command keeps one text track when it can."""
+    if not info.subtitle_codecs:
+        return []
+    if info.text_subtitle_track is None:
+        return ["Subtitles aren't kept, because they're stored as pictures, which MP4 can't hold."]
+    if segment_count > 1:
+        return ["Subtitles aren't kept when the video is cut into several parts."]
+    if len(info.subtitle_codecs) > 1:
+        return [
+            f"This video has {len(info.subtitle_codecs)} subtitle tracks. "
+            "Only the first text track is kept."
+        ]
+    return []
 
 
 def _scale_resolution(

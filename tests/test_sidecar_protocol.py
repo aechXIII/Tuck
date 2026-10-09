@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -119,3 +120,23 @@ def test_machine_readable_schema_declares_all_protocol_frame_kinds() -> None:
 
     assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
     assert set(schema["$defs"]) >= {"request", "response", "event"}
+
+
+def test_frame_limit_matches_the_desktop_shell() -> None:
+    from tuck.sidecar.protocol import MAX_FRAME_BYTES
+
+    rust = Path("src-tauri/src/backend/protocol.rs").read_text(encoding="utf-8")
+    match = re.search(r"pub const MAX_FRAME_BYTES: usize = ([\d_]+);", rust)
+
+    assert match is not None
+    assert int(match.group(1).replace("_", "")) == MAX_FRAME_BYTES
+
+
+def test_frame_fits_counts_utf8_bytes_not_characters() -> None:
+    from tuck.sidecar.protocol import MAX_FRAME_BYTES, frame_fits
+
+    assert frame_fits("a" * MAX_FRAME_BYTES)
+    assert not frame_fits("a" * (MAX_FRAME_BYTES + 1))
+    # two bytes each, so half as many characters fill the line
+    assert frame_fits("ż" * (MAX_FRAME_BYTES // 2))
+    assert not frame_fits("ż" * (MAX_FRAME_BYTES // 2 + 1))

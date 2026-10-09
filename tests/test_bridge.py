@@ -2292,3 +2292,21 @@ class TestBridgeEditorPreferences:
         assert settings["shortcut_overrides"] == {"edit.undo": ["Ctrl+Z"]}
         assert settings["timeline_snap"] is True
         assert settings["cut_suffix"] == "_cut"
+
+
+def test_diagnostics_report_the_encoder_the_queue_item_really_used():
+    api = BridgeAPI()
+    item = api._queue.enqueue(
+        EncodePlan(
+            source="clip.mp4", output="clip_out.mp4", target_size=1024 * 1024, video_encoder="auto"
+        )
+    )
+    item.effective_encoder = "libx264"
+    item.encoder_fallback = "Used software encoding because the NVIDIA encoder couldn't start"
+
+    # the page sends the encoder it asked for, which is only "auto"
+    diag = api.get_diagnostics({"item_id": item.id, "resolved_encoder": "auto"})
+
+    assert diag["ok"]
+    assert "effective encoder: libx264" in diag["text"]
+    assert "encoder fallback: Used software encoding" in diag["text"]

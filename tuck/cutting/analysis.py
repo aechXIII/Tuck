@@ -158,6 +158,8 @@ def read_inventory(
                 "json",
                 str(path),
             ],
+            # only the sidecar may read requests from its stdin pipe
+            stdin=subprocess.DEVNULL,
             stdout=output,
             stderr=errors,
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,

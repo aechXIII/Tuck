@@ -12,6 +12,7 @@ from tuck.models import (
     CropRect,
     EncodePlan,
     OutputGeometry,
+    QueueItem,
     QueueState,
     Segment,
     VideoTransform,
@@ -21,6 +22,18 @@ from tuck.queue import ProcessingQueue
 
 def _plan(name: str) -> EncodePlan:
     return EncodePlan(source=f"{name}.mp4", output=f"{name}_out.mp4", target_size=1024 * 1024)
+
+
+_FINISHED = {QueueState.COMPLETED, QueueState.FAILED, QueueState.CANCELLED}
+
+
+def _wait_until_finished(q: ProcessingQueue, *items: QueueItem, timeout: float = 5.0) -> None:
+    # the worker notifies the queue condition after every item it finishes
+    with q._condition:
+        finished = q._condition.wait_for(
+            lambda: all(item.state in _FINISHED for item in items), timeout=timeout
+        )
+    assert finished, [item.state for item in items]
 
 
 class TestQueueOrdering:
@@ -250,11 +263,7 @@ class TestQueueOrdering:
 
         monkeypatch.setattr(q._engine, "encode", fake_encode)
         q.start()
-        deadline = time.time() + 2
-        while retry.state == QueueState.PENDING and time.time() < deadline:
-            time.sleep(0.01)
-        while retry.state == QueueState.RUNNING and time.time() < deadline:
-            time.sleep(0.01)
+        _wait_until_finished(q, retry)
         q.stop()
         assert original.plan is not None
         assert original.plan.video_encoder == "auto"
@@ -301,8 +310,16 @@ class TestQueueWorker:
             return out
 
         monkeypatch.setattr(q._engine, "encode", fake_encode)
+        idle = threading.Event()
+        wait = q._condition.wait
+
+        def wait_while_idle(timeout: float | None = None) -> bool:
+            idle.set()
+            return wait(timeout)
+
+        monkeypatch.setattr(q._condition, "wait", wait_while_idle)
         q.start()
-        time.sleep(0.05)
+        assert idle.wait(timeout=5)
         item = q.enqueue(
             EncodePlan(
                 source=str(tmp_path / "clip.mp4"),
@@ -310,12 +327,7 @@ class TestQueueWorker:
                 target_size=1024 * 1024,
             )
         )
-        deadline = time.time() + 2
-        while item.state == QueueState.PENDING and time.time() < deadline:
-            time.sleep(0.02)
-        deadline = time.time() + 2
-        while item.state == QueueState.RUNNING and time.time() < deadline:
-            time.sleep(0.02)
+        _wait_until_finished(q, item)
         q.stop()
         assert processed == ["clip.mp4"]
         assert item.state == QueueState.COMPLETED
@@ -346,11 +358,7 @@ class TestQueueWorker:
             )
             for i in range(3)
         ]
-        deadline = time.time() + 3
-        while any(i.state not in (QueueState.COMPLETED, QueueState.FAILED) for i in items):
-            if time.time() > deadline:
-                break
-            time.sleep(0.02)
+        _wait_until_finished(q, *items)
         q.stop()
         assert counts == {"c0.mp4": 1, "c1.mp4": 1, "c2.mp4": 1}
 
@@ -378,12 +386,7 @@ class TestQueueWorker:
             )
             for index in range(2)
         ]
-        deadline = time.time() + 2
-        while (
-            any(item.state not in (QueueState.COMPLETED, QueueState.FAILED) for item in items)
-            and time.time() < deadline
-        ):
-            time.sleep(0.02)
+        _wait_until_finished(q, *items)
         q.stop()
 
         assert processed == ["clip-0.mp4", "clip-1.mp4"]
@@ -421,11 +424,7 @@ class TestQueueWorker:
         assert entered.wait(timeout=2)
         assert q.cancel(item.id)
         release.set()
-        deadline = time.time() + 2
-        while (
-            item.state not in (QueueState.CANCELLED, QueueState.FAILED) and time.time() < deadline
-        ):
-            time.sleep(0.01)
+        _wait_until_finished(q, item)
         q.stop()
         assert item.state == QueueState.CANCELLED
 
@@ -456,10 +455,145 @@ class TestQueueWorker:
         )
         q.cancel(b.id)
         q.start()
-        deadline = time.time() + 2
-        while a.state not in (QueueState.COMPLETED, QueueState.FAILED) and time.time() < deadline:
-            time.sleep(0.02)
+        _wait_until_finished(q, a)
         q.stop()
         assert "a.mp4" in ran
         assert "b.mp4" not in ran
         assert b.state == QueueState.CANCELLED
+
+
+class TestRetryRereadsTheVideo:
+    @staticmethod
+    def _failed_item(q: ProcessingQueue, tmp_path: Path):
+        import dataclasses
+
+        from tuck.models import VideoInfo
+
+        source = tmp_path / "clip.mp4"
+        source.write_bytes(b"video")
+        info = VideoInfo(
+            path=str(source),
+            duration=10.0,
+            width=1280,
+            height=720,
+            fps=30.0,
+            video_codec="h264",
+            file_size=5,
+        )
+        plan = EncodePlan(
+            source=str(source),
+            output=str(tmp_path / "clip_out.mp4"),
+            target_size=1024 * 1024,
+            source_info=dataclasses.replace(info),
+        )
+        item = q.enqueue(plan)
+        item.state = QueueState.FAILED
+        q._pending.clear()
+        return item, info
+
+    def test_an_unchanged_video_is_queued_again(self, tmp_path, monkeypatch):
+        import dataclasses
+
+        q = ProcessingQueue()
+        item, info = self._failed_item(q, tmp_path)
+        # the same file reached through another spelling of its path
+        monkeypatch.setattr(
+            "tuck.queue.probe", lambda path: dataclasses.replace(info, path=str(path).upper())
+        )
+        retry = q.retry(item.id)
+        assert retry is not None and retry.plan is not None
+        assert retry.plan.source_info == info
+        assert q.pending_ids == [retry.id]
+
+    def test_a_changed_video_is_not_retried_with_the_old_plan(self, tmp_path, monkeypatch):
+        import dataclasses
+
+        from tuck.queue import RetryRefused
+
+        q = ProcessingQueue()
+        item, info = self._failed_item(q, tmp_path)
+        monkeypatch.setattr(
+            "tuck.queue.probe", lambda path: dataclasses.replace(info, duration=4.0, file_size=9)
+        )
+        with pytest.raises(RetryRefused, match="Add it again") as error:
+            q.retry(item.id)
+        assert error.value.code == "source_changed"
+        assert q.pending_ids == []
+        assert len(q.items) == 1
+
+    def test_a_missing_video_is_not_retried(self, tmp_path, monkeypatch):
+        from tuck.queue import RetryRefused
+
+        q = ProcessingQueue()
+        item, _ = self._failed_item(q, tmp_path)
+
+        def gone(path):
+            raise FileNotFoundError(f"Source file not found: {path}")
+
+        monkeypatch.setattr("tuck.queue.probe", gone)
+        with pytest.raises(RetryRefused) as error:
+            q.retry(item.id)
+        assert error.value.code == "source_unavailable"
+        assert q.pending_ids == []
+
+    def test_cancel_all_while_the_video_is_reread_keeps_the_retry_out(self, tmp_path, monkeypatch):
+        q = ProcessingQueue()
+        item, info = self._failed_item(q, tmp_path)
+
+        def probe_then_cancel(path):
+            q.cancel_all()
+            return info
+
+        monkeypatch.setattr("tuck.queue.probe", probe_then_cancel)
+        assert q.retry(item.id) is None
+        assert q.pending_ids == []
+        assert [i.id for i in q.items] == [item.id]
+
+    def test_the_bridge_explains_a_refused_retry(self, tmp_path, monkeypatch):
+        import dataclasses
+
+        import tuck.settings as settings_mod
+        from tuck.bridge import BridgeAPI
+
+        monkeypatch.setattr(settings_mod, "_settings_manager", None)
+        monkeypatch.setattr(settings_mod, "_storage_root", tmp_path / "storage")
+        monkeypatch.setattr("tuck.queue._queue", None)
+        api = BridgeAPI()
+        item, info = self._failed_item(api._queue, tmp_path)
+        monkeypatch.setattr("tuck.queue.probe", lambda path: dataclasses.replace(info, file_size=9))
+        response = api.retry_item(item.id)
+        assert response["ok"] is False
+        assert response["code"] == "source_changed"
+        assert "changed" in str(response["error"])
+
+
+def test_finished_item_records_the_encoder_auto_really_used(tmp_path, monkeypatch):
+    q = ProcessingQueue()
+    fallback = "Used software encoding because the NVIDIA encoder couldn't start"
+
+    def fake_encode(plan, on_progress=None):
+        q._engine._resolved_encoder = "libx264"
+        q._engine._encoder_fallback = fallback
+        out = Path(plan.output)
+        out.write_bytes(b"ok")
+        return out
+
+    monkeypatch.setattr(q._engine, "encode", fake_encode)
+    item = q.enqueue(
+        EncodePlan(
+            source=str(tmp_path / "clip.mp4"),
+            output=str(tmp_path / "out.mp4"),
+            target_size=1024 * 1024,
+            video_encoder="auto",
+        )
+    )
+    q.start()
+    with q._condition:
+        # the encoder is recorded as the worker lets go of the item
+        done = q._condition.wait_for(
+            lambda: item.state in _FINISHED and q._current_item is None, timeout=5
+        )
+    q.stop()
+    assert done
+    assert item.effective_encoder == "libx264"
+    assert item.encoder_fallback == fallback

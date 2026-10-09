@@ -29,9 +29,10 @@ from .probe import first_video_frame
 logger = logging.getLogger(__name__)
 
 
-# SO_REUSEADDR lets the server restart quickly; daemon threads don't block process exit
+# daemon threads don't block process exit. The port is ephemeral, so SO_REUSEADDR buys
+# nothing, and on Windows it would let another socket bind the same port and answer instead
 class _MediaTCPServer(ThreadingTCPServer):
-    allow_reuse_address = True
+    allow_reuse_address = False
     daemon_threads = True
 
 
@@ -42,13 +43,21 @@ for ext, mime in [
     (".mov", "video/quicktime"),
     (".avi", "video/x-msvideo"),
     (".flv", "video/x-flv"),
+    (".f4v", "video/mp4"),
     (".m4v", "video/x-m4v"),
     (".wmv", "video/x-ms-wmv"),
+    (".asf", "video/x-ms-asf"),
     (".ts", "video/mp2t"),
     (".m2ts", "video/mp2t"),
     (".mts", "video/mp2t"),
     (".3gp", "video/3gpp"),
+    (".3g2", "video/3gpp2"),
     (".ogv", "video/ogg"),
+    (".mpg", "video/mpeg"),
+    (".mpeg", "video/mpeg"),
+    (".m2v", "video/mpeg"),
+    (".vob", "video/mpeg"),
+    (".mxf", "application/mxf"),
     (".mp3", "audio/mpeg"),
     (".wav", "audio/wav"),
     (".flac", "audio/flac"),
@@ -96,6 +105,22 @@ _WAVEFORM_MAX_GAIN_DB = 60.0
 _WAVEFORM_DENSE_CREST_DB = 16.0
 _WAVEFORM_DENSE_TARGET_MEAN_DB = -8.0
 _TOKEN_BYTES = 32  # bytes for each token
+# the preview, the audio timeline and the Library can each hold a URL for the same file, so a
+# path keeps several live tokens; the oldest goes once this many are live
+_TOKENS_PER_PATH = 16
+# Tuck's own pages: the Tauri scheme on Linux, its localhost host on Windows (http, or https if
+# the webview is switched to it) and the Vite dev server. The preview <video> is loaded with
+# crossorigin so the LUT preview can draw its frames, which makes it send an Origin just like
+# the fetches for LUT tables and waveform masks; without a match here the preview doesn't play
+_ALLOWED_ORIGINS = frozenset(
+    {
+        "tauri://localhost",
+        "http://tauri.localhost",
+        "https://tauri.localhost",
+        "http://127.0.0.1:5173",
+        "http://localhost:5173",
+    }
+)
 
 
 def _compute_byte_range(range_header: str, file_size: int, multiple: bool) -> tuple[int, int] | str:
@@ -204,8 +229,7 @@ class _TokenRequestHandler(http.server.BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(file_size))
             self.send_header("Accept-Ranges", "bytes")
             self.send_header("Cache-Control", "no-store")
-            # possession of the unguessable media token authorizes anonymous preview reads
-            self.send_header("Access-Control-Allow-Origin", "*")
+            self._send_cors_headers()
             self.end_headers()
             with open(file_path, "rb") as f:
                 while True:
@@ -241,8 +265,7 @@ class _TokenRequestHandler(http.server.BaseHTTPRequestHandler):
             self.send_header("Content-Range", f"bytes {start}-{end}/{file_size}")
             self.send_header("Accept-Ranges", "bytes")
             self.send_header("Cache-Control", "no-store")
-            # possession of the unguessable media token authorizes anonymous preview reads
-            self.send_header("Access-Control-Allow-Origin", "*")
+            self._send_cors_headers()
             self.end_headers()
 
             with open(file_path, "rb") as f:
@@ -261,6 +284,14 @@ class _TokenRequestHandler(http.server.BaseHTTPRequestHandler):
             if self._client_disconnected(exc):
                 return
             raise
+
+    def _send_cors_headers(self) -> None:
+        # the token authorizes the read; CORS decides which pages may read the bytes from
+        # script, so a web page that learns a media URL still can't
+        origin = self.headers.get("Origin")
+        if origin in _ALLOWED_ORIGINS:
+            self.send_header("Access-Control-Allow-Origin", origin)
+        self.send_header("Vary", "Origin")
 
     def _send_error(self, code: int, message: str, file_size: int = -1) -> None:
         try:
@@ -368,8 +399,11 @@ def _thumbnail_seek_time(file_path: Path) -> str:
         ]
         result = subprocess.run(
             cmd_probe,
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=10,
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         )
@@ -394,6 +428,7 @@ def _run_thumbnail_ffmpeg(
     vf_filter = f"scale={_THUMBNAIL_SCALE}"
     cmd = [
         ffmpeg,
+        "-nostdin",
         "-y",
         "-ss",
         duration_str,
@@ -409,12 +444,13 @@ def _run_thumbnail_ffmpeg(
     ]
     result = subprocess.run(
         cmd,
+        stdin=subprocess.DEVNULL,
         capture_output=True,
         timeout=timeout,
         creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
     )
     if result.returncode != 0:
-        stderr_tail = result.stderr.strip()[-500:] if result.stderr else ""
+        stderr_tail = result.stderr.decode("utf-8", errors="replace").strip()[-500:]
         logger.warning(
             "Thumbnail ffmpeg failed for %s (rc=%d): %s",
             file_path.name,
@@ -449,8 +485,9 @@ class MediaServer:
 
         token = secrets.token_hex(_TOKEN_BYTES)
         with self._lock:
-            to_remove = [t for t, p in self._tokens.items() if p == str(file_path)]
-            for t in to_remove:
+            # tokens keep their registration order, so the first ones found are the oldest
+            live = [t for t, p in self._tokens.items() if p == str(file_path)]
+            for t in live[: max(0, len(live) - _TOKENS_PER_PATH + 1)]:
                 del self._tokens[t]
             self._tokens[token] = str(file_path)
         return token
@@ -596,6 +633,7 @@ def _run_waveform_ffmpeg(ffmpeg: str, file_path: Path, waveform_path: Path, time
     gain_filter = f"volume={levels.gain_db:g}dB," if levels.gain_db > 0 else ""
     command = [
         ffmpeg,
+        "-nostdin",
         "-y",
         "-v",
         "error",
@@ -615,6 +653,7 @@ def _run_waveform_ffmpeg(ffmpeg: str, file_path: Path, waveform_path: Path, time
     ]
     result = subprocess.run(
         command,
+        stdin=subprocess.DEVNULL,
         capture_output=True,
         timeout=remaining_timeout,
         creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
@@ -638,6 +677,7 @@ def _waveform_levels(ffmpeg: str, file_path: Path, timeout: float) -> _WaveformL
     """
     command = [
         ffmpeg,
+        "-nostdin",
         "-hide_banner",
         "-nostats",
         "-v",
@@ -654,6 +694,7 @@ def _waveform_levels(ffmpeg: str, file_path: Path, timeout: float) -> _WaveformL
     ]
     result = subprocess.run(
         command,
+        stdin=subprocess.DEVNULL,
         capture_output=True,
         timeout=timeout,
         creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,

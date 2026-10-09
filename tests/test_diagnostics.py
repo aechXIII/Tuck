@@ -150,3 +150,21 @@ class TestBuildDiagnostics:
         assert "4.000s -> 6.250s" in text
         assert "selected duration: 3.250s" in text
         assert "trim: 0.500s -> 6.250s" not in text
+
+    def test_includes_encoder_fallback_and_plan_warnings(self):
+        plan = EncodePlan(
+            source="clip.mp4",
+            output="out.mp4",
+            video_encoder="auto",
+            tone_map_hdr=True,
+            warnings=["This video has 2 audio tracks. Only the first is kept."],
+        )
+        text = build_diagnostics(
+            plan=plan,
+            resolved_encoder="libx264",
+            encoder_fallback="Used software encoding because the NVIDIA encoder couldn't start",
+        )
+        assert "effective encoder: libx264" in text
+        assert "encoder fallback: Used software encoding" in text
+        assert "hdr: tone-mapped to SDR" in text
+        assert "plan warning: This video has 2 audio tracks." in text

@@ -221,6 +221,12 @@ MIN_SEGMENT_DURATION = 0.05
 
 PROFILE_SCHEMA_VERSION = 6
 
+# SMPTE ST 2084 (PQ) and ARIB STD-B67 (HLG), in ffprobe's names
+HDR_TRANSFERS = frozenset({"smpte2084", "arib-std-b67"})
+# subtitles stored as text, which FFmpeg can rewrite as MP4's mov_text; picture-based ones
+# such as Blu-ray PGS or DVD subtitles can't be
+TEXT_SUBTITLE_CODECS = frozenset({"subrip", "srt", "ass", "ssa", "mov_text", "webvtt", "text"})
+
 
 class QueueState(Enum):
     PENDING = "pending"
@@ -255,6 +261,35 @@ class VideoInfo:
     color_space: str = "unknown"
     color_primaries: str = "unknown"
     color_range: str = "unknown"
+    # 0 when the reader didn't report it
+    average_fps: float = 0.0
+    audio_stream_count: int = 0
+    # codec of each subtitle track, in file order
+    subtitle_codecs: list[str] = field(default_factory=list)
+
+    @property
+    def text_subtitle_track(self) -> int | None:
+        """The first subtitle track stored as text, counted among the subtitle tracks only."""
+        for index, codec in enumerate(self.subtitle_codecs):
+            if codec in TEXT_SUBTITLE_CODECS:
+                return index
+        return None
+
+    @property
+    def is_hdr(self) -> bool:
+        """PQ or HLG pictures, which look washed out when tagged and played as SDR."""
+        return self.color_transfer in HDR_TRANSFERS
+
+    @property
+    def decision_fps(self) -> float:
+        """The frame rate to compare against limits.
+
+        A variable-rate video's nominal rate can be a timebase-sized number far above the pictures
+        it really holds, so its average rate is the honest one.
+        """
+        if self.variable_frame_rate and self.average_fps > 0:
+            return self.average_fps
+        return self.fps
 
     @property
     def resolution_str(self) -> str:
@@ -855,6 +890,10 @@ class EncodePlan:
     transform: VideoTransform = field(default_factory=VideoTransform)
     keep_file_dates: bool = False
     replace_existing: bool = False
+    # the planner only sets this when FFmpeg has the filters to do it
+    tone_map_hdr: bool = False
+    # plain sentences about what this export will change or leave out
+    warnings: list[str] = field(default_factory=list)
 
     @property
     def effective_segments(self) -> list[Segment]:
@@ -1179,6 +1218,9 @@ class QueueItem:
     added_at: str = ""
     started_at: str = ""
     finished_at: str = ""
+    # the encoder the export really ran with, which Auto picks at run time
+    effective_encoder: str = ""
+    encoder_fallback: str = ""
 
 
 @dataclass

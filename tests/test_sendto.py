@@ -648,11 +648,12 @@ class TestGetTargetPath:
         with pytest.raises(RuntimeError, match="desktop app"):
             _get_target_path(action=ACTION_REVIEW)
 
-    def test_source_review_accepts_explicit_desktop_target(self, tmp_path, monkeypatch):
+    def test_target_is_never_supplied_by_the_caller(self, tmp_path, monkeypatch):
         monkeypatch.setattr("sys.frozen", False, raising=False)
         desktop = tmp_path / "Tuck.exe"
         desktop.touch()
-        assert _get_target_path(desktop, ACTION_REVIEW) == str(desktop)
+        with pytest.raises(TypeError):
+            _get_target_path(desktop, ACTION_REVIEW)
 
     def test_get_target_path_frozen(self, monkeypatch):
         monkeypatch.setattr("sys.frozen", True, raising=False)

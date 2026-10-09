@@ -134,3 +134,38 @@ def test_multi_segment_preview_and_queue_serialization_is_not_a_continuous_trim(
         assert data["selected_duration"] == pytest.approx(3.5)
         assert data["trim_start"] is None
         assert data["trim_end"] is None
+
+
+def test_plan_and_queue_carry_warnings_and_the_encoder_that_ran() -> None:
+    info = VideoInfo(
+        path="hdr.mp4",
+        duration=10,
+        width=1920,
+        height=1080,
+        fps=30,
+        video_codec="hevc",
+        color_transfer="smpte2084",
+        audio_stream_count=2,
+    )
+    plan = EncodePlan(
+        source="hdr.mp4",
+        output="out.mp4",
+        source_info=info,
+        tone_map_hdr=True,
+        warnings=["This video has 2 audio tracks. Only the first is kept."],
+    )
+    item = QueueItem(
+        plan=plan,
+        effective_encoder="libx264",
+        encoder_fallback="Used software encoding because the NVIDIA encoder couldn't start",
+    )
+
+    assert video_info_dict(info)["hdr"] is True
+    assert video_info_dict(info)["audio_stream_count"] == 2
+    preview = plan_preview_dict(plan)
+    assert preview["tone_map_hdr"] is True
+    assert preview["warnings"] == ["This video has 2 audio tracks. Only the first is kept."]
+    queued = queue_item_dict(item)
+    assert queued["warnings"] == preview["warnings"]
+    assert queued["effective_encoder"] == "libx264"
+    assert queued["encoder_fallback"].startswith("Used software encoding")

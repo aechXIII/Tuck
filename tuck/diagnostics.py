@@ -35,8 +35,10 @@ def _run_version(cmd: list[str]) -> str:
     try:
         result = subprocess.run(
             cmd,
+            stdin=subprocess.DEVNULL,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=10,
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         )
@@ -59,6 +61,7 @@ def build_diagnostics(
     stderr: str = "",
     selected_encoder: str = "",
     resolved_encoder: str = "",
+    encoder_fallback: str = "",
     workflow: str = "",
     profile_name: str = "",
     extra: dict[str, Any] | None = None,
@@ -105,6 +108,8 @@ def build_diagnostics(
             lines.append(f"selected encoder: {selected_encoder}")
         if resolved_encoder:
             lines.append(f"effective encoder: {resolved_encoder}")
+        if encoder_fallback:
+            lines.append(f"encoder fallback: {encoder_fallback}")
         if isinstance(plan, CutPlan):
             lines.extend(
                 [
@@ -127,6 +132,9 @@ def build_diagnostics(
             lines.append(f"preset: {plan.preset}")
             lines.append(f"scaler: {plan.scaler}")
             lines.append(f"rate control: {plan.rate_control} / {plan.rate_control_method}")
+            if plan.tone_map_hdr:
+                lines.append("hdr: tone-mapped to SDR")
+            lines.extend(f"plan warning: {warning}" for warning in plan.warnings)
             segments = plan.effective_segments
             if len(segments) > 1:
                 rendered = ", ".join(

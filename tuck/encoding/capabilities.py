@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import subprocess
 import threading
 import time
@@ -30,25 +31,50 @@ _encoder_cache: frozenset[str] | None = None
 _encoder_cache_lock = threading.Lock()
 _ENCODER_CACHE_FILE = "encoders.json"
 
-_HW_INIT_MARKERS = (
+# these name a missing or unusable GPU, driver, or runtime
+_HW_DEVICE_MARKERS = (
     "no nvenc capable devices found",
     "cannot load nvcuda",
     "cannot load nvencodeapi",
     "openencode session create failed",
+    "openencodesessionex failed",
     "nvenc api version",
     "no capable devices found",
     "device creation failed",
     "failed to initialise amf",
     "amf context create",
-    "failed to open codec",
-    "error while opening encoder",
+    # the AMD runtime DLL is missing when there's no AMD GPU or driver
+    "dll amfrt",
     "cannot create cuda",
     "cuda_error",
     "driver does not support",
     "not supported by the device",
     "no device available",
+)
+# FFmpeg prints these for any encoder that refuses to open, including one that rejects an
+# option or a frame size, so on their own they don't prove the GPU is missing
+_HW_OPEN_MARKERS = (
+    "failed to open codec",
+    "error while opening encoder",
     "could not open encoder",
 )
+_OPTION_ERROR_MARKERS = (
+    "unable to parse option value",
+    "error setting option",
+    "option not found",
+    "undefined constant or missing",
+    "error applying encoder options",
+)
+
+HW_FAILURE_DEVICE = "device"
+HW_FAILURE_SETTINGS = "settings"
+
+# a filter row is its flags, its name, then its input and output kinds such as "V->V"
+_FILTER_ROW_RE = re.compile(r"^\s*[T.][S.][C.]\s+(\S+)\s+\S*->\S*")
+_filter_cache: dict[str, frozenset[str]] = {}
+_filter_cache_lock = threading.Lock()
+# zscale converts PQ and HLG to linear light; tonemap then fits the highlights into SDR
+TONE_MAP_FILTERS = frozenset({"zscale", "tonemap"})
 
 
 @dataclass(frozen=True)
@@ -72,8 +98,10 @@ def _detect_available_encoders(ffmpeg_path: str) -> frozenset[str]:
     try:
         result = subprocess.run(
             [ffmpeg_path, "-hide_banner", "-encoders"],
+            stdin=subprocess.DEVNULL,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=15,
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         )
@@ -113,8 +141,11 @@ def _hardware_encoder_works(ffmpeg_path: str, encoder: str) -> bool:
                 "null",
                 null_output,
             ],
+            # ffmpeg reads keys from a piped stdin, and the sidecar's holds request frames
+            stdin=subprocess.DEVNULL,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=15,
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         )
@@ -287,8 +318,56 @@ def _desktop_supported_encoders(encoders: frozenset[str]) -> frozenset[str]:
     return frozenset(encoders & CPU_ENCODERS) if is_linux_desktop() else encoders
 
 
-def is_hardware_init_failure(stderr: str) -> bool:
+def hardware_failure_kind(stderr: str) -> str | None:
+    """Why a hardware encoder failed to start, or None when the failure was something else.
+
+    HW_FAILURE_DEVICE means the GPU, driver, or runtime isn't usable. HW_FAILURE_SETTINGS means
+    the encoder refused the options or picture it was given, which a working GPU can also do.
+    """
     text = (stderr or "").lower()
     if not text:
-        return False
-    return any(marker in text for marker in _HW_INIT_MARKERS)
+        return None
+    if any(marker in text for marker in _HW_DEVICE_MARKERS):
+        return HW_FAILURE_DEVICE
+    if any(marker in text for marker in _OPTION_ERROR_MARKERS + _HW_OPEN_MARKERS):
+        return HW_FAILURE_SETTINGS
+    return None
+
+
+def parse_filter_names(listing: str) -> frozenset[str]:
+    """Filter names from `ffmpeg -filters`, without its legend."""
+    return frozenset(
+        match.group(1) for line in listing.splitlines() if (match := _FILTER_ROW_RE.match(line))
+    )
+
+
+def get_available_filters() -> frozenset[str]:
+    ffmpeg_path = find_ffmpeg()
+    if not ffmpeg_path:
+        return frozenset()
+    with _filter_cache_lock:
+        cached = _filter_cache.get(ffmpeg_path)
+        if cached is not None:
+            return cached
+        try:
+            result = subprocess.run(
+                [ffmpeg_path, "-hide_banner", "-filters"],
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=15,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+            )
+        except (OSError, subprocess.SubprocessError):
+            logger.warning("Could not list FFmpeg filters", exc_info=True)
+            return frozenset()
+        filters = parse_filter_names(result.stdout) if result.returncode == 0 else frozenset()
+        if result.returncode != 0:
+            logger.warning("ffmpeg -filters returned %s; assuming no filters", result.returncode)
+        _filter_cache[ffmpeg_path] = filters
+        return filters
+
+
+def can_tone_map_hdr() -> bool:
+    return TONE_MAP_FILTERS.issubset(get_available_filters())

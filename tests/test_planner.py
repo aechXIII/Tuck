@@ -32,7 +32,7 @@ from tuck.models import (
     find_profile_by_id,
 )
 from tuck.output_paths import resolve_output_collision
-from tuck.planner import _make_even, _scale_resolution, plan
+from tuck.planner import HDR_NOT_CONVERTED_WARNING, _make_even, _scale_resolution, plan
 from tuck.planner_options import resolve_plan_options
 
 
@@ -1015,3 +1015,196 @@ class TestPlanSegments:
                 request=PlanRequest(segments=segments),
                 source_info=self._info(source),
             )
+
+
+class TestPlanStages:
+    @staticmethod
+    def _source(tmp_path: Path) -> Path:
+        source = tmp_path / "source.mp4"
+        source.write_bytes(b"source")
+        return source
+
+    @staticmethod
+    def _info(path: Path, **overrides) -> VideoInfo:
+        values = {
+            "path": str(path),
+            "duration": 10.0,
+            "width": 1280,
+            "height": 720,
+            "fps": 30.0,
+            "video_codec": "h264",
+            "audio_codec": "aac",
+            "audio_bitrate": 128_000,
+            "audio_channels": 2,
+            "audio_sample_rate": 48_000,
+            "has_audio": True,
+        }
+        values.update(overrides)
+        return VideoInfo(**values)
+
+    @pytest.mark.parametrize("size", [0, -1])
+    def test_zero_or_negative_target_size_is_rejected_not_replaced(self, tmp_path, size):
+        source = self._source(tmp_path)
+        profile = Profile(name="Broken", two_pass=False, target_size_bytes=size)
+        with pytest.raises(ValueError, match="Target size must be greater than zero"):
+            plan(source, profile, source_info=self._info(source))
+
+    def test_hard_linked_output_is_treated_as_the_source(self, tmp_path):
+        source = self._source(tmp_path)
+        link = tmp_path / "linked.mp4"
+        try:
+            os.link(source, link)
+        except OSError:
+            pytest.skip("hard links are not supported here")
+        with pytest.raises(ValueError, match="differ from source"):
+            plan(
+                source,
+                Profile(name="Linked", two_pass=False),
+                output=link,
+                source_info=self._info(source),
+                replace_existing=True,
+            )
+
+    def test_missing_output_passes_the_same_file_check(self, tmp_path):
+        source = self._source(tmp_path)
+        result = plan(
+            source,
+            Profile(name="New", two_pass=False),
+            output=tmp_path / "new.mp4",
+            source_info=self._info(source),
+        )
+        assert Path(result.output).name == "new.mp4"
+
+    def test_variable_frame_rate_uses_average_rate_for_limits(self, tmp_path):
+        source = self._source(tmp_path)
+        # a phone clip whose nominal rate is far above the pictures it holds
+        info = self._info(source, fps=120.0, average_fps=29.5, variable_frame_rate=True)
+        result = plan(
+            source,
+            Profile(name="Limit", two_pass=False, fps_mode=FPS_MODE_CUSTOM, custom_fps=60.0),
+            source_info=info,
+        )
+        assert result.target_fps == pytest.approx(29.5)
+        assert result.apply_fps_filter is False
+
+        lower = plan(
+            source,
+            Profile(name="Lower", two_pass=False, fps_mode=FPS_MODE_CUSTOM, custom_fps=24.0),
+            source_info=info,
+        )
+        assert lower.target_fps == pytest.approx(24.0)
+        assert lower.apply_fps_filter is True
+
+    def test_constant_frame_rate_keeps_nominal_rate(self, tmp_path):
+        source = self._source(tmp_path)
+        info = self._info(source, fps=60.0, average_fps=59.94)
+        result = plan(
+            source,
+            Profile(name="Limit", two_pass=False, fps_mode=FPS_MODE_CUSTOM, custom_fps=30.0),
+            source_info=info,
+        )
+        assert result.target_fps == pytest.approx(30.0)
+        assert result.apply_fps_filter is True
+
+    def test_hdr_source_is_tone_mapped_when_ffmpeg_can(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("tuck.planner.can_tone_map_hdr", lambda: True)
+        source = self._source(tmp_path)
+        info = self._info(source, color_transfer="smpte2084", color_primaries="bt2020")
+        result = plan(source, Profile(name="HDR", two_pass=False), source_info=info)
+        assert result.tone_map_hdr is True
+        assert result.warnings == []
+
+    def test_hdr_source_warns_when_ffmpeg_cannot_tone_map(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("tuck.planner.can_tone_map_hdr", lambda: False)
+        source = self._source(tmp_path)
+        info = self._info(source, color_transfer="arib-std-b67", color_primaries="bt2020")
+        result = plan(source, Profile(name="HDR", two_pass=False), source_info=info)
+        assert result.tone_map_hdr is False
+        assert result.warnings == [HDR_NOT_CONVERTED_WARNING]
+
+    def test_sdr_source_never_asks_ffmpeg_about_tone_mapping(self, tmp_path, monkeypatch):
+        def unexpected() -> bool:
+            raise AssertionError("SDR plans should not look for tone-mapping filters")
+
+        monkeypatch.setattr("tuck.planner.can_tone_map_hdr", unexpected)
+        source = self._source(tmp_path)
+        result = plan(
+            source,
+            Profile(name="SDR", two_pass=False),
+            source_info=self._info(source, color_transfer="bt709"),
+        )
+        assert result.tone_map_hdr is False
+
+    def test_extra_audio_tracks_are_reported_as_dropped(self, tmp_path):
+        source = self._source(tmp_path)
+        result = plan(
+            source,
+            Profile(name="Tracks", two_pass=False),
+            source_info=self._info(source, audio_stream_count=3),
+        )
+        assert result.warnings == ["This video has 3 audio tracks. Only the first is kept."]
+
+        muted = plan(
+            source,
+            Profile(name="Tracks", two_pass=False),
+            request=PlanRequest(audio_enabled=False),
+            source_info=self._info(source, audio_stream_count=3),
+        )
+        assert muted.warnings == []
+
+    def test_one_text_subtitle_track_is_kept_without_a_warning(self, tmp_path):
+        source = self._source(tmp_path)
+        result = plan(
+            source,
+            Profile(name="Subtitles", two_pass=False),
+            source_info=self._info(source, subtitle_codecs=["subrip"]),
+        )
+        assert result.warnings == []
+
+    @pytest.mark.parametrize(
+        ("codecs", "segments", "warning"),
+        [
+            (
+                ["hdmv_pgs_subtitle"],
+                None,
+                "Subtitles aren't kept, because they're stored as pictures, which MP4 can't hold.",
+            ),
+            (
+                ["subrip"],
+                [Segment(0, 1), Segment(4, 5)],
+                "Subtitles aren't kept when the video is cut into several parts.",
+            ),
+            (
+                ["dvd_subtitle", "ass", "subrip"],
+                None,
+                "This video has 3 subtitle tracks. Only the first text track is kept.",
+            ),
+        ],
+    )
+    def test_subtitles_that_are_left_out_are_reported(self, tmp_path, codecs, segments, warning):
+        source = self._source(tmp_path)
+        result = plan(
+            source,
+            Profile(name="Subtitles", two_pass=False),
+            request=PlanRequest(segments=segments) if segments else None,
+            source_info=self._info(source, subtitle_codecs=codecs),
+        )
+        assert result.warnings == [warning]
+
+    @pytest.mark.parametrize("method", ["cbr", "vbr"])
+    def test_compression_encodes_with_capped_vbr_whatever_the_saved_label(self, tmp_path, method):
+        source = self._source(tmp_path)
+        encoder = "libx264" if method == "cbr" else "h264_nvenc"
+        profile = Profile(
+            name="Size",
+            video_encoder=encoder,
+            preset="medium" if method == "cbr" else "p5",
+            two_pass=method == "cbr",
+        )
+        result = plan(
+            source,
+            profile,
+            request=PlanRequest(rate_control_method=method),
+            source_info=self._info(source),
+        )
+        assert result.rate_control_method == "vbr"

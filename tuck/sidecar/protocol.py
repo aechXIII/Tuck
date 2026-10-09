@@ -6,6 +6,9 @@ from dataclasses import dataclass
 from typing import TypeAlias
 
 PROTOCOL_VERSION = 1
+# the desktop shell ends the whole backend on any stdout line longer than this, not counting the
+# newline; it must match MAX_FRAME_BYTES in src-tauri/src/backend/protocol.rs
+MAX_FRAME_BYTES = 1_048_576
 
 JsonPrimitive: TypeAlias = str | int | float | bool | None
 JsonValue: TypeAlias = JsonPrimitive | list["JsonValue"] | dict[str, "JsonValue"]
@@ -151,6 +154,11 @@ def encode_event(event: Event) -> str:
             "payload": event.payload,
         }
     )
+
+
+def frame_fits(frame: str) -> bool:
+    # a character is at most four UTF-8 bytes, so most frames skip the encode
+    return len(frame) * 4 <= MAX_FRAME_BYTES or len(frame.encode("utf-8")) <= MAX_FRAME_BYTES
 
 
 def _encode_frame(frame: dict[str, JsonValue]) -> str:

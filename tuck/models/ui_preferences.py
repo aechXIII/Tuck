@@ -51,6 +51,15 @@ CUT_SUFFIX_MAX_LENGTH = 64
 _INVALID_FILE_NAME_CHARS = frozenset('<>:"/\\|?*')
 
 
+def _check_file_name_text(value: str, label: str) -> None:
+    # the suffix lands inside the export's file name, so a separator would move the export
+    # into another folder and a colon would write an NTFS alternate data stream
+    if any(ord(char) < 32 or char in _INVALID_FILE_NAME_CHARS for char in value):
+        raise ValueError(
+            f'The {label} suffix cannot contain \\ / : * ? " < > | or control characters.'
+        )
+
+
 def normalize_cut_suffix(value: object) -> str:
     """Check the text added to a cut's file name before its extension.
 
@@ -65,12 +74,28 @@ def normalize_cut_suffix(value: object) -> str:
         raise ValueError(
             f"The lossless cut suffix must be {CUT_SUFFIX_MAX_LENGTH} characters or fewer."
         )
-    if any(ord(char) < 32 or char in _INVALID_FILE_NAME_CHARS for char in value):
-        raise ValueError(
-            'The lossless cut suffix cannot contain \\ / : * ? " < > | or control characters.'
-        )
+    _check_file_name_text(value, "lossless cut")
     if "{" in value or "}" in value:
         raise ValueError("The lossless cut suffix cannot use tokens like {size}.")
+    return value
+
+
+# the encode suffixes; {size}, {width} and {height} are filled in with numbers
+_ENCODE_SUFFIX_LABELS = {"compression_suffix": "compress", "upscale_suffix": "upscale"}
+ENCODE_SUFFIXES: tuple[str, ...] = tuple(_ENCODE_SUFFIX_LABELS)
+
+
+def normalize_encode_suffix(key: str, value: object) -> str:
+    """Check the compress or upscale suffix added to an export's file name.
+
+    Raises ValueError with a message that can be shown to the user.
+    """
+    label = _ENCODE_SUFFIX_LABELS[key]
+    if not isinstance(value, str):
+        raise ValueError(f"{key} must be a string")
+    if not value.strip():
+        raise ValueError(f"Enter a suffix for {label} file names.")
+    _check_file_name_text(value, label)
     return value
 
 

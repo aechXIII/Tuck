@@ -25,11 +25,9 @@ from ..models import (
     ENCODER_AUTO_COMPRESSION,
     ENCODER_AUTO_FAST,
     RC_EXPLICIT_BITRATE,
-    RCM_CBR,
     RCM_CQ,
     RCM_CQP,
     RCM_CRF,
-    RCM_VBR,
     WORKFLOW_UPSCALE,
     EncodePlan,
 )
@@ -39,12 +37,14 @@ from ..models.progress import EncodeProgress, EncodeStage
 from ..output_paths import copy_file_dates
 from ..output_transaction import OutputTransaction
 from .capabilities import (
+    HW_FAILURE_SETTINGS,
     auto_encoder_candidates,
     get_available_encoders,
+    hardware_failure_kind,
     is_hardware_encoder,
-    is_hardware_init_failure,
 )
 from .command import build_base_cmd
+from .failures import describe_ffmpeg_failure, is_progress_line
 
 # load native array libraries before sidecar workers block on Windows stdio
 from .frame_blending import TmixBlend, prepare_blended_video, tmix_blend
@@ -59,7 +59,9 @@ from .target_size import (
 
 logger = logging.getLogger(__name__)
 
+# characters of FFmpeg output kept for Diagnostics
 _MAX_STDERR_DIAG = 4000
+_MAX_STDERR_LINES = 200
 
 ProgressCallback = Callable[[Any], None]
 
@@ -85,9 +87,38 @@ def _execution_plan(requested_plan: EncodePlan, encoder: str, auto: bool) -> Enc
     elif plan.rate_control_method == RCM_CQP:
         plan.rate_control_method = RCM_CRF
         plan.crf = plan.qp
-    elif plan.rate_control_method == RCM_VBR:
-        plan.rate_control_method = RCM_CBR
     return plan
+
+
+_ENCODER_FAMILY_NAMES = {
+    "h264_nvenc": "NVIDIA",
+    "hevc_nvenc": "NVIDIA",
+    "h264_amf": "AMD",
+    "hevc_amf": "AMD",
+}
+
+
+def _encoder_description(encoder: str) -> str:
+    family = _ENCODER_FAMILY_NAMES.get(encoder)
+    return f"the {family} encoder" if family else "software encoding"
+
+
+def describe_encoder_fallback(used: str, failures: list[tuple[str, str]]) -> str:
+    """Plain words for why Auto ended up on a different encoder than its first choice."""
+    if not failures:
+        return ""
+    families: list[str] = []
+    for encoder, _kind in failures:
+        family = _ENCODER_FAMILY_NAMES.get(encoder, encoder)
+        if family not in families:
+            families.append(family)
+    if len(families) == 1:
+        subject = f"the {families[0]} encoder"
+    else:
+        subject = f"the {', '.join(families[:-1])} and {families[-1]} encoders"
+    settings_only = all(kind == HW_FAILURE_SETTINGS for _encoder, kind in failures)
+    reason = "didn't accept these settings" if settings_only else "couldn't start"
+    return f"Used {_encoder_description(used)} because {subject} {reason}"
 
 
 class EncodeError(Exception):
@@ -120,6 +151,7 @@ class FFmpegEngine:
         self._lock = threading.Lock()
         self._last_stderr: str = ""
         self._resolved_encoder: str = ""
+        self._encoder_fallback: str = ""
         self._prepared_video: Path | None = None
         self._tmix: TmixBlend | None = None
         self._cut_runner = CutRunner()
@@ -135,10 +167,16 @@ class FFmpegEngine:
 
     @property
     def resolved_encoder(self) -> str:
+        """The encoder the last export ran with, after Auto picked one."""
         return self._resolved_encoder
 
+    @property
+    def encoder_fallback(self) -> str:
+        """Why the last Auto export moved past its first encoder, or "" when it didn't."""
+        return self._encoder_fallback
+
     def _select_encoder_candidates(self, plan: EncodePlan) -> tuple[bool, tuple[str, ...]]:
-        requested = getattr(plan, "video_encoder", "libx264") or "libx264"
+        requested = plan.video_encoder or "libx264"
         validate_encoder_supported_on_desktop(requested)
         available = get_available_encoders()
         was_auto = requested in (ENCODER_AUTO, ENCODER_AUTO_COMPRESSION, ENCODER_AUTO_FAST)
@@ -178,9 +216,11 @@ class FFmpegEngine:
     ) -> Path:
         result: Path | None = None
         last_hardware_error: EncodeError | None = None
+        failures: list[tuple[str, str]] = []
         for encoder in candidates:
             attempt_plan = _execution_plan(plan, encoder, was_auto)
             self._resolved_encoder = encoder
+            self._encoder_fallback = describe_encoder_fallback(encoder, failures)
             if was_auto:
                 logger.info("Auto encoder attempt: %s", encoder)
             try:
@@ -194,15 +234,18 @@ class FFmpegEngine:
                 )
                 break
             except EncodeError as exc:
-                if (
-                    was_auto
-                    and is_hardware_encoder(encoder)
-                    and is_hardware_init_failure(exc.stderr)
-                ):
+                kind = hardware_failure_kind(exc.stderr) if was_auto else None
+                if kind is not None and is_hardware_encoder(encoder):
                     last_hardware_error = exc
+                    failures.append((encoder, kind))
                     self._cleanup_output(tmp_output)
+                    # a settings refusal usually means Tuck asked for something this GPU
+                    # can't do, so keep FFmpeg's reason in the log as well as the fallback
                     logger.warning(
-                        "Auto encoder %s could not initialize; trying next candidate", encoder
+                        "Auto encoder %s could not start (%s); trying next candidate: %s",
+                        encoder,
+                        kind,
+                        (exc.stderr.strip().splitlines() or [""])[-1],
                     )
                     continue
                 raise
@@ -217,9 +260,10 @@ class FFmpegEngine:
         plan: EncodePlan | CutPlan,
         on_progress: ProgressCallback | None = None,
     ) -> Path:
+        self._resolved_encoder = ""
+        self._encoder_fallback = ""
         if isinstance(plan, CutPlan):
             self._last_stderr = ""
-            self._resolved_encoder = ""
             try:
                 return self._cut_runner.run(plan, on_progress)
             except CutAnalysisError as exc:
@@ -447,7 +491,7 @@ class FFmpegEngine:
         on_progress: ProgressCallback | None,
     ) -> Path:
         is_explicit = plan.rate_control == RC_EXPLICIT_BITRATE
-        is_upscale = getattr(plan, "workflow", "compression") == WORKFLOW_UPSCALE
+        is_upscale = plan.workflow == WORKFLOW_UPSCALE
 
         max_attempts = 1 if is_upscale or is_explicit else DEFAULT_MAX_RETRIES + 1
         attempt = 0
@@ -568,6 +612,7 @@ class FFmpegEngine:
             if pid:
                 subprocess.run(
                     ["taskkill", "/F", "/T", "/PID", str(pid)],
+                    stdin=subprocess.DEVNULL,
                     capture_output=True,
                     creationflags=subprocess.CREATE_NO_WINDOW,
                     timeout=10,
@@ -699,18 +744,24 @@ class FFmpegEngine:
         for line in proc.stderr:
             if self._cancel_event.is_set():
                 break
-            stderr_lines.append(line)
-            if len(stderr_lines) > 200:
-                del stderr_lines[:-200]
-
             progress = tracker.update_from_line(line)
             if progress is not None:
                 _emit(on_progress, progress)
+            # progress records would push the lines that explain a failure out of the tail
+            if is_progress_line(line):
+                continue
+            stderr_lines.append(line)
+            if len(stderr_lines) > _MAX_STDERR_LINES:
+                del stderr_lines[:-_MAX_STDERR_LINES]
 
     def _spawn_ffmpeg(self, cmd: list[str], creationflags: int) -> subprocess.Popen:
         if self._low_priority and sys.platform == "win32":
             creationflags |= subprocess.BELOW_NORMAL_PRIORITY_CLASS
         with self._lock:
+            # cancel() takes this lock before killing the current process, so checking here
+            # means a cancel between runs is never followed by a fresh FFmpeg
+            if self._cancel_event.is_set():
+                raise EncodeCancelled("Encoding cancelled by user")
             proc = subprocess.Popen(
                 cmd,
                 # only the sidecar may read requests from its stdin pipe
@@ -719,7 +770,10 @@ class FFmpegEngine:
                 # unused, and an unread stdout pipe deadlocks a verbose encode
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
-                text=True,
+                # FFmpeg writes UTF-8 whatever the Windows code page is, and file names
+                # in its messages can hold any character
+                encoding="utf-8",
+                errors="replace",
                 creationflags=creationflags,
             )
             self._process = proc
@@ -764,22 +818,33 @@ class FFmpegEngine:
             self._kill_process_tree()
             proc.wait()
             returncode = proc.returncode
-            raise EncodeError("Encoding timed out") from None
+            raise EncodeError(
+                "The export took longer than a day and was stopped. "
+                "Try a faster speed setting or a shorter selection."
+            ) from None
 
         finally:
+            # reading stops early on cancel or a failed progress callback, and an FFmpeg
+            # left running would block the wait forever and keep the output open
+            if proc.poll() is None:
+                self._kill_process_tree()
+                proc.wait()
+            if proc.stderr is not None:
+                proc.stderr.close()
             with self._lock:
                 self._process = None
-            self._last_stderr = "".join(stderr_lines[-_MAX_STDERR_DIAG:])
+            self._last_stderr = "".join(stderr_lines)[-_MAX_STDERR_DIAG:]
 
         if self._cancel_event.is_set():
-            return
+            raise EncodeCancelled("Encoding cancelled by user")
 
         if returncode is not None and returncode != 0:
-            stderr_tail = self._last_stderr
+            full_tail = "".join(stderr_lines)
+            logger.warning("FFmpeg pass %s failed with code %s", pass_num, returncode)
             raise EncodeError(
-                f"ffmpeg pass {pass_num} failed with code {returncode}",
+                describe_ffmpeg_failure(full_tail, returncode),
                 returncode=returncode,
-                stderr=stderr_tail,
+                stderr=full_tail,
             )
 
     def _kill_process_tree(self) -> None:

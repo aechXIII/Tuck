@@ -7,6 +7,7 @@ from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from functools import partial
+from itertools import count
 from pathlib import Path
 from threading import Condition, Event, Thread
 
@@ -43,6 +44,15 @@ class AnalysisSnapshot:
     progress: AnalysisProgress
     analysis: CutAnalysis | None = None
     issue: CutIssue | None = None
+    # changes whenever the keyframe list is replaced rather than extended, so a reader that
+    # already holds part of the list knows to read it again from the start
+    keyframes_revision: int = 0
+
+
+def _extends(shown: tuple[MediaTime, ...], keyframes: tuple[MediaTime, ...]) -> bool:
+    # one pass reports the same objects again with more on the end, so this is mostly an
+    # identity check
+    return len(keyframes) >= len(shown) and keyframes[: len(shown)] == shown
 
 
 @dataclass
@@ -70,6 +80,7 @@ class CutAnalysisService:
         self._closed = False
         self._history: OrderedDict[str, _Work] = OrderedDict()
         self._cache: OrderedDict[tuple[SourceIdentity, str], CutAnalysis] = OrderedDict()
+        self._revisions = count(1)
 
     def start(self, path: Path, work_id: str) -> AnalysisSnapshot:
         if not work_id or len(work_id) > 128:
@@ -82,7 +93,12 @@ class CutAnalysisService:
                 raise ValueError("Analysis work ID must be new")
             if self._current and self._current.snapshot.status in {"reading", "pending"}:
                 self._cancel_work(self._current)
-            snapshot = AnalysisSnapshot(work_id, "pending", AnalysisProgress(None, MediaTime(0)))
+            snapshot = AnalysisSnapshot(
+                work_id,
+                "pending",
+                AnalysisProgress(None, MediaTime(0)),
+                keyframes_revision=next(self._revisions),
+            )
             work = _Work(resolved, snapshot)
             self._current = self._pending = work
             self._history[str(resolved)] = work
@@ -210,16 +226,21 @@ class CutAnalysisService:
                         and active_work.snapshot.status == "reading"
                     ):
                         shown = active_work.snapshot.progress
+                        revision = active_work.snapshot.keyframes_revision
                         # the preview and the checked scan both find keyframes; the one further
                         # along is shown, so keyframes already on screen are never taken back
                         if value.coverage_end.seconds >= shown.coverage_end.seconds:
+                            if not _extends(shown.keyframes, value.keyframes):
+                                revision = next(self._revisions)
                             shown = replace(
                                 shown, coverage_end=value.coverage_end, keyframes=value.keyframes
                             )
                         # only the checked scan moves the progress, since export waits for it
                         if checked:
                             shown = replace(shown, progress=value.progress)
-                        active_work.snapshot = replace(active_work.snapshot, progress=shown)
+                        active_work.snapshot = replace(
+                            active_work.snapshot, progress=shown, keyframes_revision=revision
+                        )
 
             self._start_preview(work, partial(progress, checked=False))
             try:
@@ -237,11 +258,15 @@ class CutAnalysisService:
                         self._cache.move_to_end(key)
                         while len(self._cache) > 2:
                             self._cache.popitem(last=False)
+                        revision = work.snapshot.keyframes_revision
+                        if not _extends(work.snapshot.progress.keyframes, result.keyframes):
+                            revision = next(self._revisions)
                         work.snapshot = replace(
                             work.snapshot,
                             status="ready",
                             analysis=result,
                             progress=AnalysisProgress(1, result.duration, result.keyframes),
+                            keyframes_revision=revision,
                         )
                     self._condition.notify_all()
             except (CutAnalysisError, OSError, ValueError) as exc:

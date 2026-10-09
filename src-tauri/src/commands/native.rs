@@ -17,10 +17,15 @@ pub fn platform_capabilities() -> PlatformCapabilities {
     current_capabilities()
 }
 
+// the same lists as VIDEO_EXTENSIONS and AUDIO_EXTENSIONS in tuck/bridge_validation.py, which
+// decides what the preview may serve; a Python test keeps the two in agreement
 const VIDEO_EXTENSIONS: &[&str] = &[
-    "mp4", "mkv", "mov", "avi", "webm", "wmv", "m4v", "flv", "ts", "m2ts", "mts", "3gp", "ogv",
+    "mp4", "m4v", "mkv", "webm", "mov", "avi", "wmv", "asf", "flv", "f4v", "ts", "m2ts", "mts",
+    "3gp", "3g2", "ogv", "mpg", "mpeg", "m2v", "vob", "mxf",
 ];
-const AUDIO_EXTENSIONS: &[&str] = &["mp3", "flac", "wav", "aac", "ogg", "wma", "m4a", "opus"];
+const AUDIO_EXTENSIONS: &[&str] = &[
+    "mp3", "wav", "flac", "m4a", "aac", "ogg", "opus", "wma", "aif", "aiff",
+];
 
 fn paths_to_strings(paths: Vec<tauri_plugin_dialog::FilePath>) -> Vec<String> {
     paths

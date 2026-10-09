@@ -1,4 +1,4 @@
-"""Test native desktop services and explicit Send To targets."""
+"""Test native desktop services and natively resolved Send To targets."""
 
 import sys as _sys
 import types as _types
@@ -14,7 +14,6 @@ if "msvcrt" not in _sys.modules:
 import pytest
 
 from tuck.sendto import (
-    _validate_executable_path,
     install_generic_shortcut,
     install_profile_shortcut,
     repair_generic_shortcut,
@@ -22,109 +21,91 @@ from tuck.sendto import (
 )
 
 
-class TestValidateExecutablePath:
-    def test_valid_absolute_tuck_path(self, tmp_path):
-        exe = tmp_path / "Tuck.exe"
-        exe.write_text("dummy")
-        # Should validate without error
-        result = _validate_executable_path(str(exe))
-        assert result == str(exe)
+@pytest.fixture
+def packaged_install(tmp_path, monkeypatch):
+    """Lay out a packaged install and make this process look like its sidecar."""
 
-    def test_valid_python_path(self, tmp_path):
-        exe = tmp_path / "python.exe"
-        exe.write_text("dummy")
-        result = _validate_executable_path(str(exe))
-        assert result == str(exe)
-
-    def test_empty_rejected(self):
-        with pytest.raises(ValueError, match="non-empty"):
-            _validate_executable_path("")
-
-    def test_none_returns_empty(self):
-        assert _validate_executable_path(None) == ""
-
-    def test_relative_rejected(self):
-        with pytest.raises(ValueError, match="absolute"):
-            _validate_executable_path("relative/Tuck.exe")
-
-    def test_parent_missing_rejected(self, tmp_path):
-        bad = tmp_path / "nope" / "Tuck.exe"
-        with pytest.raises(ValueError, match="parent does not exist"):
-            _validate_executable_path(str(bad))
-
-    def test_non_tuck_name_rejected(self, tmp_path):
-        exe = tmp_path / "notvalid.exe"
-        exe.write_text("dummy")
-        with pytest.raises(ValueError, match="does not look like"):
-            _validate_executable_path(str(exe))
-
-    def test_null_byte_rejected(self, tmp_path):
-        exe = tmp_path / "Tuck.exe"
-        exe.write_text("dummy")
-        with pytest.raises(ValueError, match="invalid characters"):
-            _validate_executable_path(str(exe) + "\x00")
+    install = tmp_path / "Tuck"
+    install.mkdir()
+    for name in ("Tuck.exe", "TuckCli.exe", "tuck-sidecar.exe"):
+        (install / name).write_text("dummy")
+    monkeypatch.setattr("sys.frozen", True, raising=False)
+    monkeypatch.setattr("sys.executable", str(install / "tuck-sidecar.exe"))
+    return install
 
 
-class TestInstallSendtoExplicit:
-    def test_install_uses_explicit_path(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
-        monkeypatch.setattr("tuck.sendto._can_create_shortcuts", lambda: False)
-        exe = tmp_path / "Tuck.exe"
-        exe.write_text("dummy")
-        # Also need to ensure parent exists for validation
-        result = install_generic_shortcut("open", executable_path=str(exe))
-        assert result.exists()
+@pytest.fixture
+def sendto_dir(tmp_path, monkeypatch):
+    folder = tmp_path / "SendTo"
+    folder.mkdir()
+    monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: folder)
+    monkeypatch.setattr("tuck.sendto._can_create_shortcuts", lambda: False)
+    return folder
+
+
+@pytest.fixture
+def isolated_settings(tmp_path, monkeypatch):
+    import tuck.settings as settings_mod
+
+    monkeypatch.setattr(settings_mod, "_config_dir", lambda: tmp_path)
+    monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
+    monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
+
+
+class TestNativeSendToTarget:
+    def test_editor_shortcut_targets_this_installs_editor(self, packaged_install, sendto_dir):
+        result = install_generic_shortcut("open")
         content = result.read_text()
-        assert str(exe) in content
+        assert str(packaged_install / "Tuck.exe") in content
         assert "TUCK_OWNER_V1" in content
 
-    def test_install_rejects_invalid_explicit_path(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
-        with pytest.raises(ValueError):
-            install_generic_shortcut("open", executable_path="relative/path.exe")
+    def test_compression_profile_targets_this_installs_cli(self, packaged_install, sendto_dir):
+        result = install_profile_shortcut("my-profile", "My Profile")
+        assert str(packaged_install / "TuckCli.exe") in result.read_text()
 
-    def test_install_rejects_non_absolute(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
-        with pytest.raises(ValueError):
-            install_generic_shortcut("open", executable_path="not-absolute.exe")
+    def test_shortcut_functions_take_no_executable_path(self, packaged_install, sendto_dir):
+        for call in (
+            lambda: install_generic_shortcut("open", executable_path="C:\\evil.exe"),
+            lambda: repair_generic_shortcut("open", executable_path="C:\\evil.exe"),
+            lambda: install_profile_shortcut("p", "P", executable_path="C:\\evil.exe"),
+            lambda: repair_profile_shortcut("p", "P", executable_path="C:\\evil.exe"),
+        ):
+            with pytest.raises(TypeError):
+                call()
+        assert list(sendto_dir.iterdir()) == []
 
-    def test_install_profile_uses_explicit_path(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
-        monkeypatch.setattr("tuck.sendto._can_create_shortcuts", lambda: False)
-        exe = tmp_path / "Tuck.exe"
-        exe.write_text("dummy")
-        result = install_profile_shortcut("my-profile", "My Profile", executable_path=str(exe))
-        assert result.exists()
-        content = result.read_text()
-        assert str(exe) in content
+    def test_source_checkout_cannot_create_an_editor_shortcut(self, sendto_dir, monkeypatch):
+        monkeypatch.delattr("sys.frozen", raising=False)
+        with pytest.raises(RuntimeError, match="requires the Tuck desktop app"):
+            install_generic_shortcut("open")
+        assert list(sendto_dir.iterdir()) == []
 
-    def test_repair_rejects_invalid_explicit_path(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
-        monkeypatch.setattr("tuck.sendto._can_create_shortcuts", lambda: False)
-        # repair should return False on invalid path, not raise
-        result = repair_generic_shortcut("open", executable_path="bad/relative.exe")
-        assert result is False
+    def test_repair_points_a_moved_install_back_at_this_one(
+        self, packaged_install, sendto_dir, monkeypatch
+    ):
+        batch = install_profile_shortcut("my-profile", "My Profile")
+        moved = packaged_install.parent / "Moved"
+        moved.mkdir()
+        for name in ("Tuck.exe", "TuckCli.exe", "tuck-sidecar.exe"):
+            (moved / name).write_text("dummy")
+        monkeypatch.setattr("sys.executable", str(moved / "tuck-sidecar.exe"))
 
-    def test_repair_profile_rejects_invalid(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
-        monkeypatch.setattr("tuck.sendto._can_create_shortcuts", lambda: False)
-        # Create a batch to trigger batch path
-        exe = tmp_path / "Tuck.exe"
-        exe.write_text("dummy")
-        batch = tmp_path / "Tuck - my-profile.bat"
-        batch.write_text(
-            "@echo off\r\nREM TUCK_OWNER_V1\r\necho --profile-id my-profile --sendto-files %*\r\n"
-        )
+        assert repair_profile_shortcut("my-profile", "My Profile") is True
+        assert str(moved / "TuckCli.exe") in batch.read_text()
+        assert repair_profile_shortcut("my-profile", "My Profile") is False
+
+    def test_repair_in_a_source_checkout_leaves_the_shortcut_untouched(
+        self, packaged_install, sendto_dir, monkeypatch
+    ):
+        batch = install_generic_shortcut("open")
         before = batch.read_bytes()
-        # Now repair with invalid path should return False
-        result = repair_profile_shortcut("my-profile", "My Profile", executable_path="bad.exe")
-        assert result is False
-        # a bad target leaves the old shortcut exactly as it was
-        assert sorted(path.name for path in tmp_path.iterdir()) == [batch.name, exe.name]
+        monkeypatch.delattr("sys.frozen", raising=False)
+        with pytest.raises(RuntimeError, match="requires the Tuck desktop app"):
+            repair_generic_shortcut("open")
         assert batch.read_bytes() == before
 
 
-class TestBridgeExplicitSendTo:
+class TestBridgeSendTo:
     def test_sendto_module_rejects_linux(self, monkeypatch):
         monkeypatch.setenv("TUCK_DESKTOP_PLATFORM", "linux")
 
@@ -141,34 +122,19 @@ class TestBridgeExplicitSendTo:
         assert api.repair_generic_sendto("open")["ok"] is False
         assert api.remove_generic_sendto("open")["ok"] is False
 
-    def test_bridge_install_generic_uses_explicit(self, tmp_path, monkeypatch):
-        import tuck.settings as settings_mod
-
-        monkeypatch.setattr(settings_mod, "_config_dir", lambda: tmp_path)
-        monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
-        monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
-        monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
-        monkeypatch.setattr("tuck.sendto._can_create_shortcuts", lambda: False)
-
+    def test_bridge_install_generic_uses_the_native_target(
+        self, isolated_settings, sendto_dir, packaged_install
+    ):
         from tuck.bridge import BridgeAPI
 
-        exe = tmp_path / "Tuck.exe"
-        exe.write_text("dummy")
-        api = BridgeAPI()
-        result = api.install_generic_sendto("cut", executable_path=str(exe))
+        result = BridgeAPI().install_generic_sendto("cut")
         assert result["ok"] is True
         assert result["kind"] == "cut"
-        content = (tmp_path / "Tuck Lossless Cut.bat").read_text()
+        content = (sendto_dir / "Tuck Lossless Cut.bat").read_text()
         assert "--sendto-action review --sendto-task cut --sendto-files" in content
+        assert str(packaged_install / "Tuck.exe") in content
 
-    def test_bridge_rejects_unknown_kind(self, tmp_path, monkeypatch):
-        import tuck.settings as settings_mod
-
-        monkeypatch.setattr(settings_mod, "_config_dir", lambda: tmp_path)
-        monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
-        monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
-        monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
-
+    def test_bridge_rejects_unknown_kind(self, isolated_settings, sendto_dir):
         from tuck.bridge import BridgeAPI
 
         api = BridgeAPI()
@@ -179,32 +145,25 @@ class TestBridgeExplicitSendTo:
                 "error": "Send To shortcut kind must be open, compress, upscale, or cut.",
             }
         assert api.repair_generic_sendto(None)["ok"] is False
-        assert list(tmp_path.glob("*.bat")) == []
+        assert list(sendto_dir.glob("*.bat")) == []
 
-    def test_bridge_repair_generic_reports_each_kind(self, tmp_path, monkeypatch):
-        import tuck.settings as settings_mod
-
-        monkeypatch.setattr(settings_mod, "_config_dir", lambda: tmp_path)
-        monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
-        monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
-        monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
-        monkeypatch.setattr("tuck.sendto._can_create_shortcuts", lambda: False)
-
+    def test_bridge_repair_generic_reports_each_kind(
+        self, isolated_settings, sendto_dir, packaged_install, monkeypatch
+    ):
         from tuck.bridge import BridgeAPI
 
-        exe = tmp_path / "TuckCli.exe"
-        exe.write_text("dummy")
         api = BridgeAPI()
         assert api.repair_generic_sendto("upscale") == {
             "ok": True,
             "kind": "upscale",
             "repaired": False,
         }
-        assert api.install_generic_sendto("upscale", executable_path=str(exe))["ok"]
-        other = tmp_path / "Other" / "TuckCli.exe"
-        other.parent.mkdir()
-        other.write_text("dummy")
-        assert api.repair_generic_sendto("upscale", executable_path=str(other)) == {
+        assert api.install_generic_sendto("upscale")["ok"]
+        other = packaged_install.parent / "Other"
+        other.mkdir()
+        (other / "TuckCli.exe").write_text("dummy")
+        monkeypatch.setattr("sys.executable", str(other / "tuck-sidecar.exe"))
+        assert api.repair_generic_sendto("upscale") == {
             "ok": True,
             "kind": "upscale",
             "repaired": True,
@@ -215,65 +174,57 @@ class TestBridgeExplicitSendTo:
             "removed": True,
         }
 
-    def test_bridge_install_generic_rejects_invalid(self, tmp_path, monkeypatch):
-        import tuck.settings as settings_mod
-
-        monkeypatch.setattr(settings_mod, "_config_dir", lambda: tmp_path)
-        monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
-        monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
-
+    def test_bridge_reports_a_source_checkout_editor_shortcut(
+        self, isolated_settings, sendto_dir, monkeypatch
+    ):
         from tuck.bridge import BridgeAPI
 
-        api = BridgeAPI()
-        result = api.install_generic_sendto("open", executable_path="relative.exe")
+        monkeypatch.delattr("sys.frozen", raising=False)
+        result = BridgeAPI().install_generic_sendto("open")
         assert result["ok"] is False
-        assert "absolute" in result["error"].lower() or "invalid" in result["error"].lower()
+        assert "requires the Tuck desktop app" in result["error"]
 
-    def test_sidecar_handler_accepts_explicit(self, tmp_path, monkeypatch):
-        import tuck.settings as settings_mod
-
-        monkeypatch.setattr(settings_mod, "_config_dir", lambda: tmp_path)
-        monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
-        monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
-        monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
-        monkeypatch.setattr("tuck.sendto._can_create_shortcuts", lambda: False)
-
+    def test_sidecar_handler_installs_with_the_native_target(
+        self, isolated_settings, sendto_dir, packaged_install
+    ):
         from tuck.bridge import BridgeAPI
         from tuck.sidecar.handlers import dispatch
         from tuck.sidecar.protocol import Request
 
-        api = BridgeAPI()
-        exe = tmp_path / "Tuck.exe"
-        exe.write_text("dummy")
         req = Request(
             request_id="test-1",
             method="install_generic_sendto",
-            params={"kind": "upscale", "executable_path": str(exe)},
+            params={"kind": "upscale"},
         )
-        resp = dispatch(api, req)
+        resp = dispatch(BridgeAPI(), req)
         assert resp.ok is True
-        assert (tmp_path / "Tuck Upscale.bat").exists()
+        assert (
+            str(packaged_install / "TuckCli.exe") in (sendto_dir / "Tuck Upscale.bat").read_text()
+        )
 
-    def test_sidecar_handler_rejects_bad_type(self, tmp_path, monkeypatch):
-        import tuck.settings as settings_mod
-
-        monkeypatch.setattr(settings_mod, "_config_dir", lambda: tmp_path)
-        monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
-        monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
-
+    @pytest.mark.parametrize(
+        ("method", "params"),
+        [
+            ("install_generic_sendto", {"kind": "upscale", "executable_path": "C:\\evil.exe"}),
+            ("repair_generic_sendto", {"kind": "open", "executable_path": "C:\\evil.exe"}),
+            ("install_profile_sendto", {"profile_id": "p", "executable_path": "C:\\evil.exe"}),
+            (
+                "repair_profile_sendto",
+                {"profile_id": "p", "action": "start", "executable_path": "C:\\evil.exe"},
+            ),
+        ],
+    )
+    def test_sidecar_handlers_reject_an_executable_path(
+        self, method, params, isolated_settings, sendto_dir
+    ):
         from tuck.bridge import BridgeAPI
         from tuck.sidecar.handlers import dispatch
         from tuck.sidecar.protocol import Request
 
-        api = BridgeAPI()
-        req = Request(
-            request_id="test-2",
-            method="install_generic_sendto",
-            params={"kind": "open", "executable_path": 123},
-        )
-        resp = dispatch(api, req)
+        resp = dispatch(BridgeAPI(), Request(request_id="exe", method=method, params=params))
         assert resp.ok is False
         assert resp.error.code == "INVALID_REQUEST"
+        assert list(sendto_dir.iterdir()) == []
 
     @pytest.mark.parametrize(
         ("method", "params"),
@@ -285,15 +236,11 @@ class TestBridgeExplicitSendTo:
             ("remove_generic_sendto", {}),
             ("remove_generic_sendto", {"kind": "open", "executable_path": "C:\\Tuck.exe"}),
             ("repair_generic_sendto", {"kind": "Open"}),
+            ("install_profile_sendto", {"profile_id": 1}),
+            ("repair_profile_sendto", {"profile_id": "p", "action": 3}),
         ],
     )
-    def test_sidecar_generic_handlers_allowlist_kind(self, method, params, tmp_path, monkeypatch):
-        import tuck.settings as settings_mod
-
-        monkeypatch.setattr(settings_mod, "_config_dir", lambda: tmp_path)
-        monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
-        monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
-
+    def test_sidecar_handlers_allowlist_their_parameters(self, method, params, isolated_settings):
         from tuck.bridge import BridgeAPI
         from tuck.sidecar.handlers import dispatch
         from tuck.sidecar.protocol import Request
@@ -302,15 +249,7 @@ class TestBridgeExplicitSendTo:
         assert resp.ok is False
         assert resp.error.code == "INVALID_REQUEST"
 
-    def test_sidecar_repair_and_remove_generic(self, tmp_path, monkeypatch):
-        import tuck.settings as settings_mod
-
-        monkeypatch.setattr(settings_mod, "_config_dir", lambda: tmp_path)
-        monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
-        monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
-        monkeypatch.setattr("tuck.sendto._sendto_dir", lambda: tmp_path)
-        monkeypatch.setattr("tuck.sendto._can_create_shortcuts", lambda: False)
-
+    def test_sidecar_repair_and_remove_generic(self, isolated_settings, sendto_dir):
         from tuck.bridge import BridgeAPI
         from tuck.sidecar.handlers import dispatch
         from tuck.sidecar.protocol import Request

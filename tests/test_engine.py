@@ -1,14 +1,21 @@
 import array
+import io
 import os
 import subprocess
 import sys
+import threading
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
+from tuck.encoding.capabilities import can_tone_map_hdr
 from tuck.encoding.command import build_base_cmd, nvenc_preset, scaler_to_ffmpeg_flag
+from tuck.encoding.failures import DISK_FULL_MESSAGE
 from tuck.encoding.filters import build_video_filters
-from tuck.engine import EncodeError, FFmpegEngine, is_ffmpeg_available
+from tuck.encoding.runner import describe_encoder_fallback
+from tuck.engine import EncodeCancelled, EncodeError, FFmpegEngine, is_ffmpeg_available
+from tuck.media_tools import find_ffmpeg, find_ffprobe
 from tuck.models import (
     ENCODER_AUTO,
     ENCODER_AUTO_COMPRESSION,
@@ -18,15 +25,21 @@ from tuck.models import (
     RCM_CQP,
     RCM_CRF,
     RCM_VBR,
+    WORKFLOW_COMPRESSION,
     WORKFLOW_UPSCALE,
     CropRect,
     EncodePlan,
     EncodeProgress,
     EncodeStage,
     OutputGeometry,
+    PlanRequest,
+    Profile,
     Segment,
+    VideoInfo,
     VideoTransform,
 )
+from tuck.planner import plan as make_plan
+from tuck.probe import _run_ffprobe_json, probe
 
 
 def _create_synthetic_video(path: Path, duration: float = 3.0) -> bool:
@@ -1618,8 +1631,9 @@ class TestFFmpegCommandPerEncoder:
         assert "-rc" in cmd
         rc_idx = cmd.index("-rc")
         assert cmd[rc_idx + 1] == "vbr"
-        assert "-b:v" in cmd
-        assert "-maxrate" in cmd
+        assert cmd[cmd.index("-b:v") + 1] == "2000000"
+        assert cmd[cmd.index("-maxrate") + 1] == "3000000"
+        assert cmd[cmd.index("-bufsize") + 1] == "6000000"
 
     def test_amf_cqp_command(self, engine, real_video_path, tmp_path):
         """AMF encoder with CQP produces -rc cqp -qp_i -qp_p -qp_b."""
@@ -1687,7 +1701,7 @@ class TestFFmpegCommandPerEncoder:
         assert "-b:v" in cmd
 
     def test_amf_vbr_command(self, engine, real_video_path, tmp_path):
-        """AMF encoder with VBR produces -rc vbr -b:v -maxrate."""
+        """AMF has no plain "vbr" rate control; its capped VBR is vbr_peak."""
         from tuck.probe import probe
 
         info = probe(real_video_path)
@@ -1714,9 +1728,10 @@ class TestFFmpegCommandPerEncoder:
         cmd = build_base_cmd("ffmpeg", plan, Path(plan.source))
         assert "-rc" in cmd
         rc_idx = cmd.index("-rc")
-        assert cmd[rc_idx + 1] == "vbr"
-        assert "-b:v" in cmd
-        assert "-maxrate" in cmd
+        assert cmd[rc_idx + 1] == "vbr_peak"
+        assert cmd[cmd.index("-b:v") + 1] == "2000000"
+        assert cmd[cmd.index("-maxrate") + 1] == "3000000"
+        assert cmd[cmd.index("-bufsize") + 1] == "6000000"
 
     def testnvenc_preset_mapping(self):
         """NVENC preset mapping converts x264 preset names to p1-p7."""
@@ -1984,3 +1999,522 @@ print(repr(sys.stdin.read()))
         check=True,
     )
     assert result.stdout.splitlines() == ["''", "'sidecar request\\n'"]
+
+
+_NO_WINDOW = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+
+
+def _ffmpeg_or_skip() -> str:
+    ffmpeg = find_ffmpeg()
+    if not ffmpeg:
+        pytest.skip("FFmpeg is unavailable")
+    return ffmpeg
+
+
+def _make_clip(ffmpeg: str, path: Path, *extra: str, audio_tracks: int = 1) -> None:
+    cmd = [ffmpeg, "-y", "-v", "error", "-f", "lavfi"]
+    cmd += ["-i", "testsrc2=duration=1:size=320x240:rate=25"]
+    for index in range(audio_tracks):
+        cmd += ["-f", "lavfi", "-i", f"sine=frequency={440 + index * 220}:duration=1"]
+    cmd += ["-map", "0:v"]
+    for index in range(audio_tracks):
+        cmd += ["-map", f"{index + 1}:a"]
+    cmd += [*extra, str(path)]
+    result = subprocess.run(cmd, capture_output=True, timeout=60, creationflags=_NO_WINDOW)
+    if result.returncode != 0 or not path.is_file():
+        pytest.skip(f"cannot create {path.name}")
+
+
+def _small_info(path: Path, **overrides) -> VideoInfo:
+    base = VideoInfo(
+        path=str(path),
+        duration=1.0,
+        width=320,
+        height=240,
+        fps=25.0,
+        video_codec="h264",
+        audio_codec="aac",
+        audio_channels=1,
+        audio_sample_rate=44100,
+        audio_bitrate=64_000,
+        has_audio=True,
+    )
+    return replace(base, **overrides)
+
+
+def _small_plan(source: Path, output: Path, **overrides) -> EncodePlan:
+    base = EncodePlan(
+        source=str(source),
+        output=str(output),
+        target_width=320,
+        target_height=240,
+        target_fps=25.0,
+        video_bitrate=400_000,
+        original_video_bitrate=400_000,
+        audio_bitrate=64_000,
+        two_pass=False,
+        preset="ultrafast",
+        video_encoder="libx264",
+        rate_control_method=RCM_VBR,
+        target_size=5 * 1024 * 1024,
+        source_info=_small_info(source),
+    )
+    return replace(base, **overrides)
+
+
+def _maps(cmd: list[str]) -> list[str]:
+    return [cmd[index + 1] for index, arg in enumerate(cmd) if arg == "-map"]
+
+
+def _probe_streams(path: Path, *entries: str) -> list[str]:
+    return subprocess.run(
+        [find_ffprobe() or "ffprobe", "-v", "error", *entries, "-of", "csv=p=0", str(path)],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        creationflags=_NO_WINDOW,
+    ).stdout.split()
+
+
+class TestCancelBetweenRuns:
+    def test_cancel_before_spawn_never_starts_ffmpeg(self, monkeypatch):
+        engine = FFmpegEngine()
+        engine.cancel()
+
+        def no_spawn(*_args, **_kwargs):
+            raise AssertionError("FFmpeg started after cancel")
+
+        monkeypatch.setattr("tuck.encoding.runner.subprocess.Popen", no_spawn)
+        with pytest.raises(EncodeCancelled):
+            engine._run_pass(["ffmpeg"], 1.0, None, pass_num=2, total_passes=2)
+
+    def test_cancel_between_candidates_stops_the_fallback(self, tmp_path, monkeypatch):
+        source = tmp_path / "source.mp4"
+        source.write_bytes(b"source")
+        monkeypatch.setattr("tuck.encoding.runner.find_ffmpeg", lambda: "ffmpeg")
+        monkeypatch.setattr(
+            "tuck.encoding.runner.get_available_encoders",
+            lambda: frozenset({"libx264", "h264_nvenc"}),
+        )
+        engine = FFmpegEngine()
+        spawned: list[list[str]] = []
+
+        class FailedNvenc:
+            pid = 0
+            returncode = 1
+
+            def __init__(self) -> None:
+                self.stderr = io.StringIO("[h264_nvenc @ 01] Cannot load nvcuda.dll\n")
+
+            def poll(self) -> int:
+                return 1
+
+            def wait(self, timeout: float | None = None) -> int:
+                return 1
+
+        def popen(cmd, **_kwargs):
+            spawned.append(cmd)
+            return FailedNvenc()
+
+        def cleanup_then_cancel(_output: Path) -> None:
+            # the user cancels after the hardware attempt failed, before the next one starts
+            engine._cancel_event.set()
+
+        monkeypatch.setattr("tuck.encoding.runner.subprocess.Popen", popen)
+        monkeypatch.setattr(engine, "_cleanup_output", cleanup_then_cancel)
+        plan = _small_plan(source, tmp_path / "out.mp4", video_encoder=ENCODER_AUTO)
+        with pytest.raises(EncodeCancelled):
+            engine.encode(plan)
+        assert len(spawned) == 1
+        assert "h264_nvenc" in spawned[0]
+
+    def test_early_stop_kills_ffmpeg_instead_of_waiting_for_it(self):
+        engine = FFmpegEngine()
+        # a stand-in for FFmpeg that reports progress and never exits by itself
+        child = (
+            "import sys, time\n"
+            "while True:\n"
+            "    sys.stderr.write('out_time_us=500000\\nprogress=continue\\n')\n"
+            "    sys.stderr.flush()\n"
+            "    time.sleep(0.02)\n"
+        )
+        outcome: list[BaseException] = []
+
+        def on_progress(_progress):
+            # stop reading the way a cancel does, without killing the process here
+            engine._cancel_event.set()
+
+        def run():
+            try:
+                engine._run_pass([sys.executable, "-c", child], 1.0, on_progress, pass_num=1)
+            except BaseException as exc:
+                outcome.append(exc)
+
+        worker = threading.Thread(target=run, daemon=True)
+        worker.start()
+        worker.join(timeout=30)
+        assert not worker.is_alive(), "the pass waited for an FFmpeg that was never stopped"
+        assert len(outcome) == 1 and isinstance(outcome[0], EncodeCancelled)
+        assert engine._process is None
+
+
+class TestFailureOutput:
+    def test_failure_is_explained_and_keeps_ffmpeg_output_without_progress(self):
+        engine = FFmpegEngine()
+        child = (
+            "import sys\n"
+            "for _ in range(300):\n"
+            "    sys.stderr.write('out_time_us=100000\\nprogress=continue\\n')\n"
+            "sys.stderr.write('[mp4 @ 01] Error writing trailer: No space left on device\\n')\n"
+            "sys.exit(1)\n"
+        )
+        with pytest.raises(EncodeError) as caught:
+            engine._run_pass([sys.executable, "-c", child], 1.0, None, pass_num=1)
+        assert str(caught.value) == DISK_FULL_MESSAGE
+        assert caught.value.returncode == 1
+        assert "No space left on device" in caught.value.stderr
+        assert "progress=" not in engine.last_stderr
+        assert "No space left on device" in engine.last_stderr
+
+    def test_kept_output_is_limited_by_characters(self):
+        engine = FFmpegEngine()
+        child = (
+            "import sys\n"
+            "for index in range(150):\n"
+            "    sys.stderr.write(f'line {index} ' + 'x' * 100 + '\\n')\n"
+            "sys.exit(1)\n"
+        )
+        with pytest.raises(EncodeError):
+            engine._run_pass([sys.executable, "-c", child], 1.0, None, pass_num=1)
+        assert len(engine.last_stderr) == 4000
+        assert engine.last_stderr.endswith("x\n")
+
+
+class TestEncoderFallbackNotice:
+    @pytest.mark.parametrize(
+        ("used", "failures", "notice"),
+        [
+            (
+                "libx264",
+                [("h264_nvenc", "device")],
+                "Used software encoding because the NVIDIA encoder couldn't start",
+            ),
+            (
+                "h264_amf",
+                [("h264_nvenc", "settings")],
+                "Used the AMD encoder because the NVIDIA encoder didn't accept these settings",
+            ),
+            (
+                "libx264",
+                [("h264_nvenc", "device"), ("h264_amf", "device")],
+                "Used software encoding because the NVIDIA and AMD encoders couldn't start",
+            ),
+        ],
+    )
+    def test_wording(self, used, failures, notice):
+        assert describe_encoder_fallback(used, failures) == notice
+
+    def test_auto_fallback_is_recorded_in_plain_words(self, tmp_path, monkeypatch):
+        source = tmp_path / "source.mp4"
+        source.write_bytes(b"source")
+        monkeypatch.setattr("tuck.encoding.runner.find_ffmpeg", lambda: "ffmpeg")
+        monkeypatch.setattr(
+            "tuck.encoding.runner.get_available_encoders",
+            lambda: frozenset({"libx264", "h264_nvenc"}),
+        )
+        engine = FFmpegEngine()
+
+        def encode_with_retry(_ffmpeg, attempt, _source, output, *_args):
+            if attempt.video_encoder == "h264_nvenc":
+                raise EncodeError("failed", stderr="Cannot load nvcuda.dll")
+            output.write_bytes(b"encoded")
+            return output
+
+        monkeypatch.setattr(engine, "_encode_with_retry", encode_with_retry)
+        engine.encode(_small_plan(source, tmp_path / "out.mp4", video_encoder=ENCODER_AUTO))
+        assert engine.resolved_encoder == "libx264"
+        assert (
+            engine.encoder_fallback
+            == "Used software encoding because the NVIDIA encoder couldn't start"
+        )
+
+    def test_explicit_encoder_records_no_fallback(self, tmp_path, monkeypatch):
+        source = tmp_path / "source.mp4"
+        source.write_bytes(b"source")
+        monkeypatch.setattr("tuck.encoding.runner.find_ffmpeg", lambda: "ffmpeg")
+        monkeypatch.setattr(
+            "tuck.encoding.runner.get_available_encoders", lambda: frozenset({"libx264"})
+        )
+        engine = FFmpegEngine()
+        engine._encoder_fallback = "left over from an earlier export"
+
+        def encode_with_retry(_ffmpeg, _attempt, _source, output, *_args):
+            output.write_bytes(b"encoded")
+            return output
+
+        monkeypatch.setattr(engine, "_encode_with_retry", encode_with_retry)
+        engine.encode(_small_plan(source, tmp_path / "out.mp4"))
+        assert engine.resolved_encoder == "libx264"
+        assert engine.encoder_fallback == ""
+
+
+class TestRateControl:
+    def test_two_pass_compression_uses_capped_vbr(self, tmp_path):
+        plan = _small_plan(tmp_path / "in.mp4", tmp_path / "out.mp4", two_pass=True)
+        cmd = build_base_cmd("ffmpeg", plan, Path(plan.source), include_audio=False)
+        assert cmd[cmd.index("-b:v") + 1] == "400000"
+        assert cmd[cmd.index("-maxrate") + 1] == "600000"
+        assert cmd[cmd.index("-bufsize") + 1] == "1200000"
+        assert "-minrate" not in cmd
+
+    def test_explicit_cbr_stays_constant(self, tmp_path):
+        plan = _small_plan(tmp_path / "in.mp4", tmp_path / "out.mp4", rate_control_method=RCM_CBR)
+        cmd = build_base_cmd("ffmpeg", plan, Path(plan.source))
+        assert cmd[cmd.index("-minrate") + 1] == "400000"
+        assert cmd[cmd.index("-maxrate") + 1] == "400000"
+
+    def test_nvenc_compression_uses_capped_vbr(self, tmp_path):
+        plan = _small_plan(
+            tmp_path / "in.mp4",
+            tmp_path / "out.mp4",
+            video_encoder="h264_nvenc",
+            preset="p5",
+            workflow=WORKFLOW_COMPRESSION,
+        )
+        cmd = build_base_cmd("ffmpeg", plan, Path(plan.source))
+        assert cmd[cmd.index("-rc") + 1] == "vbr"
+        assert cmd[cmd.index("-maxrate") + 1] == "600000"
+        assert cmd[cmd.index("-bufsize") + 1] == "1200000"
+
+
+class TestStreamMapping:
+    def test_filtered_path_uses_the_first_audio_track(self, tmp_path):
+        plan = _small_plan(
+            tmp_path / "in.mp4",
+            tmp_path / "out.mp4",
+            segments=[Segment(0.0, 0.4), Segment(0.6, 1.0)],
+            source_audio_gain_db=-3.0,
+        )
+        cmd = build_base_cmd("ffmpeg", plan, Path(plan.source))
+        graph = cmd[cmd.index("-filter_complex") + 1]
+        assert "[0:a:0]" in graph
+        assert "[0:a]" not in graph
+
+    def test_first_text_track_is_kept_as_mov_text(self, tmp_path):
+        info = _small_info(tmp_path / "in.mkv", subtitle_codecs=["hdmv_pgs_subtitle", "subrip"])
+        plan = _small_plan(tmp_path / "in.mkv", tmp_path / "out.mp4", source_info=info)
+        cmd = build_base_cmd("ffmpeg", plan, Path(plan.source))
+        assert _maps(cmd) == ["0:v:0", "0:a:0?", "0:s:1?"]
+        assert cmd[cmd.index("-c:s") + 1] == "mov_text"
+
+    def test_picture_subtitles_are_not_mapped(self, tmp_path):
+        info = _small_info(tmp_path / "in.mkv", subtitle_codecs=["hdmv_pgs_subtitle"])
+        plan = _small_plan(tmp_path / "in.mkv", tmp_path / "out.mp4", source_info=info)
+        cmd = build_base_cmd("ffmpeg", plan, Path(plan.source))
+        assert _maps(cmd) == ["0:v:0", "0:a:0?"]
+        assert "-c:s" not in cmd
+
+    def test_analysis_pass_carries_no_subtitles(self, tmp_path):
+        info = _small_info(tmp_path / "in.mkv", subtitle_codecs=["subrip"])
+        plan = _small_plan(
+            tmp_path / "in.mkv", tmp_path / "out.mp4", source_info=info, two_pass=True
+        )
+        cmd = build_base_cmd("ffmpeg", plan, Path(plan.source), include_audio=False)
+        assert _maps(cmd) == ["0:v:0"]
+        assert "-c:s" not in cmd
+
+    def test_filtered_export_from_the_start_ends_subtitles_with_the_picture(self, tmp_path):
+        info = _small_info(tmp_path / "in.mkv", duration=2.0, subtitle_codecs=["ass"])
+        plan = _small_plan(
+            tmp_path / "in.mkv",
+            tmp_path / "out.mp4",
+            source_info=info,
+            segments=[Segment(0.0, 1.5)],
+            source_audio_gain_db=-3.0,
+        )
+        cmd = build_base_cmd("ffmpeg", plan, Path(plan.source))
+        assert _maps(cmd) == ["[vout]", "[aout]", "0:s:0?"]
+        assert cmd[cmd.index("-t") + 1] == "1.500"
+
+    def test_subtitle_input_comes_after_the_prepared_video(self, tmp_path):
+        info = _small_info(tmp_path / "in.mkv", duration=2.0, subtitle_codecs=["subrip"])
+        plan = _small_plan(
+            tmp_path / "in.mkv",
+            tmp_path / "out.mp4",
+            source_info=info,
+            segments=[Segment(0.5, 1.5)],
+        )
+        cmd = build_base_cmd(
+            "ffmpeg", plan, Path(plan.source), prepared_video=tmp_path / "blend.nut"
+        )
+        assert "[1:v]" in cmd[cmd.index("-filter_complex") + 1]
+        assert "2:s:0?" in _maps(cmd)
+
+    def test_several_parts_drop_subtitles(self, tmp_path):
+        info = _small_info(tmp_path / "in.mkv", duration=2.0, subtitle_codecs=["subrip"])
+        plan = _small_plan(
+            tmp_path / "in.mkv",
+            tmp_path / "out.mp4",
+            source_info=info,
+            segments=[Segment(0.0, 0.5), Segment(1.0, 1.5)],
+        )
+        cmd = build_base_cmd("ffmpeg", plan, Path(plan.source))
+        assert not any(arg.endswith(":s:0?") for arg in cmd)
+        assert "-c:s" not in cmd
+
+
+class TestToneMapping:
+    def test_sdr_plan_has_no_tone_mapping(self, tmp_path):
+        plan = _small_plan(tmp_path / "in.mp4", tmp_path / "out.mp4")
+        cmd = build_base_cmd("ffmpeg", plan, Path(plan.source))
+        assert not any("zscale" in arg or "tonemap" in arg for arg in cmd)
+        assert "-color_trc" not in cmd
+
+    def test_blended_video_stays_sdr_after_tone_mapping(self, tmp_path):
+        info = _small_info(
+            tmp_path / "in.mp4",
+            color_transfer="smpte2084",
+            color_primaries="bt2020",
+            color_space="bt2020nc",
+        )
+        plan = _small_plan(tmp_path / "in.mp4", tmp_path / "out.mp4", source_info=info)
+        plan.tone_map_hdr = True
+        cmd = build_base_cmd(
+            "ffmpeg", plan, Path(plan.source), prepared_video=tmp_path / "blend.nut"
+        )
+        graph = cmd[cmd.index("-filter_complex") + 1]
+        # nothing after the tone map converts to BT.601 or brings back the HDR colours
+        tail = graph[graph.index("tonemap") :]
+        assert "bt601" not in tail
+        assert "smpte2084" not in tail
+        assert cmd[cmd.index("-colorspace") + 1] == "bt709"
+
+    def test_blended_sdr_video_keeps_its_own_colours(self, tmp_path):
+        info = _small_info(
+            tmp_path / "in.mp4", color_transfer="smpte170m", color_primaries="smpte170m"
+        )
+        plan = _small_plan(tmp_path / "in.mp4", tmp_path / "out.mp4", source_info=info)
+        cmd = build_base_cmd(
+            "ffmpeg", plan, Path(plan.source), prepared_video=tmp_path / "blend.nut"
+        )
+        graph = cmd[cmd.index("-filter_complex") + 1]
+        assert "scale=out_color_matrix=bt601:out_range=tv" in graph
+        assert "color_trc=smpte170m" in graph
+
+
+class TestRealExports:
+    def test_non_ascii_source_and_output_encode(self, tmp_path):
+        ffmpeg = _ffmpeg_or_skip()
+        source = tmp_path / "あいう 動画.mp4"
+        _make_clip(ffmpeg, source, "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac")
+        info = probe(source)
+        output = tmp_path / "出力 クリップ.mp4"
+        result = FFmpegEngine().encode(
+            _small_plan(source, output, source_info=info, target_fps=info.fps)
+        )
+        assert result.is_file() and result.stat().st_size > 0
+        ffprobe = find_ffprobe()
+        if ffprobe:
+            # the ffprobe fallback must read the same UTF-8 file name back
+            data = _run_ffprobe_json(ffprobe, source, "probing")
+            assert data["format"]["filename"] == str(source)
+
+    def test_only_the_first_audio_track_is_encoded(self, tmp_path):
+        ffmpeg = _ffmpeg_or_skip()
+        source = tmp_path / "tracks.mkv"
+        _make_clip(
+            ffmpeg,
+            source,
+            *("-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", "-ac:a:1", "6"),
+            audio_tracks=2,
+        )
+        info = probe(source)
+        assert info.audio_stream_count == 2
+        output = FFmpegEngine().encode(
+            _small_plan(source, tmp_path / "out.mp4", source_info=info, audio_channels=2)
+        )
+        streams = _probe_streams(output, "-show_entries", "stream=codec_type")
+        assert streams.count("audio") == 1
+
+    @pytest.mark.parametrize(
+        ("container", "codec", "segments", "gain"),
+        [
+            ("mkv", "srt", None, 0.0),
+            ("mp4", "mov_text", None, 0.0),
+            # a trimmed start with edited audio goes through the filter graph
+            ("mkv", "srt", [Segment(0.3, 1.0)], -3.0),
+        ],
+    )
+    def test_text_subtitles_are_kept_in_time(self, tmp_path, container, codec, segments, gain):
+        ffmpeg = _ffmpeg_or_skip()
+        clip = tmp_path / "clip.mkv"
+        _make_clip(ffmpeg, clip, "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac")
+        subtitles = tmp_path / "subtitles.srt"
+        subtitles.write_text("1\n00:00:00,500 --> 00:00:00,900\nHello\n", encoding="utf-8")
+        source = tmp_path / f"subtitled.{container}"
+        muxed = subprocess.run(
+            [
+                *(ffmpeg, "-y", "-v", "error", "-i", str(clip), "-i", str(subtitles)),
+                *("-map", "0", "-map", "1", "-c", "copy", "-c:s", codec, str(source)),
+            ],
+            capture_output=True,
+            timeout=60,
+            creationflags=_NO_WINDOW,
+        )
+        if muxed.returncode != 0:
+            pytest.skip(f"cannot mux {codec} subtitles into {container}")
+        info = probe(source)
+        assert info.text_subtitle_track == 0
+        request = PlanRequest(segments=segments, source_audio_gain_db=gain) if segments else None
+        encode_plan = make_plan(
+            source,
+            Profile(name="Subtitles", two_pass=False, preset="ultrafast"),
+            output=tmp_path / "out.mp4",
+            request=request,
+            source_info=info,
+        )
+        assert encode_plan.warnings == []
+        result = FFmpegEngine().encode(encode_plan)
+        report = _probe_streams(
+            result, "-select_streams", "s", "-show_entries", "stream=codec_name:packet=pts_time"
+        )
+        assert "mov_text" in report
+        start = 0.3 if segments else 0.0
+        times = [float(value.strip(",")) for value in report if value != "mov_text"]
+        assert any(abs(time - (0.5 - start)) < 0.05 for time in times), report
+
+    @pytest.mark.parametrize(
+        "tags",
+        [
+            {"color_trc": "arib-std-b67", "color_primaries": "bt2020", "colorspace": "bt2020nc"},
+            # many PQ files tag only the transfer, which zscale can't place on its own
+            {"color_trc": "smpte2084"},
+        ],
+        ids=["hlg", "pq-transfer-only"],
+    )
+    def test_hdr_source_is_tone_mapped_to_sdr(self, tmp_path, tags):
+        ffmpeg = _ffmpeg_or_skip()
+        if not can_tone_map_hdr():
+            pytest.skip("this FFmpeg has no zscale and tonemap filters")
+        source = tmp_path / "hdr.mkv"
+        setparams = ":".join(f"{name}={value}" for name, value in tags.items())
+        output_tags = [arg for name, value in tags.items() for arg in (f"-{name}", value)]
+        _make_clip(
+            ffmpeg,
+            source,
+            *("-vf", f"format=yuv420p10le,setparams={setparams}", "-c:v", "ffv1"),
+            *output_tags,
+            *("-c:a", "aac"),
+        )
+        info = probe(source)
+        assert info.is_hdr
+        encode_plan = make_plan(
+            source,
+            Profile(name="HDR", two_pass=False, preset="ultrafast"),
+            output=tmp_path / "sdr.mp4",
+            source_info=info,
+        )
+        assert encode_plan.tone_map_hdr
+        output_info = probe(FFmpegEngine().encode(encode_plan))
+        assert output_info.color_transfer == "bt709"
+        assert not output_info.is_hdr

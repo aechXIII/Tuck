@@ -195,3 +195,77 @@ def test_probe_falls_back_to_ffprobe_when_pyav_cannot_read(tmp_path, monkeypatch
     info = probe(source)
 
     assert (info.width, info.height, info.duration, info.video_codec) == (1280, 720, 8.0, "h264")
+
+
+def test_video_info_keeps_average_rate_track_count_and_hdr(tmp_path) -> None:
+    source = tmp_path / "clip.mp4"
+    data = {
+        "format": {"duration": "4.0"},
+        "streams": [
+            {
+                "codec_type": "video",
+                "codec_name": "hevc",
+                "width": 1920,
+                "height": 1080,
+                "r_frame_rate": "120/1",
+                "avg_frame_rate": "59/2",
+                "color_transfer": "smpte2084",
+                "color_primaries": "bt2020",
+            },
+            {"codec_type": "audio", "codec_name": "aac", "channels": 2},
+            {"codec_type": "audio", "codec_name": "ac3", "channels": 6},
+        ],
+    }
+
+    info = _video_info(source, 0, data)
+
+    assert info.variable_frame_rate is True
+    assert info.fps == 120.0
+    assert info.average_fps == pytest.approx(29.5)
+    assert info.decision_fps == pytest.approx(29.5)
+    assert info.audio_stream_count == 2
+    assert info.audio_channels == 2
+    assert info.is_hdr
+
+
+def test_video_info_lists_subtitle_tracks_in_file_order(tmp_path) -> None:
+    source = tmp_path / "film.mkv"
+    data = {
+        "format": {"duration": "4.0"},
+        "streams": [
+            {"codec_type": "video", "codec_name": "h264", "width": 640, "height": 360},
+            {"codec_type": "subtitle", "codec_name": "hdmv_pgs_subtitle"},
+            {"codec_type": "audio", "codec_name": "aac", "channels": 2},
+            {"codec_type": "subtitle", "codec_name": "subrip"},
+        ],
+    }
+
+    info = _video_info(source, 0, data)
+
+    assert info.subtitle_codecs == ["hdmv_pgs_subtitle", "subrip"]
+    # counted among subtitle tracks, the way FFmpeg's 0:s:N names them
+    assert info.text_subtitle_track == 1
+
+
+def test_subtitle_tracks_survive_a_saved_plan(tmp_path) -> None:
+    from tuck.models import EncodePlan, VideoInfo
+
+    info = VideoInfo(
+        path=str(tmp_path / "film.mkv"),
+        duration=4.0,
+        width=640,
+        height=360,
+        fps=25.0,
+        video_codec="h264",
+        subtitle_codecs=["ass"],
+    )
+    plan = EncodePlan(source=info.path, output=str(tmp_path / "out.mp4"), source_info=info)
+    restored = EncodePlan.from_dict(plan.to_dict())
+    assert restored.source_info is not None
+    assert restored.source_info.text_subtitle_track == 0
+
+    saved_before_subtitles = plan.to_dict()
+    del saved_before_subtitles["source_info"]["subtitle_codecs"]
+    older = EncodePlan.from_dict(saved_before_subtitles)
+    assert older.source_info is not None
+    assert older.source_info.text_subtitle_track is None

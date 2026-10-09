@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import copy
 import json
+import logging
 import os
 
 try:
@@ -66,6 +67,7 @@ from .models.export_preferences import (
 from .models.ui_preferences import (
     CHOICE_PREFERENCES,
     DEFAULT_CUT_SUFFIX,
+    ENCODE_SUFFIXES,
     FLAG_PREFERENCES,
     PROFILE_LIST_PREFERENCES,
     START_TASK_LAST,
@@ -74,9 +76,12 @@ from .models.ui_preferences import (
     clean_shortcut_overrides,
     normalize_choice,
     normalize_cut_suffix,
+    normalize_encode_suffix,
     normalize_hidden_ui,
     normalize_start_task,
 )
+
+logger = logging.getLogger(__name__)
 
 APP_NAME = "Tuck"
 APP_AUTHOR = "Tuck"
@@ -416,20 +421,41 @@ class SettingsManager:
 
         return AppSettings.from_dict(merged)
 
-    # if the same profile ID appears in both our list and the disk list, our version wins
     def _merge_profiles(self, disk_profiles: list[Profile]) -> list[Profile]:
-        our_list = self._profiles or []
-        merged_map: dict[str, Profile] = {}
+        """Combine our profiles with another process's, using the last loaded or saved
+        list as the common starting point.
 
-        for p in disk_profiles:
-            if p.profile_id:
-                merged_map[p.profile_id] = p
+        A profile either side deleted stays deleted unless the other side changed it
+        meanwhile; when both sides changed the same profile, ours wins. The file format
+        is unchanged, so older versions read the result as before.
+        """
+        base = {
+            str(entry.get("profile_id")): entry
+            for entry in self._profiles_snapshot or []
+            if entry.get("profile_id")
+        }
+        ours = {p.profile_id: p for p in self._profiles or [] if p.profile_id}
+        theirs = {p.profile_id: p for p in disk_profiles if p.profile_id}
 
-        for p in our_list:
-            if p.profile_id:
-                merged_map[p.profile_id] = p
-
-        return list(merged_map.values())
+        merged: dict[str, Profile] = {}
+        for profile_id in [*theirs, *ours]:
+            if profile_id in merged:
+                continue
+            original = base.get(profile_id)
+            mine, other = ours.get(profile_id), theirs.get(profile_id)
+            mine_unchanged = mine is not None and mine.to_dict() == original
+            if mine is None:
+                # we deleted it; it comes back only if the other process edited it since
+                if other is None or other.to_dict() == original:
+                    continue
+                merged[profile_id] = other
+            elif other is None:
+                # the other process deleted it; it stays only if we edited it since
+                if not mine_unchanged:
+                    merged[profile_id] = mine
+            else:
+                merged[profile_id] = other if mine_unchanged else mine
+        return list(merged.values())
 
     def get_profiles(self) -> list[Profile]:
         if self._profiles is None:
@@ -541,6 +567,15 @@ class SettingsManager:
                 data["cut_suffix"] = normalize_cut_suffix(data["cut_suffix"])
             except ValueError:
                 data["cut_suffix"] = DEFAULT_CUT_SUFFIX
+        # older versions saved any text here; one that would write outside the export
+        # folder or into an alternate data stream goes back to the default
+        for key in ENCODE_SUFFIXES:
+            if key in data:
+                try:
+                    data[key] = normalize_encode_suffix(key, data[key])
+                except ValueError:
+                    logger.warning("Saved %s can't be used in file names; using the default", key)
+                    data[key] = getattr(AppSettings(), key)
         for key in FLAG_PREFERENCES:
             if key in data and not isinstance(data[key], bool):
                 data.pop(key)

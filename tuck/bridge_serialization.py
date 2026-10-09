@@ -37,6 +37,8 @@ def video_info_dict(info: VideoInfo) -> dict[str, Any]:
         "file_size_mb": round(info.file_size / (1024 * 1024), 2),
         "bitrate_kbps": round(info.bitrate / 1000) if info.bitrate else 0,
         "has_audio": info.has_audio,
+        "audio_stream_count": info.audio_stream_count,
+        "hdr": info.is_hdr,
     }
 
 
@@ -168,6 +170,8 @@ def plan_preview_dict(plan: EncodePlan) -> dict[str, Any]:
         "crop": plan.transform.crop.to_dict() if plan.transform.crop else None,
         "transform": plan.transform.to_dict(),
         "transform_geometry": geometry.to_dict() if geometry is not None else None,
+        "tone_map_hdr": plan.tone_map_hdr,
+        "warnings": list(plan.warnings),
     }
 
 
@@ -246,4 +250,7 @@ def queue_item_dict(item: QueueItem) -> dict[str, Any]:
         "has_trim": bool(plan.has_trim) if plan else False,
         "crop": transform.crop.to_dict() if transform is not None and transform.crop else None,
         "transform": transform.to_dict() if transform is not None else None,
+        "warnings": list(plan.warnings) if plan else [],
+        "effective_encoder": item.effective_encoder,
+        "encoder_fallback": item.encoder_fallback,
     }

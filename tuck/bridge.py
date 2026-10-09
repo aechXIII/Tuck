@@ -18,12 +18,18 @@ from .bridge_serialization import (
 )
 from .bridge_serialization import queue_item_dict as _item_to_dict
 from .bridge_validation import (
+    AUDIO_EXTENSIONS,
+    VIDEO_EXTENSIONS,
     parse_plan_request,
     validate_path,
 )
 from .cutting.analysis import CutAnalysisError, check_request
 from .cutting.planner import CutPlanChanged, parse_cut_export, parse_cut_request, plan_cut
-from .cutting.serialization import analysis_snapshot_dict, cut_plan_preview_dict
+from .cutting.serialization import (
+    KeyframeCursor,
+    analysis_snapshot_dict,
+    cut_plan_preview_dict,
+)
 from .cutting.service import CutAnalysisService
 from .desktop_platform import is_linux_desktop
 from .diagnostics import build_diagnostics
@@ -54,10 +60,12 @@ from .models.export_preferences import (
 from .models.ui_preferences import (
     CHOICE_PREFERENCES,
     DEFAULT_CUT_SUFFIX,
+    ENCODE_SUFFIXES,
     FLAG_PREFERENCES,
     PROFILE_LIST_PREFERENCES,
     normalize_choice,
     normalize_cut_suffix,
+    normalize_encode_suffix,
     normalize_hidden_ui,
     normalize_profile_ids,
     normalize_session_files,
@@ -65,13 +73,14 @@ from .models.ui_preferences import (
     normalize_start_task,
     normalize_timeline_toggle,
 )
+from .output_paths import sweep_stale_outputs_later
 from .planner import plan
 from .planner_options import CutOutputOptions, OutputOptions, output_options
 from .probe import is_ffprobe_available, probe_audio
 from .probe import probe as probe_video
 from .probe_cache import ProbeCache
 from .profile_service import ProfileService
-from .queue import get_queue
+from .queue import RetryRefused, get_queue
 from .request_work import RequestWork
 from .settings import get_settings_manager
 from .settings_backup import SettingsBackupService
@@ -96,7 +105,6 @@ class BridgeAPI:
 
         self._media_server = get_media_server()
         self._media_server.set_thumbnail_cache_dir(self._settings.cache_dir / "thumbs")
-        self._media_server.start()
 
     @property
     def log_dir(self) -> Path:
@@ -118,8 +126,13 @@ class BridgeAPI:
         }
 
     def start_background_services(self) -> None:
-        """Start the queue service for a GUI or sidecar lifetime."""
+        """Start the queue and the media server for a GUI or sidecar lifetime."""
+        self._media_server.start()
         self._queue.start()
+        # a crashed or killed export leaves its reservation and scratch folder behind
+        settings = self._settings.load()
+        if settings.output_location == OUTPUT_LOCATION_FOLDER and settings.output_dir:
+            sweep_stale_outputs_later(Path(settings.output_dir))
 
     def stop_background_services(self) -> None:
         """Stop process-owned services using the GUI cleanup order."""
@@ -210,6 +223,9 @@ class BridgeAPI:
             path = self._validate_path(path)
         except (ValueError, FileNotFoundError) as e:
             return {"ok": False, "error": str(e)}
+        # the page asks for any path it likes, so only the video and audio Tuck opens are served
+        if Path(path).suffix.lower() not in VIDEO_EXTENSIONS | AUDIO_EXTENSIONS:
+            return {"ok": False, "error": f"Unsupported media file type: {Path(path).name}"}
         try:
             token = self._media_server.register_file(path)
             url = self._media_server.get_url(token)
@@ -287,12 +303,13 @@ class BridgeAPI:
         except (ValueError, OSError) as exc:
             return {"ok": False, "error": str(exc), "code": "analysis_failed", "field": "cut"}
 
-    def get_cut_analysis(self, path: str) -> BridgeResult:
+    def get_cut_analysis(self, path: str, keyframes: KeyframeCursor | None = None) -> BridgeResult:
         try:
             if not isinstance(path, str) or not path:
                 raise ValueError("Invalid path: empty or not a string")
             # only a lookup key: nothing is opened, and a removed file reads as changed
-            return {"ok": True, **analysis_snapshot_dict(self._cut_analysis.get(Path(path)))}
+            snapshot = self._cut_analysis.get(Path(path))
+            return {"ok": True, **analysis_snapshot_dict(snapshot, keyframes)}
         except (ValueError, OSError) as exc:
             return {"ok": False, "error": str(exc), "code": "analysis_failed", "field": "cut"}
 
@@ -498,6 +515,8 @@ class BridgeAPI:
             }
         except CutAnalysisError as exc:
             return {"ok": False, "error": str(exc), "code": exc.code, "field": "cut"}
+        except RetryRefused as exc:
+            return {"ok": False, "error": str(exc), "code": exc.code}
         if item is None:
             return {"ok": False, "error": "Only failed or cancelled items can be retried"}
 
@@ -574,10 +593,13 @@ class BridgeAPI:
             error=error,
             stderr=stderr,
             selected_encoder=str(raw.get("selected_encoder") or ""),
+            # the page only knows the requested encoder; the queue item knows what really ran
             resolved_encoder=str(
-                raw.get("resolved_encoder")
+                (matched_item.effective_encoder if matched_item is not None else "")
+                or raw.get("resolved_encoder")
                 or (getattr(plan_obj, "video_encoder", "") if plan_obj else "")
             ),
+            encoder_fallback=matched_item.encoder_fallback if matched_item is not None else "",
             workflow=str(
                 raw.get("workflow") or (getattr(plan_obj, "workflow", "") if plan_obj else "")
             ),
@@ -586,9 +608,7 @@ class BridgeAPI:
         )
         return {"ok": True, "text": text}
 
-    def install_profile_sendto(
-        self, profile_id: str, action: str = "start", executable_path: str | None = None
-    ) -> BridgeResult:
+    def install_profile_sendto(self, profile_id: str, action: str = "start") -> BridgeResult:
 
         if is_linux_desktop():
             return {"ok": False, "error": "Send To shortcuts are only available on Windows."}
@@ -603,7 +623,6 @@ class BridgeAPI:
                 profile_id,
                 found.name,
                 action=action,
-                executable_path=executable_path,
                 workflow=found.workflow,
             )
             return {"ok": True, "path": str(path)}
@@ -622,9 +641,7 @@ class BridgeAPI:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
-    def repair_profile_sendto(
-        self, profile_id: str, action: str = "start", executable_path: str | None = None
-    ) -> BridgeResult:
+    def repair_profile_sendto(self, profile_id: str, action: str = "start") -> BridgeResult:
 
         if is_linux_desktop():
             return {"ok": False, "error": "Send To shortcuts are only available on Windows."}
@@ -639,7 +656,6 @@ class BridgeAPI:
                 profile_id,
                 found.name,
                 action=action,
-                executable_path=executable_path,
                 workflow=found.workflow,
             )
             return {"ok": True, "repaired": repaired}
@@ -658,9 +674,7 @@ class BridgeAPI:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
-    def install_generic_sendto(
-        self, kind: object, executable_path: str | None = None
-    ) -> BridgeResult:
+    def install_generic_sendto(self, kind: object) -> BridgeResult:
 
         if is_linux_desktop():
             return {"ok": False, "error": "Send To shortcuts are only available on Windows."}
@@ -668,7 +682,7 @@ class BridgeAPI:
             from .sendto import generic_shortcut, install_generic_shortcut
 
             spec = generic_shortcut(kind)
-            path = install_generic_shortcut(spec.kind, executable_path=executable_path)
+            path = install_generic_shortcut(spec.kind)
             return {"ok": True, "kind": spec.kind, "path": str(path)}
         except Exception as e:
             return {"ok": False, "error": str(e)}
@@ -686,9 +700,7 @@ class BridgeAPI:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
-    def repair_generic_sendto(
-        self, kind: object, executable_path: str | None = None
-    ) -> BridgeResult:
+    def repair_generic_sendto(self, kind: object) -> BridgeResult:
 
         if is_linux_desktop():
             return {"ok": False, "error": "Send To shortcuts are only available on Windows."}
@@ -696,7 +708,7 @@ class BridgeAPI:
             from .sendto import generic_shortcut, repair_generic_shortcut
 
             spec = generic_shortcut(kind)
-            repaired = repair_generic_shortcut(spec.kind, executable_path=executable_path)
+            repaired = repair_generic_shortcut(spec.kind)
             return {"ok": True, "kind": spec.kind, "repaired": repaired}
         except Exception as e:
             return {"ok": False, "error": str(e)}
@@ -814,6 +826,7 @@ class BridgeAPI:
             "output_location": normalize_output_location,
             "output_subfolder": normalize_output_subfolder,
             "last_session_files": normalize_session_files,
+            **{key: partial(normalize_encode_suffix, key) for key in ENCODE_SUFFIXES},
             **{key: partial(normalize_timeline_toggle, key) for key in FLAG_PREFERENCES},
             **{key: partial(normalize_choice, key) for key in CHOICE_PREFERENCES},
             **{key: partial(normalize_profile_ids, key) for key in PROFILE_LIST_PREFERENCES},
@@ -913,10 +926,6 @@ class BridgeAPI:
                         return {"ok": False, "error": f"{key} must be string"}
                     if val and not unchanged and not Path(val).is_file():
                         return {"ok": False, "error": f"File not found: {val}"}
-                if key in ("compression_suffix", "upscale_suffix"):
-                    val = data[key]
-                    if not isinstance(val, str) or not val.strip():
-                        return {"ok": False, "error": f"{key} must be a non-empty string"}
                 updates[key] = preferences.get(key, data[key])
 
         # only a change to where exports go is held to this; other saves must not fail on it
@@ -971,46 +980,6 @@ class BridgeAPI:
 
     def update_profile(self, profile_id: str, profile: object) -> BridgeResult:
         return self._profile_service.update(profile_id, profile)
-
-    def open_output_folder(self, path: str) -> BridgeResult:
-        import subprocess
-
-        folder = Path(self._validate_path(path)).parent
-        subprocess.Popen(["explorer", str(folder)], creationflags=0)
-        return {"ok": True}
-
-    def open_logs_folder(self) -> BridgeResult:
-        return self._open_app_folder(self._settings.log_dir)
-
-    def open_config_folder(self) -> BridgeResult:
-        return self._open_app_folder(self._settings.config_dir)
-
-    @staticmethod
-    def _open_app_folder(folder: Path) -> BridgeResult:
-        import subprocess
-
-        try:
-            folder.mkdir(parents=True, exist_ok=True)
-            subprocess.Popen(["explorer", str(folder)], creationflags=0)
-            return {"ok": True, "path": str(folder)}
-        except OSError as e:
-            return {"ok": False, "error": str(e)}
-
-    def copy_text(self, text: str) -> BridgeResult:
-        if not isinstance(text, str) or not text:
-            return {"ok": False, "error": "Nothing to copy"}
-        try:
-            import win32clipboard
-
-            win32clipboard.OpenClipboard()
-            try:
-                win32clipboard.EmptyClipboard()
-                win32clipboard.SetClipboardData(win32clipboard.CF_UNICODETEXT, text)
-            finally:
-                win32clipboard.CloseClipboard()
-            return {"ok": True}
-        except Exception as e:
-            return {"ok": False, "error": str(e)}
 
     def _validate_path(self, path: str) -> str:
         return validate_path(path)

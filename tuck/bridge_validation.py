@@ -30,10 +30,14 @@ from .models.encoding_policy import (
 from .models.frame_blending import FrameBlending
 from .models.lut import LutSettings
 
+# the one list of files Tuck offers and serves as video or audio: the desktop shell's file
+# pickers (src-tauri/src/commands/native.rs) and the page's drop routing
+# (frontend/src/features/editor/drop-routing.ts) must match it, which a test checks
 VIDEO_EXTENSIONS = frozenset(
     {
-        *(".mp4", ".mkv", ".webm", ".mov", ".avi", ".wmv", ".flv", ".m4v"),
-        *(".ts", ".m2ts", ".mts", ".3gp", ".ogv"),
+        *(".mp4", ".m4v", ".mkv", ".webm", ".mov", ".avi", ".wmv", ".asf", ".flv", ".f4v"),
+        *(".ts", ".m2ts", ".mts", ".3gp", ".3g2", ".ogv"),
+        *(".mpg", ".mpeg", ".m2v", ".vob", ".mxf"),
     }
 )
 AUDIO_EXTENSIONS = frozenset(

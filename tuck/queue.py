@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import dataclasses
 import logging
 import os
+import subprocess
 import threading
 from collections import deque
 from datetime import datetime, timezone
@@ -15,11 +17,49 @@ from .engine import EncodeCancelled, FFmpegEngine
 from .models import EncodePlan, QueueItem, QueueState
 from .models.cutting import CutPlan
 from .models.progress import EncodeProgress, EncodeStage
-from .output_paths import resolve_output_collision
+from .output_paths import resolve_output_collision, sweep_stale_outputs
 from .power import keep_awake
+from .probe import probe
 from .request_work import RequestWork
 
 logger = logging.getLogger(__name__)
+
+
+# every code a refused retry carries; the desktop bridge passes these through as they are
+RETRY_REFUSAL_CODES = frozenset({"source_changed", "source_unavailable"})
+
+
+class RetryRefused(Exception):
+    """A failed export can't run again as planned; the message says what to do instead."""
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+def _check_source_unchanged(plan: EncodePlan) -> None:
+    """Refuse a retry when the video is no longer the one the export was planned for.
+
+    Sizes, bitrates, and segments come from the first probe, and the request that
+    produced them isn't kept, so a changed video has to be added again.
+    """
+    if plan.source_info is None:
+        return
+    try:
+        current = probe(plan.source)
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
+        logger.warning("Could not read %s again for a retry: %s", plan.source, exc)
+        raise RetryRefused(
+            "source_unavailable",
+            "This video can't be read any more. Check that it is still in place, then try again.",
+        ) from exc
+    # only the file itself matters, not how its path was spelled when it was added
+    if dataclasses.replace(current, path=plan.source_info.path) != plan.source_info:
+        raise RetryRefused(
+            "source_changed",
+            "This video changed after it was added to the queue. "
+            "Add it again so the export is planned for the new version.",
+        )
 
 
 class ProcessingQueue:
@@ -166,6 +206,8 @@ class ProcessingQueue:
         try:
             if isinstance(retry_plan, CutPlan):
                 retry_plan = rebuild_cut_plan(retry_plan, work)
+            else:
+                _check_source_unchanged(retry_plan)
             with self._condition:
                 if (
                     self._items.get(item_id) is not original
@@ -275,7 +317,10 @@ class ProcessingQueue:
 
                 attempt_plan = copy.deepcopy(plan)
                 if isinstance(attempt_plan, EncodePlan) and not attempt_plan.replace_existing:
-                    attempt_plan.output = str(resolve_output_collision(Path(attempt_plan.output)))
+                    output = Path(attempt_plan.output)
+                    # a reservation left by a crashed export must not push this one to _1
+                    sweep_stale_outputs(output.parent)
+                    attempt_plan.output = str(resolve_output_collision(output))
 
                 source = attempt_plan.source
                 with self._condition:
@@ -332,6 +377,9 @@ class ProcessingQueue:
                 )
 
             with self._condition:
+                # Auto picks its encoder while running, so the item records what really ran
+                item.effective_encoder = self._engine.resolved_encoder
+                item.encoder_fallback = self._engine.encoder_fallback
                 self._current_item = None
                 self._condition.notify_all()
                 stop_now = self._stop_after_current

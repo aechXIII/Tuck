@@ -5,9 +5,9 @@ from typing import TypedDict
 
 from .models import AppSettings, AudioTrack, PlanRequest, Profile, Segment
 from .models.encoding_policy import (
-    RCM_CBR,
     native_preset_for_encoder,
     normalize_legacy_rc_matrix,
+    size_target_rate_control_method,
     validate_encoder_supported_on_desktop,
     validate_rate_control_matrix,
     validate_rc_method_for_encoder,
@@ -80,20 +80,20 @@ def resolve_plan_options(profile: Profile, request: PlanRequest | None) -> PlanO
     rate_control = profile.rate_control
     explicit_bitrate = profile.explicit_bitrate
     audio_bitrate = profile.audio_bitrate
-    workflow = getattr(profile, "workflow", "compression")
-    rate_control_method = getattr(profile, "rate_control_method", RCM_CBR)
-    qp = getattr(profile, "qp", 23)
-    cq = getattr(profile, "cq", qp)
+    workflow = profile.workflow
+    rate_control_method = profile.rate_control_method
+    qp = profile.qp
+    cq = profile.cq
     audio_enabled = True
     source_audio_muted = False
     source_audio_gain_db = 0.0
     source_audio_segments: list[Segment] | None = None
     audio_tracks: list[AudioTrack] = []
-    keep_audio = bool(getattr(profile, "keep_audio", False))
-    scaler = getattr(profile, "scaler", None) or "neighbor"
-    video_encoder = getattr(profile, "video_encoder", "libx264")
-    crf = getattr(profile, "crf", 23)
-    tune = getattr(profile, "tune", "")
+    keep_audio = bool(profile.keep_audio)
+    scaler = profile.scaler or "neighbor"
+    video_encoder = profile.video_encoder
+    crf = profile.crf
+    tune = profile.tune
     two_pass = profile.two_pass
     preset = profile.preset
 
@@ -161,6 +161,7 @@ def resolve_plan_options(profile: Profile, request: PlanRequest | None) -> PlanO
         video_encoder,
         two_pass,
     )
+    rate_control_method = size_target_rate_control_method(workflow, rate_control_method)
 
     return PlanOptions(
         resolution_mode=resolution_mode,

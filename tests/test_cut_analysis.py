@@ -1,8 +1,8 @@
-import time
 from fractions import Fraction
 from threading import Event
 
 import pytest
+from conftest import wait_until
 from media.cut_fixtures import create_source, find_tools
 
 from tuck.cutting.exact import exact_media_reason
@@ -624,10 +624,7 @@ def test_keyframes_show_while_the_video_is_still_being_hashed(media_tools, tmp_p
         cut_service.start(path, "preview")
         assert hashing.wait(10)
         # progress is a snapshot rather than an event, so read it until keyframes appear
-        deadline = time.monotonic() + 10
-        while not cut_service.get(path).progress.keyframes and time.monotonic() < deadline:
-            time.sleep(0.02)
-        assert cut_service.get(path).progress.keyframes
+        wait_until(lambda: bool(cut_service.get(path).progress.keyframes), timeout=10)
         assert cut_service.get(path).status == "reading"
         release.set()
         with cut_service._condition:

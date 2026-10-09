@@ -4,10 +4,13 @@ import os
 import pytest
 
 from tuck.encoding.capabilities import (
+    HW_FAILURE_DEVICE,
+    HW_FAILURE_SETTINGS,
     _detect_usable_encoders,
     auto_encoder_candidates,
     get_encoder_capabilities,
-    is_hardware_init_failure,
+    hardware_failure_kind,
+    parse_filter_names,
     resolve_encoder,
     select_auto_encoder,
 )
@@ -171,16 +174,82 @@ class TestPersistentEncoderCache:
 
 class TestHardwareFailureClassification:
     def test_nvenc_missing_device(self):
-        assert is_hardware_init_failure("No NVENC capable devices found")
+        assert hardware_failure_kind("No NVENC capable devices found") is not None
 
     def test_amf_init(self):
-        assert is_hardware_init_failure("Failed to initialise AMF context")
+        assert hardware_failure_kind("Failed to initialise AMF context") is not None
 
     def test_unrelated_input_error(self):
-        assert not is_hardware_init_failure("No such file or directory")
+        assert hardware_failure_kind("No such file or directory") is None
 
     def test_permission_error_not_hw(self):
-        assert not is_hardware_init_failure("Permission denied writing output")
+        assert hardware_failure_kind("Permission denied writing output") is None
+
+    def test_missing_gpu_is_a_device_failure(self):
+        stderr = (
+            "[h264_nvenc @ 000001] Cannot load nvcuda.dll\n"
+            "[vost#0:0/h264_nvenc @ 000002] Error while opening encoder - maybe incorrect "
+            "parameters such as bit_rate, rate, width or height.\n"
+        )
+        assert hardware_failure_kind(stderr) == HW_FAILURE_DEVICE
+
+    def test_missing_amd_runtime_is_a_device_failure(self):
+        stderr = (
+            "[h264_amf @ 000001] DLL amfrt64.dll failed to open\n"
+            "[vost#0:0/h264_amf @ 000002] Error while opening encoder - maybe incorrect "
+            "parameters such as bit_rate, rate, width or height.\n"
+        )
+        assert hardware_failure_kind(stderr) == HW_FAILURE_DEVICE
+
+    def test_rejected_option_is_a_settings_failure_not_a_missing_gpu(self):
+        stderr = (
+            "[h264_amf @ 000001] [Eval @ 000002] Undefined constant or missing '(' in 'vbr'\n"
+            '[h264_amf @ 000001] Unable to parse option value "vbr"\n'
+            "[h264_amf @ 000001] Error setting option rc to value vbr.\n"
+            "[vost#0:0/h264_amf @ 000003] Error applying encoder options: Invalid argument\n"
+        )
+        assert hardware_failure_kind(stderr) == HW_FAILURE_SETTINGS
+
+    def test_generic_open_failure_is_a_settings_failure(self):
+        stderr = (
+            "[h264_nvenc @ 000001] Frame Dimension greater than maximum supported\n"
+            "[vost#0:0/h264_nvenc @ 000002] Error while opening encoder - maybe incorrect "
+            "parameters such as bit_rate, rate, width or height.\n"
+        )
+        assert hardware_failure_kind(stderr) == HW_FAILURE_SETTINGS
+
+    def test_unrelated_failure_has_no_kind(self):
+        assert hardware_failure_kind("pipe:2: No space left on device") is None
+
+
+class TestFilterDiscovery:
+    LISTING = (
+        "Filters:\n"
+        "  T.. = Timeline support\n"
+        "  .S. = Slice threading\n"
+        "  ..C = Command support\n"
+        "  A = Audio input/output\n"
+        "  | = Source or sink filter\n"
+        " TSC aap               AA->A      Apply Affine Projection algorithm.\n"
+        " .S. tonemap           V->V       Conversion to/from different dynamic ranges.\n"
+        " .SC zscale            V->V       Apply resizing, colorspace and bit depth conversion.\n"
+        " ... nullsrc           |->V       Null video source, return unprocessed video frames.\n"
+    )
+
+    def test_parses_filter_rows_without_the_legend(self):
+        assert parse_filter_names(self.LISTING) == frozenset(
+            {"aap", "tonemap", "zscale", "nullsrc"}
+        )
+
+    def test_tone_mapping_needs_both_filters(self, monkeypatch):
+        from tuck.encoding import capabilities
+
+        monkeypatch.setattr(capabilities, "get_available_filters", lambda: frozenset({"tonemap"}))
+        assert not capabilities.can_tone_map_hdr()
+        monkeypatch.setattr(
+            capabilities, "get_available_filters", lambda: frozenset({"tonemap", "zscale"})
+        )
+        assert capabilities.can_tone_map_hdr()
 
 
 class TestCapabilitiesDict:

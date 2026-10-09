@@ -431,3 +431,166 @@ def test_server_reports_a_safe_fatal_event_when_startup_crashes() -> None:
             "details": {},
         },
     }
+
+
+_NOISY_SIDECAR_SCRIPT = """
+import os
+import subprocess
+import sys
+
+import tuck.sidecar.__main__ as entry
+from tuck.sidecar.protocol import Event
+from tuck.sidecar.server import run_server
+
+
+def noise(where):
+    print(f"stray print {where}")
+    os.write(1, f"native write {where}\\n".encode())
+    # stdin stays closed to children: on Windows a child that inherits the request pipe
+    # blocks at startup while the reader thread waits on it
+    subprocess.run(
+        [sys.executable, "-c", f"print('child process {where}')"],
+        stdin=subprocess.DEVNULL,
+        check=True,
+    )
+
+
+class Api:
+    def get_queue_state(self):
+        noise("in a handler")
+        return {"items": [], "current_id": None, "pending_ids": []}
+
+
+class Lifecycle:
+    def start(self):
+        noise("at startup")
+        return Api()
+
+    def ready_event(self):
+        return Event("backend_ready", {"backend_version": "0.4.0", "pid": 1, "capabilities": {}})
+
+    def shutdown(self):
+        pass
+
+
+def run_noisy(stdin, stdout, stderr):
+    return run_server(stdin, stdout, stderr, Lifecycle())
+
+
+entry.run_server = run_noisy
+raise SystemExit(entry.main(["--protocol", "1"]))
+"""
+
+
+def test_subprocess_keeps_stray_stdout_writes_out_of_the_protocol(tmp_path: Path) -> None:
+    sidecar = SidecarProcess(tmp_path / "noisy-data", [sys.executable, "-c", _NOISY_SIDECAR_SCRIPT])
+    try:
+        # receive() parses every stdout line, so any stray text there fails the test
+        assert sidecar.receive(timeout=10)["event"] == "backend_ready"
+        sidecar.send(_request("queue-1", "get_queue_state", {}))
+        response = sidecar.receive(timeout=10)
+        assert response["id"] == "queue-1"
+        assert response["ok"] is True
+        sidecar.send(_request("stop-1", "shutdown", {}))
+        assert sidecar.receive()["id"] == "stop-1"
+        assert sidecar.process.wait(timeout=5) == 0
+        assert sidecar._stdout.get(timeout=5) is None
+        stderr = sidecar.stderr_text()
+        for where in ("at startup", "in a handler"):
+            assert f"stray print {where}" in stderr
+            assert f"native write {where}" in stderr
+            assert f"child process {where}" in stderr
+    finally:
+        sidecar.close()
+
+
+class _Lifecycle:
+    def __init__(self, api: object) -> None:
+        self.api = api
+
+    def start(self) -> object:
+        return self.api
+
+    def ready_event(self) -> Event:
+        return Event("backend_ready", {"backend_version": "0.4.0", "pid": 1, "capabilities": {}})
+
+    def shutdown(self) -> None:
+        pass
+
+
+def _lines(*frames: dict[str, object]) -> io.StringIO:
+    return io.StringIO("".join(json.dumps(f, separators=(",", ":")) + "\n" for f in frames))
+
+
+def test_server_answers_an_oversized_reply_with_an_error_instead_of_breaking_the_stream() -> None:
+    from tuck.sidecar.protocol import MAX_FRAME_BYTES
+
+    class HugeApi:
+        def get_queue_state(self) -> dict[str, object]:
+            return {"items": ["x" * MAX_FRAME_BYTES], "current_id": None, "pending_ids": []}
+
+    stdout = io.StringIO()
+    stdin = _lines(_request("huge-1", "get_queue_state", {}), _request("health-1", "health", {}))
+
+    assert run_server(stdin, stdout, io.StringIO(), _Lifecycle(HugeApi())) == 0
+
+    lines = stdout.getvalue().splitlines()
+    assert all(len(line.encode("utf-8")) <= MAX_FRAME_BYTES for line in lines)
+    responses = {frame["id"]: frame for frame in map(json.loads, lines[1:])}
+    assert responses["huge-1"]["ok"] is False
+    assert responses["huge-1"]["error"]["code"] == "RESPONSE_TOO_LARGE"
+    assert responses["health-1"]["ok"] is True
+
+
+def test_server_keeps_answering_control_requests_while_media_work_is_busy() -> None:
+    from tuck.sidecar.server import MEDIA_METHODS
+
+    class SlowMediaApi:
+        def __init__(self) -> None:
+            self.release = threading.Event()
+
+        def probe_file(self, path: str) -> dict[str, object]:
+            assert self.release.wait(timeout=10)
+            return {"ok": True, "data": {"path": path}}
+
+        def get_thumbnail(self, path: str) -> dict[str, object]:
+            assert self.release.wait(timeout=10)
+            return {"ok": True, "thumbnail": ""}
+
+        def get_queue_state(self) -> dict[str, object]:
+            return {"items": [], "current_id": None, "pending_ids": []}
+
+    class WatchingStdout(io.StringIO):
+        def __init__(self, api: SlowMediaApi) -> None:
+            super().__init__()
+            self.api = api
+
+        def write(self, value: str) -> int:
+            written = super().write(value)
+            if '"id":"queue-1"' in value:
+                self.api.release.set()
+            return written
+
+    assert {"probe_file", "get_thumbnail"} <= MEDIA_METHODS
+    api = SlowMediaApi()
+    stdout = WatchingStdout(api)
+    # a large import: far more slow media requests than there are workers
+    media = [
+        _request(f"{method}-{n}", method, {"path": f"C:/clip-{n}.mp4"})
+        for n in range(6)
+        for method in ("probe_file", "get_thumbnail")
+    ]
+    stdin = _lines(*media, _request("queue-1", "get_queue_state", {}))
+    result: list[int] = []
+    worker = threading.Thread(
+        target=lambda: result.append(run_server(stdin, stdout, io.StringIO(), _Lifecycle(api)))
+    )
+    worker.start()
+    worker.join(timeout=15)
+    api.release.set()
+
+    assert result == [0]
+    ids = [frame.get("id") for frame in map(json.loads, stdout.getvalue().splitlines())]
+    # the queue answer comes before any media work finishes, since it never waits behind it
+    assert ids[1] == "queue-1"
+    assert sorted(ids[2:]) == sorted(str(frame["id"]) for frame in media)

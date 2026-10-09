@@ -80,35 +80,8 @@ def _sendto_dir() -> Path:
     return Path.home() / "SendTo"
 
 
-def _validate_executable_path(executable_path: str | Path | None) -> str:
-    if executable_path is None:
-        return ""
-    if not isinstance(executable_path, (str, Path)):
-        raise TypeError("executable_path must be a string path")
-    text = str(executable_path).strip()
-    if not text:
-        raise ValueError("executable_path must be a non-empty string")
-    if "\x00" in text:
-        raise ValueError("executable_path contains invalid characters")
-    candidate = Path(text)
-    if not candidate.is_absolute():
-        raise ValueError(f"executable_path must be absolute: {text}")
-    if not candidate.parent.exists():
-        raise ValueError(f"executable_path parent does not exist: {text}")
-    name = candidate.name.lower()
-    if "tuck" not in name and "python" not in name:
-        raise ValueError(f"executable_path does not look like a Tuck executable: {text}")
-    return str(candidate)
-
-
-def _get_target_path(
-    executable_path: str | Path | None = None,
-    action: str = ACTION_REVIEW,
-) -> str | None:
-    if executable_path is not None:
-        validated = _validate_executable_path(executable_path)
-        if validated:
-            return validated
+def _get_target_path(action: str = ACTION_REVIEW) -> str | None:
+    # the target is always this install's own executable; callers never name it
     if getattr(sys, "frozen", False):
         # in a packaged install Tuck.exe (editor), TuckCli.exe (headless console
         # encode) and tuck-sidecar.exe share one directory; "review" opens the
@@ -334,10 +307,10 @@ def _ensure_generic_destination_available(spec: GenericShortcut) -> None:
             )
 
 
-def install_generic_shortcut(kind: str, executable_path: str | Path | None = None) -> Path:
+def install_generic_shortcut(kind: str) -> Path:
     _require_sendto_support()
     spec = generic_shortcut(kind)
-    target = _get_target_path(executable_path, spec.action)
+    target = _get_target_path(spec.action)
     if not target:
         raise RuntimeError("Cannot determine Tuck executable path")
 
@@ -370,12 +343,11 @@ def install_profile_shortcut(
     profile_id: str,
     profile_name: str,
     action: str = ACTION_START,
-    executable_path: str | Path | None = None,
     *,
     workflow: str = WORKFLOW_COMPRESSION,
 ) -> Path:
     _require_sendto_support()
-    target = _get_target_path(executable_path, action)
+    target = _get_target_path(action)
     if not target:
         raise RuntimeError("Cannot determine Tuck executable path")
 
@@ -475,7 +447,7 @@ def remove_all_profile_shortcuts() -> int:
     return count
 
 
-def repair_generic_shortcut(kind: str, executable_path: str | Path | None = None) -> bool:
+def repair_generic_shortcut(kind: str) -> bool:
     """Point an installed generic shortcut back at this Tuck install.
 
     Returns False when the kind is not installed or already correct. Only files
@@ -490,10 +462,7 @@ def repair_generic_shortcut(kind: str, executable_path: str | Path | None = None
         return False
 
     # resolve before touching files so an unsupported editor target is reported
-    try:
-        target = _get_target_path(executable_path, spec.action)
-    except (ValueError, TypeError):
-        return False
+    target = _get_target_path(spec.action)
     if not target:
         return False
     arguments = _get_args(action=spec.action, task=spec.task)
@@ -538,7 +507,6 @@ def repair_profile_shortcut(
     profile_id: str,
     profile_name: str,
     action: str = ACTION_START,
-    executable_path: str | Path | None = None,
     *,
     workflow: str = WORKFLOW_COMPRESSION,
 ) -> bool:
@@ -552,11 +520,8 @@ def repair_profile_shortcut(
     owned = _owned_profile_files(profile_id)
     if not owned:
         return False
-    # resolve before touching files so a bad executable path changes nothing
-    try:
-        target = _get_target_path(executable_path, action)
-    except (ValueError, TypeError):
-        return False
+    # resolve before touching files so an unsupported editor target changes nothing
+    target = _get_target_path(action)
     if not target:
         return False
 

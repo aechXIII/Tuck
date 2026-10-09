@@ -142,8 +142,11 @@ def _run_ffprobe_json(ffprobe_path: str, source: Path, context: str) -> dict:
     try:
         result = subprocess.run(
             cmd,
+            stdin=subprocess.DEVNULL,
             capture_output=True,
-            text=True,
+            # ffprobe writes UTF-8 JSON whatever the Windows code page is
+            encoding="utf-8",
+            errors="replace",
             timeout=60,
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         )
@@ -296,9 +299,20 @@ def _video_info(source: Path, file_size: int, data: dict) -> VideoInfo:
     variable_frame_rate = (
         True if nominal_fps and average_fps and abs(nominal_fps - average_fps) > 0.001 else None
     )
+    audio_stream_count = sum(
+        1 for stream in data.get("streams", []) if stream.get("codec_type") == "audio"
+    )
+    subtitle_codecs = [
+        str(stream.get("codec_name", ""))
+        for stream in data.get("streams", [])
+        if stream.get("codec_type") == "subtitle"
+    ]
 
     return VideoInfo(
         variable_frame_rate=variable_frame_rate,
+        average_fps=average_fps or 0.0,
+        audio_stream_count=audio_stream_count,
+        subtitle_codecs=subtitle_codecs,
         sample_aspect_ratio=video_stream.get("sample_aspect_ratio", "1:1"),
         pixel_format=video_stream.get("pix_fmt", ""),
         color_transfer=video_stream.get("color_transfer", "unknown"),

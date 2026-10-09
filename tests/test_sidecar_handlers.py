@@ -189,3 +189,31 @@ def test_settings_backup_handlers_reject_extra_parameters() -> None:
         assert response.ok is False
 
     assert api.calls == []
+
+
+def test_refused_retry_keeps_its_code_for_the_page(monkeypatch) -> None:
+    from tuck.bridge import BridgeAPI
+    from tuck.queue import RETRY_REFUSAL_CODES, RetryRefused
+
+    class RefusingQueue:
+        def __init__(self, code: str) -> None:
+            self.code = code
+
+        def retry(self, item_id: str, *, work: object = None) -> None:
+            raise RetryRefused(self.code, "This video changed after it was added to the queue.")
+
+    def retry_refused_with(code: str):
+        api = BridgeAPI.__new__(BridgeAPI)
+        monkeypatch.setattr(api, "_queue", RefusingQueue(code), raising=False)
+        response = dispatch(api, _request("retry_item", {"item_id": "item-1"}))
+        assert response.ok is False
+        assert response.error is not None
+        return response.error
+
+    assert {"source_changed", "source_unavailable"} == RETRY_REFUSAL_CODES
+    for code in RETRY_REFUSAL_CODES:
+        error = retry_refused_with(code)
+        assert error.code == code.upper()
+        assert error.message.startswith("This video changed")
+    # only declared codes pass through
+    assert retry_refused_with("disk_on_fire").code != "DISK_ON_FIRE"

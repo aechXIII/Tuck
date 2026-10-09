@@ -28,6 +28,10 @@ if TYPE_CHECKING:
 
 scaler_to_ffmpeg_flag = _filters.scaler_to_ffmpeg_flag
 
+# probe describes the first audio track, so every path encodes that one; left to itself FFmpeg
+# would pick the track with the most channels when nothing is filtered
+SOURCE_AUDIO = "0:a:0"
+
 
 def fmt_ffmpeg_time(seconds: float) -> str:
     if seconds < 0:
@@ -43,12 +47,14 @@ def _segment_atrim(
     if preserve_offset:
         duration = fmt_ffmpeg_time(segment.duration)
         graph_parts.append(
-            f"[0:a]atrim=start={start}:end={end},asetpts=PTS-{start}/TB,"
+            f"[{SOURCE_AUDIO}]atrim=start={start}:end={end},asetpts=PTS-{start}/TB,"
             f"aresample=async=1:first_pts=0,apad=whole_dur={duration},"
             f"atrim=duration={duration}[{label}]"
         )
     else:
-        graph_parts.append(f"[0:a]atrim=start={start}:end={end},asetpts=PTS-STARTPTS[{label}]")
+        graph_parts.append(
+            f"[{SOURCE_AUDIO}]atrim=start={start}:end={end},asetpts=PTS-STARTPTS[{label}]"
+        )
 
 
 def _imported_clip_filters(
@@ -165,6 +171,85 @@ def _tmix_graph(blend: TmixBlend, video_filters: list[str]) -> list[str]:
     return parts
 
 
+# VBR aims at the average bitrate the size budget allows and lets busy scenes borrow from quiet
+# ones. The cap stops one scene spiking far past what players and upload sites buffer: 1.5x
+# leaves room for motion without the size swings a 2x peak can cause, and a buffer twice the
+# cap (three seconds at the average rate) lets the encoder spread those bits out smoothly
+VBR_MAXRATE_FACTOR = 1.5
+VBR_BUFSIZE_FACTOR = 2.0
+_FALLBACK_BITRATE = 2_000_000
+
+
+def vbr_limits(bitrate: int) -> tuple[int, int]:
+    """The peak rate and buffer size for capped VBR at this average bitrate."""
+    maxrate = int(bitrate * VBR_MAXRATE_FACTOR)
+    return maxrate, int(maxrate * VBR_BUFSIZE_FACTOR)
+
+
+def _rate_control_args(plan: EncodePlan) -> list[str]:
+    encoder = plan.video_encoder
+    rc_method = plan.rate_control_method
+    bitrate = plan.video_bitrate if plan.video_bitrate > 0 else _FALLBACK_BITRATE
+    maxrate, bufsize = vbr_limits(bitrate)
+    if encoder in CPU_ENCODERS:
+        args = ["-preset", plan.preset]
+        if plan.tune:
+            args += ["-tune", plan.tune]
+        if rc_method == RCM_CRF:
+            return [*args, "-crf", str(plan.crf)]
+        if rc_method == RCM_CBR:
+            return [
+                *args,
+                *("-b:v", str(bitrate), "-minrate", str(bitrate)),
+                *("-maxrate", str(bitrate), "-bufsize", str(bitrate)),
+            ]
+        if rc_method == RCM_VBR:
+            # with two passes x264 and x265 spend the average well; without, the cap and
+            # buffer keep a single pass from drifting far from it
+            return [
+                *args,
+                *("-b:v", str(bitrate), "-maxrate", str(maxrate), "-bufsize", str(bufsize)),
+            ]
+        return args
+    if encoder in NVENC_ENCODERS:
+        args = ["-preset", nvenc_preset(plan.preset)]
+        if rc_method == RCM_CQ:
+            args += ["-rc", "vbr", "-cq", str(plan.cq)]
+            if plan.video_bitrate > 0:
+                args += ["-b:v", str(plan.video_bitrate), "-maxrate", str(plan.video_bitrate * 2)]
+            return args
+        if rc_method == RCM_CQP:
+            return [*args, "-rc", "constqp", "-qp", str(plan.qp)]
+        if rc_method == RCM_CBR:
+            return [*args, "-rc", "cbr", "-b:v", str(bitrate)]
+        if rc_method == RCM_VBR:
+            return [
+                *args,
+                *("-rc", "vbr", "-b:v", str(bitrate)),
+                *("-maxrate", str(maxrate), "-bufsize", str(bufsize)),
+            ]
+        return args
+    if encoder in AMF_ENCODERS:
+        args = ["-usage", "transcoding"]
+        if rc_method in (RCM_CQ, RCM_CQP):
+            return [
+                *args,
+                *("-rc", "cqp", "-qp_i", str(plan.cq)),
+                *("-qp_p", str(plan.cq), "-qp_b", str(plan.cq)),
+            ]
+        if rc_method == RCM_CBR:
+            return [*args, "-rc", "cbr", "-b:v", str(bitrate)]
+        if rc_method == RCM_VBR:
+            # AMF has no plain "vbr"; its peak-constrained mode is the capped VBR used above
+            return [
+                *args,
+                *("-rc", "vbr_peak", "-b:v", str(bitrate)),
+                *("-maxrate", str(maxrate), "-bufsize", str(bufsize)),
+            ]
+        return args
+    return []
+
+
 def build_base_cmd(
     ffmpeg: str,
     plan: EncodePlan,
@@ -224,6 +309,13 @@ def build_base_cmd(
         )
     )
     filtered_timeline = len(segments) > 1 or timeline_audio_edits or blending
+    # only a single piece of the source keeps its subtitles in time with the picture, and the
+    # analysis pass (include_audio off) writes nothing to carry them into
+    subtitle_track = (
+        plan.source_info.text_subtitle_track
+        if include_audio and single_segment and plan.source_info is not None
+        else None
+    )
 
     if not filtered_timeline and single_segment and trim_start > 0.001:
         cmd += ["-ss", fmt_ffmpeg_time(trim_start)]
@@ -233,8 +325,21 @@ def build_base_cmd(
         cmd += ["-i", clip.source]
         imported_inputs.append((len(imported_inputs) + 1, track, clip))
 
+    input_count = 1 + len(imported_inputs)
     if prepared_video is not None:
         cmd += ["-i", str(prepared_video)]
+        input_count += 1
+
+    subtitle_map = ""
+    if subtitle_track is not None:
+        if filtered_timeline and trim_start > 0.001:
+            # the filter graph trims the picture itself, so the subtitles come from a second
+            # reading of the source that is seeked and cut to the same piece
+            cmd += ["-ss", fmt_ffmpeg_time(trim_start), "-t", fmt_ffmpeg_time(trim_duration)]
+            cmd += ["-i", str(source)]
+            subtitle_map = f"{input_count}:s:{subtitle_track}?"
+        else:
+            subtitle_map = f"0:s:{subtitle_track}?"
 
     if not filtered_timeline and (
         single_segment
@@ -270,20 +375,27 @@ def build_base_cmd(
             if info and info.display_rotation in {90, 270}:
                 sar = 1 / sar
             video_filters.insert(0, f"setsar={sar.numerator}/{sar.denominator}:max=1000000")
+            # the tone-map chain already ends in BT.709 SDR; converting that to another matrix
+            # or tagging it with the source's HDR colours would misdescribe the picture
+            tone_mapped = plan.tone_map_hdr and info is not None
             matrix = (
-                "bt709" if plan.source_info and plan.source_info.color_space == "bt709" else "bt601"
+                "bt709"
+                if tone_mapped or (info is not None and info.color_space == "bt709")
+                else "bt601"
             )
             video_filters.append(f"scale=out_color_matrix={matrix}:out_range=tv")
-            info = plan.source_info
             if info is not None:
                 tags = [
                     f"colorspace={'bt709' if matrix == 'bt709' else 'smpte170m'}",
                     "range=limited",
                 ]
-                if info.color_transfer not in {"unknown", "unspecified", ""}:
-                    tags.append(f"color_trc={info.color_transfer}")
-                if info.color_primaries not in {"unknown", "unspecified", ""}:
-                    tags.append(f"color_primaries={info.color_primaries}")
+                if tone_mapped:
+                    tags += ["color_trc=bt709", "color_primaries=bt709"]
+                else:
+                    if info.color_transfer not in {"unknown", "unspecified", ""}:
+                        tags.append(f"color_trc={info.color_transfer}")
+                    if info.color_primaries not in {"unknown", "unspecified", ""}:
+                        tags.append(f"color_primaries={info.color_primaries}")
                 video_filters.append("setparams=" + ":".join(tags))
             video_chain = join_video_filters(video_filters)
             graph_parts.append(f"[{len(imported_inputs) + 1}:v]{video_chain}[vout]")
@@ -369,7 +481,7 @@ def build_base_cmd(
                         ]
                     )
                     mix_label = f"mix{len(mix_inputs)}"
-                    graph_parts.append(f"[0:a]{','.join(filters)}[{mix_label}]")
+                    graph_parts.append(f"[{SOURCE_AUDIO}]{','.join(filters)}[{mix_label}]")
                     mix_inputs.append(f"[{mix_label}]")
             else:
                 source_audio_inputs: list[str] = []
@@ -382,7 +494,7 @@ def build_base_cmd(
                     )
                     source_audio_inputs.append(f"[sa{index}]")
                 if not source_audio_inputs:
-                    graph_parts.append("[0:a]asetpts=PTS-STARTPTS[sa0]")
+                    graph_parts.append(f"[{SOURCE_AUDIO}]asetpts=PTS-STARTPTS[sa0]")
                     source_audio_inputs.append("[sa0]")
                 source_audio_label = "sa0"
                 if len(source_audio_inputs) > 1:
@@ -419,7 +531,7 @@ def build_base_cmd(
                     local_offset,
                     output_duration,
                 )
-                graph_parts.append(f"[{input_index}:a]{','.join(clip_filters)}[{mix_label}]")
+                graph_parts.append(f"[{input_index}:a:0]{','.join(clip_filters)}[{mix_label}]")
                 mix_inputs.append(f"[{mix_label}]")
 
         if mix_inputs:
@@ -435,77 +547,29 @@ def build_base_cmd(
         cmd += ["-filter_complex", ";".join(graph_parts), "-map", "[vout]"]
         if filtered_audio:
             cmd += ["-map", "[aout]"]
+        if subtitle_map and prepared_video is None and blend is None:
+            # subtitles read from the start of the source would run on past the trimmed
+            # picture; the blending paths already end the output at the piece's length
+            cmd += ["-t", fmt_ffmpeg_time(trim_duration)]
     else:
+        # explicit maps, so FFmpeg's own stream choice can't swap tracks or pick subtitles
+        cmd += ["-map", "0:v:0"]
+        if source_audio_active:
+            cmd += ["-map", f"{SOURCE_AUDIO}?"]
         if video_filters:
             cmd += ["-vf", join_video_filters(video_filters)]
+    if subtitle_map:
+        # every encode is written as MP4 (the runner's result.mp4), and mov_text is the
+        # only subtitle format MP4 holds as text
+        cmd += ["-map", subtitle_map, "-c:s", "mov_text"]
 
-    encoder = getattr(plan, "video_encoder", "libx264")
-    rc_method = getattr(plan, "rate_control_method", RCM_CRF)
-    qp_val = getattr(plan, "qp", 23)
-    cq_val = getattr(plan, "cq", qp_val)
-    crf_val = getattr(plan, "crf", 23)
-
-    cmd += ["-c:v", encoder]
-
-    if encoder in CPU_ENCODERS:
-        cmd += ["-preset", plan.preset]
-        tune = getattr(plan, "tune", "")
-        if tune:
-            cmd += ["-tune", tune]
-        if rc_method == RCM_CRF:
-            cmd += ["-crf", str(crf_val)]
-        elif rc_method == RCM_CBR:
-            bitrate = plan.video_bitrate
-            if bitrate <= 0:
-                bitrate = 2_000_000
-            cmd += ["-b:v", str(bitrate)]
-            cmd += ["-minrate", str(bitrate)]
-            cmd += ["-maxrate", str(bitrate)]
-            cmd += ["-bufsize", str(bitrate)]
-    elif encoder in NVENC_ENCODERS:
-        cmd += ["-preset", nvenc_preset(plan.preset)]
-        if rc_method == RCM_CQ:
-            bitrate = plan.video_bitrate
-            cmd += ["-rc", "vbr", "-cq", str(cq_val)]
-            if bitrate > 0:
-                cmd += ["-b:v", str(bitrate), "-maxrate", str(bitrate * 2)]
-        elif rc_method == RCM_CQP:
-            cmd += ["-rc", "constqp", "-qp", str(qp_val)]
-        elif rc_method == RCM_CBR:
-            bitrate = plan.video_bitrate
-            if bitrate <= 0:
-                bitrate = 2_000_000
-            cmd += ["-rc", "cbr", "-b:v", str(bitrate)]
-        elif rc_method == RCM_VBR:
-            bitrate = plan.video_bitrate
-            if bitrate <= 0:
-                bitrate = 2_000_000
-            cmd += ["-rc", "vbr", "-b:v", str(bitrate), "-maxrate", str(bitrate * 2)]
-    elif encoder in AMF_ENCODERS:
-        cmd += ["-usage", "transcoding"]
-        if rc_method in (RCM_CQ, RCM_CQP):
-            cmd += [
-                "-rc",
-                "cqp",
-                "-qp_i",
-                str(cq_val),
-                "-qp_p",
-                str(cq_val),
-                "-qp_b",
-                str(cq_val),
-            ]
-        elif rc_method == RCM_CBR:
-            bitrate = plan.video_bitrate
-            if bitrate <= 0:
-                bitrate = 2_000_000
-            cmd += ["-rc", "cbr", "-b:v", str(bitrate)]
-        elif rc_method == RCM_VBR:
-            bitrate = plan.video_bitrate
-            if bitrate <= 0:
-                bitrate = 2_000_000
-            cmd += ["-rc", "vbr", "-b:v", str(bitrate), "-maxrate", str(bitrate * 2)]
+    cmd += ["-c:v", plan.video_encoder, *_rate_control_args(plan)]
 
     cmd += ["-pix_fmt", "yuv420p"]
+    if plan.tone_map_hdr:
+        # the tone-mapped picture is BT.709 SDR, so say so instead of keeping the HDR tags
+        cmd += ["-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709"]
+        cmd += ["-color_range", "tv"]
 
     if not include_audio or not plan.audio_enabled:
         cmd += ["-an"]
@@ -516,7 +580,7 @@ def build_base_cmd(
         cmd += ["-ar", str(plan.audio_sample_rate)]
     elif not source_audio_active:
         cmd += ["-an"]
-    elif getattr(plan, "copy_audio", False):
+    elif plan.copy_audio:
         cmd += ["-c:a", "copy"]
     elif plan.audio_bitrate > 0:
         cmd += ["-c:a", "aac", "-b:a", str(plan.audio_bitrate)]

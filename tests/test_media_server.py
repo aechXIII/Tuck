@@ -1,4 +1,5 @@
 import hashlib
+import socket
 import subprocess
 import threading
 from pathlib import Path
@@ -9,7 +10,12 @@ from urllib.request import Request, urlopen
 import av
 import pytest
 
-from tuck.media_server import MediaServer, _waveform_levels, get_media_server
+from tuck.media_server import (
+    _TOKENS_PER_PATH,
+    MediaServer,
+    _waveform_levels,
+    get_media_server,
+)
 from tuck.media_tools import find_ffmpeg
 
 
@@ -78,19 +84,120 @@ class TestMediaServer:
         with pytest.raises(ValueError, match="File not found"):
             server.register_file(str(tmp_path / "no_such_file.mp4"))
 
-    def test_register_file_replaces_old_token(self, tmp_path):
-
+    def test_two_players_of_the_same_file_keep_reading_until_each_releases(self, tmp_path):
         f = tmp_path / "test.mp4"
-        f.write_text("dummy")
+        f.write_bytes(b"0123456789")
 
         server = MediaServer()
-        token1 = server.register_file(str(f))
-        token2 = server.register_file(str(f))
+        server.start()
+        try:
+            preview = server.get_url(server.register_file(str(f)))
+            audio_token = server.register_file(str(f))
+            audio = server.get_url(audio_token)
 
-        assert token1 != token2
+            # the preview's next range request must not fail because the audio track loaded
+            for url in (preview, audio):
+                with urlopen(Request(url, headers={"Range": "bytes=2-4"}), timeout=5) as resp:
+                    assert resp.status == 206
+                    assert resp.read() == b"234"
+
+            server.unregister_token(audio_token)
+            with pytest.raises(HTTPError) as error:
+                urlopen(audio, timeout=5)
+            assert error.value.code == 403
+            with urlopen(preview, timeout=5) as resp:
+                assert resp.read() == b"0123456789"
+        finally:
+            server.stop()
+
+    def test_register_file_keeps_a_bounded_number_of_tokens_per_file(self, tmp_path):
+        f = tmp_path / "test.mp4"
+        f.write_text("dummy")
+        other = tmp_path / "other.mp4"
+        other.write_text("dummy")
+
+        server = MediaServer()
+        kept = server.register_file(str(other))
+        tokens = [server.register_file(str(f)) for _ in range(_TOKENS_PER_PATH + 3)]
+
         with server._lock:
-            assert token1 not in server._tokens
-            assert token2 in server._tokens
+            live = set(server._tokens)
+        assert live == {kept, *tokens[3:]}
+
+    @pytest.mark.parametrize(
+        ("origin", "allowed"),
+        [
+            ("tauri://localhost", "tauri://localhost"),
+            ("http://tauri.localhost", "http://tauri.localhost"),
+            ("http://127.0.0.1:5173", "http://127.0.0.1:5173"),
+            ("https://example.com", None),
+            ("http://127.0.0.1:8080", None),
+            (None, None),
+        ],
+    )
+    def test_only_tucks_own_pages_may_read_media_from_script(self, tmp_path, origin, allowed):
+        f = tmp_path / "table.bin"
+        f.write_bytes(b"0123456789")
+
+        server = MediaServer()
+        server.start()
+        try:
+            url = server.get_url(server.register_file(str(f)))
+            for headers in ({}, {"Range": "bytes=0-3"}):
+                if origin:
+                    headers["Origin"] = origin
+                with urlopen(Request(url, headers=headers), timeout=5) as resp:
+                    assert resp.headers["Access-Control-Allow-Origin"] == allowed
+                    assert resp.headers["Vary"] == "Origin"
+        finally:
+            server.stop()
+
+    def test_another_socket_cannot_take_over_the_media_port(self):
+        server = MediaServer()
+        server.start()
+        try:
+            intruder = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            try:
+                intruder.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                with pytest.raises(OSError):
+                    intruder.bind(("127.0.0.1", server.port))
+            finally:
+                intruder.close()
+        finally:
+            server.stop()
+
+    def test_media_processes_never_read_the_sidecar_protocol_input(self, tmp_path, monkeypatch):
+        source = tmp_path / "clip.mp4"
+        source.write_bytes(b"not a video")
+        server = MediaServer()
+        server.set_thumbnail_cache_dir(tmp_path / "thumbs")
+        calls = []
+
+        monkeypatch.setattr("tuck.media_server.find_ffmpeg", lambda: "ffmpeg")
+        monkeypatch.setattr("tuck.media_server.find_ffprobe", lambda: "ffprobe")
+
+        def fake_run(command, **kwargs):
+            calls.append((command, kwargs))
+            if command[0] == "ffprobe":
+                return SimpleNamespace(returncode=0, stdout='{"format": {"duration": "2"}}')
+            if "volumedetect" in " ".join(command):
+                return SimpleNamespace(returncode=0, stderr=b"max_volume: -6.0 dB")
+            Path(command[-1]).write_bytes(b"picture")
+            return SimpleNamespace(returncode=0, stderr=b"")
+
+        monkeypatch.setattr("tuck.media_server.subprocess.run", fake_run)
+
+        assert server.generate_thumbnail(source) is not None
+        assert server.generate_waveform(source) is not None
+
+        # ffprobe for the seek time, the ffmpeg thumbnail, and both waveform passes
+        assert [command[0] for command, _ in calls] == ["ffprobe", "ffmpeg", "ffmpeg", "ffmpeg"]
+        for command, kwargs in calls:
+            # every request frame holds a "q", which ffmpeg would take as its quit key
+            assert kwargs["stdin"] is subprocess.DEVNULL
+            assert command[0] == "ffprobe" or "-nostdin" in command
+        probe_kwargs = calls[0][1]
+        assert (probe_kwargs["encoding"], probe_kwargs["errors"]) == ("utf-8", "replace")
 
     def test_get_url_returns_valid_url(self, tmp_path):
         f = tmp_path / "test.mp4"
@@ -717,6 +824,73 @@ class TestBridgeMediaIntegration:
         resp = api.get_thumbnail(str(tmp_path / "no_file.mp4"))
         assert not resp["ok"]
         assert "error" in resp
+
+    @pytest.mark.parametrize("name", ["notes.txt", "settings.json", "tool.exe", "picture.png"])
+    def test_get_media_url_only_serves_video_and_audio(self, tmp_path, monkeypatch, name):
+        import tuck.settings as settings_mod
+
+        monkeypatch.setattr(settings_mod, "_config_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
+        monkeypatch.setattr("tuck.bridge.get_media_server", MediaServer)
+
+        from tuck.bridge import BridgeAPI
+
+        api = BridgeAPI()
+        unsupported = tmp_path / name
+        unsupported.write_bytes(b"private")
+        video = tmp_path / "Clip.MP4"
+        video.write_bytes(b"video")
+        audio = tmp_path / "voice.flac"
+        audio.write_bytes(b"audio")
+
+        refused = api.get_media_url(str(unsupported))
+        assert refused == {"ok": False, "error": f"Unsupported media file type: {name}"}
+        with api._media_server._lock:
+            assert not api._media_server._tokens
+        assert api.get_media_url(str(video))["ok"]
+        assert api.get_media_url(str(audio))["ok"]
+
+    @pytest.mark.parametrize(
+        "name", ["film.mpg", "film.MPEG", "dvd.vob", "camera.mxf", "flash.f4v", "phone.3g2"]
+    )
+    def test_preview_serves_containers_that_import_and_export(self, tmp_path, monkeypatch, name):
+        import tuck.settings as settings_mod
+
+        monkeypatch.setattr(settings_mod, "_config_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
+        monkeypatch.setattr("tuck.bridge.get_media_server", MediaServer)
+
+        from tuck.bridge import BridgeAPI
+
+        api = BridgeAPI()
+        video = tmp_path / name
+        video.write_bytes(b"video")
+        assert api.get_media_url(str(video))["ok"]
+
+    def test_media_server_runs_only_while_background_services_do(self, tmp_path, monkeypatch):
+        import tuck.settings as settings_mod
+        from tuck.queue import ProcessingQueue
+
+        monkeypatch.setattr(settings_mod, "_config_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
+        monkeypatch.setattr("tuck.bridge.get_media_server", MediaServer)
+        monkeypatch.setattr("tuck.bridge.get_queue", ProcessingQueue)
+
+        from tuck.bridge import BridgeAPI
+
+        api = BridgeAPI()
+        # building the API is side-effect free; the application boundary starts services
+        assert not api._media_server._running
+        api.start_background_services()
+        try:
+            assert api._media_server._running
+            assert api._media_server.port > 0
+        finally:
+            api.stop_background_services()
+        assert not api._media_server._running
 
     def test_release_media_token_always_ok(self, tmp_path, monkeypatch):
         import tuck.settings as settings_mod

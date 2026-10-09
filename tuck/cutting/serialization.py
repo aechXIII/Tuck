@@ -1,5 +1,7 @@
 """Serialize cut previews without losing integer media timestamps at the bridge."""
 
+from dataclasses import dataclass
+
 from ..bridge_contract import JsonValue
 from ..models.cutting import CutIssue, CutPlan, CutRange
 from .exact import exact_media_reason
@@ -69,14 +71,41 @@ def cut_plan_preview_dict(plan: CutPlan) -> dict[str, JsonValue]:
     }
 
 
-def analysis_snapshot_dict(snapshot: AnalysisSnapshot) -> dict[str, JsonValue]:
+# an all-intra video has a keyframe on every frame, so the list goes out a page at a time;
+# the whole list on every status read would soon pass the protocol's frame limit
+KEYFRAME_PAGE = 4096
+
+
+@dataclass(frozen=True)
+class KeyframeCursor:
+    """How much of which keyframe list the reader already holds."""
+
+    revision: int
+    count: int
+
+
+def analysis_snapshot_dict(
+    snapshot: AnalysisSnapshot, cursor: KeyframeCursor | None = None
+) -> dict[str, JsonValue]:
     analysis = snapshot.analysis
+    keyframes = snapshot.progress.keyframes
+    # a cursor for another list, or past the end of this one, starts the reader over
+    start = (
+        cursor.count
+        if cursor
+        and cursor.revision == snapshot.keyframes_revision
+        and 0 <= cursor.count <= len(keyframes)
+        else 0
+    )
     result: dict[str, JsonValue] = {
         "work_id": snapshot.work_id,
         "status": snapshot.status,
         "progress": snapshot.progress.progress,
         "coverage_end": snapshot.progress.coverage_end.to_dict(),
-        "keyframes": [t.to_dict() for t in snapshot.progress.keyframes],
+        "keyframes": [t.to_dict() for t in keyframes[start : start + KEYFRAME_PAGE]],
+        "keyframes_revision": snapshot.keyframes_revision,
+        "keyframes_from": start,
+        "keyframe_count": len(keyframes),
         "issue": issue_dict(snapshot.issue) if snapshot.issue else None,
         "analysis": None,
     }

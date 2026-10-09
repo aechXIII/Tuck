@@ -758,3 +758,80 @@ class TestParseSendtoArgs:
         assert files == []
         assert profile_id == "--sendto-files"
         assert action is None
+
+
+class TestQueueSummary:
+    def test_summary_names_the_file_that_was_published(self, tmp_path, monkeypatch):
+        import tuck.cli as cli_module
+        import tuck.settings as settings_mod
+
+        monkeypatch.setattr(settings_mod, "_settings_manager", None)
+        monkeypatch.setattr(settings_mod, "_storage_root", tmp_path / "storage")
+        source = tmp_path / "clip.mp4"
+        source.write_bytes(b"video")
+        planned = tmp_path / "clip_tucked.mp4"
+        # the planned name was free when planning but held by an open file at publish time
+        planned.write_bytes(b"an older export")
+        published = tmp_path / "clip_tucked_1.mp4"
+
+        def fake_plan(path, profile, **options):
+            return EncodePlan(source=path, output=str(planned), target_size=1024 * 1024)
+
+        def fake_encode(_self, plan, on_progress=None):
+            published.write_bytes(b"x" * 2048)
+            return published
+
+        monkeypatch.setattr("tuck.planner.plan", fake_plan)
+        monkeypatch.setattr("tuck.engine.FFmpegEngine.encode", fake_encode)
+
+        results, errors = cli_module._encode_queue([str(source)], None, {})
+
+        assert errors == 0
+        assert results == [("clip.mp4", str(published), 2048 / (1024 * 1024))]
+
+    def test_a_failed_encode_is_counted_and_not_listed(self, tmp_path, monkeypatch):
+        import tuck.cli as cli_module
+        import tuck.settings as settings_mod
+
+        monkeypatch.setattr(settings_mod, "_settings_manager", None)
+        monkeypatch.setattr(settings_mod, "_storage_root", tmp_path / "storage")
+        source = tmp_path / "clip.mp4"
+        source.write_bytes(b"video")
+
+        def fake_plan(path, profile, **options):
+            return EncodePlan(source=path, output=str(tmp_path / "out.mp4"), target_size=1)
+
+        def fake_encode(_self, plan, on_progress=None):
+            raise OSError("disk full")
+
+        monkeypatch.setattr("tuck.planner.plan", fake_plan)
+        monkeypatch.setattr("tuck.engine.FFmpegEngine.encode", fake_encode)
+
+        assert cli_module._encode_queue([str(source)], None, {}) == ([], 1)
+
+
+@pytest.mark.parametrize("size", [0.0, -5.0])
+def test_compress_refuses_a_zero_or_negative_size(size, capsys):
+    import argparse
+
+    from tuck.cli import _resolve_profile
+    from tuck.models import DEFAULT_PROFILES
+
+    args = argparse.Namespace(command="compress", profile=DEFAULT_PROFILES[0].profile_id, size=size)
+
+    assert _resolve_profile(args, list(DEFAULT_PROFILES)) is None
+    assert "--size must be greater than zero" in capsys.readouterr().err
+
+
+def test_compress_without_size_keeps_the_profile_size():
+    import argparse
+
+    from tuck.cli import _resolve_profile
+    from tuck.models import DEFAULT_PROFILES
+
+    profile = DEFAULT_PROFILES[0]
+    args = argparse.Namespace(command="compress", profile=profile.profile_id, size=None)
+
+    resolved = _resolve_profile(args, list(DEFAULT_PROFILES))
+    assert resolved is not None
+    assert resolved.target_size_bytes == profile.target_size_bytes

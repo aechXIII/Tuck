@@ -203,6 +203,18 @@ def normalize_legacy_rc_matrix(
     return new_rcm, new_two_pass
 
 
+def size_target_rate_control_method(workflow: str, rate_control_method: str) -> str:
+    """Compression always encodes to its size budget with capped VBR.
+
+    Profiles keep saying "cbr" for compression so older versions can still read them; the plan
+    is where it becomes VBR. Strict CBR pads simple scenes and starves busy ones for no size
+    benefit, because the size budget, not a constant bitrate, is what the export has to meet.
+    """
+    if workflow == WORKFLOW_COMPRESSION and rate_control_method in BITRATE_RC_METHODS:
+        return RCM_VBR
+    return rate_control_method
+
+
 def validate_preset_for_encoder(preset: str, video_encoder: str) -> None:
     if video_encoder in AUTO_ENCODERS:
         if preset not in VALID_PRESETS:

@@ -10,6 +10,7 @@ from ..models import (
     EncodePlan,
     OutputGeometry,
     TransformGeometry,
+    VideoInfo,
     VideoTransform,
     calculate_transform_geometry,
 )
@@ -119,6 +120,36 @@ def build_video_filters(
     return filters
 
 
+_ZSCALE_MATRICES = frozenset({"bt2020nc", "bt2020c", "bt709"})
+_ZSCALE_PRIMARIES = frozenset({"bt2020", "bt709", "smpte432", "smpte431"})
+
+
+def hdr_to_sdr_filters(info: VideoInfo) -> list[str]:
+    """Tone-map a PQ or HLG picture to BT.709 SDR.
+
+    The input colours are named rather than read from the frames, because many HDR files leave
+    the primaries or matrix untagged and zscale refuses a conversion it can't place. HDR video
+    is BT.2020 almost without exception, so that is the fallback.
+    """
+    primaries = info.color_primaries if info.color_primaries in _ZSCALE_PRIMARIES else "bt2020"
+    matrix = info.color_space if info.color_space in _ZSCALE_MATRICES else "bt2020nc"
+    color_range = "pc" if info.color_range == "pc" else "tv"
+    return [
+        # 100 nits is the SDR reference white the highlights are compressed toward; the output
+        # primaries are named too, since zscale reads them from the frame and an untagged frame
+        # leaves it with no path to linear light
+        f"zscale=tin={info.color_transfer}:pin={primaries}:min={matrix}:rin={color_range}"
+        f":t=linear:npl=100:p={primaries}",
+        "format=gbrpf32le",
+        "zscale=p=bt709",
+        # hable keeps midtones close to the source; desat=0 stops bright colours from being
+        # pulled toward grey, which the default does strongly
+        "tonemap=tonemap=hable:desat=0",
+        "zscale=t=bt709:m=bt709:r=tv",
+        "format=yuv420p",
+    ]
+
+
 def join_video_filters(filters: Iterable[str]) -> str:
     return ",".join(filters)
 
@@ -143,6 +174,11 @@ def build_plan_video_filters(plan: EncodePlan) -> list[str]:
         scaler=plan.scaler,
         frame_rate=plan.target_fps if plan.apply_fps_filter else 0.0,
     )
+
+    if plan.tone_map_hdr and plan.source_info is not None:
+        # after scaling and frame rate changes so the float conversion handles fewer pixels,
+        # and before the LUT, which expects an SDR picture
+        filters.extend(hdr_to_sdr_filters(plan.source_info))
 
     if plan.lut.enabled and plan.lut.strength > 0:
         if not plan.lut_filter_path:

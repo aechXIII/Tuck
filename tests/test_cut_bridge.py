@@ -319,3 +319,119 @@ def test_every_cut_error_code_reaches_the_desktop_app():
                 raised.add(node.args[0].value)
     # an unlisted code would reach the app as a generic failure
     assert raised and raised <= CUT_ERROR_CODES, raised - CUT_ERROR_CODES
+
+
+def _reading_snapshot(count, revision=7):
+    from tuck.cutting.service import AnalysisSnapshot
+    from tuck.models.cutting import AnalysisProgress
+
+    keyframes = tuple(MediaTime(n, 1, 30) for n in range(count))
+    progress = AnalysisProgress(0.5, MediaTime(count, 1, 30), keyframes)
+    return AnalysisSnapshot("scan-1", "reading", progress, keyframes_revision=revision)
+
+
+def test_keyframes_go_out_a_page_at_a_time_from_the_readers_cursor():
+    from tuck.cutting.serialization import KEYFRAME_PAGE, KeyframeCursor, analysis_snapshot_dict
+
+    snapshot = _reading_snapshot(KEYFRAME_PAGE + 10)
+
+    first = analysis_snapshot_dict(snapshot)
+    assert (first["keyframes_revision"], first["keyframes_from"]) == (7, 0)
+    assert first["keyframe_count"] == KEYFRAME_PAGE + 10
+    assert len(first["keyframes"]) == KEYFRAME_PAGE
+    rest = analysis_snapshot_dict(snapshot, KeyframeCursor(7, KEYFRAME_PAGE))
+    assert rest["keyframes_from"] == KEYFRAME_PAGE
+    assert rest["keyframes"] == [
+        MediaTime(n, 1, 30).to_dict() for n in range(KEYFRAME_PAGE, KEYFRAME_PAGE + 10)
+    ]
+    held = analysis_snapshot_dict(snapshot, KeyframeCursor(7, KEYFRAME_PAGE + 10))
+    assert held["keyframes"] == [] and held["keyframes_from"] == KEYFRAME_PAGE + 10
+    # a cursor for a list that has since been replaced, or past its end, starts over
+    for stale in (KeyframeCursor(6, 5), KeyframeCursor(7, KEYFRAME_PAGE + 11)):
+        restart = analysis_snapshot_dict(snapshot, stale)
+        assert restart["keyframes_from"] == 0
+        assert len(restart["keyframes"]) == KEYFRAME_PAGE
+
+
+def test_status_reads_of_an_all_intra_video_stay_under_the_frame_limit(api, monkeypatch):
+    from tuck.sidecar.protocol import encode_response, frame_fits
+
+    # one keyframe per frame for half an hour at 60 fps, about 6 MB as one list
+    snapshot = _reading_snapshot(108_000)
+    monkeypatch.setattr(api._cut_analysis, "get", lambda _: snapshot)
+    cursor = {"keyframes_revision": 7, "keyframes_from": 0}
+    received = []
+    while True:
+        response = dispatch(
+            api, Request("poll", "get_cut_analysis", {"path": "source.mp4", **cursor})
+        )
+        assert response.ok and frame_fits(encode_response(response))
+        assert response.result["keyframes_from"] == len(received)
+        if not response.result["keyframes"]:
+            break
+        received.extend(response.result["keyframes"])
+        cursor["keyframes_from"] = len(received)
+    assert len(received) == response.result["keyframe_count"] == 108_000
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"path": "source.mp4", "keyframes_from": 3},
+        {"path": "source.mp4", "keyframes_revision": 1},
+        {"path": "source.mp4", "keyframes_revision": 1, "keyframes_from": -1},
+        {"path": "source.mp4", "keyframes_revision": True, "keyframes_from": 0},
+        {"path": "source.mp4", "keyframes_revision": 1, "keyframes_from": "4"},
+        {"path": "source.mp4", "keyframes_revision": 1, "keyframes_from": 0, "extra": 1},
+        {"path": 4, "keyframes_revision": 1, "keyframes_from": 0},
+    ],
+)
+def test_keyframe_cursor_is_validated_before_calling_api(api, params):
+    response = dispatch(api, Request("bad", "get_cut_analysis", params))
+    assert not response.ok
+    assert response.error.code == "INVALID_REQUEST"
+
+
+def test_a_replaced_keyframe_list_gets_a_new_revision(tmp_path):
+    from threading import Event
+
+    from tuck.cutting.service import CutAnalysisService
+    from tuck.models.cutting import AnalysisProgress
+
+    path = tmp_path / "source.mp4"
+    path.write_bytes(b"fixture")
+    step, release = Event(), Event()
+    reports = []
+
+    def scan(source, cancel, progress, known):
+        for report in reports:
+            progress(report)
+            step.set()
+            assert release.wait(5)
+            release.clear()
+        raise AssertionError("released")
+
+    seconds = [MediaTime(n) for n in range(4)]
+    reports.extend(
+        [
+            AnalysisProgress(0.1, MediaTime(1), (seconds[0],)),
+            # the same pass with more keyframes on the end
+            AnalysisProgress(0.2, MediaTime(2), (seconds[0], seconds[1])),
+            # a different list, such as the checked scan overtaking the preview
+            AnalysisProgress(0.3, MediaTime(3), (seconds[0], seconds[2], seconds[3])),
+        ]
+    )
+    service = CutAnalysisService(scanner=scan, previewer=lambda *_: None)
+    revisions = []
+    try:
+        started = service.start(path, "only").keyframes_revision
+        for _ in reports:
+            assert step.wait(5)
+            step.clear()
+            revisions.append(service.get(path).keyframes_revision)
+            release.set()
+    finally:
+        release.set()
+        service.close()
+    assert revisions[0] == revisions[1] == started
+    assert revisions[2] != started

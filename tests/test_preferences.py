@@ -2,10 +2,10 @@ import json
 import os
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 import pytest
+from conftest import wait_until
 
 from tuck.bridge import BridgeAPI
 from tuck.models import EncodePlan, Profile, QueueState, VideoInfo
@@ -383,9 +383,8 @@ class TestRunPreferences:
             done = all(item.state == QueueState.COMPLETED for item in items)
             return done and ("release" in events or not q._keep_awake)
 
-        deadline = time.time() + 3
-        while not settled() and time.time() < deadline:
-            time.sleep(0.01)
+        # the sleep lock is released after the worker's last notification, so poll for it
+        wait_until(settled, what="exports to finish and release the sleep lock")
         q.stop()
         assert all(item.state == QueueState.COMPLETED for item in items)
         return events

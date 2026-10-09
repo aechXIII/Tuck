@@ -726,16 +726,22 @@ class TestProcessLock:
         lock_path = _get_lock_path()
 
         results = []
+        held = threading.Event()
+        waiting = threading.Event()
 
         def holder():
             with ProcessLock(lock_path):
                 results.append("holder-acquired")
-                time.sleep(0.3)
+                held.set()
+                assert waiting.wait(timeout=5)
+                # keep holding while the waiter is inside acquire; blocking can't be observed
+                time.sleep(0.2)
                 results.append("holder-releasing")
             results.append("holder-released")
 
         def waiter():
-            time.sleep(0.05)  # ensure holder acquires first
+            assert held.wait(timeout=5)
+            waiting.set()
             with ProcessLock(lock_path):
                 results.append("waiter-acquired")
             results.append("waiter-released")
@@ -1669,3 +1675,170 @@ class TestNormalizeShortcutOverrides:
             {"edit.undo": ["Ctrl+Z"], "BAD": [], "edit.redo": ["Ctrl+Z", "Ctrl+Z"]}
         ) == {"edit.undo": ["Ctrl+Z"]}
         assert clean_shortcut_overrides([]) == {}
+
+
+def _isolate(tmp_path, monkeypatch):
+    import tuck.settings as settings_mod
+
+    monkeypatch.setattr(settings_mod, "_config_dir", lambda: tmp_path)
+    monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
+    monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
+
+
+class TestProfileDeletionAcrossProcesses:
+    def test_a_deleted_profile_stays_deleted_when_another_process_saved_meanwhile(
+        self, tmp_path, monkeypatch
+    ):
+        _isolate(tmp_path, monkeypatch)
+        setup = SettingsManager()
+        setup.load()
+        setup.set_profiles([*setup.get_profiles(), Profile(name="Mine", profile_id="mine")])
+        setup.save()
+
+        gui = SettingsManager()
+        gui.load()
+        cli = SettingsManager()
+        cli.load()
+
+        gui.set_profiles([p for p in gui.get_profiles() if p.profile_id != "mine"])
+        gui.save()
+        # Send To or the CLI saves a setting with the profile list it loaded earlier
+        cli.set_setting("check_updates", False)
+        cli.save()
+
+        ids = {p.profile_id for p in SettingsManager().get_profiles()}
+        assert "mine" not in ids
+
+    def test_a_profile_deleted_elsewhere_is_not_brought_back_by_our_save(
+        self, tmp_path, monkeypatch
+    ):
+        _isolate(tmp_path, monkeypatch)
+        setup = SettingsManager()
+        setup.load()
+        setup.set_profiles([*setup.get_profiles(), Profile(name="Mine", profile_id="mine")])
+        setup.save()
+
+        gui = SettingsManager()
+        gui.load()
+        cli = SettingsManager()
+        cli.load()
+
+        cli.set_profiles([p for p in cli.get_profiles() if p.profile_id != "mine"])
+        cli.save()
+        gui.set_setting("check_updates", False)
+        gui.save()
+
+        assert "mine" not in {p.profile_id for p in SettingsManager().get_profiles()}
+        assert SettingsManager().load().check_updates is False
+
+    def test_an_edit_wins_over_a_delete_from_another_process(self, tmp_path, monkeypatch):
+        _isolate(tmp_path, monkeypatch)
+        setup = SettingsManager()
+        setup.load()
+        setup.set_profiles([*setup.get_profiles(), Profile(name="Mine", profile_id="mine")])
+        setup.save()
+
+        gui = SettingsManager()
+        gui.load()
+        cli = SettingsManager()
+        cli.load()
+
+        cli.set_profiles([p for p in cli.get_profiles() if p.profile_id != "mine"])
+        cli.save()
+        edited = [
+            Profile(name="Renamed", profile_id="mine") if p.profile_id == "mine" else p
+            for p in gui.get_profiles()
+        ]
+        gui.set_profiles(edited)
+        gui.save()
+
+        reloaded = {p.profile_id: p for p in SettingsManager().get_profiles()}
+        assert reloaded["mine"].name == "Renamed"
+
+    def test_profiles_added_on_both_sides_are_kept(self, tmp_path, monkeypatch):
+        _isolate(tmp_path, monkeypatch)
+        gui = SettingsManager()
+        gui.load()
+        gui.save()
+        cli = SettingsManager()
+        cli.load()
+
+        cli.set_profiles([*cli.get_profiles(), Profile(name="Theirs", profile_id="theirs")])
+        cli.save()
+        gui.set_profiles([*gui.get_profiles(), Profile(name="Ours", profile_id="ours")])
+        gui.save()
+
+        ids = [p.profile_id for p in SettingsManager().get_profiles()]
+        assert "theirs" in ids and "ours" in ids
+
+
+class TestStoredEncodeSuffixes:
+    @pytest.mark.parametrize("bad", [r"\..\escape", "_v:2", "a/b", "_\x07", "", "   ", 5])
+    def test_a_stored_suffix_that_breaks_file_names_falls_back_to_the_default(
+        self, tmp_path, monkeypatch, caplog, bad
+    ):
+        from tuck.models import AppSettings
+
+        _isolate(tmp_path, monkeypatch)
+        settings_path().write_text(
+            json.dumps({"version": 1, "compression_suffix": bad, "upscale_suffix": bad}),
+            encoding="utf-8",
+        )
+        loaded = SettingsManager().load()
+        assert loaded.compression_suffix == AppSettings().compression_suffix
+        assert loaded.upscale_suffix == AppSettings().upscale_suffix
+        assert "compression_suffix" in caplog.text
+
+    def test_a_good_stored_suffix_is_kept(self, tmp_path, monkeypatch):
+        _isolate(tmp_path, monkeypatch)
+        settings_path().write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "compression_suffix": "_small {size}",
+                    "upscale_suffix": "-{width}x{height}",
+                }
+            ),
+            encoding="utf-8",
+        )
+        loaded = SettingsManager().load()
+        assert loaded.compression_suffix == "_small {size}"
+        assert loaded.upscale_suffix == "-{width}x{height}"
+
+
+class TestSavingEncodeSuffixes:
+    @pytest.mark.parametrize(
+        ("key", "value", "message"),
+        [
+            ("compression_suffix", r"\..\escape", "compress suffix cannot contain"),
+            ("compression_suffix", "_v:2", "compress suffix cannot contain"),
+            ("upscale_suffix", "../x_{width}", "upscale suffix cannot contain"),
+            ("upscale_suffix", "_a\tb", "upscale suffix cannot contain"),
+            ("compression_suffix", "  ", "Enter a suffix for compress file names."),
+            ("upscale_suffix", 3, "upscale_suffix must be a string"),
+        ],
+    )
+    def test_a_suffix_that_would_break_the_file_name_is_refused(
+        self, tmp_path, monkeypatch, key, value, message
+    ):
+        import tuck.settings as settings_mod
+        from tuck.bridge import BridgeAPI
+
+        monkeypatch.setattr(settings_mod, "_settings_manager", None)
+        monkeypatch.setattr(settings_mod, "_storage_root", tmp_path / "storage")
+        api = BridgeAPI()
+        before = api.get_settings()[key]
+        result = api.save_settings({key: value})
+        assert result["ok"] is False
+        assert message in str(result["error"])
+        assert api.get_settings()[key] == before
+
+    def test_a_good_suffix_is_saved(self, tmp_path, monkeypatch):
+        import tuck.settings as settings_mod
+        from tuck.bridge import BridgeAPI
+
+        monkeypatch.setattr(settings_mod, "_settings_manager", None)
+        monkeypatch.setattr(settings_mod, "_storage_root", tmp_path / "storage")
+        api = BridgeAPI()
+        assert api.save_settings({"compression_suffix": "_small_{size}"}) == {"ok": True}
+        assert api.get_settings()["compression_suffix"] == "_small_{size}"

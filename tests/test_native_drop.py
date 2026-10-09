@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
 from tuck.bridge import BridgeAPI
-from tuck.bridge_validation import validate_video_paths
+from tuck.bridge_validation import AUDIO_EXTENSIONS, VIDEO_EXTENSIONS, validate_video_paths
 
 
 class TestVideoPathExtraction:
@@ -92,3 +95,35 @@ class TestAddIpcFiles:
             "action": "review",
         }
         assert api.get_ipc_metadata() == {}
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def _rust_extensions(name: str) -> set[str]:
+    source = (ROOT / "src-tauri/src/commands/native.rs").read_text(encoding="utf-8")
+    match = re.search(rf"const {name}: &\[&str\] = &\[(.*?)\];", source, re.DOTALL)
+    assert match is not None, name
+    return {f".{extension}" for extension in re.findall(r'"([a-z0-9]+)"', match.group(1))}
+
+
+def test_file_pickers_offer_exactly_the_files_tuck_serves() -> None:
+    assert _rust_extensions("VIDEO_EXTENSIONS") == VIDEO_EXTENSIONS
+    assert _rust_extensions("AUDIO_EXTENSIONS") == AUDIO_EXTENSIONS
+
+
+def test_drop_routing_sends_exactly_the_served_audio_files_to_the_audio_panel() -> None:
+    source = (ROOT / "frontend/src/features/editor/drop-routing.ts").read_text(encoding="utf-8")
+    match = re.search(r"AUDIO_DROP_EXTENSIONS = new Set\(\[(.*?)\]\)", source, re.DOTALL)
+    assert match is not None
+    assert set(re.findall(r'"(\.[a-z0-9]+)"', match.group(1))) == AUDIO_EXTENSIONS
+
+
+def test_every_served_file_type_has_a_content_type() -> None:
+    import importlib
+    import mimetypes
+
+    # the media server registers the types it serves when it is imported
+    importlib.import_module("tuck.media_server")
+    for extension in VIDEO_EXTENSIONS | AUDIO_EXTENSIONS:
+        assert mimetypes.guess_type(f"clip{extension}")[0], extension
