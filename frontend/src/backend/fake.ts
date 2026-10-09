@@ -1,4 +1,4 @@
-import type { CutPlanPayload, CutPlanRequest } from "./cutting-types.ts";
+import type { CutPlanPayload, CutPlanRequest, KeyframeCursor } from "./cutting-types.ts";
 import type {
   BackendCall,
   BackendClient,
@@ -122,10 +122,10 @@ class DeterministicFakeBackend implements BackendClient {
     );
   }
 
-  getCutAnalysis(path: string) {
+  getCutAnalysis(path: string, keyframes?: KeyframeCursor) {
     return this.#record(
       "getCutAnalysis",
-      [path],
+      keyframes ? [path, keyframes] : [path],
       this.#responses.getCutAnalysis ?? {
         ok: true,
         value: {

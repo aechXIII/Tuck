@@ -809,6 +809,7 @@
                     1920&times;1080 &middot; 30 fps &middot; H.264 &middot; AAC 128k
                   </div>
                 </div>
+                <ul id="export-plan-warnings" class="plan-warnings" aria-label="Export notes" hidden></ul>
               </div>
               <div class="stitle adjust-title">Adjust</div>
               <p id="export-plan-error" class="blend-error" role="alert" hidden></p>
@@ -1101,6 +1102,7 @@
             type="button"
             id="btn-segment-add"
             data-shortcut-commands="timeline.add-segment"
+            data-shortcut-label="Add segment"
             class="dock-text-btn timeline-primary-btn"
             data-action-click="timeline-add-segment"
             data-tip="Add segment (A)"
@@ -1151,7 +1153,7 @@
             id="btn-segments-reset"
             class="dock-text-btn hid"
             data-action-click="timeline-reset-segments"
-            data-tip="Reset to full clip"
+            data-tip="Reset to the whole video"
             aria-label="Reset segments to full source"
             disabled
           >
@@ -1675,7 +1677,7 @@
       <div class="mod-box" id="mod-box"></div>
     </div>
     <div id="toast-ct" aria-label="Notifications"></div>
-    <div id="drag-overlay"><h2>Drop video or audio anywhere</h2></div>
+    <div id="drag-overlay"><h2>Drop videos or audio anywhere</h2></div>
     <script type="module" src="./src/main.ts"></script>
   </body>
 </html>

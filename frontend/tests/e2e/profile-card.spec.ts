@@ -429,3 +429,68 @@ test("Escape on an open profile trigger closes its menu before the Inspector", a
   await trigger.press("Escape");
   await expect(inspector).toHaveAttribute("aria-expanded", "false");
 });
+
+test("discarding unsaved changes can be undone, the video's transform included", async ({ page }) => {
+  await open(page);
+  await setSize(page, "25");
+  await page.locator('[data-action-click="transform-rotation"][data-rotation="90"]').evaluate((button) => (button as HTMLButtonElement).click());
+  await page.getByRole("button", { name: "Discard", exact: true }).click();
+  await expect(page.locator("#sz-badge")).toHaveValue("10");
+  const note = page.locator(".toast", { hasText: "Changes to Discord discarded." });
+  await note.getByRole("button", { name: "Undo", exact: true }).click();
+  await expect(page.locator("#sz-badge")).toHaveValue("25");
+  await expect(page.locator("#prof-changed")).toBeVisible();
+  await expect(page.locator('[data-action-click="transform-rotation"][data-rotation="90"]')).toHaveAttribute("aria-pressed", "true");
+});
+
+test("saving as a new profile is a labelled dialog that keeps a dismissed name", async ({ page }) => {
+  await open(page);
+  await page.locator("#prof-pick").click();
+  await page.getByRole("button", { name: "Save current settings as new…" }).click();
+  const dialog = page.getByRole("dialog", { name: "Save profile as" });
+  const name = dialog.getByRole("textbox", { name: "Profile name" });
+  await expect(name).toBeFocused();
+  await dialog.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(name).toHaveAttribute("aria-invalid", "true");
+  await expect(name).toHaveAccessibleDescription("Enter a name for the profile.");
+  await expect(page.locator(".toast")).toHaveCount(0);
+  await name.fill("Small clips");
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator("#prof-pick")).toBeFocused();
+  await page.locator("#prof-pick").click();
+  await page.getByRole("button", { name: "Save current settings as new…" }).click();
+  await expect(name).toHaveValue("Small clips");
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await page.locator("#prof-pick").click();
+  await page.getByRole("button", { name: "Save current settings as new…" }).click();
+  await expect(name).toHaveValue("");
+});
+
+test("the plan's warnings show quietly under the profile card", async ({ page }) => {
+  const fixture = healthyBackendFixture();
+  fixture.startup.files = ["C:\videos\Morning ride.mp4"];
+  fixture.responses.probeFile = { ok: true, data: { duration: 12, width: 1920, height: 1080, fps: 30, has_audio: true, file_size: 15_000_000 } };
+  await installFakeBackend(page, fixture);
+  // plans echo their request id, the way the backend ties an answer to its request
+  await page.addInitScript(() => {
+    const client = window.tuckBackendClient!;
+    (window as unknown as { __planWarnings: string[] }).__planWarnings = [
+      "HDR colours can’t be converted with this FFmpeg, so they may look washed out.",
+      "2 extra audio tracks will be left out.",
+    ];
+    client.createPlan = (async (request: { _request_id?: number }) => ({
+      ok: true,
+      value: { _request_id: request._request_id, data: { video_bitrate_kbps: 1200, warnings: (window as unknown as { __planWarnings: string[] }).__planWarnings } },
+    })) as never;
+  });
+  await page.goto("/");
+  const notes = page.getByRole("list", { name: "Export notes" });
+  await expect(notes.getByRole("listitem")).toHaveText([
+    "HDR colours can’t be converted with this FFmpeg, so they may look washed out.",
+    "2 extra audio tracks will be left out.",
+  ]);
+  await page.evaluate(() => { (window as unknown as { __planWarnings: string[] }).__planWarnings = []; });
+  await setSize(page, "25");
+  await expect(notes).toBeHidden();
+});

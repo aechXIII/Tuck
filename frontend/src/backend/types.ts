@@ -1,4 +1,4 @@
-import type { CutAnalysisPayload, CutCancellation, CutPlanPayload, CutPlanRequest } from "./cutting-types.ts";
+import type { CutAnalysisPayload, CutCancellation, CutPlanPayload, CutPlanRequest, KeyframeCursor } from "./cutting-types.ts";
 
 export type JsonPrimitive = boolean | number | string | null;
 export type JsonValue = JsonPrimitive | JsonObject | readonly JsonValue[];
@@ -116,10 +116,7 @@ export interface DownloadProgress extends JsonObject {
 
 export interface UpdateCheck extends JsonObject {
   readonly available: boolean;
-  readonly error?: string;
   readonly notes?: string;
-  readonly size?: number;
-  readonly size_mb?: number;
   readonly version?: string;
 }
 
@@ -164,7 +161,7 @@ export interface LutPayload extends JsonObject {
 
 export interface DomainBackendClient {
   analyzeCut(path: string, workId: string): Promise<BackendResult<CutAnalysisPayload>>;
-  getCutAnalysis(path: string): Promise<BackendResult<CutAnalysisPayload>>;
+  getCutAnalysis(path: string, keyframes?: KeyframeCursor): Promise<BackendResult<CutAnalysisPayload>>;
   cancelCutWork(workId: string): Promise<BackendResult<CutCancellation>>;
   clearLutHistory(): Promise<BackendResult<LutHistoryClearedPayload>>;
   listLuts(): Promise<BackendResult<LutLibraryPayload>>;

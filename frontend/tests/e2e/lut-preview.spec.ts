@@ -1,180 +1,229 @@
-import { expect, test } from "@playwright/test";
-import { existsSync, readFileSync } from "node:fs";
+import { expect, test, type Page } from "@playwright/test";
+import { existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
-import ts from "typescript";
+import { healthyBackendFixture, installFakeBackend } from "../fixtures/fake-backend";
 
-const moduleSource = ts.transpileModule(
-  readFileSync("frontend/src/features/preview/lut-preview.ts", "utf8"),
-  { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } },
-).outputText;
+type Rgb = [number, number, number];
 
-test("LUT preview transforms real video pixels and restores the source", async ({ page }) => {
-  await page.setContent('<div style="position:relative;width:160px;height:80px"><video muted style="position:absolute;width:160px;height:80px;object-fit:fill;transform-origin:0 0"></video></div>');
-  const result = await page.evaluate(async source => {
-    const { createLutPreview } = await import(URL.createObjectURL(new Blob([source], { type: "text/javascript" })));
-    const video = document.querySelector("video")!;
-    const sourceCanvas = document.createElement("canvas");
-    sourceCanvas.width = 16;
-    sourceCanvas.height = 8;
-    const paint = sourceCanvas.getContext("2d")!;
-    paint.fillStyle = "rgb(128,64,192)";
-    paint.fillRect(0, 0, 16, 4);
-    paint.fillStyle = "rgb(32,192,64)";
-    paint.fillRect(0, 4, 16, 4);
-    const stream = sourceCanvas.captureStream(0);
-    video.srcObject = stream;
-    await video.play();
-    video.pause();
-    const errors: string[] = [];
-    const preview = createLutPreview(video, (message: string) => errors.push(message));
-    const canvas = document.querySelector<HTMLCanvasElement>("[data-lut-preview]")!;
-    const table = new Float32Array(24);
-    for (let blue = 0; blue < 2; blue++) for (let green = 0; green < 2; green++) for (let red = 0; red < 2; red++) {
-      table.set([blue, green, red], ((blue * 2 + green) * 2 + red) * 3);
-    }
-    function pixel(top: boolean): number[] {
-      const gl = canvas.getContext("webgl2")!;
-      const value = new Uint8Array(4);
-      gl.readPixels(2, top ? canvas.height - 2 : 1, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, value);
-      return Array.from(value).slice(0, 3);
-    }
-    preview.set(table, 2, 1);
-    const full = pixel(true);
-    const bottom = pixel(false);
-    const visible = getComputedStyle(canvas).display !== "none";
-    preview.set(table, 2, 0.5);
-    const half = pixel(true);
-    await video.play();
-    const playingFrame = new Promise<number[]>(resolve => {
-      const gl = canvas.getContext("webgl2")!;
-      const draw = gl.drawArrays.bind(gl);
-      gl.drawArrays = (...args) => {
-        draw(...args);
-        const rendered = pixel(true);
-        if (rendered.every(value => Math.abs(value - 128) <= 4)) {
-          gl.drawArrays = draw;
-          resolve(rendered);
-        }
-      };
-    });
-    paint.fillStyle = "rgb(64,128,192)";
-    paint.fillRect(0, 0, 16, 8);
-    const captureTrack = stream.getVideoTracks()[0] as CanvasCaptureMediaStreamTrack;
-    captureTrack.requestFrame();
-    const live = await playingFrame;
-    video.pause();
-    video.style.transform = "matrix(0,1,-1,0,80,0)";
-    video.style.width = "80px";
-    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
-    const geometry = [canvas.style.transform, canvas.style.width];
-    video.dispatchEvent(new Event("loadstart"));
-    const retainedOnLoad = getComputedStyle(canvas).display !== "none";
-    video.dispatchEvent(new Event("loadeddata"));
-    const restoredOnLoad = getComputedStyle(canvas).display !== "none";
-    preview.clear();
-    const cleared = getComputedStyle(canvas).display === "none" && getComputedStyle(video).display !== "none";
-    preview.set(table, 2, 0);
-    const zero = getComputedStyle(canvas).display === "none";
-    preview.dispose();
-    const disposed = !canvas.isConnected;
-    for (const track of stream.getTracks()) track.stop();
-    return { full, bottom, half, live, visible, geometry, retainedOnLoad, restoredOnLoad, cleared, zero, disposed, errors };
-  }, moduleSource);
-  expect(result.errors).toEqual([]);
-  for (const [actual, expected] of [[result.full, [192, 64, 128]], [result.bottom, [64, 192, 32]], [result.half, [160, 64, 160]], [result.live, [128, 128, 128]]] as const) {
-    actual.forEach((value, index) => expect(Math.abs(value - expected[index]!)).toBeLessThanOrEqual(4));
+declare global {
+  interface Window {
+    __lutSource?: { paint(top: string, bottom: string): void };
+    __lutDraws?: number;
+    __frameCallbacks?: Map<number, VideoFrameRequestCallback>;
   }
-  expect(result.visible).toBe(true);
-  expect(result.geometry).toEqual(["matrix(0, 1, -1, 0, 80, 0)", "80px"]);
-  expect(result.retainedOnLoad).toBe(true);
-  expect(result.restoredOnLoad).toBe(true);
-  expect(result.cleared).toBe(true);
-  expect(result.zero).toBe(true);
-  expect(result.disposed).toBe(true);
-});
+}
 
-test("LUT preview restores raw video after graphics context loss", async ({ page }) => {
-  await page.setContent("<video></video>");
-  const result = await page.evaluate(async source => {
-    const { createLutPreview } = await import(URL.createObjectURL(new Blob([source], { type: "text/javascript" })));
-    const errors: string[] = [];
-    const video = document.querySelector("video")!;
-    const input = document.createElement("canvas");
-    input.width = input.height = 8;
-    input.getContext("2d")!.fillRect(0, 0, 8, 8);
-    const stream = input.captureStream(0);
-    video.srcObject = stream;
-    await video.play();
-    video.pause();
-    const preview = createLutPreview(video, (message: string) => errors.push(message));
-    preview.set(new Float32Array(24), 2, 1);
-    const canvas = document.querySelector("canvas")!;
-    const lost = new Promise<void>(resolve => canvas.addEventListener("webglcontextlost", () => resolve(), { once: true }));
-    const extension = canvas.getContext("webgl2")!.getExtension("WEBGL_lose_context")!;
-    extension.loseContext();
-    await lost;
-    const hidden = getComputedStyle(canvas).display === "none";
-    const sourceVisible = getComputedStyle(video).display !== "none";
-    const restored = new Promise<void>(resolve => canvas.addEventListener("webglcontextrestored", () => resolve(), { once: true }));
-    // restoration must happen after the context-lost event has finished dispatching
-    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
-    extension.restoreContext();
-    await restored;
-    preview.clear();
-    preview.set(new Float32Array(24).fill(1), 2, 1);
-    const recovered = getComputedStyle(canvas).display !== "none";
-    const gl = canvas.getContext("webgl2")!;
-    const pixel = new Uint8Array(4);
-    gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
-    preview.dispose();
-    for (const track of stream.getTracks()) track.stop();
-    return { errors, hidden, sourceVisible, recovered, pixel: Array.from(pixel) };
-  }, moduleSource);
-  expect(result.errors).toEqual(["LUT preview stopped because graphics resources were lost. Turn the LUT off and on to retry."]);
-  expect(result.hidden).toBe(true);
-  expect(result.sourceVisible).toBe(true);
-  expect(result.recovered).toBe(true);
-  expect(result.pixel).toEqual([255, 255, 255, 255]);
-});
-
-test("LUT preview matches the real FFmpeg export filter at every strength", async ({ page }) => {
-  const python = resolve(process.platform === "win32" ? ".venv/Scripts/python.exe" : ".venv/bin/python");
-  test.skip(!existsSync(python), "The project Python environment is required for the FFmpeg comparison");
+// output red/green/blue come from input blue/green/red, so a direction mix-up shows in the pixels
+function swapTable(): number[] {
   const table: number[] = [];
   for (let blue = 0; blue < 2; blue++) for (let green = 0; green < 2; green++) for (let red = 0; red < 2; red++) table.push(blue, green, red);
-  const strengths = [0, 0.35, 1];
-  await page.setContent('<video muted style="width:16px;height:8px"></video>');
-  const browser = await page.evaluate(async ({ source, table, strengths }) => {
-    const { createLutPreview } = await import(URL.createObjectURL(new Blob([source], { type: "text/javascript" })));
-    const input = document.createElement("canvas");
-    input.width = 16;
-    input.height = 8;
-    const context = input.getContext("2d")!;
-    context.fillStyle = "rgb(128,64,192)";
-    context.fillRect(0, 0, 16, 8);
-    const stream = input.captureStream(0);
-    const video = document.querySelector("video")!;
+  return table;
+}
+
+// the editor previews an exact 16x8 picture: decoders would blur the colors this test compares
+async function openWithLut(
+  page: Page,
+  table: readonly number[],
+  options: { tableSize?: number; top?: string; bottom?: string } = {},
+): Promise<void> {
+  const fixture = healthyBackendFixture();
+  fixture.responses.pickFiles = { ok: true, files: ["C:/swatch.mp4"] };
+  fixture.responses.probeFile = { ok: true, data: { width: 16, height: 8, duration: 3, fps: 30, has_audio: false } };
+  fixture.responses.getMediaUrl = { ok: false, error: "No media server in this test" };
+  fixture.responses.getThumbnail = { ok: true, thumbnail: "" };
+  fixture.responses.pickLutFile = { path: "swap.cube" };
+  fixture.responses.loadLut = { path: "swap.cube", name: "Swap", size: options.tableSize ?? 2, table_url: "https://lut.test/table", token: "lut" };
+  await page.route("https://lut.test/table", (route) => route.fulfill({
+    body: Buffer.from(new Float32Array(table).buffer),
+    headers: { "Access-Control-Allow-Origin": "*" },
+  }));
+  await page.setViewportSize({ width: 1240, height: 800 });
+  await installFakeBackend(page, fixture);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Add videos", exact: true }).click();
+  await expect(page.locator(".clip")).toHaveCount(1);
+  await page.locator("#vid").evaluate(async (video: HTMLVideoElement, colors) => {
+    const source = document.createElement("canvas");
+    source.width = 16;
+    source.height = 8;
+    const context = source.getContext("2d")!;
+    const stream = source.captureStream(0);
+    const track = stream.getVideoTracks()[0] as CanvasCaptureMediaStreamTrack;
+    window.__lutSource = {
+      paint(top, bottom) {
+        context.fillStyle = top;
+        context.fillRect(0, 0, 16, 4);
+        context.fillStyle = bottom;
+        context.fillRect(0, 4, 16, 4);
+        track.requestFrame();
+      },
+    };
+    window.__lutSource.paint(colors.top, colors.bottom);
     video.srcObject = stream;
     await video.play();
     video.pause();
+  }, { top: options.top ?? "rgb(128,64,192)", bottom: options.bottom ?? "rgb(32,192,64)" });
+  await page.locator("#lut-panel > summary").click();
+  await page.locator("#lut-import").click();
+}
+
+function previewPixel(page: Page, row: "top" | "bottom"): Promise<Rgb> {
+  return page.locator("[data-lut-preview]").evaluate(async (element, row) => {
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    const canvas = element as HTMLCanvasElement;
+    const gl = canvas.getContext("webgl2")!;
+    const value = new Uint8Array(4);
+    gl.readPixels(2, row === "top" ? canvas.height - 2 : 1, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, value);
+    return [value[0]!, value[1]!, value[2]!] as Rgb;
+  }, row);
+}
+
+function near(actual: Rgb, expected: Rgb, tolerance = 4): boolean {
+  return actual.every((value, index) => Math.abs(value - expected[index]!) <= tolerance);
+}
+
+test("the LUT preview keeps the picture upright, mixes by strength and follows rotation", async ({ page }) => {
+  await openWithLut(page, swapTable());
+  const canvas = page.locator("[data-lut-preview]");
+  await expect(canvas).toBeVisible();
+  await expect(page.locator("#lut-error")).toBeHidden();
+
+  await expect.poll(() => previewPixel(page, "top").then((pixel) => near(pixel, [192, 64, 128]))).toBe(true);
+  expect(near(await previewPixel(page, "bottom"), [64, 192, 32])).toBe(true);
+
+  const strength = page.locator("#lut-strength");
+  await strength.fill("50");
+  await expect(page.locator("#lut-strength-value")).toHaveText("50%");
+  await expect.poll(() => previewPixel(page, "top").then((pixel) => near(pixel, [160, 64, 160]))).toBe(true);
+
+  // a playing video keeps feeding new frames through the LUT
+  await page.locator("#vid").evaluate((video: HTMLVideoElement) => video.play());
+  await expect.poll(async () => {
+    await page.evaluate(() => window.__lutSource!.paint("rgb(64,128,192)", "rgb(64,128,192)"));
+    return near(await previewPixel(page, "top"), [128, 128, 128]);
+  }).toBe(true);
+  await page.locator("#vid").evaluate((video: HTMLVideoElement) => video.pause());
+
+  await strength.fill("0");
+  await expect(canvas).toBeHidden();
+  await expect(page.locator("#vid")).toBeVisible();
+  await strength.fill("100");
+  await expect(canvas).toBeVisible();
+
+  await page.locator("#insp-tab-edit").click();
+  await page.getByRole("button", { name: "Rotate 90° clockwise" }).click();
+  await expect.poll(() => page.locator("#vid").evaluate((video: HTMLVideoElement) => {
+    const canvas = document.querySelector<HTMLCanvasElement>("[data-lut-preview]")!;
+    const shown = getComputedStyle(video);
+    return shown.transform !== "none" && canvas.style.transform === shown.transform && canvas.style.width === shown.width;
+  })).toBe(true);
+});
+
+test("losing graphics resources shows the video again and the LUT recovers when turned off and on", async ({ page }) => {
+  await openWithLut(page, swapTable());
+  const canvas = page.locator("[data-lut-preview]");
+  await expect(canvas).toBeVisible();
+
+  await canvas.evaluate(async (element) => {
+    const extension = (element as HTMLCanvasElement).getContext("webgl2")!.getExtension("WEBGL_lose_context")!;
+    const lost = new Promise<void>((resolve) => element.addEventListener("webglcontextlost", () => resolve(), { once: true }));
+    extension.loseContext();
+    await lost;
+    // restoring has to wait until the loss event has finished dispatching
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    const restored = new Promise<void>((resolve) => element.addEventListener("webglcontextrestored", () => resolve(), { once: true }));
+    extension.restoreContext();
+    await restored;
+  });
+  await expect(page.locator("#lut-error")).toHaveText("LUT preview stopped because graphics resources were lost. Turn the LUT off and on to retry.");
+  await expect(canvas).toBeHidden();
+  await expect(page.locator("#vid")).toBeVisible();
+
+  const apply = page.getByRole("switch", { name: "Apply LUT", exact: true });
+  await apply.uncheck();
+  await apply.check();
+  await expect(canvas).toBeVisible();
+  await expect(page.locator("#lut-error")).toBeHidden();
+  await expect.poll(() => previewPixel(page, "top").then((pixel) => near(pixel, [192, 64, 128]))).toBe(true);
+});
+
+test("invalid LUT data is reported without covering the video", async ({ page }) => {
+  await openWithLut(page, [0, 0, 0]);
+
+  await expect(page.locator("#lut-error")).toHaveText("The LUT preview data is invalid.");
+  await expect(page.locator("[data-lut-preview]")).toBeHidden();
+  await expect(page.locator("#vid")).toBeVisible();
+});
+
+test("a paused LUT preview paints late frame notifications and keeps listening after a source change", async ({ page }) => {
+  await page.addInitScript(() => {
+    // deliver compositor notifications by hand, independently of media events
+    const pending = new Map<number, VideoFrameRequestCallback>();
+    let sequence = 0;
+    window.__frameCallbacks = pending;
+    HTMLVideoElement.prototype.requestVideoFrameCallback = (callback) => {
+      pending.set(++sequence, callback);
+      return sequence;
+    };
+    HTMLVideoElement.prototype.cancelVideoFrameCallback = (id) => {
+      pending.delete(id);
+    };
+    const draw = WebGL2RenderingContext.prototype.drawArrays;
+    WebGL2RenderingContext.prototype.drawArrays = function drawArrays(...args) {
+      if (this.canvas instanceof HTMLCanvasElement && this.canvas.hasAttribute("data-lut-preview")) {
+        window.__lutDraws = (window.__lutDraws ?? 0) + 1;
+      }
+      draw.apply(this, args);
+    };
+  });
+  await openWithLut(page, new Array<number>(24).fill(1));
+  await expect(page.locator("[data-lut-preview]")).toBeVisible();
+
+  const result = await page.locator("#vid").evaluate(async (video: HTMLVideoElement) => {
+    const pending = window.__frameCallbacks!;
+    video.dispatchEvent(new Event("pause"));
+    const listeningWhilePaused = pending.size;
+    const before = window.__lutDraws ?? 0;
+    const callback = pending.values().next().value;
+    pending.clear();
+    callback?.(performance.now(), { mediaTime: 0, presentedFrames: 1, expectedDisplayTime: 0, presentationTime: 0, width: 16, height: 8, processingDuration: 0 });
+    const repainted = (window.__lutDraws ?? 0) > before;
+    video.dispatchEvent(new Event("loadstart"));
+    return { listeningWhilePaused, repainted, listeningAfterSourceChange: pending.size };
+  });
+  expect(result).toEqual({ listeningWhilePaused: 1, repainted: true, listeningAfterSourceChange: 1 });
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  expect(await previewPixel(page, "top")).toEqual([255, 255, 255]);
+  await expect(page.locator("[data-lut-preview]")).toBeVisible();
+});
+
+test("the LUT preview matches the real FFmpeg export filter at every strength", async ({ page }) => {
+  const python = resolve(process.platform === "win32" ? ".venv/Scripts/python.exe" : ".venv/bin/python");
+  test.skip(!existsSync(python), "The project Python environment is required for the FFmpeg comparison");
+  const table = swapTable();
+  const strengths = [0, 35, 100];
+  await openWithLut(page, table, { top: "rgb(128,64,192)", bottom: "rgb(128,64,192)" });
+  await expect(page.locator("[data-lut-preview]")).toBeVisible();
+  const sourceRgb = await page.locator("#vid").evaluate((video: HTMLVideoElement) => {
+    const sample = document.createElement("canvas");
+    sample.width = 16;
+    sample.height = 8;
+    const context = sample.getContext("2d")!;
     context.drawImage(video, 0, 0);
-    const sourceRgb = Array.from(context.getImageData(0, 0, 1, 1).data).slice(0, 3);
-    const errors: string[] = [];
-    const preview = createLutPreview(video, (message: string) => errors.push(message));
-    const canvas = document.querySelector("[data-lut-preview]") as HTMLCanvasElement;
-    const pixels = strengths.map(strength => {
-      preview.set(new Float32Array(table), 2, strength);
-      if (strength === 0) return sourceRgb;
-      const gl = canvas.getContext("webgl2")!;
-      const output = new Uint8Array(4);
-      gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, output);
-      return Array.from(output).slice(0, 3);
-    });
-    preview.dispose();
-    for (const track of stream.getTracks()) track.stop();
-    return { sourceRgb, pixels, errors };
-  }, { source: moduleSource, table, strengths });
+    return Array.from(context.getImageData(0, 0, 1, 1).data).slice(0, 3);
+  });
+  const preview: number[][] = [];
+  for (const strength of strengths) {
+    await page.locator("#lut-strength").fill(String(strength));
+    if (strength === 0) {
+      await expect(page.locator("[data-lut-preview]")).toBeHidden();
+      preview.push(sourceRgb);
+      continue;
+    }
+    await expect(page.locator("[data-lut-preview]")).toBeVisible();
+    preview.push(await previewPixel(page, "bottom"));
+  }
   const exportPixels = JSON.parse(execFileSync(python, ["-c", `
 import json, subprocess, sys, tempfile
 from pathlib import Path
@@ -206,76 +255,11 @@ with tempfile.TemporaryDirectory() as temporary:
         result = subprocess.run(args, input=bytes(payload["sourceRgb"]) * 128, capture_output=True, check=True, timeout=30)
         pixels.append(list(result.stdout[:3]))
     print(json.dumps({"pixels": pixels}))
-`], { input: JSON.stringify({ table, strengths, sourceRgb: browser.sourceRgb }), encoding: "utf8", timeout: 100_000 })) as { pixels?: number[][]; unavailable?: boolean };
+`], { input: JSON.stringify({ table, strengths: strengths.map((value) => value / 100), sourceRgb }), encoding: "utf8", timeout: 100_000 })) as { pixels?: number[][]; unavailable?: boolean };
   test.skip(exportPixels.unavailable === true, "FFmpeg is required for the export comparison");
-  expect(browser.errors).toEqual([]);
+  await expect(page.locator("#lut-error")).toBeHidden();
   expect(exportPixels.pixels).toHaveLength(strengths.length);
-  browser.pixels.forEach((pixel, index) => pixel.forEach((value, channel) => {
+  preview.forEach((pixel, index) => pixel.forEach((value, channel) => {
     expect(Math.abs(value - exportPixels.pixels![index]![channel]!)).toBeLessThanOrEqual(1);
   }));
-});
-
-test("LUT preview reports invalid tables without covering the video", async ({ page }) => {
-  await page.setContent("<video></video>");
-  const result = await page.evaluate(async source => {
-    const { createLutPreview } = await import(URL.createObjectURL(new Blob([source], { type: "text/javascript" })));
-    const errors: string[] = [];
-    const preview = createLutPreview(document.querySelector("video")!, (message: string) => errors.push(message));
-    preview.set(new Float32Array(3), 2, 1);
-    const hidden = getComputedStyle(document.querySelector("canvas")!).display === "none";
-    preview.dispose();
-    return { errors, hidden };
-  }, moduleSource);
-  expect(result.errors).toEqual(["LUT preview data is invalid. Import the LUT again."]);
-  expect(result.hidden).toBe(true);
-});
-
-test("paused LUT previews consume late frame notifications and stop after disposal", async ({page}) => {
-  await page.setContent('<video muted style="width:80px;height:40px"></video>');
-  const result = await page.evaluate(async source => {
-    const {createLutPreview} = await import(URL.createObjectURL(new Blob([source], {type:"text/javascript"})));
-    const video = document.querySelector("video")!;
-    const input = document.createElement("canvas");
-    input.width = 80; input.height = 40;
-    input.getContext("2d")!.fillRect(0,0,80,40);
-    const stream = input.captureStream(0);
-    video.srcObject = stream;
-    await video.play(); video.pause();
-    // deliver compositor notifications independently of media events
-    const pending = new Map<number, VideoFrameRequestCallback>();
-    let sequence = 0;
-    video.requestVideoFrameCallback = callback => { pending.set(++sequence, callback); return sequence; };
-    video.cancelVideoFrameCallback = id => { pending.delete(id); };
-    const errors: string[] = [];
-    const preview = createLutPreview(video, (error: string) => errors.push(error));
-    preview.set(new Float32Array(24).fill(1),2,1);
-    const canvas = document.querySelector<HTMLCanvasElement>("[data-lut-preview]")!;
-    const gl = canvas.getContext("webgl2")!;
-    let draws = 0;
-    const draw = gl.drawArrays.bind(gl);
-    gl.drawArrays = (...args) => { draws++; draw(...args); };
-    video.dispatchEvent(new Event("pause"));
-    const listeningWhilePaused = pending.size;
-    const beforeFrame = draws;
-    const callback = pending.values().next().value;
-    pending.clear();
-    callback?.(performance.now(), {mediaTime:0, presentedFrames:1, expectedDisplayTime:0, presentationTime:0, width:80, height:40, processingDuration:0});
-    const repainted = draws > beforeFrame;
-    await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
-    const retainedPixel = new Uint8Array(4);
-    gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, retainedPixel);
-    const retained = retainedPixel[0];
-    video.dispatchEvent(new Event("loadstart"));
-    const listeningAfterSourceChange = pending.size;
-    preview.dispose();
-    const pendingAfterDispose = pending.size;
-    for (const track of stream.getTracks()) track.stop();
-    return {retained,listeningWhilePaused,repainted,listeningAfterSourceChange,pendingAfterDispose,errors};
-  }, moduleSource);
-  expect(result.errors).toEqual([]);
-  expect(result.listeningWhilePaused).toBe(1);
-  expect(result.repainted).toBe(true);
-  expect(result.retained).toBe(255);
-  expect(result.listeningAfterSourceChange).toBe(1);
-  expect(result.pendingAfterDispose).toBe(0);
 });

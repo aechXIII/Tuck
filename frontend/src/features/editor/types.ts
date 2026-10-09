@@ -1,5 +1,6 @@
 import type { CropRect, Segment } from "../../types/foundation.ts";
 import type { CutClipState } from "../export/cut-state.ts";
+import type { QueueItemState } from "../queue/queue-view.ts";
 
 export type { CropRect, Segment };
 
@@ -87,7 +88,8 @@ export interface EditorClip {
   transformIntentTouched: boolean;
   audioTimeline: AudioTimelineState | null;
   _statusText?: string;
-  _queueState?: string;
+  // the backend queue's state for this video, or "" when it has no queue item
+  _queueState?: QueueItemState | "";
   _queueItemId?: string;
   _resultPath?: string;
   _progress?: number;

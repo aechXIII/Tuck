@@ -4,7 +4,7 @@ import test from "node:test";
 import { accentColor, applyAppearance, createInterfaceSizer, interfaceSize } from "../../src/features/appearance/appearance.ts";
 import { formatClockTime, timeFormat } from "../../src/features/editor/time-format.ts";
 import { createSessionFiles, SESSION_FILES_MAX } from "../../src/features/library/session-files.ts";
-import { finishedNotification } from "../../src/features/queue/queue-view.ts";
+import { finishedNotification, type QueueItem } from "../../src/features/queue/queue-view.ts";
 import { nextPlaybackSpeed, PLAYBACK_SPEEDS } from "../../src/features/player/player.ts";
 import { cutPointNear } from "../../src/features/timeline/segments.ts";
 import {
@@ -198,7 +198,7 @@ test("only the first 500 videos are remembered", () => {
 });
 
 test("the finished notification counts only the batch that just ran", () => {
-  const items = [
+  const items: QueueItem[] = [
     { id: "a", state: "completed" },
     { id: "b", state: "completed" },
     { id: "c", state: "failed" },

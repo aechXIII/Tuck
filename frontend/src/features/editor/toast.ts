@@ -9,19 +9,57 @@ export interface ToastAction {
   run: () => void;
 }
 
+export interface ToastOptions {
+  // a later toast with the same key replaces this one instead of waiting behind it
+  readonly key?: string;
+  // runs once the toast goes away without its action being used
+  readonly onDismiss?: () => void;
+}
+
 interface ToastQueueItem {
   message: string;
   kind: string;
   action?: ToastAction | undefined;
+  options: ToastOptions;
 }
 
 interface ActiveToast {
   element: HTMLElement;
   id: string;
+  item: ToastQueueItem;
   remaining: number;
   started: number;
   timer: ReturnType<typeof setTimeout> | 0;
   closing?: boolean;
+  acted?: boolean;
+}
+
+/** What a confirmation asks; every caller says it, nothing is guessed from the message. */
+export interface ConfirmIntent {
+  readonly title: string;
+  readonly confirmLabel: string;
+  readonly cancelLabel: string;
+  // the confirm button is styled as destructive
+  readonly danger?: boolean;
+}
+
+export const discardChangesIntent: ConfirmIntent = {
+  title: "Unsaved changes",
+  confirmLabel: "Discard changes",
+  cancelLabel: "Keep editing",
+  danger: true,
+};
+
+export interface ModalOptions {
+  // the box's class; "mod-box" when not given
+  readonly className?: string;
+  // the id of the dialog's heading; the first heading in the box when not given
+  readonly labelledBy?: string;
+  readonly describedBy?: string;
+  // the first focusable control when not given
+  readonly initialFocus?: HTMLElement | null;
+  // runs however the dialog closes: a button, Escape, or a click outside it
+  readonly onClose?: () => void;
 }
 
 let toastId = 0;
@@ -34,7 +72,10 @@ export type CloseModal = () => void;
 
 let prepareModalBoxImpl: PrepareModalBox = defaultPrepareModalBox;
 let closeModImpl: CloseModal = defaultCloseMod;
-let confirmReturnFocus: HTMLElement | null = null;
+let modalReturnFocus: HTMLElement | null = null;
+let modalInert: HTMLElement[] = [];
+let modalOnClose: (() => void) | null = null;
+let modalTrapInstalled = false;
 
 export function configureModalHandlers(options: {
   prepareModalBox?: PrepareModalBox;
@@ -45,10 +86,6 @@ export function configureModalHandlers(options: {
 }
 
 function defaultPrepareModalBox(className: string): HTMLElement {
-  const reset = (
-    globalThis as { resetKeyboardShortcutsDialog?: (force: boolean) => void }
-  ).resetKeyboardShortcutsDialog;
-  if (typeof reset === "function") reset(false);
   const box = byId("mod-box");
   if (!box) throw new Error("Missing #mod-box");
   box.className = className;
@@ -57,54 +94,138 @@ function defaultPrepareModalBox(className: string): HTMLElement {
 
 function defaultCloseMod(): void {
   byId("mod-overlay")?.classList.remove("open");
-  const reset = (
-    globalThis as { resetKeyboardShortcutsDialog?: (force: boolean) => void }
-  ).resetKeyboardShortcutsDialog;
-  if (typeof reset === "function") reset(true);
-  pendingConfirm = null;
 }
 
 export function prepareModalBox(className: string): HTMLElement {
   return prepareModalBoxImpl(className);
 }
 
+function focusableIn(box: HTMLElement): HTMLElement[] {
+  return Array.from(
+    box.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
+    ),
+  ).filter((element) => element.getClientRects().length > 0);
+}
+
+// Tab stays inside the open dialog
+function trapModalFocus(event: KeyboardEvent): void {
+  if (event.key !== "Tab" || event.defaultPrevented) return;
+  const box = byId("mod-box");
+  if (!box || !byId("mod-overlay")?.classList.contains("open")) return;
+  const focusable = focusableIn(box);
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (!first || !last) {
+    event.preventDefault();
+    return;
+  }
+  const active = document.activeElement;
+  if (event.shiftKey && (active === first || !box.contains(active))) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && (active === last || !box.contains(active))) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
+// everything behind the dialog goes inert except notifications and the window's own title bar
+// controls, so the window can still be moved and closed
+function setBackgroundInert(overlay: HTMLElement): void {
+  const bar = byId("tb");
+  const toasts = byId("toast-ct");
+  const candidates = [
+    ...Array.from(document.body.children).filter(
+      (element) => element !== overlay && element !== bar && element !== toasts,
+    ),
+    ...Array.from(bar?.querySelectorAll(".tb-editor") ?? []),
+  ];
+  for (const element of candidates) {
+    // leave what something else made inert, such as the editor behind Settings, to its owner
+    if (!(element instanceof HTMLElement) || element.inert) continue;
+    element.inert = true;
+    modalInert.push(element);
+  }
+}
+
+function releaseBackground(): void {
+  for (const element of modalInert) element.inert = false;
+  modalInert = [];
+}
+
+/** Shows #mod-box as a modal dialog: labelled, focus kept inside, the rest of the app inert. */
+function openModal(box: HTMLElement, options: ModalOptions): void {
+  const overlay = byId("mod-overlay");
+  if (!overlay) return;
+  if (!overlay.classList.contains("open")) {
+    const active = document.activeElement;
+    modalReturnFocus = active instanceof HTMLElement && active !== document.body ? active : null;
+  }
+  modalOnClose = options.onClose ?? null;
+  const heading = options.labelledBy ? null : box.querySelector<HTMLElement>("h1, h2, h3");
+  if (heading && !heading.id) heading.id = "mod-title";
+  const labelledBy = options.labelledBy ?? heading?.id;
+  box.setAttribute("role", "dialog");
+  box.setAttribute("aria-modal", "true");
+  if (labelledBy) box.setAttribute("aria-labelledby", labelledBy);
+  else box.removeAttribute("aria-labelledby");
+  if (options.describedBy) box.setAttribute("aria-describedby", options.describedBy);
+  else box.removeAttribute("aria-describedby");
+  if (!modalTrapInstalled) {
+    overlay.addEventListener("keydown", trapModalFocus);
+    modalTrapInstalled = true;
+  }
+  overlay.classList.add("open");
+  releaseBackground();
+  setBackgroundInert(overlay);
+  (options.initialFocus ?? focusableIn(box)[0])?.focus();
+}
+
 export function closeMod(): void {
   byId("mod-box")?.removeAttribute("aria-describedby");
   closeModImpl();
-  if (confirmReturnFocus?.isConnected) confirmReturnFocus.focus();
-  confirmReturnFocus = null;
+  releaseBackground();
+  pendingConfirm = null;
+  const onClose = modalOnClose;
+  modalOnClose = null;
+  onClose?.();
+  if (modalReturnFocus?.isConnected) modalReturnFocus.focus();
+  modalReturnFocus = null;
 }
 
-export function showMod(html: string): void {
-  const box = prepareModalBox("mod-box");
+/** Shows static dialog markup; the first heading names the dialog unless options say otherwise. */
+export function showMod(html: string, options: ModalOptions = {}): HTMLElement {
+  const box = prepareModalBox(options.className ?? "mod-box");
   box.innerHTML = html;
-  byId("mod-overlay")?.classList.add("open");
+  openModal(box, options);
+  return box;
 }
 
 export function closeActiveModal(): void {
   closeMod();
 }
 
-export function toast(msg: string, kind = "", action?: ToastAction): void {
-  toastQueue.push({ message: msg, kind: kind || "", action });
+export function toast(msg: string, kind = "", action?: ToastAction, options: ToastOptions = {}): void {
+  const item: ToastQueueItem = { message: msg, kind: kind || "", action, options };
+  const key = options.key;
+  if (key && activeToast?.item.options.key === key && !activeToast.closing) {
+    replaceActiveToast(item);
+    return;
+  }
+  const queued = key ? toastQueue.findIndex((entry) => entry.options.key === key) : -1;
+  if (queued >= 0) toastQueue[queued] = item;
+  else toastQueue.push(item);
   showNextToast();
 }
 
-function showNextToast(): void {
-  if (activeToast || !toastQueue.length) return;
-  const item = toastQueue.shift();
-  if (!item) return;
+function fillToast(element: HTMLElement, id: string, item: ToastQueueItem): void {
   const presentation = notificationPresentation(item.kind);
-  const id = `t${++toastId}`;
-  const ct = byId("toast-ct");
-  if (!ct) return;
-  const div = document.createElement("div");
-  div.className = `toast ${presentation.kind}`;
-  div.id = id;
-  div.setAttribute("role", presentation.role);
-  div.setAttribute("aria-live", presentation.live);
-  div.setAttribute("aria-atomic", "true");
-  div.appendChild(createNotificationMessage(document, item.message));
+  element.className = `toast ${presentation.kind}`;
+  element.setAttribute("role", presentation.role);
+  element.setAttribute("aria-live", presentation.live);
+  element.setAttribute("aria-atomic", "true");
+  const parts: HTMLElement[] = [createNotificationMessage(document, item.message)];
   const action = item.action;
   if (action) {
     const button = document.createElement("button");
@@ -112,10 +233,11 @@ function showNextToast(): void {
     button.className = "tact";
     button.textContent = action.label;
     button.addEventListener("click", () => {
+      if (activeToast?.id === id) activeToast.acted = true;
       dismissToast(id);
       action.run();
     });
-    div.appendChild(button);
+    parts.push(button);
   }
   const close = document.createElement("button");
   close.type = "button";
@@ -124,12 +246,42 @@ function showNextToast(): void {
   close.addEventListener("click", () => {
     dismissToast(id);
   });
-  div.appendChild(close);
+  parts.push(close);
+  element.replaceChildren(...parts);
+}
+
+function replaceActiveToast(item: ToastQueueItem): void {
+  const current = activeToast;
+  if (!current) return;
+  const hadFocus = current.element.contains(document.activeElement);
+  current.item = item;
+  fillToast(current.element, current.id, item);
+  if (hadFocus) current.element.querySelector<HTMLElement>(".tact, .tcls")?.focus();
+  // the new message gets its full time on screen
+  current.remaining = notificationPresentation(item.kind).duration;
+  if (current.timer) {
+    clearTimeout(current.timer);
+    current.timer = 0;
+    resumeToastTimer();
+  }
+}
+
+function showNextToast(): void {
+  if (activeToast || !toastQueue.length) return;
+  const ct = byId("toast-ct");
+  if (!ct) return;
+  const item = toastQueue.shift();
+  if (!item) return;
+  const id = `t${++toastId}`;
+  const div = document.createElement("div");
+  div.id = id;
+  fillToast(div, id, item);
   ct.appendChild(div);
   activeToast = {
     element: div,
     id,
-    remaining: presentation.duration,
+    item,
+    remaining: notificationPresentation(item.kind).duration,
     started: 0,
     timer: 0,
   };
@@ -161,6 +313,7 @@ function dismissToast(id: string): void {
   clearTimeout(activeToast.timer);
   activeToast.closing = true;
   const closing = activeToast;
+  if (!closing.acted) closing.item.options.onDismiss?.();
   closing.element.classList.add("leaving");
   setTimeout(() => {
     if (closing.element.parentNode) {
@@ -171,65 +324,33 @@ function dismissToast(id: string): void {
   }, 140);
 }
 
-export function confirmToast(msg: string, cb: () => void, options: {
-  title: string;
-  confirmLabel: string;
-  cancelLabel: string;
-} | null = null): void {
-  confirmReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-  const lower = msg.toLowerCase();
-  const discard = lower.includes("discard");
-  const remove =
-    lower.includes("remove") || lower.includes("delete") || lower.includes("cancel");
-  const install = lower.includes("install");
-  const title = discard
-    ? "Unsaved changes"
-    : install
-      ? "Install update"
-      : remove
-        ? "Confirm removal"
-        : "Confirm action";
-  const confirmLabel = discard
-    ? "Discard changes"
-    : install
-      ? "Install update"
-      : lower.includes("delete")
-        ? "Delete"
-        : lower.includes("remove")
-          ? "Remove"
-          : lower.includes("cancel")
-            ? "Cancel processing"
-            : "Continue";
-  const cancelLabel = discard ? "Keep editing" : "Go back";
-  pendingConfirm = cb;
+export function confirmToast(msg: string, cb: () => void, intent: ConfirmIntent): void {
   const box = prepareModalBox("mod-box confirm-dialog");
-  box.setAttribute("role", "dialog");
-  box.setAttribute("aria-modal", "true");
-  box.setAttribute("aria-labelledby", "confirm-title");
-  box.setAttribute("aria-describedby", "confirm-copy");
-  box.innerHTML = `<h2 id="confirm-title"></h2>
-    <p class="confirm-copy" id="confirm-copy"></p>
-    <div class="confirm-actions">
-      <button type="button" class="btn2" id="confirm-cancel"></button>
-      <button type="button" class="btn1" id="confirm-accept"></button>
-    </div>`;
-  const titleEl = byId("confirm-title");
-  const copyEl = byId("confirm-copy");
-  if (titleEl) titleEl.textContent = options?.title ?? title;
-  if (copyEl) copyEl.textContent = msg;
-  const cancelButton = byId("confirm-cancel");
-  const acceptButton = byId("confirm-accept");
-  if (cancelButton) {
-    cancelButton.textContent = options?.cancelLabel ?? cancelLabel;
-    cancelButton.addEventListener("click", closeMod);
-  }
-  if (acceptButton) {
-    acceptButton.textContent = options?.confirmLabel ?? confirmLabel;
-    acceptButton.classList.toggle("danger", !options && (discard || remove));
-    acceptButton.addEventListener("click", acceptConfirm);
-  }
-  byId("mod-overlay")?.classList.add("open");
-  cancelButton?.focus();
+  const title = document.createElement("h2");
+  title.id = "confirm-title";
+  title.textContent = intent.title;
+  const copy = document.createElement("p");
+  copy.className = "confirm-copy";
+  copy.id = "confirm-copy";
+  copy.textContent = msg;
+  const actions = document.createElement("div");
+  actions.className = "confirm-actions";
+  const cancelButton = document.createElement("button");
+  cancelButton.type = "button";
+  cancelButton.className = "btn2";
+  cancelButton.id = "confirm-cancel";
+  cancelButton.textContent = intent.cancelLabel;
+  cancelButton.addEventListener("click", closeMod);
+  const acceptButton = document.createElement("button");
+  acceptButton.type = "button";
+  acceptButton.className = intent.danger ? "btn1 danger" : "btn1";
+  acceptButton.id = "confirm-accept";
+  acceptButton.textContent = intent.confirmLabel;
+  acceptButton.addEventListener("click", acceptConfirm);
+  actions.append(cancelButton, acceptButton);
+  box.replaceChildren(title, copy, actions);
+  openModal(box, { labelledBy: "confirm-title", describedBy: "confirm-copy", initialFocus: cancelButton });
+  pendingConfirm = cb;
 }
 
 function acceptConfirm(): void {

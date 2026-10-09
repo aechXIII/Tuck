@@ -9,7 +9,11 @@ import {
   type EditorSession,
 } from "../editor/session.ts";
 import { confirmToast, toast } from "../editor/toast.ts";
+import { withReason } from "../editor/format.ts";
+import type { DetachedHistory } from "../history/history.ts";
 import { createPreviewController, type PreviewController } from "../preview/preview-controller.ts";
+import { isQueueActive } from "../queue/queue-view.ts";
+import { mediaToolsMessage, missingMediaTools } from "../../state/settings-state.ts";
 import { SegmentEditing } from "../timeline/segments.ts";
 import {
   createClipCard,
@@ -49,6 +53,8 @@ export interface LibraryEncodingHooks {
   setInspectorTab?: (tab: string, persist?: boolean) => void;
   // every Library change ends in a render, so this sees each new list of videos
   libraryChanged?: (paths: readonly string[]) => void;
+  // Settings at its media tools, where FFmpeg and FFprobe are chosen
+  openMediaSettings?: () => void;
 }
 
 export interface LibraryAudioHooks {
@@ -58,7 +64,17 @@ export interface LibraryAudioHooks {
 }
 
 export interface LibraryHistoryHooks {
-  forgetClip?: (path: string) => void;
+  detachClip?: (path: string) => DetachedHistory;
+  restoreClip?: (detached: DetachedHistory) => void;
+  hasEdits?: (path: string) => boolean;
+}
+
+// a removed video waits here, edits and all, until its Undo is no longer offered
+interface RemovedClip {
+  readonly clip: EditorClip;
+  readonly index: number;
+  readonly selected: boolean;
+  readonly history: DetachedHistory | null;
 }
 
 export interface LibraryHost extends LibraryEncodingHooks {
@@ -79,6 +95,8 @@ export interface LibraryApi {
   retryProbeClip(path: string): Promise<void>;
   moveSelection(delta: number, event?: Event): void;
   isReordering(): boolean;
+  // says once, while it lasts, that FFmpeg or FFprobe can't be used
+  noticeMissingTools(): void;
   orderedClipKeys(): string[];
   metaStr(clip: EditorClip): { text: string };
   probe: ProbeCoordinator;
@@ -246,11 +264,28 @@ export function createLibrary(host: LibraryHost): LibraryApi {
     return session.clipOrder.slice();
   }
 
-  function errorSummary(error: unknown, limit = 140): string {
-    const text = String(error || "Unknown error")
-      .replace(/\s+/g, " ")
-      .trim();
-    return text.length > limit ? `${text.substring(0, limit)}…` : text;
+  // the whole reason stays on the card's tooltip and description; the row itself stays short
+  function fullReason(error: unknown): string {
+    return String(error || "").replace(/\s+/g, " ").trim();
+  }
+
+  let toolsNoticeShown = false;
+
+  function noticeMissingTools(): void {
+    const missing = missingMediaTools(session.appSettings);
+    if (!missing.length) {
+      toolsNoticeShown = false;
+      return;
+    }
+    if (toolsNoticeShown) return;
+    toolsNoticeShown = true;
+    const open = host.openMediaSettings;
+    toast(mediaToolsMessage(missing), "err", open ? { label: "Open settings", run: open } : undefined);
+  }
+
+  // an unreadable video is most likely down to a missing FFprobe, so its card says so
+  function readToolMissing(): boolean {
+    return missingMediaTools(session.appSettings).includes("FFprobe");
   }
 
   function clipDuration(clip: EditorClip): string {
@@ -276,8 +311,7 @@ export function createLibrary(host: LibraryHost): LibraryApi {
     const duration = clipDuration(clip);
     if (duration) first.push(duration);
     if (data?.width && data.height) first.push(`${data.width}×${data.height}`);
-    const encoding =
-      clip._queueState === "running" || clip._queueState === "processing";
+    const encoding = clip._queueState === "running";
     if (!encoding && clip.crop) {
       first.push(`crop ${clip.crop.width}×${clip.crop.height}`);
     }
@@ -501,6 +535,7 @@ export function createLibrary(host: LibraryHost): LibraryApi {
       retryProbe: (probePath) => {
         void retryProbeClip(probePath);
       },
+      openToolSettings: () => host.openMediaSettings?.(),
       beginReorder: beginClipReorder,
     });
     container.appendChild(div as unknown as Node);
@@ -526,18 +561,23 @@ export function createLibrary(host: LibraryHost): LibraryApi {
       return;
     }
     el.classList.remove("show");
+    const toolMissing = readToolMissing();
     const models: ClipCardModel[] = keys.map((path) => {
       const clip = session.clips[path]!;
+      const needsTool = !!clip.error && toolMissing && !clip._queueState;
       let statusLabel = clip._queueState === "failed" ? "" : clip._statusText || "";
       if (!statusLabel && clip._queueState === "completed") statusLabel = "Completed";
       if (!statusLabel && clip._queueState === "pending") statusLabel = "Pending";
       if (!statusLabel && clip._queueState === "running") statusLabel = "Encoding";
       if (!statusLabel && clip._queueState === "failed") statusLabel = "Export failed";
       if (!statusLabel && clip._queueState === "cancelled") statusLabel = "Cancelled";
+      if (!statusLabel && needsTool) statusLabel = "No FFprobe";
       if (!statusLabel && clip.error) statusLabel = "Can't read file";
       const detail = clip._queueState === "failed" && clip._queueError
-        ? errorSummary(clip._queueError)
-        : clip.error ? errorSummary(clip.error) : "";
+        ? fullReason(clip._queueError)
+        : needsTool
+          ? "Tuck can’t read videos without FFprobe. Choose it in Settings › Media, then retry."
+          : clip.error ? fullReason(clip.error) : "";
       const full = clip.probed ? clip.probeData?.duration || 0 : 0;
       return {
         path,
@@ -551,6 +591,7 @@ export function createLibrary(host: LibraryHost): LibraryApi {
         progress: clip._progress || 0,
         progressIndeterminate: clip._progressIndeterminate === true,
         probeError: !!clip.error,
+        setupTool: needsTool ? "FFprobe" : "",
         fileSize: clip._fileSize || 0,
         meta: metaStr(clip),
         thumbnail: clip.error ? "" : clip._thumbnail || "",
@@ -638,26 +679,38 @@ export function createLibrary(host: LibraryHost): LibraryApi {
     }
   }
 
-  function removeClip(path: string): void {
+  let removedClips: RemovedClip[] = [];
+
+  // takes a video out of the Library but keeps what Undo needs to put it back as it was
+  function takeClip(path: string): RemovedClip | null {
     const clip = session.clips[path];
-    if (clip) host.audio?.disposeClip?.(clip);
-    if (clip?.mediaToken && hasBackendClient()) {
+    if (!clip) return null;
+    const index = orderedClipKeys().indexOf(path);
+    // the preview asks for a new media link if the video comes back
+    if (clip.mediaToken && hasBackendClient()) {
       void getBackendClient().releaseMediaToken(clip.mediaToken);
       clip.mediaToken = null;
     }
-    host.history?.forgetClip?.(path);
-    void probe.dispose(path);
+    const history = host.history?.detachClip?.(path) ?? null;
     delete session.clips[path];
     session.clipOrder = session.clipOrder.filter((value) => value !== path);
-    if (session.selPath === path) {
-      session.selPath = null;
-      const empty = byId("empty");
-      const stage = byId("stage");
-      const playerBar = byId("player-bar");
-      if (empty) empty.style.display = "flex";
-      if (stage) stage.style.display = "none";
-      playerBar?.classList.remove("on");
-      preview.select(null);
+    return { clip, index, selected: session.selPath === path, history };
+  }
+
+  function clearStage(): void {
+    session.selPath = null;
+    const empty = byId("empty");
+    const stage = byId("stage");
+    const playerBar = byId("player-bar");
+    if (empty) empty.style.display = "flex";
+    if (stage) stage.style.display = "none";
+    playerBar?.classList.remove("on");
+    preview.select(null);
+  }
+
+  function afterRemoval(removedSelected: boolean): void {
+    if (removedSelected) {
+      clearStage();
       if (session.clipOrder.length) selectClip(session.clipOrder[0]!);
       else {
         host.audio?.selectVideo?.(null);
@@ -669,50 +722,111 @@ export function createLibrary(host: LibraryHost): LibraryApi {
     renderClips();
   }
 
-  function doRemoveAllClips(): void {
-    for (const path of Object.keys(session.clips)) {
-      const clip = session.clips[path];
-      if (clip) host.audio?.disposeClip?.(clip);
-      if (clip?.mediaToken && hasBackendClient()) {
-        void getBackendClient().releaseMediaToken(clip.mediaToken);
-        clip.mediaToken = null;
-      }
-      host.history?.forgetClip?.(path);
-      void probe.dispose(path);
+  // one message covers removals made while it is up, and its Undo brings them all back
+  function offerUndo(): void {
+    const first = removedClips[0];
+    if (!first) return;
+    const message = removedClips.length === 1
+      ? `Removed “${first.clip.name}”.`
+      : `Removed ${removedClips.length} videos.`;
+    toast(message, "info", { label: "Undo", run: undoRemoval }, {
+      key: "library-removed",
+      onDismiss: releaseRemovedClips,
+    });
+  }
+
+  // Undo is gone, so the removed videos' audio and probe state can be let go
+  function releaseRemovedClips(): void {
+    const released = removedClips;
+    removedClips = [];
+    for (const { clip } of released) {
+      host.audio?.disposeClip?.(clip);
+      if (!session.clips[clip.path]) void probe.dispose(clip.path);
     }
-    session.clips = {};
-    session.clipOrder = [];
-    session.selPath = null;
-    const empty = byId("empty");
-    const stage = byId("stage");
-    const playerBar = byId("player-bar");
-    if (empty) empty.style.display = "flex";
-    if (stage) stage.style.display = "none";
-    playerBar?.classList.remove("on");
-    preview.select(null);
+  }
+
+  function undoRemoval(): void {
+    const restoring = removedClips;
+    removedClips = [];
+    let reselect: string | null = null;
+    // later removals go back first, so each earlier position is right again
+    for (const entry of [...restoring].reverse()) {
+      const { clip } = entry;
+      // the same file was added again meanwhile; keep that one
+      if (session.clips[clip.path]) continue;
+      session.clips[clip.path] = clip;
+      session.clipOrder.splice(Math.max(0, Math.min(entry.index, session.clipOrder.length)), 0, clip.path);
+      if (entry.history) host.history?.restoreClip?.(entry.history);
+      // a read or picture still in flight when it was removed was dropped, so ask again
+      clip.probing = false;
+      if (entry.selected) reselect = clip.path;
+    }
+    const target = reselect ?? (session.selPath ? null : session.clipOrder[0] ?? null);
+    if (target) selectClip(target);
+    else renderClips();
+    const order = orderedClipKeys();
+    thumbnails.add(order.filter((path) => session.clips[path]?._thumbnail === undefined));
+    probes.add(order.filter((path) => {
+      const clip = session.clips[path];
+      return !!clip && !clip.probed && !clip.probing && !clip.error;
+    }));
+    // the Undo button has gone, so focus moves to the video that came back
+    const active = documentRef.activeElement;
+    if (!active || active === documentRef.body) focusCard(target ?? restoring[0]?.clip.path ?? "");
+  }
+
+  function focusCard(path: string): void {
+    for (const card of byId("clips")?.querySelectorAll<HTMLElement>(".clip[data-clip-path]") ?? []) {
+      if (card.dataset.clipPath === path) {
+        card.focus();
+        return;
+      }
+    }
+  }
+
+  function removeClip(path: string): void {
+    const removed = takeClip(path);
+    if (!removed) return;
+    removedClips.push(removed);
+    afterRemoval(removed.selected);
+    offerUndo();
+  }
+
+  function doRemoveAllClips(): void {
+    let removedSelected = false;
+    for (const path of orderedClipKeys()) {
+      const removed = takeClip(path);
+      if (!removed) continue;
+      removedClips.push(removed);
+      removedSelected ||= removed.selected;
+    }
+    if (removedSelected || session.selPath) clearStage();
     host.audio?.selectVideo?.(null);
     host.syncTimelineUI?.();
     host.syncTransformControls?.();
     host.renderClipDetails?.();
     renderClips();
+    offerUndo();
   }
 
   function removeAllClips(): void {
-    const keys = Object.keys(session.clips);
+    const keys = orderedClipKeys();
     if (!keys.length) return;
-    let hasActive = false;
-    for (const path of keys) {
-      const st = session.clips[path]?._queueState || "";
-      if (st === "running" || st === "processing" || st === "pending") {
-        hasActive = true;
-        break;
-      }
-    }
-    if (hasActive) {
-      confirmToast("Some files are still processing. Remove all anyway?", doRemoveAllClips);
-    } else {
+    const exporting = keys.some((path) => isQueueActive(session.clips[path]?._queueState));
+    const edited = keys.filter((path) => host.history?.hasEdits?.(path)).length;
+    if (!exporting && !edited) {
       doRemoveAllClips();
+      return;
     }
+    const notes: string[] = [];
+    if (edited) notes.push(edited === 1 ? "Edits to 1 video go with it." : `Edits to ${edited} videos go with them.`);
+    if (exporting) notes.push("Exports already in the queue keep going.");
+    confirmToast(notes.join(" "), doRemoveAllClips, {
+      title: keys.length === 1 ? "Remove the video?" : `Remove all ${keys.length} videos?`,
+      confirmLabel: "Remove all",
+      cancelLabel: "Keep videos",
+      danger: true,
+    });
   }
 
   function addFiles(paths: unknown, rejected?: unknown): void {
@@ -743,15 +857,15 @@ export function createLibrary(host: LibraryHost): LibraryApi {
       selectClip(firstAdded || session.clipOrder[0] || Object.keys(session.clips)[0] || "");
     }
     const rej = Array.isArray(rejected) ? rejected.length : 0;
+    const videos = (count: number): string => `${count} ${count === 1 ? "video" : "videos"}`;
+    const files = (count: number): string => `${count} ${count === 1 ? "file" : "files"}`;
+    // some videos went in, so skipped files are worth knowing about but are not an error
     if (rej && added) {
-      toast(
-        `Added ${added} file${added === 1 ? "" : "s"}; skipped ${rej} unsupported.`,
-        "err",
-      );
+      toast(`Added ${videos(added)}. Skipped ${files(rej)} Tuck can’t open.`, "info");
     } else if (rej && !added) {
-      toast(`No supported video files in drop (${rej} skipped).`, "err");
+      toast(`No videos added. Tuck can’t open ${rej === 1 ? "that file" : `those ${files(rej)}`}.`, "err");
     } else if (added > 1) {
-      toast(`Added ${added} files.`, "ok");
+      toast(`Added ${videos(added)}.`, "ok");
     }
   }
 
@@ -762,10 +876,10 @@ export function createLibrary(host: LibraryHost): LibraryApi {
       if (response.ok && Array.isArray(response.files) && response.files.length) {
         addFiles(response.files);
       } else if (!response.ok) {
-        toast(`Could not add files: ${response.error || "Unknown error"}`, "err");
+        toast(withReason("Couldn’t add videos.", response.error), "err");
       }
     } catch {
-      toast("Could not add files.", "err");
+      toast("Couldn’t add videos. Try again.", "err");
     }
   }
 
@@ -823,6 +937,7 @@ export function createLibrary(host: LibraryHost): LibraryApi {
     retryProbeClip,
     moveSelection,
     isReordering,
+    noticeMissingTools,
     orderedClipKeys,
     metaStr,
     probe,

@@ -367,6 +367,7 @@ export function installEditorRuntime(
       await queue?.pollQueue();
     },
     setInspectorTab: (tab, persist) => panels.setInspectorTab(tab, persist),
+    openMediaSettings: () => void settings.open("media"),
   });
 
   queue = installQueue({
@@ -374,7 +375,6 @@ export function installEditorRuntime(
     byId,
     getBackendClient,
     renderClips: () => { library.renderClips(); encoding?.updateActionButtons(); },
-    removeClip: (path) => library.removeClip(path),
     isReordering: () => library.isReordering(),
     workflow: () => encoding?.workflow() ?? 0,
     addFiles: (files) => library.addFiles(files),
@@ -432,6 +432,8 @@ export function installEditorRuntime(
       panels.applyVisibility(hiddenParts(session.appSettings.hidden_ui));
       applyPreferences();
       sessionFiles.sync(library.orderedClipKeys());
+      library.noticeMissingTools();
+      library.renderClips();
     },
     setAvailableEncoders: (encoders) => encoding.setAvailableEncoders(encoders),
     copyDiagnostics: () => queue.copyDiagnostics(),
@@ -480,35 +482,6 @@ export function installEditorRuntime(
     },
   });
 
-  for (const name of [
-    "setCropAspect",
-    "setVideoRotation",
-    "toggleVideoFlip",
-    "setSizingMode",
-    "resetVideoTransform",
-  ]) {
-    history.wrap(transform, name);
-  }
-  for (const name of [
-    "addSegment",
-    "removeActiveSegment",
-    "resetSegments",
-    "splitAtPlayhead",
-    "trimActiveSegmentToPlayhead",
-  ]) {
-    history.wrap(timeline, name);
-  }
-  for (const name of [
-    "toggleMaster",
-    "toggleSourceMute",
-    "toggleFragmentMute",
-    "toggleTrackMute",
-    "splitSelected",
-    "trimSelectedToPlayhead",
-    "deleteSelected",
-  ]) {
-    history.wrap(audio, name);
-  }
   history.updateButtons();
 
   function refreshEditor(): void {
@@ -819,6 +792,7 @@ export function installEditorRuntime(
         ),
         false,
       );
+      library.noticeMissingTools();
     } catch {
       toast("Could not load settings.", "err");
     }

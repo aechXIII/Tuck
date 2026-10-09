@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   createHistory,
+  recordedCommand,
   type HistoryHost,
 } from "../../src/features/history/history.ts";
 import {
@@ -104,9 +105,10 @@ const audioOwner = {
   },
 };
 
-History.wrap(transformOwner, "resetVideoTransform");
-History.wrap(timelineOwner, "trimActiveSegmentToPlayhead");
-History.wrap(audioOwner, "trimSelectedToPlayhead");
+const selected = (): string | null => selectedPath;
+const resetVideoTransform = recordedCommand(History, selected, transformOwner.resetVideoTransform);
+const trimActiveSegmentToPlayhead = recordedCommand(History, selected, timelineOwner.trimActiveSegmentToPlayhead);
+const trimSelectedToPlayhead = recordedCommand(History, selected, audioOwner.trimSelectedToPlayhead);
 History.updateButtons();
 
 test("edit history restores clip state and forgets removed clips", () => {
@@ -145,7 +147,7 @@ test("setting a video segment boundary can be undone and redone", () => {
   const clip = resetClip();
   clip.segments = [{ start: 0, end: 12 }];
 
-  timelineOwner.trimActiveSegmentToPlayhead();
+  trimActiveSegmentToPlayhead();
   assert.equal((clip.segments![0] as MutableSegment).start, 4);
 
   History.undo();
@@ -160,7 +162,7 @@ test("setting an audio fragment boundary can be undone", () => {
   const clip = resetClip();
   clip.audioTimeline = null;
 
-  audioOwner.trimSelectedToPlayhead();
+  trimSelectedToPlayhead();
   assert.equal(clip.audioTimeline!.tracks[0]!.clips[0]!.timelineStart, 4);
 
   History.undo();
@@ -179,7 +181,7 @@ test("reset all transforms can be undone and redone", () => {
     sizingMode: "fill",
   });
 
-  transformOwner.resetVideoTransform();
+  resetVideoTransform();
   assert.equal(clip.rotation, 0);
   assert.equal(clip.crop, null);
 
@@ -196,4 +198,57 @@ test("reset all transforms can be undone and redone", () => {
   assert.equal(clip.rotation, 0);
   assert.equal(clip.crop, null);
   History.forgetClip(selectedPath!);
+});
+
+test("a recorded command that runs another recorded command is one undo step", () => {
+  const clip = resetClip();
+  const inner = recordedCommand(History, selected, () => {
+    clip.rotation = 90;
+  });
+  const outer = recordedCommand(History, selected, () => {
+    clip.flipHorizontal = true;
+    inner();
+  });
+  outer();
+  History.undo();
+  assert.equal(clip.rotation, 0);
+  assert.equal(clip.flipHorizontal, false);
+  assert.equal(undoButton.disabled, true);
+  History.forgetClip(clip.path);
+});
+
+test("a removed video's steps come back with it, in their place", () => {
+  const first = resetClip();
+  const second = createEditorClip("second.mp4");
+  clips.set(second.path, second);
+  History.action(first.path, () => {
+    first.rotation = 90;
+  });
+  History.action(second.path, () => {
+    second.rotation = 180;
+  });
+  History.action(first.path, () => {
+    first.rotation = 270;
+  });
+  assert.equal(History.hasEdits(first.path), true);
+
+  const detached = History.detachClip(first.path);
+  clips.delete(first.path);
+  assert.equal(History.hasEdits(first.path), false);
+  History.undo();
+  assert.equal(second.rotation, 0);
+  History.redo();
+
+  clips.set(first.path, first);
+  History.restoreClip(detached);
+  assert.equal(History.hasEdits(first.path), true);
+  History.undo();
+  assert.equal(first.rotation, 90);
+  History.undo();
+  assert.equal(second.rotation, 0);
+  History.undo();
+  assert.equal(first.rotation, 0);
+  assert.equal(undoButton.disabled, true);
+  History.forgetClip(first.path);
+  History.forgetClip(second.path);
 });

@@ -426,7 +426,7 @@ export function installPanels(host: PanelsHost): PanelsApi {
     }
     host.clipDetails.render(detailsDoc, detailsEl, { state: "empty" }, host.retryProbeClip);
     if (!clip.probed || !clip.probeData) {
-      if (selectionMeta) selectionMeta.textContent = "Reading clip details…";
+      if (selectionMeta) selectionMeta.textContent = "Reading video details…";
       return;
     }
     const d = clip.probeData;

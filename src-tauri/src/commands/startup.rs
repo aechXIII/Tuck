@@ -79,8 +79,9 @@ pub fn handle_second_instance(
         )
     })?;
     // Opening Tuck again should still bring its existing window forward even
-    // when the second process did not receive a media-file argument.
-    let _ = window.set_focus();
+    // when the second process did not receive a media-file argument. Focus
+    // alone does not restore a minimized or hidden window.
+    bring_forward(&window);
     if launch.is_empty() {
         return Err(PublicBackendError::new(
             "INVALID_REQUEST",
@@ -97,6 +98,37 @@ pub fn handle_second_instance(
         let _ = window.emit("second-instance", &launch);
     }
     Ok(())
+}
+
+/// The window operations second-instance delivery needs, so their order can be tested.
+pub trait ForwardableWindow {
+    fn is_minimized(&self) -> bool;
+    fn unminimize(&self);
+    fn show(&self);
+    fn set_focus(&self);
+}
+
+impl<R: tauri::Runtime> ForwardableWindow for tauri::WebviewWindow<R> {
+    fn is_minimized(&self) -> bool {
+        tauri::WebviewWindow::is_minimized(self).unwrap_or(false)
+    }
+    fn unminimize(&self) {
+        let _ = tauri::WebviewWindow::unminimize(self);
+    }
+    fn show(&self) {
+        let _ = tauri::WebviewWindow::show(self);
+    }
+    fn set_focus(&self) {
+        let _ = tauri::WebviewWindow::set_focus(self);
+    }
+}
+
+pub fn bring_forward(window: &impl ForwardableWindow) {
+    if window.is_minimized() {
+        window.unminimize();
+    }
+    window.show();
+    window.set_focus();
 }
 
 pub fn try_forward_to_primary<F>(args: Vec<String>, forwarder: F) -> Result<(), PublicBackendError>
@@ -123,6 +155,43 @@ mod tests {
             files: names.iter().map(|name| (*name).to_owned()).collect(),
             task: None,
         }
+    }
+
+    struct RecordingWindow {
+        minimized: bool,
+        calls: std::cell::RefCell<Vec<&'static str>>,
+    }
+
+    impl ForwardableWindow for RecordingWindow {
+        fn is_minimized(&self) -> bool {
+            self.minimized
+        }
+        fn unminimize(&self) {
+            self.calls.borrow_mut().push("unminimize");
+        }
+        fn show(&self) {
+            self.calls.borrow_mut().push("show");
+        }
+        fn set_focus(&self) {
+            self.calls.borrow_mut().push("focus");
+        }
+    }
+
+    #[test]
+    fn a_minimized_window_is_restored_before_it_takes_focus() {
+        let window = RecordingWindow {
+            minimized: true,
+            calls: Default::default(),
+        };
+        bring_forward(&window);
+        assert_eq!(*window.calls.borrow(), ["unminimize", "show", "focus"]);
+
+        let window = RecordingWindow {
+            minimized: false,
+            calls: Default::default(),
+        };
+        bring_forward(&window);
+        assert_eq!(*window.calls.borrow(), ["show", "focus"]);
     }
 
     #[test]

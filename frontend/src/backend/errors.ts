@@ -1,5 +1,8 @@
 import type { BackendError, BackendResult } from "./types.ts";
 
+/** install_update failed after the shell had already stopped the backend for the installer */
+export const UPDATE_BACKEND_STOPPED = "UPDATE_BACKEND_STOPPED";
+
 export function backendFailure<T>(
   code: string,
   message: string,

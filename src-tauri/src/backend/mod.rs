@@ -5,5 +5,5 @@ mod process;
 pub(crate) mod protocol;
 
 pub use pending::PendingRequests;
-pub use process::{BackendLaunchConfig, BackendProcess, BackendState};
+pub use process::{BackendLaunchConfig, BackendProcess, BackendStarter, BackendState};
 pub use protocol::PublicBackendError;

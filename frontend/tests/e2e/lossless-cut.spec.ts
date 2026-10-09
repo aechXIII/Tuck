@@ -13,7 +13,7 @@ const plan: CutPlanPreview = {
   segments:[{requested:{start:time(0),end:time(12)},resolved:{start:time(0),end:time(11.9)},start_kind:"at_start",end_frames_moved:3,audio_source:null,audio_output:null,audio_packet_count:0,copied:null}],
 };
 
-async function setup(page: Page, options: {pending?:boolean; collapsed?:boolean; moved?:boolean; shortMoved?:boolean; files?:string[]; startupCut?:boolean; holdAnalysis?:boolean; holdExportPlan?:boolean; rejectExport?:boolean; scanning?:boolean; exact?:boolean; planOverride?:Partial<CutPlanPreview>} = {}) {
+async function setup(page: Page, options: {pending?:boolean; collapsed?:boolean; moved?:boolean; shortMoved?:boolean; files?:string[]; startupCut?:boolean; holdAnalysis?:boolean; holdExportPlan?:boolean; rejectExport?:boolean; scanning?:boolean; exact?:boolean; planOverride?:Partial<CutPlanPreview>; queueAfterEnqueue?:unknown} = {}) {
   const fixture = healthyBackendFixture();
   fixture.startup.files = options.files ?? [source];
   fixture.responses.probeFile = {data:{duration:12,width:1920,height:1080,fps:30,has_audio:true,video_codec:"h264",audio_codec:"aac",file_size:15000000}};
@@ -35,6 +35,7 @@ async function setup(page: Page, options: {pending?:boolean; collapsed?:boolean;
   if (options.holdAnalysis) fixture.holdMethods = ["getCutAnalysis"];
   if (options.rejectExport) fixture.responses.enqueueWithOptions = {ok:false,error:"The video changed. Check the cut points.",code:"SOURCE_CHANGED"};
   if (options.startupCut) fixture.responses.getSettings = {...fixture.responses.getSettings as object,last_task:"cut"};
+  if (options.queueAfterEnqueue) fixture.queueStateAfterEnqueue = options.queueAfterEnqueue;
   await installFakeBackend(page,fixture);
   await page.addInitScript(({planJson,collapsed,moved,holdExportPlan,exact}) => {
     const plan = JSON.parse(planJson) as CutPlanPreview;
@@ -93,6 +94,20 @@ test("lossless Inspector shows measured boundaries and exports only cut intent",
   expect(request).toMatchObject({operation:"cut",source,plan_fingerprint:plan.fingerprint});
   expect(request).not.toHaveProperty("profile_id");
   expect(request).not.toHaveProperty("video_encoder");
+});
+
+test("a cut waiting or running in the queue can't be exported again", async ({page}) => {
+  await setup(page,{queueAfterEnqueue:{items:[{id:"cut-1",source:"Morning ride.mp4",source_path:source,state:"running",progress:10}]}});
+  await page.locator("#wf-l").click();
+  await page.getByRole("button",{name:"Export cut",exact:true}).click();
+  const polls = () => page.evaluate(() => window.__tuckFakeBackendCalls?.filter(call => call.method === "getQueueState").length ?? 0);
+  await expect.poll(() => page.evaluate(() => window.__tuckFakeBackendCalls?.some(call => call.method === "enqueueWithOptions"))).toBe(true);
+  const afterEnqueue = await polls();
+  await expect.poll(polls).toBeGreaterThan(afterEnqueue + 1);
+  // the queue reports "running"; the button keeps saying so after every poll
+  await expect(page.locator("#btn-one")).toHaveText("Exporting…");
+  await expect(page.locator("#btn-one")).toBeDisabled();
+  expect(await page.evaluate(() => window.__tuckFakeBackendCalls?.filter(call => call.method === "enqueueWithOptions").length)).toBe(1);
 });
 
 test("checks Tuck cannot make and tracks it keeps are shown without blocking export", async ({page}) => {

@@ -1,3 +1,5 @@
+import type { QueueItemState } from "../queue/queue-view.ts";
+
 export interface ClipCardElement {
   className: string;
   textContent: string | null;
@@ -25,7 +27,7 @@ export interface ClipCardModel {
   name?: string;
   selected?: boolean | undefined;
   queueItemId?: string | undefined;
-  queueState?: string | undefined;
+  queueState?: QueueItemState | "" | undefined;
   resultPath?: string | undefined;
   statusLabel?: string | undefined;
   // the full reason behind a failed export or unreadable file, shown on hover
@@ -33,6 +35,8 @@ export interface ClipCardModel {
   progress?: number | undefined;
   progressIndeterminate?: boolean | undefined;
   probeError?: unknown;
+  // the media tool that has to be set up before this video can be read, e.g. "FFprobe"
+  setupTool?: string | undefined;
   fileSize?: number | undefined;
   meta?: { text?: unknown } | null | undefined;
   // a frame from the video, or "" while none is available
@@ -58,6 +62,7 @@ export interface ClipCardCallbacks {
   openResult(path: string): void;
   retry(id: string): void;
   retryProbe?(path: string): void;
+  openToolSettings?(): void;
   beginReorder(event: ClipCardEvent, path: string, card: ClipCardElement): void;
 }
 
@@ -112,7 +117,7 @@ function actionFromTarget(
 }
 
 function isExporting(model: ClipCardModel): boolean {
-  return model.queueState === "running" || model.queueState === "processing";
+  return model.queueState === "running";
 }
 
 function exportProgress(model: ClipCardModel): number {
@@ -178,7 +183,11 @@ function appendLine<T extends ClipCardElement>(
     if (attention) line.className = "c-line attention";
     const status = text(attention ? "c-status attention" : "c-status", model.statusLabel || "");
     if (model.detail) status.dataset.tip = model.detail;
-    if (model.probeError) {
+    if (model.setupTool) {
+      const setup = createActionButton(documentRef, "open-tool-settings", "Set up " + model.setupTool + " in Settings", "c-act");
+      setup.textContent = "Set up";
+      line.appendChild(setup);
+    } else if (model.probeError) {
       const retry = createActionButton(documentRef, "retry-probe", "Retry reading " + (model.name || ""), "c-act");
       retry.textContent = "Retry";
       line.appendChild(retry);
@@ -309,6 +318,7 @@ export function createClipCard<T extends ClipCardElement>(
       const queueItemId = model.queueItemId;
       if (queueItemId) callbacks.retry(queueItemId);
     } else if (action === "retry-probe") callbacks.retryProbe?.(model.path);
+    else if (action === "open-tool-settings") callbacks.openToolSettings?.();
     else if (action === "remove") callbacks.remove(model.path);
   });
   card.addEventListener("dblclick", () => {

@@ -1,6 +1,5 @@
 import type { BackendClient, SendToKind } from "../../backend/types.ts";
 import { bindDelegatedEvents } from "../../ui/delegated-events.ts";
-import { escapeHtml } from "../../ui/dom.ts";
 import { settingsSnapshot } from "../../state/settings-state.ts";
 import {
   encoderDisplaySummary,
@@ -33,7 +32,7 @@ import {
   supportsHardwareEncoders,
   type PlatformCapabilities,
 } from "../../platform/capabilities.ts";
-import { confirmToast, toast } from "../editor/toast.ts";
+import { confirmToast, discardChangesIntent, toast } from "../editor/toast.ts";
 import { lutSettings } from "../export/lut-controls.ts";
 import { HIDEABLE_PARTS, hiddenParts, isTaskName, visibleTasks, type HideablePart, type TaskName } from "./visibility.ts";
 import {
@@ -53,13 +52,17 @@ import {
   button,
   card,
   choiceGroup,
-  ICONS,
+  fragment,
+  h,
+  icon,
   row,
   section,
   select as selectControl,
   switchRow,
   textInput,
   toolbar,
+  type Content,
+  type IconName,
 } from "./settings-markup.ts";
 import {
   highlightParts,
@@ -71,8 +74,6 @@ import {
   type SettingsEntry,
   type SettingsPage,
 } from "./settings-search.ts";
-
-const esc = escapeHtml;
 
 export interface SettingsDeps {
   syncSelects: () => void;
@@ -213,15 +214,15 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
   interface ShellOptions {
     readonly title: string;
     readonly back?: { readonly action: string; readonly label: string };
-    readonly footer?: string;
+    readonly footer?: Content;
     readonly navPage: SettingsPage | null;
     readonly counts?: ReadonlyMap<SettingsPage, number>;
-    readonly headExtra?: string;
+    readonly headExtra?: Content;
     /** pages whose changes save as they are made say so in the header */
     readonly autosaves?: boolean;
   }
 
-  function renderShell(content: string, options: ShellOptions): void {
+  function renderShell(content: Content, options: ShellOptions): void {
     const opening = !isOpen();
     const previousFocus = document.activeElement;
     if (opening) {
@@ -239,7 +240,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       back.title = options.back.label;
     }
     el("settings-page-title").textContent = options.title;
-    el("settings-head-extra").innerHTML = options.headExtra ?? "";
+    el("settings-head-extra").replaceChildren(fragment(options.headExtra));
     const status = el("settings-status");
     status.textContent = "";
     status.classList.remove("on");
@@ -247,10 +248,9 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     el("settings-autosave").hidden = !options.autosaves;
     // the profile editor has its own Back and Save, so search can't replace it mid-edit
     el<HTMLInputElement>("settings-search").disabled = view === "editor";
-    el("settings-page").innerHTML = `<div class="settings-page-inner">${content}</div>`;
+    el("settings-page").replaceChildren(h("div", { class: "settings-page-inner" }, content));
     el("settings-page").scrollTop = 0;
-    const footer = el("settings-actions");
-    footer.innerHTML = options.footer ?? "";
+    el("settings-actions").replaceChildren(fragment(options.footer));
     paintNav(options.navPage, options.counts);
     if (opening) {
       if (options.navPage) byId(`settings-nav-${options.navPage}`)?.focus();
@@ -275,7 +275,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     }, 1600);
   }
 
-  function generalHtml(s: SettingsRecord): string {
+  function generalPage(s: SettingsRecord): Content {
     const hidden = hiddenParts(s.hidden_ui);
     const visible = visibleTasks(hidden);
     const taskOptions: (readonly [string, string])[] = [
@@ -292,7 +292,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     // a stored "audio" choice opens This video, which holds the audio controls
     const inspector = s.inspector_start_panel === "audio" ? "video" : str(s.inspector_start_panel, "export");
     const startTask = str(s.start_task, "last");
-    return section("Startup", card(
+    return [section("Startup", card(
       row({
         setting: "start-task",
         label: "Start with",
@@ -317,7 +317,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         checked: s.reopen_last_videos === true,
         attributes: { "data-settings-change": "save" },
       }),
-    )) + section("Playback", card(
+    )), section("Playback", card(
       switchRow({
         setting: "loop",
         id: "set-loop",
@@ -335,7 +335,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
           label: `${value} s`,
         })), str(s.skip_seconds, "3"), { "data-settings-change": "save" }),
       }),
-    )) + section("Timeline", card(
+    )), section("Timeline", card(
       row({
         setting: "time-format",
         label: "Time format",
@@ -346,28 +346,35 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
           { value: "frames", label: "1902 f", mono: true },
         ], str(s.time_format, "seconds"), { "data-settings-change": "save" }),
       }),
-    ));
+    ))];
   }
 
-  function appearanceHtml(s: SettingsRecord): string {
+  function appearancePage(s: SettingsRecord): Content {
     const accent = str(s.accent_color, "violet");
     const swatches = ACCENTS.map((option) =>
-      `<label class="set-swatch" data-accent-swatch="${option.value}" title="${option.label}"><input type="radio" name="set-accent" value="${option.value}" aria-label="${option.label}" data-settings-change="save"${option.value === accent ? " checked" : ""}></label>`).join("");
-    const preview = `<div class="set-accent-preview" aria-hidden="true">
-      <span class="set-btn primary">Compress this video</span>
-      <span class="set-preview-play"><svg viewBox="0 0 16 16"><path d="M6 4.5v7l5.5-3.5Z"></path></svg></span>
-      <span class="set-preview-switch"></span>
-      <span class="set-preview-slider"><span></span></span>
-      <span class="set-preview-clip">S1 · ${EXAMPLE_NAME}.mp4</span>
-    </div>`;
-    return section("Color", preview + card(
+      h("label", { class: "set-swatch", "data-accent-swatch": option.value, title: option.label },
+        h("input", {
+          type: "radio",
+          name: "set-accent",
+          value: option.value,
+          "aria-label": option.label,
+          "data-settings-change": "save",
+          checked: option.value === accent,
+        })));
+    const preview = h("div", { class: "set-accent-preview", "aria-hidden": "true" },
+      h("span", { class: "set-btn primary" }, "Compress this video"),
+      h("span", { class: "set-preview-play" }, icon("play")),
+      h("span", { class: "set-preview-switch" }),
+      h("span", { class: "set-preview-slider" }, h("span")),
+      h("span", { class: "set-preview-clip" }, `S1 · ${EXAMPLE_NAME}.mp4`));
+    return [section("Color", [preview, card(
       row({
         setting: "accent",
         label: "Accent color",
         description: "Used for the main button, selection, and focus.",
-        control: `<span class="set-swatches" role="radiogroup" aria-label="Accent color">${swatches}</span>`,
+        control: h("span", { class: "set-swatches", role: "radiogroup", "aria-label": "Accent color" }, swatches),
       }),
-    )) + section("Layout", card(
+    )]), section("Layout", card(
       row({
         setting: "interface-size",
         label: "Interface size",
@@ -395,10 +402,10 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         checked: s.animations !== false,
         attributes: { "data-settings-change": "save" },
       }),
-    ));
+    ))];
   }
 
-  function toolsHtml(s: SettingsRecord): string {
+  function toolsPage(s: SettingsRecord): Content {
     const hidden = hiddenParts(s.hidden_ui);
     const visible = visibleTasks(hidden);
     const part = (id: HideablePart, setting: string, label: string, description?: string, icon?: "compress" | "upscale" | "cut") =>
@@ -413,30 +420,36 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         disabled: isTaskName(id) && visible.length === 1 && visible[0] === id,
         attributes: { "data-hide-part": id, "data-settings-change": "visibility" },
       });
-    return section("Tasks", card(
+    return [section("Tasks", card(
       part("compression", "task-compression", "Compress", undefined, "compress"),
       part("upscale", "task-upscale", "Upscale", undefined, "upscale"),
       part("cut", "task-cut", "Lossless cut", undefined, "cut"),
-    ), { description: "Turn off tasks you never use. At least one stays on." })
-      + section("Editing tools", card(
-        part("panel_video", "panel-video", "Transform panel"),
-        part("panel_audio", "panel-audio", "Audio panel"),
-        part("audio_editing", "audio-editing", "Audio editing", "Add audio tracks to a video."),
-        part("frame_blending", "frame-blending", "Frame blending", "Still shown when a profile uses it."),
-        part("lut", "lut", "Color LUT", "Still shown when a profile uses it."),
-      ));
+    ), { description: "Turn off tasks you never use. At least one stays on." }),
+    section("Editing tools", card(
+      part("panel_video", "panel-video", "Transform panel"),
+      part("panel_audio", "panel-audio", "Audio panel"),
+      part("audio_editing", "audio-editing", "Audio editing", "Add audio tracks to a video."),
+      part("frame_blending", "frame-blending", "Frame blending", "Still shown when a profile uses it."),
+      part("lut", "lut", "Color LUT", "Still shown when a profile uses it."),
+    ))];
   }
 
-  function tokenButton(target: string): string {
+  function tokenButton(target: string): Content {
     const tokens = NAMING_TOKENS[target];
-    if (!tokens) return "";
-    const items = tokens
-      .map((token) => `<button type="button" role="menuitem" data-settings-click="insert-token" data-settings-target="${target}" data-settings-token="${token}">${token}</button>`)
-      .join("");
-    return `<details class="set-token-menu"><summary aria-label="Insert a name token" title="Insert a name token">${ICONS.braces}</summary><span class="set-token-popover" role="menu">${items}</span></details>`;
+    if (!tokens) return null;
+    const items = tokens.map((token) => h("button", {
+      type: "button",
+      role: "menuitem",
+      "data-settings-click": "insert-token",
+      "data-settings-target": target,
+      "data-settings-token": token,
+    }, token));
+    return h("details", { class: "set-token-menu" },
+      h("summary", { "aria-label": "Insert a name token", title: "Insert a name token" }, icon("braces")),
+      h("span", { class: "set-token-popover", role: "menu" }, items));
   }
 
-  function filesHtml(s: SettingsRecord): string {
+  function filesPage(s: SettingsRecord): Content {
     const location = str(s.output_location, s.output_dir ? "folder" : "source");
     const folder = str(s.output_dir);
     const naming = (setting: string, id: string, label: string, value: string, icon: "compress" | "upscale" | "cut") =>
@@ -447,14 +460,14 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         icon,
         description: exampleName(id, value),
         descriptionMono: true,
-        control: textInput(id, value, `${label} suffix`, {
+        control: [textInput(id, value, `${label} suffix`, {
           mono: true,
           width: 264,
           extra: tokenButton(id),
           attributes: { "data-settings-input": "preview-output", "data-settings-change": "save" },
-        }) + `<span class="set-row-error" id="${id}-error" role="alert" hidden></span>`,
+        }), fieldError(id)],
       });
-    return section("Where exports go", card(
+    return [section("Where exports go", card(
       row({
         setting: "save-to",
         label: "Save to",
@@ -471,10 +484,10 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         description: "Made next to each source file.",
         sub: true,
         hidden: location !== "subfolder",
-        control: textInput("set-subfolder", str(s.output_subfolder, "Tucked"), "Folder name", {
+        control: [textInput("set-subfolder", str(s.output_subfolder, "Tucked"), "Folder name", {
           width: 200,
           attributes: { "data-settings-change": "save" },
-        }) + `<span class="set-row-error" id="set-subfolder-error" role="alert" hidden></span>`,
+        }), fieldError("set-subfolder")],
       }),
       row({
         setting: "folder",
@@ -483,8 +496,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         descriptionMono: !!folder,
         sub: true,
         hidden: location !== "folder",
-        control: `<span id="set-od" data-path="${esc(folder)}" hidden></span>`
-          + button("Change…", { action: "browse-output", icon: "folder" }),
+        control: [pathHolder("set-od", folder), button("Change…", { action: "browse-output", icon: "folder" })],
       }),
       switchRow({
         setting: "keep-dates",
@@ -494,7 +506,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         checked: s.keep_file_dates === true,
         attributes: { "data-settings-change": "save" },
       }),
-    )) + section("File names", card(
+    )), section("File names", card(
       naming("suffix-compression", "set-cs", "Compress", str(s.compression_suffix, DEFAULT_COMPRESSION_SUFFIX) || DEFAULT_COMPRESSION_SUFFIX, "compress"),
       naming("suffix-upscale", "set-us", "Upscale", str(s.upscale_suffix, DEFAULT_UPSCALE_SUFFIX) || DEFAULT_UPSCALE_SUFFIX, "upscale"),
       naming("suffix-cut", "set-cuts", "Lossless cut", str(s.cut_suffix, DEFAULT_CUT_SUFFIX) || DEFAULT_CUT_SUFFIX, "cut"),
@@ -507,10 +519,10 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
           { value: "replace", label: "Replace the old file" },
         ], str(s.name_taken, "number"), { "data-settings-change": "save" }),
       }),
-    ), { description: "Added to the source name." });
+    ), { description: "Added to the source name." })];
   }
 
-  function queueHtml(s: SettingsRecord): string {
+  function queuePage(s: SettingsRecord): Content {
     const flag = (setting: string, id: string, label: string, checked: boolean, description?: string) =>
       switchRow({
         setting,
@@ -520,37 +532,38 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         checked,
         attributes: { "data-settings-change": "save" },
       });
-    return section("When the queue finishes", card(
+    return [section("When the queue finishes", card(
       flag("show-folder", "set-open-output-folder", "Show the last export in its folder", s.open_output_folder_after_queue === true),
       flag("clear-finished", "set-auto-clear", "Clear finished jobs", s.clear_completed_automatically === true,
         "Failed and cancelled jobs stay so you can retry them."),
       flag("notify", "set-notify", "Notify me", s.notify_when_done !== false,
         "Shows a notification when Tuck is in the background."),
-    )) + section("While exporting", card(
+    )), section("While exporting", card(
       flag("keep-awake", "set-keep-awake", "Keep the PC awake", s.keep_awake !== false,
         "Sleep waits until the queue is done."),
       flag("background", "set-background", "Run exports in the background", s.background_exports === true,
         "Keeps games smooth. Exports take a bit longer."),
-    ));
+    ))];
   }
 
-  function profilesHtml(s: SettingsRecord): string {
+  function profilesPage(s: SettingsRecord): Content {
     const scaler = str(s.default_scaler, "neighbor");
     const filters = choiceGroup("set-profile-filter", "Filter profiles", [
       { value: "all", label: "All" },
       { value: "compression", label: "Compress" },
       { value: "upscale", label: "Upscale" },
     ], profileFilter, { "data-settings-change": "filter-profiles" });
-    return toolbar(
-      filters,
-      '<span class="set-toolbar-spacer"></span>',
-      button("Import…", { action: "import-profiles", kind: "quiet" }),
-      button("New profile", { action: "new-profile", kind: "primary", icon: "plus" }),
-    ) + `<div data-setting="profiles">`
-      + section("Your profiles", `<div id="pm-own" class="set-card set-profile-list" role="list" aria-label="Your profiles"></div>`, { id: "pm-own-section" })
-      + section("Built in", `<div id="pm-builtin" class="set-card set-profile-list" role="list" aria-label="Built-in profiles"></div>`, { id: "pm-builtin-section" })
-      + `</div>`
-      + section("When a profile doesn’t choose", card(
+    return [
+      toolbar(
+        filters,
+        h("span", { class: "set-toolbar-spacer" }),
+        button("Import…", { action: "import-profiles", kind: "quiet" }),
+        button("New profile", { action: "new-profile", kind: "primary", icon: "plus" }),
+      ),
+      h("div", { "data-setting": "profiles" },
+        section("Your profiles", h("div", { id: "pm-own", class: "set-card set-profile-list", role: "list", "aria-label": "Your profiles" }), { id: "pm-own-section" }),
+        section("Built in", h("div", { id: "pm-builtin", class: "set-card set-profile-list", role: "list", "aria-label": "Built-in profiles" }), { id: "pm-builtin-section" })),
+      section("When a profile doesn’t choose", card(
         row({
           setting: "default-scaler",
           label: "Scaler",
@@ -559,37 +572,42 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
             SCALERS.find((name) => name.toLowerCase() === scaler) ?? "Neighbor",
             { "data-settings-change": "save" }),
         }),
-      ));
+      )),
+    ];
   }
 
-  function mediaHtml(s: SettingsRecord, caps: PlatformCapabilities): string {
+  function mediaPage(s: SettingsRecord, caps: PlatformCapabilities): Content {
     const tool = (setting: string, id: string, name: string, custom: string, detected: string, ready: boolean, browse: string, clear: string) => {
       const where = custom || detected;
       const state = ready
-        ? `<span class="set-state ok">Ready</span>`
-        : `<span class="set-state warn">${ICONS.warn}Not found</span>`;
-      const path = where ? `<span class="set-desc-sep">·</span><span class="mono set-path">${esc(where)}</span>` : "";
+        ? h("span", { class: "set-state ok" }, "Ready")
+        : h("span", { class: "set-state warn" }, icon("warn"), "Not found");
+      const path = where
+        ? [h("span", { class: "set-desc-sep" }, "·"), h("span", { class: "mono set-path" }, where)]
+        : null;
       return row({
         setting,
         label: name,
-        descriptionHtml: state + path,
-        control: `<span id="${id}" data-path="${esc(custom)}" hidden></span>`
-          + (custom ? button("Use automatic", { action: clear, kind: "quiet" }) : "")
-          + button(ready ? "Change…" : "Choose file…", { action: browse, ...(ready ? {} : { kind: "primary" as const }) }),
+        descriptionExtra: [state, path],
+        control: [
+          pathHolder(id, custom),
+          custom && button("Use automatic", { action: clear, kind: "quiet" }),
+          button(ready ? "Change…" : "Choose file…", { action: browse, ...(ready ? {} : { kind: "primary" as const }) }),
+        ],
       });
     };
     const encoders = encodersForPlatform(toStringArray(s.available_encoders), caps);
     const chips = encoders.length
-      ? `<span class="set-chips">${encoders.map((name) => `<span class="set-chip">${esc(encoderLabel(name))}</span>`).join("")}</span>`
-      : `<span>${esc(encoderDisplaySummary(encoders))}</span>`;
-    return section("Tools", card(
+      ? h("span", { class: "set-chips" }, encoders.map((name) => h("span", { class: "set-chip" }, encoderLabel(name))))
+      : h("span", {}, encoderDisplaySummary(encoders));
+    return [section("Tools", card(
       tool("ffmpeg", "set-ffmpeg", "FFmpeg", str(s.ffmpeg_path), str(s.detected_ffmpeg_path), !!s.ffmpeg_available, "browse-ffmpeg", "clear-ffmpeg"),
       tool("ffprobe", "set-ffprobe", "FFprobe", str(s.ffprobe_path), str(s.detected_ffprobe_path), !!s.ffprobe_available, "browse-ffprobe", "clear-ffprobe"),
-    )) + section("Encoding", card(
+    )), section("Encoding", card(
       row({
         setting: "encoders",
         label: "Available encoders",
-        descriptionHtml: chips,
+        descriptionExtra: chips,
         control: button("Rescan", { action: "refresh-encoders", icon: "refresh" }),
       }),
       row({
@@ -605,31 +623,32 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
           ["90", "Every 90 days"],
         ], String(num(s.encoder_cache_days)), { "data-settings-change": "save" }),
       }),
-    ));
+    ))];
   }
 
-  function aboutHtml(s: SettingsRecord, caps: PlatformCapabilities): string {
+  function aboutPage(s: SettingsRecord, caps: PlatformCapabilities): Content {
     const version = str(s.version);
     const updater = shouldShowUpdater(caps);
     const checked = str(s.last_update_check);
-    const hero = `<div class="set-row set-about" data-setting="updates">
-      <span class="set-row-text"><span class="set-logo">${ICONS.logo}</span><span class="set-row-words">
-        <span class="set-label set-about-name">Tuck <span class="mono">${esc(version)}</span></span>
-        <span class="set-desc">${updater ? (checked ? `Last checked ${esc(checked)}` : "Not checked yet") : "Updates aren’t available in this build."}</span>
-      </span></span>
-      <span class="set-row-control">${updater ? button("Check for updates", { action: "check-updates", icon: "refresh" }) : ""}</span>
-    </div>`;
+    const hero = h("div", { class: "set-row set-about", "data-setting": "updates" },
+      h("span", { class: "set-row-text" },
+        h("span", { class: "set-logo" }, icon("logo")),
+        h("span", { class: "set-row-words" },
+          h("span", { class: "set-label set-about-name" }, "Tuck ", h("span", { class: "mono" }, version)),
+          h("span", { class: "set-desc" },
+            updater ? (checked ? `Last checked ${checked}` : "Not checked yet") : "Updates aren’t available in this build."))),
+      h("span", { class: "set-row-control" },
+        updater && button("Check for updates", { action: "check-updates", icon: "refresh" })));
     const updates = updater
-      ? switchRow({
+      && switchRow({
         setting: "auto-updates",
         id: "set-check-updates",
         label: "Check for updates automatically",
         checked: s.check_updates !== false,
         attributes: { "data-settings-change": "save" },
-      })
-      : "";
-    return section(updater ? "Updates" : "Version", card(hero, updates))
-      + section("Help", card(
+      });
+    return [section(updater ? "Updates" : "Version", card(hero, updates)),
+      section("Help", card(
         row({
           setting: "diagnostics",
           label: "Diagnostic report",
@@ -646,14 +665,16 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
           label: "Settings folder",
           control: button("Open folder", { action: "open-support", value: "config", icon: "folder", label: "Open settings folder" }),
         }),
-      ))
-      + section("Your settings", card(
+      )),
+      section("Your settings", card(
         row({
           setting: "backup",
           label: "Back up",
           description: "Settings, profiles, and shortcuts in one file.",
-          control: button("Export…", { action: "export-settings", label: "Export settings to a file" })
-            + button("Import…", { action: "import-settings", label: "Import settings from a file" }),
+          control: [
+            button("Export…", { action: "export-settings", label: "Export settings to a file" }),
+            button("Import…", { action: "import-settings", label: "Import settings from a file" }),
+          ],
         }),
         row({
           setting: "reset",
@@ -661,26 +682,42 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
           description: "Your profiles are kept.",
           control: button("Reset…", { action: "reset-settings", kind: "danger", label: "Reset settings" }),
         }),
-      ));
+      ))];
   }
 
-  function keyboardHtml(): string {
-    const search = `<span class="set-input set-search-shortcuts">${ICONS.search}<input type="search" id="kb-search" placeholder="Search shortcuts" aria-label="Search shortcuts" autocomplete="off" data-settings-input="filter-shortcuts"></span>`;
-    return toolbar(
-      search,
-      '<span class="set-toolbar-spacer"></span>',
-      button("Shortcut guide", { action: "show-shortcut-guide", kind: "quiet" }),
-      button("Reset all", { action: "reset-shortcuts", kind: "quiet", id: "kb-reset-all" }),
-    ) + `<div id="kb-list" class="kb-list" data-setting="keyboard"></div><span id="kb-status" class="sr-only" role="status"></span>`;
+  function keyboardPage(): Content {
+    const search = h("span", { class: "set-input set-search-shortcuts" },
+      icon("search"),
+      h("input", {
+        type: "search",
+        id: "kb-search",
+        placeholder: "Search shortcuts",
+        "aria-label": "Search shortcuts",
+        autocomplete: "off",
+        "data-settings-input": "filter-shortcuts",
+      }));
+    return [
+      toolbar(
+        search,
+        h("span", { class: "set-toolbar-spacer" }),
+        button("Shortcut guide", { action: "show-shortcut-guide", kind: "quiet" }),
+        button("Reset all", { action: "reset-shortcuts", kind: "quiet", id: "kb-reset-all" }),
+      ),
+      h("div", { id: "kb-list", class: "kb-list", "data-setting": "keyboard" }),
+      h("span", { id: "kb-status", class: "sr-only", role: "status" }),
+    ];
   }
 
-  function explorerHtml(): string {
-    return section("Send to", `<div id="st-fixed" class="set-card"></div>`, {
-      description: "Right-click videos in File Explorer, then choose Send to.",
-    }) + `<div data-setting="profile-shortcuts">` + section("Profile shortcuts", `<div id="st-list" class="set-card"></div>`, {
-      description: "One Send to entry per profile.",
-      aside: button("Add", { action: "add-shortcut", icon: "plus", label: "Add profile shortcut" }),
-    }) + `</div>`;
+  function explorerPage(): Content {
+    return [
+      section("Send to", h("div", { id: "st-fixed", class: "set-card" }), {
+        description: "Right-click videos in File Explorer, then choose Send to.",
+      }),
+      h("div", { "data-setting": "profile-shortcuts" }, section("Profile shortcuts", h("div", { id: "st-list", class: "set-card" }), {
+        description: "One Send to entry per profile.",
+        aside: button("Add", { action: "add-shortcut", icon: "plus", label: "Add profile shortcut" }),
+      })),
+    ];
   }
 
   function checked(id: string): boolean {
@@ -771,8 +808,8 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
   function errorTarget(patch: SettingsRecord, error: string): string | null {
     const lower = error.toLowerCase();
     if (lower.includes("lossless cut suffix") || lower.includes("cut_suffix")) return "set-cuts";
-    if (lower.includes("compression_suffix")) return "set-cs";
-    if (lower.includes("upscale_suffix")) return "set-us";
+    if (lower.includes("compress suffix") || lower.includes("compression_suffix")) return "set-cs";
+    if (lower.includes("upscale suffix") || lower.includes("upscale_suffix")) return "set-us";
     if ((lower.includes("folder name") || lower.includes("export folder")) && "output_subfolder" in patch)
       return "set-subfolder";
     return null;
@@ -847,14 +884,16 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     clearSearchField();
     stopCapture();
     if (page === "profiles" && view === "editor") {
-      renderShell(profileEditorHtml(), {
+      renderShell(profileEditorPage(), {
         title: settingsProfileId ? "Edit profile" : "New profile",
         back: { action: "back-profiles", label: "Back to profiles" },
         navPage: "profiles",
-        footer: `<span class="settings-editor-note" id="settings-editor-note" role="status"></span>
-          <span class="set-toolbar-spacer"></span>
-          ${button("Cancel", { action: "back-profiles" })}
-          ${button("Save profile", { action: "save-profile", kind: "primary" })}`,
+        footer: [
+          h("span", { class: "settings-editor-note", id: "settings-editor-note", role: "status" }),
+          h("span", { class: "set-toolbar-spacer" }),
+          button("Cancel", { action: "back-profiles" }),
+          button("Save profile", { action: "save-profile", kind: "primary" }),
+        ],
       });
       await hydrateEditor(caps);
       const name = input("pe-name").value.trim();
@@ -864,17 +903,17 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       return;
     }
     const s = await loadSettings();
-    const builders: Record<SettingsPage, () => string> = {
-      general: () => generalHtml(s),
-      appearance: () => appearanceHtml(s),
-      tools: () => toolsHtml(s),
-      keyboard: () => keyboardHtml(),
-      files: () => filesHtml(s),
-      queue: () => queueHtml(s),
-      profiles: () => profilesHtml(s),
-      explorer: () => explorerHtml(),
-      media: () => mediaHtml(s, caps),
-      about: () => aboutHtml(s, caps),
+    const builders: Record<SettingsPage, () => Content> = {
+      general: () => generalPage(s),
+      appearance: () => appearancePage(s),
+      tools: () => toolsPage(s),
+      keyboard: () => keyboardPage(),
+      files: () => filesPage(s),
+      queue: () => queuePage(s),
+      profiles: () => profilesPage(s),
+      explorer: () => explorerPage(),
+      media: () => mediaPage(s, caps),
+      about: () => aboutPage(s, caps),
     };
     renderShell(builders[page](), {
       title: HEADINGS[page] ?? pageTitle(page),
@@ -896,7 +935,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
   function navigateSettings(target: string): void {
     const go = (): void => void open(target);
     if (view === "editor") {
-      if (editorDirty()) confirmToast("Discard unsaved profile changes?", go);
+      if (editorDirty()) confirmToast("Discard unsaved profile changes?", go, discardChangesIntent);
       else go();
       return;
     }
@@ -905,7 +944,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       confirmToast("Discard unsaved settings?", () => {
         settingsDirty = false;
         go();
-      });
+      }, discardChangesIntent);
     });
   }
 
@@ -915,13 +954,13 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         view = "page";
         settingsProfileId = "";
         closeSettingsWorkspace();
-      });
+      }, discardChangesIntent);
     void autosave().then(() => {
       if (!settingsDirty) return closeSettingsWorkspace();
       confirmToast("Discard unsaved settings?", () => {
         settingsDirty = false;
         closeSettingsWorkspace();
-      });
+      }, discardChangesIntent);
     });
   }
 
@@ -953,10 +992,8 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     if (clear) clear.hidden = true;
   }
 
-  function resultLabel(label: string, query: string): string {
-    return highlightParts(label, query)
-      .map((part) => (part.match ? `<mark>${esc(part.text)}</mark>` : esc(part.text)))
-      .join("");
+  function resultLabel(label: string, query: string): Content {
+    return highlightParts(label, query).map((part) => (part.match ? h("mark", {}, part.text) : part.text));
   }
 
   function renderSearch(query: string): void {
@@ -968,18 +1005,26 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     for (const entry of results) counts.set(entry.page, (counts.get(entry.page) ?? 0) + 1);
     const groups = SETTINGS_PAGES.filter((info) => counts.has(info.id)).map((info) => {
       const rows = results.filter((entry) => entry.page === info.id).map((entry) =>
-        `<button type="button" class="set-row set-result" data-settings-click="search-result" data-settings-value="${esc(entry.page)}|${esc(entry.id)}">
-          <span class="set-row-text"><span class="set-row-words"><span class="set-label">${resultLabel(entry.label, query)}</span></span></span>
-          <span class="set-row-control">${ICONS.chevron}</span>
-        </button>`).join("");
-      return `<section class="set-section"><header class="set-section-head"><span><h3 class="set-crumb">${esc(info.title)}</h3></span></header><div class="set-card">${rows}</div></section>`;
-    }).join("");
-    const empty = `<p class="set-empty">No settings match “${esc(query.trim())}”.</p>`;
-    renderShell(groups || empty, {
+        h("button", {
+          type: "button",
+          class: "set-row set-result",
+          "data-settings-click": "search-result",
+          "data-settings-value": `${entry.page}|${entry.id}`,
+        },
+        h("span", { class: "set-row-text" },
+          h("span", { class: "set-row-words" }, h("span", { class: "set-label" }, resultLabel(entry.label, query)))),
+        h("span", { class: "set-row-control" }, icon("chevron"))));
+      return h("section", { class: "set-section" },
+        h("header", { class: "set-section-head" }, h("span", {}, h("h3", { class: "set-crumb" }, info.title))),
+        h("div", { class: "set-card" }, rows));
+    });
+    const empty = h("p", { class: "set-empty" }, `No settings match “${query.trim()}”.`);
+    renderShell(groups.length ? groups : empty, {
       title: `Results for “${query.trim()}”`,
       navPage: null,
       counts,
-      headExtra: results.length ? `<span class="settings-head-count">${results.length} ${results.length === 1 ? "setting" : "settings"}</span>` : "",
+      headExtra: results.length > 0
+        && h("span", { class: "settings-head-count" }, `${results.length} ${results.length === 1 ? "setting" : "settings"}`),
     });
     snapshot = "";
     settingsDirty = false;
@@ -1181,7 +1226,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         await afterSettingsReplaced();
         toast("Settings reset.", "ok");
       });
-    }, { title: "Reset settings?", confirmLabel: "Reset", cancelLabel: "Keep my settings" });
+    }, { title: "Reset settings?", confirmLabel: "Reset", cancelLabel: "Keep my settings", danger: true });
   }
 
   async function afterSettingsReplaced(): Promise<void> {
@@ -1352,7 +1397,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
           toast(result.error ?? "Could not delete profile.", "err");
         }
       });
-    });
+    }, { title: "Delete profile?", confirmLabel: "Delete", cancelLabel: "Keep profile", danger: true });
   }
 
   async function importProfiles(): Promise<void> {
@@ -1376,7 +1421,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     else toast(result.error ?? "Could not export profile.", "err");
   }
 
-  function editorSwitch(id: string, label: string, setting: string, change = "profile-visibility", description?: string): string {
+  function editorSwitch(id: string, label: string, setting: string, change = "profile-visibility", description?: string): HTMLElement {
     return switchRow({
       setting,
       id,
@@ -1387,51 +1432,62 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     });
   }
 
-  function profileEditorHtml(): string {
-    const sizePresets = [20, 50, 100, 500]
-      .map((size) => `<button type="button" class="set-choice-btn mono" data-settings-click="profile-size" data-settings-value="${size}" aria-label="${size} MB">${size}</button>`)
-      .join("");
-    const task = `<span class="set-choice" role="group" aria-label="Task">
-      <button type="button" id="pe-c" class="set-choice-btn" data-settings-click="profile-task" data-settings-value="compression">Compress</button>
-      <button type="button" id="pe-u" class="set-choice-btn" data-settings-click="profile-task" data-settings-value="upscale">Upscale</button>
-    </span>`;
+  function emptySelect(id: string, change?: string): HTMLElement {
+    return h("select", { id, class: "set-select", "data-settings-change": change });
+  }
+
+  function profileEditorPage(): Content {
+    const sizePresets = [20, 50, 100, 500].map((size) => h("button", {
+      type: "button",
+      class: "set-choice-btn mono",
+      "data-settings-click": "profile-size",
+      "data-settings-value": String(size),
+      "aria-label": `${size} MB`,
+    }, String(size)));
+    const taskButton = (id: string, value: Workflow, label: string) =>
+      h("button", { type: "button", id, class: "set-choice-btn", "data-settings-click": "profile-task", "data-settings-value": value }, label);
+    const task = h("span", { class: "set-choice", role: "group", "aria-label": "Task" },
+      taskButton("pe-c", "compression", "Compress"),
+      taskButton("pe-u", "upscale", "Upscale"));
     const scalers = SCALERS.map((name) => [name, name] as const);
-    return section("Profile", card(
+    return [section("Profile", card(
       row({ setting: "pe-name", label: "Profile name", labelFor: "pe-name", control: textInput("pe-name", "", "Profile name", { width: 280, attributes: { "data-settings-input": "editor-name" } }) }),
       row({ setting: "pe-task", label: "Task", control: task }),
-    )) + `<div id="pe-size-sec">` + section("Size", card(
+    )), h("div", { id: "pe-size-sec" }, section("Size", card(
       row({
         setting: "pe-size",
         label: "Target size",
         labelFor: "pe-size",
-        control: `<span class="set-choice" role="group" aria-label="Size presets">${sizePresets}</span>`
-          + textInput("pe-size", "50", "Target size in MB", { mono: true, width: 96, unit: "MB", attributes: { type: "number", min: "2", "data-settings-input": "profile-size" } }),
+        control: [
+          h("span", { class: "set-choice", role: "group", "aria-label": "Size presets" }, sizePresets),
+          textInput("pe-size", "50", "Target size in MB", { mono: true, width: 96, unit: "MB", attributes: { type: "number", min: "2", "data-settings-input": "profile-size" } }),
+        ],
       }),
-    )) + `</div>` + section("Video", card(
-      `<div id="pe-source-res-row">${editorSwitch("pe-source-res", "Use source resolution", "pe-source-res")}</div>`,
-      `<div class="set-row sub" id="pe-dim" data-setting="pe-dim"><span class="set-row-text"><span class="set-row-words"><span class="set-label">Resolution</span></span></span><span class="set-row-control">`
-        + textInput("pe-w", "1920", "Custom width", { mono: true, width: 88, attributes: { type: "number", min: "1" } })
-        + `<span class="set-times" aria-hidden="true">×</span>`
-        + textInput("pe-h", "1080", "Custom height", { mono: true, width: 88, attributes: { type: "number", min: "1" } })
-        + `</span></div>`,
-      `<div id="pe-scaler-row">${row({ setting: "pe-scaler", label: "Scaler", labelFor: "pe-scaler", sub: true, control: selectControl("pe-scaler", scalers, "Neighbor") })}</div>`,
+    ))), section("Video", card(
+      h("div", { id: "pe-source-res-row" }, editorSwitch("pe-source-res", "Use source resolution", "pe-source-res")),
+      h("div", { class: "set-row sub", id: "pe-dim", "data-setting": "pe-dim" },
+        h("span", { class: "set-row-text" }, h("span", { class: "set-row-words" }, h("span", { class: "set-label" }, "Resolution"))),
+        h("span", { class: "set-row-control" },
+          textInput("pe-w", "1920", "Custom width", { mono: true, width: 88, attributes: { type: "number", min: "1" } }),
+          h("span", { class: "set-times", "aria-hidden": "true" }, "×"),
+          textInput("pe-h", "1080", "Custom height", { mono: true, width: 88, attributes: { type: "number", min: "1" } }))),
+      h("div", { id: "pe-scaler-row" }, row({ setting: "pe-scaler", label: "Scaler", labelFor: "pe-scaler", sub: true, control: selectControl("pe-scaler", scalers, "Neighbor") })),
       editorSwitch("pe-source-fps", "Use source frame rate", "pe-source-fps"),
-      `<div id="pe-fps-row">${row({
+      h("div", { id: "pe-fps-row" }, row({
         setting: "pe-fps",
         label: "Frame rate",
         labelFor: "pe-fps",
         sub: true,
         control: textInput("pe-fps", "30", "Custom frame rate", { mono: true, width: 96, unit: "fps", attributes: { type: "number", step: "any", min: "0.1", max: "240", "data-settings-input": "profile-fps" } }),
-      })}</div>`,
-    )) + section("Transform", card(
+      })),
+    )), section("Transform", card(
       editorSwitch("pe-transform-enabled", "Apply transform settings from this profile", "pe-transform", "profile-visibility",
         "Saves the crop shape, not its exact position or size."),
-      `<div id="pe-transform-fields">`
-        + row({ setting: "pe-aspect", label: "Target aspect", labelFor: "pe-aspect", sub: true, control: selectControl("pe-aspect", [["free", "Free"], ["16:9", "16:9"], ["9:16", "9:16"], ["1:1", "1:1"], ["4:3", "4:3"]], "free") })
-        + row({ setting: "pe-sizing", label: "Sizing", labelFor: "pe-sizing", sub: true, control: selectControl("pe-sizing", [["fit", "Fit"], ["fill", "Fill"], ["stretch", "Stretch"]], "fit") })
-        + row({ setting: "pe-rotation", label: "Rotation", labelFor: "pe-rotation", sub: true, control: selectControl("pe-rotation", [["0", "None"], ["90", "90° clockwise"], ["180", "180°"], ["270", "90° counterclockwise"]], "0") })
-        + `</div>`,
-    )) + section("Audio", card(
+      h("div", { id: "pe-transform-fields" },
+        row({ setting: "pe-aspect", label: "Target aspect", labelFor: "pe-aspect", sub: true, control: selectControl("pe-aspect", [["free", "Free"], ["16:9", "16:9"], ["9:16", "9:16"], ["1:1", "1:1"], ["4:3", "4:3"]], "free") }),
+        row({ setting: "pe-sizing", label: "Sizing", labelFor: "pe-sizing", sub: true, control: selectControl("pe-sizing", [["fit", "Fit"], ["fill", "Fill"], ["stretch", "Stretch"]], "fit") }),
+        row({ setting: "pe-rotation", label: "Rotation", labelFor: "pe-rotation", sub: true, control: selectControl("pe-rotation", [["0", "None"], ["90", "90° clockwise"], ["180", "180°"], ["270", "90° counterclockwise"]], "0") })),
+    )), section("Audio", card(
       editorSwitch("pe-audio-source", "Keep source audio", "pe-audio-source"),
       row({
         setting: "pe-audio",
@@ -1440,13 +1496,13 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         sub: true,
         control: textInput("pe-audio", "128", "Audio bitrate in kbps", { mono: true, width: 104, unit: "kbps", attributes: { type: "number", min: "0", max: "320" } }),
       }),
-    )) + section("Encoding", card(
+    )), section("Encoding", card(
       row({
         setting: "pe-enc",
         label: "Encoder",
         labelFor: "pe-enc",
         description: "Hardware is faster; software can make smaller files.",
-        control: `<select id="pe-enc" class="set-select" data-settings-change="profile-encoder"></select>`,
+        control: emptySelect("pe-enc", "profile-encoder"),
       }),
       row({
         setting: "pe-speed",
@@ -1454,26 +1510,38 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         labelFor: "pe-speed",
         control: selectControl("pe-speed", [["fast", "Fast"], ["balanced", "Balanced"], ["best", "Best compression"]], "balanced", { "data-settings-change": "profile-speed" }),
       }),
-      `<div id="pe-two-pass-row">${switchRow({
+      h("div", { id: "pe-two-pass-row" }, switchRow({
         setting: "pe-two-pass",
         id: "pe-two-pass",
         label: "Two-pass encoding",
         description: "Two-pass is available only for software compression.",
         descriptionId: "pe-two-pass-note",
         checked: false,
-      })}</div>`,
-      `<button type="button" class="set-row set-disclosure" id="pe-advanced-button" data-settings-click="toggle-advanced" aria-expanded="false" aria-controls="pe-advanced">
-        <span class="set-row-text"><span class="set-row-words"><span class="set-label">Advanced encoding</span><span class="set-desc">Preset, quality method, bitrate, and tune</span></span></span>
-        <span class="set-row-control">${ICONS.chevron}</span>
-      </button>`,
-      `<div id="pe-advanced" class="hid">`
-        + row({ setting: "pe-preset", label: "Native FFmpeg preset", labelFor: "pe-preset", sub: true, control: `<select id="pe-preset" class="set-select" data-settings-change="profile-preset"></select>` })
-        + `<div id="pe-rc-row">${row({ setting: "pe-rc", label: "Quality method", labelFor: "pe-rc", sub: true, control: `<select id="pe-rc" class="set-select" data-settings-change="profile-visibility"></select>` })}</div>`
-        + `<div id="pe-quality-row" class="set-row sub" data-setting="pe-quality"><span class="set-row-text"><span class="set-row-words"><label class="set-label" id="pe-quality-label" for="pe-quality">CQ</label><span class="set-desc">Lower value means higher quality.</span></span></span><span class="set-row-control">${textInput("pe-quality", "23", "Quality value", { mono: true, width: 88, attributes: { type: "number", min: "0", max: "51" } })}</span></div>`
-        + `<div id="pe-bitrate-row">${row({ setting: "pe-bitrate", label: "Bitrate", labelFor: "pe-bitrate", sub: true, control: textInput("pe-bitrate", "2000", "Bitrate in kbps", { mono: true, width: 112, unit: "kbps", attributes: { type: "number", min: "50", max: "50000" } }) })}</div>`
-        + `<div id="pe-tune-row">${row({ setting: "pe-tune", label: "Tune", labelFor: "pe-tune", sub: true, control: `<select id="pe-tune" class="set-select"></select>` })}</div>`
-        + `</div>`,
-    ));
+      })),
+      h("button", {
+        type: "button",
+        class: "set-row set-disclosure",
+        id: "pe-advanced-button",
+        "data-settings-click": "toggle-advanced",
+        "aria-expanded": "false",
+        "aria-controls": "pe-advanced",
+      },
+      h("span", { class: "set-row-text" }, h("span", { class: "set-row-words" },
+        h("span", { class: "set-label" }, "Advanced encoding"),
+        h("span", { class: "set-desc" }, "Preset, quality method, bitrate, and tune"))),
+      h("span", { class: "set-row-control" }, icon("chevron"))),
+      h("div", { id: "pe-advanced", class: "hid" },
+        row({ setting: "pe-preset", label: "Native FFmpeg preset", labelFor: "pe-preset", sub: true, control: emptySelect("pe-preset", "profile-preset") }),
+        h("div", { id: "pe-rc-row" }, row({ setting: "pe-rc", label: "Quality method", labelFor: "pe-rc", sub: true, control: emptySelect("pe-rc", "profile-visibility") })),
+        h("div", { id: "pe-quality-row", class: "set-row sub", "data-setting": "pe-quality" },
+          h("span", { class: "set-row-text" }, h("span", { class: "set-row-words" },
+            h("label", { class: "set-label", id: "pe-quality-label", for: "pe-quality" }, "CQ"),
+            h("span", { class: "set-desc" }, "Lower value means higher quality."))),
+          h("span", { class: "set-row-control" },
+            textInput("pe-quality", "23", "Quality value", { mono: true, width: 88, attributes: { type: "number", min: "0", max: "51" } }))),
+        h("div", { id: "pe-bitrate-row" }, row({ setting: "pe-bitrate", label: "Bitrate", labelFor: "pe-bitrate", sub: true, control: textInput("pe-bitrate", "2000", "Bitrate in kbps", { mono: true, width: 112, unit: "kbps", attributes: { type: "number", min: "50", max: "50000" } }) })),
+        h("div", { id: "pe-tune-row" }, row({ setting: "pe-tune", label: "Tune", labelFor: "pe-tune", sub: true, control: emptySelect("pe-tune") }))),
+    ))];
   }
 
   let editorCapabilities: PlatformCapabilities | null = null;
@@ -1709,7 +1777,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       settingsProfileId = "";
       void open("profiles");
     };
-    if (editorDirty()) confirmToast("Discard unsaved profile changes?", goBack);
+    if (editorDirty()) confirmToast("Discard unsaved profile changes?", goBack, discardChangesIntent);
     else goBack();
   }
 
@@ -1788,7 +1856,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         const actions = document.createElement("span");
         actions.className = "set-row-control kb-actions";
         if (command.changed) {
-          const reset = iconButton(ICONS.reset, `Reset ${command.label} to its default keys`, () =>
+          const reset = iconButton("reset", `Reset ${command.label} to its default keys`, () =>
             void saveShortcuts(withoutOverride(command.id), `${command.label} is back to its default keys.`, command.id));
           actions.appendChild(reset);
         }
@@ -1873,7 +1941,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     const note = document.createElement("div");
     note.className = "kb-conflict";
     note.setAttribute("role", "alert");
-    note.insertAdjacentHTML("afterbegin", ICONS.warn);
+    note.appendChild(icon("warn"));
     note.appendChild(elementWithText("span", `${keys} is used by ${taken.map((item) => item.label).join(", ")}.`));
     const use = shortcutButton("Use here", () => void saveShortcuts(next, `${done} ${taken.map((item) => item.label).join(", ")} lost it.`, command.id));
     const cancel = shortcutButton("Cancel", () => {
@@ -1911,7 +1979,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
   function resetAllShortcuts(): void {
     confirmToast("Every action goes back to its default keys.", () => {
       void saveShortcuts({}, "Every shortcut is back to its default keys.");
-    }, { title: "Reset keyboard shortcuts?", confirmLabel: "Reset all", cancelLabel: "Keep my keys" });
+    }, { title: "Reset keyboard shortcuts?", confirmLabel: "Reset all", cancelLabel: "Keep my keys", danger: true });
   }
 
   interface ShortcutRecord {
@@ -1935,12 +2003,9 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     { kind: "cut", name: "Tuck Lossless Cut", note: "Opens the videos in Tuck, ready to cut.", task: "cut" },
   ];
 
-  const SEND_TO_ICONS: Readonly<Record<SendToKind, string>> = {
-    open: `<span class="set-icon set-icon-logo">${ICONS.logo}</span>`,
-    compress: ICONS.compress,
-    upscale: ICONS.upscale,
-    cut: ICONS.cut,
-  };
+  function sendToIcon(kind: SendToKind): Node {
+    return kind === "open" ? h("span", { class: "set-icon set-icon-logo" }, icon("logo")) : icon(kind);
+  }
 
   function shortcutButton(label: string, run: () => void, kind?: "quiet" | "danger" | "primary"): HTMLButtonElement {
     const node = document.createElement("button");
@@ -1951,13 +2016,13 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     return node;
   }
 
-  function iconButton(icon: string, label: string, run: () => void): HTMLButtonElement {
+  function iconButton(name: IconName, label: string, run: () => void): HTMLButtonElement {
     const node = document.createElement("button");
     node.type = "button";
     node.className = "set-icon-btn";
     node.setAttribute("aria-label", label);
     node.title = label;
-    node.insertAdjacentHTML("afterbegin", icon);
+    node.appendChild(icon(name));
     node.addEventListener("click", run);
     return node;
   }
@@ -1965,24 +2030,15 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
   function sendToRow(item: (typeof SEND_TO_SHORTCUTS)[number], installed: ShortcutRecord | undefined): HTMLElement {
     const broken = !!installed && installed.status !== "ok";
     const id = `st-${item.kind}`;
-    const wrapper = document.createElement("div");
     if (broken) {
-      wrapper.className = "set-row has-icon";
-      wrapper.dataset.setting = id;
-      wrapper.insertAdjacentHTML("afterbegin", `<span class="set-row-text">${SEND_TO_ICONS[item.kind]}<span class="set-row-words"><span class="set-label"></span><span class="set-desc"></span></span></span>`);
-      wrapper.querySelector(".set-label")!.textContent = item.name;
-      wrapper.querySelector(".set-desc")!.textContent = item.note;
-      const control = document.createElement("span");
-      control.className = "set-row-control";
-      control.insertAdjacentHTML("afterbegin", `<span class="set-state warn">${ICONS.warn}Needs repair</span>`);
-      control.append(
-        shortcutButton("Repair", () => void repairShortcut(installed)),
-        shortcutButton("Remove", () => removeShortcut(installed, item.name), "quiet"),
-      );
-      wrapper.appendChild(control);
-      return wrapper;
+      return h("div", { class: "set-row has-icon", "data-setting": id },
+        shortcutRowText(sendToIcon(item.kind), item.name, item.note),
+        h("span", { class: "set-row-control" },
+          h("span", { class: "set-state warn" }, icon("warn"), "Needs repair"),
+          shortcutButton("Repair", () => void repairShortcut(installed)),
+          shortcutButton("Remove", () => removeShortcut(installed, item.name), "quiet")));
     }
-    wrapper.innerHTML = switchRow({
+    const rowNode = switchRow({
       setting: id,
       id,
       label: item.name,
@@ -1990,9 +2046,8 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       checked: !!installed,
       attributes: { "data-sendto-kind": item.kind },
     });
-    const rowNode = wrapper.firstElementChild as HTMLElement;
     rowNode.classList.add("has-icon");
-    rowNode.querySelector(".set-row-text")?.insertAdjacentHTML("afterbegin", SEND_TO_ICONS[item.kind]);
+    rowNode.querySelector(".set-row-text")?.prepend(sendToIcon(item.kind));
     const toggle = rowNode.querySelector<HTMLInputElement>("input");
     toggle?.addEventListener("change", () => {
       if (toggle.checked) {
@@ -2025,19 +2080,12 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     list.replaceChildren();
     for (const shortcut of shortcuts.filter((item) => item.type === "profile")) {
       const name = profileShortcutName(shortcut.profile_id || shortcut.name || "");
-      const rowNode = document.createElement("div");
-      rowNode.className = "set-row has-icon";
-      rowNode.insertAdjacentHTML("afterbegin", `<span class="set-row-text">${ICONS.compress}<span class="set-row-words"><span class="set-label"></span><span class="set-desc"></span></span></span>`);
-      rowNode.querySelector(".set-label")!.textContent = shortcut.name || name;
-      rowNode.querySelector(".set-desc")!.textContent = shortcut.status === "ok"
-        ? `Runs ${name} in the background.`
-        : "This shortcut needs repair.";
-      const control = document.createElement("span");
-      control.className = "set-row-control";
-      if (shortcut.status !== "ok") control.appendChild(shortcutButton("Repair", () => void repairShortcut(shortcut)));
-      control.appendChild(shortcutButton("Remove", () => removeShortcut(shortcut, name), "quiet"));
-      rowNode.appendChild(control);
-      list.appendChild(rowNode);
+      const status = shortcut.status === "ok" ? `Runs ${name} in the background.` : "This shortcut needs repair.";
+      list.appendChild(h("div", { class: "set-row has-icon" },
+        shortcutRowText(icon("compress"), shortcut.name || name, status),
+        h("span", { class: "set-row-control" },
+          shortcut.status !== "ok" && shortcutButton("Repair", () => void repairShortcut(shortcut)),
+          shortcutButton("Remove", () => removeShortcut(shortcut, name), "quiet"))));
     }
     if (!list.children.length) list.appendChild(elementWithText("p", "No profile shortcuts yet.", "set-empty in-card"));
     if (keep && fixed.isConnected) {
@@ -2051,7 +2099,10 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     if (!shouldShowSendTo(caps)) return;
     view = "shortcut-choices";
     const profiles = (await legacyBackendResult(client().getProfilesJson())) as unknown as ProfileListEntry[] | { ok: false };
-    renderShell(`<p class="set-section-desc set-lead">Choose a profile. It appears in Send to and runs in the background.</p><div id="profile-shortcut-choices" class="set-card"></div>`, {
+    renderShell([
+      h("p", { class: "set-section-desc set-lead" }, "Choose a profile. It appears in Send to and runs in the background."),
+      h("div", { id: "profile-shortcut-choices", class: "set-card" }),
+    ], {
       title: "Add profile shortcut",
       back: { action: "open-explorer", label: "Back to File Explorer" },
       navPage: "explorer",
@@ -2091,7 +2142,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         else toast(result.error ?? "Could not remove the shortcut.", "err");
         void refreshShortcutList(kind ? `st-${kind}` : "");
       });
-    });
+    }, { title: "Remove shortcut?", confirmLabel: "Remove", cancelLabel: "Keep shortcut", danger: true });
   }
 
   async function repairShortcut(data: ShortcutRecord): Promise<void> {
@@ -2214,6 +2265,22 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     close,
     isOpen,
   };
+}
+
+// where a rejected save shows its message beside the field
+function fieldError(id: string): HTMLElement {
+  return h("span", { class: "set-row-error", id: `${id}-error`, role: "alert", hidden: true });
+}
+
+// keeps the chosen path for the page to save; the row shows it separately
+function pathHolder(id: string, path: string): HTMLElement {
+  return h("span", { id, "data-path": path, hidden: true });
+}
+
+function shortcutRowText(rowIcon: Node, label: string, description: string): HTMLElement {
+  return h("span", { class: "set-row-text" },
+    rowIcon,
+    h("span", { class: "set-row-words" }, h("span", { class: "set-label" }, label), h("span", { class: "set-desc" }, description)));
 }
 
 function elementWithText(tag: string, text: string, className?: string): HTMLElement {

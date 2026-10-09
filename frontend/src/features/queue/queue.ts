@@ -1,7 +1,7 @@
 import type { BackendClient } from "../../backend/types.ts";
 import { SegmentEditing } from "../timeline/segments.ts";
 import { legacyBackendResult } from "../editor/backend-compat.ts";
-import { errorSummary, formatBytes, formatTime } from "../editor/format.ts";
+import { formatBytes, formatTime, withReason } from "../editor/format.ts";
 import { confirmToast, toast } from "../editor/toast.ts";
 import type { EditorClip } from "../editor/types.ts";
 import type { EditorSession } from "../editor/session.ts";
@@ -10,6 +10,8 @@ import {
   exportRows,
   finishedNotification,
   formatQueueStatus,
+  isQueueActive,
+  queueItemsFromSnapshot,
   reduceQueueSnapshot,
   type ExportRow,
   type QueueItem,
@@ -21,7 +23,6 @@ export interface QueueDeps {
   byId: <T extends HTMLElement = HTMLElement>(id: string) => T | null;
   getBackendClient: () => BackendClient;
   renderClips: () => void;
-  removeClip: (path: string) => void;
   isReordering: () => boolean;
   workflow: () => number;
   addFiles: (files: string[]) => void;
@@ -36,7 +37,7 @@ export interface QueueApi {
   openResult: (path: string) => Promise<void>;
   stopAfterCurrent: () => void;
   cancelAll: () => void;
-  clearDone: () => Promise<void>;
+  clearDone: (announce?: boolean) => Promise<void>;
   copyDiagnostics: (itemId?: string) => Promise<void>;
   toggleExports: () => void;
 }
@@ -95,6 +96,16 @@ export function installQueue(deps: QueueDeps): QueueApi {
 
   function toggleExports(): void {
     setExportsOpen(!exportsOpen);
+  }
+
+  // the batch toast's Show opens the list at the first failed export, ready to retry
+  function showFailures(itemIds: readonly string[]): void {
+    setExportsOpen(true);
+    const buttons = Array.from(byId("exports-list")?.querySelectorAll<HTMLElement>("button") ?? []);
+    const retry = buttons.find(
+      (button) => button.dataset.itemId === itemIds[0] && button.dataset.actionClick === "export-item-retry",
+    );
+    (retry ?? byId("qstatus"))?.focus();
   }
 
   function sourceSize(path: string): number {
@@ -227,7 +238,6 @@ export function installQueue(deps: QueueDeps): QueueApi {
 
   function mapQueueItems(items: readonly QueueItem[]): void {
     const map: Record<string, QueueItem> = {};
-    let completed = false;
     queueItemsById = {};
     for (const item of items) {
       if (item.source_path) map[item.source_path] = item;
@@ -239,39 +249,41 @@ export function installQueue(deps: QueueDeps): QueueApi {
       const resolvedPath = clip.probeData?.path;
       const item = map[path] ?? (typeof resolvedPath === "string" ? map[resolvedPath] : undefined);
       if (item) {
-        const previousState = clip._queueState;
+        // failures are told once per batch, when it finishes, rather than one toast each
         clip._queueState = item.state ?? "";
         clip._queueItemId = item.id ?? "";
         clip._statusText = formatQueueStatus(item);
         clip._progress = item.progress || 0;
         clip._progressIndeterminate = item.progress_info?.indeterminate === true;
         if (item.error) clip._queueError = item.error;
-        if (item.state === "completed" && previousState !== "completed") completed = true;
-        if (item.state === "failed" && previousState !== "failed") {
-          toast(`Failed to process "${clip.name}": ${errorSummary(item.error)}`, "err");
-        }
         if (item.result_size) clip._resultSize = Number(item.result_size);
         if (item.result_path) clip._resultPath = item.result_path;
-      } else if (
-        clip._queueState &&
-        ["completed", "failed", "cancelled"].indexOf(clip._queueState) < 0
-      ) {
+      } else if (isQueueActive(clip._queueState)) {
         clip._queueState = "";
         clip._statusText = "";
       }
     }
-    if (completed && session.appSettings.clear_completed_automatically) {
-      setTimeout(() => void clearDone(), 0);
-    }
+  }
+
+  // clearing a finished export keeps its video and edits in the Library; only the result goes
+  function forgetFinishedExport(clip: EditorClip): void {
+    clip._queueState = "";
+    clip._queueItemId = "";
+    clip._statusText = "";
+    clip._progress = 0;
+    clip._progressIndeterminate = false;
+    delete clip._resultPath;
+    delete clip._resultSize;
   }
 
   async function pollQueue(): Promise<void> {
     if (pollingQueue) return;
     pollingQueue = true;
+    let clearFinished = false;
     try {
       const state = await legacyBackendResult(client().getQueueState());
       if (!state.ok || !Array.isArray(state.items)) return;
-      const items = state.items as QueueItem[];
+      const items = queueItemsFromSnapshot(state.items);
       mapQueueItems(items);
       if (!deps.isReordering()) deps.renderClips();
 
@@ -279,8 +291,16 @@ export function installQueue(deps: QueueDeps): QueueApi {
       queueView = reduceQueueSnapshot(previous, { items }, formatTime);
       for (const item of items) if (item.state === "running" && item.id) queueActiveItemIds[item.id] = true;
 
-      if (queueView.finishedToast) {
-        toast(queueView.finishedToast.message, queueView.finishedToast.kind);
+      const summary = queueView.finishedToast;
+      if (summary) {
+        const failedIds = summary.failedIds;
+        toast(
+          summary.message,
+          summary.kind,
+          failedIds.length ? { label: "Show", run: () => showFailures(failedIds) } : undefined,
+        );
+        // Settings promises this when the queue finishes; failed and cancelled exports stay
+        clearFinished = session.appSettings.clear_completed_automatically === true;
         if (session.appSettings.notify_when_done !== false) {
           const note = finishedNotification(items, previous.activeItemIds);
           // the system notification only shows while Tuck is in the background
@@ -322,16 +342,17 @@ export function installQueue(deps: QueueDeps): QueueApi {
     } finally {
       pollingQueue = false;
     }
+    if (clearFinished) await clearDone(false);
   }
 
   async function cancelQueueItem(itemId: string): Promise<void> {
     if (!itemId) return;
     try {
       const r = await legacyBackendResult(client().cancelItem(itemId));
-      if (!r.ok) toast(r.error ?? "Could not cancel item.", "err");
+      if (!r.ok) toast(withReason("Couldn’t cancel that export.", r.error), "err");
       await pollQueue();
     } catch {
-      toast("Could not cancel item.", "err");
+      toast("Couldn’t cancel that export. Try again.", "err");
     }
   }
 
@@ -340,7 +361,7 @@ export function installQueue(deps: QueueDeps): QueueApi {
     retryInFlight[itemId] = true;
     try {
       const r = await legacyBackendResult(client().retryItem(itemId));
-      if (!r.ok) toast(r.error ?? "Could not retry.", "err");
+      if (!r.ok) toast(withReason("Couldn’t retry that export.", r.error), "err");
       void pollQueue();
     } finally {
       delete retryInFlight[itemId];
@@ -351,51 +372,56 @@ export function installQueue(deps: QueueDeps): QueueApi {
     if (!path) return;
     try {
       const r = await legacyBackendResult(client().openOutputFolder(path));
-      if (!r.ok) toast(r.error ?? "Could not show the export in its folder.", "err");
+      if (!r.ok) toast(withReason("Couldn’t show the export in its folder.", r.error), "err");
     } catch {
-      toast("Could not show the export in its folder.", "err");
+      toast("Couldn’t show the export in its folder. Try again.", "err");
     }
   }
 
   function stopAfterCurrent(): void {
-    confirmToast("Finish the current job and cancel the rest?", () => {
+    confirmToast("The export in progress finishes. Exports still waiting in the queue are cancelled.", () => {
       void (async (): Promise<void> => {
         const r = await legacyBackendResult(client().stopAfterCurrent());
         if (!r.ok) {
-          toast(r.error ?? "Could not stop queue.", "err");
+          toast(withReason("Couldn’t stop the queue.", r.error), "err");
         } else {
-          toast("Queue will stop after the current job.", "ok");
+          toast("The queue stops after this export.", "ok");
           void pollQueue();
         }
       })();
-    });
+    }, { title: "Stop after this export?", confirmLabel: "Stop after this", cancelLabel: "Keep exporting" });
   }
 
   function cancelAll(): void {
-    confirmToast("Cancel all processing?", () => {
+    confirmToast("The export in progress stops and everything waiting in the queue is cancelled. Finished exports are kept.", () => {
       void (async (): Promise<void> => {
-        await client().cancelAllItems();
-        toast("Processing cancelled.", "ok");
+        try {
+          const r = await legacyBackendResult(client().cancelAllItems());
+          // once the queue settles, the batch message says what was cancelled
+          if (!r.ok) toast(withReason("Couldn’t cancel the exports.", r.error), "err");
+        } catch {
+          toast("Couldn’t cancel the exports. Try again.", "err");
+        }
         await pollQueue();
       })();
-    });
+    }, { title: "Cancel all exports?", confirmLabel: "Cancel exports", cancelLabel: "Keep exporting", danger: true });
   }
 
-  async function clearDone(): Promise<void> {
+  async function clearDone(announce = true): Promise<void> {
     const r = await legacyBackendResult(client().clearCompleted());
-    if (r.ok) {
-      for (const path of Object.keys(session.clips)) {
-        if (session.clips[path]?._queueState === "completed") deps.removeClip(path);
-      }
-      const count = Number(r.count) || 0;
-      toast(
-        count === 1 ? "Cleared 1 completed video." : `Cleared ${count} completed videos.`,
-        "ok",
-      );
-      await pollQueue();
-    } else {
-      toast(r.error ?? "Could not clear completed videos.", "err");
+    if (!r.ok) {
+      toast(withReason("Couldn’t clear finished exports.", r.error), "err");
+      return;
     }
+    for (const clip of Object.values(session.clips)) {
+      if (clip?._queueState === "completed") forgetFinishedExport(clip);
+    }
+    const count = Number(r.count) || 0;
+    if (announce) {
+      toast(count === 1 ? "Cleared 1 finished export." : `Cleared ${count} finished exports.`, "ok");
+    }
+    await pollQueue();
+    deps.renderClips();
   }
 
   function buildDiagnosticsContext(itemId?: string): Record<string, unknown> {

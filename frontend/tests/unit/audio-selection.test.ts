@@ -66,6 +66,7 @@ const sourceLane = {
 };
 const video = { addEventListener() {}, currentTime: 4, paused: true, volume: 1 };
 const importedTracks = {
+  addEventListener() {},
   querySelectorAll() {
     return [importedRow];
   },

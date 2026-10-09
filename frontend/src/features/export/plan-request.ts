@@ -244,3 +244,11 @@ export function buildCutRequest({clip,state,edits,frameDuration,duration}: CutRe
     })),
   };
 }
+
+/** The plain sentences a plan gives about what its export changes or leaves out. */
+export function planWarnings(plan: unknown): string[] {
+  if (plan === null || typeof plan !== "object" || !("warnings" in plan)) return [];
+  const warnings = plan.warnings;
+  if (!Array.isArray(warnings)) return [];
+  return warnings.filter((warning): warning is string => typeof warning === "string" && warning.trim() !== "");
+}

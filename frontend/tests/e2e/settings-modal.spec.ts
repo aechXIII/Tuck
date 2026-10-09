@@ -457,7 +457,7 @@ test("Send To shortcuts are switched on and off one at a time", async ({ page })
   // turning one off asks first and stays on until confirmed
   await page.getByText("Opens the videos in Tuck.", { exact: true }).click();
   await expect(page.getByRole("switch", { name: "Tuck", exact: true })).toBeChecked();
-  await page.getByRole("dialog", { name: "Confirm removal" }).getByRole("button", { name: "Remove" }).click();
+  await page.getByRole("dialog", { name: "Remove shortcut?" }).getByRole("button", { name: "Remove" }).click();
   await expect.poll(() => page.evaluate(() =>
     window.__tuckFakeBackendCalls?.find((call) => call.method === "removeGenericSendto")?.args)).toEqual(["open"]);
 });
@@ -568,4 +568,50 @@ test("the timeline style is Graphite by default and Violet when chosen", async (
   await timeline.getByRole("radio", { name: "Violet" }).check();
   await savedWith(page, "timeline_style", "violet");
   await expect(page.locator("html")).toHaveAttribute("data-timeline", "violet");
+});
+
+test("paths, names, and versions from the backend show as text, never as markup", async ({ page }) => {
+  const hostile = `<img src=x onerror="window.__settingsInjected=1"> "quoted" & 'more'`;
+  const folder = `C:\\Exports\\${hostile}`;
+  const ffmpeg = `C:\\Tools\\${hostile}\\ffmpeg.exe`;
+  await start(page, {
+    version: hostile,
+    last_update_check: hostile,
+    output_location: "folder",
+    output_dir: folder,
+    output_subfolder: hostile,
+    compression_suffix: `_${hostile}`,
+    ffmpeg_available: true,
+    ffmpeg_path: ffmpeg,
+    available_encoders: [hostile],
+  }, {
+    getProfilesJson: [{ profile_id: "odd", name: `Odd ${hostile}`, workflow: "compression", builtin: false }],
+  });
+  const settingsPage = page.locator("#settings-page");
+
+  await openSettings(page, "files");
+  await expect(settingsPage.locator('[data-setting="folder"] .set-desc')).toHaveText(folder);
+  await expect(page.locator("#set-od")).toHaveAttribute("data-path", folder);
+  await expect(page.locator("#set-cs")).toHaveValue(`_${hostile}`);
+  await expect(settingsPage.locator('[data-setting="suffix-compression"] .set-desc')).toHaveText(`Morning ride_${hostile}.mp4`);
+  await expect(settingsPage.locator("img")).toHaveCount(0);
+
+  await page.locator("#settings-nav-media").click();
+  await expect(settingsPage.locator('[data-setting="ffmpeg"] .set-path')).toHaveText(ffmpeg);
+  await expect(settingsPage.locator(".set-chip")).toHaveText([hostile]);
+  await expect(settingsPage.locator("img")).toHaveCount(0);
+
+  await page.locator("#settings-nav-about").click();
+  await expect(settingsPage.locator(".set-about-name .mono")).toHaveText(hostile);
+  await expect(settingsPage.locator('[data-setting="updates"] .set-desc')).toHaveText(`Last checked ${hostile}`);
+  await expect(settingsPage.locator("img")).toHaveCount(0);
+
+  await page.locator("#settings-nav-profiles").click();
+  await expect(settingsPage.locator("#pm-own .set-label")).toHaveText([`Odd ${hostile}`]);
+  await expect(settingsPage.locator("img")).toHaveCount(0);
+
+  await page.getByRole("searchbox", { name: "Search settings" }).fill(hostile);
+  await expect(settingsPage.locator(".set-empty")).toHaveText(`No settings match “${hostile}”.`);
+  await expect(settingsPage.locator("img")).toHaveCount(0);
+  expect(await page.evaluate(() => Reflect.get(window, "__settingsInjected"))).toBeUndefined();
 });

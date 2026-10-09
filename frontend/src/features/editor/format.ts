@@ -29,6 +29,18 @@ export function errorSummary(error: unknown, limit = 140): string {
   return text.length > limit ? `${text.substring(0, limit)}…` : text;
 }
 
+/** Backend text as one tidy sentence, or "" when there is none. */
+export function reasonSentence(error: unknown): string {
+  const text = typeof error === "string" ? error.replace(/\s+/g, " ").trim() : "";
+  if (!text) return "";
+  return /[.!?…]$/.test(text) ? text : `${text}.`;
+}
+
+/** "Couldn’t do X." followed by why, or by what to do next when the backend gave no reason. */
+export function withReason(what: string, error: unknown, next = "Try again."): string {
+  return `${what} ${reasonSentence(error) || next}`;
+}
+
 export function byId(id: string): HTMLElement | null {
   return document.getElementById(id);
 }

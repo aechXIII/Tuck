@@ -6,6 +6,7 @@ import { formatTime } from "../editor/format.ts";
 import { formatClockTime } from "../editor/time-format.ts";
 import type { EditorClip, EditorSession } from "../editor/session.ts";
 import { toast } from "../editor/toast.ts";
+import { recordedCommand } from "../history/history.ts";
 import { mediaSeconds } from "../export/cut-state.ts";
 import * as Keyframes from "./keyframes.ts";
 import * as SegmentEditing from "./segments.ts";
@@ -45,6 +46,7 @@ export interface TimelineHost {
     begin?: (path: string | null) => void;
     commit?: () => void;
     cancel?: () => void;
+    action?: <T>(path: string | null, fn: () => T) => T;
   };
   TuckShortcuts?: {
     registerAction: (
@@ -645,6 +647,9 @@ function paintTrimChrome() {
     addButton.disabled = false;
     addButton.setAttribute("aria-disabled", canAdd ? "false" : "true");
     addButton.dataset.tip = canAdd ? withShortcut("Add segment", "timeline.add-segment") : NO_ROOM_FOR_SEGMENT;
+    // shortcut changes refresh the tip from this label, so while full the reason stays put
+    if (canAdd) addButton.dataset.shortcutLabel = "Add segment";
+    else delete addButton.dataset.shortcutLabel;
   }
   paintCutOverlay();
   if (host.AudioTimeline && host.AudioTimeline.paintSource)
@@ -1569,6 +1574,12 @@ function initTimelineResizer() {
 
 
 
+  // segment edits made through the api or the keyboard are one undo step each
+  const history = host.History?.action ? { action: host.History.action } : null;
+  const recorded = <A extends unknown[], R>(run: (...args: A) => R) =>
+    recordedCommand(history, () => session.selPath, run);
+  const addSegmentStep = recorded(addSegment);
+
   host.TuckShortcuts?.registerAction("timeline.add-segment", {
     enabled: function () {
       const clip = selectedClip(session);
@@ -1576,7 +1587,7 @@ function initTimelineResizer() {
       let full = videoDuration() || clip.probeData?.duration || 0;
       return full > 0 && SegmentEditing.canAddSegment(clipSegments(clip, full), full);
     },
-    execute: addSegment,
+    execute: addSegmentStep,
   });
   for (const [id, direction] of [
     ["timeline.previous-keyframe", -1],
@@ -1616,7 +1627,7 @@ function initTimelineResizer() {
 
   let api = {
     isDragging: function () { return !!_tlDrag; },
-    addSegment: addSegment,
+    addSegment: addSegmentStep,
     applyTimelineZoom: applyTimelineZoom,
     canTrimActiveSegmentToPlayhead: canTrimActiveSegmentToPlayhead,
     canRemoveActiveSegment: canRemoveActiveSegment,
@@ -1626,18 +1637,18 @@ function initTimelineResizer() {
     paintCutOverlay: paintCutOverlay,
     paintTrimChrome: paintTrimChrome,
     playbackSegments: playbackSegments,
-    removeActiveSegment: removeActiveSegment,
+    removeActiveSegment: recorded(removeActiveSegment),
     goToCutPoint: goToCutPoint,
     seekToKeyframe: seekToKeyframe,
     resetTimelineHeight: resetTimelineHeight,
-    resetSegments: resetSegments,
+    resetSegments: recorded(resetSegments),
     restoreTimelineHeight: restoreTimelineHeight,
     segmentColor: segmentColor,
     setClipSegments: setClipSegments,
     setPlayheadUI: setPlayheadUI,
     setTimelineZoom: setTimelineZoom,
     snapCandidateTime: snapCandidateTime,
-    splitAtPlayhead: splitAtPlayhead,
+    splitAtPlayhead: recorded(splitAtPlayhead),
     syncTimelineTrackCount: syncTimelineTrackCount,
     syncTimelineUI: syncTimelineUI,
     timelinePxPerSecond: timelinePxPerSecond,
@@ -1645,7 +1656,7 @@ function initTimelineResizer() {
     toggleSnap: toggleSnap,
     setKeyframes: setKeyframes,
     setSnap: setSnap,
-    trimActiveSegmentToPlayhead: trimActiveSegmentToPlayhead,
+    trimActiveSegmentToPlayhead: recorded(trimActiveSegmentToPlayhead),
     videoDuration: videoDuration,
   };
   const extended = Object.assign({}, api, {

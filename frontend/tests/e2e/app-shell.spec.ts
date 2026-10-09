@@ -89,8 +89,8 @@ test("missing desktop backend is a visible startup error", async ({ page }) => {
   await page.setViewportSize({ width: 1240, height: 800 });
   await page.goto("/");
 
-  await expect(page.getByRole("alert")).toContainText("Desktop backend unavailable");
-  await expect(page.getByRole("alert")).toContainText("reopen Tuck");
+  await expect(page.getByRole("alert")).toContainText("Tuck couldn't start");
+  await expect(page.getByRole("alert")).toContainText("Restart Tuck");
   await expect(page.locator("#editor-shell")).toHaveAttribute("inert", "");
   // the window's own title bar controls stay usable so the window can still be moved and closed
   await expect(page.locator("#window-caption")).toBeVisible();

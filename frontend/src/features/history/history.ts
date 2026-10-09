@@ -17,11 +17,39 @@ export interface HistoryApi {
   commit: () => void;
   cancel: () => void;
   action: <T>(path: string | null, fn: () => T) => T;
-  wrap: (owner: object, name: string) => void;
   undo: () => void;
   redo: () => void;
   updateButtons: () => void;
   forgetClip: (path: string) => void;
+  // a removed video takes its steps along, so bringing it back brings them back too
+  detachClip: (path: string) => DetachedHistory;
+  restoreClip: (detached: DetachedHistory) => void;
+  hasEdits: (path: string) => boolean;
+}
+
+/** One video's undo and redo steps, kept aside while the video is out of the Library. */
+export interface DetachedHistory {
+  readonly path: string;
+  readonly undo: readonly HistoryEntry[];
+  readonly redo: readonly HistoryEntry[];
+  readonly commits: number;
+}
+
+export interface HistoryRecorder {
+  action: <T>(path: string | null, fn: () => T) => T;
+}
+
+/**
+ * An edit command that is one undo step for the selected video. Commands that call other
+ * recorded commands still make a single step.
+ */
+export function recordedCommand<A extends unknown[], R>(
+  history: HistoryRecorder | null | undefined,
+  selectedPath: () => string | null,
+  run: (...args: A) => R,
+): (...args: A) => R {
+  return (...args: A): R =>
+    history ? history.action(selectedPath(), () => run(...args)) : run(...args);
 }
 
 interface ClipSnapshot {
@@ -38,10 +66,12 @@ interface ClipSnapshot {
   audioTimeline: AudioTimelineState | null;
 }
 
-interface HistoryEntry {
+export interface HistoryEntry {
   path: string;
   before: ClipSnapshot;
   after: ClipSnapshot;
+  // order across videos, so restored steps go back where they were
+  seq: number;
 }
 
 interface PendingEntry {
@@ -103,6 +133,9 @@ export function createHistory(host: HistoryHost): HistoryApi {
   let undoStack: HistoryEntry[] = [];
   let redoStack: HistoryEntry[] = [];
   let pending: PendingEntry | null = null;
+  let actionDepth = 0;
+  let seq = 0;
+  let commits = 0;
 
   function updateButtons(): void {
     const undoBtn = host.undoButton();
@@ -145,9 +178,11 @@ export function createHistory(host: HistoryHost): HistoryApi {
       path: pending.path,
       before: pending.before,
       after,
+      seq: (seq += 1),
     });
     if (undoStack.length > MAX_ENTRIES) undoStack.shift();
     redoStack.length = 0;
+    commits += 1;
     pending = null;
     updateButtons();
   }
@@ -157,20 +192,20 @@ export function createHistory(host: HistoryHost): HistoryApi {
   }
 
   function action<T>(path: string | null, fn: () => T): T {
+    // an action inside another belongs to the outer step
+    if (actionDepth > 0) return fn();
+    actionDepth += 1;
     begin(path);
-    const result = fn();
-    commit();
-    return result;
-  }
-
-  function wrap(owner: object, name: string): void {
-    const record = owner as Record<string, unknown>;
-    const original = record[name];
-    if (typeof original !== "function") return;
-    const fn = original as (...args: unknown[]) => unknown;
-    record[name] = function (this: unknown, ...args: unknown[]) {
-      return action(host.selectedPath(), () => fn.apply(this, args));
-    };
+    try {
+      const result = fn();
+      commit();
+      return result;
+    } catch (error) {
+      cancel();
+      throw error;
+    } finally {
+      actionDepth -= 1;
+    }
   }
 
   function undo(): void {
@@ -203,16 +238,43 @@ export function createHistory(host: HistoryHost): HistoryApi {
     updateButtons();
   }
 
+  function detachClip(path: string): DetachedHistory {
+    const detached = {
+      path,
+      undo: undoStack.filter((entry) => entry.path === path),
+      redo: redoStack.filter((entry) => entry.path === path),
+      commits,
+    };
+    if (pending?.path === path) pending = null;
+    forgetClip(path);
+    return detached;
+  }
+
+  function restoreClip(detached: DetachedHistory): void {
+    undoStack = [...undoStack, ...detached.undo].sort((a, b) => a.seq - b.seq).slice(-MAX_ENTRIES);
+    // a new edit since the removal cleared redo, so the removed video's redo steps go too
+    if (commits === detached.commits) {
+      redoStack = [...redoStack, ...detached.redo].sort((a, b) => b.seq - a.seq);
+    }
+    updateButtons();
+  }
+
+  function hasEdits(path: string): boolean {
+    return undoStack.some((entry) => entry.path === path);
+  }
+
   return {
     begin,
     commit,
     cancel,
     action,
-    wrap,
     undo,
     redo,
     updateButtons,
     forgetClip,
+    detachClip,
+    restoreClip,
+    hasEdits,
   };
 }
 

@@ -21,6 +21,29 @@ fn desktop_config_keeps_native_drag_drop_and_local_sidecar_csp() {
 }
 
 #[test]
+fn production_csp_has_no_eval_dev_server_or_unused_asset_protocol() {
+    let config = tauri_config();
+    let security = &config["app"]["security"];
+    let csp = security["csp"]
+        .as_str()
+        .expect("desktop CSP must be configured");
+    assert!(!csp.contains("'unsafe-eval'"));
+    assert!(
+        !csp.contains("ws:"),
+        "the Vite dev socket is development only"
+    );
+    assert!(!csp.contains("asset:") && !csp.contains("asset.localhost"));
+    // the asset protocol stays off, so nothing in the CSP needs to name it
+    assert!(security.get("assetProtocol").is_none());
+
+    let dev_csp = security["devCsp"]
+        .as_str()
+        .expect("development keeps its own CSP for the Vite dev server");
+    assert!(dev_csp.contains("ws://127.0.0.1:5173"));
+    assert!(!dev_csp.contains("'unsafe-eval'"));
+}
+
+#[test]
 fn main_window_has_only_the_permissions_needed_for_native_commands_and_events() {
     let capability: Value = serde_json::from_str(include_str!("../capabilities/main.json"))
         .expect("main capability must be valid JSON");
@@ -38,6 +61,11 @@ fn main_window_has_only_the_permissions_needed_for_native_commands_and_events() 
     assert!(has_permission("allow-backend-request"));
     assert!(has_permission("allow-native-commands"));
     assert!(has_permission("allow-window-chrome"));
+    assert!(has_permission("allow-app-lifecycle"));
+    // dialogs open only through the typed pick_* commands, never from page script
+    assert!(!permissions.iter().any(|permission| permission
+        .as_str()
+        .is_some_and(|name| name.starts_with("dialog:"))));
     // the title bar drags the window and maximizes it on double-click through Tauri's drag region
     assert!(has_permission("core:window:allow-start-dragging"));
     assert!(has_permission("core:window:allow-internal-toggle-maximize"));

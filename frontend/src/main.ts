@@ -4,90 +4,84 @@ import {
 } from "./backend/index.ts";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { BackendClient } from "./backend/types.ts";
+import type { BackendClient, BackendError } from "./backend/types.ts";
 import type { TauriBackendClient } from "./backend/index.ts";
 import {
   installEditorRuntime,
   type EditorRuntime,
 } from "./features/editor/runtime.ts";
-import { backendUnavailableMessage, hasDesktopBackend } from "./desktop-status.ts";
+import { confirmToast } from "./features/editor/toast.ts";
+import {
+  backendFailureDetails,
+  backendUnavailableScreen,
+  DEVELOPER_SHELL_HINT,
+  hasDesktopBackend,
+  restartTuckAction,
+  type BackendFailureKind,
+} from "./desktop-status.ts";
+import {
+  activeExportCount,
+  installCloseGuard,
+  isExiting,
+  showExitScreen,
+  withTimeout,
+} from "./platform/app-exit.ts";
 import {
   createSecondInstanceLaunchQueue,
   launchFromPayload,
   mergeLaunches,
   type StartupLaunch,
 } from "./platform/second-instance.ts";
+import { hideStatusScreens, showStatusScreen, type StatusAction } from "./platform/status-screen.ts";
 import { installWindowChrome } from "./platform/window-chrome.ts";
 import "./styles/index.ts";
 
-export { backendUnavailableMessage, hasDesktopBackend };
+export { hasDesktopBackend };
 
 const BACKEND_GRACE_PERIOD_MS = 2_000;
+// long enough for a busy queue, short enough that closing never feels stuck
+const QUEUE_CHECK_TIMEOUT_MS = 2_000;
 let backendTimer: number | undefined;
-let blockedSiblings: HTMLElement[] = [];
 let tauriStartupStarted = false;
 let editorRuntime: EditorRuntime | undefined;
 let backendAttached = false;
 
 function showBackendLoading(): void {
   if (document.getElementById("backend-connecting")) return;
-
-  const status = document.createElement("section");
-  status.id = "backend-connecting";
-  status.className = "backend-unavailable";
-  status.setAttribute("role", "status");
-  status.setAttribute("aria-live", "polite");
-
-  const content = document.createElement("div");
-  content.className = "backend-unavailable__content";
-  const heading = document.createElement("h1");
-  heading.textContent = "Connecting to desktop backend";
-  const detail = document.createElement("p");
-  detail.textContent = "Tuck is starting its desktop backend.";
-  content.append(heading, detail);
-  status.append(content);
-  document.body.append(status);
-}
-
-function showBackendUnavailable(reason?: string): void {
-  if (document.getElementById("backend-unavailable")) return;
-  document.getElementById("backend-connecting")?.remove();
-
-  const alert = document.createElement("section");
-  alert.id = "backend-unavailable";
-  alert.className = "backend-unavailable";
-  alert.setAttribute("role", "alert");
-  alert.setAttribute("aria-live", "assertive");
-
-  const content = document.createElement("div");
-  content.className = "backend-unavailable__content";
-
-  const heading = document.createElement("h1");
-  heading.textContent = "Desktop backend unavailable";
-
-  const detail = document.createElement("p");
-  detail.textContent = backendUnavailableMessage(reason);
-
-  content.append(heading, detail);
-  alert.append(content);
-  document.body.append(alert);
-  blockedSiblings = blockingTargets(alert);
-  blockedSiblings.forEach((element) => {
-    element.inert = true;
+  showStatusScreen(document, {
+    id: "backend-connecting",
+    tone: "status",
+    title: "Starting Tuck…",
+    detail: "This usually takes a few seconds.",
   });
 }
 
-// everything but the alert goes inert, except the window's own title bar controls, so the window
-// can still be moved, resized and closed
-function blockingTargets(alert: HTMLElement): HTMLElement[] {
-  const bar = document.getElementById("tb");
-  const candidates = [
-    ...Array.from(document.body.children).filter((element) => element !== alert && element !== bar),
-    ...Array.from(bar?.querySelectorAll(".tb-editor") ?? []),
-  ];
-  return candidates.filter(
-    (element): element is HTMLElement => element instanceof HTMLElement && !element.inert,
-  );
+function failureActions(error: BackendError | undefined): StatusAction[] {
+  if (!hasDesktopBackend(window)) return [];
+  const restart = restartTuckAction();
+  const copy: StatusAction = {
+    label: "Copy details",
+    run: (_button, note) => {
+      invoke("copy_text", { text: backendFailureDetails(error) })
+        .then(() => {
+          note.textContent = "Details copied.";
+        })
+        .catch((cause: unknown) => {
+          console.error("Could not copy the details", cause);
+          note.textContent = "The details couldn't be copied.";
+        });
+    },
+  };
+  // the primary action sits last, as in Tuck's other dialogs
+  return [copy, restart];
+}
+
+function showBackendUnavailable(kind: BackendFailureKind, error?: BackendError): void {
+  // a backend that stops because Tuck is closing is not a failure
+  if (isExiting() || document.getElementById("backend-unavailable")) return;
+  if (error) console.error("Tuck's backend is unavailable", error);
+  else console.info(DEVELOPER_SHELL_HINT);
+  showStatusScreen(document, backendUnavailableScreen(kind, failureActions(error)));
 }
 
 function markDesktopBackendReady(): void {
@@ -95,12 +89,7 @@ function markDesktopBackendReady(): void {
     window.clearTimeout(backendTimer);
     backendTimer = undefined;
   }
-  document.getElementById("backend-connecting")?.remove();
-  document.getElementById("backend-unavailable")?.remove();
-  blockedSiblings.forEach((element) => {
-    element.inert = false;
-  });
-  blockedSiblings = [];
+  hideStatusScreens(document);
 }
 
 function attachDesktopBackend(client: BackendClient): void {
@@ -112,10 +101,33 @@ function attachDesktopBackend(client: BackendClient): void {
   markDesktopBackendReady();
 }
 
+function installTauriCloseGuard(client: TauriBackendClient): void {
+  void installCloseGuard({
+    activeExports: async () => {
+      // nothing can have been exported before the editor was connected
+      if (!backendAttached) return 0;
+      const result = await withTimeout(client.getQueueState(), QUEUE_CHECK_TIMEOUT_MS, null);
+      return result?.ok ? activeExportCount(result.value) : null;
+    },
+    confirm: (question, onConfirm) => {
+      confirmToast(question.message, onConfirm, {
+        title: question.title,
+        confirmLabel: question.confirmLabel,
+        cancelLabel: question.cancelLabel,
+        danger: true,
+      });
+    },
+    showClosing: (count) => showExitScreen(document, count, "close"),
+  }).catch((error: unknown) => {
+    console.error("Could not listen for close requests", error);
+  });
+}
+
 function startTauriBackend(client: TauriBackendClient): void {
   if (tauriStartupStarted) return;
   tauriStartupStarted = true;
-  client.onFatal((error) => showBackendUnavailable(error.message));
+  client.onFatal((error) => showBackendUnavailable(backendAttached ? "stopped" : "start", error));
+  installTauriCloseGuard(client);
   showBackendLoading();
 
   // Rust keeps forwarded paths buffered until this listener has completed the
@@ -127,9 +139,10 @@ function startTauriBackend(client: TauriBackendClient): void {
     secondInstanceLaunches.enqueue(event.payload);
   }).catch(() => undefined);
 
+  // the shell answers health once its backend has finished starting
   void listenerReady.then(() => client.health()).then(async (result) => {
     if (!result.ok) {
-      showBackendUnavailable(result.error.message);
+      showBackendUnavailable("start", result.error);
       return;
     }
     // Fetch startup files after backend is ready (normalized in Rust, validated in Python)
@@ -161,7 +174,7 @@ function waitForDesktopBackend(): void {
   if (installDesktopBackend()) return;
   backendTimer = window.setTimeout(() => {
     backendTimer = undefined;
-    if (!installDesktopBackend()) showBackendUnavailable();
+    if (!installDesktopBackend()) showBackendUnavailable("start");
   }, BACKEND_GRACE_PERIOD_MS);
 }
 

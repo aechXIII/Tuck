@@ -1,9 +1,10 @@
 import type { BackendClient } from "../../backend/types.ts";
-import { isCutPlanPayload, type CutPlanRequest, type CutPlanPreview } from "../../backend/cutting-types.ts";
+import { isCutPlanPayload, keyframeCursor, mergeKeyframePage, moreKeyframesToRead, type CutPlanRequest, type CutPlanPreview } from "../../backend/cutting-types.ts";
 import type { EditorClip } from "../editor/types.ts";
 import type { EditorSession } from "../editor/session.ts";
 import { formatBytes, formatTimeToHundredths } from "../editor/format.ts";
 import { toast } from "../editor/toast.ts";
+import { isQueueActive } from "../queue/queue-view.ts";
 import { createCutState, cutSegmentStatus, cutStartUnchecked, cutTime, cutTrackSummary, encodedSeconds, mediaSeconds, reduceCutState, shownSegment } from "./cut-state.ts";
 
 interface CutControlsDeps {
@@ -81,8 +82,9 @@ export function installCutControls(deps: CutControlsDeps) {
     return (ready(clip) || replanning(clip)) && !exporting(clip);
   }
 
+  // a cut already waiting or running in the queue can't be exported again until it finishes
   function exporting(clip: EditorClip): boolean {
-    return clip._queueState === "queued" || clip._queueState === "encoding";
+    return isQueueActive(clip._queueState);
   }
 
   function stopScan(): void {
@@ -129,7 +131,9 @@ export function installCutControls(deps: CutControlsDeps) {
 
   async function prepare(clip: EditorClip, current: () => boolean): Promise<CutPlanPreview | null> {
     try {
-      let result = await client().getCutAnalysis(clip.path);
+      // each status read sends only the keyframes this clip doesn't hold yet
+      let held = state(clip).analysis;
+      let result = await client().getCutAnalysis(clip.path,keyframeCursor(held));
       if (!current()) return null;
       if (!result.ok) throw new Error(result.error.message);
       if (["missing","cancelled","failed"].includes(result.value.status)) {
@@ -140,22 +144,26 @@ export function installCutControls(deps: CutControlsDeps) {
       }
       while (current()) {
         if (!result.ok) throw new Error(result.error.message);
-        const analysis = result.value;
+        const analysis = mergeKeyframePage(held,result.value);
+        const more = moreKeyframesToRead(held,analysis);
+        held = analysis;
         const previous = state(clip).analysis;
         if (analysis.status === "ready" && (previous?.status !== "ready" || previous.work_id !== analysis.work_id) && selected() === clip) {
           element("cut-announcement").textContent = "Keyframes read.";
         }
         clip.cutState = reduceCutState(state(clip),{type:"analysis",generation:state(clip).generation,analysis});
         if (selected() === clip) render();
-        if (analysis.status === "ready") break;
-        if (!["reading","pending"].includes(analysis.status)) {
+        if (analysis.status === "ready") {
+          if (!more) break;
+        } else if (!["reading","pending"].includes(analysis.status)) {
           throw new Error(analysis.issue?.message ?? "Keyframes could not be read. Read them again to retry.");
+        } else {
+          scanning = {clip,workId:analysis.work_id};
+          // a status read is cheap, and a short video is often read in well under a second
+          await new Promise(resolve => setTimeout(resolve,150));
+          if (!current()) return null;
         }
-        scanning = {clip,workId:analysis.work_id};
-        // a status read is cheap, and a short video is often read in well under a second
-        await new Promise(resolve => setTimeout(resolve,150));
-        if (!current()) return null;
-        result = await client().getCutAnalysis(clip.path);
+        result = await client().getCutAnalysis(clip.path,keyframeCursor(held));
       }
       if (!current()) return null;
       if (scanning?.clip === clip) scanning = null;
@@ -332,7 +340,7 @@ export function installCutControls(deps: CutControlsDeps) {
           clip.cutState = reduceCutState(state(clip),{type:"failed",message:response.error.message,plan:isCutPlanPayload(payload) ? payload.data : undefined});
           toast(`${clip.name}: ${response.error.message}`,"err"); break;
         }
-        clip._queueState = "queued";
+        clip._queueState = "pending";
         if (typeof response.value.item_id === "string") clip._queueItemId = response.value.item_id;
         await deps.pollQueue();
       }

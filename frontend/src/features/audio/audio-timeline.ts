@@ -6,7 +6,8 @@ import type {
   AudioTimelineState,
   AudioTrack,
 } from "../editor/types.ts";
-import { confirmToast, toast } from "../editor/toast.ts";
+import { confirmToast, toast, type ConfirmIntent } from "../editor/toast.ts";
+import { recordedCommand } from "../history/history.ts";
 import * as SegmentEditing from "../timeline/segments.ts";
 import * as TimelineCore from "../timeline/timeline-core.ts";
 import * as core from "./audio-core.ts";
@@ -29,7 +30,7 @@ export interface AudioTimelineHost {
   documentRef?: Document;
   windowRef?: Window & typeof globalThis;
   toast?: (msg: string, kind?: string) => void;
-  confirmToast?: (msg: string, cb: () => void) => void;
+  confirmToast?: (msg: string, cb: () => void, intent: ConfirmIntent) => void;
   setInspectorTab?: (tab: string, persist?: boolean) => void;
   renderClips?: () => void;
   reqPreview?: () => void;
@@ -53,6 +54,7 @@ export interface AudioTimelineHost {
     begin?: (path: string | null) => void;
     commit?: () => void;
     cancel?: () => void;
+    action?: <T>(path: string | null, fn: () => T) => T;
   };
   TuckShortcuts?: {
     registerAction: (
@@ -582,11 +584,6 @@ export function installAudioTimeline(host: AudioTimelineHost) {
       muteEl.dataset.tip = track.muted ? "Unmute " + track.name : "Mute " + track.name;
       muteEl.setAttribute("aria-pressed", track.muted ? "true" : "false");
       muteEl.setAttribute("aria-label", muteEl.dataset.tip);
-      muteEl.addEventListener("click", function(event: PointerEvent) {
-        event.stopPropagation();
-        selectedTrackId = track.id;
-        apiObject.toggleTrackMute(track.id);
-      });
       head.appendChild(muteEl);
     }
 
@@ -602,11 +599,6 @@ export function installAudioTimeline(host: AudioTimelineHost) {
         "</svg>";
       removeEl.dataset.tip = "Remove " + track.name;
       removeEl.setAttribute("aria-label", removeEl.dataset.tip);
-      removeEl.addEventListener("click", function(event: PointerEvent) {
-        event.stopPropagation();
-        selectedTrackId = track.id;
-        apiObject.removeTrack(track.id);
-      });
       head.appendChild(removeEl);
     }
 
@@ -615,7 +607,6 @@ export function installAudioTimeline(host: AudioTimelineHost) {
     let lane = documentRef.createElement("div");
     lane.className = "seq-lane audio-lane";
     lane.dataset.trackId = track.id;
-    lane.addEventListener("pointerdown", onLanePointerDown);
     track.clips.forEach(function(audioClip, clipIndex) {
       let selected = audioClip.id === selectedClipId;
       let el = documentRef.createElement("div");
@@ -821,11 +812,11 @@ export function installAudioTimeline(host: AudioTimelineHost) {
     };
   }
 
-  function onLanePointerDown(event: PointerEvent) {
+  function onLanePointerDown(event: PointerEvent, laneElement?: HTMLElement | null) {
     if (event.button != null && event.button !== 0) return;
-    const lane = isHtmlElement(event.currentTarget) ? event.currentTarget : null;
+    const lane = laneElement ?? (isHtmlElement(event.currentTarget) ? event.currentTarget : null);
     const target = isElement(event.target) ? event.target : null;
-    const clipCandidate = target?.closest(".seq-audio-clip, .audio-clip") ?? null;
+    const clipCandidate = target?.closest(".seq-audio-clip") ?? null;
     const clipEl = isHtmlElement(clipCandidate) ? clipCandidate : null;
     let videoClip = selectedVideo();
     let total = sourceDuration(videoClip);
@@ -1493,6 +1484,11 @@ export function installAudioTimeline(host: AudioTimelineHost) {
     return payload;
   }
 
+  // edits made through the api or the keyboard are one undo step each
+  const history = host.History?.action ? { action: host.History.action } : null;
+  const recorded = <A extends unknown[], R>(run: (...args: A) => R) =>
+    recordedCommand(history, () => session.selPath, run);
+
   let apiObject = {
     render: render,
     trackColor: trackColor,
@@ -1550,25 +1546,23 @@ export function installAudioTimeline(host: AudioTimelineHost) {
       }
     },
     addPaths: addPaths,
-    toggleMaster: function () {
+    toggleMaster: recorded(function () {
       let clip = selectedVideo();
       let state = ensureState(clip);
       if (!state) return;
       state.enabled = !state.enabled;
       render();
       setPlanDirty(clip);
-    },
-    toggleFragmentMute: function () {
+    }),
+    toggleFragmentMute: recorded(function () {
       let clip = selectedVideo();
       if (!clip) return;
       if (selectedTrackId !== "source") {
         let selected = findSelected(clip);
         if (!selected) return;
-        host.History?.begin?.(session.selPath);
         selected.clip.muted = !selected.clip.muted;
         render();
         setPlanDirty(clip);
-        host.History?.commit?.();
         return;
       }
       if (!SegmentEditing) return;
@@ -1583,7 +1577,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
       if (typeof host.paintTrimChrome === "function") host.paintTrimChrome();
       render();
       setPlanDirty(clip);
-    },
+    }),
     selectTrack: function(trackId: string) {
       setTimelineSelection(trackId || "source", null);
       paintMixer(selectedVideo());
@@ -1599,7 +1593,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
     isSourceGroupSelected: function () {
       return selectedTrackId === "source";
     },
-    toggleSourceMute: function () {
+    toggleSourceMute: recorded(function () {
       let clip = selectedVideo();
       let state = ensureState(clip);
       if (!state) return;
@@ -1607,7 +1601,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
       state.sourceMuted = !state.sourceMuted;
       render();
       setPlanDirty(clip);
-    },
+    }),
     setSourceGain: function(value: number) {
       let clip = selectedVideo();
       let state = ensureState(clip);
@@ -1616,7 +1610,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
       applyPreviewVolume();
       setPlanDirty(clip);
     },
-    toggleTrackMute: function(trackId: string) {
+    toggleTrackMute: recorded(function(trackId: string) {
       let clip = selectedVideo();
       let track = findTrack(trackId, clip);
       if (!track) return;
@@ -1624,7 +1618,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
       track.muted = !track.muted;
       render();
       setPlanDirty(clip);
-    },
+    }),
     toggleMixerMute: function () {
       if (selectedTrackId === "source") return apiObject.toggleSourceMute();
       apiObject.toggleTrackMute(selectedTrackId);
@@ -1646,11 +1640,11 @@ export function installAudioTimeline(host: AudioTimelineHost) {
       let track = findTrack(trackId, clip);
       if (!clip || !track) return;
       confirm("Remove audio track “" + track.name + "”?", function () {
-        host.History?.begin?.(session.selPath);
         let selected = findSelected(clip);
         // lookups normalize the model, so mutate the current state after them
         const state = ensureState(clip);
         if (!state) return;
+        host.History?.begin?.(clip.path);
         releaseToken(track.mediaToken);
         releaseToken(track.waveformToken);
         const element = previewElements[track.id];
@@ -1665,9 +1659,9 @@ export function installAudioTimeline(host: AudioTimelineHost) {
         render();
         setPlanDirty(clip);
         host.History?.commit?.();
-      });
+      }, { title: "Remove audio track?", confirmLabel: "Remove", cancelLabel: "Keep track", danger: true });
     },
-    splitSelected: function () {
+    splitSelected: recorded(function () {
       let videoClip = selectedVideo();
       if (!videoClip) return;
       let at = sourceTime();
@@ -1689,8 +1683,8 @@ export function installAudioTimeline(host: AudioTimelineHost) {
       selectedClipId = normalizedRight.id;
       render();
       setPlanDirty(videoClip);
-    },
-    trimSelectedToPlayhead: function(endpoint: "start" | "end") {
+    }),
+    trimSelectedToPlayhead: recorded(function(endpoint: "start" | "end") {
       let videoClip = selectedVideo();
       let selected = findSelected(videoClip);
       if (!videoClip || !selected) return null;
@@ -1717,8 +1711,8 @@ export function installAudioTimeline(host: AudioTimelineHost) {
       render();
       setPlanDirty(videoClip);
       return selectedClipRangeData(videoClip);
-    },
-    deleteSelected: function () {
+    }),
+    deleteSelected: recorded(function () {
       let videoClip = selectedVideo();
       if (!videoClip) return;
       let selected = findSelected(videoClip);
@@ -1727,7 +1721,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
       selectedClipId = null;
       render();
       setPlanDirty(videoClip);
-    },
+    }),
     removeSelectedTrack: function () {
       if (selectedTrackId === "source") return;
       apiObject.removeTrack(selectedTrackId);
@@ -1756,6 +1750,21 @@ export function installAudioTimeline(host: AudioTimelineHost) {
 
   let sourceLane = documentRef.getElementById("source-audio-lane");
   if (sourceLane) sourceLane.addEventListener("pointerdown", onLanePointerDown);
+  // imported track rows are rebuilt on every render; their stable container handles them
+  const importedTracks = documentRef.getElementById("imported-audio-tracks");
+  importedTracks?.addEventListener("click", (event) => {
+    const button = isElement(event.target) ? event.target.closest<HTMLElement>("[data-track-action]") : null;
+    const trackId = button?.closest<HTMLElement>(".seq-row.imported")?.dataset.trackId;
+    if (!button || !trackId) return;
+    event.stopPropagation();
+    selectedTrackId = trackId;
+    if (button.dataset.trackAction === "mute") apiObject.toggleTrackMute(trackId);
+    else if (button.dataset.trackAction === "remove") apiObject.removeTrack(trackId);
+  });
+  importedTracks?.addEventListener("pointerdown", (event) => {
+    const lane = isElement(event.target) ? event.target.closest<HTMLElement>(".audio-lane") : null;
+    if (lane && importedTracks.contains(lane)) onLanePointerDown(event, lane);
+  });
   windowRef.addEventListener("pointermove", onPointerMove);
   windowRef.addEventListener("pointerup", onPointerUp);
   let video = documentRef.getElementById("vid");

@@ -1,9 +1,25 @@
 import { getBackendClient } from "../../backend/client.ts";
-import type { UpdateCheck } from "../../backend/types.ts";
+import type { BackendClient, UpdateCheck } from "../../backend/types.ts";
+import {
+  activeExportCount,
+  cancelExit,
+  showExitScreen,
+  stopExportsQuestion,
+  withTimeout,
+} from "../../platform/app-exit.ts";
 import { fetchPlatformCapabilities, shouldShowUpdater } from "../../platform/capabilities.ts";
+import { showStatusScreen } from "../../platform/status-screen.ts";
+import {
+  backendUnavailableScreen,
+  restartTuckAction,
+  updateStoppedTuck,
+} from "../../desktop-status.ts";
 import { legacyBackendResult } from "./backend-compat.ts";
 import { byId } from "./session.ts";
-import { closeMod, showMod, toast } from "./toast.ts";
+import { closeMod, confirmToast, showMod, toast } from "./toast.ts";
+
+// long enough for a busy queue, short enough that the install never feels stuck
+const QUEUE_CHECK_TIMEOUT_MS = 2_000;
 
 export interface UpdateNoteBlock {
   type: "heading" | "bullet" | "text";
@@ -71,7 +87,7 @@ export function showUpdateModal(update: UpdateCheck | Record<string, unknown>): 
   showMod(
     `<h2>Update available</h2>
     <div>
-      Version <strong id="update-version"></strong><span id="update-size"></span>
+      Version <strong id="update-version"></strong>
     </div>
     <h3>What's new</h3>
     <div class="update-notes" id="update-notes"></div>
@@ -81,10 +97,7 @@ export function showUpdateModal(update: UpdateCheck | Record<string, unknown>): 
     </div>`,
   );
   const version = byId("update-version");
-  const size = byId("update-size");
   if (version) version.textContent = `v${String(update.version ?? "")}`;
-  const sizeMb = typeof update.size_mb === "number" ? update.size_mb : 0;
-  if (size) size.textContent = sizeMb > 0 ? ` · ${sizeMb.toFixed(1)} MB` : "";
   byId("update-later")?.addEventListener("click", closeMod);
   byId("update-install")?.addEventListener("click", () => {
     void downloadAndInstallUpdate();
@@ -98,38 +111,80 @@ async function downloadAndInstallUpdate(): Promise<void> {
   if (!button || !later) return;
   button.disabled = true;
   later.disabled = true;
-  const api = getBackendClient();
-  try {
-    const started = await legacyBackendResult(api.downloadUpdate());
-    if (!started.ok) {
-      throw new Error(started.error || "Could not start the download");
-    }
-    while (true) {
-      await new Promise<void>((resolve) => {
-        setTimeout(resolve, 500);
-      });
-      const progress = await legacyBackendResult(api.getDownloadProgress());
-      if (progress.downloading) {
-        button.textContent = `Downloading ${Number(progress.progress || 0)}%`;
-        continue;
-      }
-      if (progress.error) throw new Error(String(progress.error));
-      if (progress.done) break;
-      throw new Error("Download stopped unexpectedly");
-    }
-    button.textContent = "Starting installer...";
-    const installed = await legacyBackendResult(api.installUpdate());
-    if (!installed.ok) {
-      throw new Error(installed.error || "Could not start the installer");
-    }
-    await api.closeWindow();
-  } catch (error) {
+  const restoreOffer = (): void => {
     button.disabled = false;
     later.disabled = false;
     button.textContent = "Download & install";
+  };
+  const api = getBackendClient();
+  try {
+    await downloadUpdate(api, button);
+  } catch (error) {
+    restoreOffer();
     const message = error instanceof Error ? error.message : String(error);
     toast(`Update failed: ${message}`, "err");
+    return;
   }
+
+  // installing closes Tuck, so running exports are never stopped without asking
+  const count = await activeExports(api);
+  if (count === 0) {
+    await installUpdate(api, restoreOffer);
+    return;
+  }
+  restoreOffer();
+  const question = stopExportsQuestion(count, "update");
+  confirmToast(question.message, () => void installUpdate(api, null), {
+    title: question.title,
+    confirmLabel: question.confirmLabel,
+    cancelLabel: question.cancelLabel,
+    danger: true,
+  });
+}
+
+// the shell keeps a finished, verified download, so asking again does not fetch it twice
+async function downloadUpdate(api: BackendClient, button: HTMLButtonElement): Promise<void> {
+  const started = await legacyBackendResult(api.downloadUpdate());
+  if (!started.ok) {
+    throw new Error(started.error || "Could not start the download");
+  }
+  while (true) {
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 500);
+    });
+    const progress = await legacyBackendResult(api.getDownloadProgress());
+    if (progress.downloading) {
+      button.textContent = `Downloading ${Number(progress.progress || 0)}%`;
+      continue;
+    }
+    if (progress.error) throw new Error(String(progress.error));
+    if (progress.done) return;
+    throw new Error("Download stopped unexpectedly");
+  }
+}
+
+async function activeExports(api: BackendClient): Promise<number | null> {
+  const result = await withTimeout(api.getQueueState(), QUEUE_CHECK_TIMEOUT_MS, null);
+  return result?.ok ? activeExportCount(result.value) : null;
+}
+
+async function installUpdate(api: BackendClient, restoreOffer: (() => void) | null): Promise<void> {
+  showExitScreen(document, null, "update");
+  const installed = await api.installUpdate();
+  if (installed.ok) {
+    // the installer normally closes Tuck itself; this covers a shell that returned instead
+    await api.closeWindow();
+    return;
+  }
+  cancelExit(document);
+  if (updateStoppedTuck(installed.error)) {
+    // trying again can't work without the backend, and only a restart brings it back
+    closeMod();
+    showStatusScreen(document, backendUnavailableScreen("update", [restartTuckAction()]));
+    return;
+  }
+  restoreOffer?.();
+  toast(`Update failed: ${installed.error.message || "Could not start the installer"}`, "err");
 }
 
 export async function checkUpdates(silent: boolean): Promise<void> {

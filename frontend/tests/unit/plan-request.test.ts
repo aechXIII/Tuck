@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   buildPlanRequest,
   buildProfilePayload,
+  planWarnings,
   type ExportFormState,
 } from "../../src/features/export/plan-request.ts";
 
@@ -201,4 +202,10 @@ test("LUT settings survive both workflow requests and profile persistence", () =
     assert.deepEqual(buildProfilePayload(state, {name:"Look",currentProfile:null,clip:null}).lut, lut);
   }
   assert.equal(buildPlanRequest(form(), {source:"s"}).lut, undefined);
+});
+
+test("plan warnings read as a list of sentences, and nothing for older plans", () => {
+  assert.deepEqual(planWarnings({ warnings: ["HDR colours stay as they are.", "", 3] }), ["HDR colours stay as they are."]);
+  assert.deepEqual(planWarnings({ estimated_size_mb: 9 }), []);
+  assert.deepEqual(planWarnings(null), []);
 });

@@ -5,6 +5,7 @@ import * as clipCards from "../../src/features/library/clip-card.ts";
 import type {
   ClipCardElement,
   ClipCardEvent,
+  ClipCardModel,
 } from "../../src/features/library/clip-card.ts";
 
 class FakeElement implements ClipCardElement {
@@ -61,7 +62,7 @@ function action(root: FakeElement, name: string): FakeElement | undefined {
 
 test("clip cards keep backend data inert and delegate exact action values", () => {
   const calls: Array<[string, string | undefined]> = [];
-  const model = {
+  const model: ClipCardModel = {
     path: `C:\\video'\" onclick=\"globalThis.pwned=true.mp4`,
     name: '<img src=x onerror="globalThis.pwned=true">',
     selected: true,
@@ -132,7 +133,7 @@ test("clip cards keep backend data inert and delegate exact action values", () =
 });
 
 test("library lists problems first and keeps every other video in the order it was given", () => {
-  const clips = [
+  const clips: ClipCardModel[] = [
     { path: "ready-a.mp4", name: "ready-a.mp4", queueState: "" },
     { path: "queued-a.mp4", name: "queued-a.mp4", queueState: "pending" },
     { path: "failed.mp4", name: "failed.mp4", queueState: "failed" },
@@ -165,7 +166,7 @@ test("library lists problems first and keeps every other video in the order it w
 });
 
 test("failed exports and unreadable files need attention and say so briefly", () => {
-  const clips = [
+  const clips: ClipCardModel[] = [
     { path: "ready.mp4", name: "ready.mp4", queueState: "cancelled" },
     { path: "failed.mp4", name: "failed.mp4", queueState: "failed", queueItemId: "q1" },
     { path: "broken.mp4", name: "broken.mp4", queueState: "", probeError: true },
@@ -199,6 +200,23 @@ test("failed exports and unreadable files need attention and say so briefly", ()
 });
 
 const quiet = { select() {}, togglePlay() {}, remove() {}, openResult() {}, retry() {}, beginReorder() {} };
+
+test("a video unreadable because FFprobe is missing points at Settings instead of Retry", () => {
+  let opened = 0;
+  const created = clipCards.createClipCard(
+    documentRef,
+    { path: "a.mp4", name: "a.mp4", probeError: true, setupTool: "FFprobe", statusLabel: "No FFprobe" },
+    { ...quiet, openToolSettings: () => (opened += 1) },
+  );
+  if (!(created instanceof FakeElement)) throw new Error("expected FakeElement");
+  assert.equal(action(created, "retry-probe"), undefined);
+  const setup = action(created, "open-tool-settings");
+  assert.ok(setup);
+  assert.equal(setup.textContent, "Set up");
+  assert.equal(setup.attributes["aria-label"], "Set up FFprobe in Settings");
+  created.listeners.click?.[0]?.({ target: setup, stopPropagation() {} });
+  assert.equal(opened, 1);
+});
 
 test("a queued or exporting row says where it is and leaves its controls to the Exports panel", () => {
   const queued = clipCards.createClipCard(documentRef, {
@@ -258,7 +276,7 @@ test("a ready row says what the task makes of the video, and warns when it runs 
 });
 
 test("library omits empty status sections and reports a hand-checked summary", () => {
-  const clips = [
+  const clips: ClipCardModel[] = [
     { path: "one.mp4", name: "one.mp4", queueState: "", fileSize: 1_500_000_000 },
     { path: "two.mp4", name: "two.mp4", queueState: "failed", fileSize: 540_000_000 },
     { path: "three.mp4", name: "three.mp4", queueState: "cancelled", fileSize: 0 },

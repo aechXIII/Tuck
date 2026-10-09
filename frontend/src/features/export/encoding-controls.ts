@@ -5,13 +5,14 @@ import { installCutControls } from "./cut-controls.ts";
 import { createCutState } from "./cut-state.ts";
 import type { CutPlanPreview } from "../../backend/cutting-types.ts";
 import type { BackendClient } from "../../backend/types.ts";
-import { allProbesReady, isProbeReady } from "../../state/probe.ts";
+import { isProbeReady, probeSummary } from "../../state/probe.ts";
 import * as InspectorUi from "../panels/inspector-ui.ts";
 import { cropForAspect, isFullCrop, type CropTransform } from "../transform/crop-geometry.ts";
 import { SegmentEditing } from "../timeline/segments.ts";
 import { hiddenParts, launchTask, taskAt, taskIndex, visibleTasks } from "../settings/visibility.ts";
 import { legacyBackendResult } from "../editor/backend-compat.ts";
 import { closeMod, showMod, toast } from "../editor/toast.ts";
+import { reasonSentence, withReason } from "../editor/format.ts";
 import { profileChangeSummary, profileSummary } from "../profiles/profile-summary.ts";
 import { pickerProfiles } from "../profiles/profile-list.ts";
 import type { EditorClip } from "../editor/types.ts";
@@ -20,6 +21,7 @@ import {
   buildPlanRequest,
   buildProfilePayload,
   buildCutRequest,
+  planWarnings,
   type ExportFormState,
 } from "./plan-request.ts";
 import {
@@ -263,22 +265,51 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     if (r.ok) Object.assign(settings, data);
   }
 
+  // the video whose plan notes are showing under the profile card
+  let warningsPath: string | null = null;
+
+  function exportReadiness() {
+    return probeSummary(deps.orderedClipKeys(), (path) => session.clips[path]);
+  }
+
+  // “a.mp4”, or “a.mp4” and 2 others
+  function namedVideos(paths: readonly string[]): string {
+    const first = paths[0];
+    if (!first) return "";
+    const name = `“${session.clips[first]?.name ?? first}”`;
+    const others = paths.length - 1;
+    return others ? `${name} and ${others} ${others === 1 ? "other" : "others"}` : name;
+  }
+
+  function allNote(readiness: ReturnType<typeof exportReadiness>): string {
+    if (readiness.loading.length) return "Some videos are still being read.";
+    const failed = readiness.failed;
+    if (!failed.length) return "";
+    // a failed read won't finish on its own, so the readable videos go ahead without it
+    if (readiness.ready.length) return `${namedVideos(failed)} can’t be read and will be skipped.`;
+    return `${namedVideos(failed)} can’t be read. Retry ${failed.length === 1 ? "it" : "them"} in the Library, or remove ${failed.length === 1 ? "it" : "them"}.`;
+  }
+
   function updateActionButtons(): void {
+    // another video, or none, is selected now; its own plan brings its own notes
+    if (warningsPath && warningsPath !== session.selPath) paintPlanWarnings(null);
     if (wf === 2) { cutting.render(); return; }
     const up = wf === 1;
-    const count = Object.keys(session.clips).length;
+    const readiness = exportReadiness();
+    const count = readiness.ready.length + readiness.loading.length + readiness.failed.length;
     const selReady = isProbeReady(session.selPath ? session.clips[session.selPath] : null);
-    const allReady = allProbesReady(session.clips);
+    const allReady = readiness.ready.length > 0 && !readiness.loading.length;
     const one = el<HTMLButtonElement>("btn-one");
     const all = el<HTMLButtonElement>("btn-all");
     // the settings are shared; this button acts on the selected video only
     one.textContent = up ? "Upscale this video" : "Compress this video";
     one.disabled = !selReady || !blending.valid() || !lut.valid() || !videoSettingsValid();
-    all.textContent = (up ? "Upscale all" : "Compress all") + (count ? ` (${count})` : "");
+    const exported = readiness.ready.length + readiness.loading.length;
+    all.textContent = (up ? "Upscale all" : "Compress all") + (exported ? ` (${exported})` : "");
     all.disabled = !allReady || !blending.valid() || !lut.valid() || !videoSettingsValid();
     all.classList.toggle("upscale-batch", up);
     const note = el("btn-all-note");
-    note.textContent = count > 1 && !allReady ? "Some videos are still being read." : "";
+    note.textContent = count > 1 ? allNote(readiness) : "";
     note.hidden = !note.textContent;
     syncExportSummary();
   }
@@ -949,10 +980,24 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     });
   }
 
+  // the selected video's plan notes, shown under the profile card; nothing shows while it is replanned
+  function paintPlanWarnings(plan: unknown, path: string | null = null): void {
+    const list = el("export-plan-warnings");
+    const warnings = planWarnings(plan);
+    warningsPath = warnings.length ? path : null;
+    list.replaceChildren(...warnings.map((warning) => {
+      const item = document.createElement("li");
+      item.textContent = warning;
+      return item;
+    }));
+    list.hidden = !warnings.length;
+  }
+
   async function reqPreview(): Promise<void> {
     if (wf === 2) { cutting.refresh(); return; }
     const path = session.selPath;
     const clip = path ? session.clips[path] : undefined;
+    paintPlanWarnings(null);
     if (!clip || !clip.probed) return;
     if (!videoSettingsValid() || !lut.valid()) {
       clip.planData = null;
@@ -996,6 +1041,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
       ) {
         clip.planData = data;
         if (session.selPath !== path) return;
+        paintPlanWarnings(data, path);
         deps.renderClips?.();
         deps.paintCropOverlay();
         void planLibrary();
@@ -1046,37 +1092,58 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     if (wf === 2) { await cutting.exportCuts(false); return; }
     if (!lut.valid() || !blending.reportValidity() || !videoSettingsValid()) return;
     const path = session.selPath;
-    if (!path) {
-      toast("Select a clip first.", "err");
+    const clip = path ? session.clips[path] : undefined;
+    if (!clip) {
+      toast("Select a video first.", "err");
       return;
     }
-    if (!isProbeReady(session.clips[path])) {
-      toast("Retry reading clip details before exporting.", "err");
+    if (!isProbeReady(clip)) {
+      toast(clip.error
+        ? `Tuck can’t read “${clip.name}”. Select Retry on it in the Library, then export.`
+        : `“${clip.name}” is still being read. Export it once it’s ready.`, "err");
       return;
     }
     const r = await legacyBackendResult(
-      client().enqueueWithOptions(buildRequest(session.clips[path]!.path) as never),
+      client().enqueueWithOptions(buildRequest(clip.path) as never),
     );
-    if (!r.ok) toast(`Error: ${r.error ?? "Failed"}`, "err");
+    if (!r.ok) toast(withReason(`Couldn’t add “${clip.name}” to the queue.`, r.error), "err");
     void deps.pollQueue();
+  }
+
+  // the backend names each file in its reasons; a long list is cut short rather than flooding
+  function enqueueReasons(errors: readonly string[]): string {
+    const shown = errors.slice(0, 2).map(reasonSentence).join(" ");
+    const more = errors.length - 2;
+    return more > 0 ? `${shown} And ${more} more.` : shown;
   }
 
   async function compressAll(): Promise<void> {
     if (wf === 2) { await cutting.exportCuts(true); return; }
     if (!lut.valid() || !blending.reportValidity() || !videoSettingsValid()) return;
-    const keys = deps.orderedClipKeys();
-    if (!keys.length) {
-      toast("Add clips first.", "err");
+    const readiness = exportReadiness();
+    if (!readiness.ready.length && !readiness.loading.length && !readiness.failed.length) {
+      toast("Add videos first.", "err");
       return;
     }
-    if (!allProbesReady(session.clips)) {
-      toast("Retry unreadable clip details before exporting all files.", "err");
+    if (readiness.loading.length) {
+      toast("Some videos are still being read. Export them all once they’re ready.", "err");
       return;
     }
-    const requests = keys.map((key) => buildRequest(session.clips[key]!.path) as never);
+    if (!readiness.ready.length) {
+      toast(`Tuck can’t read ${namedVideos(readiness.failed)}. Retry in the Library, or remove ${readiness.failed.length === 1 ? "it" : "them"}.`, "err");
+      return;
+    }
+    // videos that can't be read are skipped; the note under the button already says which
+    const requests = readiness.ready.map((path) => buildRequest(session.clips[path]!.path) as never);
     const r = await legacyBackendResult(client().enqueueBatch(requests));
-    if (!r.ok) toast(`Error: ${r.error ?? "Failed"}`, "err");
-    if (Array.isArray(r.errors) && r.errors.length) toast("Some errors occurred.", "err");
+    const errors = toStringArray(r.errors);
+    if (!r.ok) {
+      toast(errors.length
+        ? `No videos were added to the queue. ${enqueueReasons(errors)}`
+        : withReason("Couldn’t add the videos to the queue.", r.error), "err");
+    } else if (errors.length) {
+      toast(`${errors.length} of ${requests.length} videos weren’t added to the queue. ${enqueueReasons(errors)}`, "err");
+    }
     void deps.pollQueue();
   }
 
@@ -1122,51 +1189,83 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
       snapProf();
       toast(`Changes saved to "${name}".`, "ok");
     } else {
-      toast(r.error ?? "Could not save profile.", "err");
+      toast(withReason(`Couldn’t save changes to “${name}”.`, r.error), "err");
     }
   }
 
+  // a name typed and then dismissed with Escape or a click outside is kept for next time;
+  // only Cancel or a successful save clears it
+  let profileNameDraft = "";
+
   function saveProfileAs(): Promise<void> {
+    let cancelled = false;
     showMod(
-      `<h2>Save Profile As</h2>
+      `<h2 id="sp-title">Save profile as</h2>
     <div>
-      <span>Profile name</span>
-      <input type="text" id="sp-name" placeholder="My profile">
+      <label for="sp-name">Profile name</label>
+      <input type="text" id="sp-name" placeholder="My profile" autocomplete="off">
+      <p class="mod-field-error" id="sp-error" hidden></p>
     </div>
-    <div class="mod-btns">
+    <div class="confirm-actions">
       <button type="button" class="btn2" id="sp-cancel">Cancel</button>
-      <button type="button" class="btn1" id="sp-save" style="width:auto">Save</button>
+      <button type="button" class="btn1" id="sp-save">Save</button>
     </div>`,
+      {
+        labelledBy: "sp-title",
+        onClose: () => {
+          profileNameDraft = cancelled ? "" : byId<HTMLInputElement>("sp-name")?.value ?? "";
+        },
+      },
     );
-    byId("sp-cancel")?.addEventListener("click", closeMod);
+    const nameInput = byId<HTMLInputElement>("sp-name");
+    if (nameInput) {
+      nameInput.value = profileNameDraft;
+      nameInput.select();
+      nameInput.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") void doSaveAs();
+      });
+      nameInput.addEventListener("input", () => showNameError(""));
+    }
+    byId("sp-cancel")?.addEventListener("click", () => {
+      cancelled = true;
+      closeMod();
+    });
     byId("sp-save")?.addEventListener("click", () => void doSaveAs());
-    setTimeout(() => {
-      const nameInput = byId<HTMLInputElement>("sp-name");
-      if (nameInput) {
-        nameInput.focus();
-        nameInput.addEventListener("keydown", (event) => {
-          if (event.key === "Enter") void doSaveAs();
-        });
-      }
-    }, 100);
     return Promise.resolve();
+  }
+
+  function showNameError(message: string): void {
+    const error = byId("sp-error");
+    const nameInput = byId<HTMLInputElement>("sp-name");
+    if (!error || !nameInput) return;
+    error.textContent = message;
+    error.hidden = !message;
+    if (message) {
+      nameInput.setAttribute("aria-invalid", "true");
+      nameInput.setAttribute("aria-describedby", "sp-error");
+    } else {
+      nameInput.removeAttribute("aria-invalid");
+      nameInput.removeAttribute("aria-describedby");
+    }
   }
 
   async function doSaveAs(): Promise<void> {
     if (!lut.valid() || !blending.reportValidity() || !videoSettingsValid()) return;
     const name = (byId<HTMLInputElement>("sp-name")?.value ?? "").trim();
     if (!name) {
-      toast("Enter a name.", "err");
+      showNameError("Enter a name for the profile.");
+      byId<HTMLInputElement>("sp-name")?.focus();
       return;
     }
     closeMod();
     const r = await legacyBackendResult(client().createProfile(profilePayload(name) as never));
     if (r.ok) {
+      profileNameDraft = "";
       await loadSettings();
       snapProf();
-      toast(`Profile saved as "${name}".`, "ok");
+      toast(`Profile saved as “${name}”.`, "ok");
     } else {
-      toast(r.error ?? "Could not save profile.", "err");
+      toast(withReason(`Couldn’t save “${name}”.`, r.error), "err");
     }
   }
 
@@ -1482,10 +1581,45 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     updateDirty();
   }
 
+  type ClipTransform = Pick<
+    EditorClip,
+    "crop" | "cropAspect" | "rotation" | "sizingMode" | "flipHorizontal" | "flipVertical" | "transformOverride" | "transformIntentTouched"
+  >;
+
+  // discarding resets every video's transform to the profile's, so Undo puts those back too
   function resetToProfile(): void {
+    const unsaved = unsavedProfile();
+    const transforms = new Map<EditorClip, ClipTransform>();
+    for (const clip of Object.values(session.clips)) {
+      transforms.set(clip, {
+        crop: clip.crop ? { ...clip.crop } : null,
+        cropAspect: clip.cropAspect,
+        rotation: clip.rotation,
+        sizingMode: clip.sizingMode,
+        flipHorizontal: clip.flipHorizontal,
+        flipVertical: clip.flipVertical,
+        transformOverride: clip.transformOverride,
+        transformIntentTouched: clip.transformIntentTouched,
+      });
+    }
     applyProfile(true);
     snapProf();
-    toast("Changes discarded.", "ok");
+    const name = unsaved?.name ?? currentProfileName();
+    toast(name ? `Changes to ${name} discarded.` : "Changes discarded.", "", {
+      label: "Undo",
+      run: () => {
+        if (unsaved) restoreUnsaved(unsaved);
+        for (const [clip, values] of transforms) {
+          if (session.clips[clip.path] !== clip) continue;
+          Object.assign(clip, values);
+          clip.planData = null;
+        }
+        deps.syncTransformControls();
+        deps.paintCropOverlay();
+        deps.renderClips?.();
+        void reqPreview();
+      },
+    });
   }
 
   function resizeSizeInput(): void {

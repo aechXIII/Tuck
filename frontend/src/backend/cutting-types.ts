@@ -99,9 +99,19 @@ export interface CutAnalysisPayload extends JsonObject {
   readonly status: "missing" | "pending" | "reading" | "ready" | "cancelled" | "failed";
   readonly progress: number | null;
   readonly coverage_end: MediaTime;
+  // one page of keyframes, starting at `keyframes_from` in the list `keyframes_revision` names;
+  // the backend sends what the poller lacks, and `mergeKeyframePage` puts the list back together
   readonly keyframes: readonly MediaTime[];
+  readonly keyframes_revision?: number;
+  readonly keyframes_from?: number;
+  readonly keyframe_count?: number;
   readonly issue: CutIssue | null;
   readonly analysis: CutAnalysisSummary | null;
+}
+// how much of which keyframe list the poller already holds
+export interface KeyframeCursor {
+  readonly revision: number;
+  readonly from: number;
 }
 export interface CutCancellation extends JsonObject {
   readonly cancelled: boolean;
@@ -210,11 +220,55 @@ export function isCutAnalysisPayload(value: unknown): value is CutAnalysisPayloa
     && isMediaTime(value.coverage_end)
     && Array.isArray(value.keyframes)
     && value.keyframes.every(isMediaTime)
+    && (value.keyframes_revision === undefined || integer(value.keyframes_revision))
+    && (value.keyframes_from === undefined || integer(value.keyframes_from))
+    && (value.keyframe_count === undefined || (
+      integer(value.keyframe_count)
+      && value.keyframe_count >= (integer(value.keyframes_from) ? value.keyframes_from : 0) + value.keyframes.length
+    ))
     && (value.issue === null || issue(value.issue))
     && (value.analysis === null || summary(value.analysis))
     && (value.status !== "ready" || summary(value.analysis))
   );
 }
+/**
+ * Joins a page of keyframes onto the list already held. The result holds the whole list from
+ * the start, so the timeline reads it like a single answer. A page for another scan or a
+ * replaced list starts over from what the page carries.
+ */
+export function mergeKeyframePage(
+  held: CutAnalysisPayload | null | undefined,
+  page: CutAnalysisPayload,
+): CutAnalysisPayload {
+  const from = page.keyframes_from ?? 0;
+  const sameList = !!held && held.work_id === page.work_id
+    && held.keyframes_revision !== undefined && held.keyframes_revision === page.keyframes_revision;
+  const base = sameList && from <= held.keyframes.length ? held.keyframes.slice(0, from) : null;
+  // a page that starts past what is held cannot be joined; the next read asks from the start
+  const keyframes = base ? base.concat(page.keyframes) : from === 0 ? page.keyframes : [];
+  return {...page, keyframes, keyframes_from: 0};
+}
+
+// where the next status read should start, or nothing when the list came without a revision
+export function keyframeCursor(analysis: CutAnalysisPayload | null | undefined): KeyframeCursor | undefined {
+  if (analysis?.keyframes_revision === undefined) return undefined;
+  return {revision: analysis.keyframes_revision, from: analysis.keyframes.length};
+}
+
+/**
+ * Whether to read the next page straight away: the backend holds more keyframes and the last
+ * page added some. A page that adds nothing means the cursor did not reach the backend, so the
+ * list read so far stands rather than asking for the same page forever.
+ */
+export function moreKeyframesToRead(
+  held: CutAnalysisPayload | null | undefined,
+  merged: CutAnalysisPayload,
+): boolean {
+  if (merged.keyframe_count === undefined || merged.keyframes.length >= merged.keyframe_count) return false;
+  const sameList = !!held && held.work_id === merged.work_id && held.keyframes_revision === merged.keyframes_revision;
+  return merged.keyframes.length > (sameList && held ? held.keyframes.length : 0);
+}
+
 export function isCutCancellation(value: unknown): value is CutCancellation {
   return object(value) && typeof value.cancelled === "boolean";
 }

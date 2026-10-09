@@ -7,6 +7,9 @@ pub mod platform;
 use backend::{BackendLaunchConfig, BackendState};
 use commands::backend::backend_request;
 use commands::desktop::{notify_when_unfocused, set_interface_size};
+use commands::lifecycle::{
+    acknowledge_close_request, confirm_close, handle_close_request, restart_app, CloseState,
+};
 use commands::native::{
     close_window, copy_text, open_config_folder, open_logs_folder, open_output_folder,
     pick_audio_files, pick_ffmpeg_file, pick_ffprobe_file, pick_folder, pick_import_file,
@@ -21,23 +24,7 @@ use commands::updates::{
 use commands::window::{
     minimize_window, set_caption_maximize_area, show_window_menu, toggle_maximize_window,
 };
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
-};
 use tauri::Manager;
-
-async fn finish_window_close(
-    closing: &AtomicBool,
-    shutdown: impl std::future::Future<Output = ()>,
-    close: impl FnOnce(),
-) {
-    if closing.swap(true, Ordering::AcqRel) {
-        return;
-    }
-    shutdown.await;
-    close();
-}
 
 fn allows_app_navigation(url: &tauri::Url) -> bool {
     url.scheme() == "tauri"
@@ -129,6 +116,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(startup_state)
         .manage(UpdaterState::default())
+        .manage(CloseState::default())
         .setup(|app| {
             #[cfg(windows)]
             if let Some(window) = app.get_webview_window("main") {
@@ -137,12 +125,18 @@ pub fn run() {
                 window.set_decorations(false)?;
                 platform::windows_caption::remember_app(app.handle());
             }
-            let state = match resolve_backend_config(&app.handle().clone()) {
-                Ok(config) => tauri::async_runtime::block_on(BackendState::launch(config))
-                    .unwrap_or_else(BackendState::unavailable),
-                Err(error) => BackendState::unavailable(error),
-            };
+            // the backend starts in the background so the page can draw its own
+            // starting screen; requests made meanwhile wait for it to be ready
+            let (state, starter) = BackendState::starting();
             app.manage(state);
+            let config = resolve_backend_config(&app.handle().clone());
+            tauri::async_runtime::spawn(async move {
+                let result = match config {
+                    Ok(config) => backend::BackendProcess::launch(config).await,
+                    Err(error) => Err(error),
+                };
+                starter.finish(result);
+            });
             Ok(())
         });
 
@@ -162,6 +156,9 @@ pub fn run() {
         open_logs_folder,
         open_config_folder,
         close_window,
+        acknowledge_close_request,
+        confirm_close,
+        restart_app,
         check_for_updates,
         download_update,
         install_update,
@@ -175,39 +172,16 @@ pub fn run() {
         notify_when_unfocused
     ]);
 
-    let closing = Arc::new(AtomicBool::new(false));
     builder
-        .on_window_event(move |window, event| {
+        .on_window_event(|window, event| {
             if let tauri::WindowEvent::Resized(_) = event {
                 notify_window_resized(window);
             }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                // keep the shell alive until its backend has released the installed files
+                // keep the shell alive until running exports are confirmed and its
+                // backend has released the installed files
                 api.prevent_close();
-                let state = window
-                    .try_state::<BackendState>()
-                    .map(|state| state.inner().clone());
-                let window = window.clone();
-                let closing = closing.clone();
-                tauri::async_runtime::spawn(async move {
-                    finish_window_close(
-                        &closing,
-                        async {
-                            if let Some(state) = state {
-                                if let Err(error) = state.shutdown().await {
-                                    eprintln!("could not shut down the backend: {error}");
-                                }
-                            }
-                        },
-                        || {
-                            if let Err(error) = window.destroy() {
-                                closing.store(false, Ordering::Release);
-                                eprintln!("could not close the window: {error}");
-                            }
-                        },
-                    )
-                    .await;
-                });
+                handle_close_request(window);
             }
         })
         .run(tauri::generate_context!())
@@ -217,49 +191,6 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::{allows_app_navigation, packaged_resource_paths};
-
-    #[tokio::test]
-    async fn window_close_waits_for_backend_and_ignores_repeated_requests() {
-        use std::sync::{
-            atomic::{AtomicBool, Ordering},
-            Arc,
-        };
-        let closing = Arc::new(AtomicBool::new(false));
-        let closed = Arc::new(AtomicBool::new(false));
-        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
-        let (finish_tx, finish_rx) = tokio::sync::oneshot::channel();
-        let first_closing = closing.clone();
-        let first_closed = closed.clone();
-        let first = tokio::spawn(async move {
-            super::finish_window_close(
-                &first_closing,
-                async {
-                    started_tx.send(()).unwrap();
-                    finish_rx.await.unwrap();
-                },
-                || {
-                    first_closed.store(true, Ordering::Release);
-                },
-            )
-            .await;
-        });
-        started_rx.await.unwrap();
-        assert!(!closed.load(Ordering::Acquire));
-        super::finish_window_close(
-            &closing,
-            async {
-                panic!("duplicate shutdown");
-            },
-            || {
-                panic!("duplicate close must not bypass shutdown");
-            },
-        )
-        .await;
-        assert!(!closed.load(Ordering::Acquire));
-        finish_tx.send(()).unwrap();
-        first.await.unwrap();
-        assert!(closed.load(Ordering::Acquire));
-    }
 
     #[test]
     fn navigation_policy_allows_only_tuck_origins() {

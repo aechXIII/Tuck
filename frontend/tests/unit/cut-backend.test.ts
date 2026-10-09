@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createTauriBackendClient } from "../../src/backend/tauri.ts";
 import type { CutEnqueueRequest, CutPlanPreview } from "../../src/backend/cutting-types.ts";
+import { keyframeCursor, mergeKeyframePage, moreKeyframesToRead } from "../../src/backend/cutting-types.ts";
 
 const zero = {ticks:"0",time_base_num:1,time_base_den:90000};
 const pending = {work_id:"scan-1",status:"pending",progress:null,coverage_end:zero,keyframes:[],issue:null,analysis:null};
@@ -80,4 +81,53 @@ test("cut enqueue validates success and preserves stale-plan error details", asy
   }
   const error = {code: "PLAN_CHANGED", message: "Review the current cuts.", details: {field: "cut", current_plan: {fingerprint: "b".repeat(64)}}};
   assert.deepEqual(await createTauriBackendClient(async () => {throw error;}).enqueueWithOptions(request), {ok: false, error});
+});
+
+test("status reads send the keyframe cursor and validate the page it answers with", async () => {
+  const calls: unknown[] = [];
+  const page = {...pending,status:"reading",keyframes:[zero],keyframes_revision:3,keyframes_from:5,keyframe_count:6};
+  const client = createTauriBackendClient(async (_command,args) => {calls.push(args); return page;});
+  assert.deepEqual(await client.getCutAnalysis("clip.mp4",{revision:3,from:5}),{ok:true,value:page});
+  assert.deepEqual(calls,[{command:{command:"get_cut_analysis",payload:{path:"clip.mp4",keyframes_revision:3,keyframes_from:5}}}]);
+  for (const bad of [{keyframes_from:-1},{keyframes_revision:1.5},{keyframe_count:5},{keyframes_from:"5"}]) {
+    assert.equal((await createTauriBackendClient(async () => ({...page,...bad})).getCutAnalysis("clip.mp4")).ok,false);
+  }
+});
+
+const second = (n: number) => ({ticks:String(n),time_base_num:1,time_base_den:1});
+const seconds = (from: number, to: number) => Array.from({length:to-from},(_,n) => second(from+n));
+const reading = {...pending,status:"reading" as const};
+
+test("keyframe pages join into one list until the list is replaced", () => {
+  const first = mergeKeyframePage(null,{...reading,keyframes:seconds(0,3),keyframes_revision:1,keyframes_from:0,keyframe_count:3});
+  assert.deepEqual(keyframeCursor(first),{revision:1,from:3});
+  const next = mergeKeyframePage(first,{...reading,keyframes:seconds(3,5),keyframes_revision:1,keyframes_from:3,keyframe_count:5});
+  assert.deepEqual(next.keyframes,seconds(0,5));
+  assert.equal(next.keyframes_from,0);
+  // the backend replaced the list, so it sent the new one from the start
+  const replaced = mergeKeyframePage(next,{...reading,keyframes:[second(0),second(7)],keyframes_revision:2,keyframes_from:0,keyframe_count:2});
+  assert.deepEqual(replaced.keyframes,[second(0),second(7)]);
+  // a page that cannot follow what is held is dropped, and the next read starts over
+  const gap = mergeKeyframePage(first,{...reading,keyframes:[second(9)],keyframes_revision:1,keyframes_from:8,keyframe_count:9});
+  assert.deepEqual(gap.keyframes,[]);
+  assert.deepEqual(keyframeCursor(gap),{revision:1,from:0});
+  const otherScan = mergeKeyframePage(first,{...reading,work_id:"scan-2",keyframes:[second(4)],keyframes_revision:1,keyframes_from:3,keyframe_count:4});
+  assert.deepEqual(otherScan.keyframes,[]);
+  // a backend without pages sends the whole list each time
+  const whole = mergeKeyframePage(first,{...reading,keyframes:seconds(0,2)});
+  assert.deepEqual(whole.keyframes,seconds(0,2));
+  assert.equal(keyframeCursor(whole),undefined);
+});
+
+test("the rest of a long list is read after the scan ends, but never the same page forever", () => {
+  const ready = {...pending,status:"ready" as const,keyframes_revision:1,keyframe_count:10};
+  const firstPage = mergeKeyframePage(null,{...ready,keyframes:seconds(0,4),keyframes_from:0});
+  assert.equal(moreKeyframesToRead(null,firstPage),true);
+  const secondPage = mergeKeyframePage(firstPage,{...ready,keyframes:seconds(4,8),keyframes_from:4});
+  assert.equal(moreKeyframesToRead(firstPage,secondPage),true);
+  const last = mergeKeyframePage(secondPage,{...ready,keyframes:seconds(8,10),keyframes_from:8});
+  assert.equal(moreKeyframesToRead(secondPage,last),false);
+  // a cursor that never reaches the backend brings back the first page again
+  const repeated = mergeKeyframePage(firstPage,{...ready,keyframes:seconds(0,4),keyframes_from:0});
+  assert.equal(moreKeyframesToRead(firstPage,repeated),false);
 });

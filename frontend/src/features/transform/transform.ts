@@ -1,5 +1,6 @@
 import type { EditorClip } from "../editor/types.ts";
 import * as CropGeometry from "./crop-geometry.ts";
+import { recordedCommand } from "../history/history.ts";
 import type {
   ContainedRect,
   CropRect,
@@ -43,7 +44,11 @@ export interface TransformHost {
   window?: Window & typeof globalThis;
   clips: () => Readonly<Record<string, EditorClip>>;
   selPath: () => string | null;
-  History?: { begin: (path: string | null) => void; commit: () => void };
+  History?: {
+    begin: (path: string | null) => void;
+    commit: () => void;
+    action?: <T>(path: string | null, fn: () => T) => T;
+  };
   renderClips?: () => void;
   reqPreview?: () => void;
   clock?: {
@@ -476,13 +481,6 @@ export function installTransform(host: TransformHost): TransformApi {
     if ((clip.cropAspect || "off") === "off") {
       ui.classList.remove("on");
       paintTransformPreview(clip, size);
-      const offLabel = doc.getElementById("crop-label");
-      const offReset = doc.getElementById("btn-crop-reset");
-      if (offLabel) {
-        offLabel.textContent = "Full frame";
-        offLabel.classList.remove("active");
-      }
-      if (offReset) offReset.classList.add("hid");
       return;
     }
 
@@ -526,39 +524,6 @@ export function installTransform(host: TransformHost): TransformApi {
       content.left + content.width - shown.left - shown.width,
       shown.height,
     );
-
-    const label = doc.getElementById("crop-label");
-    const reset = doc.getElementById("btn-crop-reset");
-    if (label) {
-      const aspect =
-        clip.cropAspect && clip.cropAspect !== "free" && clip.cropAspect !== "off"
-          ? " · " + clip.cropAspect
-          : "";
-      const rotation = clip.rotation ? " · " + clip.rotation + "°" : "";
-      const flip =
-        clip.flipHorizontal || clip.flipVertical
-          ? " · flip " +
-            (clip.flipHorizontal && clip.flipVertical
-              ? "H+V"
-              : clip.flipHorizontal
-                ? "H"
-                : "V")
-          : "";
-      label.textContent =
-        (clip.crop ? "Crop " + crop.width + "×" + crop.height : "Full frame") +
-        aspect +
-        rotation +
-        flip;
-      label.classList.toggle(
-        "active",
-        !!clip.crop || !!aspect || !!rotation || !!flip,
-      );
-    }
-    if (reset)
-      reset.classList.toggle(
-        "hid",
-        !(!!clip.crop || (clip.cropAspect || "off") !== "off"),
-      );
   }
 
   function eventSourcePoint(
@@ -983,15 +948,20 @@ export function installTransform(host: TransformHost): TransformApi {
     }
   }
 
+  // each transform button press is one undo step for the selected video
+  const history = host.History?.action ? { action: host.History.action } : null;
+  const recorded = <A extends unknown[], R>(run: (...args: A) => R) =>
+    recordedCommand(history, host.selPath, run);
+
   const api: TransformApi = {
     paintCropOverlay,
     syncTransformControls,
-    setCropAspect,
-    setVideoRotation,
-    toggleVideoFlip,
-    setSizingMode,
+    setCropAspect: recorded(setCropAspect),
+    setVideoRotation: recorded(setVideoRotation),
+    toggleVideoFlip: recorded(toggleVideoFlip),
+    setSizingMode: recorded(setSizingMode),
     clearCrop,
-    resetVideoTransform,
+    resetVideoTransform: recorded(resetVideoTransform),
     resetVideoTransformValues,
     cropTransformForRequest,
     dispose: () => {

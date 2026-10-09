@@ -47,6 +47,11 @@ pub enum BackendCommand {
     },
     GetCutAnalysis {
         path: String,
+        // a long keyframe list arrives in pages; the sidecar validates the pair
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        keyframes_revision: Option<u64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        keyframes_from: Option<u64>,
     },
     CancelCutWork {
         work_id: String,
@@ -111,21 +116,19 @@ pub enum BackendCommand {
         path: String,
         profile_id: String,
     },
+    // the shortcut target is always resolved natively, never named by the webview
     InstallGenericSendto {
         kind: SendToKind,
-        executable_path: Option<String>,
     },
     RemoveGenericSendto {
         kind: SendToKind,
     },
     RepairGenericSendto {
         kind: SendToKind,
-        executable_path: Option<String>,
     },
     InstallProfileSendto {
         profile_id: String,
         action: Option<String>,
-        executable_path: Option<String>,
     },
     RemoveProfileSendto {
         profile_id: String,
@@ -133,10 +136,8 @@ pub enum BackendCommand {
     RepairProfileSendto {
         profile_id: String,
         action: Option<String>,
-        executable_path: Option<String>,
     },
     ListSendtoShortcuts,
-    Shutdown,
 }
 
 impl BackendCommand {
@@ -168,7 +169,20 @@ impl BackendCommand {
             Self::AnalyzeCut { path, work_id } => {
                 ("analyze_cut", json!({ "path": path, "work_id": work_id }))
             }
-            Self::GetCutAnalysis { path } => ("get_cut_analysis", json!({ "path": path })),
+            Self::GetCutAnalysis {
+                path,
+                keyframes_revision,
+                keyframes_from,
+            } => {
+                let mut payload = json!({ "path": path });
+                if let Some(revision) = keyframes_revision {
+                    payload["keyframes_revision"] = json!(revision);
+                }
+                if let Some(from) = keyframes_from {
+                    payload["keyframes_from"] = json!(from);
+                }
+                ("get_cut_analysis", payload)
+            }
             Self::CancelCutWork { work_id } => ("cancel_cut_work", json!({ "work_id": work_id })),
             Self::CreatePlan { request } => ("create_plan", json!({ "request": request })),
             Self::EnqueueWithOptions { request } => {
@@ -225,68 +239,37 @@ impl BackendCommand {
                 "export_profile_to_file",
                 json!({ "path": path, "profile_id": profile_id }),
             ),
-            Self::InstallGenericSendto {
-                kind,
-                executable_path,
-            } => (
-                "install_generic_sendto",
-                generic_sendto_params(*kind, executable_path.as_deref()),
-            ),
+            Self::InstallGenericSendto { kind } => {
+                ("install_generic_sendto", json!({ "kind": kind }))
+            }
             Self::RemoveGenericSendto { kind } => {
                 ("remove_generic_sendto", json!({ "kind": kind }))
             }
-            Self::RepairGenericSendto {
-                kind,
-                executable_path,
-            } => (
-                "repair_generic_sendto",
-                generic_sendto_params(*kind, executable_path.as_deref()),
-            ),
-            Self::InstallProfileSendto {
-                profile_id,
-                action,
-                executable_path,
-            } => {
-                let mut params = serde_json::Map::new();
-                params.insert("profile_id".into(), json!(profile_id));
-                if let Some(a) = action {
-                    params.insert("action".into(), json!(a));
-                }
-                if let Some(p) = executable_path {
-                    params.insert("executable_path".into(), json!(p));
-                }
-                ("install_profile_sendto", Value::Object(params))
+            Self::RepairGenericSendto { kind } => {
+                ("repair_generic_sendto", json!({ "kind": kind }))
             }
+            Self::InstallProfileSendto { profile_id, action } => (
+                "install_profile_sendto",
+                profile_sendto_params(profile_id, action.as_deref()),
+            ),
             Self::RemoveProfileSendto { profile_id } => {
                 ("remove_profile_sendto", json!({ "profile_id": profile_id }))
             }
-            Self::RepairProfileSendto {
-                profile_id,
-                action,
-                executable_path,
-            } => {
-                let mut params = serde_json::Map::new();
-                params.insert("profile_id".into(), json!(profile_id));
-                if let Some(a) = action {
-                    params.insert("action".into(), json!(a));
-                }
-                if let Some(p) = executable_path {
-                    params.insert("executable_path".into(), json!(p));
-                }
-                ("repair_profile_sendto", Value::Object(params))
-            }
+            Self::RepairProfileSendto { profile_id, action } => (
+                "repair_profile_sendto",
+                profile_sendto_params(profile_id, action.as_deref()),
+            ),
             Self::ListSendtoShortcuts => ("list_sendto_shortcuts", json!({})),
-            Self::Shutdown => ("shutdown", json!({})),
         };
         crate::backend::protocol::request_frame(request_id, method, params)
     }
 }
 
-fn generic_sendto_params(kind: SendToKind, executable_path: Option<&str>) -> Value {
+fn profile_sendto_params(profile_id: &str, action: Option<&str>) -> Value {
     let mut params = serde_json::Map::new();
-    params.insert("kind".into(), json!(kind));
-    if let Some(path) = executable_path {
-        params.insert("executable_path".into(), json!(path));
+    params.insert("profile_id".into(), json!(profile_id));
+    if let Some(action) = action {
+        params.insert("action".into(), json!(action));
     }
     Value::Object(params)
 }
@@ -300,12 +283,7 @@ pub async fn backend_request(
         &command,
         &crate::platform::current_capabilities().platform,
     )?;
-    if matches!(command, BackendCommand::Shutdown) {
-        state.shutdown().await?;
-        Ok(json!({ "status": "stopped" }))
-    } else {
-        state.request(command).await
-    }
+    state.request(command).await
 }
 
 fn reject_unsupported_backend_command(
@@ -330,19 +308,16 @@ mod tests {
         let commands = [
             BackendCommand::InstallGenericSendto {
                 kind: SendToKind::Open,
-                executable_path: None,
             },
             BackendCommand::RemoveGenericSendto {
                 kind: SendToKind::Compress,
             },
             BackendCommand::RepairGenericSendto {
                 kind: SendToKind::Cut,
-                executable_path: None,
             },
             BackendCommand::InstallProfileSendto {
                 profile_id: "profile-1".into(),
                 action: None,
-                executable_path: None,
             },
             BackendCommand::RemoveProfileSendto {
                 profile_id: "profile-1".into(),
@@ -350,7 +325,6 @@ mod tests {
             BackendCommand::RepairProfileSendto {
                 profile_id: "profile-1".into(),
                 action: None,
-                executable_path: None,
             },
             BackendCommand::ListSendtoShortcuts,
         ];
@@ -420,16 +394,75 @@ mod tests {
     }
 
     #[test]
-    fn generic_send_to_keeps_an_explicit_executable_path() {
-        let command = BackendCommand::InstallGenericSendto {
-            kind: SendToKind::Upscale,
-            executable_path: Some("C:\\Tuck\\Tuck.exe".into()),
-        };
-        let request = command.to_sidecar_request("path").unwrap();
+    fn cut_analysis_forwards_the_keyframe_cursor_only_when_given() {
+        let paged = serde_json::from_value::<BackendCommand>(json!({
+            "command": "get_cut_analysis",
+            "payload": {"path": "/media/a.mp4", "keyframes_revision": 3, "keyframes_from": 4096},
+        }))
+        .unwrap()
+        .to_sidecar_request("r1")
+        .unwrap();
+        assert_eq!(
+            paged["params"],
+            json!({"path": "/media/a.mp4", "keyframes_revision": 3, "keyframes_from": 4096})
+        );
+
+        let plain = serde_json::from_value::<BackendCommand>(json!({
+            "command": "get_cut_analysis",
+            "payload": {"path": "/media/a.mp4"},
+        }))
+        .unwrap()
+        .to_sidecar_request("r2")
+        .unwrap();
+        assert_eq!(plain["params"], json!({"path": "/media/a.mp4"}));
+    }
+
+    #[test]
+    fn send_to_commands_never_carry_a_webview_supplied_executable() {
+        for (command, payload) in [
+            (
+                "install_generic_sendto",
+                json!({"kind": "upscale", "executable_path": "C:\\Tuck\\Tuck.exe"}),
+            ),
+            (
+                "repair_generic_sendto",
+                json!({"kind": "upscale", "executable_path": "C:\\Tuck\\Tuck.exe"}),
+            ),
+            (
+                "install_profile_sendto",
+                json!({"profile_id": "p", "executable_path": "C:\\evil.exe"}),
+            ),
+            (
+                "repair_profile_sendto",
+                json!({"profile_id": "p", "action": "start", "executable_path": "C:\\evil.exe"}),
+            ),
+        ] {
+            let request = serde_json::from_value::<BackendCommand>(
+                json!({"command": command, "payload": payload}),
+            )
+            .expect("unknown payload fields are dropped, not forwarded")
+            .to_sidecar_request("path")
+            .unwrap();
+            assert!(
+                request["params"].get("executable_path").is_none(),
+                "{command} forwarded an executable path"
+            );
+        }
+        let request = BackendCommand::InstallProfileSendto {
+            profile_id: "p".into(),
+            action: Some("review".into()),
+        }
+        .to_sidecar_request("profile")
+        .unwrap();
         assert_eq!(
             request["params"],
-            json!({"kind": "upscale", "executable_path": "C:\\Tuck\\Tuck.exe"})
+            json!({"profile_id": "p", "action": "review"})
         );
+    }
+
+    #[test]
+    fn the_webview_cannot_request_a_backend_shutdown() {
+        assert!(serde_json::from_value::<BackendCommand>(json!({"command": "shutdown"})).is_err());
     }
 
     #[test]

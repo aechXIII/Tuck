@@ -8,7 +8,7 @@ use std::time::Duration;
 use serde_json::{Map, Value};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
-use tokio::sync::{oneshot, Mutex, Notify};
+use tokio::sync::{oneshot, watch, Mutex, Notify};
 
 use crate::commands::backend::BackendCommand;
 use crate::platform::ProcessTreeGuard;
@@ -114,30 +114,119 @@ impl BackendLaunchConfig {
     }
 }
 
+/// The shell's handle to the backend. It can exist before the backend has
+/// started, so the window can draw while the backend launches; requests made in
+/// that window wait for the launch to finish instead of failing.
 #[derive(Clone)]
 pub struct BackendState {
-    process: Arc<BackendProcess>,
+    slot: Arc<watch::Sender<Option<Arc<BackendProcess>>>>,
+}
+
+/// Finishes a [`BackendState`] created by [`BackendState::starting`]. Dropping
+/// it unfinished marks the backend unavailable so waiting requests never hang.
+pub struct BackendStarter {
+    slot: Arc<watch::Sender<Option<Arc<BackendProcess>>>>,
+    finished: bool,
+}
+
+impl BackendStarter {
+    pub fn finish(mut self, result: Result<Arc<BackendProcess>, PublicBackendError>) {
+        self.finished = true;
+        let process = result.unwrap_or_else(|error| Arc::new(BackendProcess::unavailable(error)));
+        self.slot.send_replace(Some(process));
+    }
+}
+
+impl Drop for BackendStarter {
+    fn drop(&mut self) {
+        if !self.finished {
+            self.slot
+                .send_replace(Some(Arc::new(BackendProcess::unavailable(
+                    PublicBackendError::new(
+                        "BACKEND_START_FAILED",
+                        "The Python backend stopped while it was starting.",
+                    ),
+                ))));
+        }
+    }
 }
 
 impl BackendState {
+    pub fn starting() -> (Self, BackendStarter) {
+        let (sender, _) = watch::channel(None);
+        let slot = Arc::new(sender);
+        (
+            Self { slot: slot.clone() },
+            BackendStarter {
+                slot,
+                finished: false,
+            },
+        )
+    }
+
     pub async fn launch(config: BackendLaunchConfig) -> Result<Self, PublicBackendError> {
-        Ok(Self {
-            process: BackendProcess::launch(config).await?,
-        })
+        Ok(Self::ready(BackendProcess::launch(config).await?))
     }
 
     pub fn unavailable(error: PublicBackendError) -> Self {
-        Self {
-            process: Arc::new(BackendProcess::unavailable(error)),
-        }
+        Self::ready(Arc::new(BackendProcess::unavailable(error)))
+    }
+
+    fn ready(process: Arc<BackendProcess>) -> Self {
+        let (state, starter) = Self::starting();
+        starter.finish(Ok(process));
+        state
+    }
+
+    async fn process(&self) -> Arc<BackendProcess> {
+        let mut receiver = self.slot.subscribe();
+        let started = match receiver.wait_for(Option::is_some).await {
+            Ok(process) => process.clone(),
+            // the state owns the sender, so the channel cannot close while it is borrowed
+            Err(_) => None,
+        };
+        started.unwrap_or_else(|| {
+            Arc::new(BackendProcess::unavailable(PublicBackendError::new(
+                "BACKEND_START_FAILED",
+                "The Python backend could not start.",
+            )))
+        })
     }
 
     pub async fn request(&self, command: BackendCommand) -> Result<Value, PublicBackendError> {
-        self.process.request(command).await
+        self.process().await.request(command).await
+    }
+
+    /// True only while a started backend is serving requests. A backend that is
+    /// still starting has no work to lose, so this does not wait for it.
+    pub async fn is_running(&self) -> bool {
+        let process = self.slot.borrow().clone();
+        match process {
+            Some(process) => process.is_running().await,
+            None => false,
+        }
     }
 
     pub async fn shutdown(&self) -> Result<(), PublicBackendError> {
-        self.process.shutdown().await
+        self.process().await.shutdown().await
+    }
+}
+
+/// What the shell sends to the sidecar: a webview-allowlisted command, or the
+/// shutdown request that only the native lifecycle may send.
+enum Outgoing<'a> {
+    Command(&'a BackendCommand),
+    Shutdown,
+}
+
+impl Outgoing<'_> {
+    fn frame(&self, request_id: &str) -> Result<Value, PublicBackendError> {
+        match self {
+            Self::Command(command) => command.to_sidecar_request(request_id),
+            Self::Shutdown => {
+                super::protocol::request_frame(request_id, "shutdown", Value::Object(Map::new()))
+            }
+        }
     }
 }
 
@@ -294,7 +383,8 @@ impl BackendProcess {
         command: BackendCommand,
         timeout: Duration,
     ) -> Result<Value, PublicBackendError> {
-        self.send_request(command, timeout, false).await
+        self.send_request(Outgoing::Command(&command), timeout, false)
+            .await
     }
 
     pub async fn pending_count(&self) -> usize {
@@ -325,7 +415,7 @@ impl BackendProcess {
             }
         };
         let graceful_result = if should_request_shutdown {
-            self.send_request(BackendCommand::Shutdown, LIGHT_REQUEST_TIMEOUT, true)
+            self.send_request(Outgoing::Shutdown, LIGHT_REQUEST_TIMEOUT, true)
                 .await
                 .map(|_| ())
         } else {
@@ -346,7 +436,7 @@ impl BackendProcess {
 
     async fn send_request(
         &self,
-        command: BackendCommand,
+        outgoing: Outgoing<'_>,
         timeout: Duration,
         allow_stopping: bool,
     ) -> Result<Value, PublicBackendError> {
@@ -357,7 +447,7 @@ impl BackendProcess {
             "rust-{}",
             self.request_sequence.fetch_add(1, Ordering::Relaxed)
         );
-        let frame = command.to_sidecar_request(&request_id)?;
+        let frame = outgoing.frame(&request_id)?;
         let encoded = serde_json::to_vec(&frame).map_err(|_| {
             PublicBackendError::new(
                 "INVALID_BACKEND_REQUEST",
@@ -558,15 +648,7 @@ impl BackendProcess {
                 Ok(read) => {
                     let text = String::from_utf8_lossy(&chunk[..read]);
                     let mut captured = self.stderr.lock().await;
-                    if captured.len() < MAX_STDERR_BYTES {
-                        let remaining = MAX_STDERR_BYTES - captured.len();
-                        let fragment = if text.len() > remaining {
-                            &text[..text.floor_char_boundary(remaining)]
-                        } else {
-                            &text
-                        };
-                        captured.push_str(fragment);
-                    }
+                    keep_stderr_tail(&mut captured, &text, MAX_STDERR_BYTES);
                 }
             }
         }
@@ -675,6 +757,15 @@ impl BackendProcess {
     }
 }
 
+// a crash traceback is written last, so the newest output is the useful part
+fn keep_stderr_tail(captured: &mut String, text: &str, max_bytes: usize) {
+    captured.push_str(text);
+    if captured.len() > max_bytes {
+        let cut = captured.ceil_char_boundary(captured.len() - max_bytes);
+        captured.drain(..cut);
+    }
+}
+
 fn development_python_path(repository_root: &std::path::Path) -> PathBuf {
     let venv = repository_root.join(".venv");
     #[cfg(windows)]
@@ -752,8 +843,7 @@ impl BackendCommand {
             | Self::InstallProfileSendto { .. }
             | Self::RemoveProfileSendto { .. }
             | Self::RepairProfileSendto { .. }
-            | Self::ListSendtoShortcuts
-            | Self::Shutdown => LIGHT_REQUEST_TIMEOUT,
+            | Self::ListSendtoShortcuts => LIGHT_REQUEST_TIMEOUT,
             Self::LoadLut { .. }
             | Self::ProbeFile { .. }
             | Self::ProbeAudioFile { .. }
@@ -766,6 +856,71 @@ impl BackendCommand {
             | Self::RetryItem { .. }
             | Self::EnqueueBatch { .. } => MEDIA_REQUEST_TIMEOUT,
         }
+    }
+}
+
+#[cfg(test)]
+mod state_tests {
+    use super::*;
+
+    #[test]
+    fn stderr_keeps_the_newest_output_within_the_limit() {
+        let mut captured = String::new();
+        keep_stderr_tail(&mut captured, "early noise\n", 16);
+        keep_stderr_tail(&mut captured, "Traceback: boom\n", 16);
+        assert_eq!(captured, "Traceback: boom\n");
+
+        // a multi-byte character at the cut point is dropped whole, never split
+        let mut captured = String::new();
+        keep_stderr_tail(&mut captured, "aé", 2);
+        assert_eq!(captured, "é");
+        keep_stderr_tail(&mut captured, "xyz", 2);
+        assert_eq!(captured, "yz");
+    }
+
+    #[tokio::test]
+    async fn requests_wait_for_a_backend_that_is_still_starting() {
+        let (state, starter) = BackendState::starting();
+        assert!(!state.is_running().await);
+        let waiting = tokio::spawn({
+            let state = state.clone();
+            async move { state.request(BackendCommand::Health).await }
+        });
+        tokio::task::yield_now().await;
+        assert!(!waiting.is_finished());
+
+        starter.finish(Err(PublicBackendError::new(
+            "BACKEND_START_FAILED",
+            "could not start",
+        )));
+        let error = waiting
+            .await
+            .unwrap()
+            .expect_err("an unavailable backend fails the waiting request");
+        assert_eq!(error.code, "BACKEND_START_FAILED");
+        assert!(!state.is_running().await);
+    }
+
+    #[tokio::test]
+    async fn an_abandoned_start_does_not_leave_requests_hanging() {
+        let (state, starter) = BackendState::starting();
+        drop(starter);
+        let error = state
+            .request(BackendCommand::Health)
+            .await
+            .expect_err("an abandoned start reports the backend unavailable");
+        assert_eq!(error.code, "BACKEND_START_FAILED");
+    }
+
+    #[test]
+    fn shutdown_is_a_native_request_the_webview_cannot_name() {
+        let frame = Outgoing::Shutdown.frame("stop-1").unwrap();
+        assert_eq!(frame["method"], "shutdown");
+        assert_eq!(frame["params"], serde_json::json!({}));
+        assert!(serde_json::from_value::<BackendCommand>(
+            serde_json::json!({"command": "shutdown"})
+        )
+        .is_err());
     }
 }
 

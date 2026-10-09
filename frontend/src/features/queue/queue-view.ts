@@ -1,8 +1,21 @@
+// the states tuck/models QueueState sends; anything else is treated as unknown
+export const QUEUE_ITEM_STATES = ["pending", "running", "completed", "failed", "cancelled"] as const;
+export type QueueItemState = (typeof QUEUE_ITEM_STATES)[number];
+
+export function queueItemState(value: unknown): QueueItemState | "" {
+  return QUEUE_ITEM_STATES.find((state) => state === value) ?? "";
+}
+
+/** Waiting or running, so the same video should not be exported again yet. */
+export function isQueueActive(state: QueueItemState | "" | undefined): boolean {
+  return state === "pending" || state === "running";
+}
+
 export interface QueueItem {
   readonly id?: string;
   readonly source?: string;
   readonly source_path?: string;
-  readonly state?: string;
+  readonly state?: QueueItemState;
   readonly progress?: number;
   readonly progress_info?: { readonly speed?: number; readonly eta_seconds?: number | null; readonly indeterminate?: boolean };
   readonly status_text?: string;
@@ -12,7 +25,21 @@ export interface QueueItem {
   readonly duration?: number;
   readonly error?: string;
   readonly error_detail?: string;
+  /** Why Auto finished on a different encoder, in plain words; empty when it didn't. */
+  readonly encoder_fallback?: string;
   readonly [key: string]: unknown;
+}
+
+/** Queue items from the backend, with any state Tuck doesn't know left unset. */
+export function queueItemsFromSnapshot(raw: readonly unknown[]): QueueItem[] {
+  return raw.flatMap((entry) => {
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) return [];
+    const item: Record<string, unknown> = { ...entry };
+    const state = queueItemState(item.state);
+    if (state) item.state = state;
+    else delete item.state;
+    return [item as QueueItem];
+  });
 }
 
 export interface QueueSnapshot {
@@ -41,7 +68,7 @@ export interface QueueViewState {
   readonly waiting: number;
   readonly failed: number;
   /** Non-empty when a batch just finished and the toast should fire. */
-  readonly finishedToast: { readonly message: string; readonly kind: "ok" | "err" } | null;
+  readonly finishedToast: BatchSummary | null;
   /** Result path to reveal when the automatic show-export setting is on. */
   readonly outputToOpen: string;
 }
@@ -66,6 +93,44 @@ export function emptyQueueView(): QueueViewState {
     finishedToast: null,
     outputToOpen: "",
   };
+}
+
+export interface BatchSummary {
+  readonly message: string;
+  readonly kind: "ok" | "err" | "info";
+  /** Failed items of this batch, first one first, so the toast can show them. */
+  readonly failedIds: readonly string[];
+}
+
+function itemName(item: QueueItem): string {
+  return item.source ?? item.source_path?.split(/[\\/]/).pop() ?? "video";
+}
+
+/** One message for a finished batch, counted from that batch's items only. */
+export function batchSummary(
+  items: readonly QueueItem[],
+  batchIds: Readonly<Record<string, true>>,
+): BatchSummary {
+  const batch = items.filter((item) => item.id && batchIds[item.id]);
+  const completed = batch.filter((item) => item.state === "completed");
+  const failed = batch.filter((item) => item.state === "failed");
+  const cancelled = batch.filter((item) => item.state === "cancelled").length;
+  const failedIds = failed.map((item) => item.id ?? "");
+  if (failed.length) {
+    const message = batch.length === 1
+      ? `Couldn’t export “${itemName(failed[0]!)}”.`
+      : `${failed.length} of ${batch.length} exports failed.`;
+    return { message, kind: "err", failedIds };
+  }
+  if (cancelled) {
+    const message = completed.length
+      ? `${completed.length} exported, ${cancelled} cancelled.`
+      : cancelled === 1 ? "Export cancelled." : "Exports cancelled.";
+    return { message, kind: "info", failedIds };
+  }
+  if (completed.length === 1) return { message: `Exported “${itemName(completed[0]!)}”.`, kind: "ok", failedIds };
+  if (completed.length) return { message: `${completed.length} videos exported.`, kind: "ok", failedIds };
+  return { message: "Exports finished.", kind: "ok", failedIds };
 }
 
 /** What the system notification says when a batch finishes. */
@@ -104,6 +169,9 @@ export function formatQueueStatus(item: QueueItem | null | undefined): string {
   // a finished cut Tuck could not fully check stays marked; the Inspector lists why
   if (item.state === "completed" && Array.isArray(item.unverified) && item.unverified.length) {
     return `${item.status_text || "Completed"} · Not checked`;
+  }
+  if (item.state === "completed" && item.encoder_fallback) {
+    return `${item.status_text || "Completed"} · ${item.encoder_fallback}`;
   }
   if (item.status_text) {
     const parts = [item.status_text];
@@ -182,7 +250,7 @@ export function exportRows(
   for (const item of items) {
     const base = {
       id: item.id ?? "",
-      name: item.source ?? item.source_path?.split(/[\/]/).pop() ?? "?",
+      name: itemName(item),
       resultPath: item.result_path ?? "",
     };
     if (item.state === "running") {
@@ -241,14 +309,7 @@ export function reduceQueueSnapshot(
   const outputToOpen = queueCompletionOutput(items, previous.hadActive, active > 0, activeItemIds);
   const queueFinished = previous.hadActive && active === 0;
 
-  const finishedToast = queueFinished
-    ? failed
-      ? {
-          message: `Processing finished with ${failed} failure${failed === 1 ? "" : "s"}.`,
-          kind: "err" as const,
-        }
-      : { message: "Processing completed.", kind: "ok" as const }
-    : null;
+  const finishedToast = queueFinished ? batchSummary(items, activeItemIds) : null;
 
   const nextActiveItemIds = queueFinished ? {} : activeItemIds;
 

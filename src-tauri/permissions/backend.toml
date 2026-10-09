@@ -17,3 +17,8 @@ commands.allow = ["minimize_window", "toggle_maximize_window", "set_caption_maxi
 identifier = "allow-desktop-preferences"
 description = "Allows the interface size setting and the queue-finished notification."
 commands.allow = ["set_interface_size", "notify_when_unfocused"]
+
+[[permission]]
+identifier = "allow-app-lifecycle"
+description = "Allows the page to answer a close request and to restart Tuck after its backend stopped."
+commands.allow = ["acknowledge_close_request", "confirm_close", "restart_app"]

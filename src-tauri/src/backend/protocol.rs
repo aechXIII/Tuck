@@ -234,4 +234,21 @@ mod tests {
                 if code == "INTERNAL_ERROR" && details.is_empty()
         ));
     }
+
+    #[test]
+    fn domain_error_codes_reach_the_page_unchanged() {
+        for code in ["SOURCE_CHANGED", "SOURCE_UNAVAILABLE", "ANALYSIS_REQUIRED"] {
+            let line = format!(
+                r#"{{"kind":"response","protocol":1,"id":"retry-1","ok":false,"error":{{"code":"{code}","message":"Add it again.","details":{{"method":"retry_item"}}}}}}"#
+            );
+            let Ok(BackendFrame::Response {
+                result: Err(error), ..
+            }) = parse_stdout_frame(&line)
+            else {
+                panic!("a domain error is an ordinary failed response");
+            };
+            assert_eq!(error.code, code);
+            assert_eq!(error.message, "Add it again.");
+        }
+    }
 }

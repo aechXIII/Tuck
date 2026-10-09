@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 import { backendFailure, errorMessage, isBackendError } from "./errors.ts";
 import { isCutAnalysisPayload, isCutCancellation, isCutPlanPayload } from "./cutting-types.ts";
-import type { CutAnalysisPayload, CutCancellation, CutPlanPayload, CutPlanRequest } from "./cutting-types.ts";
+import type { CutAnalysisPayload, CutCancellation, CutPlanPayload, CutPlanRequest, KeyframeCursor } from "./cutting-types.ts";
 import type {
   BackendClient,
   BackendError,
@@ -59,7 +59,10 @@ type TauriBackendCommand =
   | { command: "get_media_url"; payload: { path: string } }
   | { command: "release_media_token"; payload: { token: string } }
   | { command: "analyze_cut"; payload: { path: string; work_id: string } }
-  | { command: "get_cut_analysis"; payload: { path: string } }
+  | {
+    command: "get_cut_analysis";
+    payload: { path: string; keyframes_revision?: number; keyframes_from?: number };
+  }
   | { command: "cancel_cut_work"; payload: { work_id: string } }
   | { command: "create_plan"; payload: { request: PlanRequest } }
   | { command: "enqueue_with_options"; payload: { request: PlanRequest } }
@@ -88,11 +91,10 @@ type TauriBackendCommand =
   | { command: "install_generic_sendto"; payload: { kind: SendToKind } }
   | { command: "remove_generic_sendto"; payload: { kind: SendToKind } }
   | { command: "repair_generic_sendto"; payload: { kind: SendToKind } }
-  | { command: "install_profile_sendto"; payload: { profile_id: string; action?: string; executable_path?: string } }
+  | { command: "install_profile_sendto"; payload: { profile_id: string; action?: string } }
   | { command: "remove_profile_sendto"; payload: { profile_id: string } }
-  | { command: "repair_profile_sendto"; payload: { profile_id: string; action?: string; executable_path?: string } }
-  | { command: "list_sendto_shortcuts" }
-  | { command: "shutdown" };
+  | { command: "repair_profile_sendto"; payload: { profile_id: string; action?: string } }
+  | { command: "list_sendto_shortcuts" };
 
 function isSettingsImport(value: unknown): value is SettingsImport {
   return isJsonObject(value) && (value.skipped === undefined
@@ -148,6 +150,13 @@ function isDataPayload(value: unknown): value is DataPayload {
   return isJsonObject(value) && isJsonObject(value.data);
 }
 
+// older backends send no plan warnings; when present they are plain sentences
+function isPlanPreviewPayload(value: unknown): value is DataPayload {
+  if (!isDataPayload(value)) return false;
+  const warnings = value.data.warnings;
+  return warnings === undefined || (Array.isArray(warnings) && warnings.every((warning) => typeof warning === "string"));
+}
+
 function isQueueState(value: unknown): value is QueueState {
   return (
     isJsonObject(value) &&
@@ -177,6 +186,29 @@ function isSettings(value: unknown): value is Settings {
 
 function isDiagnosticsPayload(value: unknown): value is DiagnosticsPayload {
   return isJsonObject(value) && typeof value.text === "string";
+}
+
+function isOptionalString(value: unknown): value is string | undefined {
+  return value === undefined || typeof value === "string";
+}
+
+function isUpdateCheck(value: unknown): value is UpdateCheck {
+  return (
+    isJsonObject(value) &&
+    typeof value.available === "boolean" &&
+    isOptionalString(value.version) &&
+    isOptionalString(value.notes)
+  );
+}
+
+function isDownloadProgress(value: unknown): value is DownloadProgress {
+  return (
+    isJsonObject(value) &&
+    typeof value.downloading === "boolean" &&
+    (value.done === undefined || typeof value.done === "boolean") &&
+    (value.progress === undefined || typeof value.progress === "number") &&
+    isOptionalString(value.error)
+  );
 }
 
 function isEncoderPayload(value: unknown): value is EncoderPayload {
@@ -390,10 +422,13 @@ class TauriTransport implements TauriBackendClient {
     );
   }
 
-  getCutAnalysis(path: string): Promise<BackendResult<CutAnalysisPayload>> {
+  getCutAnalysis(path: string, keyframes?: KeyframeCursor): Promise<BackendResult<CutAnalysisPayload>> {
+    const payload = keyframes
+      ? { path, keyframes_revision: keyframes.revision, keyframes_from: keyframes.from }
+      : { path };
     return this.#request(
       "getCutAnalysis",
-      { command: "get_cut_analysis", payload: { path } },
+      { command: "get_cut_analysis", payload },
       isCutAnalysisPayload,
     );
   }
@@ -412,7 +447,7 @@ class TauriTransport implements TauriBackendClient {
     return this.#request(
       "createPlan",
       { command: "create_plan", payload: { request } },
-      request.operation === "cut" ? isCutPlanPayload : isDataPayload,
+      request.operation === "cut" ? isCutPlanPayload : isPlanPreviewPayload,
     );
   }
 
@@ -601,7 +636,10 @@ class TauriTransport implements TauriBackendClient {
 
   async checkForUpdates(): Promise<BackendResult<UpdateCheck>> {
     try {
-      const result = (await this.#invoke("check_for_updates", {})) as UpdateCheck;
+      const result = await this.#invoke("check_for_updates", {});
+      if (!isUpdateCheck(result)) {
+        return backendFailure("MALFORMED_BRIDGE_RESULT", "The update check returned an invalid result", { method: "checkForUpdates" });
+      }
       return { ok: true, value: result };
     } catch (error) {
       if (isBackendError(error)) return { ok: false, error };
@@ -621,7 +659,10 @@ class TauriTransport implements TauriBackendClient {
 
   async getDownloadProgress(): Promise<BackendResult<DownloadProgress>> {
     try {
-      const result = (await this.#invoke("get_download_progress", {})) as DownloadProgress;
+      const result = await this.#invoke("get_download_progress", {});
+      if (!isDownloadProgress(result)) {
+        return backendFailure("MALFORMED_BRIDGE_RESULT", "The update download returned an invalid progress report", { method: "getDownloadProgress" });
+      }
       return { ok: true, value: result };
     } catch (error) {
       if (isBackendError(error)) return { ok: false, error };

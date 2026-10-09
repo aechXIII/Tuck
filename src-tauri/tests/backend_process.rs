@@ -138,6 +138,34 @@ async fn process_returns_stderr_diagnostics_after_early_exit() {
 }
 
 #[tokio::test]
+async fn crash_diagnostics_keep_the_end_of_a_long_stderr() {
+    let process = BackendProcess::launch(fake_sidecar(
+        "import json, sys\nprint(json.dumps({'kind':'event','protocol':1,'event':'backend_ready','payload':{'backend_version':'0.5.1','pid':1,'capabilities':{'protocol':1}}}), flush=True)\nsys.stderr.write('startup noise\\n' * 10000)\nsys.stderr.write('Traceback: the real crash\\n')\nsys.stderr.flush()",
+    ))
+    .await
+    .expect("sidecar should report readiness before it crashes");
+
+    let error = process
+        .request(BackendCommand::Health)
+        .await
+        .expect_err("a crashed sidecar must fail requests");
+
+    assert_eq!(error.code, "BACKEND_EXITED");
+    let stderr = error
+        .details
+        .get("stderr")
+        .and_then(serde_json::Value::as_str)
+        .expect("the crash keeps its diagnostics");
+    assert!(stderr.len() <= 65_536);
+    // Windows writes text-mode stderr with CRLF line endings
+    assert!(stderr.trim_end().ends_with("Traceback: the real crash"));
+    process
+        .shutdown()
+        .await
+        .expect("shutdown should tolerate an exited child");
+}
+
+#[tokio::test]
 async fn request_timeout_removes_the_pending_entry() {
     let process = BackendProcess::launch(fake_sidecar(
         "import json, sys\nprint(json.dumps({'kind':'event','protocol':1,'event':'backend_ready','payload':{'backend_version':'0.5.1','pid':1,'capabilities':{'protocol':1}}}), flush=True)\nfor _ in sys.stdin: pass",

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { UPDATE_BACKEND_STOPPED } from "../../src/backend/errors.ts";
 import {
   createTauriBackendClient,
   hasTauriInvoke,
@@ -288,4 +289,79 @@ test("interface size and notifications are native commands", async () => {
   const result = await failing.notifyWhenUnfocused("", "");
   assert.equal(result.ok, false);
   assert.equal(!result.ok && result.error.code, "INVALID_REQUEST");
+});
+
+test("update checks and download progress are validated at the native boundary", async () => {
+  const replies: Record<string, unknown> = {
+    check_for_updates: { available: true, version: "0.6.0", notes: "Faster startup" },
+    get_download_progress: { downloading: false, progress: 100, done: true },
+  };
+  const client = createTauriBackendClient(async (command) => replies[command]);
+  assert.deepEqual(await client.checkForUpdates(), {
+    ok: true,
+    value: { available: true, version: "0.6.0", notes: "Faster startup" },
+  });
+  assert.deepEqual(await client.getDownloadProgress(), {
+    ok: true,
+    value: { downloading: false, progress: 100, done: true },
+  });
+
+  replies.check_for_updates = { available: "yes" };
+  replies.get_download_progress = { progress: 50 };
+  const check = await client.checkForUpdates();
+  const progress = await client.getDownloadProgress();
+  assert.equal(check.ok ? "ok" : check.error.code, "MALFORMED_BRIDGE_RESULT");
+  assert.equal(progress.ok ? "ok" : progress.error.code, "MALFORMED_BRIDGE_RESULT");
+});
+
+test("an install that failed after the backend stopped keeps its code for the page", async () => {
+  const client = createTauriBackendClient(async () => {
+    throw {
+      code: "UPDATE_BACKEND_STOPPED",
+      message: "the installer did not start after Tuck stopped its work: access denied",
+      details: {},
+    };
+  });
+  const fatal: string[] = [];
+  client.onFatal((error) => fatal.push(error.code));
+  const result = await client.installUpdate();
+  assert.equal(result.ok ? "ok" : result.error.code, UPDATE_BACKEND_STOPPED);
+  // the page shows its own restart screen, not the crash screen
+  assert.deepEqual(fatal, []);
+});
+
+test("a refused retry keeps the code and message the backend gave it", async () => {
+  for (const code of ["SOURCE_CHANGED", "SOURCE_UNAVAILABLE"]) {
+    const client = createTauriBackendClient(async () => {
+      throw { code, message: "Add it again.", details: { method: "retry_item" } };
+    });
+    const result = await client.retryItem("item-1");
+    assert.deepEqual(result, {
+      ok: false,
+      error: { code, message: "Add it again.", details: { method: "retry_item" } },
+    });
+  }
+});
+
+test("profile Send To shortcuts never send an executable path", async () => {
+  const payloads: unknown[] = [];
+  const client = createTauriBackendClient(async (_command, args) => {
+    payloads.push((args.command as { payload?: unknown }).payload);
+    return {};
+  });
+  await client.installProfileSendto("profile-1", "review");
+  await client.repairProfileSendto("profile-1");
+  assert.deepEqual(payloads, [
+    { profile_id: "profile-1", action: "review" },
+    { profile_id: "profile-1" },
+  ]);
+});
+
+test("plan warnings are optional and must be plain sentences when present", async () => {
+  const plan = (data: Record<string, unknown>) => createTauriBackendClient(async () => ({ data }));
+  assert.equal((await plan({ estimated_size_mb: 9 }).createPlan({ source: "s" })).ok, true);
+  const warned = await plan({ warnings: ["Extra audio tracks are left out."] }).createPlan({ source: "s" });
+  assert.deepEqual(warned, { ok: true, value: { data: { warnings: ["Extra audio tracks are left out."] } } });
+  assert.equal((await plan({ warnings: "HDR" }).createPlan({ source: "s" })).ok, false);
+  assert.equal((await plan({ warnings: [1] }).createPlan({ source: "s" })).ok, false);
 });
