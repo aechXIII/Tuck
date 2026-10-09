@@ -119,14 +119,6 @@ body.crop-dragging * {
   user-select: none !important;
 }
 
-#crop-label {
-  color: var(--muted);
-  font: 600 11px var(--font);
-}
-#crop-label.active {
-  color: var(--accent-light);
-}
-
 #transform-fields {
   display: flex;
   flex-direction: column;
@@ -137,9 +129,6 @@ body.crop-dragging * {
 }
 #transform-fields.disabled button {
   cursor: default;
-}
-#transform-fields .enc-field {
-  margin-top: 0;
 }
 .transform-controls {
   display: flex;
@@ -179,7 +168,6 @@ body.crop-dragging * {
   min-width: 0;
   padding: 0 5px;
   border: 0;
-  border: 0;
   border-radius: 0;
   background: transparent;
   color: var(--muted);
@@ -218,113 +206,6 @@ body.crop-dragging * {
   stroke-linejoin: round;
   fill: none;
 }
-.dock-zoom {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-}
-.dock-zoom-btn {
-  width: 20px;
-  height: 20px;
-  border-radius: 4px;
-  background: transparent;
-  border: 0;
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 12px;
-  line-height: 1;
-  padding: 0;
-}
-.dock-zoom-btn:hover {
-  background: var(--raised);
-  color: var(--text);
-}
-.dock-zoom-btn:focus-visible {
-  outline: 2px solid var(--accent-light);
-  outline-offset: 1px;
-}
-#tl-zoom-slider {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 64px;
-  height: 18px;
-  background: transparent;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-#tl-zoom-slider::-webkit-slider-runnable-track {
-  height: 4px;
-  border-radius: 999px;
-  background: var(--border2);
-}
-#tl-zoom-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 10px;
-  height: 10px;
-  margin-top: -3px;
-  border-radius: 50%;
-  background: var(--accent-light);
-  border: none;
-  cursor: pointer;
-}
-.dock-toggle {
-  flex-shrink: 0;
-  background: transparent;
-  color: var(--muted);
-  border: 0;
-  border-bottom: 2px solid transparent;
-  border-radius: 0;
-  font: 700 10px var(--font);
-  padding: 4px 8px;
-  cursor: pointer;
-}
-.dock-toggle:hover:not(.on) {
-  background: var(--raised);
-  color: var(--text);
-}
-.dock-toggle.on {
-  background: transparent;
-  color: var(--text);
-  border-bottom-color: var(--accent-light);
-}
-.dock-toggle:focus-visible {
-  outline: 2px solid var(--accent-light);
-  outline-offset: 1px;
-}
-.dock-text-btn {
-  flex-shrink: 0;
-  height: 22px;
-  border-radius: 4px;
-  background: transparent;
-  border: 0;
-  color: var(--muted);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 0 8px;
-  font: 600 11px var(--font);
-}
-.dock-text-btn svg {
-  width: 12px;
-  height: 12px;
-  stroke: currentColor;
-  stroke-width: 1.6;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  fill: none;
-}
-.dock-text-btn:hover {
-  background: var(--raised);
-  color: var(--text);
-}
-.dock-text-btn:focus-visible {
-  outline: 2px solid var(--accent-light);
-  outline-offset: 1px;
-}
-
 #transform-tooltip {
   position: fixed;
   z-index: 1000;

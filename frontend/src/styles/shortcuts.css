@@ -38,7 +38,7 @@
   align-items: center;
   justify-content: center;
   border: 0;
-  border-radius: var(--radius);
+  border-radius: var(--r-ctl);
   background: transparent;
   color: var(--muted);
   cursor: pointer;
@@ -63,7 +63,6 @@
   /* --unit stands in for the reference design's 34px key; every key's --kw
      and this --gap are that design's exact px values, so scaling --unit
      scales the whole board uniformly and keeps columns aligned across rows. */
-  --unit: clamp(18px, 2.7vw, 36px);
   --unit: clamp(18px, 5.38cqi, 36px);
   --gap: calc(var(--unit) * 4 / 34);
   display: flex;
@@ -72,7 +71,7 @@
   gap: var(--gap);
   background: var(--panel);
   border: 1px solid var(--border2);
-  border-radius: 12px;
+  border-radius: var(--r-card);
   padding: calc(var(--unit) * 0.4);
   overflow: hidden;
 }
@@ -84,7 +83,7 @@
   width: calc(var(--unit) * var(--kw) / 34);
   height: var(--unit);
   flex: none;
-  border-radius: 4px;
+  border-radius: var(--r-chip);
   background: var(--raised-2);
   color: var(--muted);
   display: flex;
@@ -110,7 +109,7 @@
   padding: 10px 12px;
   background: var(--input-bg);
   border: 1px solid var(--border2);
-  border-radius: var(--radius);
+  border-radius: var(--r-ctl);
   transition: border-color 0.15s ease-out;
 }
 .kbs-search:focus-within {

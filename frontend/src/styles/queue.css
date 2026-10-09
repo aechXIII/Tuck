@@ -239,7 +239,7 @@
   flex-direction: column;
   padding: 6px;
   border: 1px solid var(--border2);
-  border-radius: 10px;
+  border-radius: var(--r-surf);
   background: #1c1c20;
   box-shadow: 0 16px 36px rgba(0, 0, 0, 0.52);
 }
@@ -307,7 +307,7 @@
   align-items: center;
   gap: 3px 12px;
   padding: 7px 8px;
-  border-radius: 7px;
+  border-radius: var(--r-ctl);
 }
 .exports-row.running {
   background: var(--raised);
@@ -379,16 +379,6 @@
   margin-left: auto;
 }
 
-/* the drawers stop above the bar, so the task switch and exports are never covered */
-@media (max-width: 1179px) {
-  #left,
-  #right {
-    bottom: var(--task-bar-height);
-  }
-  body.workspace-drawer-open #workspace-backdrop {
-    bottom: var(--task-bar-height);
-  }
-}
 @media (max-width: 1100px) {
   #qcnt .q-saved,
   #qcnt .q-saved-sep {

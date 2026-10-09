@@ -1,191 +1,6 @@
-#audio-editor {
-  --timeline-head-width: 124px;
-  flex-shrink: 0;
-  height: 190px;
-  min-height: 170px;
-  max-height: 55vh;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-  margin: 0 var(--gutter);
-  background: var(--panel);
-  border-radius: var(--r-card);
-  padding: 8px 16px 10px;
-  overflow: hidden;
-}
-
-#timeline-resizer {
-  position: relative;
-  z-index: 8;
-  flex: 0 0 var(--gutter);
-  height: var(--gutter);
-  cursor: ns-resize;
-  touch-action: none;
-  outline: none;
-}
-#timeline-resizer::after {
-  content: "";
-  position: absolute;
-  inset: 3px 16px auto;
-  height: 1px;
-  border-radius: 1px;
-  background: transparent;
-  transition:
-    height 100ms ease,
-    background 100ms ease,
-    box-shadow 100ms ease;
-}
-#timeline-resizer:hover::after,
-#timeline-resizer:focus-visible::after,
-body.timeline-resizing #timeline-resizer::after {
-  height: 2px;
-  background: var(--accent-light);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-light) 12%, transparent);
-}
-#timeline-resizer:focus-visible {
-  outline: none;
-}
-body.timeline-resizing,
-body.timeline-resizing * {
-  cursor: ns-resize !important;
-  user-select: none !important;
-}
-#audio-editor.disabled .seq-lane,
-#audio-editor.disabled .seq-head,
-.seq-row.disabled .seq-lane,
-.seq-row.disabled .seq-head {
-  opacity: 0.4;
-  pointer-events: none;
-}
-#timeline-row.seq-toolbar {
-  justify-content: flex-start;
-  border-bottom: 1px solid var(--border);
-  gap: 0;
-  padding: 2px 0 7px;
-  flex-shrink: 0;
-  min-height: 36px;
-  overflow-x: visible;
-  scrollbar-width: none;
-}
-#timeline-row.seq-toolbar::-webkit-scrollbar {
-  display: none;
-}
-.tl-time-readout {
-  min-width: 82px;
-  padding: 0 8px;
-  color: var(--text);
-  font-size: 11px;
-  font-family: var(--mono);
-  white-space: nowrap;
-  flex-shrink: 0;
-  text-align: center;
-}
 .seq-audio-clip:focus-visible {
   outline: 2px solid var(--accent-light);
   outline-offset: 1px;
-}
-#sequence-frame {
-  position: relative;
-  flex: 1;
-  min-height: 0;
-  overflow-x: hidden;
-  overflow-y: auto;
-}
-.timeline-empty {
-  position: absolute;
-  inset: 32px 0 0;
-  z-index: 3;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
-  padding: 12px;
-  text-align: center;
-  pointer-events: none;
-}
-@media (min-width: 1180px) {
-  body.library-panel-open .timeline-empty {
-    left: var(--library-width);
-  }
-  body.inspector-panel-open .timeline-empty {
-    right: var(--inspector-width);
-  }
-}
-@media (min-width: 1440px) {
-  body.inspector-panel-open .timeline-empty {
-    right: var(--inspector-wide-width);
-  }
-}
-.timeline-empty[hidden] {
-  display: none;
-}
-.timeline-empty-title {
-  color: var(--text);
-  font: 650 11px/15px var(--font);
-}
-.timeline-empty-copy {
-  color: var(--muted);
-  font: 500 11px/15px var(--font);
-}
-#audio-editor.is-loading .timeline-empty-title {
-  color: var(--accent-light);
-}
-#audio-editor.is-empty #source-group,
-#audio-editor.is-loading #source-group {
-  opacity: 0.42;
-}
-#timeline-row button:disabled,
-#timeline-row button[aria-disabled="true"],
-#timeline-row input:disabled {
-  cursor: default;
-  opacity: 0.38;
-}
-#sequence-frame.is-zoomed {
-  overflow-x: auto;
-}
-#sequence-stack {
-  width: var(--tl-width, 100%);
-  min-width: 100%;
-}
-.seq-row {
-  display: grid;
-  grid-template-columns: var(--timeline-head-width) minmax(0, 1fr);
-  column-gap: 8px;
-  align-items: center;
-}
-#imported-audio-tracks:has(.seq-row) {
-  margin-top: 5px;
-  padding-top: 5px;
-  border-top: 1px solid var(--border2);
-}
-.seq-lane,
-.audio-lane {
-  position: relative;
-  min-width: 0;
-  height: 18px;
-  overflow: visible;
-  cursor: pointer;
-  touch-action: none;
-}
-.seq-row.video .seq-head {
-  height: 60px;
-}
-.seq-row.video .seq-lane {
-  height: 48px;
-}
-.seq-row.audio .seq-head {
-  height: 42px;
-}
-.seq-row.audio .seq-lane {
-  height: 24px;
-}
-.seq-row + .seq-row {
-  margin-top: 3px;
-}
-.audio-lane {
-  background: transparent;
 }
 .audio-lane::before {
   content: "";
@@ -193,162 +8,27 @@ body.timeline-resizing * {
   left: 0;
   right: 0;
   top: 50%;
+  border-radius: 999px;
   height: 6px;
   margin-top: -3px;
-  border-radius: 999px;
-  background: var(--raised-2);
+  background: var(--raised);
 }
-#seq-selection-layer {
+.seq-audio-clip {
   position: absolute;
-  top: 0;
-  bottom: 0;
-  left: calc(var(--timeline-head-width) + 8px);
-  width: calc(var(--tl-width, 100%) - var(--timeline-head-width) - 8px);
-  pointer-events: none;
-  z-index: 5;
-}
-#seq-selection {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  opacity: 0;
-  pointer-events: none;
-}
-.sr-handle {
-  width: 1px;
-  height: 1px;
-  margin-top: -0.5px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  border-width: 0;
-}
-.sr-handle:focus-visible {
-  width: 14px;
-  height: 14px;
-  margin-top: -7px;
-  margin-left: -7px;
-  overflow: visible;
-  clip: auto;
-  border-width: 2px;
-  background: var(--text);
-  outline: 2px solid var(--accent-light);
-  outline-offset: 2px;
-}
-.clip-edge {
-  position: absolute;
-  top: 0;
-  z-index: 5;
-  width: 24px;
-  height: 100%;
-  margin: 0;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-  cursor: ew-resize;
-  touch-action: none;
-}
-.clip-edge.start {
-  left: 0;
-}
-.clip-edge.end {
-  right: 0;
-}
-/* the handle is the clip's own end: a light strip with a dark grip line. Both are measured to
-   stay at least 3:1 against every clip fill in both timeline styles and every accent; the
-   timeline style picks the strip's colour */
-.clip-edge::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 6px;
-  background: var(--tl-edge, #b4b3bb);
-  transition: background 0.1s ease;
-}
-.clip-edge::after {
-  content: "";
-  position: absolute;
-  top: 50%;
-  width: 2px;
-  height: 12px;
-  margin-top: -6px;
-  border-radius: 1px;
-  background: #1c1c1f;
-}
-.clip-edge.start::before {
-  left: 0;
-  border-radius: 4px 0 0 4px;
-}
-.clip-edge.end::before {
-  right: 0;
-  border-radius: 0 4px 4px 0;
-}
-.clip-edge.start::after {
-  left: 2px;
-}
-.clip-edge.end::after {
-  right: 2px;
-}
-.clip-edge:hover::before,
-.clip-edge:focus-visible::before,
-.clip-edge.dragging::before {
-  background: var(--accent-light);
-}
-.clip-edge:focus-visible {
-  outline: 2px solid var(--accent-light);
-  outline-offset: -2px;
-}
-#seq-playhead-layer {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: calc(var(--timeline-head-width) + 8px);
-  width: calc(var(--tl-width, 100%) - var(--timeline-head-width) - 8px);
-  pointer-events: none;
-  z-index: 8;
-}
-#seq-playhead {
-  position: absolute;
-  top: 4px;
-  bottom: 4px;
-  left: var(--playhead, 0%);
-  width: 2px;
-  margin-left: -1px;
-  background: var(--timeline-playhead);
-  border-radius: 1px;
-  box-shadow:
-    0 0 0 1px rgba(10, 10, 15, 0.5),
-    0 0 6px color-mix(in srgb, var(--timeline-playhead) 32%, transparent);
-}
-#seq-playhead::before {
-  content: "";
-  position: absolute;
-  top: -3px;
-  left: 50%;
-  width: 10px;
-  height: 7px;
-  transform: translateX(-50%);
-  border-radius: 2px 2px 3px 3px;
-  background: var(--timeline-playhead);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.65);
-}
-.seq-audio-clip,
-.audio-clip {
-  position: absolute;
-  top: 0;
-  bottom: 0;
+  top: var(--tl-inset);
+  bottom: var(--tl-inset);
   z-index: 1;
-  overflow: hidden;
   min-width: 4px;
-  border: 0;
-  border-radius: 4px;
   display: flex;
   align-items: center;
+  overflow: hidden;
   padding: 0 8px;
-  background-color: color-mix(in srgb, var(--segment-color, var(--accent)) 24%, var(--sink));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--segment-color, var(--accent)) 42%, transparent);
-  opacity: 0.9;
+  border: 0;
+  border-radius: var(--r-chip);
+  background-color: var(--tl-audio);
+  box-shadow: none;
+  filter: none;
+  opacity: 1;
   color: var(--muted);
   cursor: grab;
   touch-action: none;
@@ -356,17 +36,18 @@ body.timeline-resizing * {
     opacity 0.15s ease,
     box-shadow 0.15s ease;
 }
-.seq-audio-clip:hover,
-.audio-clip:hover {
-  opacity: 1;
+.seq-audio-clip:hover {
+  background-color: var(--tl-audio-hover);
 }
 #source-audio-track.selected .seq-audio-clip.selected,
-.seq-audio-clip.imported.selected,
-.audio-clip.selected {
+.seq-row.audio.imported .seq-audio-clip.selected {
   overflow: visible;
-  background-color: color-mix(in srgb, var(--segment-color, var(--accent)) 36%, var(--sink));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--segment-color, var(--accent)) 65%, white);
-  opacity: 1;
+  background-color: var(--tl-audio-selected);
+  box-shadow: none;
+}
+#source-audio-track.selected .seq-audio-clip.selected .audio-waveform,
+.seq-row.audio.imported .seq-audio-clip.selected .audio-waveform {
+  background: var(--tl-wave-selected);
 }
 .audio-source-range-readout {
   position: absolute;
@@ -376,7 +57,7 @@ body.timeline-resizing * {
   transform: translateX(-50%) translateY(2px);
   padding: 3px 6px;
   border: 1px solid var(--hair-2);
-  border-radius: 4px;
+  border-radius: var(--r-chip);
   background: var(--raised-2);
   color: var(--text);
   font: 600 9px/13px var(--mono);
@@ -395,15 +76,34 @@ body.timeline-resizing * {
   transform: translateX(-50%) translateY(0);
 }
 .seq-audio-clip.muted,
+#source-audio-track.muted .seq-audio-clip,
+.seq-row.audio.imported.muted .seq-audio-clip {
+  background-color: var(--raised);
+  border: 0;
+  box-shadow: none;
+  filter: none;
+  opacity: 1;
+}
+/* a muted clip that is selected keeps the selected fill, so the selection doesn't vanish with
+   the sound */
 #source-audio-track.selected .seq-audio-clip.selected.muted,
-.seq-audio-clip.imported.selected.muted,
-.audio-clip.muted {
+#source-audio-track.muted.selected .seq-audio-clip.selected,
+.seq-row.audio.imported .seq-audio-clip.selected.muted,
+.seq-row.audio.imported.muted .seq-audio-clip.selected {
+  background-color: var(--tl-audio-selected);
+  box-shadow: none;
+  filter: none;
+  opacity: 1;
+}
+#source-audio-track.muted .seq-audio-clip.selected {
   background-color: var(--raised);
   box-shadow: inset 0 0 0 1px var(--raised-2);
-  opacity: 0.72;
+  filter: grayscale(1);
+  opacity: 0.52;
 }
 .seq-audio-clip.muted .audio-waveform,
-.audio-clip.muted .audio-waveform {
+#source-audio-track.muted .seq-audio-clip .audio-waveform,
+.seq-row.audio.imported.muted .seq-audio-clip .audio-waveform {
   filter: grayscale(1);
   /* dim enough to read as off, but the shape stays recognisable */
   opacity: 0.36;
@@ -414,27 +114,14 @@ body.timeline-resizing * {
   left: 50%;
   z-index: 3;
   padding: 3px 6px;
+  transform: translate(-50%, -50%);
   border-radius: 3px;
   background-color: inherit;
-  transform: translate(-50%, -50%);
   color: var(--muted);
   font: 650 10px/1 var(--font);
   text-shadow: 0 1px 2px var(--sink);
   white-space: nowrap;
   pointer-events: none;
-}
-#source-audio-track.muted .seq-audio-clip,
-#source-audio-track.muted .seq-audio-clip.selected,
-.seq-row.audio.imported.muted .seq-audio-clip {
-  background-color: var(--raised);
-  box-shadow: inset 0 0 0 1px var(--raised-2);
-  filter: grayscale(1);
-  opacity: 0.52;
-}
-#source-audio-track.muted .seq-audio-clip .audio-waveform,
-.seq-row.audio.imported.muted .seq-audio-clip .audio-waveform {
-  filter: grayscale(1);
-  opacity: 0.36;
 }
 #source-audio-track.muted .audio-muted-indicator,
 .seq-row.audio.imported.muted .audio-muted-indicator {
@@ -454,14 +141,22 @@ body.timeline-resizing * {
 .audio-waveform {
   position: absolute;
   inset: 0;
-  background-position: left center;
-  background-repeat: no-repeat;
-  background-size: auto 100%;
-  opacity: 0.9;
   pointer-events: none;
+  z-index: 0;
+  background: var(--tl-wave);
+  -webkit-mask-image: var(--wave-image);
+  mask-image: var(--wave-image);
+  -webkit-mask-size: var(--wave-size, 100% 100%);
+  mask-size: var(--wave-size, 100% 100%);
+  -webkit-mask-position: var(--wave-position, left center);
+  mask-position: var(--wave-position, left center);
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  opacity: 1;
+  filter: none;
+  mix-blend-mode: normal;
 }
-.seq-audio-clip .clip-edge,
-.audio-clip .clip-edge {
+.seq-audio-clip .clip-edge {
   display: block;
   opacity: 0;
   pointer-events: none;
@@ -470,11 +165,7 @@ body.timeline-resizing * {
 .seq-audio-clip:focus-visible .clip-edge,
 #source-audio-track.selected .seq-audio-clip.selected .clip-edge,
 .seq-audio-clip.imported.selected .clip-edge,
-.seq-audio-clip .clip-edge.dragging,
-.audio-clip:hover .clip-edge,
-.audio-clip:focus-visible .clip-edge,
-.audio-clip.selected .clip-edge,
-.audio-clip .clip-edge.dragging {
+.seq-audio-clip .clip-edge.dragging {
   opacity: 1;
   pointer-events: auto;
 }
@@ -492,119 +183,4 @@ body.timeline-resizing * {
 .audio-fade.out {
   right: 0;
   background: linear-gradient(to left, rgba(10, 10, 16, 0.75), transparent);
-}
-#sequence-ruler {
-  position: relative;
-  height: 26px;
-  margin: 0 0 2px calc(var(--timeline-head-width) + 8px);
-  border-bottom: 1px solid color-mix(in srgb, var(--timeline-ruler-tick-major) 38%, var(--border2));
-  cursor: ew-resize;
-  touch-action: none;
-  user-select: none;
-}
-#sequence-ruler.scrubbing,
-body.timeline-scrubbing,
-body.timeline-scrubbing * {
-  cursor: ew-resize !important;
-}
-.timeline-tool-group {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  min-height: 28px;
-  padding: 0 8px;
-  flex-shrink: 0;
-}
-.timeline-tool-group:first-child {
-  padding-left: 0;
-}
-.timeline-tool-group:not(:first-child) {
-  border-left: 1px solid var(--border);
-}
-.timeline-tool-label {
-  padding: 0 4px 0 3px;
-  color: var(--dim);
-  font: 700 9px/1 var(--font);
-  letter-spacing: 0.055em;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-.timeline-tool-group .dock-zoom-btn,
-.timeline-tool-group .dock-toggle,
-.timeline-tool-group .dock-text-btn {
-  border-color: transparent;
-}
-.timeline-tool-group .dock-zoom-btn:hover,
-.timeline-tool-group .dock-text-btn:hover {
-  background: var(--raised);
-}
-.timeline-primary-btn {
-  height: 26px;
-  color: var(--muted);
-}
-#btn-segment-add:not(:disabled) {
-  color: var(--text);
-}
-.timeline-command-label {
-  white-space: nowrap;
-}
-.timeline-view-tools {
-  padding-right: 0;
-}
-.timeline-toolbar-spacer {
-  flex: 1;
-  min-width: 12px;
-}
-@media (max-width: 719px) {
-  #audio-editor {
-    --timeline-head-width: 108px;
-    padding-inline: 8px;
-  }
-  #timeline-row.seq-toolbar {
-    overflow-x: hidden;
-  }
-  .timeline-tool-group {
-    padding-inline: 5px;
-  }
-  .timeline-tool-label,
-  .timeline-command-label {
-    display: none;
-  }
-  .timeline-primary-btn {
-    width: 24px;
-    padding: 0;
-  }
-  #tl-zoom-slider {
-    display: none;
-  }
-  .tl-time-readout {
-    min-width: 72px;
-    padding-inline: 4px;
-    font-size: 10px;
-  }
-}
-.seq-tick {
-  position: absolute;
-  bottom: 0;
-  width: 1px;
-  height: 6px;
-  background: var(--timeline-ruler-tick);
-}
-.seq-tick.major {
-  width: 2px;
-  height: 10px;
-  background: var(--timeline-ruler-tick-major);
-}
-.seq-tick span {
-  position: absolute;
-  top: 2px;
-  left: 5px;
-  font: 600 10px/12px var(--mono);
-  color: var(--timeline-ruler-label);
-  white-space: nowrap;
-  user-select: none;
-}
-.seq-tick:last-child span {
-  right: 5px;
-  left: auto;
 }

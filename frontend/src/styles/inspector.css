@@ -1,27 +1,31 @@
 /* Shared Inspector structure and reference-aligned Video and Audio refinements. */
 .inspector-summary {
   min-height: 34px;
+  flex: 0 0 34px;
   display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 2px;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
   margin-inline: 0;
-  padding: 6px 0;
+  padding: 0;
   background: var(--panel);
 }
 .inspector-summary-title {
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   color: var(--text);
-  font-size: 11px;
-  font-weight: 700;
+  font-size: 11.5px;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .inspector-summary-detail {
+  min-width: 0;
   overflow: hidden;
   color: var(--dim);
-  font: 500 10px/1.25 var(--mono);
+  font: 400 10px var(--mono);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -30,6 +34,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  margin-bottom: 9px;
 }
 .inspector-label-row .grt {
   margin-bottom: 0;
@@ -65,20 +70,20 @@
 #right input[type="text"],
 #right input[type="number"] {
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--r-chip);
   background: var(--raised);
 }
 
 .audio-master-row {
   min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   margin-inline: 0;
   padding: 4px 0;
   border-bottom: 0;
   background: var(--panel);
-}
-
-#right-scroll {
-  padding: 0 var(--panel-inset) var(--panel-inset);
 }
 
 @media (max-width: 1179px) {
@@ -87,41 +92,14 @@
     bottom: var(--cut-workspace-bottom, 0px);
   }
 }
-#insp-edit,
-#insp-audio,
-#insp-export,
-#video-inspector-content {
-  gap: 0;
-}
 .inspector-content {
   min-height: 0;
-}
-.inspector-summary {
-  min-height: 34px;
-  flex: 0 0 34px;
-  flex-direction: row;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 8px;
-  margin-inline: 0;
-  padding: 0;
-}
-.inspector-summary-title {
-  flex: 0 1 auto;
-  color: var(--text);
-  font-size: 11.5px;
-  font-weight: 600;
-}
-.inspector-summary-detail {
-  min-width: 0;
-  color: var(--dim);
-  font: 400 10px var(--mono);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 #video-inspector-content > .gr:not(#clip-details-card) {
   padding: 0;
-}
-.inspector-label-row {
-  margin-bottom: 9px;
 }
 .inspector-label-row .grt,
 #clip-details-card > .grt,
@@ -133,10 +111,6 @@
   font-weight: 600;
   letter-spacing: 0;
   text-transform: none;
-}
-#transform-fields {
-  display: flex;
-  flex-direction: column;
 }
 #transform-fields .enc-field {
   display: flex;
@@ -213,21 +187,16 @@
   height: 11px;
 }
 #clip-details-card {
+  position: static;
+  z-index: 1;
+  bottom: 0;
   margin-top: auto;
   padding: 12px 0 0;
+  border-top: 1px solid var(--border);
+  background: var(--panel);
 }
 #clip-details-card > .grt {
   margin-bottom: 8px;
-}
-
-#clips {
-  padding-left: max(0px, calc(var(--panel-inset) - var(--scroll-gutter-left, 0px)));
-  padding-right: max(0px, calc(var(--panel-inset) - var(--scroll-gutter-right, 0px)));
-}
-
-#right-scroll {
-  padding-left: max(0px, calc(var(--inspector-content-inset) - var(--scroll-gutter-left, 0px)));
-  padding-right: max(0px, calc(var(--inspector-content-inset) - var(--scroll-gutter-right, 0px)));
 }
 
 /* This video: Transform, then its audio below a rule, in one scroll */

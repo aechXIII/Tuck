@@ -377,7 +377,7 @@ body.settings-open .settings-dialog {
 .set-card {
   display: flex;
   flex-direction: column;
-  border-radius: 12px;
+  border-radius: var(--r-card);
   background: var(--sink);
 }
 .set-row {
@@ -410,13 +410,13 @@ body.settings-open .settings-dialog {
   display: none;
 }
 .set-card > .set-row:first-child {
-  border-radius: 12px 12px 0 0;
+  border-radius: var(--r-card) var(--r-card) 0 0;
 }
 .set-card > .set-row:last-child {
-  border-radius: 0 0 12px 12px;
+  border-radius: 0 0 var(--r-card) var(--r-card);
 }
 .set-card > .set-row:only-child {
-  border-radius: 12px;
+  border-radius: var(--r-card);
 }
 .set-row.sub {
   padding-left: 44px;
@@ -731,7 +731,7 @@ body.settings-open .settings-dialog {
   gap: 14px;
   margin-bottom: 8px;
   padding: 16px;
-  border-radius: 12px;
+  border-radius: var(--r-card);
   background: var(--sink);
 }
 .set-accent-preview .set-btn {
@@ -862,7 +862,7 @@ body.settings-open .settings-dialog {
   align-items: center;
   height: 18px;
   padding: 0 6px;
-  border-radius: 4px;
+  border-radius: var(--r-chip);
   background: var(--raised);
   color: var(--muted);
   font-size: 11px;
@@ -893,7 +893,7 @@ body.settings-open .settings-dialog {
   width: 176px;
   padding: 5px;
   border: 1px solid var(--hair-2);
-  border-radius: 10px;
+  border-radius: var(--r-surf);
   background: var(--raised);
   box-shadow: 0 12px 32px rgba(6, 4, 16, 0.5);
 }
@@ -995,7 +995,7 @@ body.settings-open .settings-dialog {
   min-width: 24px;
   height: 22px;
   padding: 0 6px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--hair-2);
   border-bottom-width: 2px;
   border-radius: 5px;
   background: var(--raised);
