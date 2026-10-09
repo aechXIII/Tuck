@@ -12,7 +12,7 @@ Install the build tools in Ubuntu:
 ```sh
 sudo apt-get update
 sudo apt-get install -y gcc-mingw-w64-x86-64-posix g++-mingw-w64-x86-64-posix \
-  cmake make nasm pkg-config meson ninja-build python3
+  cmake make nasm pkg-config meson ninja-build autoconf automake libtool python3
 ```
 
 From the checkout in Ubuntu, run:

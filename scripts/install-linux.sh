@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 # Install Tuck (x86-64 AppImage) into ~/.local for the current user. No root.
 #
-#   curl -fsSL https://raw.githubusercontent.com/aechXIii/Tuck/main/scripts/install-linux.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/aechXIII/Tuck/main/scripts/install-linux.sh | sh
 #
 # Re-run any time to move to the latest release. Uninstall by deleting
 # ~/.local/bin/tuck, ~/.local/share/tuck, ~/.local/share/applications/tuck.desktop,
@@ -9,7 +9,7 @@
 
 set -eu
 
-REPO="aechXIii/Tuck"
+REPO="aechXIII/Tuck"
 FEED="https://github.com/${REPO}/releases/latest/download/latest.json"
 ICON_URL="https://raw.githubusercontent.com/${REPO}/main/src-tauri/icons/128x128.png"
 

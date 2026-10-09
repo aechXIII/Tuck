@@ -181,27 +181,74 @@ def test_linux_ffmpeg_lock_completely_pins_the_source_build() -> None:
     assert hashlib.sha256(recipe_path.read_bytes()).hexdigest() == recipe["sha256"]
 
     sources = {source["name"]: source for source in lock["sources"]}
-    assert set(sources) == {"ffmpeg", "x264", "x265"}
-    for source in sources.values():
+    assert set(sources) == {"ffmpeg", "x264", "x265", "zimg"}
+    for name, source in sources.items():
         assert source["url"].startswith("https://")
         assert len(source["sha256"]) == 64
         assert source["size_bytes"] > 0
         assert source["archive_root"]
         assert source["license"] == {
-            "spdx": "GPL-2.0-or-later",
+            "spdx": "WTFPL" if name == "zimg" else "GPL-2.0-or-later",
             "text_path": source["license"]["text_path"],
         }
-    assert len(sources["x265"]["revision"]) == 40
-    assert sources["x265"]["revision"] in sources["x265"]["url"]
+    for name in ("x265", "zimg"):
+        assert len(sources[name]["revision"]) == 40
+        assert sources[name]["revision"] in sources[name]["url"]
 
     output = lock["output"]
     assert output["executables"] == ["ffmpeg", "ffprobe"]
-    assert {"--enable-gpl", "--enable-libx264", "--enable-libx265"} <= set(
+    assert {"--enable-gpl", "--enable-libx264", "--enable-libx265", "--enable-libzimg"} <= set(
         output["license"]["configure_flags_required"]
     )
     assert "--static" in output["license"]["configure_flags_forbidden"]
     assert output["runtime_dependency"] == "libc.so.6"
-    assert output["forbidden_runtime_dependencies"] == ["libx264", "libx265"]
+    assert output["forbidden_runtime_dependencies"] == ["libx264", "libx265", "libzimg"]
+
+
+def test_both_ffmpeg_locks_require_the_tone_map_filters() -> None:
+    from tuck.encoding.capabilities import TONE_MAP_FILTERS
+
+    windows = json.loads(_LOCK.read_text(encoding="utf-8"))
+    linux = json.loads(_LINUX_LOCK.read_text(encoding="utf-8"))
+
+    # a build that drops zimg would still pass every other check and quietly lose HDR to SDR
+    assert set(windows["output"]["filters"]) >= TONE_MAP_FILTERS
+    assert set(linux["output"]["required_filters"]) >= TONE_MAP_FILTERS
+    assert "--enable-libzimg" in windows["output"]["configure_flags_required"]
+    assert "--enable-libzimg" in linux["output"]["license"]["configure_flags_required"]
+
+
+def test_ffmpeg_recipes_build_the_locked_zimg() -> None:
+    for lock_path in (_LOCK, _LINUX_LOCK):
+        lock = json.loads(lock_path.read_text(encoding="utf-8"))
+        zimg = next(source for source in lock["sources"] if source["name"] == "zimg")
+        recipe = (_REPO / lock["recipe"]["path"]).read_text(encoding="utf-8")
+
+        # the recipes name the extracted directory, so it must follow the locked revision
+        assert zimg["archive_root"] in recipe
+        assert "--enable-libzimg" in recipe
+
+
+@pytest.mark.parametrize("license_id", ["GPL-2.0-or-later", None])
+def test_linux_lock_requires_zimg_under_its_own_license(
+    tmp_path: Path, monkeypatch, license_id: str | None
+) -> None:
+    build_linux = _build_linux_module()
+    verify_package = _verify_package_module()
+    lock = json.loads(_LINUX_LOCK.read_text(encoding="utf-8"))
+    zimg = next(source for source in lock["sources"] if source["name"] == "zimg")
+    if license_id is None:
+        lock["sources"].remove(zimg)
+    else:
+        zimg["license"]["spdx"] = license_id
+    lock_path = tmp_path / "ffmpeg-linux-sources.lock.json"
+    lock_path.write_text(json.dumps(lock), encoding="utf-8")
+    monkeypatch.setattr(build_linux, "LOCK_PATH", lock_path)
+
+    with pytest.raises(build_linux.BuildError, match=r"zimg|provenance is incomplete"):
+        build_linux.load_lock()
+    with pytest.raises(verify_package.VerifyError, match="incomplete"):
+        verify_package._validate_linux_lock(lock)
 
 
 def test_linux_build_rejects_incomplete_source_provenance(tmp_path: Path, monkeypatch) -> None:
@@ -214,6 +261,32 @@ def test_linux_build_rejects_incomplete_source_provenance(tmp_path: Path, monkey
 
     with pytest.raises(build_linux.BuildError, match="provenance is incomplete"):
         build_linux.load_lock()
+
+
+def test_linux_build_leaves_source_links_out_of_the_extracted_tree(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import io
+    import tarfile
+
+    build_linux = _build_linux_module()
+    monkeypatch.setattr(build_linux, "FFMPEG_BUILD", tmp_path / "build")
+    archive_path = tmp_path / "source.tar.gz"
+    with tarfile.open(archive_path, "w:gz") as archive:
+        license_file = tarfile.TarInfo("source/COPYING")
+        license_file.size = 7
+        archive.addfile(license_file, io.BytesIO(b"license"))
+        link = tarfile.TarInfo("source/doc/example.h")
+        link.type = tarfile.SYMTYPE
+        link.linkname = "/etc/passwd"
+        archive.addfile(link)
+    record = {"archive_root": "source", "license": {"text_path": "COPYING"}}
+
+    source_root = build_linux._extract_sources([(record, archive_path)])
+
+    assert (source_root / "source" / "COPYING").read_bytes() == b"license"
+    assert not (source_root / "source" / "doc" / "example.h").is_symlink()
+    assert not (source_root / "source" / "doc" / "example.h").exists()
 
 
 def test_linux_package_verifier_rejects_incomplete_source_provenance() -> None:
@@ -338,3 +411,28 @@ def test_packaged_backend_smoke() -> None:
         timeout=600,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_linux_sidecar_starts_without_the_modules_its_package_leaves_out() -> None:
+    spec = (_REPO / "scripts" / "tuck-sidecar-linux.spec").read_text(encoding="utf-8")
+    excludes = spec.split("_excludes = [", 1)[1].split("]", 1)[0]
+    left_out = [
+        name.strip().strip('",')
+        for name in excludes.splitlines()
+        if name.strip().startswith('"tuck.')
+    ]
+    assert "tuck.sendto" in left_out
+
+    # a fresh interpreter, so modules imported by other tests don't hide the import chain
+    script = (
+        "import sys, tuck.sidecar.__main__\n"
+        f"print([name for name in {left_out!r} if name in sys.modules])\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=_REPO,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert result.stdout.strip() == "[]"

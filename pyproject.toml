@@ -28,7 +28,6 @@ dependencies = [
     "numpy==2.2.6",
     "platformdirs>=4.0",
     "rich>=13.7",
-    "packaging>=23.0",
     "pywin32>=306; sys_platform == 'win32'",
 ]
 

@@ -100,7 +100,6 @@ _hiddenimports = [
     "tuck.encoding.runner",
     "tuck.encoding.target_size",
     "platformdirs",
-    "packaging",
     "rich",
     "win32com",
     "win32com.client",

@@ -34,6 +34,7 @@ def test_windows_lock_pins_sources_and_hardware_support():
         "amf",
         "zlib",
         "dav1d",
+        "zimg",
     }
     assert {"libx264", "libx265", "h264_nvenc", "hevc_nvenc", "h264_amf", "hevc_amf", "aac"} <= set(
         lock["output"]["encoders"]
@@ -91,6 +92,27 @@ def test_unsafe_source_member_is_rejected(tmp_path):
     with pytest.raises(module.BuildError, match="Unsafe"):
         module.extract_source(path, "source", tmp_path / "extracted")
     assert not (tmp_path / "escape").exists()
+
+
+def test_source_links_are_never_extracted(tmp_path):
+    import io
+    import tarfile
+
+    module = builder()
+    path = tmp_path / "links.tar"
+    with tarfile.open(path, "w") as archive:
+        info = tarfile.TarInfo("source/src/header.h")
+        info.size = 1
+        archive.addfile(info, io.BytesIO(b"x"))
+        link = tarfile.TarInfo("source/doc/header.h")
+        link.type = tarfile.SYMTYPE
+        link.linkname = "/etc/passwd"
+        archive.addfile(link)
+    module.extract_source(path, "source", tmp_path / "extracted")
+
+    assert (tmp_path / "extracted/source/src/header.h").read_bytes() == b"x"
+    assert not (tmp_path / "extracted/source/doc/header.h").exists()
+    assert not (tmp_path / "extracted/source/doc/header.h").is_symlink()
 
 
 @pytest.fixture

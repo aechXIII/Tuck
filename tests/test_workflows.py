@@ -285,3 +285,22 @@ def test_build_script_orchestrates_sidecar_then_tauri_then_verify() -> None:
     tauri = build_script.index("npm run tauri build")
     verify = build_script.index("scripts/verify_package.py")
     assert sidecar < tauri < verify, "build.ps1 must build the sidecar, then bundle, then verify"
+
+
+def test_jobs_that_read_the_signing_key_run_in_the_protected_environment() -> None:
+    # the key lives only in the protected release environment; a job outside it
+    # would read an empty secret and build unsigned
+    jobs = _jobs(_read(RELEASE_YML))
+    for name, body in jobs.items():
+        if "secrets.TAURI_SIGNING_PRIVATE_KEY" not in body:
+            continue
+        assert re.search(r"^    environment: .*'release'", body, re.MULTILINE) or re.search(
+            r"^    environment: release\s*$", body, re.MULTILINE
+        ), f"{name} reads the signing key outside the protected release environment"
+
+
+def test_a_mismatched_tag_stops_the_release_before_any_build() -> None:
+    jobs = _jobs(_read(RELEASE_YML))
+    assert 'build_metadata.py check-ref --ref "$GITHUB_REF"' in jobs["release-version"]
+    for name in ("windows-ffmpeg", "build-windows", "build-linux"):
+        assert re.search(r"^    needs: .*release-version", jobs[name], re.MULTILINE), name

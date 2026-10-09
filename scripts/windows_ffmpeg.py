@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parent.parent
 LOCK_PATH = ROOT / "packaging/ffmpeg-sources.lock.json"
 BUILD = ROOT / "build/windows-ffmpeg"
 SOURCE_BUNDLE = "Tuck-FFmpeg-Windows-Sources.tar.xz"
-REQUIRED_SOURCES = {"ffmpeg", "x264", "x265", "nv-codec-headers", "amf", "zlib", "dav1d"}
+REQUIRED_SOURCES = {"ffmpeg", "x264", "x265", "nv-codec-headers", "amf", "zlib", "dav1d", "zimg"}
 DOWNLOAD_ATTEMPTS = 3
 
 
@@ -121,10 +121,12 @@ def extract_source(path: Path, root: str, destination: Path) -> None:
                 and ".." not in name.parts
                 and "\\" not in member.name
                 and name.parts[0] == root
-                and (member.isfile() or member.isdir()),
+                and (member.isfile() or member.isdir() or member.issym()),
                 f"Unsafe source member: {member.name}",
             )
-        archive.extractall(destination, members=members)
+        # zimg links a few example sources from its docs; no recipe builds them, so links are
+        # never written and can't point a later write outside the source tree
+        archive.extractall(destination, members=[m for m in members if not m.issym()])
 
 
 def write_source_bundle(lock: dict, sources: list[Path], target: Path) -> None:

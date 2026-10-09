@@ -2,11 +2,12 @@
 # Build the native Linux x86_64 AppImage.
 #
 # Prerequisites: Linux x86_64, Python 3.10+ with venv support, Node/npm,
-# Rust/Cargo, the Tauri Linux system dependencies, CMake, NASM, pkg-config, a
-# native C/C++ compiler, the GStreamer 1.0 tools and base/good/bad/libav plugin
-# packages (bundled into the AppImage for editor preview playback), and network
-# access for the pinned Python and FFmpeg source inputs. AppImage builds may
-# also require FUSE to run the resulting artifact on the build host.
+# Rust/Cargo, the Tauri Linux system dependencies, CMake, NASM, pkg-config,
+# Autoconf, Automake, Libtool, a native C/C++ compiler, the GStreamer 1.0 tools
+# and base/good/bad/libav plugin packages (bundled into the AppImage for editor
+# preview playback), and network access for the pinned Python and FFmpeg source
+# inputs. AppImage builds may also require FUSE to run the resulting artifact on
+# the build host.
 
 set -euo pipefail
 
@@ -34,7 +35,7 @@ if [[ "$(uname -m)" != "x86_64" && "$(uname -m)" != "amd64" ]]; then
   exit 1
 fi
 for command in "$python_bin" npm cargo xvfb-run xwininfo cmake gcc g++ make nasm mksquashfs \
-  pkg-config gst-inspect-1.0; do
+  pkg-config autoconf automake libtoolize gst-inspect-1.0; do
   if ! command -v "$command" >/dev/null 2>&1; then
     echo "$command was not found on PATH." >&2
     exit 1

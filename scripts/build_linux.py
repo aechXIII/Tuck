@@ -1,7 +1,7 @@
 """Build the Linux x86_64 sidecar resource tree for Tuck's AppImage.
 
 Run this on native Ubuntu 22.04 x86_64. It needs Python 3.10+, venv support,
-network access to the locked FFmpeg, x264, and x265 source archives, and the
+network access to the locked FFmpeg, x264, x265, and zimg source archives, and the
 native compiler toolchain required by PyInstaller. This script builds the media
 tools from those verified sources, preserves the exact inputs and recipe in the
 staging tree, and builds the Python sidecar. ``scripts/build-linux.sh`` builds
@@ -43,6 +43,13 @@ STAGING = ROOT / "packaging" / "staging" / "linux"
 STAGING_APP = STAGING / "app"
 STAGING_FFMPEG = STAGING / "ffmpeg"
 SOURCE_BUNDLE_NAME = "ffmpeg-source.tar.xz"
+# zimg keeps its own permissive license inside the GPL build
+SOURCE_LICENSES = {
+    "ffmpeg": "GPL-2.0-or-later",
+    "x264": "GPL-2.0-or-later",
+    "x265": "GPL-2.0-or-later",
+    "zimg": "WTFPL",
+}
 
 
 class BuildError(RuntimeError):
@@ -111,7 +118,7 @@ def _source_entries(lock: dict[str, object]) -> list[dict[str, object]]:
         license_info = entry.get("license")
         _require(
             isinstance(name, str)
-            and name in {"ffmpeg", "x264", "x265"}
+            and name in SOURCE_LICENSES
             and name not in names
             and isinstance(version, str)
             and version
@@ -119,19 +126,20 @@ def _source_entries(lock: dict[str, object]) -> list[dict[str, object]]:
             and root == Path(root).name
             and root
             and isinstance(license_info, dict)
-            and license_info.get("spdx") == "GPL-2.0-or-later"
+            and license_info.get("spdx") == SOURCE_LICENSES[name]
             and isinstance(license_info.get("text_path"), str)
             and license_info["text_path"],
             "Linux FFmpeg source provenance is incomplete",
         )
-        if name == "x265":
+        if name in {"x265", "zimg"}:
             revision = entry.get("revision")
             _require(
                 isinstance(revision, str) and re.fullmatch(r"[0-9a-f]{40}", revision) is not None,
-                "x265 source must record an immutable revision",
+                f"{name} source must record an immutable revision",
             )
             _require(
-                revision in str(entry["url"]), "x265 source URL must name its immutable revision"
+                revision in str(entry["url"]),
+                f"{name} source URL must name its immutable revision",
             )
         names.add(name)
         filename = str(entry["filename"])
@@ -139,7 +147,8 @@ def _source_entries(lock: dict[str, object]) -> list[dict[str, object]]:
         filenames.add(filename)
         entries.append(entry)
     _require(
-        names == {"ffmpeg", "x264", "x265"}, "Linux FFmpeg lock must include FFmpeg, x264, and x265"
+        names == set(SOURCE_LICENSES),
+        "Linux FFmpeg lock must include FFmpeg, x264, x265, and zimg",
     )
     return entries
 
@@ -198,8 +207,8 @@ def load_lock() -> dict[str, object]:
         output.get("runtime_dependency") == "libc.so.6", "Linux FFmpeg must retain libc dependency"
     )
     _require(
-        output.get("forbidden_runtime_dependencies") == ["libx264", "libx265"],
-        "Linux FFmpeg must statically link x264 and x265",
+        output.get("forbidden_runtime_dependencies") == ["libx264", "libx265", "libzimg"],
+        "Linux FFmpeg must statically link x264, x265, and zimg",
     )
     return lock
 
@@ -258,10 +267,14 @@ def _extract_sources(sources: list[tuple[dict[str, object], Path]]) -> Path:
                     and ".." not in member_path.parts
                     and member_path.parts
                     and member_path.parts[0] == root
-                    and (member.isfile() or member.isdir()),
+                    and (member.isfile() or member.isdir() or member.issym()),
                     f"Unsafe or unexpected source archive member: {member.name}",
                 )
-            archive.extractall(source_root, members=members)
+            # zimg links a few example sources from its docs; no recipe builds them, so links
+            # are never written and can't point a later write outside the source tree
+            archive.extractall(
+                source_root, members=[member for member in members if not member.issym()]
+            )
         license_info = source["license"]
         _require(isinstance(license_info, dict), "Linux FFmpeg source license is invalid")
         license_path = source_root / root / str(license_info["text_path"])
@@ -310,7 +323,7 @@ def _build_ffmpeg(lock: dict[str, object], source_root: Path) -> Path:
     _require(isinstance(recipe, dict), "Linux FFmpeg recipe is invalid")
     output = FFMPEG_BUILD / "output"
     jobs = str(os.cpu_count() or 1)
-    print("  build   FFmpeg, x264, and x265 from locked sources")
+    print("  build   FFmpeg, x264, x265, and zimg from locked sources")
     subprocess.run(
         [
             "bash",

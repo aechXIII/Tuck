@@ -52,6 +52,12 @@ MANIFEST = ROOT / "packaging" / "staging" / "manifest.json"
 LOCK = ROOT / "packaging" / "ffmpeg-sources.lock.json"
 WEBVIEW2_LOCK = ROOT / "packaging" / "webview2-bootstrapper.lock.json"
 EXPECTED_VERSION = "0.5.2"
+_LINUX_SOURCE_LICENSES = {
+    "ffmpeg": "GPL-2.0-or-later",
+    "x264": "GPL-2.0-or-later",
+    "x265": "GPL-2.0-or-later",
+    "zimg": "WTFPL",
+}
 
 
 class VerifyError(RuntimeError):
@@ -133,7 +139,8 @@ def _validate_linux_lock(lock: dict) -> None:
     )
     sources = lock.get("sources")
     _require_provenance(
-        isinstance(sources, list) and len(sources) == 3, "Linux FFmpeg lock sources are incomplete"
+        isinstance(sources, list) and len(sources) == len(_LINUX_SOURCE_LICENSES),
+        "Linux FFmpeg lock sources are incomplete",
     )
     names: set[str] = set()
     filenames: set[str] = set()
@@ -144,6 +151,7 @@ def _validate_linux_lock(lock: dict) -> None:
         license_info = source.get("license")
         _require_provenance(
             isinstance(name, str)
+            and name in _LINUX_SOURCE_LICENSES
             and name not in names
             and isinstance(source.get("version"), str)
             and bool(source["version"])
@@ -159,22 +167,22 @@ def _validate_linux_lock(lock: dict) -> None:
             and source["archive_root"] == Path(source["archive_root"]).name
             and bool(source["archive_root"])
             and isinstance(license_info, dict)
-            and license_info.get("spdx") == "GPL-2.0-or-later"
+            and license_info.get("spdx") == _LINUX_SOURCE_LICENSES[name]
             and isinstance(license_info.get("text_path"), str)
             and bool(license_info["text_path"]),
             "Linux FFmpeg source provenance is incomplete",
         )
-        if name == "x265":
+        if name in {"x265", "zimg"}:
             revision = source.get("revision")
             _require_provenance(
                 isinstance(revision, str)
                 and re.fullmatch(r"[0-9a-f]{40}", revision) is not None
                 and revision in source["url"],
-                "x265 source must use an immutable revision URL",
+                f"{name} source must use an immutable revision URL",
             )
         names.add(name)
         filenames.add(filename)
-    _require_provenance(names == {"ffmpeg", "x264", "x265"}, "Linux FFmpeg sources are incomplete")
+    _require_provenance(names == set(_LINUX_SOURCE_LICENSES), "Linux FFmpeg sources are incomplete")
     output = lock.get("output")
     license_info = output.get("license") if isinstance(output, dict) else None
     _require_provenance(
@@ -192,8 +200,8 @@ def _validate_linux_lock(lock: dict) -> None:
         "Linux FFmpeg output provenance is incomplete",
     )
     _require_provenance(
-        output.get("forbidden_runtime_dependencies") == ["libx264", "libx265"],
-        "Linux FFmpeg output must require static x264 and x265 linkage",
+        output.get("forbidden_runtime_dependencies") == ["libx264", "libx265", "libzimg"],
+        "Linux FFmpeg output must require static x264, x265, and zimg linkage",
     )
 
 

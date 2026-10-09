@@ -59,6 +59,31 @@ def _check_version(manifest: dict, root: Path) -> str:
     return version
 
 
+def _git_ref(manifest: dict) -> str:
+    git = manifest.get("git")
+    ref = git.get("ref", "") if isinstance(git, dict) else ""
+    _require(isinstance(ref, str), "manifest git ref is not a string")
+    return ref
+
+
+def _check_git_ref(manifest: dict, version: str) -> None:
+    try:
+        bm.check_release_ref(_git_ref(manifest), version)
+    except bm.MetadataError as exc:
+        raise VerifyError(str(exc)) from exc
+
+
+def _check_signed_ref(manifest: dict, version: str) -> None:
+    """The updater feed links to the tag's download folder, so the tag must exist."""
+
+    ref = _git_ref(manifest)
+    expected = f"refs/tags/{bm.release_tag(version)}"
+    _require(
+        ref == expected,
+        f"a signed release must be built from its version tag {expected}, not {ref or 'no ref'}",
+    )
+
+
 def _check_artifacts(manifest: dict, version: str, artifacts_dir: Path) -> None:
     artifacts = manifest.get("artifacts")
     _require(isinstance(artifacts, list) and artifacts, "manifest lists no artifacts")
@@ -169,8 +194,8 @@ def _check_signing(manifest: dict, *, require_signed: bool) -> None:
         signing.get("tauri_updater") == "enabled",
         "public release blocked: the Tauri updater signing key was not configured for this run. "
         "Generate a keypair with `npm run tauri signer generate`, then set the "
-        "TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD secrets on the "
-        "protected tag environment and re-run the tagged release. CI builds unsigned "
+        "TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD secrets in the "
+        "protected 'release' environment and re-run the tagged release. CI builds unsigned "
         "candidate artifacts without it, but will not publish an unsigned production release.",
     )
 
@@ -211,10 +236,12 @@ def _check_updater_feed(manifest: dict, version: str, artifacts_dir: Path) -> No
             entry.get("signature", "").strip() == signatures.get(platform, "").strip(),
             f"{feed_path.name}: {target} signature does not match {platform} artifact .sig",
         )
-        expected_name = bm.artifact_name(platform, version)
+        expected_url = (
+            f"{bm.UPDATER_BASE_URL}/{bm.release_tag(version)}/{bm.artifact_name(platform, version)}"
+        )
         _require(
-            str(entry.get("url", "")).endswith(f"/{expected_name}"),
-            f"{feed_path.name}: {target} url does not point at {expected_name}",
+            entry.get("url") == expected_url,
+            f"{feed_path.name}: {target} url does not point at {expected_url}",
         )
 
 
@@ -240,11 +267,13 @@ def verify_release(
 
     resolved_dir = artifacts_dir or manifest_path.parent
     version = _check_version(manifest, root)
+    _check_git_ref(manifest, version)
     _check_artifacts(manifest, version, resolved_dir)
     _check_immutable_inputs(manifest, root)
     _check_notices(manifest, root)
     _check_signing(manifest, require_signed=require_signed)
     if require_signed:
+        _check_signed_ref(manifest, version)
         _check_updater_feed(manifest, version, resolved_dir)
     return manifest
 

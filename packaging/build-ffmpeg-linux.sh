@@ -14,7 +14,7 @@ output_dir=$3
 jobs=$4
 prefix="$build_dir/prefix"
 
-for command in cmake gcc g++ make nasm pkg-config; do
+for command in cmake gcc g++ make nasm pkg-config autoconf automake libtoolize; do
   if ! command -v "$command" >/dev/null 2>&1; then
     echo "$command is required to build the locked Linux FFmpeg sources." >&2
     exit 1
@@ -23,6 +23,7 @@ done
 
 x264="$source_dir/x264-snapshot-20191217-2245-stable"
 x265="$source_dir/multicoreware-x265_git-aa7f602f7592"
+zimg="$source_dir/zimg-f819b14e8f39d1282400b0d9543e8ef73c1b2bbd"
 ffmpeg="$source_dir/ffmpeg-7.1.1"
 
 rm -rf "$build_dir" "$output_dir"
@@ -48,12 +49,20 @@ cmake --install "$build_dir/x265"
 # link metadata, then remove the shared object so FFmpeg can only link libx265.a.
 rm -f "$prefix"/lib/libx265.so*
 
+pushd "$zimg" >/dev/null
+./autogen.sh
+./configure --prefix="$prefix" --enable-static --disable-shared --with-pic
+make -j "$jobs"
+make install
+popd >/dev/null
+
 pushd "$ffmpeg" >/dev/null
 PKG_CONFIG_PATH="$prefix/lib/pkgconfig" ./configure \
   --prefix="$prefix" \
   --enable-gpl \
   --enable-libx264 \
   --enable-libx265 \
+  --enable-libzimg \
   --enable-static \
   --disable-shared \
   --disable-debug \

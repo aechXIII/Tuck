@@ -4,6 +4,11 @@ name: Release
 # updater key and the publish job is blocked unless that key is configured. A
 # manual run assembles a release candidate: same build, verification, manifest,
 # and checksums, the signing key is never decrypted, and nothing is published.
+#
+# The signing key lives only in the protected `release` environment. Every job
+# that reads it (both builds and publish) runs in that environment for a version
+# tag, so its protection rules gate signing as well as publishing. The tag must
+# name the checked-in version, or the run stops before anything is built.
 on:
   workflow_dispatch:
     inputs:
@@ -24,13 +29,32 @@ env:
   RELEASE_CHANNEL: ${{ github.event_name == 'workflow_dispatch' && inputs.channel || 'release' }}
 
 jobs:
+  release-version:
+    name: Check the tag matches the version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Require the tag to name the checked-in version
+        # the updater feed points at /releases/download/v<version>/, so a tag for any
+        # other version would publish a feed that links to missing files
+        run: python scripts/build_metadata.py check-ref --ref "$GITHUB_REF"
+
   windows-ffmpeg:
+    needs: release-version
     uses: ./.github/workflows/windows-ffmpeg.yml
 
   build-windows:
     name: Build Windows (native)
-    needs: windows-ffmpeg
+    needs: [release-version, windows-ffmpeg]
     runs-on: windows-latest
+    # only a version tag signs, and signing needs the key kept in the protected environment
+    environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'release' || '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -91,8 +115,9 @@ jobs:
         run: python scripts/build_sidecar.py --python python
 
       - name: Build the Tauri Windows bundle
-        # Secrets only reach a build for a version tag; a release candidate builds
-        # unsigned. build.ps1 / the CLI emit updater artifacts only when the key is set.
+        # The key reaches a build only for a version tag, from the release environment;
+        # a release candidate builds unsigned. The CLI emits updater artifacts only
+        # when the key is set.
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
@@ -153,7 +178,10 @@ jobs:
 
   build-linux:
     name: Build Linux (frozen Ubuntu 22.04 baseline)
+    needs: release-version
     runs-on: ubuntu-22.04
+    # only a version tag signs, and signing needs the key kept in the protected environment
+    environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'release' || '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -173,7 +201,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev patchelf \
-            build-essential nasm cmake pkg-config \
+            build-essential nasm cmake pkg-config autoconf automake libtool \
             squashfs-tools xvfb x11-utils \
             gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
             gstreamer1.0-plugins-bad gstreamer1.0-libav \
@@ -212,8 +240,9 @@ jobs:
           workspaces: src-tauri
 
       - name: Build the AppImage
-        # Secrets only reach a build for a version tag; a release candidate builds
-        # unsigned. build-linux.sh emits and re-signs updater artifacts only when the key is set.
+        # The key reaches a build only for a version tag, from the release environment;
+        # a release candidate builds unsigned. build-linux.sh emits and re-signs updater
+        # artifacts only when the key is set.
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
@@ -381,8 +410,10 @@ jobs:
             echo "::error::Public release blocked: the Tauri updater signing key is not configured."
             echo "Generate a keypair with 'npm run tauri signer generate', add the"
             echo "TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD secrets to the"
-            echo "protected 'release' environment, and re-run this tag. Release candidates build"
-            echo "unsigned artifacts without it; a production release will not ship unsigned."
+            echo "protected 'release' environment (not the repository secrets), allow v* tags in"
+            echo "its deployment rules, and re-run this tag. The build jobs and this job all read"
+            echo "the key from that environment. Release candidates build unsigned artifacts"
+            echo "without it; a production release will not ship unsigned."
             exit 1
           fi
           python - <<'PY'

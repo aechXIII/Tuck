@@ -11,9 +11,9 @@
   },
   "recipe": {
     "path": "packaging/build-ffmpeg-linux.sh",
-    "sha256": "630a1a57a3d937a1cbfa702b355319e8e06219a713f91369d225c433ec38188b",
-    "size_bytes": 1899,
-    "description": "Build x264 and x265 as static libraries, then link them into dynamically libc-linked FFmpeg and ffprobe."
+    "sha256": "5df2ba230f6ed1d91cccf6dde1b3f3fb092534a2ff9e24ac8606ab319bf91fba",
+    "size_bytes": 2173,
+    "description": "Build x264, x265, and zimg as static libraries, then link them into dynamically libc-linked FFmpeg and ffprobe."
   },
   "sources": [
     {
@@ -55,6 +55,20 @@
         "spdx": "GPL-2.0-or-later",
         "text_path": "COPYING"
       }
+    },
+    {
+      "name": "zimg",
+      "version": "3.0.6",
+      "revision": "f819b14e8f39d1282400b0d9543e8ef73c1b2bbd",
+      "filename": "zimg-f819b14e8f39d1282400b0d9543e8ef73c1b2bbd.tar.gz",
+      "url": "https://codeload.github.com/sekrit-twc/zimg/tar.gz/f819b14e8f39d1282400b0d9543e8ef73c1b2bbd",
+      "size_bytes": 326822,
+      "sha256": "4dc9faba466bce429226f0f5454cb7948ec2b70f6b5b6de383898227b38e51da",
+      "archive_root": "zimg-f819b14e8f39d1282400b0d9543e8ef73c1b2bbd",
+      "license": {
+        "spdx": "WTFPL",
+        "text_path": "COPYING"
+      }
     }
   ],
   "output": {
@@ -64,6 +78,7 @@
         "--enable-gpl",
         "--enable-libx264",
         "--enable-libx265",
+        "--enable-libzimg",
         "--enable-static",
         "--disable-shared"
       ],
@@ -84,12 +99,15 @@
       "amix",
       "concat",
       "crop",
-      "scale"
+      "scale",
+      "zscale",
+      "tonemap"
     ],
     "runtime_dependency": "libc.so.6",
     "forbidden_runtime_dependencies": [
       "libx264",
-      "libx265"
+      "libx265",
+      "libzimg"
     ]
   }
 }

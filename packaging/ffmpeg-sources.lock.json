@@ -9,8 +9,8 @@
   },
   "recipe": {
     "path": "packaging/build-ffmpeg-windows.sh",
-    "size_bytes": 4639,
-    "sha256": "7b1c9ae08e96150c09d69a48ab766cad418f53edb2a86f4a779d24615301861b"
+    "size_bytes": 5065,
+    "sha256": "34cf64bf3235ee47c95626210c6de75ddc8c55aff8b4ab6e38e08c0e743d6d21"
   },
   "sources": [
     {
@@ -108,6 +108,20 @@
         "spdx": "BSD-2-Clause",
         "text_path": "COPYING"
       }
+    },
+    {
+      "name": "zimg",
+      "version": "3.0.6",
+      "revision": "f819b14e8f39d1282400b0d9543e8ef73c1b2bbd",
+      "filename": "zimg-f819b14e8f39d1282400b0d9543e8ef73c1b2bbd.tar.gz",
+      "url": "https://codeload.github.com/sekrit-twc/zimg/tar.gz/f819b14e8f39d1282400b0d9543e8ef73c1b2bbd",
+      "archive_root": "zimg-f819b14e8f39d1282400b0d9543e8ef73c1b2bbd",
+      "size_bytes": 326822,
+      "sha256": "4dc9faba466bce429226f0f5454cb7948ec2b70f6b5b6de383898227b38e51da",
+      "license": {
+        "spdx": "WTFPL",
+        "text_path": "COPYING"
+      }
     }
   ],
   "output": {
@@ -156,7 +170,9 @@
       "hflip",
       "vflip",
       "setsar",
-      "fps"
+      "fps",
+      "zscale",
+      "tonemap"
     ],
     "configure_flags_required": [
       "--enable-gpl",
@@ -164,6 +180,7 @@
       "--enable-libx264",
       "--enable-libx265",
       "--enable-libdav1d",
+      "--enable-libzimg",
       "--enable-zlib",
       "--enable-amf",
       "--enable-ffnvcodec",

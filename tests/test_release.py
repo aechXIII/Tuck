@@ -256,7 +256,12 @@ def _signed_release(tmp_path: Path) -> tuple[Path, Path]:
             signed=True,
         ),
     ]
-    manifest = bm.build_manifest(channel="release", artifacts=entries, root=_REPO)
+    manifest = bm.build_manifest(
+        channel="release",
+        artifacts=entries,
+        root=_REPO,
+        git={"commit": "0" * 40, "ref": f"refs/tags/v{version}"},
+    )
     (dist / bm.MANIFEST_FILENAME).write_text(
         json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8"
     )
@@ -356,3 +361,67 @@ def test_updater_manifest_points_each_platform_at_its_tagged_artifact(tmp_path: 
 def test_updater_manifest_needs_a_signature_for_every_platform() -> None:
     with pytest.raises(bm.MetadataError, match="missing updater signature"):
         bm.build_updater_manifest(version="0.5.1", notes="x", signatures={"windows": "W"})
+
+
+# --- tag and version agreement -------------------------------------------------------
+
+
+def test_a_tag_must_name_the_checked_in_version() -> None:
+    bm.check_release_ref("refs/tags/v0.5.2", "0.5.2")
+    # a release-candidate run builds from a branch and carries no version
+    bm.check_release_ref("refs/heads/main", "0.5.2")
+    bm.check_release_ref("", "0.5.2")
+    with pytest.raises(bm.MetadataError, match=r"tag v0\.5\.3 does not match .* 0\.5\.2"):
+        bm.check_release_ref("refs/tags/v0.5.3", "0.5.2")
+    with pytest.raises(bm.MetadataError, match="does not match"):
+        bm.check_release_ref("refs/tags/0.5.2", "0.5.2")
+
+
+def test_check_ref_command_stops_a_mismatched_tag_early(capsys: pytest.CaptureFixture[str]) -> None:
+    version = bm.project_version(_REPO)
+    assert bm.main(["check-ref", "--ref", f"refs/tags/v{version}"]) == 0
+    assert bm.main(["check-ref", "--ref", "refs/tags/v999.0.0"]) == 2
+    assert "does not match the checked-in version" in capsys.readouterr().err
+
+
+def test_verify_release_rejects_a_manifest_from_a_mismatched_tag(tmp_path: Path) -> None:
+    manifest_path, dist = _candidate_manifest(tmp_path)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["git"] = {"ref": "refs/tags/v999.0.0"}
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(vr.VerifyError, match="does not match the checked-in version"):
+        vr.verify_release(manifest_path, artifacts_dir=dist, root=_REPO)
+
+
+def test_signed_release_must_come_from_its_version_tag(tmp_path: Path) -> None:
+    manifest_path, dist = _signed_release(tmp_path)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["git"]["ref"] = "refs/heads/main"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(vr.VerifyError, match="built from its version tag"):
+        vr.verify_release(manifest_path, artifacts_dir=dist, root=_REPO, require_signed=True)
+
+
+def test_signed_release_feed_must_link_to_the_tags_downloads(tmp_path: Path) -> None:
+    manifest_path, dist = _signed_release(tmp_path)
+    version = bm.project_version(_REPO)
+    feed = json.loads((dist / bm.UPDATER_FEED_FILENAME).read_text(encoding="utf-8"))
+    name = bm.artifact_name("windows", version)
+    feed["platforms"]["windows-x86_64"]["url"] = f"{bm.UPDATER_BASE_URL}/v0.0.1/{name}"
+    (dist / bm.UPDATER_FEED_FILENAME).write_text(json.dumps(feed), encoding="utf-8")
+
+    with pytest.raises(vr.VerifyError, match="url does not point at"):
+        vr.verify_release(manifest_path, artifacts_dir=dist, root=_REPO, require_signed=True)
+
+
+def test_release_links_use_the_repository_owner_spelled_one_way() -> None:
+    assert bm.UPDATER_BASE_URL == "https://github.com/aechXIII/Tuck/releases/download"
+    updater = json.loads((_REPO / "src-tauri" / "tauri.conf.json").read_text(encoding="utf-8"))
+    assert updater["plugins"]["updater"]["endpoints"][0].startswith(
+        "https://github.com/aechXIII/Tuck/"
+    )
+    installer = (_REPO / "scripts" / "install-linux.sh").read_text(encoding="utf-8")
+    assert 'REPO="aechXIII/Tuck"' in installer
+    assert "aechXIii" not in installer

@@ -8,6 +8,7 @@ never re-implements naming or hashing rules that the tests pin.
 Subcommands::
 
     python scripts/build_metadata.py version
+    python scripts/build_metadata.py check-ref --ref refs/tags/v0.5.2
     python scripts/build_metadata.py artifact-name --platform windows
     python scripts/build_metadata.py checksum <file>
     python scripts/build_metadata.py entry --platform windows --kind nsis-installer \
@@ -106,6 +107,32 @@ def project_version(root: Path = ROOT) -> str:
     return distinct[0]
 
 
+def release_tag(version: str) -> str:
+    """The git tag a release of `version` is published under."""
+
+    return f"v{version}"
+
+
+def check_release_ref(ref: str, version: str) -> None:
+    """Refuse a tag that names a different version than the checkout.
+
+    Release feeds and download links are built from the checked-in version, so a
+    mismatched tag would publish links to files that do not exist. Branch refs
+    (release-candidate runs) carry no version and always pass.
+    """
+
+    prefix = "refs/tags/"
+    if not ref.startswith(prefix):
+        return
+    tag = ref[len(prefix) :]
+    expected = release_tag(version)
+    if tag != expected:
+        raise MetadataError(
+            f"tag {tag} does not match the checked-in version {version}; "
+            f"tag the release {expected} or update every version declaration first"
+        )
+
+
 def artifact_name(platform: str, version: str) -> str:
     """Canonical downloadable filename: product, version, OS, and architecture."""
 
@@ -146,7 +173,7 @@ UPDATER_TARGETS: dict[str, str] = {
     "windows": "windows-x86_64",
     "linux": "linux-x86_64",
 }
-UPDATER_BASE_URL = "https://github.com/aechXIii/Tuck/releases/download"
+UPDATER_BASE_URL = "https://github.com/aechXIII/Tuck/releases/download"
 
 
 def artifact_entry(
@@ -239,7 +266,7 @@ def build_updater_manifest(
     """
 
     stamp = pub_date or _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    tag = f"v{version}"
+    tag = release_tag(version)
     platforms: dict[str, object] = {}
     for platform, target in UPDATER_TARGETS.items():
         signature = signatures.get(platform)
@@ -263,6 +290,13 @@ def _load_entries(paths: list[Path]) -> list[dict[str, object]]:
 
 def _cmd_version(_args: argparse.Namespace) -> int:
     print(project_version())
+    return 0
+
+
+def _cmd_check_ref(args: argparse.Namespace) -> int:
+    version = project_version()
+    check_release_ref(args.ref, version)
+    print(f"{args.ref or 'no ref'} matches {PRODUCT} {version}")
     return 0
 
 
@@ -338,6 +372,10 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("version").set_defaults(func=_cmd_version)
+
+    p_ref = sub.add_parser("check-ref")
+    p_ref.add_argument("--ref", required=True, help="The git ref being built, e.g. $GITHUB_REF.")
+    p_ref.set_defaults(func=_cmd_check_ref)
 
     p_name = sub.add_parser("artifact-name")
     p_name.add_argument("--platform", required=True, choices=PLATFORMS)

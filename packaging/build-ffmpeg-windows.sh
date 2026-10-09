@@ -11,7 +11,8 @@ output_dir=$(realpath -m "$3")
 jobs=$4
 prefix="$build_dir/prefix"
 cross=x86_64-w64-mingw32
-for tool in "$cross-gcc-posix" "$cross-g++-posix" cmake make nasm pkg-config meson ninja; do
+for tool in "$cross-gcc-posix" "$cross-g++-posix" cmake make nasm pkg-config meson ninja \
+  autoconf automake libtoolize; do
   command -v "$tool" >/dev/null || { echo "Missing build tool: $tool" >&2; exit 1; }
 done
 mkdir -p "$build_dir" "$output_dir" "$prefix"
@@ -85,6 +86,15 @@ meson setup "$build_dir/dav1d" "$source_dir/dav1d-1.5.1" \
 ninja -C "$build_dir/dav1d" -j "$jobs"
 ninja -C "$build_dir/dav1d" install
 
+pushd "$source_dir/zimg-f819b14e8f39d1282400b0d9543e8ef73c1b2bbd" >/dev/null
+./autogen.sh
+# name the POSIX compilers, or configure picks the win32-thread ones from --host
+./configure --host="$cross" --prefix="$prefix" --enable-static --disable-shared \
+  CC="$cross-gcc-posix" CXX="$cross-g++-posix"
+make -j "$jobs"
+make install
+popd >/dev/null
+
 make -C "$source_dir/nv-codec-headers-c69278340ab1d5559c7d7bf0edf615dc33ddbba7" install PREFIX="$prefix"
 mkdir -p "$prefix/include/AMF"
 cp -R "$source_dir/AMF-ba07d1b3c7c7ee0d846125cffc1d6d78a020c45a/amf/public/include/"* "$prefix/include/AMF/"
@@ -96,7 +106,7 @@ pushd "$build_dir/ffmpeg" >/dev/null
   --cc="$cross-gcc-posix" --cxx="$cross-g++-posix" \
   --prefix="$prefix" --enable-cross-compile --disable-autodetect \
   --enable-gpl --enable-static --disable-shared --disable-debug --disable-doc --disable-ffplay \
-  --enable-libx264 --enable-libx265 --enable-libdav1d --enable-zlib \
+  --enable-libx264 --enable-libx265 --enable-libdav1d --enable-libzimg --enable-zlib \
   --enable-amf --enable-ffnvcodec --enable-nvenc --enable-nvdec \
   --enable-d3d11va --enable-dxva2 --enable-w32threads \
   --pkg-config=pkg-config --pkg-config-flags=--static \
@@ -108,6 +118,7 @@ popd >/dev/null
 "$cross-gcc-posix" --version > "$output_dir/build-environment.txt"
 dpkg-query -W gcc-mingw-w64-x86-64-posix g++-mingw-w64-x86-64-posix \
   mingw-w64-x86-64-dev binutils-mingw-w64-x86-64 cmake nasm meson ninja-build \
+  autoconf automake libtool \
   >> "$output_dir/build-environment.txt"
 cat /usr/share/doc/mingw-w64-common/copyright \
   /usr/share/doc/gcc-mingw-w64-base/copyright > "$output_dir/Toolchain-LICENSE.txt"
