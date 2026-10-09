@@ -181,14 +181,14 @@ def test_linux_ffmpeg_lock_completely_pins_the_source_build() -> None:
     assert hashlib.sha256(recipe_path.read_bytes()).hexdigest() == recipe["sha256"]
 
     sources = {source["name"]: source for source in lock["sources"]}
-    assert set(sources) == {"ffmpeg", "x264", "x265", "zimg"}
+    assert set(sources) == {"ffmpeg", "x264", "x265", "zimg", "dav1d"}
     for name, source in sources.items():
         assert source["url"].startswith("https://")
         assert len(source["sha256"]) == 64
         assert source["size_bytes"] > 0
         assert source["archive_root"]
         assert source["license"] == {
-            "spdx": "WTFPL" if name == "zimg" else "GPL-2.0-or-later",
+            "spdx": {"zimg": "WTFPL", "dav1d": "BSD-2-Clause"}.get(name, "GPL-2.0-or-later"),
             "text_path": source["license"]["text_path"],
         }
     for name in ("x265", "zimg"):
@@ -202,7 +202,26 @@ def test_linux_ffmpeg_lock_completely_pins_the_source_build() -> None:
     )
     assert "--static" in output["license"]["configure_flags_forbidden"]
     assert output["runtime_dependency"] == "libc.so.6"
-    assert output["forbidden_runtime_dependencies"] == ["libx264", "libx265", "libzimg"]
+    assert output["forbidden_runtime_dependencies"] == [
+        "libx264",
+        "libx265",
+        "libzimg",
+        "libdav1d",
+    ]
+
+
+def test_both_ffmpeg_builds_decode_av1_in_software() -> None:
+    windows = json.loads(_LOCK.read_text(encoding="utf-8"))
+    linux = json.loads(_LINUX_LOCK.read_text(encoding="utf-8"))
+
+    # FFmpeg's built-in AV1 decoder needs a GPU, so without dav1d AV1 videos can't be exported
+    assert "libdav1d" in windows["output"]["decoders"]
+    assert "libdav1d" in linux["output"]["required_decoders"]
+    for lock in (windows, linux):
+        dav1d = next(source for source in lock["sources"] if source["name"] == "dav1d")
+        recipe = (_REPO / lock["recipe"]["path"]).read_text(encoding="utf-8")
+        assert dav1d["archive_root"] in recipe
+        assert "--enable-libdav1d" in recipe
 
 
 def test_both_ffmpeg_locks_require_the_tone_map_filters() -> None:

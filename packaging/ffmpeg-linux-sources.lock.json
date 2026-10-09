@@ -11,9 +11,9 @@
   },
   "recipe": {
     "path": "packaging/build-ffmpeg-linux.sh",
-    "sha256": "5df2ba230f6ed1d91cccf6dde1b3f3fb092534a2ff9e24ac8606ab319bf91fba",
-    "size_bytes": 2173,
-    "description": "Build x264, x265, and zimg as static libraries, then link them into dynamically libc-linked FFmpeg and ffprobe."
+    "sha256": "649a30ace25e23c2283dc8d3b551c26780917e2a25a28915f9c33bb7809ac777",
+    "size_bytes": 2581,
+    "description": "Build x264, x265, zimg, and dav1d as static libraries, then link them into dynamically libc-linked FFmpeg and ffprobe."
   },
   "sources": [
     {
@@ -69,6 +69,19 @@
         "spdx": "WTFPL",
         "text_path": "COPYING"
       }
+    },
+    {
+      "name": "dav1d",
+      "version": "1.5.1",
+      "filename": "dav1d-1.5.1.tar.xz",
+      "url": "https://download.videolan.org/pub/videolan/dav1d/1.5.1/dav1d-1.5.1.tar.xz",
+      "size_bytes": 1020760,
+      "sha256": "401813f1f89fa8fd4295805aa5284d9aed9bc7fc1fdbe554af4292f64cbabe21",
+      "archive_root": "dav1d-1.5.1",
+      "license": {
+        "spdx": "BSD-2-Clause",
+        "text_path": "COPYING"
+      }
     }
   ],
   "output": {
@@ -79,6 +92,7 @@
         "--enable-libx264",
         "--enable-libx265",
         "--enable-libzimg",
+        "--enable-libdav1d",
         "--enable-static",
         "--disable-shared"
       ],
@@ -95,6 +109,9 @@
       "libx264",
       "libx265"
     ],
+    "required_decoders": [
+      "libdav1d"
+    ],
     "required_filters": [
       "amix",
       "concat",
@@ -107,7 +124,8 @@
     "forbidden_runtime_dependencies": [
       "libx264",
       "libx265",
-      "libzimg"
+      "libzimg",
+      "libdav1d"
     ]
   }
 }

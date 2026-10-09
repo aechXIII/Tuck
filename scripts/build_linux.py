@@ -1,7 +1,7 @@
 """Build the Linux x86_64 sidecar resource tree for Tuck's AppImage.
 
 Run this on native Ubuntu 22.04 x86_64. It needs Python 3.10+, venv support,
-network access to the locked FFmpeg, x264, x265, and zimg source archives, and the
+network access to the locked FFmpeg, x264, x265, zimg, and dav1d source archives, and the
 native compiler toolchain required by PyInstaller. This script builds the media
 tools from those verified sources, preserves the exact inputs and recipe in the
 staging tree, and builds the Python sidecar. ``scripts/build-linux.sh`` builds
@@ -49,6 +49,7 @@ SOURCE_LICENSES = {
     "x264": "GPL-2.0-or-later",
     "x265": "GPL-2.0-or-later",
     "zimg": "WTFPL",
+    "dav1d": "BSD-2-Clause",
 }
 
 
@@ -148,7 +149,7 @@ def _source_entries(lock: dict[str, object]) -> list[dict[str, object]]:
         entries.append(entry)
     _require(
         names == set(SOURCE_LICENSES),
-        "Linux FFmpeg lock must include FFmpeg, x264, x265, and zimg",
+        "Linux FFmpeg lock must include FFmpeg, x264, x265, zimg, and dav1d",
     )
     return entries
 
@@ -197,7 +198,7 @@ def load_lock() -> dict[str, object]:
         and isinstance(license_info.get("configure_flags_forbidden"), list),
         "Linux FFmpeg output licensing requirements are incomplete",
     )
-    for key in ("executables", "required_encoders", "required_filters"):
+    for key in ("executables", "required_encoders", "required_decoders", "required_filters"):
         _require(
             isinstance(output.get(key), list)
             and all(isinstance(item, str) for item in output[key]),
@@ -207,8 +208,9 @@ def load_lock() -> dict[str, object]:
         output.get("runtime_dependency") == "libc.so.6", "Linux FFmpeg must retain libc dependency"
     )
     _require(
-        output.get("forbidden_runtime_dependencies") == ["libx264", "libx265", "libzimg"],
-        "Linux FFmpeg must statically link x264, x265, and zimg",
+        output.get("forbidden_runtime_dependencies")
+        == ["libx264", "libx265", "libzimg", "libdav1d"],
+        "Linux FFmpeg must statically link x264, x265, zimg, and dav1d",
     )
     return lock
 
@@ -323,7 +325,7 @@ def _build_ffmpeg(lock: dict[str, object], source_root: Path) -> Path:
     _require(isinstance(recipe, dict), "Linux FFmpeg recipe is invalid")
     output = FFMPEG_BUILD / "output"
     jobs = str(os.cpu_count() or 1)
-    print("  build   FFmpeg, x264, x265, and zimg from locked sources")
+    print("  build   FFmpeg, x264, x265, zimg, and dav1d from locked sources")
     subprocess.run(
         [
             "bash",
@@ -366,6 +368,9 @@ def validate_ffmpeg_runtime(lock: dict[str, object], directory: Path) -> None:
     encoders = _tool_output(ffmpeg, "-hide_banner", "-encoders")
     for encoder in output["required_encoders"]:
         _require(f" {encoder}" in encoders, f"FFmpeg build is missing encoder {encoder}")
+    decoders = _tool_output(ffmpeg, "-hide_banner", "-decoders")
+    for decoder in output["required_decoders"]:
+        _require(f" {decoder}" in decoders, f"FFmpeg build is missing decoder {decoder}")
     filters = _tool_output(ffmpeg, "-hide_banner", "-filters")
     for filter_name in output["required_filters"]:
         _require(f" {filter_name}" in filters, f"FFmpeg build is missing filter {filter_name}")

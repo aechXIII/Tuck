@@ -57,6 +57,7 @@ _LINUX_SOURCE_LICENSES = {
     "x264": "GPL-2.0-or-later",
     "x265": "GPL-2.0-or-later",
     "zimg": "WTFPL",
+    "dav1d": "BSD-2-Clause",
 }
 
 
@@ -194,14 +195,17 @@ def _validate_linux_lock(lock: dict) -> None:
         and output.get("executables") == ["ffmpeg", "ffprobe"]
         and isinstance(output.get("required_encoders"), list)
         and bool(output["required_encoders"])
+        and isinstance(output.get("required_decoders"), list)
+        and bool(output["required_decoders"])
         and isinstance(output.get("required_filters"), list)
         and bool(output["required_filters"])
         and output.get("runtime_dependency") == "libc.so.6",
         "Linux FFmpeg output provenance is incomplete",
     )
     _require_provenance(
-        output.get("forbidden_runtime_dependencies") == ["libx264", "libx265", "libzimg"],
-        "Linux FFmpeg output must require static x264, x265, and zimg linkage",
+        output.get("forbidden_runtime_dependencies")
+        == ["libx264", "libx265", "libzimg", "libdav1d"],
+        "Linux FFmpeg output must require static x264, x265, zimg, and dav1d linkage",
     )
 
 
@@ -300,6 +304,7 @@ def _validate_linux_ffmpeg_runtime(app_root: Path, lock: dict) -> None:
         )
     for command, names, kind in (
         ("-encoders", lock["output"]["required_encoders"], "encoder"),
+        ("-decoders", lock["output"]["required_decoders"], "decoder"),
         ("-filters", lock["output"]["required_filters"], "filter"),
     ):
         result = subprocess.run(

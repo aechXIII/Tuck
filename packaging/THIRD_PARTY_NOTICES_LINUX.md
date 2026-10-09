@@ -8,10 +8,11 @@ below.
 
 `ffmpeg` and `ffprobe` are built on Ubuntu 22.04 from pinned sources:
 FFmpeg 7.1.1, x264 (snapshot 20191217-2245-stable) and x265 3.6, all
-GPL-2.0-or-later, and zimg 3.0.6 (WTFPL). x264, x265 and zimg are linked
-statically. The lock file is `packaging/ffmpeg-linux-sources.lock.json`.
+GPL-2.0-or-later, zimg 3.0.6 (WTFPL) and dav1d 1.5.1 (BSD-2-Clause). x264,
+x265, zimg and dav1d are linked statically. The lock file is
+`packaging/ffmpeg-linux-sources.lock.json`.
 
-The AppImage includes `ffmpeg/source/ffmpeg-source.tar.xz` with the four
+The AppImage includes `ffmpeg/source/ffmpeg-source.tar.xz` with the five
 source archives, the build recipe and the license files. If it is missing,
 ask for a copy through Tuck's GitHub repository.
 

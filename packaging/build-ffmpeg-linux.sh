@@ -14,7 +14,7 @@ output_dir=$3
 jobs=$4
 prefix="$build_dir/prefix"
 
-for command in cmake gcc g++ make nasm pkg-config autoconf automake libtoolize; do
+for command in cmake gcc g++ make nasm pkg-config autoconf automake libtoolize meson ninja; do
   if ! command -v "$command" >/dev/null 2>&1; then
     echo "$command is required to build the locked Linux FFmpeg sources." >&2
     exit 1
@@ -24,6 +24,7 @@ done
 x264="$source_dir/x264-snapshot-20191217-2245-stable"
 x265="$source_dir/multicoreware-x265_git-aa7f602f7592"
 zimg="$source_dir/zimg-f819b14e8f39d1282400b0d9543e8ef73c1b2bbd"
+dav1d="$source_dir/dav1d-1.5.1"
 ffmpeg="$source_dir/ffmpeg-7.1.1"
 
 rm -rf "$build_dir" "$output_dir"
@@ -56,6 +57,13 @@ make -j "$jobs"
 make install
 popd >/dev/null
 
+# FFmpeg's own AV1 decoder only works with GPU acceleration, so AV1 video needs dav1d
+meson setup "$build_dir/dav1d" "$dav1d" \
+  --prefix "$prefix" --libdir lib --buildtype release --default-library static \
+  -Db_pic=true -Denable_tools=false -Denable_tests=false
+ninja -C "$build_dir/dav1d" -j "$jobs"
+ninja -C "$build_dir/dav1d" install
+
 pushd "$ffmpeg" >/dev/null
 PKG_CONFIG_PATH="$prefix/lib/pkgconfig" ./configure \
   --prefix="$prefix" \
@@ -63,6 +71,7 @@ PKG_CONFIG_PATH="$prefix/lib/pkgconfig" ./configure \
   --enable-libx264 \
   --enable-libx265 \
   --enable-libzimg \
+  --enable-libdav1d \
   --enable-static \
   --disable-shared \
   --disable-debug \

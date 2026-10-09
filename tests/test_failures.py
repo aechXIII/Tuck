@@ -2,6 +2,7 @@ import pytest
 
 from tuck.encoding.failures import (
     ACCESS_DENIED_MESSAGE,
+    DECODER_MISSING_MESSAGE,
     DISK_FULL_MESSAGE,
     ENCODER_FAILED_MESSAGE,
     FILTER_FAILED_MESSAGE,
@@ -38,6 +39,16 @@ from tuck.encoding.failures import (
             "[vost#0:0/libx264 @ 000003] Could not open encoder before EOF\n",
             FILTER_FAILED_MESSAGE,
         ),
+        # FFmpeg's own AV1 decoder without a GPU, the way it fails on an AV1 export
+        (
+            "[dec:av1 @ 0x5b] Decode error rate 1 exceeds maximum 0.666667\n"
+            "[dec:av1 @ 0x5b] Task finished with error code: -1145393733\n",
+            DECODER_MISSING_MESSAGE,
+        ),
+        (
+            "[vist#0:0/av1 @ 0x5a] Decoder (codec av1) not found for input stream #0:0\n",
+            DECODER_MISSING_MESSAGE,
+        ),
         (
             "[mov,mp4,m4a,3gp,3g2,mj2 @ 000001] moov atom not found\n"
             "[in#0 @ 000002] Error opening input: Invalid data found when processing input\n",
@@ -51,6 +62,8 @@ from tuck.encoding.failures import (
         "encoder-open",
         "unknown-encoder",
         "filter",
+        "av1-without-gpu",
+        "no-decoder",
         "damaged-input",
     ],
 )

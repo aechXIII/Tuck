@@ -49,6 +49,12 @@ _ENCODER_MARKERS = (
     "failed to initialise amf",
     "generic error in an external library",
 )
+# no decoder for the video's format, or one that can't run here; FFmpeg's own AV1 decoder
+# needs a GPU and fails every frame without one
+_DECODER_MARKERS = (
+    "decoder (codec",
+    "decode error rate",
+)
 _INPUT_MARKERS = (
     "invalid data found when processing input",
     "moov atom not found",
@@ -77,6 +83,11 @@ FILTER_FAILED_MESSAGE = (
     "Try removing the LUT, crop or frame blending, or open Diagnostics on this export "
     "for FFmpeg's details."
 )
+DECODER_MISSING_MESSAGE = (
+    "Tuck couldn't decode this video. FFmpeg may not support its format, or the file may be "
+    "damaged. Check that it plays in another app, or choose a different FFmpeg in "
+    "Settings > Media tools, then export again."
+)
 INPUT_DAMAGED_MESSAGE = (
     "Tuck couldn't read part of the source video. The file may be damaged or incomplete. "
     "Check that it plays in another app, then export again."
@@ -98,6 +109,8 @@ def describe_ffmpeg_failure(stderr: str, returncode: int) -> str:
         return FILTER_FAILED_MESSAGE
     if any(marker in text for marker in _ENCODER_MARKERS):
         return ENCODER_FAILED_MESSAGE
+    if any(marker in text for marker in _DECODER_MARKERS):
+        return DECODER_MISSING_MESSAGE
     if any(marker in text for marker in _INPUT_MARKERS):
         return INPUT_DAMAGED_MESSAGE
     return (
