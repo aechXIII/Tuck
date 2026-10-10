@@ -27,8 +27,8 @@ test("cut state belongs to each clip and accepts only the current plan generatio
   assert.equal(reduceCutState(ready, {type:"request",key:"first"}), ready);
 });
 
-test("precision, audio and edit choices invalidate the plan without changing other clips", () => {
-  for (const event of [{type:"precision",value:"exact"}, {type:"audio",value:false}, {type:"withoutEdits",value:true}] as const) {
+test("precision and audio choices invalidate the plan without changing other clips", () => {
+  for (const event of [{type:"precision",value:"exact"}, {type:"audio",value:false}] as const) {
     const state = {...createCutState(),plan};
     const next = reduceCutState(state,event);
     assert.equal(next.plan,null);
@@ -59,36 +59,48 @@ test("cut request contains only cut intent and preserves fractional frame bounda
   const clip = createEditorClip("/videos/ride.mp4");
   clip.probeData = {duration:120,has_audio:true};
   clip.segments = [{start:1001/30000,end:120}];
-  const request = buildCutRequest({clip,state:createCutState(),edits:["crop"],frameDuration:{ticks:"1001",time_base_num:1,time_base_den:30000}});
+  const request = buildCutRequest({clip,state:createCutState(),frameDuration:{ticks:"1001",time_base_num:1,time_base_den:30000}});
   assert.equal(request.operation,"cut");
   assert.equal(request.source,clip.path);
   assert.deepEqual(request.segments[0]?.start,{ticks:"1001",time_base_num:1,time_base_den:30000});
-  assert.deepEqual(request.edits,["crop"]);
   assert.equal(request.include_audio,true);
   assert.equal("video_encoder" in request,false);
   assert.equal("profile_id" in request,false);
   const before = JSON.stringify(clip);
-  buildCutRequest({clip,state:createCutState(),edits:[]});
+  buildCutRequest({clip,state:createCutState()});
   assert.equal(JSON.stringify(clip),before);
 });
 
-test("muting all source audio disables inclusion while individual mutes remain an edit", () => {
+test("a cut takes only the kept segments and leaves the clip's other edits for Compress", () => {
   const clip = createEditorClip("/videos/ride.mp4");
-  clip.probeData = {duration:12,has_audio:true};
-  clip.audioTimeline = {enabled:true,sourceMuted:true,sourceGainDb:0,sourceWaveformUrl:"",sourceWaveformToken:"",sourceWaveformLoading:false,tracks:[]};
-  assert.equal(buildCutRequest({clip,state:createCutState(),edits:[]}).include_audio,false);
-  clip.audioTimeline.sourceMuted = false;
+  clip.probeData = {duration:12,width:1920,height:1080,has_audio:true};
+  clip.crop = {x:100,y:0,width:1200,height:1080};
+  clip.rotation = 90;
+  clip.flipHorizontal = true;
   clip.segments = [{start:0,end:4,muted:true},{start:6,end:12}];
-  const request = buildCutRequest({clip,state:createCutState(),edits:[]});
+  clip.audioTimeline = {
+    enabled:false,sourceMuted:true,sourceGainDb:-6,sourceWaveformUrl:"",sourceWaveformToken:"",sourceWaveformLoading:false,
+    tracks:[{id:"music",sourceDuration:20,muted:true,clips:[{id:"a",timelineStart:0,timelineDuration:5,sourceIn:0,sourceOut:5,fadeIn:1,fadeOut:0,loop:false,muted:true}]}],
+  };
+  const before = JSON.stringify(clip);
+  const request = buildCutRequest({clip,state:createCutState()});
+  assert.deepEqual(Object.keys(request).sort(),["include_audio","operation","precision","segments","source"]);
+  assert.deepEqual(request.segments.map(range => [mediaSeconds(range.start),mediaSeconds(range.end)]),[[0,4],[6,12]]);
+  assert.ok(request.segments.every(range => Object.keys(range).sort().join() === "end,start"));
+  // the audio timeline's mutes and Include in export don't reach the cut; its own switch does
   assert.equal(request.include_audio,true);
-  assert.ok(request.edits?.includes("muted_segments"));
+  assert.equal(buildCutRequest({clip,state:{...createCutState(),includeAudio:false}}).include_audio,false);
+  clip.probeData = {...clip.probeData,has_audio:false};
+  assert.equal(buildCutRequest({clip,state:createCutState()}).include_audio,false);
+  clip.probeData = {...clip.probeData,has_audio:true};
+  assert.equal(JSON.stringify(clip),before);
 });
 
 test("a selection reaching the source end uses the measured video duration", () => {
   const clip = createEditorClip("/videos/ride.mp4");
   clip.probeData = {duration:12.032,has_audio:true};
   const duration = {ticks:"12",time_base_num:1,time_base_den:1};
-  const context = {clip,state:createCutState(),edits:[],duration};
+  const context = {clip,state:createCutState(),duration};
   assert.deepEqual(buildCutRequest(context).segments[0]?.end,duration);
   clip.segments = [{start:4,end:12.032}];
   assert.deepEqual(buildCutRequest(context).segments[0]?.end,duration);

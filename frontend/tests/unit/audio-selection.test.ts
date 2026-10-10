@@ -214,6 +214,7 @@ let canTrim = false;
 const trimEndpoints: string[] = [];
 let canRemove = false;
 let removeCalls = 0;
+let cutTask = false;
 
 const windowRef = {
   addEventListener() {},
@@ -228,6 +229,7 @@ const windowRef = {
 
 const AudioTimeline = installAudioTimeline({
   session,
+  cutTask: () => cutTask,
   byId: (id) => documentRef.getElementById(id) as HTMLElement | null,
   documentRef: documentRef as unknown as Document,
   windowRef: windowRef as unknown as Window & typeof globalThis,
@@ -536,4 +538,45 @@ test("keyboard delete removes the active video segment when audio is not selecte
     },
   );
   assert.equal(removeCalls, 1);
+});
+
+test("M and the mute commands leave every mute alone in Lossless cut", () => {
+  const clip = session.clips["video.mp4"]!;
+  const track = clip.audioTimeline!.tracks[0]!;
+  const audioClip = track.clips[0]!;
+  clip.segments = [{ start: 0, end: 12, muted: false }];
+  audioClip.muted = false;
+  setClipSegmentsCalls.length = 0;
+  cutTask = true;
+  try {
+    for (const select of [() => AudioTimeline.selectVideoTrack(), () => AudioTimeline.selectClip(track.id, audioClip.id)]) {
+      select();
+      shortcuts.dispatch(
+        {
+          key: "m",
+          ctrlKey: false,
+          shiftKey: false,
+          altKey: false,
+          metaKey: false,
+          preventDefault() {},
+        },
+        {
+          modalOpen: false,
+          settingsOpen: false,
+          formControlFocused: false,
+          textEntryFocused: false,
+        },
+      );
+      AudioTimeline.toggleFragmentMute();
+    }
+    assert.equal(clip.segments[0]?.muted, false);
+    assert.equal(audioClip.muted, false);
+    assert.deepEqual(setClipSegmentsCalls, []);
+  } finally {
+    cutTask = false;
+  }
+  // back in Compress the same key mutes the segment again
+  AudioTimeline.selectVideoTrack();
+  AudioTimeline.toggleFragmentMute();
+  assert.equal(clip.segments[0]?.muted, true);
 });

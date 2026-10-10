@@ -184,6 +184,7 @@ export function installEditorRuntime(
 
   const audio = installAudioTimeline({
     session,
+    cutTask: () => encoding?.workflow() === 2,
     byId,
     documentRef: windowRef.document,
     windowRef,
@@ -418,6 +419,8 @@ export function installEditorRuntime(
       if (cutTask !== workspaceCutTask) {
         workspaceCutTask = cutTask;
         panels?.applyWorkspacePanels();
+        // segment and audio track labels say whether mutes apply to the current task
+        timeline.syncTimelineUI();
       }
     },
   });

@@ -9,7 +9,6 @@ export interface CutClipState {
   analysis: CutAnalysisPayload | null;
   precision: "keyframes" | "exact";
   includeAudio: boolean;
-  withoutEdits: boolean;
   workId: string | null;
   error: string;
   // the last answer on Exact, kept while a new plan is prepared so the control does not flicker
@@ -25,10 +24,10 @@ export type CutEvent =
   | {type:"failed"; message:string; plan?:CutPlanPreview | null | undefined}
   | {type:"retry"}
   | {type:"precision"; value:"keyframes" | "exact"}
-  | {type:"audio" | "withoutEdits"; value:boolean};
+  | {type:"audio"; value:boolean};
 
 export function createCutState(): CutClipState {
-  return {generation:0,requestKey:"",plan:null,shown:null,analysis:null,precision:"keyframes",includeAudio:true,withoutEdits:false,workId:null,error:"",exactAvailable:false};
+  return {generation:0,requestKey:"",plan:null,shown:null,analysis:null,precision:"keyframes",includeAudio:true,workId:null,error:"",exactAvailable:false};
 }
 
 export function reduceCutState(state: CutClipState, event: CutEvent): CutClipState {
@@ -47,7 +46,7 @@ export function reduceCutState(state: CutClipState, event: CutEvent): CutClipSta
   if (event.type === "request" && event.key === state.requestKey) return state;
   const change = event.type === "request" ? {requestKey:event.key}
     : event.type === "precision" ? {precision:event.value}
-    : event.type === "audio" ? {includeAudio:event.value} : {withoutEdits:event.value};
+    : {includeAudio:event.value};
   return {...state,...change,generation:state.generation+1,plan:null,error:""};
 }
 

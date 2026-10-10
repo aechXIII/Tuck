@@ -53,9 +53,7 @@ async function setup(page: Page, options: {pending?:boolean; collapsed?:boolean;
           window.__tuckReleaseHeld = (method,value) => method === "cut-plan" ? resolve() : release?.(method,value);
         });
       }
-      const issues = Array.isArray(request.edits) && request.edits.length && !request.without_edits
-        ? [{code:"incompatible_edit",field:"edits",message:"Crop needs re-encoding. Choose Compress or export without these edits.",title:"Crop needs re-encoding"}] : [];
-      if (collapsed) issues.push({code:"segment_collapsed",field:"segments",message:"A segment has no copyable frames.",title:""});
+      const issues = collapsed ? [{code:"segment_collapsed",field:"segments",message:"A segment has no copyable frames."}] : [];
       if (exact) {
         const precise = request.precision === "exact";
         const tenth = (value: number) => ({ticks:String(value),time_base_num:1,time_base_den:10});
@@ -201,13 +199,10 @@ test("changing cut options does not repeat the completed scan announcement", asy
   await expect(page.locator("#cut-announcement")).toHaveAttribute("data-updates","0");
 });
 
-test("export errors stay visible and whole-source mute maps to no audio", async ({page}) => {
+test("export errors stay visible until the cut is retried", async ({page}) => {
   await setup(page,{rejectExport:true});
-  await page.locator("#source-audio-label").click();
   await page.locator("#wf-l").click();
   await expect(page.locator("#btn-one")).toBeEnabled();
-  await expect(page.locator("#cut-audio")).not.toBeChecked();
-  await expect(page.locator("#cut-audio")).toBeDisabled();
   await page.locator("#btn-one").click();
   await expect(page.locator("#cut-message")).toHaveText("The video changed. Check the cut points.");
   await expect(page.locator("#cut-reread")).toBeVisible();
@@ -264,24 +259,39 @@ test("entering Upscale from Lossless cut restores the last Upscale profile", asy
   await expect(page.locator("#prof-sel")).toHaveValue("up-two");
 });
 
-test("conflicting edits require a reversible choice and stay intact", async ({page}) => {
+test("re-encoding edits and audio mutes stay on the clip and out of the cut", async ({page}) => {
   await setup(page);
   await page.locator("#insp-tab-edit").click();
   await page.getByRole("button",{name:"Rotate 90° clockwise",exact:true}).click();
+  await page.locator("#source-audio-label").click();
   await page.locator("#insp-tab-export").click();
   await page.locator("#wf-l").click();
-  await expect(page.locator("#cut-conflict")).toBeVisible();
-  await expect(page.locator("#btn-one")).toBeDisabled();
-  await page.locator("#conflict-remove").click();
   await expect(page.locator("#btn-one")).toBeEnabled();
-  await expect(page.locator("#conflict-restore")).toBeVisible();
-  await page.locator("#conflict-restore").click();
-  await expect(page.locator('#cut-list [data-cut-index="0"]')).toBeFocused();
-  await expect(page.locator("#conflict-remove")).toBeVisible();
-  await expect(page.locator("#btn-one")).toBeDisabled();
-  await page.locator("#conflict-compress").click();
-  await expect(page.locator("#wf-c")).toBeFocused();
-  await expect(page.locator("#wf-c")).toHaveAttribute("aria-pressed","true");
+  // the cut's own switch decides the audio; the audio timeline's mute does not apply here
+  await expect(page.locator("#cut-audio")).toBeChecked();
+  await expect(page.locator("#cut-audio")).toBeEnabled();
+  await expect(page.locator("#source-audio-label")).toBeDisabled();
+  await expect(page.locator("#source-audio-label")).toHaveAttribute("aria-pressed","false");
+  const segment = page.locator('.tl-segment[data-segment-index="0"]');
+  await segment.click();
+  await page.keyboard.press("m");
+  await expect(segment).not.toHaveAttribute("aria-label",/muted/);
+  await page.locator("#btn-one").click();
+  await expect.poll(() => page.evaluate(() => window.__tuckFakeBackendCalls?.some(call => call.method === "enqueueWithOptions"))).toBe(true);
+  const requests = await page.evaluate(() => window.__tuckFakeBackendCalls
+    ?.filter(call => ["createPlan","enqueueWithOptions"].includes(call.method))
+    .map(call => call.args[0] as {operation?: string})
+    .filter(request => request.operation === "cut") ?? []);
+  expect(requests.length).toBeGreaterThan(0);
+  for (const request of requests) {
+    expect(Object.keys(request).sort()).toEqual(expect.arrayContaining(["include_audio","operation","precision","segments","source"]));
+    expect(request).not.toHaveProperty("edits");
+    expect(request).not.toHaveProperty("without_edits");
+    expect(request).toHaveProperty("include_audio",true);
+  }
+  await page.locator("#wf-c").click();
+  await expect(page.locator("#source-audio-label")).toHaveAttribute("aria-pressed","true");
+  await expect(segment).not.toHaveAttribute("aria-label",/muted/);
   await page.locator("#insp-tab-edit").click();
   await expect(page.locator('[data-action-click="transform-rotation"][data-rotation="90"]')).toHaveClass(/on/);
 });

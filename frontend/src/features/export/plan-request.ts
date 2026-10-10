@@ -208,13 +208,12 @@ function numberOr(value: unknown, fallback: number): number {
 export interface CutRequestContext {
   clip: EditorClip;
   state: CutClipState;
-  edits: readonly string[];
   frameDuration?: MediaTime;
   duration?: MediaTime;
 }
 
 // Python places the cut from the user's export location, the same way it places encodes
-export function buildCutRequest({clip,state,edits,frameDuration,duration}: CutRequestContext): CutPlanRequest {
+export function buildCutRequest({clip,state,frameDuration,duration}: CutRequestContext): CutPlanRequest {
   const toTime = (seconds: number): MediaTime => {
     if (duration && Math.abs(seconds - mediaSeconds(duration)) < 0.00001) return duration;
     if (frameDuration) {
@@ -227,16 +226,12 @@ export function buildCutRequest({clip,state,edits,frameDuration,duration}: CutRe
     return {ticks:String(Math.round(seconds*1000000)),time_base_num:1,time_base_den:1000000};
   };
   const full = clip.probeData?.duration ?? 0;
+  // a cut copies the kept segments as they are; crop, filters and the audio timeline's mix,
+  // mutes and added tracks stay on the clip for Compress and Upscale
   const segments = SegmentEditing.segmentsForClip(clip,full);
-  const audio = clip.audioTimeline;
-  const includeAudio = state.includeAudio && clip.probeData?.has_audio !== false && !audio?.sourceMuted && audio?.enabled !== false;
-  const editSet = new Set(edits);
-  if (audio?.sourceGainDb) editSet.add("source_gain");
-  if (audio?.tracks.some(track => track.clips.length)) editSet.add("added_audio");
-  if (segments.some(segment => segment.muted)) editSet.add("muted_segments");
+  const includeAudio = state.includeAudio && clip.probeData?.has_audio !== false;
   return {
     operation:"cut",source:clip.path,precision:state.precision,include_audio:includeAudio,
-    without_edits:state.withoutEdits,edits:[...editSet].sort(),
     segments:segments.map(segment => ({
       start:toTime(segment.start),
       // container duration can include audio padding beyond the last video frame

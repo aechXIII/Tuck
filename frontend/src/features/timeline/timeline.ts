@@ -543,7 +543,8 @@ function paintTrimChrome() {
   let startPct = full > 0 ? (bounds.start / full) * 100 : 0;
   let endPct = full > 0 ? (bounds.end / full) * 100 : 100;
   for (const [i, segment] of segments.entries()) {
-    let segmentAudioMuted = !!segment.muted;
+    // a lossless cut keeps the source audio of every segment
+    let segmentAudioMuted = !!segment.muted && !host.cutTask?.();
     let presentation = TimelineCore.segmentPresentationState(i, active);
     let range = documentRef.createElement("button");
     range.type = "button";

@@ -76,8 +76,6 @@ def prepare_cut(
             tuple(s.requested for s in plan.segments),
             plan.precision,
             plan.include_audio,
-            (),
-            False,
             str(output.parent),
             output.name,
         ),

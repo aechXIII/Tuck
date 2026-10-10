@@ -284,7 +284,7 @@ def test_open_gop_starts_are_cut_and_marked_not_checked(tools, encoders, tmp_pat
     # the note reaches the Inspector and the queue so the export is not presented as checked
     message = plan.unverified[0].message
     assert cut_plan_preview_dict(plan)["unverified"] == [
-        {"code": "unverified_start", "message": message, "field": None, "title": ""}
+        {"code": "unverified_start", "message": message, "field": None}
     ]
     assert queue_item_dict(QueueItem(plan=plan))["unverified"] == [message]
 

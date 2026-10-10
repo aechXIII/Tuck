@@ -705,13 +705,6 @@ label.export-toggle {
 #insp-cut .inspector-label-row { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 7px; }
 #insp-cut .grt { margin: 0; }
 #insp-cut .setting-note { margin: 7px 0 0; }
-.cut-notice { margin: 12px 0 2px; padding: 10px 11px 9px; border: 1px solid color-mix(in srgb, var(--warn) 38%, transparent); border-radius: var(--r-surf); background: color-mix(in srgb, var(--warn) 7%, var(--panel)); }
-.cut-notice[hidden] { display: none; }
-.cut-notice h4 { margin: 0 0 2px; font: 600 11.5px var(--font); color: var(--text); }
-.cut-notice p { margin: 0 0 8px; font: 400 11px/1.45 var(--font); color: color-mix(in srgb, var(--warn) 55%, var(--text)); }
-.cut-notice .row { display: flex; gap: 4px; flex-wrap: wrap; }
-.cut-notice .btn2 { padding: 6px 8px; font-size: 11px; }
-.cut-notice .btn2.primary { background: color-mix(in srgb, var(--warn) 22%, var(--raised-2)); color: var(--text); }
 .cut-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .cut-row-btn { display: grid; grid-template-columns: 20px 1fr auto; grid-template-areas: "n range dur" "n status status"; column-gap: 8px; row-gap: 2px; width: 100%; padding: 6px 8px 6px 6px; border: 0; border-radius: var(--r-ctl); background: transparent; color: var(--text); text-align: left; cursor: pointer; min-width: 0; }
 .cut-row-btn:hover { background: var(--raised); }

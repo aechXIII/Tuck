@@ -164,23 +164,14 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
   const cutting = installCutControls({
     session,client,request: cutRequest,
     selectSegment: deps.selectCutSegment,moveStarts: deps.moveCutStarts,
-    compressInstead: () => { setWf(0); el("wf-c").focus(); },pollQueue: deps.pollQueue,
+    pollQueue: deps.pollQueue,
     paintTimeline: deps.paintCutTimeline,
   });
 
   function cutRequest(clip: EditorClip) {
-    const form = readForm();
-    const edits: string[] = [];
-    if (clip.crop && !isFullCrop(clip.crop,Number(clip.probeData?.width),Number(clip.probeData?.height))) edits.push("crop");
-    if (clip.rotation) edits.push("rotation");
-    if (clip.flipHorizontal || clip.flipVertical) edits.push("flip");
-    if (form.resolutionMode === "custom" && (form.customWidth !== clip.probeData?.width || form.customHeight !== clip.probeData?.height)) edits.push("resize");
-    if (!form.useSourceFps && form.customFps !== clip.probeData?.fps) edits.push("fps");
-    if (form.lut?.enabled) edits.push("lut");
-    if (form.frameBlending?.enabled) edits.push("frame_blending");
     const state = clip.cutState ??= createCutState();
     const analysis = state.analysis?.analysis;
-    return buildCutRequest({clip,state,edits,
+    return buildCutRequest({clip,state,
       ...(analysis ? {frameDuration:analysis.frame_duration,duration:analysis.duration} : {}),
     });
   }

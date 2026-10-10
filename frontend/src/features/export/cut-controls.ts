@@ -13,7 +13,6 @@ interface CutControlsDeps {
   request: (clip: EditorClip) => CutPlanRequest;
   selectSegment: (index: number, time: number) => void;
   moveStarts: (clip: EditorClip, plan: CutPlanPreview) => boolean;
-  compressInstead: () => void;
   pollQueue: () => void | Promise<void>;
   paintTimeline: () => void;
 }
@@ -193,13 +192,7 @@ export function installCutControls(deps: CutControlsDeps) {
     const pending = !!clip && pendingPath === clip.path;
     const reading = pending && current?.analysis?.status !== "ready";
     const request = clip ? deps.request(clip) : null;
-    const conflict = shown?.issues.find(issue => issue.code === "incompatible_edit");
-    const withoutEdits = !!current?.withoutEdits && !!request?.edits?.length;
-    element("cut-conflict").hidden = !conflict && !withoutEdits;
-    element("conflict-title").textContent = withoutEdits ? "Exporting without these edits" : conflict?.title || conflict?.message || "";
-    element("conflict-remove").hidden = withoutEdits;
-    element("conflict-restore").hidden = !withoutEdits;
-    const issue = shown?.issues.find(issue => !["incompatible_edit","segment_collapsed"].includes(issue.code));
+    const issue = shown?.issues.find(issue => issue.code !== "segment_collapsed");
     const message = !clip ? "Choose a video to cut."
       : !clip.probed ? clip.error || "Reading video details…" : current?.error || issue?.message || "";
     element("cut-message").textContent = message;
@@ -282,7 +275,7 @@ export function installCutControls(deps: CutControlsDeps) {
       const item = document.createElement("li"); item.textContent = note.message; return item;
     }));
     element<HTMLInputElement>("cut-audio").checked = request?.include_audio === true;
-    element<HTMLInputElement>("cut-audio").disabled = !clip?.probed || clip.probeData?.has_audio === false || !!clip.audioTimeline?.sourceMuted || clip.audioTimeline?.enabled === false || busy;
+    element<HTMLInputElement>("cut-audio").disabled = !clip?.probed || clip.probeData?.has_audio === false || busy;
     const one = element<HTMLButtonElement>("btn-one");
     one.textContent = busy || clip && exporting(clip) ? "Exporting…" : reading ? "Reading keyframes…" : "Export cut";
     one.disabled = !clip || !exportable(clip) || busy || waiting;
@@ -374,16 +367,6 @@ export function installCutControls(deps: CutControlsDeps) {
     if (!clip || value !== "keyframes" && value !== "exact" || state(clip).precision === value) return;
     clip.cutState = reduceCutState(state(clip),{type:"precision",value}); refresh(0);
   });
-  element("conflict-compress").addEventListener("click",deps.compressInstead);
-  for (const [id,value] of [["conflict-remove",true],["conflict-restore",false]] as const) {
-    element(id).addEventListener("click",() => {
-      const clip = selected(); if (!clip) return;
-      clip.cutState = reduceCutState(state(clip),{type:"withoutEdits",value}); refresh();
-      if (value) element("conflict-restore").focus();
-      // the notice hides until the new plan arrives, so focus the cuts it applies to
-      else (element("cut-list").querySelector<HTMLButtonElement>("button") ?? element("wf-l")).focus();
-    });
-  }
   element<HTMLInputElement>("cut-audio").addEventListener("change",event => {
     const clip = selected(); if (!clip) return;
     clip.cutState = reduceCutState(state(clip),{type:"audio",value:(event.currentTarget as HTMLInputElement).checked}); refresh(0);

@@ -75,7 +75,6 @@ CUT_ERROR_CODES = frozenset(
         "cut_failed",
         "cut_timed_out",
         "exact_unavailable",
-        "incompatible_edit",
         "invalid_cut_request",
         "invalid_output",
         "invalid_range",
@@ -95,8 +94,6 @@ class CutIssue:
     code: str
     message: str
     field: str | None = None
-    # a short heading for notices that show the message below it
-    title: str = ""
 
 
 @dataclass(frozen=True)
@@ -212,8 +209,6 @@ class CutRequest:
     segments: tuple[CutRange, ...]
     precision: str
     include_audio: bool
-    edits: tuple[str, ...]
-    without_edits: bool
     output_dir: str
     output_name: str
 

@@ -30,8 +30,6 @@ def request_for(analysis, **overrides):
         "segments": [{"start": moment(Fraction(21, 10)), "end": moment(Fraction(49, 10))}],
         "precision": "keyframes",
         "include_audio": True,
-        "edits": [],
-        "without_edits": False,
     }
     result.update(overrides)
     return result
@@ -88,46 +86,6 @@ def test_fingerprint_changes_with_intent_but_not_ui_request_id(analyzed):
     assert silent.segments[0].audio_source is None
 
 
-def test_the_edit_notice_names_the_edits_in_plain_english(analyzed):
-    from tuck.cutting.planner import parse_cut_request, plan_cut
-
-    def notice(edits):
-        plan = plan_cut(parse_cut_request(request_for(analyzed, edits=edits)), analyzed)
-        return next(i for i in plan.issues if i.code == "incompatible_edit")
-
-    assert notice(["crop"]).title == "Crop needs re-encoding"
-    assert notice(["crop", "flip"]).title == "Crop and Flip need re-encoding"
-    three = notice(["crop", "flip", "lut"])
-    assert three.title == "Crop, Flip and Color LUT need re-encoding"
-    assert three.message.startswith(three.title + ". Choose Compress")
-
-
-@pytest.mark.parametrize(
-    "edit",
-    [
-        "crop",
-        "flip",
-        "rotation",
-        "resize",
-        "lut",
-        "fps",
-        "frame_blending",
-        "source_gain",
-        "source_fades",
-        "added_audio",
-        "muted_segments",
-    ],
-)
-def test_edits_need_an_explicit_choice(analyzed, edit):
-    from tuck.cutting.planner import parse_cut_request, plan_cut
-
-    raw = request_for(analyzed, edits=[edit])
-    blocked = plan_cut(parse_cut_request(raw), analyzed)
-    assert any(issue.code == "incompatible_edit" for issue in blocked.issues)
-    allowed = plan_cut(parse_cut_request({**raw, "without_edits": True}), analyzed)
-    assert not allowed.issues
-
-
 @pytest.mark.parametrize(
     "overrides",
     [
@@ -136,7 +94,6 @@ def test_edits_need_an_explicit_choice(analyzed, edit):
         {"precision": "smart"},
         {"crf": 18},
         {"ffmpeg_args": ["-y"]},
-        {"edits": ["unknown"]},
         {"output_name": "../outside.mp4"},
         {"output_name": "CON.mp4"},
         {"segments": []},
@@ -164,6 +121,21 @@ def _plain_cut_request(source, **overrides):
         "segments": [{"start": moment(0), "end": moment(1)}],
         **overrides,
     }
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [{"edits": []}, {"edits": ["crop"]}, {"without_edits": True}, {"without_edits": False}],
+)
+def test_cut_requests_carry_no_edit_choices(tmp_path, overrides):
+    from tuck.cutting.planner import parse_cut_export, parse_cut_request
+
+    # a cut copies only the kept segments, so crop, filters and audio mixing are not its fields
+    raw = _plain_cut_request(tmp_path / "clip.mp4", **overrides)
+    with pytest.raises(ValueError, match="unknown fields"):
+        parse_cut_request(raw)
+    with pytest.raises(ValueError, match="unknown fields"):
+        parse_cut_export({**raw, "plan_fingerprint": "a" * 64})
 
 
 def test_default_output_name_uses_the_cut_suffix(tmp_path):

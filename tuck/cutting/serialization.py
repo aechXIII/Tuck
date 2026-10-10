@@ -13,7 +13,6 @@ def issue_dict(issue: CutIssue) -> dict[str, JsonValue]:
         "code": issue.code,
         "message": issue.message,
         "field": issue.field,
-        "title": issue.title,
     }
 
 

@@ -25,20 +25,6 @@ from .analysis import CutAnalysisError
 from .exact import exact_media_reason
 from .tracks import plan_tracks
 
-EDIT_NAMES = {
-    "crop": "Crop",
-    "flip": "Flip",
-    "rotation": "Rotation",
-    "resize": "Resize",
-    "lut": "Color LUT",
-    "fps": "Frame rate",
-    "frame_blending": "Frame blending",
-    "source_gain": "Source volume",
-    "source_fades": "Source fades",
-    "added_audio": "Added audio",
-    "muted_segments": "Muted audio segments",
-}
-
 
 class CutPlanChanged(CutAnalysisError):
     def __init__(self, current_plan: CutPlan) -> None:
@@ -92,8 +78,6 @@ def parse_cut_request(
         "segments",
         "precision",
         "include_audio",
-        "edits",
-        "without_edits",
         "output_dir",
         "output_name",
         "_request_id",
@@ -110,14 +94,8 @@ def parse_cut_request(
     if precision not in ("keyframes", "exact"):
         raise ValueError("Choose On keyframes or Exact precision")
     include_audio = raw.get("include_audio", True)
-    without_edits = raw.get("without_edits", False)
-    if type(include_audio) is not bool or type(without_edits) is not bool:
-        raise ValueError("Audio and edit choices must be boolean values")
-    edits = raw.get("edits", [])
-    if not isinstance(edits, list) or any(
-        not isinstance(e, str) or e not in EDIT_NAMES for e in edits
-    ):
-        raise ValueError("The cut request contains an unknown edit")
+    if type(include_audio) is not bool:
+        raise ValueError("Include audio must be on or off")
     ranges = raw.get("segments")
     if not isinstance(ranges, list) or not 1 <= len(ranges) <= 1000:
         raise ValueError("Choose between 1 and 1000 kept segments")
@@ -165,8 +143,6 @@ def parse_cut_request(
         tuple(segments),
         precision,
         include_audio,
-        tuple(sorted(set(edits))),
-        without_edits,
         output_dir,
         name,
     )
@@ -255,18 +231,6 @@ def plan_cut(request: CutRequest, analysis: CutAnalysis) -> CutPlan:
     if request.source != analysis.identity.path:
         issues.insert(
             0, CutIssue("source_changed", "The cut analysis belongs to a different video.")
-        )
-    if request.edits and not request.without_edits:
-        names = [EDIT_NAMES[edit] for edit in request.edits]
-        listed = names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
-        title = f"{listed} {'needs' if len(names) == 1 else 'need'} re-encoding"
-        issues.append(
-            CutIssue(
-                "incompatible_edit",
-                f"{title}. Choose Compress or export without these edits.",
-                "edits",
-                title,
-            )
         )
     if exact and exact_reason:
         issues.append(CutIssue("exact_unavailable", exact_reason, "precision"))

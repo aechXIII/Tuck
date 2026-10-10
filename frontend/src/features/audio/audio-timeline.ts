@@ -26,6 +26,8 @@ function currentWaveformGeneration(path: string): number {
 
 export interface AudioTimelineHost {
   session: EditorSession;
+  // a lossless cut copies the source audio as it is, so mutes and added tracks don't apply there
+  cutTask?: () => boolean;
   byId: (id: string) => HTMLElement | null;
   documentRef?: Document;
   windowRef?: Window & typeof globalThis;
@@ -204,6 +206,10 @@ export function installAudioTimeline(host: AudioTimelineHost) {
 
   function selectedVideo() {
     return session.selPath ? session.clips[session.selPath] ?? null : null;
+  }
+
+  function cutTask(): boolean {
+    return host.cutTask?.() === true;
   }
 
   function normalizeAudioClip(audioClip: AudioClip): AudioClipState {
@@ -446,22 +452,25 @@ export function installAudioTimeline(host: AudioTimelineHost) {
     let sourceTrack = byId("source-audio-track");
     if (!lane || !sourceTrack) return;
     let hasAudio = !!(clip && clip.probeData && clip.probeData.has_audio);
-    sourceTrack.classList.toggle("disabled", !hasAudio || !state.enabled);
-    sourceTrack.classList.toggle("muted", state.sourceMuted);
+    let cut = cutTask();
+    let enabled = cut || state.enabled;
+    let muted = !cut && state.sourceMuted;
+    sourceTrack.classList.toggle("disabled", !hasAudio || !enabled);
+    sourceTrack.classList.toggle("muted", muted);
     sourceTrack.setAttribute(
       "aria-label",
-      state.sourceMuted ? "Source audio track, muted" : "Source audio track",
+      muted ? "Source audio track, muted" : "Source audio track",
     );
     let sourceLabel = byId("source-audio-label");
     if (sourceLabel) {
-      if (hasAudio && state.enabled) sourceLabel.removeAttribute("disabled");
+      if (hasAudio && state.enabled && !cut) sourceLabel.removeAttribute("disabled");
       else sourceLabel.setAttribute("disabled", "");
-      sourceLabel.classList.toggle("muted", state.sourceMuted);
-      sourceLabel.dataset.tip = state.sourceMuted ? "Unmute source audio" : "Mute source audio";
-      sourceLabel.setAttribute("aria-pressed", state.sourceMuted ? "true" : "false");
+      sourceLabel.classList.toggle("muted", muted);
+      sourceLabel.dataset.tip = muted ? "Unmute source audio" : "Mute source audio";
+      sourceLabel.setAttribute("aria-pressed", muted ? "true" : "false");
       sourceLabel.setAttribute(
         "aria-label",
-        state.sourceMuted ? "Unmute source audio" : "Mute source audio",
+        muted ? "Unmute source audio" : "Mute source audio",
       );
     }
     paintSourceLane(clip, state, total);
@@ -472,7 +481,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
     if (!lane) return;
     lane.replaceChildren();
     if (!clip || !state || total <= 0) return;
-    if (!clip.probeData || !clip.probeData.has_audio || !state.enabled) return;
+    if (!clip.probeData || !clip.probeData.has_audio || !state.enabled && !cutTask()) return;
     let videoSegs = SegmentEditing.segmentsForClip(clip, total);
     let videoActive =
       clip && Number.isInteger(clip.activeSegment) ? clip.activeSegment : 0;
@@ -495,16 +504,17 @@ export function installAudioTimeline(host: AudioTimelineHost) {
 
   function sourceAudioBlock(segment: SegmentLike, index: number, selected: boolean, state: AudioTimelineState, total: number, touchesPrevious: boolean, touchesNext: boolean, ) {
     let block = documentRef.createElement("div");
+    let muted = !!segment.muted && !cutTask();
     block.className =
-      "seq-audio-clip" + (selected ? " selected" : "") + (segment.muted ? " muted" : "");
+      "seq-audio-clip" + (selected ? " selected" : "") + (muted ? " muted" : "");
     addJoinClasses(block, touchesPrevious, touchesNext);
-    if (segment.muted) block.dataset.tip = "Source audio muted for this segment";
+    if (muted) block.dataset.tip = "Source audio muted for this segment";
     block.dataset.audioKind = "source";
     block.dataset.segmentIndex = String(index);
     block.style.setProperty("--segment-color", host.segmentColor?.(index) ?? "var(--seg-fill)");
     block.style.setProperty(
       "--clip-fill",
-      TimelineCore.clipFill("source", selected, !!segment.muted),
+      TimelineCore.clipFill("source", selected, muted),
     );
     block.style.left = pct(segment.start, total);
     block.style.width = pct(Math.max(0, segment.end - segment.start), total);
@@ -527,7 +537,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
       );
       block.appendChild(wave);
     }
-    if (segment.muted) {
+    if (muted) {
       let mutedIndicator = documentRef.createElement("span");
       mutedIndicator.className = "audio-muted-indicator";
       mutedIndicator.textContent = "Muted";
@@ -546,12 +556,14 @@ export function installAudioTimeline(host: AudioTimelineHost) {
 
   function renderImportedTrack(track: AudioTrackState, total: number, index: number) {
     let row = documentRef.createElement("div");
-    row.className = "seq-row audio imported" + (track.muted ? " muted" : "");
+    let cut = cutTask();
+    let trackMuted = !cut && !!track.muted;
+    row.className = "seq-row audio imported" + (trackMuted ? " muted" : "");
     row.dataset.trackId = track.id;
     row.style.setProperty("--segment-color", trackColor(index));
     row.setAttribute(
       "aria-label",
-      track.name + " audio track" + (track.muted ? ", muted" : ""),
+      track.name + " audio track" + (cut ? ", not in the cut" : trackMuted ? ", muted" : ""),
     );
 
     let head = documentRef.createElement("div");
@@ -573,16 +585,17 @@ export function installAudioTimeline(host: AudioTimelineHost) {
     if (actions.indexOf("mute") >= 0) {
       let muteEl = documentRef.createElement("button");
       muteEl.type = "button";
-      muteEl.className = "seq-track-mute" + (track.muted ? " muted" : "");
+      muteEl.className = "seq-track-mute" + (trackMuted ? " muted" : "");
       muteEl.dataset.trackAction = "mute";
+      muteEl.disabled = cut;
       muteEl.innerHTML =
         '<svg viewBox="0 0 16 16" aria-hidden="true">' +
         '<path d="M1.5 6h2.3l3.4-3v10l-3.4-3H1.5z"></path>' +
         '<path class="track-sound-waves" d="M10 5.1a4 4 0 0 1 0 5.8M12 3.3a6.5 6.5 0 0 1 0 9.4"></path>' +
         '<path class="track-mute-cross" d="M10.4 6.2l3.4 3.6M13.8 6.2l-3.4 3.6"></path>' +
         "</svg>";
-      muteEl.dataset.tip = track.muted ? "Unmute " + track.name : "Mute " + track.name;
-      muteEl.setAttribute("aria-pressed", track.muted ? "true" : "false");
+      muteEl.dataset.tip = trackMuted ? "Unmute " + track.name : "Mute " + track.name;
+      muteEl.setAttribute("aria-pressed", trackMuted ? "true" : "false");
       muteEl.setAttribute("aria-label", muteEl.dataset.tip);
       head.appendChild(muteEl);
     }
@@ -609,11 +622,12 @@ export function installAudioTimeline(host: AudioTimelineHost) {
     lane.dataset.trackId = track.id;
     track.clips.forEach(function(audioClip, clipIndex) {
       let selected = audioClip.id === selectedClipId;
+      let clipMuted = !cut && !!audioClip.muted;
       let el = documentRef.createElement("div");
       el.className =
         "seq-audio-clip imported" +
         (selected ? " selected" : "") +
-        (audioClip.muted ? " muted" : "");
+        (clipMuted ? " muted" : "");
       let previousClip = clipIndex > 0 ? arrayItem(track.clips, clipIndex - 1) : null;
       let nextClip = arrayItem(track.clips, clipIndex + 1);
       addJoinClasses(
@@ -639,7 +653,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
         track.name +
           " audio clip" +
           (audioClip.loop ? ", looping" : "") +
-          (audioClip.muted ? ", muted" : ""),
+          (clipMuted ? ", muted" : ""),
       );
       el.dataset.tip = "Drag to move · Alt-drag to choose another source fragment";
       el.style.left = pct(audioClip.timelineStart, total);
@@ -649,7 +663,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
         TimelineCore.clipFill(
           "imported",
           selected,
-          !!audioClip.muted,
+          clipMuted,
           trackColor(index),
         ),
       );
@@ -659,7 +673,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
       wave.setAttribute("style", waveformStyle(track, audioClip));
       // the track header already names the file, so the clip shows only its waveform
       el.appendChild(wave);
-      if (audioClip.muted) {
+      if (clipMuted) {
         let clipMutedIndicator = documentRef.createElement("span");
         clipMutedIndicator.className = "audio-muted-indicator";
         clipMutedIndicator.textContent = "Muted";
@@ -1164,6 +1178,18 @@ export function installAudioTimeline(host: AudioTimelineHost) {
     return SegmentEditing.segmentIndexAtTime(segs, time, 0.02) >= 0;
   }
 
+  // the preview plays what the current task exports: a cut keeps every kept segment's
+  // source audio at its own level, with no added tracks
+  function sourcePreviewVolume(clip: EditorClip, state: AudioTimelineState, time: number) {
+    if (!clip.probeData?.has_audio) return 0;
+    if (cutTask()) {
+      let kept = SegmentEditing.segmentsForClip(clip, sourceDuration(clip));
+      return SegmentEditing.segmentIndexAtTime(kept, time, 0.02) >= 0 ? previewBaseVolume() : 0;
+    }
+    if (!state.enabled || state.sourceMuted || !sourceAudioAudibleAt(clip, time)) return 0;
+    return Math.max(0, Math.min(1, previewBaseVolume() * dbToGain(state.sourceGainDb)));
+  }
+
   function applyPreviewVolume() {
     let videoClip = selectedVideo();
     let videoCandidate = byId("vid");
@@ -1171,17 +1197,8 @@ export function installAudioTimeline(host: AudioTimelineHost) {
     if (!videoClip || !video) return;
     let state = ensureState(videoClip);
     if (!state) return;
-    let base = previewBaseVolume();
     let time = Number(video.currentTime) || 0;
-    let sourceAudible =
-      state.enabled &&
-      !state.sourceMuted &&
-      videoClip.probeData &&
-      videoClip.probeData.has_audio &&
-      sourceAudioAudibleAt(videoClip, time);
-    video.volume = sourceAudible
-      ? Math.max(0, Math.min(1, base * dbToGain(state.sourceGainDb)))
-      : 0;
+    video.volume = sourcePreviewVolume(videoClip, state, time);
     syncPreview();
   }
 
@@ -1197,15 +1214,8 @@ export function installAudioTimeline(host: AudioTimelineHost) {
     let time = video.paused ? sourceTime() : Number(video.currentTime) || 0;
     updatePlayheads(time, total);
     let base = previewBaseVolume();
-    let sourceAudible =
-      state.enabled &&
-      !state.sourceMuted &&
-      videoClip.probeData &&
-      videoClip.probeData.has_audio &&
-      sourceAudioAudibleAt(videoClip, time);
-    video.volume = sourceAudible
-      ? Math.max(0, Math.min(1, base * dbToGain(state.sourceGainDb)))
-      : 0;
+    video.volume = sourcePreviewVolume(videoClip, state, time);
+    let cut = cutTask();
     state.tracks.forEach(function(track: AudioTrackState) {
       let element = previewElement(track);
       if (!element) return;
@@ -1219,7 +1229,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
           break;
         }
       }
-      if (!state.enabled || track.muted || !active || active.muted || video.paused) {
+      if (cut || !state.enabled || track.muted || !active || active.muted || video.paused) {
         if (!element.paused) element.pause();
         return;
       }
@@ -1556,7 +1566,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
     }),
     toggleFragmentMute: recorded(function () {
       let clip = selectedVideo();
-      if (!clip) return;
+      if (!clip || cutTask()) return;
       if (selectedTrackId !== "source") {
         let selected = findSelected(clip);
         if (!selected) return;
@@ -1804,7 +1814,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
   host.TuckShortcuts?.registerAction("audio.toggle-fragment-mute", {
     enabled: function () {
       let clip = selectedVideo();
-      if (!clip) return false;
+      if (!clip || cutTask()) return false;
       return (
         selectedTrackId === "source" ||
         selectedTrackId === "video" ||
