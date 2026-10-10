@@ -116,6 +116,7 @@ FLAG_PREFERENCES: tuple[str, ...] = (
     "keep_awake",
     "background_exports",
     "loop_playback",
+    "remove_after_export",
 )
 
 ACCENT_COLORS: tuple[str, ...] = ("violet", "blue", "teal", "green", "amber", "rose")

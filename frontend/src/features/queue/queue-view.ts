@@ -153,6 +153,62 @@ export function finishedNotification(
   return { title: "Exports finished", body: `${videos(saved)} saved.` };
 }
 
+/** The Library video an export came from, and how many edits it had when it was queued. */
+export interface WatchedExport {
+  readonly path: string;
+  readonly edits: number;
+}
+
+/**
+ * Notes each export the first time it is seen waiting or running. Failed and cancelled ones are
+ * kept so a retry is still compared with the video as it was queued; cleared ones are dropped.
+ */
+export function watchExports(
+  items: readonly QueueItem[],
+  watched: Readonly<Record<string, WatchedExport>>,
+  libraryPath: (sourcePath: string) => string | null,
+  editCount: (path: string) => number,
+): Record<string, WatchedExport> {
+  const next: Record<string, WatchedExport> = {};
+  for (const item of items) {
+    if (!item.id) continue;
+    const known = watched[item.id];
+    if (known) {
+      next[item.id] = known;
+      continue;
+    }
+    if (!isQueueActive(item.state) || !item.source_path) continue;
+    const path = libraryPath(item.source_path);
+    if (path) next[item.id] = { path, edits: editCount(path) };
+  }
+  return next;
+}
+
+/**
+ * Videos to take out of the Library once a batch finishes, for "Remove videos after they export".
+ * A video stays when any of its exports in the batch failed or was cancelled, or when it was
+ * edited after its latest export was queued, since that export doesn't have the new edits.
+ */
+export function videosToRemoveAfterExport(
+  items: readonly QueueItem[],
+  batchIds: Readonly<Record<string, true>>,
+  watched: Readonly<Record<string, WatchedExport>>,
+  editCount: (path: string) => number,
+): string[] {
+  const queuedEdits = new Map<string, number>();
+  const unfinished = new Set<string>();
+  for (const item of items) {
+    const watch = item.id && batchIds[item.id] ? watched[item.id] : undefined;
+    if (!watch) continue;
+    if (item.state !== "completed") unfinished.add(watch.path);
+    // edit counts only go up, so the highest one belongs to the export queued last
+    queuedEdits.set(watch.path, Math.max(queuedEdits.get(watch.path) ?? 0, watch.edits));
+  }
+  return Array.from(queuedEdits)
+    .filter(([path, edits]) => !unfinished.has(path) && editCount(path) === edits)
+    .map(([path]) => path);
+}
+
 export function formatEta(seconds: number | null | undefined): string {
   if (seconds == null || !(seconds >= 0)) return "--";
   const total = Math.round(seconds);

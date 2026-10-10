@@ -57,6 +57,8 @@ export interface Settings extends JsonObject {
   readonly notify_when_done?: boolean;
   readonly keep_awake?: boolean;
   readonly background_exports?: boolean;
+  /** take a video out of the Library once its export finishes */
+  readonly remove_after_export?: boolean;
   readonly reopen_last_videos?: boolean;
   readonly last_session_files?: readonly string[];
   readonly loop_playback?: boolean;

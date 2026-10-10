@@ -12,6 +12,8 @@ import {
   isQueueActive,
   queueItemState,
   queueItemsFromSnapshot,
+  videosToRemoveAfterExport,
+  watchExports,
   type QueueItem,
   type QueueViewState,
 } from "../../src/features/queue/queue-view.ts";
@@ -264,4 +266,68 @@ test("cancelling every export finishes the batch without claiming success", () =
     ],
   });
   assert.deepEqual(done.finishedToast, { message: "Exports cancelled.", kind: "info", failedIds: [] });
+});
+
+test("exports are watched from when they are first seen waiting or running", () => {
+  const edits: Record<string, number> = { "C:/a.mp4": 2, "C:/b.mp4": 0 };
+  const libraryPath = (source: string): string | null => (source === "C:/gone.mp4" ? null : source);
+  const editCount = (path: string): number => edits[path] ?? 0;
+  let watched = watchExports([
+    { id: "a", source_path: "C:/a.mp4", state: "running" },
+    { id: "b", source_path: "C:/b.mp4", state: "pending" },
+    // already finished before Tuck saw it waiting, so it isn't one of this batch's exports
+    { id: "old", source_path: "C:/b.mp4", state: "completed" },
+    { id: "gone", source_path: "C:/gone.mp4", state: "pending" },
+  ], {}, libraryPath, editCount);
+  assert.deepEqual(watched, { a: { path: "C:/a.mp4", edits: 2 }, b: { path: "C:/b.mp4", edits: 0 } });
+
+  // later edits don't move the mark made when the export was queued
+  edits["C:/a.mp4"] = 3;
+  watched = watchExports([
+    { id: "a", source_path: "C:/a.mp4", state: "completed" },
+    { id: "b", source_path: "C:/b.mp4", state: "failed" },
+  ], watched, libraryPath, editCount);
+  assert.deepEqual(watched, { a: { path: "C:/a.mp4", edits: 2 }, b: { path: "C:/b.mp4", edits: 0 } });
+
+  // a cleared export is forgotten; a failed one is kept for its retry
+  watched = watchExports([{ id: "b", source_path: "C:/b.mp4", state: "pending" }], watched, libraryPath, editCount);
+  assert.deepEqual(watched, { b: { path: "C:/b.mp4", edits: 0 } });
+});
+
+test("only videos whose exports all finished, and weren't edited since, leave the Library", () => {
+  const watched = {
+    a: { path: "C:/a.mp4", edits: 0 },
+    b: { path: "C:/b.mp4", edits: 0 },
+    c: { path: "C:/c.mp4", edits: 1 },
+    d: { path: "C:/d.mp4", edits: 0 },
+    e1: { path: "C:/e.mp4", edits: 0 },
+    e2: { path: "C:/e.mp4", edits: 2 },
+    f1: { path: "C:/f.mp4", edits: 0 },
+    f2: { path: "C:/f.mp4", edits: 0 },
+    old: { path: "C:/g.mp4", edits: 0 },
+  };
+  const edits: Record<string, number> = { "C:/c.mp4": 4, "C:/e.mp4": 2 };
+  const items: QueueItem[] = [
+    { id: "a", state: "completed" },
+    { id: "b", state: "failed" },
+    // edited after it was queued, so the export doesn't have the latest edits
+    { id: "c", state: "completed" },
+    { id: "d", state: "cancelled" },
+    // exported again after an edit; the later export has it
+    { id: "e1", state: "completed" },
+    { id: "e2", state: "completed" },
+    // one of the video's two exports failed, so it stays for the retry
+    { id: "f1", state: "completed" },
+    { id: "f2", state: "failed" },
+    // finished in an earlier batch
+    { id: "old", state: "completed" },
+    // never seen waiting or running
+    { id: "unseen", state: "completed" },
+  ];
+  const batch = { a: true, b: true, c: true, d: true, e1: true, e2: true, f1: true, f2: true, unseen: true } as const;
+  assert.deepEqual(
+    videosToRemoveAfterExport(items, batch, watched, (path) => edits[path] ?? 0),
+    ["C:/a.mp4", "C:/e.mp4"],
+  );
+  assert.deepEqual(videosToRemoveAfterExport(items, {}, watched, () => 0), []);
 });

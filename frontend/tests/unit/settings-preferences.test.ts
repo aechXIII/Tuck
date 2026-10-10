@@ -24,6 +24,11 @@ test("search finds settings by label, keyword, or page, in page order", () => {
   assert.deepEqual(searchSettings("hdr", SETTINGS_INDEX), []);
 });
 
+test("search finds the switch that removes exported videos from the Library", () => {
+  assert.deepEqual(searchSettings("library", SETTINGS_INDEX).map((entry) => entry.id), ["reopen", "remove-exported"]);
+  assert.deepEqual(searchSettings("remove", SETTINGS_INDEX).map((entry) => entry.id), ["clear-finished", "remove-exported"]);
+});
+
 test("search leaves out pages this computer doesn't show", () => {
   const all = searchSettings("send to", SETTINGS_INDEX).map((entry) => entry.page);
   assert.ok(all.includes("explorer"));

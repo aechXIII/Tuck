@@ -106,6 +106,7 @@ class TestSettingsFile:
         assert settings["background_exports"] is False
         assert settings["reopen_last_videos"] is False
         assert settings["last_session_files"] == []
+        assert settings["remove_after_export"] is False
 
     def test_a_chosen_folder_from_before_the_location_choice_stays_in_use(self, tmp_path):
         out = tmp_path / "exports"
@@ -130,6 +131,23 @@ class TestSettingsFile:
         assert settings["animations"] is True
         assert settings["output_location"] == "source"
         assert settings["output_subfolder"] == "Tucked"
+
+    @pytest.mark.parametrize(
+        "stored",
+        [
+            # files from before the setting existed
+            {"version": 1, "clear_completed_automatically": True},
+            {"version": 1, "remove_after_export": "yes"},
+            {"version": 1, "remove_after_export": 1},
+        ],
+    )
+    def test_removing_videos_after_export_stays_off_unless_turned_on(self, tmp_path, stored):
+        _write_settings(tmp_path, stored)
+        assert BridgeAPI().get_settings()["remove_after_export"] is False
+
+    def test_removing_videos_after_export_reads_back_from_the_file(self, tmp_path):
+        _write_settings(tmp_path, {"version": 1, "remove_after_export": True})
+        assert BridgeAPI().get_settings()["remove_after_export"] is True
 
     def test_reopen_list_only_offers_files_that_still_exist(self, tmp_path):
         here = tmp_path / "here.mp4"
@@ -160,6 +178,7 @@ class TestSavingPreferences:
             "keep_awake": False,
             "background_exports": True,
             "reopen_last_videos": True,
+            "remove_after_export": True,
         }
         assert api.save_settings(patch) == {"ok": True}
         settings = api.get_settings()
@@ -171,6 +190,7 @@ class TestSavingPreferences:
         [
             ({"accent_color": "neon"}, "accent_color"),
             ({"animations": "on"}, "animations must be boolean"),
+            ({"remove_after_export": "on"}, "remove_after_export must be boolean"),
             ({"output_location": "cloud"}, "output_location"),
             ({"output_subfolder": "a/b"}, "export folder name"),
             ({"last_session_files": "a.mp4"}, "last_session_files"),

@@ -536,6 +536,8 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       flag("show-folder", "set-open-output-folder", "Show the last export in its folder", s.open_output_folder_after_queue === true),
       flag("clear-finished", "set-auto-clear", "Clear finished jobs", s.clear_completed_automatically === true,
         "Failed and cancelled jobs stay so you can retry them."),
+      flag("remove-exported", "set-remove-exported", "Remove videos after they export", s.remove_after_export === true,
+        "Finished videos leave the Library."),
       flag("notify", "set-notify", "Notify me", s.notify_when_done !== false,
         "Shows a notification when Tuck is in the background."),
     )), section("While exporting", card(
@@ -772,6 +774,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         return {
           open_output_folder_after_queue: checked("set-open-output-folder"),
           clear_completed_automatically: checked("set-auto-clear"),
+          remove_after_export: checked("set-remove-exported"),
           notify_when_done: checked("set-notify"),
           keep_awake: checked("set-keep-awake"),
           background_exports: checked("set-background"),

@@ -207,9 +207,10 @@
   letter-spacing: 1px;
   margin: 0 0 4px;
 }
+/* a long chord wraps onto a second line before the action's name breaks */
 .kbs-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(min-content, 1fr) auto;
   align-items: center;
   gap: 12px;
   padding: 5px 0;
@@ -222,6 +223,9 @@
   flex-direction: column;
   align-items: flex-start;
   gap: 2px;
+}
+.kbs-action > :first-child {
+  white-space: nowrap;
 }
 .kbs-note {
   color: var(--dim);

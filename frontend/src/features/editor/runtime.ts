@@ -379,6 +379,8 @@ export function installEditorRuntime(
     isReordering: () => library.isReordering(),
     workflow: () => encoding?.workflow() ?? 0,
     addFiles: (files) => library.addFiles(files),
+    removeClip: (path) => library.removeClip(path),
+    editCount: (path) => history.editCount(path),
     onSendto: (data) => handleSendto(data),
   });
 
@@ -612,6 +614,13 @@ export function installEditorRuntime(
   function installEditorShortcuts(): void {
     shortcuts.registerAction("file.add-videos", () => {
       void library.browse();
+    });
+    // the same removal as the card's remove button, so Undo and kept edits work the same way
+    shortcuts.registerAction("media.remove-current", {
+      enabled: () => session.selPath !== null,
+      execute: () => {
+        if (session.selPath) library.removeClip(session.selPath);
+      },
     });
     shortcuts.registerAction("settings.open", () => {
       settings.toggle();

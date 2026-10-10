@@ -120,3 +120,43 @@ test("clearing finished exports automatically waits for the batch and keeps the 
   await expect.poll(() => page.evaluate(() => window.__tuckFakeBackendCalls?.filter((call) => call.method === "clearCompleted").length)).toBe(1);
   await expect(page.locator(".clip")).toHaveCount(2);
 });
+
+test("finished videos leave the Library when the setting is on, and Undo brings them back", async ({ page }) => {
+  const fixture = fixtureFor([A, B, C]);
+  fixture.responses.getSettings = { ...(fixture.responses.getSettings as object), remove_after_export: true };
+  await open(page, fixture, 3);
+  await setQueue(page, [item("a", A, "running", { progress: 10 }), item("b", B, "pending"), item("c", C, "pending")]);
+  await expect(page.locator("#qbar")).toBeVisible();
+  await setQueue(page, [item("a", A, "completed"), item("b", B, "running", { progress: 5 }), item("c", C, "pending")]);
+  await expect(page.locator(".clip", { hasText: "Bravo.mp4" })).toHaveAttribute("data-queue-state", "running");
+  // the batch isn't done yet, so nothing has left
+  await expect(page.locator(".clip")).toHaveCount(3);
+  // Alpha is the selected video; an edit after queueing means its export is out of date, so it stays
+  await page.locator('[data-action-click="transform-rotation"][data-rotation="90"]')
+    .evaluate((button) => (button as HTMLButtonElement).click());
+  await setQueue(page, [
+    item("a", A, "completed", { result_path: "C:\\videos\\Alpha_small.mp4" }),
+    item("b", B, "completed", { result_path: "C:\\videos\\Bravo_small.mp4" }),
+    item("c", C, "failed", { error: "Disk is full" }),
+  ]);
+  await expect(page.locator(".clip")).toHaveCount(2);
+  await expect(page.locator(".clip", { hasText: "Bravo.mp4" })).toHaveCount(0);
+  await expect(page.locator(".clip", { hasText: "Alpha.mp4" })).toHaveCount(1);
+  await expect(page.locator(".clip", { hasText: "Charlie.mp4" })).toHaveCount(1);
+
+  // the batch message comes first, then one message for the removal
+  const summary = page.locator(".toast", { hasText: "1 of 3 exports failed." });
+  await summary.getByRole("button", { name: "Dismiss notification" }).click();
+  await page.locator(".toast", { hasText: "Removed “Bravo.mp4”." }).getByRole("button", { name: "Undo", exact: true }).click();
+  await expect(page.locator(".clip")).toHaveCount(3);
+});
+
+test("finished videos stay in the Library while the setting is off", async ({ page }) => {
+  await open(page, fixtureFor([A, B]), 2);
+  await setQueue(page, [item("a", A, "running", { progress: 50 })]);
+  await expect(page.locator("#qbar")).toBeVisible();
+  await setQueue(page, [item("a", A, "completed", { result_path: "C:\\videos\\Alpha_small.mp4" })]);
+  await expect(page.locator(".toast", { hasText: "Exported “Alpha.mp4”." })).toBeVisible();
+  await expect(page.locator(".clip")).toHaveCount(2);
+  await expect(page.locator(".toast", { hasText: "Removed" })).toHaveCount(0);
+});

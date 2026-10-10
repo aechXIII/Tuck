@@ -252,3 +252,29 @@ test("a removed video's steps come back with it, in their place", () => {
   History.forgetClip(first.path);
   History.forgetClip(second.path);
 });
+
+test("each video's edit count goes up with its edits, undo and redo, and not with no-op steps", () => {
+  const clip = createEditorClip("counted.mp4");
+  const other = createEditorClip("other-counted.mp4");
+  clips.set(clip.path, clip);
+  clips.set(other.path, other);
+  const start = History.editCount(clip.path);
+  History.action(clip.path, () => {
+    clip.rotation = 90;
+  });
+  assert.equal(History.editCount(clip.path), start + 1);
+  // a step that changed nothing isn't an edit
+  History.action(clip.path, () => {});
+  assert.equal(History.editCount(clip.path), start + 1);
+  History.undo();
+  assert.equal(History.editCount(clip.path), start + 2);
+  History.redo();
+  assert.equal(History.editCount(clip.path), start + 3);
+  History.action(other.path, () => {
+    other.rotation = 180;
+  });
+  assert.equal(History.editCount(clip.path), start + 3);
+  assert.equal(History.editCount("never-edited.mp4"), 0);
+  clips.delete(clip.path);
+  clips.delete(other.path);
+});

@@ -50,6 +50,7 @@ test("production commands are the source of the existing shortcut guide", () => 
   assert.equal(new Set(commandIds).size, commandIds.length);
   assert.deepEqual(defaultBindings, {
     "file.add-videos": ["Ctrl+O"],
+    "media.remove-current": ["Ctrl+Delete", "Ctrl+Backspace"],
     "settings.open": ["Ctrl+,"],
     "app.exit": ["Ctrl+Q"],
     "task.compress": ["1"],
@@ -101,6 +102,7 @@ test("production commands are the source of the existing shortcut guide", () => 
         column: 0,
         items: [
           { label: "Add videos", bindings: "Ctrl + O" },
+          { label: "Remove video", bindings: "Ctrl + Del or Ctrl + Backspace" },
           { label: "Open settings", bindings: "Ctrl + ," },
           { label: "Exit Tuck", bindings: "Ctrl + Q" },
           { label: "Compress / Upscale / Lossless cut", bindings: "1 or 2 or 3" },
@@ -150,7 +152,7 @@ test("production commands are the source of the existing shortcut guide", () => 
           { label: "Add segment", bindings: "A" },
           { label: "Split at playhead", bindings: "S" },
           { label: "Mute / unmute fragment", bindings: "M" },
-          { label: "Delete selected item", bindings: "Delete or Backspace" },
+          { label: "Delete selected item", bindings: "Del or Backspace" },
           { label: "Set selected start / end", bindings: "I or O" },
           { label: "Previous / next keyframe", bindings: "[ or ]" },
           {
@@ -517,7 +519,7 @@ test("structured key bindings produce clear visual and spoken labels", () => {
   );
   assert.equal(
     shortcuts.bindingMarkup([["←"], ["→"]]),
-    '<span class="kbs-chord"><kbd>←</kbd></span><span class="kbs-or">or</span><span class="kbs-chord"><kbd>→</kbd></span>',
+    '<span class="kbs-chord"><kbd>←</kbd></span><span class="kbs-chord"><span class="kbs-or">or</span><kbd>→</kbd></span>',
   );
 });
 
@@ -812,7 +814,7 @@ test("the production guide renders every physical key with one base keycap style
     ),
   );
 
-  assert.equal(shortcuts.search(shortcuts.sections, "").total, 22);
+  assert.equal(shortcuts.search(shortcuts.sections, "").total, 23);
   assert.deepEqual(
     Array.from(shortcutIds).filter((id) => !renderedIds.has(id)),
     [],
@@ -830,4 +832,42 @@ test("keyframe navigation is searchable by bracket and highlights both bracket k
   );
   assert.deepEqual(result.keyIds.slice().sort(), ["lbracket", "rbracket"]);
   assert.match(shortcuts.keyboardRowsMarkup(), /data-k="lbracket"[^>]*>\[<\/div>/);
+});
+
+test("Ctrl+Delete and Ctrl+Backspace remove the current video, but never while typing", () => {
+  const ids = ["media.remove-current", "edit.delete-selection"];
+  const registry = shortcuts.createRegistry(shortcuts.commands.filter((command) => ids.includes(command.id)));
+  const calls: string[] = [];
+  registry.registerAction("media.remove-current", () => calls.push("remove"));
+  registry.registerAction("edit.delete-selection", () => calls.push("delete"));
+  const editor = { modalOpen: false, settingsOpen: false, formControlFocused: false, textEntryFocused: false };
+
+  assert.equal(registry.dispatch(keyEvent("Delete", { ctrlKey: true }), editor), "media.remove-current");
+  assert.equal(registry.dispatch(keyEvent("Backspace", { ctrlKey: true }), editor), "media.remove-current");
+  // without Ctrl the keys still delete the selected segment or audio clip
+  assert.equal(registry.dispatch(keyEvent("Delete"), editor), "edit.delete-selection");
+  assert.equal(registry.dispatch(keyEvent("Backspace"), editor), "edit.delete-selection");
+
+  // Ctrl+Backspace deletes a word in a text field, so the field keeps it
+  const typing = keyEvent("Backspace", { ctrlKey: true });
+  assert.equal(registry.dispatch(typing, { ...editor, formControlFocused: true, textEntryFocused: true }), null);
+  assert.equal(typing.defaultPrevented, false);
+  assert.equal(registry.dispatch(keyEvent("Delete", { ctrlKey: true }), { ...editor, settingsOpen: true }), null);
+  assert.deepEqual(calls, ["remove", "remove", "delete", "delete"]);
+});
+
+test("removing the current video is in the guide and lights the keys that were searched", () => {
+  const result = shortcuts.search(shortcuts.sections, "remove video");
+  assert.deepEqual(
+    result.sections.flatMap((section) => section.items.map((item) => item.label)),
+    ["Remove video"],
+  );
+  assert.deepEqual(result.keyIds.slice().sort(), ["ctrl", "del"]);
+  const backspace = shortcuts.search(shortcuts.sections, "ctrl backspace");
+  assert.deepEqual(
+    backspace.sections.flatMap((section) => section.items.map((item) => item.label)),
+    ["Remove video"],
+  );
+  assert.deepEqual(backspace.keyIds.slice().sort(), ["backspace", "ctrl"]);
+  assert.match(shortcuts.keyboardRowsMarkup(), /data-k="backspace"[^>]*>Backspace<\/div>/);
 });

@@ -150,6 +150,7 @@ const KEY_ALIASES: Readonly<Record<string, string>> = {
 const SPOKEN_KEYS: Readonly<Record<string, string>> = {
   Ctrl: "Control",
   Esc: "Escape",
+  Del: "Delete",
   ",": "comma",
   ".": "period",
   "<": "less than",
@@ -166,7 +167,9 @@ const KEY_IDS: Readonly<Record<string, string>> = {
   Ctrl: "ctrl",
   Shift: "shift",
   Esc: "esc",
+  Del: "del",
   Delete: "del",
+  Backspace: "backspace",
   ",": "comma",
   ".": "period",
   // Shift with comma and period types < and >, so those keys light up for them
@@ -189,6 +192,15 @@ const COMMANDS: CommandDefinition[] = [
     label: "Add videos",
     bindings: ["Ctrl+O"],
     context: "editor",
+  },
+  {
+    id: "media.remove-current",
+    category: "General",
+    column: 0,
+    label: "Remove video",
+    // Ctrl+Backspace deletes a word while typing, so text fields keep it
+    bindings: ["Ctrl+Delete", "Ctrl+Backspace"],
+    context: "editor-no-text-entry",
   },
   {
     id: "settings.open",
@@ -537,8 +549,10 @@ const COMMANDS: CommandDefinition[] = [
   },
 ];
 
+// short names match the keycaps on the keyboard picture and keep long chords on one line
 const DISPLAY_KEYS: Readonly<Record<string, string>> = {
   Escape: "Esc",
+  Delete: "Del",
   ArrowLeft: "←",
   ArrowRight: "→",
   ArrowUp: "↑",
@@ -774,7 +788,7 @@ const KEYBOARD_LAYOUT: readonly (readonly KeyboardKeySpec[])[] = [
     [34, "0", "0"],
     [34, "-"],
     [34, "="],
-    [72, "Backspace"],
+    [72, "Backspace", "backspace"],
     [34, "Del", "del"],
   ],
   [
@@ -880,13 +894,15 @@ export function bindingMarkup(
   keys: string | readonly string[] | readonly (readonly string[])[] | null | undefined,
 ): string {
   return bindingGroups(keys)
-    .map((chord) => {
+    .map((chord, index) => {
       const keycaps = chord
         .map((key) => "<kbd>" + escapeMarkup(key) + "</kbd>")
         .join('<span class="kbs-plus">+</span>');
-      return '<span class="kbs-chord">' + keycaps + "</span>";
+      // "or" travels with the chord after it, so a wrapped list never ends a line on "or"
+      const or = index ? '<span class="kbs-or">or</span>' : "";
+      return '<span class="kbs-chord">' + or + keycaps + "</span>";
     })
-    .join('<span class="kbs-or">or</span>');
+    .join("");
 }
 
 function normalize(value: unknown): string {

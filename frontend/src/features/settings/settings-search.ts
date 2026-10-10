@@ -82,6 +82,7 @@ export const SETTINGS_INDEX: readonly SettingsEntry[] = [
   { id: "name-taken", page: "files", label: "If the name is taken", keywords: "overwrite replace exists collision number duplicate" },
   { id: "show-folder", page: "queue", label: "Show the last export in its folder", keywords: "open explorer reveal finished done" },
   { id: "clear-finished", page: "queue", label: "Clear finished jobs", keywords: "completed automatically remove" },
+  { id: "remove-exported", page: "queue", label: "Remove videos after they export", keywords: "library finished done completed automatically clear" },
   { id: "notify", page: "queue", label: "Notify me", keywords: "notification done finished alert" },
   { id: "keep-awake", page: "queue", label: "Keep the PC awake", keywords: "sleep power computer" },
   { id: "background", page: "queue", label: "Run exports in the background", keywords: "priority games performance slow" },

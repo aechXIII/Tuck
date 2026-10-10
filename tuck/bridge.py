@@ -758,6 +758,7 @@ class BridgeAPI:
             "notify_when_done": s.notify_when_done,
             "keep_awake": s.keep_awake,
             "background_exports": s.background_exports,
+            "remove_after_export": s.remove_after_export,
             "reopen_last_videos": s.reopen_last_videos,
             # files moved or deleted since the last session are not offered again
             # checking up to 500 paths can be slow on network drives, so only when they're used

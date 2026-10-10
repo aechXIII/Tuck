@@ -55,6 +55,38 @@ test("removing a video can be undone, edits and undo steps included", async ({ p
   await expect(card(page, "Morning ride.mp4")).not.toHaveAttribute("title", /90°/);
 });
 
+test("Ctrl+Delete and Ctrl+Backspace remove the current video, and Undo brings it back", async ({ page }) => {
+  await open(page, fixtureFor([MORNING, EVENING]), 2);
+  await card(page, "Morning ride.mp4").click();
+  await rotate(page);
+  // with a card focused its own Delete key answers, so start from nowhere in particular
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+
+  await page.keyboard.press("Control+Delete");
+  await expect(page.locator(".clip")).toHaveCount(1);
+  await expect(card(page, "Evening.mp4")).toHaveClass(/sel/);
+  await page.locator(".toast", { hasText: "Removed “Morning ride.mp4”." })
+    .getByRole("button", { name: "Undo", exact: true }).click();
+  await expect(page.locator(".clip")).toHaveCount(2);
+  await expect(card(page, "Morning ride.mp4")).toHaveClass(/sel/);
+  await expect(card(page, "Morning ride.mp4")).toHaveAttribute("title", /90°/);
+
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.keyboard.press("Control+Backspace");
+  await expect(page.locator(".clip")).toHaveCount(1);
+  await expect(page.locator(".toast", { hasText: "Removed “Morning ride.mp4”." })).toBeVisible();
+});
+
+test("Ctrl+Backspace in a text field edits the text and keeps the video", async ({ page }) => {
+  await open(page, fixtureFor([MORNING, EVENING]), 2);
+  const size = page.locator("#sz-badge");
+  await size.fill("42");
+  await size.press("Control+Backspace");
+  await size.press("Control+Delete");
+  await expect(page.locator(".clip")).toHaveCount(2);
+  await expect(page.locator(".toast", { hasText: "Removed" })).toHaveCount(0);
+});
+
 test("Remove all asks first when videos have edits, and can be undone", async ({ page }) => {
   await open(page, fixtureFor([MORNING, EVENING]), 2);
   await rotate(page);

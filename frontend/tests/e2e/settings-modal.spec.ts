@@ -76,6 +76,19 @@ test("show-export preference saves through the existing settings key", async ({ 
   await expect(page.locator("#settings-status")).toHaveText("");
 });
 
+test("removing videos after they export is off by default, found by search, and saved", async ({ page }) => {
+  await start(page);
+  await openSettings(page);
+  await page.getByRole("searchbox", { name: "Search settings" }).fill("remove videos");
+  await page.locator(".set-result", { hasText: "Remove videos after they export" }).click();
+  await expect(page.getByRole("heading", { name: "Queue", exact: true })).toBeVisible();
+  const option = page.getByRole("switch", { name: "Remove videos after they export" });
+  await expect(option).not.toBeChecked();
+  await page.getByText("Remove videos after they export", { exact: true }).click();
+  await expect(option).toBeChecked();
+  await savedWith(page, "remove_after_export", true);
+});
+
 test("a rejected save keeps the change visible and explains why", async ({ page }) => {
   await start(page, {}, { saveSettings: { ok: false, error: "Settings could not be written." } });
   await openSettings(page, "appearance");

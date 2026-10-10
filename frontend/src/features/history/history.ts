@@ -25,6 +25,8 @@ export interface HistoryApi {
   detachClip: (path: string) => DetachedHistory;
   restoreClip: (detached: DetachedHistory) => void;
   hasEdits: (path: string) => boolean;
+  // goes up with every edit, undo and redo of the video, so a later change can be noticed
+  editCount: (path: string) => number;
 }
 
 /** One video's undo and redo steps, kept aside while the video is out of the Library. */
@@ -136,6 +138,11 @@ export function createHistory(host: HistoryHost): HistoryApi {
   let actionDepth = 0;
   let seq = 0;
   let commits = 0;
+  const editCounts = new Map<string, number>();
+
+  function countEdit(path: string): void {
+    editCounts.set(path, (editCounts.get(path) ?? 0) + 1);
+  }
 
   function updateButtons(): void {
     const undoBtn = host.undoButton();
@@ -183,6 +190,7 @@ export function createHistory(host: HistoryHost): HistoryApi {
     if (undoStack.length > MAX_ENTRIES) undoStack.shift();
     redoStack.length = 0;
     commits += 1;
+    countEdit(pending.path);
     pending = null;
     updateButtons();
   }
@@ -216,6 +224,7 @@ export function createHistory(host: HistoryHost): HistoryApi {
       apply(clip, entry.before);
       host.refreshUiForClip(entry.path);
     }
+    countEdit(entry.path);
     redoStack.push(entry);
     updateButtons();
   }
@@ -228,6 +237,7 @@ export function createHistory(host: HistoryHost): HistoryApi {
       apply(clip, entry.after);
       host.refreshUiForClip(entry.path);
     }
+    countEdit(entry.path);
     undoStack.push(entry);
     updateButtons();
   }
@@ -263,6 +273,10 @@ export function createHistory(host: HistoryHost): HistoryApi {
     return undoStack.some((entry) => entry.path === path);
   }
 
+  function editCount(path: string): number {
+    return editCounts.get(path) ?? 0;
+  }
+
   return {
     begin,
     commit,
@@ -275,6 +289,7 @@ export function createHistory(host: HistoryHost): HistoryApi {
     detachClip,
     restoreClip,
     hasEdits,
+    editCount,
   };
 }
 

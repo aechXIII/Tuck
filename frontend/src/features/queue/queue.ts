@@ -13,9 +13,12 @@ import {
   isQueueActive,
   queueItemsFromSnapshot,
   reduceQueueSnapshot,
+  videosToRemoveAfterExport,
+  watchExports,
   type ExportRow,
   type QueueItem,
   type QueueViewState,
+  type WatchedExport,
 } from "./queue-view.ts";
 
 export interface QueueDeps {
@@ -26,6 +29,9 @@ export interface QueueDeps {
   isReordering: () => boolean;
   workflow: () => number;
   addFiles: (files: string[]) => void;
+  // the Library's own removal, with its Undo
+  removeClip: (path: string) => void;
+  editCount: (path: string) => number;
   onSendto: (data: Record<string, unknown>) => void;
 }
 
@@ -234,7 +240,13 @@ export function installQueue(deps: QueueDeps): QueueApi {
   const queueActiveItemIds: Record<string, true> = {};
   const retryInFlight: Record<string, true> = {};
   let queueView: QueueViewState = emptyQueueView();
+  let watchedExports: Record<string, WatchedExport> = {};
   let pollingQueue = false;
+
+  function libraryPath(sourcePath: string): string | null {
+    if (session.clips[sourcePath]) return sourcePath;
+    return Object.keys(session.clips).find((path) => session.clips[path]?.probeData?.path === sourcePath) ?? null;
+  }
 
   function mapQueueItems(items: readonly QueueItem[]): void {
     const map: Record<string, QueueItem> = {};
@@ -280,11 +292,13 @@ export function installQueue(deps: QueueDeps): QueueApi {
     if (pollingQueue) return;
     pollingQueue = true;
     let clearFinished = false;
+    let removeVideos: string[] = [];
     try {
       const state = await legacyBackendResult(client().getQueueState());
       if (!state.ok || !Array.isArray(state.items)) return;
       const items = queueItemsFromSnapshot(state.items);
       mapQueueItems(items);
+      watchedExports = watchExports(items, watchedExports, libraryPath, deps.editCount);
       if (!deps.isReordering()) deps.renderClips();
 
       const previous = queueView;
@@ -301,6 +315,10 @@ export function installQueue(deps: QueueDeps): QueueApi {
         );
         // Settings promises this when the queue finishes; failed and cancelled exports stay
         clearFinished = session.appSettings.clear_completed_automatically === true;
+        // the whole batch goes at once, so one Undo message covers every video
+        if (session.appSettings.remove_after_export === true) {
+          removeVideos = videosToRemoveAfterExport(items, previous.activeItemIds, watchedExports, deps.editCount);
+        }
         if (session.appSettings.notify_when_done !== false) {
           const note = finishedNotification(items, previous.activeItemIds);
           // the system notification only shows while Tuck is in the background
@@ -342,6 +360,7 @@ export function installQueue(deps: QueueDeps): QueueApi {
     } finally {
       pollingQueue = false;
     }
+    for (const path of removeVideos) deps.removeClip(path);
     if (clearFinished) await clearDone(false);
   }
 
