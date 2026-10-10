@@ -75,10 +75,11 @@
   opacity: 1;
   transform: translateX(-50%) translateY(0);
 }
+/* muted clips sink below the lane's other clips, so they read as off rather than highlighted */
 .seq-audio-clip.muted,
 #source-audio-track.muted .seq-audio-clip,
 .seq-row.audio.imported.muted .seq-audio-clip {
-  background-color: var(--raised);
+  background-color: var(--sink);
   border: 0;
   box-shadow: none;
   filter: none;
@@ -105,8 +106,8 @@
 #source-audio-track.muted .seq-audio-clip .audio-waveform,
 .seq-row.audio.imported.muted .seq-audio-clip .audio-waveform {
   filter: grayscale(1);
-  /* dim enough to read as off, but the shape stays recognisable */
-  opacity: 0.36;
+  /* faint enough to read as off, but the shape stays there for lining up cuts with the sound */
+  opacity: 0.18;
 }
 .audio-muted-indicator {
   position: absolute;
@@ -117,9 +118,8 @@
   transform: translate(-50%, -50%);
   border-radius: 3px;
   background-color: inherit;
-  color: var(--muted);
+  color: var(--dim);
   font: 650 10px/1 var(--font);
-  text-shadow: 0 1px 2px var(--sink);
   white-space: nowrap;
   pointer-events: none;
 }

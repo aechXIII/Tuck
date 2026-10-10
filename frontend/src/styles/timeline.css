@@ -101,22 +101,34 @@ body.timeline-resizing * {
   width: var(--tl-width, 100%);
   min-width: 100%;
 }
+/* clips sit as far from a lane's ends as from its top and bottom, so the time axis of every lane,
+   the ruler and the overlays is inset by --tl-inset on both sides; the lane's own background
+   reaches back out to the full width */
 .seq-lane {
   position: relative;
   min-width: 0;
   height: 18px;
+  margin-inline: var(--tl-inset);
   overflow: visible;
-  border-radius: 6px;
-  background: var(--tl-lane);
+  isolation: isolate;
   cursor: pointer;
   touch-action: none;
+}
+.seq-lane::after {
+  content: "";
+  position: absolute;
+  inset: 0 calc(-1 * var(--tl-inset));
+  z-index: -1;
+  border-radius: 6px;
+  background: var(--tl-lane);
+  pointer-events: none;
 }
 #seq-selection-layer {
   position: absolute;
   top: 0;
   bottom: 0;
-  left: calc(var(--timeline-head-width) + 8px);
-  width: calc(var(--tl-width, 100%) - var(--timeline-head-width) - 8px);
+  left: calc(var(--timeline-head-width) + 8px + var(--tl-inset));
+  width: calc(var(--tl-width, 100%) - var(--timeline-head-width) - 8px - 2 * var(--tl-inset));
   pointer-events: none;
   z-index: 5;
 }
@@ -216,8 +228,8 @@ body.timeline-resizing * {
   position: absolute;
   top: 0;
   bottom: 0;
-  left: calc(var(--timeline-head-width) + 8px);
-  width: calc(var(--tl-width, 100%) - var(--timeline-head-width) - 8px);
+  left: calc(var(--timeline-head-width) + 8px + var(--tl-inset));
+  width: calc(var(--tl-width, 100%) - var(--timeline-head-width) - 8px - 2 * var(--tl-inset));
   pointer-events: none;
   z-index: 8;
 }
@@ -854,7 +866,7 @@ body.task-cut #timeline-audio-tools {
 #sequence-ruler {
   position: relative;
   height: 26px;
-  margin: 0 0 2px calc(var(--timeline-head-width) + 8px);
+  margin: 0 var(--tl-inset) 2px calc(var(--timeline-head-width) + 8px + var(--tl-inset));
   border-bottom: 1px solid var(--border);
   cursor: ew-resize;
   user-select: none;
@@ -1271,6 +1283,7 @@ body.task-cut #timeline-audio-tools {
 }
 .tl-cut-marks {
   position: relative;
+  margin-inline: var(--tl-inset);
   align-self: center;
   height: 48px;
   pointer-events: none;
