@@ -142,6 +142,8 @@ for (const width of [1240, 960]) {
     expect(surfaces.popupCorner).toBe("0px");
     expect(await menu.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
     await expect(page.locator("#prof-search")).toBeHidden();
+    // a click opens with nothing lit; the first arrow press lands on the chosen profile
+    await page.keyboard.press("ArrowDown");
     await expect(menu.getByRole("option", { name: "Discord", exact: true })).toBeFocused();
     await page.keyboard.press("ArrowDown");
     await page.keyboard.press("Enter");
@@ -493,4 +495,25 @@ test("the plan's warnings show quietly under the profile card", async ({ page })
   await page.evaluate(() => { (window as unknown as { __planWarnings: string[] }).__planWarnings = []; });
   await setSize(page, "25");
   await expect(notes).toBeHidden();
+});
+
+test("the profile menu lights one row: the pointer's row goes dark when it leaves, the keyboard's stays", async ({ page }) => {
+  await open(page, undefined, 3);
+  await page.locator("#prof-pick").click();
+  const options = page.locator("#prof-options [role=option]");
+  await expect(options).toHaveCount(3);
+  const lit = () => options.evaluateAll(rows => rows.map(row => getComputedStyle(row).backgroundColor !== "rgba(0, 0, 0, 0)"));
+  // a click opens with nothing lit; the checkmark alone shows the chosen profile
+  expect(await lit()).toEqual([false, false, false]);
+  await options.nth(1).hover();
+  expect(await lit()).toEqual([false, true, false]);
+  await page.mouse.move(5, 5);
+  expect(await lit()).toEqual([false, false, false]);
+  // with nothing lit, the arrow keys start from the chosen profile, and that row stays lit
+  await page.keyboard.press("ArrowDown");
+  await expect(options.nth(0)).toBeFocused();
+  expect(await lit()).toEqual([true, false, false]);
+  await page.keyboard.press("ArrowDown");
+  await expect(options.nth(1)).toBeFocused();
+  expect(await lit()).toEqual([false, true, false]);
 });

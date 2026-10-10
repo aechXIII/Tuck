@@ -63,14 +63,14 @@ test("Quiet dropdowns show compact labels and a neutral selection", async ({ pag
   await expect(popup.getByRole("combobox")).toHaveCount(0);
   const geometry = await options.evaluateAll(rows => rows.map(row => row.getBoundingClientRect().height));
   for (const height of geometry) expect(height).toBeCloseTo(33, 2);
+  // a click opens with nothing lit; the checkmark alone marks the chosen option, in the normal text colour
   const selected = await popup.locator('[aria-selected="true"]').evaluate(row => {
     const style = getComputedStyle(row);
-    return { background: style.backgroundColor, text: style.color,
-      neutral: getComputedStyle(document.documentElement).getPropertyValue("--raised-2").trim(),
+    return { background: style.backgroundColor, text: style.color, check: getComputedStyle(row.querySelector("svg")!).visibility,
       foreground: getComputedStyle(document.querySelector("#set-ds-trigger")!).color };
   });
-  expect(selected.background).toBe("rgb(52, 53, 58)");
-  expect(selected.neutral).toBe("#34353a");
+  expect(selected.background).toBe("rgba(0, 0, 0, 0)");
+  expect(selected.check).toBe("visible");
   expect(selected.text).toBe(selected.foreground);
   await popup.getByRole("option", { name: "Bicubic", exact: true }).click();
   await expect(page.locator("#set-ds")).toHaveValue("Bicubic");
@@ -102,6 +102,8 @@ for (const count of [7, 8]) {
       await page.locator("#prof-search").fill("Profile 1");
     } else {
       await expect(page.locator("#prof-search")).toBeHidden();
+      // a click opens with nothing lit; the first arrow press lands on the chosen profile
+      await page.keyboard.press("ArrowDown");
       await expect(profiles.getByRole("option", { name: "Profile 0", exact: true })).toBeFocused();
       await page.keyboard.press("ArrowDown");
     }

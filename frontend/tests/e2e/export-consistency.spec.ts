@@ -53,9 +53,9 @@ for (const width of [1240, 960]) {
     await page.screenshot({path:`frontend/.scratch/lut-audio-alignment-${width}.png`});
     expect(metrics.pickerRow.left).toBeCloseTo(metrics.audio.left, 0);
     expect(metrics.pickerRow.right).toBeCloseTo(metrics.audio.right, 0);
-    // the existing LUT picker keeps its compact shape alongside the custom selects
-    expect(metrics.pickerRow.radius).toEqual("4px");
-    expect(metrics.picker.height).toEqual(26);
+    // the LUT row is sized and rounded like the dropdowns around it
+    expect(metrics.pickerRow.radius).toEqual(metrics.input.radius);
+    expect(metrics.picker.height).toEqual(metrics.input.height);
     await page.locator('#frame-blending-panel').screenshot({path:`frontend/.scratch/effects-alignment-blend-${width}.png`});
     await page.locator('#lut-panel').screenshot({path:`frontend/.scratch/effects-alignment-lut-${width}.png`});
     await page.screenshot({path:`frontend/.scratch/effects-alignment-full-${width}.png`});

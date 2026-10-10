@@ -192,13 +192,16 @@
   border-bottom: 1px solid var(--hair-2);
   pointer-events: none;
 }
-.profile-option:hover,
-.profile-option:focus {
-  background: var(--raised-2);
+/* the checkmark marks the chosen profile; the fill marks the one lit row, as in the other dropdowns */
+/* the menu itself only holds focus while no row is lit */
+.profile-menu:focus {
   outline: none;
 }
-.profile-option[aria-selected="true"] {
-  background: var(--raised);
+.profile-option[data-active] {
+  background: var(--raised-2);
+}
+.profile-option:focus {
+  outline: none;
 }
 .profile-option:focus-visible { outline: 2px solid var(--accent-light); outline-offset: -2px; }
 .profile-option::before {
@@ -255,7 +258,7 @@
   text-align: left;
   cursor: pointer;
 }
-.profile-menu-cmd:hover {
+.profile-menu-cmd[data-active] {
   background: var(--raised-2);
   color: var(--text);
 }
@@ -657,11 +660,12 @@ label.export-toggle {
 .lut-help { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
 .lut-adjustments .lut-help { margin-top: -4px; }
 #lut-clear-history { margin-left: auto; }
-.lut-file-row { display: flex; align-items: center; gap: 0; min-width: 0; background: var(--raised); border-radius: var(--r-chip); }
+/* the LUT row is sized like the dropdowns around it */
+.lut-file-row { display: flex; align-items: center; gap: 0; min-width: 0; background: var(--raised); border-radius: var(--r-ctl); }
 .lut-file-row:has(button:hover:not(:disabled)) { background: var(--raised-2); }
-:is(.lut-file-row, .lut-picker-head) > #lut-import { position: relative; flex: none; align-self: stretch; padding: 0 12px; border: 0; border-radius: 0; background: transparent; color: var(--text); font-size: 12px; font-weight: 500; }
+:is(.lut-file-row, .lut-picker-head) > #lut-import { position: relative; flex: none; align-self: stretch; padding: 0 12px; border: 0; border-radius: 0; background: transparent; color: var(--muted); font-size: 12px; font-weight: 500; }
 /* a thin divider keeps Import reading as its own button inside the file row */
-.lut-file-row > #lut-import::before { content: ""; position: absolute; left: 0; top: 8px; bottom: 8px; width: 1px; background: var(--raised-2); }
+:is(.lut-file-row, .lut-picker-head) > #lut-import::before { content: ""; position: absolute; left: 0; top: 8px; bottom: 8px; width: 1px; background: var(--raised-2); }
 :is(.lut-file-row, .lut-picker-head) > #lut-import:hover:not(:disabled) { background: transparent; color: var(--text); }
 .lut-strength-row input { min-width: 40px; flex: 1; margin: 0; accent-color: var(--accent); }
 .lut-strength-row output { width: 36px; flex: none; text-align: right; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -673,25 +677,25 @@ label.export-toggle {
 .blend-fps-row > .video-fps-controls { flex: 1; }
 .blend-fps-row select { width: 100%; }
 .blend-fps-row [hidden] { display: none; }
-.lut-picker-trigger { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex: 1; min-width: 0; height: 26px; padding: 0 10px; color: var(--text); background: transparent; border: 0; border-radius: var(--r-chip) 0 0 var(--r-chip); font: 400 10.5px var(--font); text-align: left; }
+.lut-picker-trigger { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex: 1; min-width: 0; height: 33px; padding: 0 10px; color: var(--text); background: transparent; border: 0; border-radius: var(--r-ctl) 0 0 var(--r-ctl); font: 400 12px var(--font); text-align: left; }
 .lut-picker-trigger span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lut-picker-trigger:hover:not(:disabled), .lut-picker-trigger[aria-expanded="true"] { background: transparent; }
 .lut-picker-trigger:disabled { opacity: .55; cursor: default; }
-.lut-picker-popup { position: fixed; inset: auto; box-sizing: border-box; margin: 0; padding: 0; width: 280px; max-width: calc(100vw - 16px); color: var(--text); background: var(--raised); border: 0; border-radius: var(--r-chip); box-shadow: 0 8px 24px rgb(0 0 0 / .25); overflow: auto; }
-.lut-picker-popup:has(#lut-search:focus-visible) { outline: 1px solid var(--accent); outline-offset: 0; }
+/* the menu opens over the file row and continues it, so its top matches the closed row exactly */
+.lut-picker-popup { position: fixed; inset: auto; box-sizing: border-box; margin: 0; padding: 0; width: 280px; max-width: calc(100vw - 16px); color: var(--text); background: var(--raised); border: 0; border-radius: var(--r-ctl); box-shadow: 0 6px 18px rgb(0 0 0 / .25); overflow: auto; }
 .lut-picker-popup::backdrop { background: transparent; }
-.lut-picker-head { display: flex; min-height: 26px; background: transparent; }
+.lut-picker-head { display: flex; min-height: 33px; background: transparent; }
+.lut-picker-head:focus-within { box-shadow: inset 0 -2px var(--accent-light); }
 .lut-search-row { display: flex; flex: 1; min-width: 0; align-items: center; gap: 8px; padding: 0 10px; }
 .lut-search-row > svg { flex: none; color: var(--muted); }
-.lut-search-row:focus-within > svg { color: var(--accent); }
-.lut-picker-popup #lut-search { flex: 1; min-width: 0; box-sizing: border-box; height: 26px; padding: 0; margin: 0; border: 0; border-radius: 0; outline: 0; box-shadow: none; background: transparent; color: var(--text); font: inherit; font-size: 12px; caret-color: var(--accent); }
+.lut-picker-popup #lut-search { flex: 1; min-width: 0; box-sizing: border-box; height: 33px; padding: 0; margin: 0; border: 0; border-radius: 0; outline: 0; box-shadow: none; background: transparent; color: var(--text); font: inherit; font-size: 12px; caret-color: var(--accent); }
 .lut-picker-popup #lut-search::placeholder { color: var(--muted); opacity: 1; }
-.lut-options { max-height: 208px; padding: 4px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--raised-2) transparent; }
-.lut-option { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 32px; padding: 7px 8px; border-radius: var(--r-ctl); font-size: 12px; line-height: 1.4; cursor: pointer; overflow-wrap: anywhere; }
-.lut-option svg { flex: none; visibility: hidden; color: var(--accent); }
+.lut-options { max-height: 208px; padding: 6px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--raised-2) transparent; }
+.lut-option { display: flex; align-items: center; justify-content: space-between; gap: 12px; box-sizing: border-box; min-height: 33px; padding: 6px 10px; border-radius: 6px; font-size: 12px; line-height: 1.4; cursor: pointer; overflow-wrap: anywhere; }
+.lut-option svg { flex: none; visibility: hidden; color: var(--accent-light); }
 .lut-option[aria-selected="true"] svg { visibility: visible; }
-.lut-option:hover, .lut-option[data-active="true"] { background: var(--raised-2); }
-.lut-option[aria-selected="true"] { color: var(--accent-light); }
+/* as in the other dropdowns, the checkmark marks the chosen LUT and the fill marks the one active row */
+.lut-option[data-active="true"] { background: var(--raised-2); }
 .lut-picker-footer { display: flex; align-items: center; padding: 4px; border-top: 1px solid var(--hair); }
 .lut-picker-footer button { flex: none; padding: 7px 8px; border: 0; border-radius: var(--r-ctl); background: transparent; color: var(--muted); font-size: 11px; }
 .lut-picker-footer button:hover:not(:disabled) { text-decoration: underline; text-underline-offset: 3px; }

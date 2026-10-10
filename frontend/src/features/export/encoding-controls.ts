@@ -1331,8 +1331,27 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     return [...el("prof-options").querySelectorAll<HTMLElement>('[role="option"]')].filter(row => !row.hidden);
   }
 
+  // one row is lit at a time; a row lit by the pointer goes dark when it leaves, one lit by the
+  // keyboard stays, and the checkmark alone marks the chosen profile
+  let profilePointerActive = false;
+  let profilePointerX = NaN;
+  let profilePointerY = NaN;
+  function profileMenuItems(): HTMLElement[] {
+    return [...profileMenu.querySelectorAll<HTMLElement>('[role="option"], .profile-menu-cmd')];
+  }
+  function setProfileActive(row: HTMLElement | null, byPointer: boolean): void {
+    profilePointerActive = byPointer && row !== null;
+    for (const item of profileMenuItems()) item.toggleAttribute("data-active", item === row);
+  }
+  function clearProfilePointer(): void {
+    setProfileActive(null, false);
+    // focus waits on the menu itself, so the keyboard keeps working and nothing looks chosen
+    if (document.activeElement !== profileSearch) profileMenu.focus({ preventScroll: true });
+  }
+
   function focusProfileItem(item: HTMLElement | undefined): void {
     if (!item) return;
+    setProfileActive(profileMenuItems().includes(item) ? item : null, false);
     item.focus({ preventScroll: true });
     // reveal the focused item without moving the Inspector behind the menu
     const bounds = item.getBoundingClientRect();
@@ -1414,7 +1433,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     profileMenu.style.maxHeight = `${placement.maxHeight}px`;
   }
 
-  function openProfileMenu(searchFocus = false): void {
+  function openProfileMenu(searchFocus = false, byPointer = false): void {
     if (!profileMenu.hidden) return;
     profileTyped = "";
     profileLastTyped = 0;
@@ -1426,7 +1445,11 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     positionProfileMenu();
     const rows = profileOptionRows();
     if (searchFocus && !profileSearchRow.hidden) focusProfileItem(profileSearch);
-    else focusProfileItem(rows.find((row) => row.getAttribute("aria-selected") === "true") ?? rows[0] ??
+    // a click opens with nothing lit, the keyboard opens on the chosen profile
+    else if (byPointer) {
+      setProfileActive(null, false);
+      profileMenu.focus({ preventScroll: true });
+    } else focusProfileItem(rows.find((row) => row.getAttribute("aria-selected") === "true") ?? rows[0] ??
       profileMenu.querySelector<HTMLButtonElement>(".profile-menu-cmd") ?? profilePick);
   }
 
@@ -1440,7 +1463,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
   }
 
   function toggleProfileMenu(): void {
-    if (profileMenu.hidden) openProfileMenu(true);
+    if (profileMenu.hidden) openProfileMenu(true, true);
     else closeProfileMenu(true);
   }
 
@@ -1462,7 +1485,10 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
       event.preventDefault();
       event.stopPropagation();
       const step = event.key === "ArrowDown" ? 1 : -1;
-      const next = index < 0 ? (step === 1 ? 0 : rows.length - 1) : Math.max(0, Math.min(rows.length - 1, index + step));
+      const chosen = rows.findIndex(row => row.getAttribute("aria-selected") === "true");
+      const next = index < 0
+        ? (chosen >= 0 ? chosen : step === 1 ? 0 : rows.length - 1)
+        : Math.max(0, Math.min(rows.length - 1, index + step));
       focusProfileItem(rows[next]);
     } else if (!searching && (event.key === "Home" || event.key === "End")) {
       event.preventDefault();
@@ -1475,9 +1501,9 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     } else if (searching && event.key === "Enter") {
       event.preventDefault();
       event.stopPropagation();
-      const first = rows[0];
-      if (first) chooseProfile(first.dataset.profileId ?? "");
-    } else if (index >= 0 && event.key.length === 1 && !event.ctrlKey && !event.altKey && !event.metaKey) {
+      const lit = rows.find(row => row.hasAttribute("data-active")) ?? rows[0];
+      if (lit) chooseProfile(lit.dataset.profileId ?? "");
+    } else if (!searching && event.key.length === 1 && !event.ctrlKey && !event.altKey && !event.metaKey) {
       event.preventDefault();
       event.stopPropagation();
       profileTyped = selectTypeaheadPrefix(profileTyped, profileLastTyped, event.key, event.timeStamp);
@@ -1486,8 +1512,35 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
         value: row.dataset.profileId ?? "", label: row.querySelector(".profile-option-name")?.textContent ?? "",
         detail: row.title, disabled: false,
       }));
-      focusProfileItem(rows[nextSelectMatch(choices, index, profileTyped, profileTyped.length === 1)]);
+      // with nothing lit, typing starts from the chosen profile, the same as the arrow keys
+      const from = index >= 0 ? index : rows.findIndex(row => row.getAttribute("aria-selected") === "true");
+      focusProfileItem(rows[nextSelectMatch(choices, from, profileTyped, profileTyped.length === 1)]);
     }
+  });
+  profileMenu.addEventListener("pointermove", (event) => {
+    // only a real move counts, so a list scrolling under a resting pointer keeps the keyboard's row
+    if (event.clientX === profilePointerX && event.clientY === profilePointerY) return;
+    profilePointerX = event.clientX;
+    profilePointerY = event.clientY;
+    const row = event.target instanceof Element
+      ? event.target.closest<HTMLElement>('[role="option"], .profile-menu-cmd')
+      : null;
+    if (!row || row.hidden) {
+      if (profilePointerActive) clearProfilePointer();
+      return;
+    }
+    if (row.hasAttribute("data-active")) return;
+    setProfileActive(row, true);
+    // typing in the search box keeps its focus; the lit row still answers Enter through the list
+    if (document.activeElement !== profileSearch) row.focus({ preventScroll: true });
+  });
+  profileMenu.addEventListener("pointerleave", () => {
+    if (profilePointerActive) clearProfilePointer();
+  });
+  // Tab and other focus moves light the row they land on
+  profileMenu.addEventListener("focusin", (event) => {
+    const row = event.target instanceof HTMLElement ? event.target : null;
+    if (row && profileMenuItems().includes(row) && !row.hasAttribute("data-active")) setProfileActive(row, false);
   });
   profileSearch.addEventListener("input", () => { filterProfiles(); positionProfileMenu(); });
   profileMenu.addEventListener("toggle", () => {

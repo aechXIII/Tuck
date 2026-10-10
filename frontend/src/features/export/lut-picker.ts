@@ -16,6 +16,10 @@ export function createLutPicker(root: HTMLElement, select: (path: string) => voi
   const options = new Map<string, HTMLElement>();
   let selectedPath = "";
   let activePath: string | null = null;
+  // a row lit by the pointer goes dark when the pointer leaves; one lit by the keyboard stays
+  let pointerActive = false;
+  let pointerX = NaN;
+  let pointerY = NaN;
   let nextId = 0;
   let historyCount = 0;
   let locked = false;
@@ -36,6 +40,7 @@ export function createLutPicker(root: HTMLElement, select: (path: string) => voi
     } else search.removeAttribute("aria-activedescendant");
   }
   function filter(): void {
+    pointerActive = false;
     const query = search.value.trim().toLocaleLowerCase();
     for (const option of options.values()) option.hidden = !(option.textContent ?? "").toLocaleLowerCase().includes(query);
     const visible = visibleOptions();
@@ -65,16 +70,18 @@ export function createLutPicker(root: HTMLElement, select: (path: string) => voi
     popup.style.left = `${Math.max(8, Math.min(bounds.left, window.innerWidth - popup.offsetWidth - 8))}px`;
     popup.style.top = `${top}px`;
   }
-  function open(): void {
+  function open(byPointer = false): void {
     if (trigger.disabled) return;
     search.value = "";
     head.append(importButton);
     popup.showPopover();
     trigger.setAttribute("aria-expanded", "true");
     filter();
+    // a click opens with nothing lit, the keyboard opens on the chosen LUT
+    if (byPointer) activate(null);
     search.focus({preventScroll:true});
   }
-  trigger.addEventListener("click", () => popup.matches(":popover-open") ? close() : open());
+  trigger.addEventListener("click", () => popup.matches(":popover-open") ? close() : open(true));
   trigger.addEventListener("keydown", event => {
     if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); open(); }
   });
@@ -91,12 +98,30 @@ export function createLutPicker(root: HTMLElement, select: (path: string) => voi
     if (event.relatedTarget instanceof Node && !popup.contains(event.relatedTarget)) close();
   });
   search.addEventListener("input", filter);
+  list.addEventListener("pointermove", event => {
+    // only a real move counts, so a list scrolling under a resting pointer keeps the keyboard's row
+    if (event.clientX === pointerX && event.clientY === pointerY) return;
+    pointerX = event.clientX;
+    pointerY = event.clientY;
+    const option = event.target instanceof Element ? event.target.closest<HTMLElement>("[role=option]") : null;
+    if (!option || option.hidden) return;
+    if (option.dataset.path !== activePath) activate(option.dataset.path ?? null);
+    pointerActive = true;
+  });
+  list.addEventListener("pointerleave", () => {
+    if (!pointerActive) return;
+    pointerActive = false;
+    activate(null);
+  });
   search.addEventListener("keydown", event => {
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
+      pointerActive = false;
       const visible = visibleOptions();
       const index = visible.findIndex(option => option.dataset.path === activePath);
-      const next = event.key === "ArrowDown" ? Math.min(visible.length - 1, index + 1) : Math.max(0, index - 1);
+      const chosen = visible.findIndex(option => option.dataset.path === selectedPath);
+      const next = index < 0 && chosen >= 0 ? chosen
+        : event.key === "ArrowDown" ? Math.min(visible.length - 1, index + 1) : Math.max(0, index - 1);
       activate(visible[next]?.dataset.path ?? null);
     } else if (event.key === "Enter" && activePath !== null && !locked) {
       event.preventDefault();

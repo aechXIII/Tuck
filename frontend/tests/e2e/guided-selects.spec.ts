@@ -268,3 +268,25 @@ test("a long profile menu closes when its Inspector anchor scrolls out of view",
   await expect(menu).toBeHidden();
   await expect(page.locator("#prof-pick")).toHaveAttribute("aria-expanded", "false");
 });
+
+test("a dropdown lights one row: the pointer's row goes dark when it leaves, the keyboard's stays", async ({ page }) => {
+  await installFakeBackend(page, healthyBackendFixture());
+  await page.goto("/");
+  await page.locator("#export-fps-select-trigger").click();
+  const popup = page.locator("#export-fps-select-popup");
+  await expect(popup).toBeVisible();
+  const options = popup.getByRole("option");
+  const lit = () => options.evaluateAll(rows => rows.map(row => row.hasAttribute("data-active")));
+  // a click opens with nothing lit; the checkmark alone shows the chosen option
+  expect((await lit()).some(Boolean)).toBe(false);
+  await options.nth(1).hover();
+  expect((await lit()).map((on, index) => on && index)).toContain(1);
+  await page.mouse.move(5, 5);
+  expect((await lit()).some(Boolean)).toBe(false);
+  // with nothing lit, the arrow keys start from the chosen option, and that row stays lit
+  const chosen = await options.evaluateAll(rows => rows.findIndex(row => row.getAttribute("aria-selected") === "true"));
+  await page.keyboard.press("ArrowDown");
+  expect((await lit()).indexOf(true)).toBe(chosen);
+  await page.keyboard.press("ArrowDown");
+  expect((await lit()).indexOf(true)).toBe(chosen + 1);
+});

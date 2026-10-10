@@ -100,3 +100,36 @@ for (const width of [1240, 960]) {
     await expect(page.locator("#lut-import")).toBeFocused();
   });
 }
+
+test("the open LUT menu continues its row and lights one option, which the pointer moves", async ({page}) => {
+  const fixture = healthyBackendFixture();
+  fixture.responses.listLuts = {luts:[{path:"C:/managed/warm.cube",name:"Warm"},{path:"C:/managed/cool.cube",name:"Cool"},{path:"C:/managed/film.cube",name:"Film"}]};
+  fixture.responses.loadLut = {path:"C:/managed/film.cube",name:"Film",size:2,table_url:"http://127.0.0.1:4321/token/table",token:"t"};
+  await page.route("http://127.0.0.1:4321/token/table", route => route.fulfill({body:Buffer.from(new Float32Array(24).buffer),headers:{"Access-Control-Allow-Origin":"*"}}));
+  await installFakeBackend(page,fixture);
+  await page.goto("/");
+  await page.locator("#lut-panel > summary").click();
+  const row = page.locator(".lut-file-row");
+  const closed = await row.evaluate(node => ({height: node.getBoundingClientRect().height, radius: getComputedStyle(node).borderTopLeftRadius}));
+  await page.getByRole("button",{name:/^LUT /}).click();
+  const popup = page.getByRole("dialog",{name:"Saved LUTs",exact:true});
+  const head = await page.locator(".lut-picker-head").evaluate(node => node.getBoundingClientRect().height);
+  const radius = await popup.evaluate(node => getComputedStyle(node).borderTopLeftRadius);
+  expect(head).toBeCloseTo(closed.height, 0);
+  expect(radius).toBe(closed.radius);
+  const options = popup.getByRole("option");
+  const lit = () => options.evaluateAll(rows => rows.map(row => getComputedStyle(row).backgroundColor !== "rgba(0, 0, 0, 0)"));
+  const search = page.getByRole("combobox",{name:"Search saved LUTs",exact:true});
+  // a click opens with nothing lit; the pointer lights a row and it goes dark when the pointer leaves
+  expect(await lit()).toEqual([false, false, false]);
+  await options.nth(1).hover();
+  expect(await lit()).toEqual([false, true, false]);
+  await page.mouse.move(5, 5);
+  expect(await lit()).toEqual([false, false, false]);
+  await expect(search).not.toHaveAttribute("aria-activedescendant");
+  await options.nth(2).hover();
+  await expect(search).toHaveAttribute("aria-activedescendant", (await options.nth(2).getAttribute("id"))!);
+  await page.keyboard.press("Enter");
+  await expect(popup).toBeHidden();
+  await expect(page.getByRole("button",{name:/^LUT /})).toHaveAccessibleName("LUT Film");
+});

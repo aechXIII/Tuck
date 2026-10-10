@@ -93,6 +93,10 @@ export function installSelectControls(
     let options: SelectOption[] = [];
     let visible: SelectOption[] = [];
     let active = -1;
+    // a row lit by the pointer goes dark when the pointer leaves; one lit by the keyboard stays
+    let pointerActive = false;
+    let pointerX = NaN;
+    let pointerY = NaN;
     let signature = "";
     let searchable = false;
     let typed = "";
@@ -119,6 +123,7 @@ export function installSelectControls(
     }
 
     function render(): void {
+      pointerActive = false;
       const previous = visible[active]?.value;
       visible = filterSelectOptions(options, searchable ? search.value : "");
       list.replaceChildren();
@@ -167,7 +172,7 @@ export function installSelectControls(
       if (restoreFocus && trigger.isConnected && !trigger.disabled) trigger.focus({ preventScroll: true });
     }
 
-    function open(): void {
+    function open(byPointer = false): void {
       control.sync();
       if (trigger.disabled) return;
       openControl?.close();
@@ -182,7 +187,8 @@ export function installSelectControls(
       trigger.setAttribute("aria-expanded", "true");
       position();
       focusOwner().focus({ preventScroll: true });
-      markActive(active);
+      // a click opens with nothing lit, the keyboard opens on the chosen option
+      markActive(byPointer ? -1 : active);
     }
 
     function choose(index: number): void {
@@ -209,10 +215,13 @@ export function installSelectControls(
       if (!keys.includes(event.key) && (typing || !character)) return;
       event.stopPropagation();
       event.preventDefault();
+      pointerActive = false;
       const wasOpen = isOpen();
       if (!wasOpen) open();
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-        if (wasOpen) markActive(nextSelectIndex(visible, active, event.key === "ArrowDown" ? 1 : -1));
+        const chosen = visible.findIndex(option => option.value === select.value && !option.disabled);
+        if (wasOpen && active < 0 && chosen >= 0) markActive(chosen);
+        else if (wasOpen) markActive(nextSelectIndex(visible, active, event.key === "ArrowDown" ? 1 : -1));
       } else if (event.key === "Home" || event.key === "End") {
         markActive(nextSelectIndex(visible, -1, event.key === "Home" ? 1 : -1));
       } else if (event.key === "Enter" || event.key === " ") {
@@ -222,14 +231,16 @@ export function installSelectControls(
         lastTyped = event.timeStamp;
         if (searchable) { search.value = typed; render(); position(); }
         else {
-          markActive(nextSelectMatch(visible, active, typed, typed.length === 1));
+          // with nothing lit, typing starts from the chosen option, the same as the arrow keys
+          const from = active >= 0 ? active : visible.findIndex(option => option.value === select.value);
+          markActive(nextSelectMatch(visible, from, typed, typed.length === 1));
         }
       }
     }
 
     trigger.addEventListener("click", event => {
       event.preventDefault();
-      if (isOpen()) close(); else open();
+      if (isOpen()) close(); else open(true);
     });
     trigger.addEventListener("keydown", keydown);
     popup.addEventListener("keydown", keydown);
@@ -237,8 +248,23 @@ export function installSelectControls(
     search.addEventListener("input", () => { visible = []; active = -1; render(); position(); });
     list.addEventListener("pointerdown", event => event.preventDefault());
     list.addEventListener("pointermove", event => {
+      // only a real move counts, so a list scrolling under a resting pointer keeps the keyboard's row
+      if (event.clientX === pointerX && event.clientY === pointerY) return;
+      pointerX = event.clientX;
+      pointerY = event.clientY;
       const row = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-index]") : null;
-      if (row && row.getAttribute("aria-disabled") !== "true") markActive(Number(row.dataset.index), false);
+      if (!row) return;
+      if (row.getAttribute("aria-disabled") === "true") {
+        if (pointerActive) markActive(-1, false);
+        return;
+      }
+      markActive(Number(row.dataset.index), false);
+      pointerActive = true;
+    });
+    list.addEventListener("pointerleave", () => {
+      if (!pointerActive) return;
+      pointerActive = false;
+      markActive(-1, false);
     });
     list.addEventListener("click", event => {
       const row = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-index]") : null;
