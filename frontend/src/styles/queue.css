@@ -123,6 +123,11 @@
   display: flex;
   min-width: 0;
   max-width: 100%;
+  /* runs each time the bar appears, so accepted exports visibly arrive where they'll be tracked */
+  animation: qbar-enter var(--workspace-motion);
+}
+@keyframes qbar-enter {
+  from { opacity: 0; transform: translateY(4px); }
 }
 #qstatus {
   position: relative;
@@ -246,6 +251,20 @@
 #exports-panel[hidden] {
   display: none;
 }
+/* rises out of the bottom bar that opens it, and sinks back into it on close */
+#exports-panel {
+  animation: exports-enter 160ms var(--ease-out);
+}
+#exports-panel.closing {
+  animation: exports-leave 120ms var(--ease-out) forwards;
+  pointer-events: none;
+}
+@keyframes exports-enter {
+  from { opacity: 0; transform: translateY(4px); }
+}
+@keyframes exports-leave {
+  to { opacity: 0; transform: translateY(4px); }
+}
 .exports-head {
   display: flex;
   align-items: center;
@@ -279,6 +298,14 @@
 .exports-btn:hover:not(:disabled) {
   background: var(--raised);
   color: var(--text);
+}
+.exports-btn {
+  transition: background-color 120ms var(--ease-out), color 120ms var(--ease-out);
+}
+.exports-btn:active:not(:disabled, [aria-disabled="true"]) {
+  background: color-mix(in srgb, var(--raised) 84%, #000);
+  color: var(--text);
+  transition-duration: 0s;
 }
 .exports-btn:focus-visible {
   outline: 2px solid var(--accent-light);
@@ -347,6 +374,16 @@
 }
 .exports-row.running .exports-btn {
   background: var(--raised-2);
+}
+.exports-row .exports-btn:active:not(:disabled, [aria-disabled="true"]) {
+  background: color-mix(in srgb, var(--raised) 84%, #000);
+}
+/* waiting for the backend: the label reads as status, and further presses do nothing */
+.exports-btn[aria-disabled="true"],
+.exports-row .exports-btn[aria-disabled="true"] {
+  background: transparent;
+  color: var(--muted);
+  cursor: default;
 }
 .exports-bar {
   grid-column: 1 / -1;

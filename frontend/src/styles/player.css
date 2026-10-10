@@ -25,6 +25,34 @@
   font-size: 18px;
   font-weight: 600;
 }
+/* the Library's Add videos sits in a drawer at small window sizes, so the empty screen offers it too */
+#empty-add {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--raised);
+  color: var(--text);
+  font: 600 12px var(--font);
+  cursor: pointer;
+}
+#empty-add:hover {
+  background: var(--raised-2);
+}
+#empty-add {
+  transition: background-color 120ms var(--ease-out), transform 120ms var(--ease-out);
+}
+#empty-add:active {
+  background: color-mix(in srgb, var(--raised) 84%, #000);
+  transform: scale(0.98);
+  transition-duration: 0s, 80ms;
+}
+#empty-add:focus-visible {
+  outline: 2px solid var(--accent-light);
+  outline-offset: 2px;
+}
 /* the screen is darker than the card, so bars beside a video of another shape read as part of
    the screen rather than as a frame; the picture is centred, so they split evenly */
 #stage {

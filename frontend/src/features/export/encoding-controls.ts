@@ -258,6 +258,11 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
 
   // the video whose plan notes are showing under the profile card
   let warningsPath: string | null = null;
+  // set while an export request is with the backend, so a second press can't queue the same videos twice
+  let enqueueing = false;
+  // most requests return before a label could be read, so the busy state waits a moment instead of flashing
+  let enqueueBusyShown = false;
+  const ENQUEUE_BUSY_DELAY_MS = 250;
 
   function exportReadiness() {
     return probeSummary(deps.orderedClipKeys(), (path) => session.clips[path]);
@@ -299,6 +304,11 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     all.textContent = (up ? "Upscale all" : "Compress all") + (exported ? ` (${exported})` : "");
     all.disabled = !allReady || !blending.valid() || !lut.valid() || !videoSettingsValid();
     all.classList.toggle("upscale-batch", up);
+    if (enqueueBusyShown) {
+      one.textContent = "Adding to queue…";
+      one.disabled = true;
+      all.disabled = true;
+    }
     const note = el("btn-all-note");
     note.textContent = count > 1 ? allNote(readiness) : "";
     note.hidden = !note.textContent;
@@ -1081,6 +1091,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
 
   async function compressOne(): Promise<void> {
     if (wf === 2) { await cutting.exportCuts(false); return; }
+    if (enqueueing) return;
     if (!lut.valid() || !blending.reportValidity() || !videoSettingsValid()) return;
     const path = session.selPath;
     const clip = path ? session.clips[path] : undefined;
@@ -1094,11 +1105,35 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
         : `“${clip.name}” is still being read. Export it once it’s ready.`, "err");
       return;
     }
-    const r = await legacyBackendResult(
-      client().enqueueWithOptions(buildRequest(clip.path) as never),
-    );
-    if (!r.ok) toast(withReason(`Couldn’t add “${clip.name}” to the queue.`, r.error), "err");
+    await whileEnqueueing(async () => {
+      const r = await legacyBackendResult(
+        client().enqueueWithOptions(buildRequest(clip.path) as never),
+      );
+      if (!r.ok) toast(withReason(`Couldn’t add “${clip.name}” to the queue.`, r.error), "err");
+    });
     void deps.pollQueue();
+  }
+
+  async function whileEnqueueing(request: () => Promise<void>): Promise<void> {
+    enqueueing = true;
+    const focused = document.activeElement;
+    const timer = setTimeout(() => {
+      enqueueBusyShown = true;
+      updateActionButtons();
+    }, ENQUEUE_BUSY_DELAY_MS);
+    try {
+      await request();
+    } finally {
+      clearTimeout(timer);
+      const wasShown = enqueueBusyShown;
+      enqueueing = false;
+      enqueueBusyShown = false;
+      updateActionButtons();
+      // disabling the button dropped its focus; give it back so keyboard users stay in place
+      if (wasShown && focused instanceof HTMLElement && focused.isConnected && document.activeElement === document.body) {
+        focused.focus();
+      }
+    }
   }
 
   // the backend names each file in its reasons; a long list is cut short rather than flooding
@@ -1110,6 +1145,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
 
   async function compressAll(): Promise<void> {
     if (wf === 2) { await cutting.exportCuts(true); return; }
+    if (enqueueing) return;
     if (!lut.valid() || !blending.reportValidity() || !videoSettingsValid()) return;
     const readiness = exportReadiness();
     if (!readiness.ready.length && !readiness.loading.length && !readiness.failed.length) {
@@ -1126,15 +1162,17 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     }
     // videos that can't be read are skipped; the note under the button already says which
     const requests = readiness.ready.map((path) => buildRequest(session.clips[path]!.path) as never);
-    const r = await legacyBackendResult(client().enqueueBatch(requests));
-    const errors = toStringArray(r.errors);
-    if (!r.ok) {
-      toast(errors.length
-        ? `No videos were added to the queue. ${enqueueReasons(errors)}`
-        : withReason("Couldn’t add the videos to the queue.", r.error), "err");
-    } else if (errors.length) {
-      toast(`${errors.length} of ${requests.length} videos weren’t added to the queue. ${enqueueReasons(errors)}`, "err");
-    }
+    await whileEnqueueing(async () => {
+      const r = await legacyBackendResult(client().enqueueBatch(requests));
+      const errors = toStringArray(r.errors);
+      if (!r.ok) {
+        toast(errors.length
+          ? `No videos were added to the queue. ${enqueueReasons(errors)}`
+          : withReason("Couldn’t add the videos to the queue.", r.error), "err");
+      } else if (errors.length) {
+        toast(`${errors.length} of ${requests.length} videos weren’t added to the queue. ${enqueueReasons(errors)}`, "err");
+      }
+    });
     void deps.pollQueue();
   }
 

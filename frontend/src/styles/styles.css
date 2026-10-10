@@ -65,7 +65,8 @@
   --panel-inset: 12px;
   --panel-scrollbar: 10px;
   --inspector-content-inset: var(--panel-inset);
-  --workspace-motion: 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --workspace-motion: 180ms var(--ease-out);
   --z-workspace-backdrop: 30;
   --z-workspace-panel: 40;
   --z-exports: 50;
@@ -440,7 +441,8 @@ body.custom-titlebar:has(.mod-overlay.open) .tb-editor > * {
   background: var(--raised);
   color: var(--text);
 }
-#btn-add::before {
+#btn-add::before,
+#empty-add::before {
   content: "";
   width: 12px;
   height: 12px;
@@ -1303,7 +1305,6 @@ select {
   padding: 8px 14px;
   cursor: pointer;
   font-family: var(--font);
-  transition: background 0.15s;
 }
 .btn1:hover {
   background: var(--action-hover);
@@ -1335,6 +1336,29 @@ select {
 .btn2:focus-visible {
   outline: 2px solid var(--accent-light);
   outline-offset: -1px;
+}
+/* a press darkens the button at once and eases back on release, so every click visibly lands.
+   only standalone buttons shrink; joined or dense controls must not move under the pointer */
+.btn1,
+.btn2,
+#btn-add {
+  transition:
+    background-color 120ms var(--ease-out),
+    color 120ms var(--ease-out),
+    transform 120ms var(--ease-out);
+}
+.btn1:active:not(:disabled) {
+  background: color-mix(in srgb, var(--action) 84%, #000);
+  transition-duration: 0s, 0s, 80ms;
+}
+.btn2:active:not(:disabled),
+#btn-add:active {
+  background: color-mix(in srgb, var(--raised) 84%, #000);
+  transition-duration: 0s, 0s, 80ms;
+}
+.btn1:active:not(:disabled),
+#btn-add:active {
+  transform: scale(0.98);
 }
 .setting-note {
   color: var(--muted);
@@ -1776,11 +1800,6 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
   font-size: 12px;
   font-weight: 650;
 }
-#drop-z span {
-  color: var(--dim);
-  font-size: 11px;
-  line-height: 1.45;
-}
 @media (min-width: 1180px) {
   body.workspace-ready:not(.library-panel-open) #left,
   body.workspace-ready:not(.inspector-panel-open) #right {
@@ -1866,13 +1885,23 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
   background: rgba(10, 10, 19, 0.9);
   border: 3px dashed var(--accent);
   border-radius: 20px;
-  display: none;
+  display: flex;
   align-items: center;
   justify-content: center;
   pointer-events: none;
+  /* fades rather than pops; visibility keeps the hidden overlay out of the accessibility tree */
+  opacity: 0;
+  visibility: hidden;
+}
+/* the fade-out waits until the overlay has been shown, so the stylesheet arriving after the
+   first paint in development doesn't fade it out from the browser's default style */
+#drag-overlay.armed {
+  transition: opacity 90ms ease-out, visibility 0s linear 90ms;
 }
 #drag-overlay.show {
-  display: flex;
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 120ms ease-out, visibility 0s;
 }
 #drag-overlay h2 {
   color: var(--accent-light);

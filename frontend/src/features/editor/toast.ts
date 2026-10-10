@@ -216,7 +216,27 @@ export function toast(msg: string, kind = "", action?: ToastAction, options: Toa
   const queued = key ? toastQueue.findIndex((entry) => entry.options.key === key) : -1;
   if (queued >= 0) toastQueue[queued] = item;
   else toastQueue.push(item);
+  yieldActionToast();
   showNextToast();
+}
+
+// a message with a button, such as Undo, stays long enough to reach it by keyboard,
+// but only while nothing is waiting behind it; then it keeps the usual time at most
+const ACTION_TOAST_MS = 10000;
+
+function toastDuration(item: ToastQueueItem): number {
+  const usual = notificationPresentation(item.kind).duration;
+  return item.action && !toastQueue.length ? ACTION_TOAST_MS : usual;
+}
+
+function yieldActionToast(): void {
+  const current = activeToast;
+  if (!current || !current.item.action || current.closing) return;
+  const usual = notificationPresentation(current.item.kind).duration;
+  const running = !!current.timer;
+  if (running) pauseToastTimer();
+  current.remaining = Math.min(current.remaining, usual);
+  if (running) resumeToastTimer();
 }
 
 function fillToast(element: HTMLElement, id: string, item: ToastQueueItem): void {
@@ -258,7 +278,7 @@ function replaceActiveToast(item: ToastQueueItem): void {
   fillToast(current.element, current.id, item);
   if (hadFocus) current.element.querySelector<HTMLElement>(".tact, .tcls")?.focus();
   // the new message gets its full time on screen
-  current.remaining = notificationPresentation(item.kind).duration;
+  current.remaining = toastDuration(item);
   if (current.timer) {
     clearTimeout(current.timer);
     current.timer = 0;
@@ -281,7 +301,7 @@ function showNextToast(): void {
     element: div,
     id,
     item,
-    remaining: notificationPresentation(item.kind).duration,
+    remaining: toastDuration(item),
     started: 0,
     timer: 0,
   };

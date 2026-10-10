@@ -566,6 +566,26 @@
 #right-foot > .btn1:disabled + .export-actions[open] > summary {
   background: var(--raised-2);
 }
+/* pressed sits after hover so it wins while the pointer is still over the button.
+   the button and its menu arrow are one control, so the pair shrinks together */
+#right-foot,
+.export-actions > summary {
+  transition: transform 120ms var(--ease-out), background-color 120ms var(--ease-out);
+}
+#right-foot > .btn1:active:not(:disabled),
+#right-foot .export-actions > summary:active {
+  background: color-mix(in srgb, var(--action) 84%, #000);
+  transform: none;
+  transition-duration: 0s;
+}
+#right-foot > .btn1:disabled + .export-actions > summary:active {
+  background: color-mix(in srgb, var(--raised) 84%, #000);
+  transition-duration: 0s;
+}
+#right-foot:has(> .btn1:active:not(:disabled)) {
+  transform: scale(0.98);
+  transition-duration: 80ms;
+}
 .export-actions > summary svg {
   width: 11px;
   height: 11px;

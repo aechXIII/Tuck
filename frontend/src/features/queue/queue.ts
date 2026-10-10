@@ -90,11 +90,37 @@ export function installQueue(deps: QueueDeps): QueueApi {
   let exportsOpen = false;
   let lastItems: readonly QueueItem[] = [];
 
+  let closeTicket = 0;
+
+  // the panel stays in place while it animates away; opening it again in the meantime keeps it
+  function closeExportsPanel(panel: HTMLElement): void {
+    if (panel.hidden) return;
+    const ticket = ++closeTicket;
+    panel.classList.add("closing");
+    const finish = (): void => {
+      if (ticket !== closeTicket) return;
+      panel.classList.remove("closing");
+      panel.hidden = true;
+    };
+    const animations = typeof panel.getAnimations === "function" ? panel.getAnimations() : [];
+    if (!animations.length) {
+      finish();
+      return;
+    }
+    void Promise.all(animations.map((animation) => animation.finished)).then(finish, finish);
+  }
+
   function setExportsOpen(open: boolean, returnFocus = false): void {
     const panel = byId("exports-panel");
     const status = byId("qstatus");
     exportsOpen = open && lastItems.length > 0;
-    if (panel) panel.hidden = !exportsOpen;
+    if (panel && exportsOpen) {
+      closeTicket += 1;
+      panel.classList.remove("closing");
+      panel.hidden = false;
+    } else if (panel) {
+      closeExportsPanel(panel);
+    }
     status?.setAttribute("aria-expanded", String(exportsOpen));
     if (exportsOpen) renderExports(lastItems);
     if (!exportsOpen && returnFocus) status?.focus();
@@ -134,6 +160,12 @@ export function installQueue(deps: QueueDeps): QueueApi {
       button.className = "exports-btn";
       button.textContent = labels[row.action];
       button.setAttribute("aria-label", `${labels[row.action]} ${row.name}`);
+      // aria-disabled rather than disabled, so a keyboard user's focus stays on the row while it waits
+      const pending = rowRequests[row.id];
+      if (pending && pending === row.action) {
+        button.textContent = pending === "cancel" ? "Cancelling…" : "Retrying…";
+        button.setAttribute("aria-disabled", "true");
+      }
       button.dataset.actionClick = `export-item-${row.action}`;
       button.dataset.itemId = row.id;
       if (row.action === "show") button.dataset.resultPath = row.resultPath;
@@ -238,7 +270,8 @@ export function installQueue(deps: QueueDeps): QueueApi {
 
   let queueItemsById: Record<string, QueueItem> = {};
   const queueActiveItemIds: Record<string, true> = {};
-  const retryInFlight: Record<string, true> = {};
+  // a Cancel or Retry the backend hasn't answered yet; rows are rebuilt on every poll, so it lives here
+  const rowRequests: Record<string, "cancel" | "retry"> = {};
   let queueView: QueueViewState = emptyQueueView();
   let watchedExports: Record<string, WatchedExport> = {};
   let pollingQueue = false;
@@ -364,26 +397,40 @@ export function installQueue(deps: QueueDeps): QueueApi {
     if (clearFinished) await clearDone(false);
   }
 
+  function startRowRequest(itemId: string, action: "cancel" | "retry"): boolean {
+    if (!itemId || rowRequests[itemId]) return false;
+    rowRequests[itemId] = action;
+    if (exportsOpen) renderExports(lastItems);
+    return true;
+  }
+
+  function endRowRequest(itemId: string): void {
+    delete rowRequests[itemId];
+    if (exportsOpen) renderExports(lastItems);
+  }
+
   async function cancelQueueItem(itemId: string): Promise<void> {
-    if (!itemId) return;
+    if (!startRowRequest(itemId, "cancel")) return;
+    // the row keeps its pending label until the queue state after the request is painted
     try {
       const r = await legacyBackendResult(client().cancelItem(itemId));
       if (!r.ok) toast(withReason("Couldn’t cancel that export.", r.error), "err");
       await pollQueue();
     } catch {
       toast("Couldn’t cancel that export. Try again.", "err");
+    } finally {
+      endRowRequest(itemId);
     }
   }
 
   async function retryQueueItem(itemId: string): Promise<void> {
-    if (!itemId || retryInFlight[itemId]) return;
-    retryInFlight[itemId] = true;
+    if (!startRowRequest(itemId, "retry")) return;
     try {
       const r = await legacyBackendResult(client().retryItem(itemId));
       if (!r.ok) toast(withReason("Couldn’t retry that export.", r.error), "err");
-      void pollQueue();
+      await pollQueue();
     } finally {
-      delete retryInFlight[itemId];
+      endRowRequest(itemId);
     }
   }
 

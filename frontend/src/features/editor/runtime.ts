@@ -720,16 +720,18 @@ export function installEditorRuntime(
       Array.from(event.dataTransfer?.types ?? []).includes("Files");
     const overlay = byId("drag-overlay");
     const dropZone = byId("drop-z");
+    // armed enables the fade-out; see #drag-overlay.armed
+    const showOverlay = (): void => overlay?.classList.add("show", "armed");
     windowRef.document.body.addEventListener("dragenter", (event) => {
       if (!isFileDrag(event)) return;
       event.preventDefault();
       dragDepth += 1;
-      overlay?.classList.add("show");
+      showOverlay();
     });
     windowRef.document.body.addEventListener("dragover", (event) => {
       if (!isFileDrag(event)) return;
       event.preventDefault();
-      overlay?.classList.add("show");
+      showOverlay();
     });
     windowRef.document.body.addEventListener("dragleave", (event) => {
       if (!isFileDrag(event) && dragDepth === 0) return;
@@ -763,7 +765,7 @@ export function installEditorRuntime(
           await getCurrentWebview().onDragDropEvent((event) => {
             const payload = event.payload;
             if (payload.type === "enter" || payload.type === "over") {
-              overlay?.classList.add("show");
+              showOverlay();
             } else if (payload.type === "leave") {
               overlay?.classList.remove("show");
             } else if (payload.type === "drop") {

@@ -556,6 +556,19 @@ body.settings-open .settings-dialog {
   opacity: 0.5;
   cursor: default;
 }
+/* pressed comes after every hover so it wins while the pointer is still over the button;
+   it reads darker than both rest and hover, and shows at once */
+.set-btn {
+  transition: background-color 120ms var(--ease-out), color 120ms var(--ease-out);
+}
+.set-btn:active:not(:disabled),
+.set-btn.quiet:active:not(:disabled) {
+  background: color-mix(in srgb, var(--raised) 84%, #000);
+  transition-duration: 0s;
+}
+.set-btn.primary:active:not(:disabled) {
+  background: color-mix(in srgb, var(--action) 84%, #000);
+}
 .set-input {
   position: relative;
   box-sizing: border-box;
