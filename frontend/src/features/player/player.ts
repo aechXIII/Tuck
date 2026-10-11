@@ -318,17 +318,16 @@ export function installPlayer(host: PlayerHost): PlayerApi {
     updateMuteIcon();
   }
 
-  // while playing, the playhead and the segment-end check follow every decoded frame;
+  // while playing, the playhead and the segment-end check follow every display frame;
   // timeupdate alone fires only about four times a second, so the playhead stepped and could
-  // run past a segment's end by that much
-  let frameLoop: { video: HTMLVideoElement; id: number; kind: "frame" | "animation" } | null = null;
+  // run past a segment's end by that much. Video frame callbacks are not used here because
+  // WebKitGTK drawing in software can offer them without ever calling them
+  let frameLoop: number | null = null;
 
   function stopFrameLoop(): void {
-    if (!frameLoop) return;
-    const { video, id, kind } = frameLoop;
+    if (frameLoop === null) return;
+    clock.cancelAnimationFrame(frameLoop);
     frameLoop = null;
-    if (kind === "frame") video.cancelVideoFrameCallback(id);
-    else clock.cancelAnimationFrame(id);
   }
 
   function startFrameLoop(video: HTMLVideoElement): void {
@@ -339,16 +338,9 @@ export function installPlayer(host: PlayerHost): PlayerApi {
         return;
       }
       updateTime();
-      schedule();
+      frameLoop = clock.requestAnimationFrame(tick);
     };
-    const schedule = (): void => {
-      if (typeof video.requestVideoFrameCallback === "function") {
-        frameLoop = { video, id: video.requestVideoFrameCallback(tick), kind: "frame" };
-      } else {
-        frameLoop = { video, id: clock.requestAnimationFrame(tick), kind: "animation" };
-      }
-    };
-    schedule();
+    frameLoop = clock.requestAnimationFrame(tick);
   }
 
   function onPlay(): void {

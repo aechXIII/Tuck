@@ -13,6 +13,8 @@
 ### Changed
 
 - Frame blending is much faster, and a selection late in a long video starts blending right away
+- Smoother video previews on Linux
+- Faster first video import after starting Tuck on Linux
 
 ## [0.5.2] - 2026-09-19
 

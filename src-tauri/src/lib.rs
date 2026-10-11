@@ -125,6 +125,16 @@ pub fn run() {
                 window.set_decorations(false)?;
                 platform::windows_caption::remember_app(app.handle());
             }
+            #[cfg(target_os = "linux")]
+            if let Some(window) = app.get_webview_window("main") {
+                let handle = app.handle().clone();
+                platform::watch_gpu_renderer(&window, move || {
+                    let app = handle.clone();
+                    tauri::async_runtime::spawn(
+                        commands::lifecycle::restart_after_gpu_renderer_crash(app),
+                    );
+                })?;
+            }
             // the backend starts in the background so the page can draw its own
             // starting screen; requests made meanwhile wait for it to be ready
             let (state, starter) = BackendState::starting();

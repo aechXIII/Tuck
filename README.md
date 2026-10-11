@@ -66,10 +66,15 @@ FFmpeg/ffprobe, and the plugins used for video previews.
 - If the AppImage reports that FUSE is missing, run
   it with `./Tuck-*-x86_64.AppImage --appimage-extract-and-run` (or
   `tuck --appimage-extract-and-run` after using the installer script).
-- If video previews stay blank, try launching with
+- Tuck draws with the GPU when your computer has a real graphics driver, and
+  without it in virtual machines. If the GPU drawing crashes, Tuck restarts and
+  draws without it from then on, until the next update.
+- If the window stays blank, launch with
+  `WEBKIT_DISABLE_COMPOSITING_MODE=1 ./Tuck-*-x86_64.AppImage` to draw without
+  the GPU.
+- If only video previews stay blank, try launching with
   `TUCK_WEBKIT_COMPOSITING=1 ./Tuck-*-x86_64.AppImage`.
-- Hardware-accelerated display is off by default for compatibility with virtual
-  machines. To enable it, launch with
+- To always use the GPU, launch with
   `TUCK_WEBKIT_ACCELERATED=1 ./Tuck-*-x86_64.AppImage`.
 
 ## Features

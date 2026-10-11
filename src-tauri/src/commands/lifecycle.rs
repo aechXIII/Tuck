@@ -229,6 +229,18 @@ pub async fn restart_app(
     app.restart();
 }
 
+/// The page died with the GPU renderer, so nothing on screen can be saved or asked
+/// about. The platform layer has already chosen software drawing for the next launch,
+/// so a restart brings the editor back instead of leaving a blank window.
+#[cfg(target_os = "linux")]
+pub async fn restart_after_gpu_renderer_crash(app: tauri::AppHandle) {
+    if let Some(close) = app.try_state::<CloseState>() {
+        close.begin_exit();
+    }
+    shut_down_backend(&app).await;
+    app.restart();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

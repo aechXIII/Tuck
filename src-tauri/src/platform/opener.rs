@@ -25,6 +25,19 @@ fn host_command(program: &str) -> std::process::Command {
     command
 }
 
+/// GStreamer settings the AppImage launcher and Tuck set for the bundled plugins.
+/// The launcher replaces any value the user had, so host programs get none of them.
+#[cfg(target_os = "linux")]
+const BUNDLED_GSTREAMER_KEYS: &[&str] = &[
+    "GST_PLUGIN_SYSTEM_PATH",
+    "GST_PLUGIN_SYSTEM_PATH_1_0",
+    "GST_PLUGIN_PATH_1_0",
+    "GST_PLUGIN_SCANNER_1_0",
+    "GST_PTP_HELPER_1_0",
+    "GST_REGISTRY_1_0",
+    "GST_REGISTRY_REUSE_PLUGIN_SCANNER",
+];
+
 #[cfg(target_os = "linux")]
 fn clean_host_environment(
     command: &mut std::process::Command,
@@ -33,6 +46,13 @@ fn clean_host_environment(
 ) {
     // host programs must not load the AppImage's older libraries and plugins
     for (key, value) in environment {
+        if key
+            .to_str()
+            .is_some_and(|key| BUNDLED_GSTREAMER_KEYS.contains(&key))
+        {
+            command.env_remove(key);
+            continue;
+        }
         if !matches!(
             key.to_str(),
             Some(
@@ -369,6 +389,14 @@ mod tests {
             ("PATH", "/tmp/Tuck/usr/bin:/usr/bin"),
             ("GIO_MODULE_DIR", "/tmp/Tuck/usr/lib/gio/modules"),
             ("XDG_DATA_DIRS", "/tmp/Tuck/usr/share:/usr/share"),
+            (
+                "GST_PLUGIN_SYSTEM_PATH_1_0",
+                "/home/a/.cache/com.tuck.app/gstreamer/plugins",
+            ),
+            (
+                "GST_REGISTRY_1_0",
+                "/home/a/.cache/com.tuck.app/gstreamer/registry.bin",
+            ),
             ("DBUS_SESSION_BUS_ADDRESS", "unix:path=/run/user/1000/bus"),
             ("DISPLAY", ":1"),
         ]
@@ -385,6 +413,7 @@ mod tests {
         assert!(output.contains("DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus\n"));
         assert!(output.contains("DISPLAY=:1\n"));
         assert!(!output.contains("GIO_MODULE_DIR="));
+        assert!(!output.contains("GST_"));
     }
 
     #[cfg(target_os = "linux")]
