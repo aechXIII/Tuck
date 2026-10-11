@@ -12,6 +12,8 @@ import {
   resultNote,
   resultNoteDetail,
   targetFit,
+  taskbarProgress,
+  TASKBAR_IDLE,
   batchSummary,
   isQueueActive,
   queueItemState,
@@ -403,4 +405,50 @@ test("a finished export keeps its note and says whether it fit its target", () =
     "2 videos exported. 1 has a note in Exports.",
   );
   assert.equal(exportRows([fallback], () => 0).finished[0]?.note, fallback.encoder_fallback);
+});
+
+test("the taskbar crosses the whole batch, goes red after failures and clears when looked at", () => {
+  const steps: QueueItem[][] = [
+    [
+      { id: "a", source: "a", state: "running", progress: 50 },
+      { id: "b", source: "b", state: "pending" },
+    ],
+    [
+      { id: "a", source: "a", state: "completed" },
+      { id: "b", source: "b", state: "running", progress: 0, progress_info: { indeterminate: true } },
+    ],
+    [
+      { id: "a", source: "a", state: "completed" },
+      { id: "b", source: "b", state: "running", progress: 40 },
+    ],
+    [
+      { id: "a", source: "a", state: "completed" },
+      { id: "b", source: "b", state: "failed", error: "boom" },
+    ],
+    [
+      { id: "a", source: "a", state: "completed" },
+      { id: "b", source: "b", state: "failed", error: "boom" },
+    ],
+  ];
+  let view = emptyQueueView();
+  let taskbar = TASKBAR_IDLE;
+  const seen = steps.map((items) => {
+    view = reduceQueueSnapshot(view, { items });
+    taskbar = taskbarProgress(items, view, taskbar);
+    return taskbar;
+  });
+  assert.deepEqual(seen, [
+    { state: "normal", progress: 25, flash: false },
+    { state: "indeterminate", progress: null, flash: false },
+    { state: "normal", progress: 70, flash: false },
+    { state: "error", progress: 100, flash: true },
+    // the next poll keeps it red without asking for attention again
+    { state: "error", progress: 100, flash: false },
+  ]);
+
+  const ok = reduceQueueSnapshot(
+    reduceQueueSnapshot(emptyQueueView(), { items: [{ id: "c", source: "c", state: "running", progress: 90 }] }),
+    { items: [{ id: "c", source: "c", state: "completed" }] },
+  );
+  assert.deepEqual(taskbarProgress([{ id: "c", source: "c", state: "completed" }], ok, taskbar), TASKBAR_IDLE);
 });

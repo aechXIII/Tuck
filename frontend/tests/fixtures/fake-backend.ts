@@ -201,6 +201,8 @@ export async function installFakeBackend(
         setInterfaceSize: (size: string) => respond("setInterfaceSize", [size]),
         notifyWhenUnfocused: (title: string, body: string) =>
           respond("notifyWhenUnfocused", [title, body]),
+        setTaskbarProgress: (state: string, progress: number | null, flash: boolean) =>
+          respond("setTaskbarProgress", [state, progress, flash]),
       };
       window.__tuckFakeBackendCalls = calls;
       // the app takes window.tuckBackendClient as a ready BackendClient before it

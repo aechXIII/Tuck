@@ -26,7 +26,6 @@ for (const size of [{width:1240,height:800}, {width:960,height:640}]) {
     await expect(page.getByLabel("Enable frame blending")).toBeVisible();
     await expect(page.getByLabel("Blur amount")).toBeVisible();
     await expect(page.getByLabel("Blur amount")).toBeDisabled();
-    await panel.screenshot({path:`frontend/.scratch/blend-disabled-${size.width}.png`});
     await page.getByLabel("Enable frame blending").check();
     await page.getByLabel("Blur amount").focus();
     await page.keyboard.press("ArrowUp");
@@ -53,7 +52,6 @@ for (const size of [{width:1240,height:800}, {width:960,height:640}]) {
     expect(preview.visible).toBe(true);
     expect(Math.abs(preview.left)).toBeLessThan(1);
     expect(Math.abs(preview.right)).toBeLessThan(1);
-    await panel.screenshot({path:`frontend/.scratch/blend-vegas-${size.width}.png`});
     await chooseSelect(page, page.getByLabel("Weighting", {exact:true}), "equal");
     await chooseSelect(page, page.getByLabel("Output frame rate", {exact:true}), "custom");
     await page.getByLabel("Target frame rate", {exact:true}).fill("29.97");
@@ -74,8 +72,6 @@ for (const size of [{width:1240,height:800}, {width:960,height:640}]) {
     await page.getByLabel("Custom weights", {exact:false}).fill("1, 2, 1");
     await page.getByLabel("Blend in linear light", {exact:true}).check();
     await expect(page.locator("#blend-error")).toBeHidden();
-    await panel.screenshot({path:`frontend/.scratch/blend-panel-${size.width}.png`});
-    await page.screenshot({path:`frontend/.scratch/blend-desktop-${size.width}.png`});
     await page.getByRole("button", {name:"Compress this video", exact:true}).click();
     await expect.poll(async () => page.evaluate(() => (window.__tuckFakeBackendCalls ?? []).filter(c=>c.method==="enqueueWithOptions").length)).toBe(1);
     const request = await page.evaluate(() => (window.__tuckFakeBackendCalls ?? []).find(c=>c.method==="enqueueWithOptions")?.args[0]);
@@ -105,5 +101,4 @@ test("Vegas has a weight preview before a video is added", async ({page}) => {
   const bars = page.locator("#blend-chart rect");
   await expect(bars).toHaveCount(32);
   expect(await bars.evaluateAll(nodes => nodes.every(node => node.getBoundingClientRect().height > 0))).toBe(true);
-  await page.locator("#frame-blending-panel").screenshot({path:"frontend/.scratch/blend-vegas-no-source.png"});
 });

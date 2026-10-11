@@ -26,7 +26,6 @@ for (const width of [1240, 960]) {
     await expect(page.getByLabel("Custom width", {exact:true})).toBeHidden();
     await expect(page.getByLabel("Scaler algorithm")).toBeVisible();
     expect(await page.locator("#export-fps-select option").evaluateAll(options => options.map(o => (o as HTMLOptionElement).value))).toEqual(["source", "24", "30", "60", "120", "custom"]);
-    await panel.screenshot({path:`frontend/.scratch/video-simple-${width}.png`});
     await expect(fps).toBeHidden();
     await expect(fps).toHaveValue("900");
     await chooseSelect(page, fpsPreset, "60");
@@ -51,8 +50,6 @@ for (const width of [1240, 960]) {
     await expect(page.locator("#video-error")).toContainText("2 pixels");
     await page.getByLabel("Custom width", {exact:true}).fill("1600");
     await expect(page.locator("#video-error")).toBeHidden();
-    await panel.screenshot({path:`frontend/.scratch/video-controls-${width}.png`});
-    await page.screenshot({path:`frontend/.scratch/video-layout-${width}.png`});
     expect(await panel.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
     await page.getByRole("button", {name:"Compress this video",exact:true}).click();
     const request = await page.evaluate(() => (window.__tuckFakeBackendCalls ?? []).find(c => c.method === "enqueueWithOptions")?.args[0]);

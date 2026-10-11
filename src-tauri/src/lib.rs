@@ -6,7 +6,7 @@ pub mod platform;
 
 use backend::{BackendLaunchConfig, BackendState};
 use commands::backend::backend_request;
-use commands::desktop::{notify_when_unfocused, set_interface_size};
+use commands::desktop::{notify_when_unfocused, set_interface_size, set_taskbar_progress};
 use commands::lifecycle::{
     acknowledge_close_request, confirm_close, handle_close_request, restart_app, CloseState,
 };
@@ -169,7 +169,8 @@ pub fn run() {
         set_caption_maximize_area,
         show_window_menu,
         set_interface_size,
-        notify_when_unfocused
+        notify_when_unfocused,
+        set_taskbar_progress
     ]);
 
     builder

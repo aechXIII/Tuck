@@ -30,7 +30,6 @@ for (const width of [1240, 960]) {
     await page.keyboard.press("Enter");
     await expect(page.getByLabel("Apply LUT", {exact:true})).toBeHidden();
     await expect(page.getByLabel("Strength", {exact:true})).toBeHidden();
-    await panel.screenshot({path:`frontend/.scratch/lut-empty-${width}.png`});
     await panel.getByRole("button", {name:"Import",exact:true}).click();
     await expect(page.locator("#lut-current-name")).toHaveText("Warm.cube");
     await expect(page.getByLabel("Apply LUT", {exact:true})).toBeChecked();
@@ -57,8 +56,6 @@ for (const width of [1240, 960]) {
       return [canvas.left-video.left, canvas.top-video.top, canvas.width-video.width, canvas.height-video.height];
     });
     for (const difference of bounds) expect(Math.abs(difference)).toBeLessThan(1);
-    await page.screenshot({path:`frontend/.scratch/lut-editor-${width}.png`});
-    await panel.screenshot({path:`frontend/.scratch/lut-loaded-${width}.png`});
     await page.getByRole("button", {name:"Compress this video",exact:true}).click();
     const request = await page.evaluate(() => window.__tuckFakeBackendCalls?.filter(c=>c.method==="enqueueWithOptions").at(-1)?.args[0]);
     expect(request).toMatchObject({lut:{enabled:true,path:"C:/managed/abc.cube",name:"Warm.cube",strength:.35}});
@@ -157,8 +154,6 @@ test("blending errors leave the LUT preview enabled and FPS controls stay synchr
   const calls = await page.evaluate(() => window.__tuckFakeBackendCalls ?? []);
   expect(calls.filter(call=>call.method==="pickLutFile")).toHaveLength(0);
   expect(calls.filter(call=>call.method==="createPlan").at(-1)?.args[0]).toMatchObject({custom_fps:47.5,lut:{enabled:true},frame_blending:{enabled:true}});
-  await page.locator("#frame-blending-panel").screenshot({path:"frontend/.scratch/blend-shared-fps-960.png"});
-  await page.locator("#lut-panel").screenshot({path:"frontend/.scratch/lut-library-960.png"});
   await page.reload();
   await page.getByRole("button",{name:"Inspector",exact:true}).click();
   await page.locator("#lut-panel > summary").click();

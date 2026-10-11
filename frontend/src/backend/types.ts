@@ -74,6 +74,9 @@ export interface Settings extends JsonObject {
 
 export type AccentColor = "violet" | "blue" | "teal" | "green" | "amber" | "rose";
 export type InterfaceSize = "compact" | "default" | "large";
+
+/** What the taskbar button shows for the export queue. */
+export type TaskbarProgressState = "none" | "normal" | "indeterminate" | "error";
 export type TimelineStyle = "graphite" | "violet";
 export type TimeFormat = "seconds" | "timecode" | "frames";
 export type OutputLocation = "source" | "subfolder" | "folder";
@@ -232,6 +235,7 @@ export interface NativeBackendClient {
   pickSaveFile(defaultName?: string): Promise<BackendResult<PathSelection>>;
   setInterfaceSize(size: InterfaceSize): Promise<BackendResult<EmptyPayload>>;
   notifyWhenUnfocused(title: string, body: string): Promise<BackendResult<NotificationResult>>;
+  setTaskbarProgress(state: TaskbarProgressState, progress: number | null, flash: boolean): Promise<BackendResult<EmptyPayload>>;
 }
 
 export interface BackendClient extends DomainBackendClient, NativeBackendClient {}

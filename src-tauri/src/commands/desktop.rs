@@ -1,5 +1,6 @@
 use serde::Deserialize;
-use tauri::LogicalSize;
+use tauri::window::{ProgressBarState, ProgressBarStatus};
+use tauri::{LogicalSize, UserAttentionType};
 use tauri_plugin_notification::NotificationExt;
 
 use crate::backend::protocol::PublicBackendError;
@@ -128,6 +129,60 @@ pub fn notify_when_unfocused(
     Ok(true)
 }
 
+/// What the taskbar button shows for the export queue.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskbarProgress {
+    None,
+    Normal,
+    Indeterminate,
+    Error,
+}
+
+fn progress_bar_state(
+    state: TaskbarProgress,
+    progress: Option<u8>,
+) -> Result<ProgressBarState, PublicBackendError> {
+    if progress.is_some_and(|value| value > 100) {
+        return Err(PublicBackendError::new(
+            "INVALID_REQUEST",
+            "Taskbar progress must be between 0 and 100.",
+        ));
+    }
+    let progress = progress.map(u64::from);
+    let (status, progress) = match state {
+        TaskbarProgress::None => (ProgressBarStatus::None, None),
+        TaskbarProgress::Normal => (ProgressBarStatus::Normal, Some(progress.unwrap_or(0))),
+        TaskbarProgress::Indeterminate => (ProgressBarStatus::Indeterminate, None),
+        // a failed batch fills the button red so it reads as finished, not stuck
+        TaskbarProgress::Error => (ProgressBarStatus::Error, Some(progress.unwrap_or(100))),
+    };
+    Ok(ProgressBarState {
+        status: Some(status),
+        progress,
+    })
+}
+
+/// Mirrors queue progress on the taskbar button. `flash` asks for attention once, and only
+/// while Tuck is in the background. Linux shows this only on desktops with libunity.
+#[tauri::command]
+pub fn set_taskbar_progress(
+    window: tauri::WebviewWindow,
+    state: TaskbarProgress,
+    progress: Option<u8>,
+    flash: bool,
+) -> Result<(), PublicBackendError> {
+    let bar = progress_bar_state(state, progress)?;
+    window.set_progress_bar(bar).map_err(|_| {
+        PublicBackendError::new("INTERNAL_ERROR", "Could not update the taskbar progress.")
+    })?;
+    if flash && !window.is_focused().unwrap_or(false) {
+        // the progress already shows the result, so a refused flash isn't worth an error
+        let _ = window.request_user_attention(Some(UserAttentionType::Informational));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -164,5 +219,44 @@ mod tests {
         assert!(validate_notification("   ", "body").is_err());
         assert!(validate_notification("Title\u{0007}", "body").is_err());
         assert!(validate_notification("Title", &"a".repeat(MAX_NOTIFICATION_BODY + 1)).is_err());
+    }
+
+    #[test]
+    fn taskbar_states_parse_from_their_names_only() {
+        for (name, state) in [
+            ("none", TaskbarProgress::None),
+            ("normal", TaskbarProgress::Normal),
+            ("indeterminate", TaskbarProgress::Indeterminate),
+            ("error", TaskbarProgress::Error),
+        ] {
+            assert_eq!(
+                serde_json::from_value::<TaskbarProgress>(serde_json::json!(name)).unwrap(),
+                state
+            );
+        }
+        for name in ["Normal", "paused", ""] {
+            assert!(serde_json::from_value::<TaskbarProgress>(serde_json::json!(name)).is_err());
+        }
+    }
+
+    #[test]
+    fn taskbar_progress_maps_to_the_native_bar() {
+        let bar = progress_bar_state(TaskbarProgress::Normal, Some(42)).unwrap();
+        assert!(matches!(bar.status, Some(ProgressBarStatus::Normal)));
+        assert_eq!(bar.progress, Some(42));
+
+        let bar = progress_bar_state(TaskbarProgress::Indeterminate, Some(42)).unwrap();
+        assert!(matches!(bar.status, Some(ProgressBarStatus::Indeterminate)));
+        assert_eq!(bar.progress, None);
+
+        let bar = progress_bar_state(TaskbarProgress::Error, None).unwrap();
+        assert!(matches!(bar.status, Some(ProgressBarStatus::Error)));
+        assert_eq!(bar.progress, Some(100));
+
+        let bar = progress_bar_state(TaskbarProgress::None, Some(10)).unwrap();
+        assert!(matches!(bar.status, Some(ProgressBarStatus::None)));
+        assert_eq!(bar.progress, None);
+
+        assert!(progress_bar_state(TaskbarProgress::Normal, Some(101)).is_err());
     }
 }

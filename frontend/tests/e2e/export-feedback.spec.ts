@@ -234,3 +234,30 @@ test("removing a video slides the cards below into its place, and Undo brings it
   await expect(page.locator(".clip")).toHaveCount(3);
   expect(await slides()).toBeGreaterThan(0);
 });
+
+test("the taskbar follows the whole batch and turns red when it ends with a failure", async ({ page }) => {
+  const fixture = fixtureWith([VIDEO]);
+  fixture.responseSequences = {
+    getQueueState: [
+      {
+        items: [
+          { id: "a", source: "Alpha.mp4", source_path: VIDEO, state: "running", progress: 50 },
+          { id: "b", source: "Bravo.mp4", source_path: "C:\videos\Bravo.mp4", state: "pending" },
+        ],
+      },
+    ],
+  };
+  fixture.responses.getQueueState = {
+    items: [
+      { id: "a", source: "Alpha.mp4", source_path: VIDEO, state: "completed", result_size: 9_000_000 },
+      { id: "b", source: "Bravo.mp4", source_path: "C:\videos\Bravo.mp4", state: "failed", error: "FFmpeg stopped" },
+    ],
+  };
+  await open(page, fixture);
+  const taskbarCalls = () =>
+    page.evaluate(() => window.__tuckFakeBackendCalls?.filter((call) => call.method === "setTaskbarProgress").map((call) => call.args) ?? []);
+  await expect.poll(taskbarCalls).toEqual([
+    ["normal", 25, false],
+    ["error", 100, true],
+  ]);
+});

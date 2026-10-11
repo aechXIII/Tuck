@@ -222,7 +222,6 @@ for (const width of [1240, 960]) {
     const card = page.locator("#prof-card");
     const savedBounds = (await card.boundingBox())!;
     const savedTargetTop = (await page.locator("#sz-grp").boundingBox())!.y;
-    await card.screenshot({ path: `.scratch/profile-card-polish/clean-${width}.png` });
     await setSize(page, "25");
     await expect(card.getByText("Unsaved changes", { exact: true })).toBeVisible();
     await expect(page.locator("#prof-sub")).toHaveAttribute("title", "Target 25 MB, was 10 MB");
@@ -243,12 +242,9 @@ for (const width of [1240, 960]) {
     });
     expect(layout.fits).toBe(true);
     expect(layout.buttons.every(button => button.fits && button.inside)).toBe(true);
-    await page.screenshot({ path: `.scratch/profile-card-polish/full-${width}.png` });
-    await card.screenshot({ path: `.scratch/profile-card-polish/changed-${width}.png` });
     await card.getByRole("button", { name: "Discard", exact: true }).focus();
     await page.keyboard.press("Tab");
     await expect(card.getByRole("button", { name: "Save to profile", exact: true })).toBeFocused();
-    await card.screenshot({ path: `.scratch/profile-card-polish/focus-${width}.png` });
     await card.getByRole("button", { name: "Discard", exact: true }).click();
     await expect(page.locator("#prof-changed")).toBeHidden();
     expect((await card.boundingBox())!.height).toBeCloseTo(savedBounds.height, 2);

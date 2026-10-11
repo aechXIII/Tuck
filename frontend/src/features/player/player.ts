@@ -318,14 +318,50 @@ export function installPlayer(host: PlayerHost): PlayerApi {
     updateMuteIcon();
   }
 
+  // while playing, the playhead and the segment-end check follow every decoded frame;
+  // timeupdate alone fires only about four times a second, so the playhead stepped and could
+  // run past a segment's end by that much
+  let frameLoop: { video: HTMLVideoElement; id: number; kind: "frame" | "animation" } | null = null;
+
+  function stopFrameLoop(): void {
+    if (!frameLoop) return;
+    const { video, id, kind } = frameLoop;
+    frameLoop = null;
+    if (kind === "frame") video.cancelVideoFrameCallback(id);
+    else clock.cancelAnimationFrame(id);
+  }
+
+  function startFrameLoop(video: HTMLVideoElement): void {
+    stopFrameLoop();
+    const tick = (): void => {
+      if (disposed || video.paused || video.ended) {
+        frameLoop = null;
+        return;
+      }
+      updateTime();
+      schedule();
+    };
+    const schedule = (): void => {
+      if (typeof video.requestVideoFrameCallback === "function") {
+        frameLoop = { video, id: video.requestVideoFrameCallback(tick), kind: "frame" };
+      } else {
+        frameLoop = { video, id: clock.requestAnimationFrame(tick), kind: "animation" };
+      }
+    };
+    schedule();
+  }
+
   function onPlay(): void {
     const btn = byId("btn-play");
     if (btn) btn.classList.add("playing");
+    const video = byId<HTMLVideoElement>("vid");
+    if (video) startFrameLoop(video);
   }
 
   function onPause(): void {
     const btn = byId("btn-play");
     if (btn) btn.classList.remove("playing");
+    stopFrameLoop();
   }
 
   function onDurationOrMeta(): void {
@@ -361,7 +397,9 @@ export function installPlayer(host: PlayerHost): PlayerApi {
   const vid = byId<HTMLVideoElement>("vid");
   if (vid) {
     vid.addEventListener("emptied", resetSeek);
+    vid.addEventListener("emptied", stopFrameLoop);
     vid.addEventListener("error", resetSeek);
+    vid.addEventListener("error", stopFrameLoop);
     vid.addEventListener("play", onPlay);
     vid.addEventListener("pause", onPause);
     vid.addEventListener("timeupdate", updateTime);
@@ -393,9 +431,12 @@ export function installPlayer(host: PlayerHost): PlayerApi {
     dispose: () => {
       if (disposed) return;
       disposed = true;
+      stopFrameLoop();
       if (vid) {
         vid.removeEventListener("emptied", resetSeek);
+        vid.removeEventListener("emptied", stopFrameLoop);
         vid.removeEventListener("error", resetSeek);
+        vid.removeEventListener("error", stopFrameLoop);
         vid.removeEventListener("play", onPlay);
         vid.removeEventListener("pause", onPause);
         vid.removeEventListener("timeupdate", updateTime);

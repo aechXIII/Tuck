@@ -48,16 +48,10 @@ for (const width of [1240, 960]) {
       expect([input.height,input.font,input.size]).toEqual([metrics.input.height,metrics.input.font,metrics.input.size]);
     }
     for (const toggle of metrics.checks) expect(toggle.right).toBeCloseTo(metrics.input.right, 0);
-    await page.locator('#frame-blending-panel > summary').click();
-    await page.locator('#audio-br').scrollIntoViewIfNeeded();
-    await page.screenshot({path:`frontend/.scratch/lut-audio-alignment-${width}.png`});
     expect(metrics.pickerRow.left).toBeCloseTo(metrics.audio.left, 0);
     expect(metrics.pickerRow.right).toBeCloseTo(metrics.audio.right, 0);
     // the LUT row is sized and rounded like the dropdowns around it
     expect(metrics.pickerRow.radius).toEqual(metrics.input.radius);
     expect(metrics.picker.height).toEqual(metrics.input.height);
-    await page.locator('#frame-blending-panel').screenshot({path:`frontend/.scratch/effects-alignment-blend-${width}.png`});
-    await page.locator('#lut-panel').screenshot({path:`frontend/.scratch/effects-alignment-lut-${width}.png`});
-    await page.screenshot({path:`frontend/.scratch/effects-alignment-full-${width}.png`});
   });
 }

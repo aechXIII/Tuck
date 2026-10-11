@@ -296,9 +296,13 @@ test("interface size and notifications are native commands", async () => {
 
   assert.deepEqual(await client.setInterfaceSize("large"), { ok: true, value: {} });
   assert.deepEqual(await client.notifyWhenUnfocused("Exports finished", "2 videos saved."), { ok: true, value: { shown: true } });
+  assert.deepEqual(await client.setTaskbarProgress("normal", 42, false), { ok: true, value: {} });
+  assert.deepEqual(await client.setTaskbarProgress("error", null, true), { ok: true, value: {} });
   assert.deepEqual(calls, [
     { command: "set_interface_size", args: { size: "large" } },
     { command: "notify_when_unfocused", args: { title: "Exports finished", body: "2 videos saved." } },
+    { command: "set_taskbar_progress", args: { state: "normal", progress: 42, flash: false } },
+    { command: "set_taskbar_progress", args: { state: "error", progress: null, flash: true } },
   ]);
 
   const failing = createTauriBackendClient(async () => {

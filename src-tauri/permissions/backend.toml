@@ -15,8 +15,8 @@ commands.allow = ["minimize_window", "toggle_maximize_window", "set_caption_maxi
 
 [[permission]]
 identifier = "allow-desktop-preferences"
-description = "Allows the interface size setting and the queue-finished notification."
-commands.allow = ["set_interface_size", "notify_when_unfocused"]
+description = "Allows the interface size setting, the queue-finished notification and taskbar progress."
+commands.allow = ["set_interface_size", "notify_when_unfocused", "set_taskbar_progress"]
 
 [[permission]]
 identifier = "allow-app-lifecycle"

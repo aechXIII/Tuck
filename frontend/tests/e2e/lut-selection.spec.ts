@@ -58,7 +58,6 @@ for (const width of [1240, 960]) {
       const expected = index === 0 ? [223,159,63] : [96,32,192];
       pixel.forEach((value,i)=>expect(Math.abs(value-expected[i]!)).toBeLessThanOrEqual(2));
     }
-    await page.locator("#lut-panel").screenshot({path:`frontend/.scratch/lut-selection-${width}.png`});
     await select.click();
     await page.locator("#lut-options").getByRole("option",{name:"Invert",exact:true}).click();
     await expect(page.locator("#lut-error")).toHaveText("The LUT file is unavailable. Import it again.");

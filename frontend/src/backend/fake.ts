@@ -6,6 +6,7 @@ import type {
   DiagnosticsContext,
   DataPayload,
   InterfaceSize,
+  TaskbarProgressState,
   PlanRequest,
   ProfileInput,
   SendToKind,
@@ -563,6 +564,14 @@ class DeterministicFakeBackend implements BackendClient {
       "notifyWhenUnfocused",
       [title, body],
       this.#responses.notifyWhenUnfocused ?? success({ shown: false }),
+    );
+  }
+
+  setTaskbarProgress(state: TaskbarProgressState, progress: number | null, flash: boolean) {
+    return this.#record(
+      "setTaskbarProgress",
+      [state, progress, flash],
+      this.#responses.setTaskbarProgress ?? success({}),
     );
   }
 }

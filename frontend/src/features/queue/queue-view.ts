@@ -1,3 +1,5 @@
+import type { TaskbarProgressState } from "../../backend/types.ts";
+
 // the states tuck/models QueueState sends; anything else is treated as unknown
 export const QUEUE_ITEM_STATES = ["pending", "running", "completed", "failed", "cancelled"] as const;
 export type QueueItemState = (typeof QUEUE_ITEM_STATES)[number];
@@ -454,6 +456,42 @@ function runningDetail(
  * `previous` carries forward the had-active flag, the active-id set, and the
  * running-item progress so the displayed progress never regresses mid-job.
  */
+export interface TaskbarProgress {
+  readonly state: TaskbarProgressState;
+  /** Whole-batch percent; null when nothing is measured. */
+  readonly progress: number | null;
+  /** Ask for attention once, when a batch has just finished with failures. */
+  readonly flash: boolean;
+}
+
+export const TASKBAR_IDLE: TaskbarProgress = { state: "none", progress: null, flash: false };
+
+/**
+ * What the taskbar button shows for a reduced snapshot: the batch's measured progress while it
+ * runs, and red after a batch with failures until the window is looked at again.
+ */
+export function taskbarProgress(
+  items: readonly QueueItem[],
+  view: QueueViewState,
+  previous: TaskbarProgress,
+): TaskbarProgress {
+  if (view.finishedToast) {
+    return view.finishedToast.failedIds.length ? { state: "error", progress: 100, flash: true } : TASKBAR_IDLE;
+  }
+  if (!view.active) return previous.state === "error" ? { ...previous, flash: false } : TASKBAR_IDLE;
+  if (view.indeterminate) return { state: "indeterminate", progress: null, flash: false };
+  // each export in the batch counts once, so the bar crosses the whole batch instead of restarting per video
+  const batch = items.filter((item) => item.id && view.activeItemIds[item.id]);
+  if (!batch.length) return { state: "normal", progress: 0, flash: false };
+  let done = 0;
+  for (const item of batch) {
+    if (item.state === "pending") continue;
+    if (item.state === "running") done += (item.id === view.runningItemId ? view.progress : Math.round(item.progress ?? 0)) / 100;
+    else done += 1;
+  }
+  return { state: "normal", progress: Math.min(100, Math.floor((done / batch.length) * 100)), flash: false };
+}
+
 export function reduceQueueSnapshot(
   previous: QueueViewState,
   snapshot: QueueSnapshot,

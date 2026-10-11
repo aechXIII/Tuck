@@ -17,11 +17,14 @@ import {
   resultNote,
   resultNoteDetail,
   targetFit,
+  taskbarProgress,
+  TASKBAR_IDLE,
   videosToRemoveAfterExport,
   watchExports,
   type ExportRow,
   type QueueItem,
   type QueueViewState,
+  type TaskbarProgress,
   type WatchedExport,
 } from "./queue-view.ts";
 
@@ -332,6 +335,19 @@ export function installQueue(deps: QueueDeps): QueueApi {
   // failures already told to screen reader users while the rest of their batch kept going
   const announcedFailures = new Set<string>();
   let pollingQueue = false;
+  let taskbar: TaskbarProgress = TASKBAR_IDLE;
+
+  function showTaskbar(next: TaskbarProgress): void {
+    if (!next.flash && next.state === taskbar.state && next.progress === taskbar.progress) return;
+    taskbar = next;
+    // the taskbar only mirrors the queue bar, so a desktop without support loses nothing
+    void client().setTaskbarProgress(next.state, next.progress, next.flash);
+  }
+
+  // the red button has done its job once the user is back in Tuck
+  window.addEventListener("focus", () => {
+    if (taskbar.state === "error") showTaskbar(TASKBAR_IDLE);
+  });
 
   function libraryPath(sourcePath: string): string | null {
     if (session.clips[sourcePath]) return sourcePath;
@@ -427,6 +443,10 @@ export function installQueue(deps: QueueDeps): QueueApi {
       for (const item of items) if (item.state === "running" && item.id) queueActiveItemIds[item.id] = true;
 
       announceQueueChanges(previous, items);
+      const nextTaskbar = taskbarProgress(items, queueView, taskbar);
+      showTaskbar(
+        nextTaskbar.flash && session.appSettings.notify_when_done === false ? { ...nextTaskbar, flash: false } : nextTaskbar,
+      );
 
       const summary = queueView.finishedToast;
       const bar = byId("qbar");

@@ -15,6 +15,7 @@ import type {
   EncoderPayload,
   FileSelection,
   InterfaceSize,
+  TaskbarProgressState,
   LutPayload,
   LutLibraryPayload,
   LutHistoryClearedPayload,
@@ -852,6 +853,16 @@ class TauriTransport implements TauriBackendClient {
     } catch (error) {
       if (isBackendError(error)) return { ok: false, error };
       return backendFailure("TAURI_INVOKE_FAILED", errorMessage(error, "Could not show the notification"), { method: "notifyWhenUnfocused" });
+    }
+  }
+
+  async setTaskbarProgress(state: TaskbarProgressState, progress: number | null, flash: boolean): Promise<BackendResult<EmptyPayload>> {
+    try {
+      await this.#invoke("set_taskbar_progress", { state, progress, flash });
+      return { ok: true, value: {} };
+    } catch (error) {
+      if (isBackendError(error)) return { ok: false, error };
+      return backendFailure("TAURI_INVOKE_FAILED", errorMessage(error, "Could not update the taskbar progress"), { method: "setTaskbarProgress" });
     }
   }
 

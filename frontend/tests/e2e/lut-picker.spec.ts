@@ -37,7 +37,6 @@ for (const width of [1240, 960]) {
     expect(Math.abs(openMenu!.width - closedRow!.width)).toBeLessThanOrEqual(1);
     expect(Math.abs(openImport!.x - closedImport!.x)).toBeLessThanOrEqual(2);
     await expect(options).toHaveCount(entries.length);
-    await page.screenshot({path:`frontend/.scratch/lut-popup-${width}.png`});
     await search.fill("evening");
     await expect(options).toHaveCount(1);
     await expect(options).toHaveText(entries[2]!.name);
@@ -55,7 +54,6 @@ for (const width of [1240, 960]) {
     await search.fill("not a saved look");
     await expect(options).toHaveCount(0);
     await expect(popup.getByText("No LUTs found.",{exact:true})).toBeVisible();
-    await popup.screenshot({path:`frontend/.scratch/lut-popup-empty-${width}.png`});
     await page.keyboard.press("Enter");
     await expect(popup).toBeVisible();
     await search.fill("");
@@ -82,7 +80,6 @@ for (const width of [1240, 960]) {
     await expect(page.getByLabel("Apply LUT",{exact:true})).toBeChecked();
     await expect(popup.getByRole("button",{name:"Clear history",exact:true})).toBeDisabled();
     await expect(search).toBeFocused();
-    await popup.screenshot({path:`frontend/.scratch/lut-popup-cleared-${width}.png`});
     await page.keyboard.press("Escape");
     await expect(trigger).toBeFocused();
     await page.getByLabel("Strength",{exact:true}).fill("35");

@@ -97,3 +97,53 @@ test("past the last segment, playback loops back or stops as chosen", () => {
     assert.deepEqual(stopping.calls, ["pause"]);
   } finally { stopping.player.dispose(); }
 });
+
+test("while playing, the playhead follows every decoded frame and stops at a segment's end", () => {
+  const playheads: number[] = [];
+  const calls: string[] = [];
+  const frameCallbacks = new Map<number, VideoFrameRequestCallback>();
+  let nextFrame = 0;
+  const segments = [{ start: 0, end: 4 }, { start: 6, end: 8 }];
+  const video = Object.assign(new EventTarget(), {
+    currentTime: 3.9,
+    paused: false,
+    ended: false,
+    duration: 10,
+    pause() { calls.push("pause"); this.paused = true; },
+    play() { calls.push("play"); this.paused = false; return Promise.resolve(); },
+    requestVideoFrameCallback(callback: VideoFrameRequestCallback) { frameCallbacks.set(++nextFrame, callback); return nextFrame; },
+    cancelVideoFrameCallback(id: number) { frameCallbacks.delete(id); },
+  });
+  const host: PlayerHost = {
+    byId: <T extends HTMLElement>(id: string) => id === "vid" ? video as unknown as T : null,
+    clips: () => ({ a: {} as never }), selPath: () => "a",
+    getMuted: () => false, setMuted: () => {}, getVolBefore: () => 80, setVolBefore: () => {},
+    playbackSegments: () => segments, clipSegments: () => segments, videoDuration: () => 10,
+    setPlayheadUI: (time) => { playheads.push(time); }, document: {} as Document,
+    loopPlayback: () => true,
+    clock: {
+      setTimeout: () => 0, clearTimeout: () => {},
+      requestAnimationFrame: () => 0, cancelAnimationFrame: () => {},
+    },
+  };
+  const player = installPlayer(host);
+  const nextFrameTick = (time: number): void => {
+    video.currentTime = time;
+    const pending = [...frameCallbacks.values()];
+    frameCallbacks.clear();
+    for (const callback of pending) callback(0, {} as VideoFrameCallbackMetadata);
+  };
+  try {
+    video.dispatchEvent(new Event("play"));
+    nextFrameTick(3.95);
+    assert.equal(playheads.at(-1), 3.95);
+    // the frame past the segment's end moves straight on to the next segment
+    nextFrameTick(4.02);
+    assert.equal(video.currentTime, 6);
+    assert.ok(frameCallbacks.size > 0);
+
+    video.paused = true;
+    video.dispatchEvent(new Event("pause"));
+    assert.equal(frameCallbacks.size, 0);
+  } finally { player.dispose(); }
+});
