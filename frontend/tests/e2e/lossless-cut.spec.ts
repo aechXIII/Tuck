@@ -360,10 +360,10 @@ for (const width of [1440,960]) {
     await page.locator("#snap-all").click();
     await expect(page.locator("#tl-in")).toHaveAttribute("aria-valuenow","4");
     await expect(page.locator("#btn-one")).toBeEnabled();
-    await page.getByRole("button",{name:"Undo",exact:true}).click();
+    await page.locator("#btn-undo").click();
     await expect(page.locator("#tl-in")).toHaveAttribute("aria-valuenow","0");
     await expect(page.locator("#btn-one")).toBeEnabled();
-    await page.getByRole("button",{name:"Redo",exact:true}).click();
+    await page.locator("#btn-redo").click();
     await expect(page.locator("#tl-in")).toHaveAttribute("aria-valuenow","4");
     await expect(page.locator("#btn-one")).toBeEnabled();
   });
@@ -421,7 +421,7 @@ test("[ and ] move the playhead, or a focused handle, between keyframes", async 
   await page.keyboard.press("[");
   await expect(page.locator("#tl-out")).toHaveAttribute("aria-valuenow","8");
   await expect(page.locator("#ptime")).toHaveText("0:08.00 / 0:12.00");
-  await page.getByRole("button",{name:"Undo",exact:true}).click();
+  await page.locator("#btn-undo").click();
   await expect(page.locator("#tl-out")).toHaveAttribute("aria-valuenow","12");
   await expect(page.locator("#tl-in")).toHaveAttribute("aria-valuenow","4");
   await page.locator("#wf-c").click();
@@ -533,9 +533,11 @@ test("dragging a start snaps to keyframes and lights the keyframe it copies from
   const edge = (await page.locator('.tl-segment[data-segment-index="0"] .clip-edge.start').boundingBox())!;
   const x = (seconds: number) => track.x + track.width * seconds / 12;
   const y = edge.y + edge.height / 2;
+  // the edge keeps the spot it was grabbed by, so each move aims the edge, not the pointer
+  const grab = edge.x + edge.width / 2 - x(0);
   await page.mouse.move(edge.x + edge.width / 2, y);
   await page.mouse.down();
-  await page.mouse.move(x(3.96), y, {steps:6});
+  await page.mouse.move(x(3.96) + grab, y, {steps:6});
   await expect(page.locator("#kf-lane")).toHaveClass(/dragging/);
   await expect(page.locator("#kf-guides .kf-guide.landing")).toHaveCount(1);
   await page.mouse.up();
@@ -544,9 +546,10 @@ test("dragging a start snaps to keyframes and lights the keyframe it copies from
   await expect(page.locator("#kf-guides .kf-guide.landing")).toHaveCount(0);
   await page.locator("#btn-snap-toggle").click();
   const moved = (await page.locator('.tl-segment[data-segment-index="0"] .clip-edge.start').boundingBox())!;
+  const movedGrab = moved.x + moved.width / 2 - x(4);
   await page.mouse.move(moved.x + moved.width / 2, y);
   await page.mouse.down();
-  await page.mouse.move(x(7.95), y, {steps:6});
+  await page.mouse.move(x(7.95) + movedGrab, y, {steps:6});
   await page.mouse.up();
   await expect(page.locator("#tl-in")).not.toHaveAttribute("aria-valuenow","4");
   await expect(page.locator("#tl-in")).not.toHaveAttribute("aria-valuenow","8");
@@ -559,9 +562,11 @@ test("a dragged start says how much later the cut starts, at the keyframe it cop
   const track = (await page.locator("#tl-track").boundingBox())!;
   const edge = (await page.locator('.tl-segment[data-segment-index="0"] .clip-edge.start').boundingBox())!;
   const y = edge.y + edge.height / 2;
+  // the edge keeps the spot it was grabbed by, so each move aims the edge, not the pointer
+  const grab = edge.x + edge.width / 2 - track.x;
   await page.mouse.move(edge.x + edge.width / 2, y);
   await page.mouse.down();
-  await page.mouse.move(track.x + track.width * 5.5 / 12, y, {steps:6});
+  await page.mouse.move(track.x + track.width * 5.5 / 12 + grab, y, {steps:6});
   const note = page.locator("#kf-guides .kf-guide.landing .kf-landing-note");
   await expect(note).toHaveText("starts 2.5 s later");
   const noteBox = (await note.boundingBox())!;
@@ -569,11 +574,11 @@ test("a dragged start says how much later the cut starts, at the keyframe it cop
   // the clip shows its own range, so the bubble above it would only cover the ruler
   await expect(page.locator(".tl-segment.active .tl-segment-time")).toBeHidden();
   // close to the keyframe the note moves out from under the playhead's time
-  await page.mouse.move(track.x + track.width * 7.8 / 12, y, {steps:3});
+  await page.mouse.move(track.x + track.width * 7.8 / 12 + grab, y, {steps:3});
   await expect(note).toHaveText("starts 0.2 s later");
   const time = (await page.locator("#seq-playhead-time").boundingBox())!;
   expect((await note.boundingBox())!.x).toBeGreaterThanOrEqual(time.x + time.width);
-  await page.mouse.move(track.x + track.width * 3.97 / 12, y, {steps:3});
+  await page.mouse.move(track.x + track.width * 3.97 / 12 + grab, y, {steps:3});
   await expect(note).toHaveCount(0);
   await page.mouse.up();
   await expect(page.locator(".kf-landing-note")).toHaveCount(0);

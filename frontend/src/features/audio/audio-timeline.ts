@@ -53,10 +53,10 @@ export interface AudioTimelineHost {
   removeActiveSegment?: () => void;
   splitAtPlayhead?: () => void;
   History?: {
-    begin?: (path: string | null) => void;
+    begin?: (path: string | null, label?: string) => void;
     commit?: () => void;
     cancel?: () => void;
-    action?: <T>(path: string | null, fn: () => T) => T;
+    action?: <T>(path: string | null, fn: () => T, label?: string) => T;
   };
   TuckShortcuts?: {
     registerAction: (
@@ -176,6 +176,14 @@ function isTimelineModel(
 ): target is AudioTimelineModel {
   return "tracks" in target;
 }
+
+// names an audio drag on the Undo button
+const AUDIO_DRAG_LABELS: Record<string, string> = {
+  "trim-start": "trim audio start",
+  "trim-end": "trim audio end",
+  slip: "slip audio",
+  move: "move audio",
+};
 
 export function installAudioTimeline(host: AudioTimelineHost) {
   const session = host.session;
@@ -917,7 +925,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
         core.formatSourceTime(selectedAudioClip.sourceOut);
       clipEl.appendChild(slipReadout);
     }
-    host.History?.begin?.(session.selPath);
+    host.History?.begin?.(session.selPath, AUDIO_DRAG_LABELS[importedAction]);
     dragState = {
       action: importedAction,
       kind: "imported",
@@ -1282,11 +1290,18 @@ export function installAudioTimeline(host: AudioTimelineHost) {
     // normalization and undo can replace state while the request is pending
     // resolve the live target by track id before storing the waveform
     const trackId = isTimelineModel(target) ? null : target.id;
+    // a source waveform that didn't arrive may be asked for again the next time the video is selected;
+    // only a newer request for the same file keeps the flag, since that one will clear it
+    const releaseSourceLoading = (): void => {
+      if (trackId === null && clip.audioTimeline) clip.audioTimeline.sourceWaveformLoading = false;
+    };
     try {
       let result = await getBackendClient().getWaveform(path);
       if (currentWaveformGeneration(path) !== generation) return;
-      if (selectedVideo() !== clip || clip.path !== clipPath) return;
-      if (!result.ok || !clip.audioTimeline) return;
+      if (selectedVideo() !== clip || clip.path !== clipPath || !result.ok || !clip.audioTimeline) {
+        releaseSourceLoading();
+        return;
+      }
       if (trackId === null) {
         clip.audioTimeline.sourceWaveformUrl = result.value.url;
         clip.audioTimeline.sourceWaveformToken = result.value.token ?? "";
@@ -1299,7 +1314,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
       }
       if (selectedVideo() === clip) render();
     } catch (err) {
-      if (trackId === null && clip.audioTimeline) clip.audioTimeline.sourceWaveformLoading = false;
+      releaseSourceLoading();
     }
   }
 
@@ -1496,8 +1511,8 @@ export function installAudioTimeline(host: AudioTimelineHost) {
 
   // edits made through the api or the keyboard are one undo step each
   const history = host.History?.action ? { action: host.History.action } : null;
-  const recorded = <A extends unknown[], R>(run: (...args: A) => R) =>
-    recordedCommand(history, () => session.selPath, run);
+  const recorded = <A extends unknown[], R>(label: string, run: (...args: A) => R) =>
+    recordedCommand(history, () => session.selPath, run, label);
 
   let apiObject = {
     render: render,
@@ -1556,7 +1571,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
       }
     },
     addPaths: addPaths,
-    toggleMaster: recorded(function () {
+    toggleMaster: recorded("include audio", function () {
       let clip = selectedVideo();
       let state = ensureState(clip);
       if (!state) return;
@@ -1564,7 +1579,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
       render();
       setPlanDirty(clip);
     }),
-    toggleFragmentMute: recorded(function () {
+    toggleFragmentMute: recorded("mute audio clip", function () {
       let clip = selectedVideo();
       if (!clip || cutTask()) return;
       if (selectedTrackId !== "source") {
@@ -1603,7 +1618,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
     isSourceGroupSelected: function () {
       return selectedTrackId === "source";
     },
-    toggleSourceMute: recorded(function () {
+    toggleSourceMute: recorded("mute source audio", function () {
       let clip = selectedVideo();
       let state = ensureState(clip);
       if (!state) return;
@@ -1620,7 +1635,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
       applyPreviewVolume();
       setPlanDirty(clip);
     },
-    toggleTrackMute: recorded(function(trackId: string) {
+    toggleTrackMute: recorded("mute track", function(trackId: string) {
       let clip = selectedVideo();
       let track = findTrack(trackId, clip);
       if (!track) return;
@@ -1654,7 +1669,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
         // lookups normalize the model, so mutate the current state after them
         const state = ensureState(clip);
         if (!state) return;
-        host.History?.begin?.(clip.path);
+        host.History?.begin?.(clip.path, "remove audio track");
         releaseToken(track.mediaToken);
         releaseToken(track.waveformToken);
         const element = previewElements[track.id];
@@ -1671,7 +1686,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
         host.History?.commit?.();
       }, { title: "Remove audio track?", confirmLabel: "Remove", cancelLabel: "Keep track", danger: true });
     },
-    splitSelected: recorded(function () {
+    splitSelected: recorded("split audio", function () {
       let videoClip = selectedVideo();
       if (!videoClip) return;
       let at = sourceTime();
@@ -1694,7 +1709,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
       render();
       setPlanDirty(videoClip);
     }),
-    trimSelectedToPlayhead: recorded(function(endpoint: "start" | "end") {
+    trimSelectedToPlayhead: recorded("trim audio", function(endpoint: "start" | "end") {
       let videoClip = selectedVideo();
       let selected = findSelected(videoClip);
       if (!videoClip || !selected) return null;
@@ -1722,7 +1737,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
       setPlanDirty(videoClip);
       return selectedClipRangeData(videoClip);
     }),
-    deleteSelected: recorded(function () {
+    deleteSelected: recorded("delete audio clip", function () {
       let videoClip = selectedVideo();
       if (!videoClip) return;
       let selected = findSelected(videoClip);

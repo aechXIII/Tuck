@@ -79,3 +79,47 @@ test("a preview that fails to play falls back to the picture, and removal clears
   await expect(page.locator("#thumb")).toHaveCount(0);
   await expect(page.locator(".tl-segment")).toHaveCount(0);
 });
+
+test("switching videos shows the new video's own picture while its preview loads, never the last video", async ({ page }) => {
+  const fixture = previewFixture();
+  fixture.startup.files = [VIDEO, "C:\\media\\Sunset.mp4"];
+  fixture.responses.getThumbnail = { ok: true, thumbnail: PICTURE };
+  fixture.holdMethods = ["getMediaUrl"];
+  await installFakeBackend(page, fixture);
+  await page.goto("/");
+  await expect(page.locator(".clip")).toHaveCount(2);
+  const release = (url: string): Promise<void> => page.evaluate((value) => {
+    window.__tuckReleaseHeld?.("getMediaUrl", { ok: true, url: value, token: value });
+  }, url);
+  await release("https://media.test/harbour");
+  await expect.poll(() => page.locator("#vid").getAttribute("src")).toBe("https://media.test/harbour");
+  // wait for the second video's picture, so the switch has one to show
+  await expect.poll(() => page.evaluate(() => (window.__tuckFakeBackendCalls ?? []).filter((call) => call.method === "getThumbnail").length)).toBeGreaterThanOrEqual(2);
+
+  await page.locator(".clip").filter({ hasText: "Sunset.mp4" }).click();
+
+  await expect(page.locator("#vid")).not.toHaveAttribute("src", /./);
+  await expect(page.locator("#media-viewport #thumb")).toHaveAttribute("src", PICTURE);
+  await expect(page.locator("#preview-status")).toContainText("Loading preview…");
+
+  await release("https://media.test/sunset");
+  await expect.poll(() => page.locator("#vid").getAttribute("src")).toBe("https://media.test/sunset");
+});
+
+test("a video with neither a preview nor a picture says so and offers Retry", async ({ page }) => {
+  const fixture = previewFixture();
+  fixture.responses.getMediaUrl = { ok: false, error: "The preview could not be served" };
+  fixture.responses.getThumbnail = { ok: true, thumbnail: "" };
+  await installFakeBackend(page, fixture);
+  await page.goto("/");
+
+  await addVideo(page);
+
+  await expect(page.locator("#preview-status")).toContainText("Can’t show a preview of this video.");
+  const retry = page.locator("#preview-status").getByRole("button", { name: "Retry" });
+  await expect(retry).toBeVisible();
+  const asked = () => page.evaluate(() => (window.__tuckFakeBackendCalls ?? []).filter((call) => call.method === "getMediaUrl").length);
+  const before = await asked();
+  await retry.click();
+  await expect.poll(asked).toBeGreaterThan(before);
+});

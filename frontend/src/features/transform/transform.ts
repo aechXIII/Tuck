@@ -45,9 +45,9 @@ export interface TransformHost {
   clips: () => Readonly<Record<string, EditorClip>>;
   selPath: () => string | null;
   History?: {
-    begin: (path: string | null) => void;
+    begin: (path: string | null, label?: string) => void;
     commit: () => void;
-    action?: <T>(path: string | null, fn: () => T) => T;
+    action?: <T>(path: string | null, fn: () => T, label?: string) => T;
   };
   renderClips?: () => void;
   reqPreview?: () => void;
@@ -590,7 +590,7 @@ export function installTransform(host: TransformHost): TransformApi {
       /* capture optional */
     }
     doc.body.classList.add("crop-dragging");
-    host.History?.begin(host.selPath());
+    host.History?.begin(host.selPath(), "crop");
     event.preventDefault();
     event.stopPropagation();
   }
@@ -950,18 +950,18 @@ export function installTransform(host: TransformHost): TransformApi {
 
   // each transform button press is one undo step for the selected video
   const history = host.History?.action ? { action: host.History.action } : null;
-  const recorded = <A extends unknown[], R>(run: (...args: A) => R) =>
-    recordedCommand(history, host.selPath, run);
+  const recorded = <A extends unknown[], R>(label: string, run: (...args: A) => R) =>
+    recordedCommand(history, host.selPath, run, label);
 
   const api: TransformApi = {
     paintCropOverlay,
     syncTransformControls,
-    setCropAspect: recorded(setCropAspect),
-    setVideoRotation: recorded(setVideoRotation),
-    toggleVideoFlip: recorded(toggleVideoFlip),
-    setSizingMode: recorded(setSizingMode),
+    setCropAspect: recorded("crop", setCropAspect),
+    setVideoRotation: recorded("rotate", setVideoRotation),
+    toggleVideoFlip: recorded("flip", toggleVideoFlip),
+    setSizingMode: recorded("sizing", setSizingMode),
     clearCrop,
-    resetVideoTransform: recorded(resetVideoTransform),
+    resetVideoTransform: recorded("reset transform", resetVideoTransform),
     resetVideoTransformValues,
     cropTransformForRequest,
     dispose: () => {

@@ -342,3 +342,38 @@ test("alignToQueueOrder swaps waiting videos into run order and leaves the rest 
   assert.deepEqual(alignToQueueOrder(["A", "B"], ["X", "B", "A"]), ["B", "A"]);
   assert.deepEqual(alignToQueueOrder(["A", "B"], []), ["A", "B"]);
 });
+
+test("a size retry starts its own progress, and the bar and card name the same try", () => {
+  const fmt = (seconds: number) => `${seconds}s`;
+  const verifying: QueueItem = {
+    id: "a", source: "clip.mp4", state: "running", progress: 99, status_text: "Verifying target size",
+    progress_info: { stage: "verifying", retry_number: null },
+  };
+  let view = reduceQueueSnapshot(emptyQueueView(), { items: [verifying] }, fmt);
+  assert.equal(view.progress, 99);
+  assert.equal(view.attempt, 1);
+
+  const retrying: QueueItem = {
+    id: "a", source: "clip.mp4", state: "running", progress: 0,
+    status_text: "Retrying · Attempt 2 of 3 · Adjusting bitrate",
+    progress_info: { stage: "retrying", retry_number: 2 },
+  };
+  view = reduceQueueSnapshot(view, { items: [retrying] }, fmt);
+  assert.equal(view.attempt, 2);
+  assert.equal(view.progress, 0);
+
+  // the second try's encoding no longer carries the try number; the bar remembers it
+  const encoding: QueueItem = {
+    id: "a", source: "clip.mp4", state: "running", progress: 4, status_text: "Encoding",
+    progress_info: { stage: "encoding", eta_seconds: 41 },
+  };
+  view = reduceQueueSnapshot(view, { items: [encoding] }, fmt);
+  assert.equal(view.progress, 4);
+  assert.equal(view.detail, "Second try · adjusting bitrate · 4% · 41s left");
+  assert.equal(formatQueueStatus(encoding, view.attempt).split(" · ")[0], "Second try");
+  assert.equal(exportRows([encoding], () => 0, fmt, view).running[0]?.detail, view.detail);
+
+  // within a try, a lower reading still never moves the bar back
+  view = reduceQueueSnapshot(view, { items: [{ ...encoding, progress: 3 }] }, fmt);
+  assert.equal(view.progress, 4);
+});

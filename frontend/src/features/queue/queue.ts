@@ -204,7 +204,7 @@ export function installQueue(deps: QueueDeps): QueueApi {
     const list = byId("exports-list");
     if (!list) return;
     const doc = list.ownerDocument;
-    const rows = exportRows(items, sourceSize, formatTime);
+    const rows = exportRows(items, sourceSize, formatTime, queueView);
     // polling repaints the list; keep the focused button focused
     const active = doc.activeElement;
     const focused = active instanceof HTMLElement && list.contains(active)
@@ -281,7 +281,7 @@ export function installQueue(deps: QueueDeps): QueueApi {
     return Object.keys(session.clips).find((path) => session.clips[path]?.probeData?.path === sourcePath) ?? null;
   }
 
-  function mapQueueItems(items: readonly QueueItem[]): void {
+  function mapQueueItems(items: readonly QueueItem[], view: QueueViewState): void {
     const map: Record<string, QueueItem> = {};
     queueItemsById = {};
     for (const item of items) {
@@ -297,7 +297,8 @@ export function installQueue(deps: QueueDeps): QueueApi {
         // failures are told once per batch, when it finishes, rather than one toast each
         clip._queueState = item.state ?? "";
         clip._queueItemId = item.id ?? "";
-        clip._statusText = formatQueueStatus(item);
+        // the card and the queue bar name the same try of a size retry
+        clip._statusText = formatQueueStatus(item, item.id && item.id === view.runningItemId ? view.attempt : 1);
         clip._progress = item.progress || 0;
         clip._progressIndeterminate = item.progress_info?.indeterminate === true;
         if (item.error) clip._queueError = item.error;
@@ -330,12 +331,12 @@ export function installQueue(deps: QueueDeps): QueueApi {
       const state = await legacyBackendResult(client().getQueueState());
       if (!state.ok || !Array.isArray(state.items)) return;
       const items = queueItemsFromSnapshot(state.items);
-      mapQueueItems(items);
+      const previous = queueView;
+      queueView = reduceQueueSnapshot(previous, { items }, formatTime);
+      mapQueueItems(items, queueView);
       watchedExports = watchExports(items, watchedExports, libraryPath, deps.editCount);
       if (!deps.isReordering()) deps.renderClips();
 
-      const previous = queueView;
-      queueView = reduceQueueSnapshot(previous, { items }, formatTime);
       for (const item of items) if (item.state === "running" && item.id) queueActiveItemIds[item.id] = true;
 
       const summary = queueView.finishedToast;

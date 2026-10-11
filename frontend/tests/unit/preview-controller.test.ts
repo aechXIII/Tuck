@@ -52,8 +52,10 @@ test("preview URLs bind to the selected source and ignore stale responses", asyn
     clip: (path) => clips.get(path),
     selectedPath: () => selected,
     media: {
+      showLoading() {},
       showUrl: (url) => urls.push(url),
       showThumbnail: (source) => thumbs.push(source),
+      showUnavailable() {},
       clear() {},
       seek() {},
     },
@@ -89,10 +91,12 @@ test("disposing a preview releases its media token exactly once", async () => {
     clip: (path) => (path === clip.path ? clip : undefined),
     selectedPath: () => selected,
     media: {
+      showLoading() {},
       showUrl() {
         displayed = true;
       },
       showThumbnail() {},
+      showUnavailable() {},
       clear() {
         selected = null;
       },
@@ -113,4 +117,69 @@ test("disposing a preview releases its media token exactly once", async () => {
     [["token-c"]],
   );
   assert.equal(clip.mediaToken, null);
+});
+
+test("selecting a video shows its own picture at once, before its preview arrives", async () => {
+  const media = deferred<BackendResult<UrlPayload>>();
+  const first = createEditorClip("A.mp4");
+  const second = createEditorClip("B.mp4");
+  second._thumbnail = "picture://B";
+  const clips = new Map<string, EditorClip>([
+    [first.path, first],
+    [second.path, second],
+  ]);
+  let selected: string | null = first.path;
+  const events: string[] = [];
+  setBackendClient({
+    ...createFakeBackendClient({}).client,
+    getMediaUrl: async () => media.promise,
+  });
+  const preview = createPreviewController({
+    clip: (path) => clips.get(path),
+    selectedPath: () => selected,
+    media: {
+      showLoading: (picture) => events.push(`loading ${picture ?? "none"}`),
+      showUrl: (url) => events.push(`url ${url}`),
+      showThumbnail: (source) => events.push(`picture ${source}`),
+      showUnavailable: (hasPicture) => events.push(`unavailable ${hasPicture}`),
+      clear: () => events.push("clear"),
+      seek() {},
+    },
+  });
+
+  selected = second.path;
+  preview.select(second.path);
+  // the stage changes in the same moment, while the media link is still on its way
+  assert.deepEqual(events, ["loading picture://B"]);
+
+  media.resolve({ ok: true, value: { url: "media://B", token: "token-b" } });
+  await settleAsyncWork();
+  assert.deepEqual(events, ["loading picture://B", "url media://B"]);
+});
+
+test("a video with neither a preview nor a picture says its preview is unavailable", async () => {
+  const clip = createEditorClip("broken.mp4");
+  const events: string[] = [];
+  setBackendClient({
+    ...createFakeBackendClient({}).client,
+    getMediaUrl: async () => ({ ok: false, error: { code: "MEDIA", message: "No preview", details: {} } }),
+    getThumbnail: async () => ({ ok: false, error: { code: "MEDIA", message: "No picture", details: {} } }),
+  });
+  const preview = createPreviewController({
+    clip: (path) => (path === clip.path ? clip : undefined),
+    selectedPath: () => clip.path,
+    media: {
+      showLoading: (picture) => events.push(`loading ${picture ?? "none"}`),
+      showUrl: (url) => events.push(`url ${url}`),
+      showThumbnail: (source) => events.push(`picture ${source}`),
+      showUnavailable: (hasPicture) => events.push(`unavailable ${hasPicture}`),
+      clear: () => events.push("clear"),
+      seek() {},
+    },
+  });
+
+  preview.select(clip.path);
+  await settleAsyncWork();
+  await settleAsyncWork();
+  assert.deepEqual(events, ["loading none", "unavailable false"]);
 });

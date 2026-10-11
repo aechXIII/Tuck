@@ -17,7 +17,14 @@ export interface QueueItem {
   readonly source_path?: string;
   readonly state?: QueueItemState;
   readonly progress?: number;
-  readonly progress_info?: { readonly speed?: number; readonly eta_seconds?: number | null; readonly indeterminate?: boolean };
+  readonly progress_info?: {
+    readonly speed?: number;
+    readonly eta_seconds?: number | null;
+    readonly indeterminate?: boolean;
+    readonly stage?: string;
+    // set while a size retry starts and while its result is checked
+    readonly retry_number?: number | null;
+  };
   readonly status_text?: string;
   readonly result_path?: string;
   readonly finished_at?: string;
@@ -52,6 +59,8 @@ export interface QueueViewState {
   /** Item ids seen running or pending since the last completed batch. */
   readonly activeItemIds: Readonly<Record<string, true>>;
   readonly runningItemId: string;
+  /** Which try the running export is on; a size retry starts the next one from zero. */
+  readonly attempt: number;
   readonly progress: number;
   readonly indeterminate: boolean;
   readonly barVisible: boolean;
@@ -78,6 +87,7 @@ export function emptyQueueView(): QueueViewState {
     hadActive: false,
     activeItemIds: {},
     runningItemId: "",
+    attempt: 1,
     progress: 0,
     indeterminate: false,
     barVisible: false,
@@ -232,7 +242,21 @@ export function formatEta(seconds: number | null | undefined): string {
   return `${pad(m)}:${pad(s)}`;
 }
 
-export function formatQueueStatus(item: QueueItem | null | undefined): string {
+// a size retry names its try instead of the stage the backend repeats for every pass
+export function attemptStatus(item: QueueItem, attempt: number): string | null {
+  if (attempt < 2 || item.state !== "running") return null;
+  const word = attempt === 2 ? "Second try" : attempt === 3 ? "Third try" : `Try ${attempt}`;
+  return item.progress_info?.stage === "verifying" ? `${word} · checking the size` : `${word} · adjusting bitrate`;
+}
+
+/** Which try a running export is on, given what was known about it before this snapshot. */
+export function runningAttempt(item: QueueItem, previous: Pick<QueueViewState, "runningItemId" | "attempt">): number {
+  const reported = item.progress_info?.retry_number;
+  if (typeof reported === "number" && reported > 0) return reported;
+  return item.id && item.id === previous.runningItemId ? previous.attempt : 1;
+}
+
+export function formatQueueStatus(item: QueueItem | null | undefined, attempt = 1): string {
   if (!item) return "";
   // a finished cut Tuck could not fully check stays marked; the Inspector lists why
   if (item.state === "completed" && Array.isArray(item.unverified) && item.unverified.length) {
@@ -241,8 +265,9 @@ export function formatQueueStatus(item: QueueItem | null | undefined): string {
   if (item.state === "completed" && item.encoder_fallback) {
     return `${item.status_text || "Completed"} · ${item.encoder_fallback}`;
   }
-  if (item.status_text) {
-    const parts = [item.status_text];
+  const retrying = attemptStatus(item, attempt);
+  if (item.status_text || retrying) {
+    const parts = [retrying ?? item.status_text ?? ""];
     if (item.state === "running" && !item.progress_info?.indeterminate) {
       if ((item.progress ?? 0) > 0) parts.push(`${Math.round(item.progress ?? 0)}%`);
       const pi = item.progress_info ?? {};
@@ -310,6 +335,7 @@ export function exportRows(
   items: readonly QueueItem[],
   sourceSize: (path: string) => number,
   formatDuration: (seconds: number) => string = String,
+  view: Pick<QueueViewState, "runningItemId" | "attempt"> | null = null,
 ): ExportRows {
   const running: ExportRow[] = [];
   const waiting: ExportRow[] = [];
@@ -323,7 +349,8 @@ export function exportRows(
     };
     if (item.state === "running") {
       const progress = Math.round(item.progress ?? 0);
-      running.push({...base, kind: "running", detail: runningDetail(item, progress, formatDuration), sizes: null,
+      const attempt = view && item.id === view.runningItemId ? view.attempt : 1;
+      running.push({...base, kind: "running", detail: runningDetail(item, progress, formatDuration, attempt), sizes: null,
         progress: item.progress_info?.indeterminate ? null : progress, action: "cancel"});
     } else if (item.state === "pending") {
       waiting.push({...base, kind: "waiting", detail: "Waiting", sizes: null, progress: null, action: "cancel"});
@@ -343,10 +370,17 @@ export function exportRows(
 }
 
 // plain encoding needs no verb; other steps such as a second pass or a cut's joining say theirs
-function runningDetail(item: QueueItem, progress: number, formatDuration: (seconds: number) => string): string {
+function runningDetail(
+  item: QueueItem,
+  progress: number,
+  formatDuration: (seconds: number) => string,
+  attempt = 1,
+): string {
   const info = item.progress_info ?? {};
   const parts: string[] = [];
-  if (item.status_text && item.status_text !== "Encoding") parts.push(item.status_text);
+  const retrying = attemptStatus(item, attempt);
+  if (retrying) parts.push(retrying);
+  else if (item.status_text && item.status_text !== "Encoding") parts.push(item.status_text);
   if (!info.indeterminate) {
     if (progress > 0) parts.push(`${progress}%`);
     if (info.eta_seconds != null && info.eta_seconds >= 0) parts.push(`${formatDuration(info.eta_seconds)} left`);
@@ -386,19 +420,22 @@ export function reduceQueueSnapshot(
   let detail = "";
   let fname = "";
   let runningItemId = "";
+  let attempt = 1;
 
   const first = running[0];
   if (first) {
     runningItemId = first.id ?? "";
+    attempt = runningAttempt(first, previous);
     const raw = Math.round(first.progress ?? 0);
+    // progress never slips back within one try; a new try starts again from its own zero
     progress =
-      runningItemId && runningItemId === previous.runningItemId
+      runningItemId && runningItemId === previous.runningItemId && attempt === previous.attempt
         ? Math.max(raw, previous.progress)
         : raw;
     const pi = first.progress_info ?? {};
     indeterminate = pi.indeterminate === true;
     fname = first.source ?? "?";
-    detail = runningDetail(first, progress, formatDuration);
+    detail = runningDetail(first, progress, formatDuration, attempt);
   } else if (!pending.length && items.length) {
     progress = 100;
     fname = completedCount ? `${completedCount} exported` : "Done";
@@ -408,6 +445,7 @@ export function reduceQueueSnapshot(
     hadActive: active > 0,
     activeItemIds: nextActiveItemIds,
     runningItemId,
+    attempt,
     progress,
     indeterminate,
     barVisible: items.length > 0,

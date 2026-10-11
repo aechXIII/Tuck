@@ -64,6 +64,47 @@
   position: relative;
   display: none;
 }
+/* says the selected video's preview is still coming, or can't be shown, from a corner of the picture */
+.preview-status {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100% - 20px);
+  padding: 4px 8px;
+  border-radius: var(--r-chip);
+  background: rgba(17, 17, 19, 0.78);
+  color: var(--text);
+  font-size: 12px;
+  pointer-events: none;
+}
+.preview-status[hidden],
+.preview-status [hidden] {
+  display: none;
+}
+.preview-status-message:empty {
+  display: none;
+}
+.preview-status-retry {
+  pointer-events: auto;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--accent-light);
+  font: 600 12px var(--font);
+  cursor: pointer;
+}
+.preview-status-retry:hover {
+  text-decoration: underline;
+}
+.preview-status-retry:focus-visible {
+  outline: 2px solid var(--accent-light);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
 #center:fullscreen {
   height: 100%;
   padding: 0;

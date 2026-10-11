@@ -10,13 +10,17 @@ export interface HistoryHost {
   refreshUiForClip(path: string): void;
   undoButton(): { disabled: boolean } | null;
   redoButton(): { disabled: boolean } | null;
+  // names the next step on each button, e.g. "Undo split"; null when there is none
+  labelButtons?(undo: string | null, redo: string | null): void;
 }
 
 export interface HistoryApi {
-  begin: (path: string | null) => void;
+  begin: (path: string | null, label?: string) => void;
   commit: () => void;
   cancel: () => void;
-  action: <T>(path: string | null, fn: () => T) => T;
+  // puts the video back the way it was when the step began, and drops the step
+  revert: () => void;
+  action: <T>(path: string | null, fn: () => T, label?: string) => T;
   undo: () => void;
   redo: () => void;
   updateButtons: () => void;
@@ -34,24 +38,24 @@ export interface DetachedHistory {
   readonly path: string;
   readonly undo: readonly HistoryEntry[];
   readonly redo: readonly HistoryEntry[];
-  readonly commits: number;
 }
 
 export interface HistoryRecorder {
-  action: <T>(path: string | null, fn: () => T) => T;
+  action: <T>(path: string | null, fn: () => T, label?: string) => T;
 }
 
 /**
  * An edit command that is one undo step for the selected video. Commands that call other
- * recorded commands still make a single step.
+ * recorded commands still make a single step. The label names the step on the Undo button.
  */
 export function recordedCommand<A extends unknown[], R>(
   history: HistoryRecorder | null | undefined,
   selectedPath: () => string | null,
   run: (...args: A) => R,
+  label?: string,
 ): (...args: A) => R {
   return (...args: A): R =>
-    history ? history.action(selectedPath(), () => run(...args)) : run(...args);
+    history ? history.action(selectedPath(), () => run(...args), label) : run(...args);
 }
 
 interface ClipSnapshot {
@@ -70,6 +74,8 @@ interface ClipSnapshot {
 
 export interface HistoryEntry {
   path: string;
+  // lower case, read after "Undo" or "Redo"
+  label: string;
   before: ClipSnapshot;
   after: ClipSnapshot;
   // order across videos, so restored steps go back where they were
@@ -78,8 +84,11 @@ export interface HistoryEntry {
 
 interface PendingEntry {
   path: string;
+  label: string;
   before: ClipSnapshot;
 }
+
+const DEFAULT_LABEL = "edit";
 
 const MAX_ENTRIES = 100;
 
@@ -137,21 +146,33 @@ export function createHistory(host: HistoryHost): HistoryApi {
   let pending: PendingEntry | null = null;
   let actionDepth = 0;
   let seq = 0;
-  let commits = 0;
   const editCounts = new Map<string, number>();
 
   function countEdit(path: string): void {
     editCounts.set(path, (editCounts.get(path) ?? 0) + 1);
   }
 
-  function updateButtons(): void {
-    const undoBtn = host.undoButton();
-    const redoBtn = host.redoButton();
-    if (undoBtn) undoBtn.disabled = undoStack.length === 0;
-    if (redoBtn) redoBtn.disabled = redoStack.length === 0;
+  // each video has its own steps, so Undo never changes a video that isn't on screen
+  function lastIndexFor(stack: readonly HistoryEntry[], path: string | null): number {
+    if (!path) return -1;
+    for (let index = stack.length - 1; index >= 0; index -= 1) {
+      if (stack[index]?.path === path) return index;
+    }
+    return -1;
   }
 
-  function begin(path: string | null): void {
+  function updateButtons(): void {
+    const path = host.selectedPath();
+    const undoEntry = undoStack[lastIndexFor(undoStack, path)];
+    const redoEntry = redoStack[lastIndexFor(redoStack, path)];
+    const undoBtn = host.undoButton();
+    const redoBtn = host.redoButton();
+    if (undoBtn) undoBtn.disabled = !undoEntry;
+    if (redoBtn) redoBtn.disabled = !redoEntry;
+    host.labelButtons?.(undoEntry?.label ?? null, redoEntry?.label ?? null);
+  }
+
+  function begin(path: string | null, label: string = DEFAULT_LABEL): void {
     if (!path) {
       pending = null;
       return;
@@ -166,7 +187,7 @@ export function createHistory(host: HistoryHost): HistoryApi {
       pending = null;
       return;
     }
-    pending = { path, before };
+    pending = { path, label, before };
   }
 
   function commit(): void {
@@ -183,13 +204,15 @@ export function createHistory(host: HistoryHost): HistoryApi {
     }
     undoStack.push({
       path: pending.path,
+      label: pending.label,
       before: pending.before,
       after,
       seq: (seq += 1),
     });
     if (undoStack.length > MAX_ENTRIES) undoStack.shift();
-    redoStack.length = 0;
-    commits += 1;
+    // a new edit replaces only this video's redo steps
+    const editedPath = pending.path;
+    redoStack = redoStack.filter((entry) => entry.path !== editedPath);
     countEdit(pending.path);
     pending = null;
     updateButtons();
@@ -199,11 +222,21 @@ export function createHistory(host: HistoryHost): HistoryApi {
     pending = null;
   }
 
-  function action<T>(path: string | null, fn: () => T): T {
+  function revert(): void {
+    if (!pending) return;
+    const { path, before } = pending;
+    pending = null;
+    const clip = host.getClip(path);
+    if (!clip) return;
+    apply(clip, before);
+    host.refreshUiForClip(path);
+  }
+
+  function action<T>(path: string | null, fn: () => T, label?: string): T {
     // an action inside another belongs to the outer step
     if (actionDepth > 0) return fn();
     actionDepth += 1;
-    begin(path);
+    begin(path, label);
     try {
       const result = fn();
       commit();
@@ -217,7 +250,9 @@ export function createHistory(host: HistoryHost): HistoryApi {
   }
 
   function undo(): void {
-    const entry = undoStack.pop();
+    const index = lastIndexFor(undoStack, host.selectedPath());
+    if (index < 0) return;
+    const [entry] = undoStack.splice(index, 1);
     if (!entry) return;
     const clip = host.getClip(entry.path);
     if (clip) {
@@ -230,7 +265,9 @@ export function createHistory(host: HistoryHost): HistoryApi {
   }
 
   function redo(): void {
-    const entry = redoStack.pop();
+    const index = lastIndexFor(redoStack, host.selectedPath());
+    if (index < 0) return;
+    const [entry] = redoStack.splice(index, 1);
     if (!entry) return;
     const clip = host.getClip(entry.path);
     if (clip) {
@@ -253,7 +290,6 @@ export function createHistory(host: HistoryHost): HistoryApi {
       path,
       undo: undoStack.filter((entry) => entry.path === path),
       redo: redoStack.filter((entry) => entry.path === path),
-      commits,
     };
     if (pending?.path === path) pending = null;
     forgetClip(path);
@@ -262,10 +298,8 @@ export function createHistory(host: HistoryHost): HistoryApi {
 
   function restoreClip(detached: DetachedHistory): void {
     undoStack = [...undoStack, ...detached.undo].sort((a, b) => a.seq - b.seq).slice(-MAX_ENTRIES);
-    // a new edit since the removal cleared redo, so the removed video's redo steps go too
-    if (commits === detached.commits) {
-      redoStack = [...redoStack, ...detached.redo].sort((a, b) => b.seq - a.seq);
-    }
+    // steps are per video, so edits to other videos while it was gone don't touch its redo
+    redoStack = [...redoStack, ...detached.redo].sort((a, b) => b.seq - a.seq);
     updateButtons();
   }
 
@@ -281,6 +315,7 @@ export function createHistory(host: HistoryHost): HistoryApi {
     begin,
     commit,
     cancel,
+    revert,
     action,
     undo,
     redo,

@@ -26,9 +26,11 @@ test("a dragged trim edge shows the snap guide only while it is snapped", async 
   await expect(handle).not.toHaveAttribute("aria-valuenow", "0");
   await expect(guide).toBeHidden();
   await expect(page.locator("#timeline")).not.toHaveAttribute("data-snapped");
-  // back within reach of the clip start: the edge lands on it and the guide marks it
+  // back within reach of the clip start: the edge lands on it and the guide marks it.
+  // the edge keeps the spot it was grabbed by, so it is the edge, not the pointer, that comes near
   const track = (await page.locator("#tl-track").boundingBox())!;
-  await page.mouse.move(track.x + 4, y, { steps: 8 });
+  const grab = x - track.x;
+  await page.mouse.move(track.x + grab + 4, y, { steps: 8 });
   await expect(handle).toHaveAttribute("aria-valuenow", "0");
   await expect(guide).toBeVisible();
   await expect(page.locator("#timeline")).toHaveAttribute("data-snapped", "start");

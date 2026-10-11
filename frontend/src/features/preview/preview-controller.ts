@@ -3,8 +3,12 @@ import { legacyBackendResult } from "../editor/backend-compat.ts";
 import type { EditorClip } from "../editor/types.ts";
 
 export interface PreviewMedia {
+  // the new video's own picture, or nothing, while its preview is fetched; never the last video
+  showLoading(picture: string | null): void;
   showUrl(url: string): void;
   showThumbnail(source: string): void;
+  // the video can't be played here; a picture may still be showing
+  showUnavailable(hasPicture: boolean): void;
   clear(): void;
   seek(seconds: number): void;
 }
@@ -48,6 +52,7 @@ export function createPreviewController(host: PreviewCoordinatorHost): PreviewCo
       }
       if (typeof response.thumbnail === "string" && response.thumbnail) {
         host.media.showThumbnail(response.thumbnail);
+        host.media.showUnavailable(true);
         return;
       }
       await loadThumbnail(path, requestId);
@@ -58,29 +63,32 @@ export function createPreviewController(host: PreviewCoordinatorHost): PreviewCo
   }
 
   async function loadThumbnail(path: string, requestId: number): Promise<void> {
+    let shown = false;
     try {
       const response = await legacyBackendResult(getBackendClient().getThumbnail(path));
       if (requestId !== generation || host.selectedPath() !== path) return;
       if (response.ok && typeof response.thumbnail === "string" && response.thumbnail) {
         host.media.showThumbnail(response.thumbnail);
+        shown = true;
       }
     } catch {
-      // preview fallback remains empty when both media and thumbnail fail
+      // a failed picture request leaves the stage without a picture
+      if (requestId !== generation || host.selectedPath() !== path) return;
     }
+    host.media.showUnavailable(shown);
   }
 
   return {
     select(path) {
       const previous = selectedPath !== path ? host.clip(selectedPath ?? "") : undefined;
-      if (previous) void releaseToken(previous);
       selectedPath = path;
       generation += 1;
       const requestId = generation;
-      if (!path) {
-        host.media.clear();
-        return;
-      }
-      void load(path, requestId);
+      // the old video leaves the stage before its media link is given back
+      if (!path) host.media.clear();
+      else host.media.showLoading(host.clip(path)?._thumbnail || null);
+      if (previous) void releaseToken(previous);
+      if (path) void load(path, requestId);
     },
     seek(seconds) {
       host.media.seek(seconds);

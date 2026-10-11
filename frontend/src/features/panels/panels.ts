@@ -108,7 +108,7 @@ export interface PanelsHost {
   clipDetails: ClipDetailsApi;
   AudioTimeline?: AudioTimelineApi;
   AudioEditing?: AudioEditingApi;
-  History?: { begin: (path: string | null) => void; commit: () => void };
+  History?: { begin: (path: string | null, label?: string) => void; commit: () => void };
 }
 
 export interface PanelsApi {
@@ -611,7 +611,7 @@ export function installPanels(host: PanelsHost): PanelsApi {
       }
       if (slider instanceof HTMLInputElement) {
         slider.addEventListener("pointerdown", () => {
-          host.History?.begin(host.selPath());
+          host.History?.begin(host.selPath(), "gain");
         });
         slider.addEventListener("input", () => {
           const output = row.querySelector(".mixer-db");
@@ -624,7 +624,7 @@ export function installPanels(host: PanelsHost): PanelsApi {
         });
         slider.addEventListener("dblclick", (event) => {
           event.preventDefault();
-          host.History?.begin(host.selPath());
+          host.History?.begin(host.selPath(), "reset gain");
           slider.value = "0";
           const output = row.querySelector(".mixer-db");
           if (output) output.textContent = formatGainDb(0);
@@ -873,7 +873,7 @@ export function installPanels(host: PanelsHost): PanelsApi {
             ? "audio-range-detail-dragging"
             : "audio-range-overview-dragging",
       };
-      host.History?.begin(host.selPath());
+      host.History?.begin(host.selPath(), "audio range");
       element.classList.add("dragging");
       doc.body.classList.add(pointer.cursorClass);
       // Track the whole drag on the window and don't match pointerId: WebKitGTK
@@ -925,7 +925,7 @@ export function installPanels(host: PanelsHost): PanelsApi {
       );
       if (next == null) return;
       event.preventDefault();
-      host.History?.begin(host.selPath());
+      host.History?.begin(host.selPath(), "audio range");
       host.AudioTimeline?.setSelectedSourceIn(next, true);
       host.History?.commit();
     }
@@ -934,7 +934,7 @@ export function installPanels(host: PanelsHost): PanelsApi {
 
     function resetRange(event: Event): void {
       event.preventDefault();
-      host.History?.begin(host.selPath());
+      host.History?.begin(host.selPath(), "reset audio range");
       host.AudioTimeline?.resetSelectedSource();
       host.History?.commit();
     }

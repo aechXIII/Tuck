@@ -73,7 +73,7 @@ test("imported waveform appears after undo replaces its track during loading", a
   await expect(waveform).toHaveCSS("mask-image", "none");
 
   await page.locator("#imported-audio-tracks .seq-track-mute").click();
-  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await page.locator("#btn-undo").click();
   await expect(page.locator("#imported-audio-tracks .seq-track-mute")).toHaveAttribute("aria-pressed", "false");
   await releaseWaveform(page);
 

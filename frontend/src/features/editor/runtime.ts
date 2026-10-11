@@ -168,6 +168,17 @@ export function installEditorRuntime(
       refreshUiForClip: () => refreshEditor(),
       undoButton: () => byId<HTMLButtonElement>("btn-undo"),
       redoButton: () => byId<HTMLButtonElement>("btn-redo"),
+      labelButtons: (undo, redo) => {
+        const steps = [["btn-undo", "Undo", undo], ["btn-redo", "Redo", redo]] as const;
+        for (const [id, verb, step] of steps) {
+          const button = byId<HTMLButtonElement>(id);
+          if (!button) continue;
+          const label = step ? `${verb} ${step}` : verb;
+          button.dataset.shortcutLabel = label;
+          button.setAttribute("aria-label", label);
+          if (button.parentElement) syncShortcutHints(button.parentElement);
+        }
+      },
     },
     shortcuts,
   );
@@ -407,7 +418,7 @@ export function installEditorRuntime(
       }
       history.action(clip.path,() => {
         timeline.setClipSegments(clip,moved.segments,clip.activeSegment);
-      });
+      },"move to keyframes");
       timeline.syncTimelineUI();
       audio.render();
       library.renderClips();

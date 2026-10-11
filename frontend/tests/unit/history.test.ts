@@ -15,6 +15,7 @@ type MutableSegment = { start: number; end: number; muted?: boolean };
 
 const undoButton = { disabled: true };
 const redoButton = { disabled: true };
+let buttonLabels: { undo: string | null; redo: string | null } = { undo: null, redo: null };
 let selectedPath: string | null = "clip.mp4";
 const clips = new Map<string, EditorClip>();
 
@@ -44,6 +45,9 @@ const host: HistoryHost = {
   },
   redoButton() {
     return redoButton;
+  },
+  labelButtons(undo, redo) {
+    buttonLabels = { undo, redo };
   },
 };
 
@@ -235,20 +239,27 @@ test("a removed video's steps come back with it, in their place", () => {
   const detached = History.detachClip(first.path);
   clips.delete(first.path);
   assert.equal(History.hasEdits(first.path), false);
+  selectedPath = second.path;
   History.undo();
   assert.equal(second.rotation, 0);
   History.redo();
+  assert.equal(second.rotation, 180);
 
   clips.set(first.path, first);
   History.restoreClip(detached);
   assert.equal(History.hasEdits(first.path), true);
+  selectedPath = first.path;
   History.undo();
   assert.equal(first.rotation, 90);
   History.undo();
-  assert.equal(second.rotation, 0);
-  History.undo();
   assert.equal(first.rotation, 0);
   assert.equal(undoButton.disabled, true);
+  // the other video kept its own step
+  selectedPath = second.path;
+  History.updateButtons();
+  assert.equal(undoButton.disabled, false);
+  History.undo();
+  assert.equal(second.rotation, 0);
   History.forgetClip(first.path);
   History.forgetClip(second.path);
 });
@@ -259,6 +270,7 @@ test("each video's edit count goes up with its edits, undo and redo, and not wit
   clips.set(clip.path, clip);
   clips.set(other.path, other);
   const start = History.editCount(clip.path);
+  selectedPath = clip.path;
   History.action(clip.path, () => {
     clip.rotation = 90;
   });
@@ -277,4 +289,74 @@ test("each video's edit count goes up with its edits, undo and redo, and not wit
   assert.equal(History.editCount("never-edited.mp4"), 0);
   clips.delete(clip.path);
   clips.delete(other.path);
+});
+
+test("undo and redo only change the video on screen", () => {
+  const first = resetClip();
+  const second = createEditorClip("second.mp4");
+  clips.set(second.path, second);
+  History.action(first.path, () => {
+    first.rotation = 90;
+  }, "rotate");
+
+  // looking at the other video, Undo has nothing of its own to undo
+  selectedPath = second.path;
+  History.updateButtons();
+  assert.equal(undoButton.disabled, true);
+  History.undo();
+  assert.equal(first.rotation, 90);
+
+  selectedPath = first.path;
+  History.updateButtons();
+  assert.equal(undoButton.disabled, false);
+  History.undo();
+  assert.equal(first.rotation, 0);
+  History.forgetClip(first.path);
+  History.forgetClip(second.path);
+});
+
+test("an edit to one video keeps another video's redo step", () => {
+  const first = resetClip();
+  const second = createEditorClip("second.mp4");
+  clips.set(second.path, second);
+  History.action(first.path, () => {
+    first.rotation = 90;
+  });
+  History.undo();
+  selectedPath = second.path;
+  History.action(second.path, () => {
+    second.rotation = 180;
+  });
+  selectedPath = first.path;
+  History.redo();
+  assert.equal(first.rotation, 90);
+  History.forgetClip(first.path);
+  History.forgetClip(second.path);
+});
+
+test("the buttons name the step they will undo and redo", () => {
+  const clip = resetClip();
+  const split = recordedCommand(History, selected, () => {
+    clip.segments = [
+      { start: 0, end: 4 },
+      { start: 4, end: 12 },
+    ];
+  }, "split");
+  split();
+  assert.deepEqual(buttonLabels, { undo: "split", redo: null });
+  History.undo();
+  assert.deepEqual(buttonLabels, { undo: null, redo: "split" });
+  History.forgetClip(clip.path);
+  assert.deepEqual(buttonLabels, { undo: null, redo: null });
+});
+
+test("revert puts a video back the way it was when the step began", () => {
+  const clip = resetClip();
+  History.begin(clip.path, "trim start");
+  (clip.segments![0] as MutableSegment).start = 3;
+  History.revert();
+  assert.equal((clip.segments![0] as MutableSegment).start, 0);
+  // nothing was recorded, so a later commit does nothing
+  History.commit();
+  assert.equal(undoButton.disabled, true);
 });

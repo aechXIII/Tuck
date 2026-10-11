@@ -43,10 +43,11 @@ export interface TimelineHost {
     selectVideoTrack?: () => void;
   };
   History?: {
-    begin?: (path: string | null) => void;
+    begin?: (path: string | null, label?: string) => void;
     commit?: () => void;
     cancel?: () => void;
-    action?: <T>(path: string | null, fn: () => T) => T;
+    revert?: () => void;
+    action?: <T>(path: string | null, fn: () => T, label?: string) => T;
   };
   TuckShortcuts?: {
     registerAction: (
@@ -60,7 +61,8 @@ export type TimelineApi = ReturnType<typeof installTimeline>;
 
 type SegmentLike = { start: number; end: number; muted?: boolean; badge?: string; index?: number };
 
-type TimelineDrag = "in" | "out" | "ruler" | "seek" | "segment-pending" | "segment";
+// a pressed trim edge waits as "in-pending"/"out-pending" until the pointer really moves
+type TimelineDrag = "in" | "out" | "in-pending" | "out-pending" | "ruler" | "seek" | "segment-pending" | "segment";
 
 const EMPTY_TIMELINE_STATUS: "empty" = "empty";
 
@@ -142,6 +144,10 @@ let _segmentDragOffset = 0;
 let _segmentPointerX = 0;
 let _segmentClickTime = 0;
 let _SEGMENT_DRAG_THRESHOLD = 5;
+// a trim follows the pointer from where the edge was grabbed, and only once it moves this far
+let _trimGrabOffset = 0;
+let _trimPointerX = 0;
+const _TRIM_DRAG_THRESHOLD = 3;
 // shades of the accent's segment fill, so neighbouring segments stay apart in any accent color
 let _SEGMENT_COLORS = [50, 36, 44, 20, 60, 28].map(
   (share) => `color-mix(in srgb, var(--seg-fill) ${share}%, var(--raised))`,
@@ -416,7 +422,7 @@ function moveHandleToKeyframe(e: KeyboardEvent) {
     overlay.tolerance,
   );
   if (next == null) return;
-  host.History?.begin?.(session.selPath);
+  host.History?.begin?.(session.selPath, endpoint === "start" ? "trim start" : "trim end");
   const value = endpoint === "start" ? applyTrimStart(next, false) : applyTrimEnd(next, false);
   host.History?.commit?.();
   paintTrimChrome();
@@ -1076,7 +1082,7 @@ function onTimelinePointerDown(e: PointerEvent) {
       ) ?? null;
       edge = isHtmlElement(replacement) ? replacement : null;
     }
-    _tlDrag = edgeName === "start" ? "in" : "out";
+    beginTrimPress(edgeName === "start" ? "in" : "out", e);
     if (edge) edge.classList.add("dragging");
     setTrimDragCursor(true);
   } else if (isSegment) {
@@ -1091,12 +1097,10 @@ function onTimelinePointerDown(e: PointerEvent) {
     _segmentClickTime = pointerTime;
     selectSegment(index, false);
     _tlDrag = "segment-pending";
-  } else if (target && target.id === "tl-in") _tlDrag = "in";
-  else if (target && target.id === "tl-out") _tlDrag = "out";
+  } else if (target && target.id === "tl-in") beginTrimPress("in", e);
+  else if (target && target.id === "tl-out") beginTrimPress("out", e);
   else _tlDrag = "seek";
-  if (_tlDrag === "in" || _tlDrag === "out" || _tlDrag === "segment-pending") {
-    host.History?.begin?.(session.selPath);
-  }
+  if (_tlDrag === "segment-pending") host.History?.begin?.(session.selPath, "move segment");
   if (target?.classList.contains("tl-handle")) {
     target.classList.add("dragging");
     setTrimDragCursor(true);
@@ -1107,8 +1111,19 @@ function onTimelinePointerDown(e: PointerEvent) {
       currentTarget.setPointerCapture(e.pointerId);
     } catch (err) {}
   }
-  if (_tlDrag !== "segment-pending") processTimelineMove(e);
+  if (_tlDrag === "seek") processTimelineMove(e);
   e.preventDefault();
+}
+
+// pressing an edge only grabs it: nothing changes, and no undo step exists, until it moves
+function beginTrimPress(drag: "in" | "out", e: PointerEvent) {
+  const full = videoDuration();
+  const bounds = paintTrimChrome().bounds;
+  const edgeTime = drag === "in" ? bounds.start : bounds.end;
+  _trimGrabOffset = full > 0 ? timelineRatioFromEvent(e) * full - edgeTime : 0;
+  _trimPointerX = e.clientX;
+  _tlDrag = drag === "in" ? "in-pending" : "out-pending";
+  host.History?.begin?.(session.selPath, drag === "in" ? "trim start" : "trim end");
 }
 
 function processTimelineMove(e: PointerEvent) {
@@ -1118,12 +1133,16 @@ function processTimelineMove(e: PointerEvent) {
     _tlDrag = "segment";
     setSegmentDragCursor(true);
   }
+  if (_tlDrag === "in-pending" || _tlDrag === "out-pending") {
+    if (Math.abs(e.clientX - _trimPointerX) < _TRIM_DRAG_THRESHOLD) return;
+    _tlDrag = _tlDrag === "in-pending" ? "in" : "out";
+  }
   let ratio = timelineRatioFromEvent(e);
   let full = videoDuration();
   if (full <= 0) return;
   let time = ratio * full;
   if (_tlDrag === "in") {
-    let start = applyTrimStart(time);
+    let start = applyTrimStart(time - _trimGrabOffset);
     if (start == null) return;
     const overlay = cutOverlay();
     const at = overlay && selectedClip(session)?.cutState?.precision !== "exact"
@@ -1134,7 +1153,7 @@ function processTimelineMove(e: PointerEvent) {
     paintSnapGuide(lastSnapTime);
     host.seekPreview?.(start);
   } else if (_tlDrag === "out") {
-    let end = applyTrimEnd(time);
+    let end = applyTrimEnd(time - _trimGrabOffset);
     if (end == null) return;
     paintTrimChrome();
     paintSnapGuide(lastSnapTime);
@@ -1164,20 +1183,34 @@ function onTimelinePointerMove(e: PointerEvent) {
 }
 
 function onTimelinePointerUp(e: PointerEvent) {
+  finishTimelineDrag(!!e && e.type === "pointercancel");
+}
+
+// Esc puts a trim or segment drag back where it started
+function onTimelineDragEscape(e: KeyboardEvent) {
+  if (e.key !== "Escape") return;
+  if (_tlDrag !== "in" && _tlDrag !== "out" && _tlDrag !== "segment") return;
+  e.preventDefault();
+  e.stopPropagation();
+  finishTimelineDrag(true);
+}
+
+function finishTimelineDrag(cancelled: boolean) {
   if (!_tlDrag) return;
   if (_tlMoveRaf) {
     cancelAnimationFrame(_tlMoveRaf);
     _tlMoveRaf = 0;
   }
-  if (_tlMoveEvent) {
-    processTimelineMove(_tlMoveEvent);
-    _tlMoveEvent = null;
-  }
-  let wasSegmentClick =
-    _tlDrag === "segment-pending" && (!e || e.type !== "pointercancel");
-  let wasEdit = _tlDrag === "in" || _tlDrag === "out" || _tlDrag === "segment";
+  if (_tlMoveEvent && !cancelled) processTimelineMove(_tlMoveEvent);
+  _tlMoveEvent = null;
+  let wasSegmentClick = _tlDrag === "segment-pending" && !cancelled;
+  let wasEdit = !cancelled && (_tlDrag === "in" || _tlDrag === "out" || _tlDrag === "segment");
   if (wasEdit) host.History?.commit?.();
-  else host.History?.cancel?.();
+  // a drag the system took away is undone rather than kept half-finished
+  else if (cancelled && (_tlDrag === "in" || _tlDrag === "out" || _tlDrag === "segment")) {
+    if (host.History?.revert) host.History.revert();
+    else host.History?.cancel?.();
+  } else host.History?.cancel?.();
   if (wasSegmentClick) host.seekPreview?.(_segmentClickTime);
   byId("tl-in")?.classList.remove("dragging");
   byId("tl-out")?.classList.remove("dragging");
@@ -1268,6 +1301,7 @@ function handleTimelineEditKey(e: KeyboardEvent) {
     ruler.addEventListener("pointercancel", onTimelinePointerUp);
   }
   timeline.addEventListener("pointerdown", onTimelinePointerDown);
+  documentRef.addEventListener("keydown", onTimelineDragEscape, true);
   timeline.addEventListener("pointermove", onTimelinePointerMove);
   timeline.addEventListener("pointerup", onTimelinePointerUp);
   timeline.addEventListener("pointercancel", onTimelinePointerUp);
@@ -1277,7 +1311,7 @@ function handleTimelineEditKey(e: KeyboardEvent) {
       if (e.button != null && e.button !== 0) return;
       const target = isHtmlElement(e.target) ? e.target : null;
       if (!target || (target.id !== "tl-in" && target.id !== "tl-out")) return;
-      _tlDrag = target.id === "tl-in" ? "in" : "out";
+      beginTrimPress(target.id === "tl-in" ? "in" : "out", e);
       target.classList.add("dragging");
       setTrimDragCursor(true);
       if (e.pointerId != null && selectionLayer.setPointerCapture) {
@@ -1285,7 +1319,6 @@ function handleTimelineEditKey(e: KeyboardEvent) {
           selectionLayer.setPointerCapture(e.pointerId);
         } catch (err) {}
       }
-      processTimelineMove(e);
       e.preventDefault();
     });
     selectionLayer.addEventListener("pointermove", onTimelinePointerMove);
@@ -1624,9 +1657,9 @@ function initTimelineResizer() {
 
   // segment edits made through the api or the keyboard are one undo step each
   const history = host.History?.action ? { action: host.History.action } : null;
-  const recorded = <A extends unknown[], R>(run: (...args: A) => R) =>
-    recordedCommand(history, () => session.selPath, run);
-  const addSegmentStep = recorded(addSegment);
+  const recorded = <A extends unknown[], R>(label: string, run: (...args: A) => R) =>
+    recordedCommand(history, () => session.selPath, run, label);
+  const addSegmentStep = recorded("add segment", addSegment);
 
   host.TuckShortcuts?.registerAction("timeline.add-segment", {
     enabled: function () {
@@ -1685,18 +1718,18 @@ function initTimelineResizer() {
     paintCutOverlay: paintCutOverlay,
     paintTrimChrome: paintTrimChrome,
     playbackSegments: playbackSegments,
-    removeActiveSegment: recorded(removeActiveSegment),
+    removeActiveSegment: recorded("remove segment", removeActiveSegment),
     goToCutPoint: goToCutPoint,
     seekToKeyframe: seekToKeyframe,
     resetTimelineHeight: resetTimelineHeight,
-    resetSegments: recorded(resetSegments),
+    resetSegments: recorded("reset segments", resetSegments),
     restoreTimelineHeight: restoreTimelineHeight,
     segmentColor: segmentColor,
     setClipSegments: setClipSegments,
     setPlayheadUI: setPlayheadUI,
     setTimelineZoom: setTimelineZoom,
     snapCandidateTime: snapCandidateTime,
-    splitAtPlayhead: recorded(splitAtPlayhead),
+    splitAtPlayhead: recorded("split", splitAtPlayhead),
     syncTimelineTrackCount: syncTimelineTrackCount,
     syncTimelineUI: syncTimelineUI,
     timelinePxPerSecond: timelinePxPerSecond,
@@ -1704,7 +1737,7 @@ function initTimelineResizer() {
     toggleSnap: toggleSnap,
     setKeyframes: setKeyframes,
     setSnap: setSnap,
-    trimActiveSegmentToPlayhead: recorded(trimActiveSegmentToPlayhead),
+    trimActiveSegmentToPlayhead: recorded("trim to playhead", trimActiveSegmentToPlayhead),
     videoDuration: videoDuration,
   };
   const extended = Object.assign({}, api, {

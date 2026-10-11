@@ -64,6 +64,8 @@ export interface LibraryAudioHooks {
 }
 
 export interface LibraryHistoryHooks {
+  // Undo follows the selected video, so its buttons change with the selection
+  updateButtons?: () => void;
   detachClip?: (path: string) => DetachedHistory;
   restoreClip?: (detached: DetachedHistory) => void;
   hasEdits?: (path: string) => boolean;
@@ -159,32 +161,158 @@ export function createLibrary(host: LibraryHost): LibraryApi {
     byId("thumb")?.remove();
   }
 
+  // the stylesheet's animation switch can't reach script-driven animations, so it is checked here
+  function motionOn(): boolean {
+    return documentRef.documentElement.dataset.motion !== "off";
+  }
+
+  // a short wait, so a preview that arrives quickly never flashes the loading note
+  const PREVIEW_LOADING_DELAY_MS = 250;
+  let previewLoadingTimer: ReturnType<typeof setTimeout> | null = null;
+  // counts media handed to the stage, so a late frame or error from an older video is ignored
+  let stageMedia = 0;
+
+  function previewStatus(): HTMLElement | null {
+    const existing = byId("preview-status");
+    if (existing) return existing;
+    const stage = byId("stage");
+    if (!stage) return null;
+    const status = documentRef.createElement("div");
+    status.id = "preview-status";
+    status.className = "preview-status";
+    status.hidden = true;
+    const loading = documentRef.createElement("span");
+    loading.className = "preview-status-loading";
+    loading.textContent = "Loading preview…";
+    // exists before it has anything to say, so a failure is announced when it arrives
+    const message = documentRef.createElement("span");
+    message.className = "preview-status-message";
+    message.setAttribute("role", "status");
+    const retry = documentRef.createElement("button");
+    retry.type = "button";
+    retry.className = "preview-status-retry";
+    retry.textContent = "Retry";
+    retry.addEventListener("click", () => {
+      if (session.selPath) preview.select(session.selPath);
+    });
+    status.append(loading, message, retry);
+    stage.append(status);
+    return status;
+  }
+
+  function setPreviewStatus(state: "ready" | "loading" | "unavailable", hasPicture = false): void {
+    if (previewLoadingTimer !== null) {
+      clearTimeout(previewLoadingTimer);
+      previewLoadingTimer = null;
+    }
+    const status = previewStatus();
+    if (!status) return;
+    const loading = status.querySelector<HTMLElement>(".preview-status-loading");
+    const message = status.querySelector<HTMLElement>(".preview-status-message");
+    const retry = status.querySelector<HTMLElement>(".preview-status-retry");
+    if (state === "ready") {
+      status.hidden = true;
+      if (message) message.textContent = "";
+      return;
+    }
+    if (state === "unavailable") {
+      if (loading) loading.hidden = true;
+      if (message) {
+        message.textContent = hasPicture
+          ? "Preview unavailable"
+          : "Can’t show a preview of this video.";
+      }
+      if (retry) retry.hidden = false;
+      status.hidden = false;
+      return;
+    }
+    status.hidden = true;
+    if (message) message.textContent = "";
+    previewLoadingTimer = setTimeout(() => {
+      previewLoadingTimer = null;
+      if (loading) loading.hidden = false;
+      if (retry) retry.hidden = true;
+      status.hidden = false;
+      if (motionOn() && typeof status.animate === "function") {
+        status.animate([{ opacity: 0 }, { opacity: 1 }], {
+          duration: 120,
+          easing: "cubic-bezier(0.22, 1, 0.36, 1)",
+        });
+      }
+    }, PREVIEW_LOADING_DELAY_MS);
+  }
+
+  // the first decoded frame takes over from the picture shown while it loaded
+  function revealVideo(): void {
+    setPreviewStatus("ready");
+    const still = byId("thumb");
+    if (!still) return;
+    if (!motionOn() || typeof still.animate !== "function") {
+      still.remove();
+      return;
+    }
+    still
+      .animate([{ opacity: 1 }, { opacity: 0 }], {
+        duration: 120,
+        easing: "cubic-bezier(0.22, 1, 0.36, 1)",
+      })
+      .finished.then(() => still.remove(), () => still.remove());
+    // a window that isn't drawing may never finish the fade; the picture still has to go
+    setTimeout(() => still.remove(), 200);
+  }
+
   const preview = createPreviewController({
     clip: (path) => session.clips[path],
     selectedPath: () => session.selPath,
     media: {
+      showLoading(picture) {
+        stageMedia += 1;
+        const video = asHTMLVideoElement(byId("vid"));
+        if (video) {
+          video.onerror = null;
+          video.onloadeddata = null;
+          video.pause();
+          video.removeAttribute("src");
+          video.load();
+        }
+        if (picture) showThumbnail(picture);
+        else removeThumbnail();
+        if (video) video.style.display = "block";
+        setPreviewStatus("loading");
+      },
       showUrl(url) {
         const video = asHTMLVideoElement(byId("vid"));
         if (!video) return;
+        const shown = (stageMedia += 1);
         video.src = url;
         video.load();
         video.style.display = "block";
-        removeThumbnail();
+        // the loading picture stays on top until this video has a frame to show
+        video.onloadeddata = () => {
+          if (shown === stageMedia) revealVideo();
+        };
         video.onerror = () => {
-          if (session.selPath) void loadThumb(session.selPath);
+          if (shown === stageMedia && session.selPath) void loadThumb(session.selPath);
         };
       },
       showThumbnail(source) {
         showThumbnail(source);
       },
+      showUnavailable(hasPicture) {
+        setPreviewStatus("unavailable", hasPicture);
+      },
       clear() {
+        stageMedia += 1;
         const video = asHTMLVideoElement(byId("vid"));
         if (video) {
+          video.onerror = null;
+          video.onloadeddata = null;
           video.pause();
           video.removeAttribute("src");
           video.load();
         }
         removeThumbnail();
+        setPreviewStatus("ready");
       },
       seek(seconds) {
         const video = asHTMLVideoElement(byId("vid"));
@@ -502,8 +630,7 @@ export function createLibrary(host: LibraryHost): LibraryApi {
 
   // the new order is already in place; cards only slide from where they were, so the moved video can be followed
   function settleCards(before: ReadonlyMap<string, number>): void {
-    // the stylesheet's animation switch can't reach script-driven animations, so it is checked here
-    if (documentRef.documentElement.dataset.motion === "off") return;
+    if (!motionOn()) return;
     for (const card of byId("clips")?.querySelectorAll<HTMLElement>(".clip[data-clip-path]") ?? []) {
       const was = card.dataset.clipPath ? before.get(card.dataset.clipPath) : undefined;
       if (was == null || typeof card.animate !== "function") continue;
@@ -698,22 +825,27 @@ export function createLibrary(host: LibraryHost): LibraryApi {
     host.updateActionButtons?.();
   }
 
+  // a preview that failed to play falls back to the video's picture and says so
   async function loadThumb(path: string): Promise<void> {
     if (!hasBackendClient() || session.selPath !== path) return;
+    let shown = false;
     try {
       const response = await legacyBackendResult(getBackendClient().getThumbnail(path));
       if (session.selPath !== path) return;
       if (response.ok && typeof response.thumbnail === "string" && response.thumbnail) {
         showThumbnail(response.thumbnail);
+        shown = true;
       }
     } catch {
-      // thumbnail fallback remains empty
+      if (session.selPath !== path) return;
     }
+    setPreviewStatus("unavailable", shown);
   }
 
   function selectClip(path: string): void {
     preview.select(path);
     session.selPath = path;
+    host.history?.updateButtons?.();
     renderClips();
     const empty = byId("empty");
     const stage = byId("stage");
@@ -721,9 +853,6 @@ export function createLibrary(host: LibraryHost): LibraryApi {
     if (empty) empty.style.display = "none";
     if (stage) stage.style.display = "block";
     playerBar?.classList.add("on");
-    removeThumbnail();
-    const vid = byId("vid");
-    if (vid) vid.style.display = "block";
     const play = byId("btn-play");
     if (play) play.classList.remove("playing");
     const clip = session.clips[path];
@@ -763,6 +892,7 @@ export function createLibrary(host: LibraryHost): LibraryApi {
 
   function clearStage(): void {
     session.selPath = null;
+    host.history?.updateButtons?.();
     const empty = byId("empty");
     const stage = byId("stage");
     const playerBar = byId("player-bar");

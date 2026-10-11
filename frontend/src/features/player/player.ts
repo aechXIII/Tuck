@@ -135,7 +135,9 @@ export function installPlayer(host: PlayerHost): PlayerApi {
     if (v.paused) {
       const target = playbackTarget(host.playbackSegments(), v.currentTime, 0.04);
       if (target != null) v.currentTime = target;
-      void v.play();
+      // a switch to another video aborts this, and the stage already says when a preview can't play
+      const playResult = v.play();
+      if (playResult && typeof playResult.catch === "function") playResult.catch(() => {});
     } else {
       v.pause();
     }
@@ -281,8 +283,11 @@ export function installPlayer(host: PlayerHost): PlayerApi {
     const vbar = byId<HTMLInputElement>("vbar");
     const isMuted = host.getMuted() || (vbar != null && Number(vbar.value) === 0);
     btn.innerHTML = isMuted ? ICON_MUTE : ICON_VOL;
-    btn.title = isMuted ? "Unmute preview" : "Mute preview";
-    btn.setAttribute("aria-label", isMuted ? "Unmute preview" : "Mute preview");
+    const label = isMuted ? "Unmute preview" : "Mute preview";
+    // Tuck's own tooltip reads data-tip; a native title would show a second, different one
+    btn.dataset.tip = label;
+    btn.removeAttribute("title");
+    btn.setAttribute("aria-label", label);
   }
 
   function toggleMute(): void {
