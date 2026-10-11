@@ -44,7 +44,7 @@ function pageErrors(page: Page): string[] {
 }
 
 async function addVideo(page: Page): Promise<void> {
-  await page.getByRole("button", { name: "Add videos" }).click();
+  await page.locator("#btn-add").click();
   await expect(page.getByRole("button", { name: "Compress this video" })).toBeEnabled();
 }
 
@@ -356,7 +356,7 @@ test("the editor still renders when settings fail to load at startup", async ({ 
   await installFakeBackend(page, fixture);
   await page.goto("/");
 
-  await expect(page.getByRole("button", { name: "Add videos" })).toBeVisible();
+  await expect(page.locator("#btn-add")).toBeVisible();
   await page.getByRole("button", { name: "Settings" }).click();
   await expect(page.getByRole("dialog", { name: "Settings" })).toBeVisible();
   expect(errors).toEqual([]);

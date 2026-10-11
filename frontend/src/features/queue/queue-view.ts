@@ -209,6 +209,18 @@ export function videosToRemoveAfterExport(
     .map(([path]) => path);
 }
 
+/**
+ * The Library order with its waiting videos put back in the order the queue will run them.
+ * Waiting videos keep the places they hold in the Library and only swap among themselves;
+ * everything else stays where the person left it.
+ */
+export function alignToQueueOrder(order: readonly string[], waitingInQueueOrder: readonly string[]): string[] {
+  const waiting = new Set(waitingInQueueOrder);
+  const queued = waitingInQueueOrder.filter((path) => order.includes(path));
+  let next = 0;
+  return order.map((path) => (waiting.has(path) ? queued[next++] ?? path : path));
+}
+
 export function formatEta(seconds: number | null | undefined): string {
   if (seconds == null || !(seconds >= 0)) return "--";
   const total = Math.round(seconds);

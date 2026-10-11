@@ -12,7 +12,7 @@ import { confirmToast, toast } from "../editor/toast.ts";
 import { withReason } from "../editor/format.ts";
 import type { DetachedHistory } from "../history/history.ts";
 import { createPreviewController, type PreviewController } from "../preview/preview-controller.ts";
-import { isQueueActive } from "../queue/queue-view.ts";
+import { alignToQueueOrder, isQueueActive } from "../queue/queue-view.ts";
 import { mediaToolsMessage, missingMediaTools } from "../../state/settings-state.ts";
 import { SegmentEditing } from "../timeline/segments.ts";
 import {
@@ -484,13 +484,48 @@ export function createLibrary(host: LibraryHost): LibraryApi {
     order.splice(fromIdx, 1);
     const insertion = order.indexOf(overPath) + (clipReorder.position === "after" ? 1 : 0);
     order.splice(insertion, 0, fromPath);
+    const before = cardTops();
     session.clipOrder = order;
     clipReorder.moved = false;
     renderClips();
+    settleCards(before);
     await syncPendingQueueToClipOrder();
   }
 
-  async function syncPendingQueueToClipOrder(): Promise<void> {
+  function cardTops(): Map<string, number> {
+    const tops = new Map<string, number>();
+    for (const card of byId("clips")?.querySelectorAll<HTMLElement>(".clip[data-clip-path]") ?? []) {
+      if (card.dataset.clipPath) tops.set(card.dataset.clipPath, card.getBoundingClientRect().top);
+    }
+    return tops;
+  }
+
+  // the new order is already in place; cards only slide from where they were, so the moved video can be followed
+  function settleCards(before: ReadonlyMap<string, number>): void {
+    // the stylesheet's animation switch can't reach script-driven animations, so it is checked here
+    if (documentRef.documentElement.dataset.motion === "off") return;
+    for (const card of byId("clips")?.querySelectorAll<HTMLElement>(".clip[data-clip-path]") ?? []) {
+      const was = card.dataset.clipPath ? before.get(card.dataset.clipPath) : undefined;
+      if (was == null || typeof card.animate !== "function") continue;
+      const shift = was - card.getBoundingClientRect().top;
+      if (Math.abs(shift) < 1) continue;
+      // matches --workspace-motion
+      card.animate(
+        [{ transform: `translateY(${shift}px)` }, { transform: "none" }],
+        { duration: 180, easing: "cubic-bezier(0.22, 1, 0.36, 1)" },
+      );
+    }
+  }
+
+  // a drag that ends while the queue is still being reordered waits its turn, so moves never interleave
+  let queueOrderSync: Promise<void> = Promise.resolve();
+
+  function syncPendingQueueToClipOrder(): Promise<void> {
+    queueOrderSync = queueOrderSync.then(applyClipOrderToQueue, applyClipOrderToQueue);
+    return queueOrderSync;
+  }
+
+  async function applyClipOrderToQueue(): Promise<void> {
     if (!hasBackendClient()) return;
     const api = getBackendClient();
     const desired: string[] = [];
@@ -501,14 +536,43 @@ export function createLibrary(host: LibraryHost): LibraryApi {
       }
     }
     if (desired.length < 2) return;
+    let moved = true;
     try {
-      for (let index = 0; index < desired.length; index++) {
-        await api.moveItem(desired[index]!, index);
+      for (let index = 0; index < desired.length && moved; index++) {
+        moved = (await api.moveItem(desired[index]!, index)).ok;
       }
     } catch {
-      // queue reorder is best-effort
+      moved = false;
     }
+    // usually an export started before its move arrived; the Library must not promise an order the queue won't run
+    if (!moved) await alignLibraryToQueue();
     await host.pollQueue?.();
+  }
+
+  async function alignLibraryToQueue(): Promise<void> {
+    let waitingIds: string[] | null = null;
+    try {
+      const state = await getBackendClient().getQueueState();
+      const ids = state.ok ? state.value.pending_ids : null;
+      if (Array.isArray(ids)) waitingIds = ids.filter((id): id is string => typeof id === "string");
+    } catch {
+      // handled below: without the queue's own order there is nothing reliable to show
+    }
+    if (!waitingIds) {
+      toast("Couldn’t reorder the queue. Exports may run in a different order than the Library shows.", "err");
+      return;
+    }
+    const pathById = new Map<string, string>();
+    for (const path of session.clipOrder) {
+      const id = session.clips[path]?._queueItemId;
+      if (id) pathById.set(id, path);
+    }
+    const waitingPaths = waitingIds.map((id) => pathById.get(id)).filter((path): path is string => !!path);
+    const before = cardTops();
+    session.clipOrder = alignToQueueOrder(session.clipOrder, waitingPaths);
+    renderClips();
+    settleCards(before);
+    toast("The queue couldn’t follow that order, so the Library now shows the order exports will run in.", "info");
   }
 
   function appendLibraryClip(container: HTMLElement, model: ClipCardModel): void {

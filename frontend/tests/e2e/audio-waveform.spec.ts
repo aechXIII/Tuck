@@ -48,7 +48,7 @@ test.beforeEach(async ({ page }) => {
   await page.setViewportSize({ width: 1240, height: 800 });
   await installFakeBackend(page, fixture);
   await page.goto("/");
-  await page.getByRole("button", { name: "Add videos" }).click();
+  await page.locator("#btn-add").click();
   await waitForWaveformRequest(page, VIDEO);
 });
 

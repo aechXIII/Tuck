@@ -41,7 +41,7 @@ async function openWithLut(
   await page.setViewportSize({ width: 1240, height: 800 });
   await installFakeBackend(page, fixture);
   await page.goto("/");
-  await page.getByRole("button", { name: "Add videos", exact: true }).click();
+  await page.locator("#btn-add").click();
   await expect(page.locator(".clip")).toHaveCount(1);
   await page.locator("#vid").evaluate(async (video: HTMLVideoElement, colors) => {
     const source = document.createElement("canvas");

@@ -64,7 +64,7 @@ test(`LUT playback, switching and seeking with ${stalledCallbacks ? "stalled" : 
   await page.route("https://lut.test/invert", route => route.fulfill({body:Buffer.from(table.buffer),headers:{"Access-Control-Allow-Origin":"*"}}));
   await installFakeBackend(page,fixture);
   await page.goto("/");
-  await page.getByRole("button",{name:"Add videos",exact:true}).click();
+  await page.locator("#btn-add").click();
   await expect.poll(()=>page.locator("#vid").evaluate((video:HTMLVideoElement)=>video.readyState)).toBeGreaterThanOrEqual(2);
   await page.locator("#lut-panel > summary").click();
   await page.locator("#lut-import").click();

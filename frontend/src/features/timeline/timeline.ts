@@ -850,15 +850,16 @@ function applyTrimStart(sec: number, snap?: boolean) {
   if (full <= 0) return null;
   let segments = clipSegments(c, full);
   let active = activeSegmentIndex(c, segments);
-  if (snap !== false && typeof snapCandidateTime === "function")
-    sec = snapCandidateTime(
-      sec,
-      segmentSnapCandidates(segments, active, full, [sec]),
-      timelinePxPerSecond(),
-    );
+  const snapped = snap === false
+    ? null
+    : snapCandidate(sec, segmentSnapCandidates(segments, active, full, [sec]), timelinePxPerSecond());
+  if (snapped != null) sec = snapped;
   segments = SegmentEditing.editEndpoint(segments, active, "start", sec, full);
   setClipSegments(c, segments, active);
-  return arrayItem(segments, active)?.start ?? null;
+  const start = arrayItem(segments, active)?.start ?? null;
+  lastSnapTime = landedOn(start, snapped);
+  lastSnapEdge = "start";
+  return start;
 }
 
 function applyTrimEnd(sec: number, snap?: boolean) {
@@ -868,15 +869,21 @@ function applyTrimEnd(sec: number, snap?: boolean) {
   if (full <= 0) return null;
   let segments = clipSegments(c, full);
   let active = activeSegmentIndex(c, segments);
-  if (snap !== false && typeof snapCandidateTime === "function")
-    sec = snapCandidateTime(
-      sec,
-      segmentSnapCandidates(segments, active, full, [sec]),
-      timelinePxPerSecond(),
-    );
+  const snapped = snap === false
+    ? null
+    : snapCandidate(sec, segmentSnapCandidates(segments, active, full, [sec]), timelinePxPerSecond());
+  if (snapped != null) sec = snapped;
   segments = SegmentEditing.editEndpoint(segments, active, "end", sec, full);
   setClipSegments(c, segments, active);
-  return arrayItem(segments, active)?.end ?? null;
+  const end = arrayItem(segments, active)?.end ?? null;
+  lastSnapTime = landedOn(end, snapped);
+  lastSnapEdge = "end";
+  return end;
+}
+
+// a snapped edit can still be clamped by its neighbours; the guide only shows where the edge really is
+function landedOn(edge: number | null, snapped: number | null): number | null {
+  return edge != null && snapped != null && Math.abs(edge - snapped) < 1e-6 ? snapped : null;
 }
 
 function canTrimActiveSegmentToPlayhead() {
@@ -921,24 +928,33 @@ function moveActiveSegment(start: number, snap?: boolean) {
   if (full <= 0) return null;
   let segments = clipSegments(c, full);
   let active = activeSegmentIndex(c, segments);
-  if (snap !== false && typeof snapCandidateTime === "function") {
+  lastSnapTime = null;
+  // a moved segment snaps by either edge; the guide marks the edge that lined up
+  let guide: number | null = null;
+  let snappedStart: number | null = null;
+  if (snap !== false) {
     const activeSegment = arrayItem(segments, active);
     if (!activeSegment) return null;
     let duration = activeSegment.end - activeSegment.start;
-    let candidates = segmentSnapCandidates(
-      segments,
-      active,
-      full,
-      [start, start + duration],
-    ).reduce<number[]>(function(acc, point) {
+    const points = segmentSnapCandidates(segments, active, full, [start, start + duration]);
+    let candidates = points.reduce<number[]>(function(acc, point) {
       acc.push(point, point - duration);
       return acc;
     }, []);
-    start = snapCandidateTime(start, candidates, timelinePxPerSecond());
+    snappedStart = snapCandidate(start, candidates, timelinePxPerSecond());
+    if (snappedStart != null) {
+      start = snappedStart;
+      guide = points.includes(snappedStart) ? snappedStart : snappedStart + duration;
+    }
   }
   segments = SegmentEditing.moveSegment(segments, active, start, full);
   setClipSegments(c, segments, active);
-  return arrayItem(segments, active);
+  const moved = arrayItem(segments, active);
+  if (guide != null && landedOn(moved?.start ?? null, snappedStart) != null) {
+    lastSnapTime = guide;
+    lastSnapEdge = guide === snappedStart ? "start" : "end";
+  }
+  return moved;
 }
 
 function resetSegments() {
@@ -1115,16 +1131,19 @@ function processTimelineMove(e: PointerEvent) {
       : null;
     _kfLanding = at == null ? null : { at, from: start };
     paintTrimChrome();
+    paintSnapGuide(lastSnapTime);
     host.seekPreview?.(start);
   } else if (_tlDrag === "out") {
     let end = applyTrimEnd(time);
     if (end == null) return;
     paintTrimChrome();
+    paintSnapGuide(lastSnapTime);
     host.seekPreview?.(end);
   } else if (_tlDrag === "segment") {
     let moved = moveActiveSegment(time - _segmentDragOffset);
     if (!moved) return;
     paintTrimChrome();
+    paintSnapGuide(lastSnapTime);
     host.seekPreview?.(moved.start);
   } else {
     host.seekToRatio?.(ratio);
@@ -1168,6 +1187,8 @@ function onTimelinePointerUp(e: PointerEvent) {
   setSegmentDragCursor(false);
   if (_tlDrag === "ruler") setRulerScrubCursor(false);
   _tlDrag = null;
+  lastSnapTime = null;
+  paintSnapGuide(null);
   if (_kfLanding != null || byId("kf-lane")?.classList.contains("dragging")) {
     _kfLanding = null;
     paintCutOverlay();
@@ -1306,9 +1327,14 @@ function toggleSnap(): boolean {
 }
 
 function snapCandidateTime(time: number, candidates: number[], pxPerSecond: number) {
-  if (!snapOn || !pxPerSecond) return time;
+  return snapCandidate(time, candidates, pxPerSecond) ?? time;
+}
+
+// the candidate a time snaps to, or null when none is close enough
+function snapCandidate(time: number, candidates: number[], pxPerSecond: number): number | null {
+  if (!snapOn || !pxPerSecond) return null;
   let thresholdSec = TL_SNAP_PX / pxPerSecond;
-  let best = time;
+  let best: number | null = null;
   let bestDist = thresholdSec;
   for (let i = 0; i < candidates.length; i++) {
     let c = candidates[i];
@@ -1320,6 +1346,27 @@ function snapCandidateTime(time: number, candidates: number[], pxPerSecond: numb
     }
   }
   return best;
+}
+
+// where the last trim or move snapped and with which edge, so a pointer drag can draw it;
+// keyboard edits never show it
+let lastSnapTime: number | null = null;
+let lastSnapEdge: "start" | "end" = "start";
+
+function paintSnapGuide(time: number | null) {
+  const guide = byId("seq-snap-guide");
+  if (!guide) return;
+  const full = videoDuration();
+  const timeline = byId("timeline");
+  // the playhead follows a dragged edge and covers the line, so the snapped edge itself shows the lock
+  if (time == null || !(full > 0)) {
+    timeline?.removeAttribute("data-snapped");
+    guide.hidden = true;
+    return;
+  }
+  timeline?.setAttribute("data-snapped", lastSnapEdge);
+  guide.style.setProperty("--snap", Math.max(0, Math.min(100, (time / full) * 100)) + "%");
+  guide.hidden = false;
 }
 
 function timelinePxPerSecond() {

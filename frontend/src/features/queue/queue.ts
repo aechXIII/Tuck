@@ -339,6 +339,13 @@ export function installQueue(deps: QueueDeps): QueueApi {
       for (const item of items) if (item.state === "running" && item.id) queueActiveItemIds[item.id] = true;
 
       const summary = queueView.finishedToast;
+      const bar = byId("qbar");
+      if (bar && (summary || !queueView.finished)) bar.classList.remove("just-finished");
+      if (bar && summary?.kind === "ok") {
+        // restart the one-shot finish animation for this batch
+        void bar.offsetWidth;
+        bar.classList.add("just-finished");
+      }
       if (summary) {
         const failedIds = summary.failedIds;
         toast(

@@ -98,7 +98,7 @@ test("adding a video probes, renders the filename as text, and enables preview c
   await installFakeBackend(page, editorFixture());
   await page.goto("/");
 
-  await page.getByRole("button", { name: "Add videos" }).click();
+  await page.locator("#btn-add").click();
   await expect(page.locator(".c2").getByText("Morning clip.mp4", { exact: true })).toBeVisible();
   // the row shows the length on its picture; the rest of the details sit on hover
   await expect(page.locator(".clip .c-dur")).toHaveText("0:12");
@@ -115,7 +115,7 @@ test("selected segment and library card text stays readable on the accent fill",
   await installFakeBackend(page, editorFixture());
   await page.goto("/");
 
-  await page.getByRole("button", { name: "Add videos" }).click();
+  await page.locator("#btn-add").click();
   await expect(page.locator(".tl-segment.active .tl-segment-label")).toBeVisible();
 
   expect(
@@ -172,7 +172,7 @@ test("selected segment and library card text stays readable on the accent fill",
 test("primary actions and timeline labels retain contrast in normal and hover states", async ({ page }) => {
   await installFakeBackend(page, editorFixture());
   await page.goto("/");
-  await page.getByRole("button", { name: "Add videos" }).click();
+  await page.locator("#btn-add").click();
   for (const selector of ["#btn-one", "#btn-play", ".export-actions > summary"]) {
     expect(await textContrast(page, selector, selector), selector).toBeGreaterThanOrEqual(4.5);
     await page.locator(selector).hover();
@@ -196,7 +196,7 @@ test("primary actions and timeline labels retain contrast in normal and hover st
 test("track header controls stay readable and usable at desktop and compact sizes", async ({ page }) => {
   await installFakeBackend(page, editorFixture());
   await page.goto("/");
-  await page.getByRole("button", { name: "Add videos" }).click();
+  await page.locator("#btn-add").click();
   await expect(page.locator("#video-track-head .seq-track-name")).toHaveText("Video");
   await expect(page.locator("#source-audio-head .seq-track-name")).toHaveText("Source audio");
   for (const width of [1240, 960]) {
@@ -236,7 +236,7 @@ test("source audio without an audio stream has a disabled mute control", async (
   fixture.responses.probeFile = { ok: true, data: probeData({ has_audio: false }) };
   await installFakeBackend(page, fixture);
   await page.goto("/");
-  await page.getByRole("button", { name: "Add videos" }).click();
+  await page.locator("#btn-add").click();
   await expect(page.getByRole("button", { name: "Mute source audio", exact: true })).toBeDisabled();
 });
 
@@ -260,7 +260,7 @@ test("queue progress becomes visible after compressing the selected video", asyn
   await installFakeBackend(page, fixture);
   await page.goto("/");
 
-  await page.getByRole("button", { name: "Add videos" }).click();
+  await page.locator("#btn-add").click();
   await expect(page.getByRole("button", { name: "Compress this video" })).toBeEnabled();
   await page.getByRole("button", { name: "Compress this video" }).click();
 
@@ -282,7 +282,7 @@ test("the editor runs entirely from the single module entry with no classic scri
   await installFakeBackend(page, editorFixture());
   await page.goto("/");
 
-  await page.getByRole("button", { name: "Add videos" }).click();
+  await page.locator("#btn-add").click();
   await expect(page.locator(".c2")).toContainText("Morning clip.mp4");
   await expect(page.getByRole("button", { name: "Play/Pause" })).toBeEnabled();
 
@@ -312,7 +312,7 @@ test("a failed probe keeps retry enabled and recovers without executing backend 
   await installFakeBackend(page, fixture);
   await page.goto("/");
 
-  await page.getByRole("button", { name: "Add videos" }).click();
+  await page.locator("#btn-add").click();
   await expect(page.locator(".clip")).toHaveAttribute("aria-description", /malformed/);
   await expect(page.locator("#clips img")).toHaveCount(0);
   const retry = page.getByRole("button", { name: /Retry reading/ });
@@ -331,7 +331,7 @@ test("switching clips during a pending preview ignores the stale media URL", asy
   await installFakeBackend(page, fixture);
   await page.goto("/");
 
-  await page.getByRole("button", { name: "Add videos" }).click();
+  await page.locator("#btn-add").click();
   await expect(page.locator(".c2").first()).toBeVisible();
   await page.locator(".clip").nth(1).click();
   await page.evaluate(() => {
@@ -355,7 +355,7 @@ test("crop, rotation, and segment edits update the selected clip and undo restor
   await page.setViewportSize({ width: 1240, height: 800 });
   await installFakeBackend(page, editorFixture());
   await page.goto("/");
-  await page.getByRole("button", { name: "Add videos" }).click();
+  await page.locator("#btn-add").click();
   await expect(page.locator(".clip .c-dur")).toHaveText("0:12");
 
   await page.locator("#insp-tab-edit").click();
@@ -398,7 +398,7 @@ test("keyboard shortcuts, compact drawers, and audio import stay usable at 960 b
   await expect(page.locator("#left")).toHaveAttribute("role", "dialog");
   await expect(page.locator("#center")).toHaveAttribute("inert", "");
 
-  await page.getByRole("button", { name: "Add videos" }).click();
+  await page.locator("#btn-add").click();
   await expect(page.locator(".c2")).toContainText("Morning clip.mp4");
   await page.keyboard.press("Escape");
   await expect(libraryToggle).toBeFocused();
@@ -428,7 +428,7 @@ test("the audio source range picker sizes its window to the selection and stays 
   await installFakeBackend(page, editorFixture());
   await page.goto("/");
 
-  await page.getByRole("button", { name: "Add videos" }).click();
+  await page.locator("#btn-add").click();
   await expect(page.locator(".c2").getByText("Morning clip.mp4", { exact: true })).toBeVisible();
 
   await page.locator("#insp-tab-edit").click();
@@ -474,7 +474,7 @@ test("track additions and removals resize a manually sized timeline", async ({ p
   await page.setViewportSize({ width: 1920, height: 1080 });
   await installFakeBackend(page, editorFixture());
   await page.goto("/");
-  await page.getByRole("button", { name: "Add videos" }).click();
+  await page.locator("#btn-add").click();
   const separator = page.getByRole("separator", { name: "Resize timeline" });
   await separator.focus();
   await page.keyboard.press("Home");
@@ -494,7 +494,7 @@ test("Inspector content aligns with tabs and footer without empty scrolling", as
   await page.setViewportSize({ width: 1240, height: 800 });
   await installFakeBackend(page, editorFixture());
   await page.goto("/");
-  await page.getByRole("button", { name: "Add videos" }).click();
+  await page.locator("#btn-add").click();
   const libraryEdges = await page.evaluate(() => {
     const rect = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
     return { card: rect(".clip").left, add: rect("#btn-add").left };
@@ -533,7 +533,7 @@ test("export controls have balanced insets and timeline text shares a baseline",
   await page.setViewportSize({ width: 1240, height: 800 });
   await installFakeBackend(page, editorFixture());
   await page.goto("/");
-  await page.getByRole("button", { name: "Add videos" }).click();
+  await page.locator("#btn-add").click();
   const geometry = await page.evaluate(() => {
     const rect = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
     const tabs = rect("#insp-tabs"), tab = rect("#insp-tab-export");
@@ -574,7 +574,7 @@ test("export controls have balanced insets and timeline text shares a baseline",
 test("preview icons retain their geometry through playback events", async ({ page }) => {
   await installFakeBackend(page, editorFixture());
   await page.goto("/");
-  await page.getByRole("button", { name: "Add videos" }).click();
+  await page.locator("#btn-add").click();
   await expect(page.locator("#btn-play .play-icon")).toBeVisible();
   await expect(page.locator("#btn-play .pause-icon")).toBeHidden();
   await page.locator("#vid").dispatchEvent("play");
@@ -588,7 +588,7 @@ test("custom export fields share edges and selected clips have matching handles"
   await page.setViewportSize({ width: 1240, height: 800 });
   await installFakeBackend(page, editorFixture());
   await page.goto("/");
-  await page.getByRole("button", { name: "Add videos" }).click();
+  await page.locator("#btn-add").click();
   await chooseSelect(page, page.locator("#export-res-select-trigger"), { label: "Custom…" });
   await expect(page.getByLabel("Scaler algorithm")).toBeVisible();
   const geometry = await page.evaluate(() => {
@@ -627,7 +627,7 @@ test("segment handles stand out from their clips in both timeline styles", async
   await page.setViewportSize({ width: 1240, height: 800 });
   await installFakeBackend(page, editorFixture());
   await page.goto("/");
-  await page.getByRole("button", { name: "Add videos" }).click();
+  await page.locator("#btn-add").click();
   await expect(page.locator(".tl-segment.active .clip-edge.end")).toBeVisible();
   // the strip against the clip and the grip line against the strip, as contrast ratios
   const handleContrast = () => page.evaluate(() => {
@@ -680,7 +680,7 @@ test("export label centers across the split button and toolbar dividers are cent
   await page.setViewportSize({ width: 1240, height: 800 });
   await installFakeBackend(page, editorFixture());
   await page.goto("/");
-  await page.getByRole("button", { name: "Add videos" }).click();
+  await page.locator("#btn-add").click();
   for (const mode of ["#wf-c", "#wf-u"]) {
     await page.locator(mode).click();
     const geometry = await page.evaluate(() => {
@@ -709,7 +709,7 @@ test("export label centers across the split button and toolbar dividers are cent
 test("Audio cards and headings share the Inspector edges", async ({ page }) => {
   await installFakeBackend(page, editorFixture());
   await page.goto("/");
-  await page.getByRole("button", { name: "Add videos" }).click();
+  await page.locator("#btn-add").click();
   await page.locator("#insp-tab-edit").click();
   const edges = await page.evaluate(() => ["#audio-master-card", ".audio-section-heading", "#audio-track-mixer"].map(s => {
     const r = document.querySelector(s)!.getBoundingClientRect();
@@ -724,7 +724,7 @@ test("panel edges stay aligned when scrollbars reserve no space", async ({ page 
   await installFakeBackend(page, editorFixture());
   await page.goto("/");
   await page.addStyleTag({ content: "#right-scroll, #clips { scrollbar-gutter: auto; scrollbar-width: none; } #right-scroll::-webkit-scrollbar, #clips::-webkit-scrollbar { width: 0; }" });
-  await page.getByRole("button", { name: "Add videos" }).click();
+  await page.locator("#btn-add").click();
   await expect.poll(() => page.evaluate(() => {
     const rect = (s: string) => document.querySelector(s)!.getBoundingClientRect();
     return Math.abs(rect("#profile-card").left - rect("#insp-tabs").left)
@@ -737,7 +737,7 @@ test("Inspector reserves scrollbar space without moving its controls", async ({ 
   await page.setViewportSize({ width: 1240, height: 1100 });
   await installFakeBackend(page, editorFixture());
   await page.goto("/");
-  await page.getByRole("button", { name: "Add videos" }).click();
+  await page.locator("#btn-add").click();
   const measure = () => page.evaluate(() => {
     const field = document.querySelector("#profile-card")!.getBoundingClientRect();
     const scroll = document.querySelector<HTMLElement>("#right-scroll")!;
@@ -776,7 +776,7 @@ test("comma and period jump between cut points, and < > change the playback spee
   const errors = collectPageErrors(page);
   await installFakeBackend(page, editorFixture());
   await page.goto("/");
-  await page.getByRole("button", { name: "Add videos" }).click();
+  await page.locator("#btn-add").click();
   await expect(page.locator(".tl-segment")).toHaveCount(1);
   await seekOnRuler(page, 0.5);
   await page.getByRole("button", { name: "Split at playhead" }).click();
@@ -817,7 +817,7 @@ test("the skip length setting changes how far Shift with the arrows jumps", asyn
   fixture.responses.getSettings = { ...fixture.responses.getSettings as object, skip_seconds: "5" };
   await installFakeBackend(page, fixture);
   await page.goto("/");
-  await page.getByRole("button", { name: "Add videos" }).click();
+  await page.locator("#btn-add").click();
   await expect(page.locator(".tl-segment")).toHaveCount(1);
   // a loaded video knows its length; the test video has no media to read it from
   await page.evaluate(() => Object.defineProperty(document.getElementById("vid"), "duration", { value: 12 }));

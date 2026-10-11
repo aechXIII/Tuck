@@ -13,7 +13,7 @@ test("the Inspector mixer and the timeline share source audio mute, and output a
   await page.setViewportSize({ width: 1240, height: 800 });
   await installFakeBackend(page, fixture);
   await page.goto("/");
-  await page.getByRole("button", { name: "Add videos" }).click();
+  await page.locator("#btn-add").click();
   await page.locator("#insp-tab-edit").click();
 
   const mixer = page.locator("#audio-track-mixer");

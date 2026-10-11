@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  alignToQueueOrder,
   emptyQueueView,
   exportRows,
   formatEta,
@@ -330,4 +331,14 @@ test("only videos whose exports all finished, and weren't edited since, leave th
     ["C:/a.mp4", "C:/e.mp4"],
   );
   assert.deepEqual(videosToRemoveAfterExport(items, {}, watched, () => 0), []);
+});
+
+test("alignToQueueOrder swaps waiting videos into run order and leaves the rest in place", () => {
+  // B and D wait in the queue as D, B; A is exporting and C has no export
+  assert.deepEqual(alignToQueueOrder(["A", "B", "C", "D"], ["D", "B"]), ["A", "D", "C", "B"]);
+  // already matching: nothing moves
+  assert.deepEqual(alignToQueueOrder(["A", "B", "C"], ["A", "C"]), ["A", "B", "C"]);
+  // a waiting export whose video left the Library takes no place
+  assert.deepEqual(alignToQueueOrder(["A", "B"], ["X", "B", "A"]), ["B", "A"]);
+  assert.deepEqual(alignToQueueOrder(["A", "B"], []), ["A", "B"]);
 });

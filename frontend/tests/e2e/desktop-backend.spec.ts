@@ -42,7 +42,7 @@ test("the exit shortcut asks the desktop backend to close the window", async ({ 
   fixture.responses.closeWindow = { ok: true };
   await installFakeBackend(page, fixture);
   await page.goto("/");
-  await expect(page.getByRole("button", { name: "Add videos" })).toBeVisible();
+  await expect(page.locator("#btn-add")).toBeVisible();
   await expect
     .poll(() => page.evaluate(() => (window.__tuckFakeBackendCalls ?? []).some((call) => call.method === "getSettings")))
     .toBe(true);

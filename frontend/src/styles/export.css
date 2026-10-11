@@ -568,9 +568,12 @@
 }
 /* pressed sits after hover so it wins while the pointer is still over the button.
    the button and its menu arrow are one control, so the pair shrinks together */
-#right-foot,
-.export-actions > summary {
-  transition: transform 120ms var(--ease-out), background-color 120ms var(--ease-out);
+#right-foot {
+  transition: transform 120ms var(--ease-out);
+}
+/* the ease back lives on hover, where a release happens, so an accent change repaints instantly */
+.export-actions > summary:hover {
+  transition: background-color 120ms var(--ease-out);
 }
 #right-foot > .btn1:active:not(:disabled),
 #right-foot .export-actions > summary:active {

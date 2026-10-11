@@ -17,7 +17,7 @@ for (const size of [{width:1240,height:800}, {width:960,height:640}]) {
     await installFakeBackend(page, fixture);
     await page.goto("/");
     if (size.width === 960) await page.getByRole("button", {name:"Library", exact:true}).click();
-    await page.getByRole("button", {name:"Add videos"}).click();
+    await page.locator("#btn-add").click();
     if (size.width === 960) await page.getByRole("button", {name:"Inspector", exact:true}).click();
     const panel = page.locator("#frame-blending-panel");
     await expect(panel.locator("#blend-summary")).toHaveText("Off");

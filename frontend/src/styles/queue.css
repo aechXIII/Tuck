@@ -173,6 +173,21 @@
 #qbar.finished .qstatus-done {
   display: block;
 }
+/* a batch that finished cleanly draws its check once; polls and failed batches never replay it */
+#qbar.just-finished .qstatus-done path {
+  stroke-dasharray: 14;
+  animation: qdone-draw 260ms var(--ease-out) both;
+}
+#qbar.just-finished #qfname {
+  animation: qdone-label var(--workspace-motion);
+}
+@keyframes qdone-draw {
+  from { stroke-dashoffset: 14; }
+  to { stroke-dashoffset: 0; }
+}
+@keyframes qdone-label {
+  from { opacity: 0; transform: translateY(2px); }
+}
 .qstatus-chevron {
   width: 12px;
   height: 12px;

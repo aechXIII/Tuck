@@ -17,7 +17,7 @@ for (const width of [1240, 960]) {
     await installFakeBackend(page, fixture);
     await page.goto("/");
     if (width === 960) await page.getByRole("button", {name:"Library",exact:true}).click();
-    await page.getByRole("button", {name:"Add videos"}).click();
+    await page.locator("#btn-add").click();
     if (width === 960) await page.getByRole("button", {name:"Inspector",exact:true}).click();
     const panel = page.locator("#export-video-panel");
     const resolution = page.getByLabel("Output resolution", {exact:true});

@@ -557,8 +557,9 @@ body.settings-open .settings-dialog {
   cursor: default;
 }
 /* pressed comes after every hover so it wins while the pointer is still over the button;
-   it reads darker than both rest and hover, and shows at once */
-.set-btn {
+   it reads darker than both rest and hover, and shows at once. The ease back on release lives
+   on hover, where a release happens, so an accent change elsewhere still repaints instantly */
+.set-btn:hover {
   transition: background-color 120ms var(--ease-out), color 120ms var(--ease-out);
 }
 .set-btn:active:not(:disabled),

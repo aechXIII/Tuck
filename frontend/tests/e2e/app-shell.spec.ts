@@ -29,7 +29,7 @@ test("generated entry loads relative assets and exposes the empty editor", async
   await installFakeBackend(page, healthyBackendFixture());
   await page.goto("/");
 
-  await expect(page.getByRole("button", { name: "Add videos" })).toBeVisible();
+  await expect(page.locator("#btn-add")).toBeVisible();
   await expect(page.getByRole("button", { name: "Settings" })).toBeVisible();
   await expect(page.locator("#vid")).toHaveAttribute("aria-label", /preview/i);
   await expect(page.getByText("Drop videos anywhere", { exact: true })).toBeVisible();
@@ -75,7 +75,7 @@ test("the editor remains usable at the 960 by 640 minimum", async ({ page }) => 
   await expect(libraryToggle).toBeVisible();
   await libraryToggle.click();
   await expect(libraryToggle).toHaveAttribute("aria-expanded", "true");
-  await expect(page.getByRole("button", { name: "Add videos" })).toBeVisible();
+  await expect(page.locator("#btn-add")).toBeVisible();
   await expect(page.getByRole("button", { name: "Settings" })).toBeVisible();
   await expect(page.locator("#timeline")).toBeVisible();
   const overflow = await page.evaluate(() => ({
@@ -111,7 +111,7 @@ test("rejected file selection is visible, recoverable, and rendered as text", as
   await installFakeBackend(page, fixture);
   await page.goto("/");
 
-  const addVideos = page.getByRole("button", { name: "Add videos" });
+  const addVideos = page.locator("#btn-add");
   await addVideos.click();
 
   await expect(page.getByRole("alert")).toContainText(
@@ -150,7 +150,7 @@ test("a failed probe exposes an enabled retry and recovers", async ({ page }) =>
   await installFakeBackend(page, fixture);
   await page.goto("/");
 
-  await page.getByRole("button", { name: "Add videos" }).click();
+  await page.locator("#btn-add").click();
   // the card names the problem; the reason is on its tooltip and read out with it
   await expect(page.locator(".lib-group-attention .c-status")).toHaveText("Can't read file");
   await expect(page.locator(".lib-group-attention .c-status")).toHaveAttribute("data-tip", "Probe failed safely");

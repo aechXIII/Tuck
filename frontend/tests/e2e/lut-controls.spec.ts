@@ -23,7 +23,7 @@ for (const width of [1240, 960]) {
     await installFakeBackend(page, fixture);
     await page.goto("/");
     if (width === 960) await page.getByRole("button", {name:"Library",exact:true}).click();
-    await page.getByRole("button", {name:"Add videos"}).click();
+    await page.locator("#btn-add").click();
     if (width === 960) await page.getByRole("button", {name:"Inspector",exact:true}).click();
     const panel = page.locator("#lut-panel");
     await panel.locator(":scope > summary").focus();
@@ -121,7 +121,7 @@ test("blending errors leave the LUT preview enabled and FPS controls stay synchr
   await installFakeBackend(page,fixture);
   await page.goto("/");
   await page.getByRole("button",{name:"Library",exact:true}).click();
-  await page.getByRole("button",{name:"Add videos"}).click();
+  await page.locator("#btn-add").click();
   await page.getByRole("button",{name:"Inspector",exact:true}).click();
   await page.locator("#lut-panel > summary").click();
   await page.getByRole("button",{name:/^LUT /}).click();

@@ -18,7 +18,7 @@ test.beforeEach(async ({ page }) => {
   await page.clock.install();
   await installFakeBackend(page, fixture);
   await page.goto("/");
-  await page.getByRole("button", { name: "Add videos" }).click();
+  await page.locator("#btn-add").click();
 });
 
 test("queue errors preserve the last successful queue display", async ({ page }) => {

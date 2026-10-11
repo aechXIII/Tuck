@@ -21,7 +21,7 @@ function previewFixture(): FakeBackendFixture {
 }
 
 async function addVideo(page: Page): Promise<void> {
-  await page.getByRole("button", { name: "Add videos" }).click();
+  await page.locator("#btn-add").click();
   await expect(page.locator(".clip").filter({ hasText: "Harbour.mp4" })).toBeVisible();
 }
 

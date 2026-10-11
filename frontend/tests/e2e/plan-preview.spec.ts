@@ -42,7 +42,7 @@ test("a plan answered after the settings changed never shows its estimate", asyn
   await page.setViewportSize({ width: 1240, height: 800 });
   await installFakeBackend(page, fixture);
   await page.goto("/");
-  await page.getByRole("button", { name: "Add videos" }).click();
+  await page.locator("#btn-add").click();
   const row = page.locator(".clip").filter({ hasText: "Estimate.mp4" });
   await expect(row).toBeVisible();
 

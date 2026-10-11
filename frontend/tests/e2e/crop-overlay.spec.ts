@@ -19,7 +19,7 @@ async function openCrop(page: Page): Promise<void> {
   await page.setViewportSize({ width: 1240, height: 800 });
   await installFakeBackend(page, fixture);
   await page.goto("/");
-  await page.getByRole("button", { name: "Add videos" }).click();
+  await page.locator("#btn-add").click();
   await expect(page.getByRole("button", { name: "Compress this video" })).toBeEnabled();
   await page.locator("#insp-tab-edit").click();
   await page.getByRole("group", { name: "Crop aspect ratio" }).getByRole("button", { name: "Free" }).click();

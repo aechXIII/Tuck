@@ -22,6 +22,11 @@
 }
 #crop-ui.on {
   display: block;
+  /* fades in once as crop mode opens; the box and handles then follow the pointer with no easing */
+  animation: crop-enter 140ms ease-out;
+}
+@keyframes crop-enter {
+  from { opacity: 0; }
 }
 .crop-dim {
   position: absolute;

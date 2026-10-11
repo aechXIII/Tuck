@@ -220,6 +220,12 @@ body.timeline-resizing * {
 .clip-edge.dragging::before {
   background: var(--accent-light);
 }
+/* the edge that snapped turns near-white, so the lock reads on the edge under the pointer */
+#timeline[data-snapped="start"] .tl-segment[aria-pressed="true"] .clip-edge.start::before,
+#timeline[data-snapped="end"] .tl-segment[aria-pressed="true"] .clip-edge.end::before {
+  background: var(--text);
+  transition: none;
+}
 .clip-edge:focus-visible {
   outline: 2px solid var(--accent-light);
   outline-offset: -2px;
@@ -1449,6 +1455,19 @@ body.task-cut #timeline-audio-tools {
 }
 #video-track.selected .tl-segment.active .tl-segment-badge {
   color: var(--tl-selected-ink);
+}
+/* where a dragged edge lands while it is snapped; neutral so it never reads as the playhead */
+#seq-snap-guide {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--snap, 0%);
+  width: 1px;
+  margin-left: -0.5px;
+  background: color-mix(in srgb, var(--text) 60%, transparent);
+}
+#seq-snap-guide[hidden] {
+  display: none;
 }
 #seq-playhead {
   position: absolute;
