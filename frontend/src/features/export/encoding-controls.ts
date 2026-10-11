@@ -16,6 +16,7 @@ import { reasonSentence, withReason } from "../editor/format.ts";
 import { profileChangeSummary, profileSummary } from "../profiles/profile-summary.ts";
 import { pickerProfiles } from "../profiles/profile-list.ts";
 import type { EditorClip } from "../editor/types.ts";
+import { isQueueActive, queuedVideoLabel } from "../queue/queue-view.ts";
 import type { EditorSession } from "../editor/session.ts";
 import {
   buildPlanRequest,
@@ -57,6 +58,8 @@ export interface EncodingControlsDeps {
   orderedClipKeys: () => string[];
   audioRequestPayload: (clip: EditorClip) => Record<string, unknown>;
   pollQueue: () => void | Promise<void>;
+  // opens Exports at this export, for a video that is already in the queue
+  showExport?: (itemId: string) => void;
   renderClips?: () => void;
   selectCutSegment: (index: number, time: number) => void;
   moveCutStarts: (clip: EditorClip, plan: CutPlanPreview) => boolean;
@@ -95,6 +98,8 @@ export interface EncodingControlsApi {
   resetToProfile: () => void;
   compressOne: () => Promise<void>;
   compressAll: () => Promise<void>;
+  // queues the selected video again even though an export of it is already waiting or running
+  compressCopy: () => Promise<void>;
   saveProfileChanges: () => Promise<void>;
   saveProfileAs: () => Promise<void>;
   onSize: (value: string) => void;
@@ -289,7 +294,11 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
   function updateActionButtons(): void {
     // another video, or none, is selected now; its own plan brings its own notes
     if (warningsPath && warningsPath !== session.selPath) paintPlanWarnings(null);
-    if (wf === 2) { cutting.render(); return; }
+    if (wf === 2) {
+      el("btn-copy").hidden = true;
+      cutting.render();
+      return;
+    }
     const up = wf === 1;
     const readiness = exportReadiness();
     const count = readiness.ready.length + readiness.loading.length + readiness.failed.length;
@@ -300,15 +309,26 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     // the settings are shared; this button acts on the selected video only
     one.textContent = up ? "Upscale this video" : "Compress this video";
     one.disabled = !selReady || !blending.valid() || !lut.valid() || !videoSettingsValid();
-    const exported = readiness.ready.length + readiness.loading.length;
+    const alreadyQueued = readiness.ready.filter((path) => isQueueActive(session.clips[path]?._queueState)).length;
+    const exported = readiness.ready.length + readiness.loading.length - alreadyQueued;
     all.textContent = (up ? "Upscale all" : "Compress all") + (exported ? ` (${exported})` : "");
     all.disabled = !allReady || !blending.valid() || !lut.valid() || !videoSettingsValid();
     all.classList.toggle("upscale-batch", up);
+    const selected = session.selPath ? session.clips[session.selPath] : null;
+    const queued = !!selected && isQueueActive(selected._queueState);
     if (enqueueBusyShown) {
       one.textContent = "Adding to queue…";
       one.disabled = true;
       all.disabled = true;
+    } else if (selected && queued) {
+      // the button shows the export already on its way and opens it, so a press can't queue it twice
+      showQueuedState(one, selected);
+    } else {
+      clearQueuedState(one);
     }
+    const copy = el<HTMLButtonElement>("btn-copy");
+    copy.hidden = !queued || enqueueBusyShown;
+    copy.disabled = one.disabled && !queued;
     const note = el("btn-all-note");
     note.textContent = count > 1 ? allNote(readiness) : "";
     note.hidden = !note.textContent;
@@ -1089,8 +1109,43 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     updateDirty();
   }
 
+  function showQueuedState(button: HTMLButtonElement, clip: EditorClip): void {
+    const label = queuedVideoLabel(clip._queueState, clip._statusText, clip._progress, clip._progressIndeterminate);
+    button.textContent = label;
+    button.disabled = false;
+    button.dataset.queued = "true";
+    button.dataset.tip = "Show in Exports";
+    button.setAttribute("aria-label", `${label}. Show in Exports`);
+  }
+
+  function clearQueuedState(button: HTMLButtonElement): void {
+    if (button.dataset.queued !== "true") return;
+    delete button.dataset.queued;
+    delete button.dataset.tip;
+    button.removeAttribute("aria-label");
+  }
+
+  function closeExportMenu(): void {
+    document.querySelector<HTMLDetailsElement>("#right-foot .export-actions")?.removeAttribute("open");
+  }
+
   async function compressOne(): Promise<void> {
+    const selected = session.selPath ? session.clips[session.selPath] : undefined;
+    if (selected && isQueueActive(selected._queueState)) {
+      deps.showExport?.(selected._queueItemId ?? "");
+      return;
+    }
     if (wf === 2) { await cutting.exportCuts(false); return; }
+    await enqueueSelected(false);
+  }
+
+  async function compressCopy(): Promise<void> {
+    closeExportMenu();
+    if (wf === 2) return;
+    await enqueueSelected(true);
+  }
+
+  async function enqueueSelected(copy: boolean): Promise<void> {
     if (enqueueing) return;
     if (!lut.valid() || !blending.reportValidity() || !videoSettingsValid()) return;
     const path = session.selPath;
@@ -1109,7 +1164,16 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
       const r = await legacyBackendResult(
         client().enqueueWithOptions(buildRequest(clip.path) as never),
       );
+      if (!r.ok && r.code === "BACKEND_TIMEOUT") {
+        // the request may still have reached the queue, so it is checked before being called a failure
+        await deps.pollQueue();
+        if (!isQueueActive(clip._queueState)) {
+          toast(`Tuck didn’t hear back about “${clip.name}”, and it isn’t in the queue yet. Check Exports before exporting it again.`, "err");
+        }
+        return;
+      }
       if (!r.ok) toast(withReason(`Couldn’t add “${clip.name}” to the queue.`, r.error), "err");
+      else if (copy) toast(`Added another copy of “${clip.name}”. It gets its own file name.`, "info");
     });
     void deps.pollQueue();
   }
@@ -1144,6 +1208,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
   }
 
   async function compressAll(): Promise<void> {
+    closeExportMenu();
     if (wf === 2) { await cutting.exportCuts(true); return; }
     if (enqueueing) return;
     if (!lut.valid() || !blending.reportValidity() || !videoSettingsValid()) return;
@@ -1160,17 +1225,35 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
       toast(`Tuck can’t read ${namedVideos(readiness.failed)}. Retry in the Library, or remove ${readiness.failed.length === 1 ? "it" : "them"}.`, "err");
       return;
     }
-    // videos that can't be read are skipped; the note under the button already says which
-    const requests = readiness.ready.map((path) => buildRequest(session.clips[path]!.path) as never);
+    // videos that can't be read are skipped; the note under the button already says which.
+    // videos already waiting or exporting are skipped too, so Compress all never doubles them
+    const alreadyQueued = readiness.ready.filter((path) => isQueueActive(session.clips[path]?._queueState));
+    const toQueue = readiness.ready.filter((path) => !alreadyQueued.includes(path));
+    if (!toQueue.length) {
+      toast(alreadyQueued.length === 1 ? "That video is already in the queue." : "These videos are already in the queue.", "info");
+      return;
+    }
+    const requests = toQueue.map((path) => buildRequest(session.clips[path]!.path) as never);
     await whileEnqueueing(async () => {
       const r = await legacyBackendResult(client().enqueueBatch(requests));
       const errors = toStringArray(r.errors);
+      if (!r.ok && r.code === "BACKEND_TIMEOUT") {
+        await deps.pollQueue();
+        const arrived = toQueue.filter((path) => isQueueActive(session.clips[path]?._queueState)).length;
+        if (arrived < toQueue.length) {
+          toast(`Tuck didn’t hear back. ${arrived} of ${toQueue.length} videos are in the queue. Check Exports before exporting the rest again.`, "err");
+        }
+        return;
+      }
       if (!r.ok) {
         toast(errors.length
           ? `No videos were added to the queue. ${enqueueReasons(errors)}`
           : withReason("Couldn’t add the videos to the queue.", r.error), "err");
       } else if (errors.length) {
         toast(`${errors.length} of ${requests.length} videos weren’t added to the queue. ${enqueueReasons(errors)}`, "err");
+      } else if (alreadyQueued.length) {
+        const added = requests.length;
+        toast(`Added ${added} ${added === 1 ? "video" : "videos"}. ${alreadyQueued.length} ${alreadyQueued.length === 1 ? "was" : "were"} already in the queue.`, "info");
       }
     });
     void deps.pollQueue();
@@ -1759,6 +1842,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     resetToProfile,
     compressOne,
     compressAll,
+    compressCopy,
     saveProfileChanges,
     saveProfileAs,
     onSize,

@@ -2,7 +2,7 @@ import type { BackendClient } from "../../backend/types.ts";
 import { SegmentEditing } from "../timeline/segments.ts";
 import { legacyBackendResult } from "../editor/backend-compat.ts";
 import { formatBytes, formatTime, withReason } from "../editor/format.ts";
-import { confirmToast, toast } from "../editor/toast.ts";
+import { announce, confirmToast, toast } from "../editor/toast.ts";
 import type { EditorClip } from "../editor/types.ts";
 import type { EditorSession } from "../editor/session.ts";
 import {
@@ -13,6 +13,9 @@ import {
   isQueueActive,
   queueItemsFromSnapshot,
   reduceQueueSnapshot,
+  resultNote,
+  resultNoteDetail,
+  targetFit,
   videosToRemoveAfterExport,
   watchExports,
   type ExportRow,
@@ -46,6 +49,8 @@ export interface QueueApi {
   clearDone: (announce?: boolean) => Promise<void>;
   copyDiagnostics: (itemId?: string) => Promise<void>;
   toggleExports: () => void;
+  // opens Exports with focus on this export's row
+  showExport: (itemId: string) => void;
 }
 
 export function installQueue(deps: QueueDeps): QueueApi {
@@ -140,6 +145,14 @@ export function installQueue(deps: QueueDeps): QueueApi {
     (retry ?? byId("qstatus"))?.focus();
   }
 
+  // a video's export button opens the list at that export, so its Cancel is one key away
+  function showExport(itemId: string): void {
+    setExportsOpen(true);
+    const buttons = Array.from(byId("exports-list")?.querySelectorAll<HTMLElement>("button") ?? []);
+    const row = buttons.find((button) => button.dataset.itemId === itemId);
+    (row ?? byId("qstatus"))?.focus();
+  }
+
   function sourceSize(path: string): number {
     const clip = session.clips[path] ?? Object.values(session.clips).find((item) => item?.probeData?.path === path);
     return Number(clip?._fileSize) || 0;
@@ -184,8 +197,9 @@ export function installQueue(deps: QueueDeps): QueueApi {
       if (row.sizes.from > row.sizes.to) {
         detail.append(` · saved ${Math.round((1 - row.sizes.to / row.sizes.from) * 100)}%`);
       }
+      if (row.note) detail.append(` · ${row.note}`);
     } else {
-      detail.textContent = row.detail;
+      detail.textContent = row.note && row.detail ? `${row.detail} · ${row.note}` : row.note || row.detail;
     }
     detail.title = detail.textContent ?? "";
     element.append(detail);
@@ -274,6 +288,8 @@ export function installQueue(deps: QueueDeps): QueueApi {
   const rowRequests: Record<string, "cancel" | "retry"> = {};
   let queueView: QueueViewState = emptyQueueView();
   let watchedExports: Record<string, WatchedExport> = {};
+  // failures already told to screen reader users while the rest of their batch kept going
+  const announcedFailures = new Set<string>();
   let pollingQueue = false;
 
   function libraryPath(sourcePath: string): string | null {
@@ -304,6 +320,11 @@ export function installQueue(deps: QueueDeps): QueueApi {
         if (item.error) clip._queueError = item.error;
         if (item.result_size) clip._resultSize = Number(item.result_size);
         if (item.result_path) clip._resultPath = item.result_path;
+        const fit = targetFit(item);
+        clip._resultTarget = fit?.target ?? 0;
+        clip._resultFits = fit?.fits ?? false;
+        clip._resultNote = resultNote(item);
+        clip._resultNoteDetail = resultNoteDetail(item);
       } else if (isQueueActive(clip._queueState)) {
         clip._queueState = "";
         clip._statusText = "";
@@ -320,6 +341,31 @@ export function installQueue(deps: QueueDeps): QueueApi {
     clip._progressIndeterminate = false;
     delete clip._resultPath;
     delete clip._resultSize;
+    delete clip._resultTarget;
+    delete clip._resultFits;
+    delete clip._resultNote;
+    delete clip._resultNoteDetail;
+  }
+
+  // the queue bar's own text isn't read out, so starting and failing exports are said here;
+  // the end of a batch is said by its toast
+  function announceQueueChanges(previous: QueueViewState, items: readonly QueueItem[]): void {
+    const active = items.filter((item) => isQueueActive(item.state));
+    if (!previous.hadActive && active.length) {
+      const first = active[0]!;
+      announce(active.length === 1
+        ? `Exporting “${first.source ?? "video"}”.`
+        : `Exporting ${active.length} videos.`);
+    }
+    if (!active.length) {
+      announcedFailures.clear();
+      return;
+    }
+    for (const item of items) {
+      if (item.state !== "failed" || !item.id || announcedFailures.has(item.id) || !queueActiveItemIds[item.id]) continue;
+      announcedFailures.add(item.id);
+      announce(`Couldn’t export “${item.source ?? "a video"}”.`);
+    }
   }
 
   async function pollQueue(): Promise<void> {
@@ -339,8 +385,12 @@ export function installQueue(deps: QueueDeps): QueueApi {
 
       for (const item of items) if (item.state === "running" && item.id) queueActiveItemIds[item.id] = true;
 
+      announceQueueChanges(previous, items);
+
       const summary = queueView.finishedToast;
       const bar = byId("qbar");
+      // a batch with any failure shows a warning instead of the success check
+      bar?.classList.toggle("has-failed", queueView.finished && queueView.failed > 0);
       if (bar && (summary || !queueView.finished)) bar.classList.remove("just-finished");
       if (bar && summary?.kind === "ok") {
         // restart the one-shot finish animation for this batch
@@ -644,6 +694,7 @@ export function installQueue(deps: QueueDeps): QueueApi {
     clearDone,
     copyDiagnostics,
     toggleExports,
+    showExport,
   };
 }
 

@@ -292,3 +292,41 @@ test("library omits empty status sections and reports a hand-checked summary", (
     sizeLabel: "1.9 GB",
   });
 });
+
+test("a finished row shows the size against its target and keeps the export's note", () => {
+  const done = clipCards.createClipCard(documentRef, {
+    path: "harbour.mp4",
+    name: "harbour.mp4",
+    queueItemId: "d1",
+    queueState: "completed",
+    resultPath: "harbour_tuck.mp4",
+    resultSize: "9.0 MB",
+    resultTarget: "10 MB",
+    resultFits: true,
+    resultNote: "Used software encoding because the NVIDIA encoder couldn't start",
+    resultNoteDetail: "Used software encoding because the NVIDIA encoder couldn't start",
+  }, quiet);
+  if (!(done instanceof FakeElement)) throw new Error("expected FakeElement");
+  const line = descendants(done).find((element) => element.className === "c-line done");
+  assert.deepEqual(line?.children.map((element) => [element.className, element.textContent]), [
+    ["c-status", "9.0 MB"],
+    ["c-sep", "·"],
+    ["c-fit", "fits 10 MB"],
+    ["c-act", "Show"],
+  ]);
+  const note = descendants(done).find((element) => element.className === "c-note");
+  assert.equal(note?.textContent, "Used software encoding because the NVIDIA encoder couldn't start");
+  assert.equal(note?.attributes["aria-description"], note?.textContent);
+
+  const over = clipCards.createClipCard(documentRef, {
+    path: "long.mp4",
+    name: "long.mp4",
+    queueState: "completed",
+    resultSize: "10.4 MB",
+    resultTarget: "10 MB",
+    resultFits: false,
+  }, quiet);
+  if (!(over instanceof FakeElement)) throw new Error("expected FakeElement");
+  assert.equal(descendants(over).find((element) => element.className === "c-fit over")?.textContent, "over 10 MB");
+  assert.equal(descendants(over).find((element) => element.className === "c-note"), undefined);
+});

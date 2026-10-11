@@ -182,9 +182,19 @@
   height: 100%;
   background: var(--accent-light);
 }
+/* no measurable progress: the same sweep as the queue bar, or a still dashed track with Animations off */
 .c-thumb .c-progress.is-indeterminate .c-progress-fill {
-  width: 32%;
-  margin-left: 34%;
+  width: 30%;
+  animation: card-progress-sweep 1.6s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+@keyframes card-progress-sweep {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(334%); }
+}
+:root[data-motion="off"] .c-thumb .c-progress.is-indeterminate .c-progress-fill {
+  width: 100%;
+  animation: none;
+  background: repeating-linear-gradient(90deg, var(--accent-light) 0 6px, transparent 6px 12px);
 }
 
 .c-line {
@@ -221,6 +231,22 @@
 }
 .c-line.done {
   color: var(--good);
+}
+.c-line .c-sep {
+  flex: 0 0 auto;
+  color: var(--dim);
+}
+/* a finished export that came in over its target says so in the warning colour */
+.c-line .c-fit.over {
+  color: var(--warn);
+}
+.c-note {
+  margin-top: 1px;
+  overflow: hidden;
+  color: var(--muted);
+  font: 400 11px/15px var(--font);
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .c-line.attention {
   color: color-mix(in srgb, var(--warn) 80%, var(--text));

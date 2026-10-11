@@ -1297,6 +1297,8 @@ select {
 .btn1 {
   width: 100%;
   background: var(--action);
+  /* "Exporting · 40%" changes every poll; even digits keep the label still */
+  font-variant-numeric: tabular-nums;
   border: none;
   border-radius: var(--r-ctl);
   color: var(--on-accent);

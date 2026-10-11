@@ -253,4 +253,6 @@ def queue_item_dict(item: QueueItem) -> dict[str, Any]:
         "warnings": list(plan.warnings) if plan else [],
         "effective_encoder": item.effective_encoder,
         "encoder_fallback": item.encoder_fallback,
+        # the size this export aimed for, in bytes; 0 when it had no target
+        "target_size": int(plan.target_size) if plan is not None and plan.target_size else 0,
     }

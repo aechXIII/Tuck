@@ -23,6 +23,7 @@ class TestEncodeProgressModel:
             EncodeProgress(stage=EncodeStage.ENCODING_EDGES).status_text() == "Encoding cut edges"
         )
         assert EncodeProgress(stage=EncodeStage.VERIFYING).status_text() == "Checking output"
+        assert EncodeProgress(stage=EncodeStage.SAVING).status_text() == "Saving file"
         assert EncodeProgress(stage=EncodeStage.JOINING, indeterminate=True).to_dict()[
             "indeterminate"
         ]

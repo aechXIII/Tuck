@@ -22,6 +22,12 @@ export function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
+// a target size the way people set it: "10 MB", or "9.5 MB" when it isn't whole
+export function formatTarget(bytes: number): string {
+  const tenths = Math.round((bytes / (1024 * 1024)) * 10) / 10;
+  return `${Number.isInteger(tenths) ? tenths.toFixed(0) : tenths.toFixed(1)} MB`;
+}
+
 export function errorSummary(error: unknown, limit = 140): string {
   const text = String(error || "Unknown error")
     .replace(/\s+/g, " ")

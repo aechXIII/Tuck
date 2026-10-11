@@ -96,6 +96,12 @@ export interface EditorClip {
   _progressIndeterminate?: boolean;
   _fileSize?: number;
   _resultSize?: number;
+  // the size the finished export aimed for, in bytes, and whether it came in under it
+  _resultTarget?: number;
+  _resultFits?: boolean;
+  // what the finished export still has to say, e.g. the encoder it fell back to
+  _resultNote?: string;
+  _resultNoteDetail?: string;
   _queueError?: string;
   _previewRequestId?: number;
   // the Library picture: undefined until asked for, "" when there is none

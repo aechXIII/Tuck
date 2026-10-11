@@ -9,7 +9,7 @@ import {
   type EditorSession,
 } from "../editor/session.ts";
 import { confirmToast, toast } from "../editor/toast.ts";
-import { withReason } from "../editor/format.ts";
+import { formatTarget, withReason } from "../editor/format.ts";
 import type { DetachedHistory } from "../history/history.ts";
 import { createPreviewController, type PreviewController } from "../preview/preview-controller.ts";
 import { alignToQueueOrder, isQueueActive } from "../queue/queue-view.ts";
@@ -789,6 +789,10 @@ export function createLibrary(host: LibraryHost): LibraryApi {
         duration: full ? formatTime(full) : "",
         result: clipResult(clip),
         resultSize: clip._queueState === "completed" && clip._resultSize ? formatBytes(clip._resultSize) : "",
+        resultTarget: clip._queueState === "completed" && clip._resultTarget ? formatTarget(clip._resultTarget) : "",
+        resultFits: clip._resultFits === true,
+        resultNote: clip._queueState === "completed" ? clip._resultNote || "" : "",
+        resultNoteDetail: clip._queueState === "completed" ? clip._resultNoteDetail || "" : "",
       };
     });
     const nextModels = JSON.stringify(models);

@@ -11,6 +11,23 @@ export function isQueueActive(state: QueueItemState | "" | undefined): boolean {
   return state === "pending" || state === "running";
 }
 
+/**
+ * What a video in the queue says about its export: "Queued", "Exporting · 40%", or the step the
+ * backend names, such as "Pass 1 of 2 · 12%" or "Second try · 4%".
+ */
+export function queuedVideoLabel(
+  state: QueueItemState | "" | undefined,
+  statusText: string | undefined,
+  progress: number | undefined,
+  indeterminate: boolean | undefined,
+): string {
+  if (state === "pending") return "Queued";
+  const phase = (statusText || "").split(" · ")[0] || "";
+  const label = phase && phase !== "Encoding" && phase !== "Pending" ? phase : "Exporting";
+  const percent = Math.round(Math.max(0, Math.min(100, progress || 0)));
+  return indeterminate || !percent ? label : `${label} · ${percent}%`;
+}
+
 export interface QueueItem {
   readonly id?: string;
   readonly source?: string;
@@ -34,6 +51,8 @@ export interface QueueItem {
   readonly error_detail?: string;
   /** Why Auto finished on a different encoder, in plain words; empty when it didn't. */
   readonly encoder_fallback?: string;
+  /** The size the export aimed for, in bytes; 0 when it had none. */
+  readonly target_size?: number;
   readonly [key: string]: unknown;
 }
 
@@ -116,6 +135,36 @@ function itemName(item: QueueItem): string {
   return item.source ?? item.source_path?.split(/[\\/]/).pop() ?? "video";
 }
 
+/** The short note a finished export keeps: the encoder it fell back to, or checks Tuck couldn't make. */
+export function resultNote(item: QueueItem): string {
+  if (item.state !== "completed") return "";
+  if (item.encoder_fallback) return item.encoder_fallback;
+  if (Array.isArray(item.unverified) && item.unverified.length) return "Not fully checked";
+  return "";
+}
+
+/** The whole reason behind a result note, for its tooltip. */
+export function resultNoteDetail(item: QueueItem): string {
+  if (item.state !== "completed") return "";
+  if (item.encoder_fallback) return item.encoder_fallback;
+  if (Array.isArray(item.unverified)) return item.unverified.filter((entry) => typeof entry === "string").join(" ");
+  return "";
+}
+
+/** Whether a finished export came in under the size it aimed for; null when it had no target. */
+export function targetFit(item: QueueItem): { readonly fits: boolean; readonly target: number } | null {
+  const size = Number(item.result_size) || 0;
+  const target = Number(item.target_size) || 0;
+  if (item.state !== "completed" || size <= 0 || target <= 0) return null;
+  return { fits: size <= target, target };
+}
+
+// "Used software encoding because …" reads as its own sentence after the main message
+function sentence(note: string): string {
+  const trimmed = note.trim();
+  return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
+}
+
 /** One message for a finished batch, counted from that batch's items only. */
 export function batchSummary(
   items: readonly QueueItem[],
@@ -138,8 +187,17 @@ export function batchSummary(
       : cancelled === 1 ? "Export cancelled." : "Exports cancelled.";
     return { message, kind: "info", failedIds };
   }
-  if (completed.length === 1) return { message: `Exported “${itemName(completed[0]!)}”.`, kind: "ok", failedIds };
-  if (completed.length) return { message: `${completed.length} videos exported.`, kind: "ok", failedIds };
+  if (completed.length === 1) {
+    const note = resultNote(completed[0]!);
+    const message = `Exported “${itemName(completed[0]!)}”.` + (note ? ` ${sentence(note)}` : "");
+    return { message, kind: "ok", failedIds };
+  }
+  if (completed.length) {
+    const noted = completed.filter((item) => resultNote(item)).length;
+    const message = `${completed.length} videos exported.` +
+      (noted ? ` ${noted} ${noted === 1 ? "has a note" : "have notes"} in Exports.` : "");
+    return { message, kind: "ok", failedIds };
+  }
   return { message: "Exports finished.", kind: "ok", failedIds };
 }
 
@@ -315,6 +373,8 @@ export interface ExportRow {
   readonly name: string;
   readonly kind: ExportRowKind;
   readonly detail: string;
+  /** What a finished export should still say, such as the encoder it fell back to. */
+  readonly note: string;
   /** Source and result sizes, shown when both are known. */
   readonly sizes: { readonly from: number; readonly to: number } | null;
   readonly progress: number | null;
@@ -346,6 +406,7 @@ export function exportRows(
       id: item.id ?? "",
       name: itemName(item),
       resultPath: item.result_path ?? "",
+      note: resultNote(item),
     };
     if (item.state === "running") {
       const progress = Math.round(item.progress ?? 0);

@@ -1,4 +1,4 @@
-import type { QueueItemState } from "../queue/queue-view.ts";
+import { queuedVideoLabel, type QueueItemState } from "../queue/queue-view.ts";
 
 export interface ClipCardElement {
   className: string;
@@ -46,6 +46,12 @@ export interface ClipCardModel {
   result?: ClipResult | null | undefined;
   // the exported file's size once it is done
   resultSize?: string | undefined;
+  // the size it aimed for, e.g. "10 MB", and whether it came in under it
+  resultTarget?: string | undefined;
+  resultFits?: boolean | undefined;
+  // a short note the finished export keeps, with its whole reason for the tooltip
+  resultNote?: string | undefined;
+  resultNoteDetail?: string | undefined;
 }
 
 export interface ClipResult {
@@ -171,10 +177,7 @@ function appendLine<T extends ClipCardElement>(
   if (isExporting(model)) {
     // the row names the phase, like "Pass 1 of 2"; speed and time left stay in the bottom bar
     line.className = "c-line run";
-    const phase = (model.statusLabel || "").split(" · ")[0] || "";
-    const label = phase && phase !== "Encoding" ? phase : "Exporting";
-    const percent = Math.round(exportProgress(model));
-    text("c-status", model.progressIndeterminate || !percent ? label : `${label} · ${percent}%`);
+    text("c-status", queuedVideoLabel("running", model.statusLabel, exportProgress(model), model.progressIndeterminate));
   } else if (state === "pending") {
     line.className = "c-line queued";
     text("c-status", "Queued");
@@ -197,7 +200,21 @@ function appendLine<T extends ClipCardElement>(
   } else if (state === "completed") {
     line.className = "c-line done";
     text("c-status", model.resultSize || model.statusLabel || "Exported");
+    if (model.resultSize && model.resultTarget) {
+      text("c-sep", "·");
+      text(model.resultFits ? "c-fit" : "c-fit over", `${model.resultFits ? "fits" : "over"} ${model.resultTarget}`);
+    }
     if (model.resultPath) line.appendChild(createActionButton(documentRef, "open-result", "Show", "c-act"));
+    if (model.resultNote) {
+      main.appendChild(line);
+      const note = createElement(documentRef, "div", "c-note", model.resultNote);
+      if (model.resultNoteDetail) {
+        note.dataset.tip = model.resultNoteDetail;
+        note.setAttribute("aria-description", model.resultNoteDetail);
+      }
+      main.appendChild(note);
+      return;
+    }
   } else if (model.result && (model.result.from || model.result.to)) {
     const result = model.result;
     if (result.from) text("c-from", result.from);

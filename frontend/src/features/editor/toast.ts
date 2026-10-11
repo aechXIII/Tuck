@@ -239,12 +239,33 @@ function yieldActionToast(): void {
   if (running) resumeToastTimer();
 }
 
+// a live region added along with its text is often not read out, so messages go through the two
+// regions in #toast-ct, cleared first so that a repeated message is still announced
+function speak(region: "status" | "alert", message: string): void {
+  const target = byId(region === "alert" ? "live-alert" : "live-status");
+  if (!target) return;
+  target.textContent = "";
+  setTimeout(() => {
+    target.textContent = message;
+  }, 50);
+}
+
+function quiet(message: string): void {
+  for (const id of ["live-status", "live-alert"]) {
+    const region = byId(id);
+    if (region && region.textContent === message) region.textContent = "";
+  }
+}
+
+/** Says something to screen reader users without showing a notification, e.g. that exports started. */
+export function announce(message: string): void {
+  speak("status", message);
+}
+
 function fillToast(element: HTMLElement, id: string, item: ToastQueueItem): void {
   const presentation = notificationPresentation(item.kind);
   element.className = `toast ${presentation.kind}`;
-  element.setAttribute("role", presentation.role);
-  element.setAttribute("aria-live", presentation.live);
-  element.setAttribute("aria-atomic", "true");
+  speak(presentation.role === "alert" ? "alert" : "status", item.message);
   const parts: HTMLElement[] = [createNotificationMessage(document, item.message)];
   const action = item.action;
   if (action) {
@@ -334,6 +355,7 @@ function dismissToast(id: string): void {
   activeToast.closing = true;
   const closing = activeToast;
   if (!closing.acted) closing.item.options.onDismiss?.();
+  quiet(closing.item.message);
   closing.element.classList.add("leaving");
   setTimeout(() => {
     if (closing.element.parentNode) {

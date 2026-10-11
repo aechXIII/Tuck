@@ -425,6 +425,7 @@ export function installEditorRuntime(
       return true;
     },
     pollQueue: () => queue.pollQueue(),
+    showExport: (itemId) => queue.showExport(itemId),
     renderClips: () => library.renderClips(),
     paintCutTimeline: () => {
       timeline.paintCutOverlay();
@@ -566,6 +567,7 @@ export function installEditorRuntime(
         "encoding-toggle-advanced": () => encoding.toggleAdvanced(),
         "encoding-run-selected": () => void encoding.compressOne(),
         "encoding-run-all": () => void encoding.compressAll(),
+        "encoding-run-copy": () => void encoding.compressCopy(),
         "playback-speed-reset": () => player.resetSpeed(),
         "timeline-add-segment": () => timeline.addSegment(),
         "timeline-keyframe": (target) => timeline.seekToKeyframe(numericValue(target) < 0 ? -1 : 1),

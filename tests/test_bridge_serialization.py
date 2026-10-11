@@ -169,3 +169,10 @@ def test_plan_and_queue_carry_warnings_and_the_encoder_that_ran() -> None:
     assert queued["warnings"] == preview["warnings"]
     assert queued["effective_encoder"] == "libx264"
     assert queued["encoder_fallback"].startswith("Used software encoding")
+
+
+def test_queued_export_says_what_size_it_aimed_for() -> None:
+    plan = EncodePlan(source="clip.mp4", output="out.mp4", target_size=10 * 1024 * 1024)
+    assert queue_item_dict(QueueItem(plan=plan))["target_size"] == 10 * 1024 * 1024
+    no_target = EncodePlan(source="a.mp4", output="b.mp4")
+    assert queue_item_dict(QueueItem(plan=no_target))["target_size"] == 0

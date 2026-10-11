@@ -160,6 +160,9 @@ def test_copies_exact_planned_frames_and_audio_packets(
     assert not list(tmp_path.glob("*.reserved"))
     stages = [update.stage.value for update in updates]
     assert "copying" in stages and "joining" in stages and "verifying" in stages
+    # moving the file into place is named, and comes after the checks
+    assert stages.index("saving") > stages.index("verifying")
+    assert next(update for update in updates if update.stage.value == "saving").indeterminate
     assert stages[-1] == "completed" and updates[-1].percent == 100
     assert all(update.percent < 100 for update in updates[:-1])
 

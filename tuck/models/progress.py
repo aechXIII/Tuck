@@ -15,6 +15,8 @@ class EncodeStage(Enum):
     PASS_2 = "pass_2"
     RETRYING = "retrying"
     VERIFYING = "verifying"
+    # the finished file is being moved into place; its length depends on the drive, not the video
+    SAVING = "saving"
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
@@ -77,6 +79,8 @@ class EncodeProgress:
             return self.message or "Checking output"
         if stage == EncodeStage.ENCODING_EDGES:
             return "Encoding cut edges"
+        if stage == EncodeStage.SAVING:
+            return "Saving file"
         if stage == EncodeStage.COMPLETED:
             return "Completed"
         if stage == EncodeStage.FAILED:

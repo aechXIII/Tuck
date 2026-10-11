@@ -339,6 +339,16 @@ class FFmpegEngine:
 
                 if self._cancel_event.is_set():
                     raise EncodeCancelled("Encoding cancelled by user")
+                # a move to another drive can take a while, so it is named instead of sitting at 99%
+                _emit(
+                    on_progress,
+                    EncodeProgress(
+                        percent=99.0,
+                        stage=EncodeStage.SAVING,
+                        duration=total_duration,
+                        indeterminate=True,
+                    ),
+                )
                 output = transaction.publish(result)
                 plan.output = str(output)
                 if plan.keep_file_dates:

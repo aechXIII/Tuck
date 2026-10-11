@@ -170,6 +170,24 @@
   stroke-width: 1.6;
   color: var(--good);
 }
+.qstatus-warn {
+  display: none;
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: var(--warn);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* a batch with a failure never shows the success check */
+#qbar.finished.has-failed .qstatus-done {
+  display: none;
+}
+#qbar.finished.has-failed .qstatus-warn {
+  display: block;
+}
 #qbar.finished .qstatus-done {
   display: block;
 }
@@ -240,8 +258,21 @@
 #qprog::-webkit-progress-value {
   background: var(--accent-light);
 }
+/* a step with no measurable progress shows activity, never an amount: a short segment sweeps across */
 #qprog:indeterminate {
-  background: linear-gradient(to right, var(--raised-2) 34%, var(--accent-light) 34%, var(--accent-light) 66%, var(--raised-2) 66%);
+  background:
+    linear-gradient(var(--accent-light), var(--accent-light)) -45% 0 / 30% 100% no-repeat,
+    var(--raised-2);
+  animation: progress-sweep 1.6s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+@keyframes progress-sweep {
+  from { background-position: -45% 0, 0 0; }
+  to { background-position: 145% 0, 0 0; }
+}
+/* with Animations off it is a still dashed track, which can't be mistaken for a percentage */
+:root[data-motion="off"] #qprog:indeterminate {
+  animation: none;
+  background: repeating-linear-gradient(90deg, var(--accent-light) 0 6px, transparent 6px 12px), var(--raised-2);
 }
 #qbar.finished #qprog {
   display: none;

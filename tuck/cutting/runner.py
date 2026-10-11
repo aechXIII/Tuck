@@ -30,6 +30,7 @@ _UNMEASURED_STAGES = {
     EncodeStage.ENCODING_EDGES,
     EncodeStage.JOINING,
     EncodeStage.VERIFYING,
+    EncodeStage.SAVING,
 }
 
 
@@ -248,6 +249,7 @@ class CutRunner:
                     edges=edges,
                 )
                 check_cut_cancel(self._cancel)
+                report(EncodeStage.SAVING, "Saving file")
                 output = transaction.publish(result)
                 if plan.keep_file_dates:
                     copy_file_dates(Path(plan.source), output)

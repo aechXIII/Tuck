@@ -99,3 +99,82 @@ test("the empty screen offers Add videos, even with the Library closed", async (
   await expect(page.locator(".clip")).toHaveCount(1);
   await expect(page.locator("#empty")).toBeHidden();
 });
+
+const running = (progress: number) => ({
+  items: [{ id: "a", source: "Alpha.mp4", source_path: VIDEO, state: "running", progress }],
+});
+
+test("the export button shows a queued video's export and opens it, and a copy is one step away", async ({ page }) => {
+  const fixture = fixtureWith([VIDEO]);
+  fixture.queueStateAfterEnqueue = running(40);
+  await open(page, fixture);
+  const exportButton = page.locator("#btn-one");
+
+  await exportButton.click();
+  await expect(exportButton).toHaveText("Exporting · 40%");
+  await expect(exportButton).toHaveAttribute("aria-label", "Exporting · 40%. Show in Exports");
+  await exportButton.click();
+  await expect(page.locator("#exports-panel")).toBeVisible();
+  expect(await callCount(page, "enqueueWithOptions")).toBe(1);
+
+  await page.keyboard.press("Escape");
+  await page.locator(".export-actions > summary").click();
+  await page.getByRole("button", { name: "Export another copy" }).click();
+  await expect.poll(() => callCount(page, "enqueueWithOptions")).toBe(2);
+  await expect(page.locator(".export-actions")).not.toHaveAttribute("open", "");
+  await expect(page.locator(".toast")).toContainText("Added another copy of “Alpha.mp4”.");
+});
+
+test("a batch with a failure shows a warning, never the success check", async ({ page }) => {
+  const fixture = fixtureWith([VIDEO]);
+  fixture.responses.getQueueState = {
+    items: [
+      { id: "a", source: "Alpha.mp4", source_path: VIDEO, state: "completed", result_size: 9_000_000 },
+      { id: "b", source: "Bravo.mp4", source_path: "C:\videos\Bravo.mp4", state: "failed", error: "FFmpeg stopped" },
+    ],
+  };
+  await open(page, fixture);
+  await expect(page.locator("#qbar")).toHaveClass(/has-failed/);
+  await expect(page.locator("#qbar .qstatus-warn")).toBeVisible();
+  await expect(page.locator("#qbar .qstatus-done")).toBeHidden();
+});
+
+test("starting an export is announced through a status region that was there before it", async ({ page }) => {
+  const fixture = fixtureWith([VIDEO]);
+  fixture.queueStateAfterEnqueue = running(5);
+  await open(page, fixture);
+  const status = page.locator("#live-status");
+  await expect(status).toHaveAttribute("role", "status");
+  await expect(status).toBeEmpty();
+
+  await page.locator("#btn-one").click();
+  await expect(status).toHaveText("Exporting “Alpha.mp4”.");
+});
+
+test("an export request that times out is checked against the queue before it is called a failure", async ({ page }) => {
+  const fixture = fixtureWith([VIDEO]);
+  fixture.responses.enqueueWithOptions = { ok: false, error: "The Python backend did not respond in time.", code: "BACKEND_TIMEOUT" };
+  fixture.queueStateAfterEnqueue = running(5);
+  await open(page, fixture);
+
+  await page.locator("#btn-one").click();
+  await expect(page.locator("#btn-one")).toHaveText("Exporting · 5%");
+  await expect(page.locator(".toast.err")).toHaveCount(0);
+});
+
+test("a step with no percentage sweeps, and with Animations off shows a still dashed track", async ({ page }) => {
+  const fixture = fixtureWith([VIDEO]);
+  fixture.queueStateAfterEnqueue = {
+    items: [{ id: "a", source: "Alpha.mp4", source_path: VIDEO, state: "running", progress: 0, status_text: "Saving file", progress_info: { stage: "saving", indeterminate: true } }],
+  };
+  await open(page, fixture);
+  await page.locator("#btn-one").click();
+  await expect(page.locator("#btn-one")).toHaveText("Saving file");
+  const fill = page.locator(".clip .c-progress.is-indeterminate .c-progress-fill");
+  await expect(fill).toHaveCSS("animation-name", "card-progress-sweep");
+  await expect(page.locator("#qprog")).toHaveCSS("animation-name", "progress-sweep");
+
+  await page.evaluate(() => { document.documentElement.dataset.motion = "off"; });
+  await expect(fill).toHaveCSS("animation-name", "none");
+  await expect(fill).toHaveCSS("width", /^\d/);
+});

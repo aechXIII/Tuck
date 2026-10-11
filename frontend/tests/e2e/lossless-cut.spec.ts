@@ -94,7 +94,7 @@ test("lossless Inspector shows measured boundaries and exports only cut intent",
   expect(request).not.toHaveProperty("video_encoder");
 });
 
-test("a cut waiting or running in the queue can't be exported again", async ({page}) => {
+test("a cut waiting or running in the queue shows its export instead of queuing it again", async ({page}) => {
   await setup(page,{queueAfterEnqueue:{items:[{id:"cut-1",source:"Morning ride.mp4",source_path:source,state:"running",progress:10}]}});
   await page.locator("#wf-l").click();
   await page.getByRole("button",{name:"Export cut",exact:true}).click();
@@ -102,9 +102,11 @@ test("a cut waiting or running in the queue can't be exported again", async ({pa
   await expect.poll(() => page.evaluate(() => window.__tuckFakeBackendCalls?.some(call => call.method === "enqueueWithOptions"))).toBe(true);
   const afterEnqueue = await polls();
   await expect.poll(polls).toBeGreaterThan(afterEnqueue + 1);
-  // the queue reports "running"; the button keeps saying so after every poll
-  await expect(page.locator("#btn-one")).toHaveText("Exporting…");
-  await expect(page.locator("#btn-one")).toBeDisabled();
+  // the queue reports "running"; the button shows that export after every poll and opens it
+  await expect(page.locator("#btn-one")).toHaveText("Exporting · 10%");
+  await expect(page.locator("#btn-one")).toBeEnabled();
+  await page.locator("#btn-one").click();
+  await expect(page.locator("#exports-panel")).toBeVisible();
   expect(await page.evaluate(() => window.__tuckFakeBackendCalls?.filter(call => call.method === "enqueueWithOptions").length)).toBe(1);
 });
 

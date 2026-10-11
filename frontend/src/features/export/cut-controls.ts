@@ -4,7 +4,7 @@ import type { EditorClip } from "../editor/types.ts";
 import type { EditorSession } from "../editor/session.ts";
 import { formatBytes, formatTimeToHundredths } from "../editor/format.ts";
 import { toast } from "../editor/toast.ts";
-import { isQueueActive } from "../queue/queue-view.ts";
+import { isQueueActive, queuedVideoLabel } from "../queue/queue-view.ts";
 import { createCutState, cutSegmentStatus, cutStartUnchecked, cutTime, cutTrackSummary, encodedSeconds, mediaSeconds, reduceCutState, shownSegment } from "./cut-state.ts";
 
 interface CutControlsDeps {
@@ -277,8 +277,21 @@ export function installCutControls(deps: CutControlsDeps) {
     element<HTMLInputElement>("cut-audio").checked = request?.include_audio === true;
     element<HTMLInputElement>("cut-audio").disabled = !clip?.probed || clip.probeData?.has_audio === false || busy;
     const one = element<HTMLButtonElement>("btn-one");
-    one.textContent = busy || clip && exporting(clip) ? "Exporting…" : reading ? "Reading keyframes…" : "Export cut";
-    one.disabled = !clip || !exportable(clip) || busy || waiting;
+    // a cut already in the queue shows its export, and the button opens it in Exports
+    const queued = !busy && !!clip && exporting(clip);
+    one.textContent = busy ? "Exporting…"
+      : queued ? queuedVideoLabel(clip._queueState, clip._statusText, clip._progress, clip._progressIndeterminate)
+      : reading ? "Reading keyframes…" : "Export cut";
+    one.disabled = queued ? false : !clip || !exportable(clip) || busy || waiting;
+    if (queued) {
+      one.dataset.queued = "true";
+      one.dataset.tip = "Show in Exports";
+      one.setAttribute("aria-label", `${one.textContent}. Show in Exports`);
+    } else if (one.dataset.queued === "true") {
+      delete one.dataset.queued;
+      delete one.dataset.tip;
+      one.removeAttribute("aria-label");
+    }
     const clips = Object.values(session.clips);
     const all = element<HTMLButtonElement>("btn-all");
     all.textContent = `Export all cuts${clips.length ? ` (${clips.length})` : ""}`;

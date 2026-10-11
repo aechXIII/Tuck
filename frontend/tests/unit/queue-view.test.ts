@@ -9,6 +9,9 @@ import {
   formatQueueStatus,
   queueCompletionOutput,
   reduceQueueSnapshot,
+  resultNote,
+  resultNoteDetail,
+  targetFit,
   batchSummary,
   isQueueActive,
   queueItemState,
@@ -376,4 +379,28 @@ test("a size retry starts its own progress, and the bar and card name the same t
   // within a try, a lower reading still never moves the bar back
   view = reduceQueueSnapshot(view, { items: [{ ...encoding, progress: 3 }] }, fmt);
   assert.equal(view.progress, 4);
+});
+
+test("a finished export keeps its note and says whether it fit its target", () => {
+  const fallback: QueueItem = {
+    id: "a", source: "clip.mp4", state: "completed", result_size: 9 * 1024 * 1024, target_size: 10 * 1024 * 1024,
+    encoder_fallback: "Used software encoding because the NVIDIA encoder couldn't start",
+  };
+  assert.deepEqual(targetFit(fallback), { fits: true, target: 10 * 1024 * 1024 });
+  assert.equal(targetFit({ ...fallback, result_size: 11 * 1024 * 1024 })?.fits, false);
+  assert.equal(targetFit({ ...fallback, target_size: 0 }), null);
+  assert.equal(resultNote(fallback), fallback.encoder_fallback);
+  assert.equal(resultNote({ id: "c", state: "completed", unverified: ["Cut starts could not be confirmed."] }), "Not fully checked");
+  assert.equal(resultNoteDetail({ id: "c", state: "completed", unverified: ["Cut starts could not be confirmed."] }), "Cut starts could not be confirmed.");
+
+  // the toast for one export carries the note as its own sentence
+  assert.equal(
+    batchSummary([fallback], { a: true }).message,
+    "Exported “clip.mp4”. Used software encoding because the NVIDIA encoder couldn't start.",
+  );
+  assert.equal(
+    batchSummary([fallback, { id: "b", source: "b.mp4", state: "completed" }], { a: true, b: true }).message,
+    "2 videos exported. 1 has a note in Exports.",
+  );
+  assert.equal(exportRows([fallback], () => 0).finished[0]?.note, fallback.encoder_fallback);
 });
