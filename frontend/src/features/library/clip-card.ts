@@ -59,6 +59,8 @@ export interface ClipResult {
   to?: string | undefined;
   // the estimate is over the target size
   over?: boolean | undefined;
+  // a new estimate is being planned; the row shows a placeholder where it will go
+  pending?: boolean | undefined;
 }
 
 export interface ClipCardCallbacks {
@@ -221,6 +223,11 @@ function appendLine<T extends ClipCardElement>(
     if (result.from && result.to) text("c-arrow", "→");
     if (result.to) text(result.over ? "c-to over" : "c-to", result.to);
     if (result.over) line.setAttribute("title", "The estimate is over the target size");
+    if (result.pending) {
+      if (result.from) text("c-arrow", "→");
+      text("c-pending", "…");
+      line.setAttribute("title", "Updating the estimate for the new settings");
+    }
   } else {
     text("c-status", model.meta ? String(model.meta.text) : "");
   }

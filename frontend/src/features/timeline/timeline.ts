@@ -18,7 +18,7 @@ export interface TimelineHost {
   byId: (id: string) => HTMLElement | null;
   documentRef?: Document;
   windowRef?: Window & typeof globalThis;
-  toast?: (msg: string, kind?: string) => void;
+  toast?: typeof toast;
   formatTime?: (seconds: number) => string;
   timeFormat?: () => TimeFormat;
   updateTime?: () => void;
@@ -647,7 +647,15 @@ function paintTrimChrome() {
     resetButton.disabled = !has;
     resetButton.classList.toggle("hid", !has);
   }
-  if (isButtonElement(removeButton)) removeButton.disabled = segments.length <= 1;
+  if (isButtonElement(removeButton)) {
+    // like Add segment, it stays focusable when it can't act, so its reason can be read and said
+    const canRemove = segments.length > 1;
+    removeButton.disabled = false;
+    removeButton.setAttribute("aria-disabled", canRemove ? "false" : "true");
+    removeButton.dataset.tip = canRemove ? withShortcut("Remove segment", "edit.delete-selection") : KEEP_ONE_SEGMENT;
+    if (canRemove) removeButton.dataset.shortcutLabel = "Remove segment";
+    else delete removeButton.dataset.shortcutLabel;
+  }
   let canAdd = SegmentEditing.canAddSegment(segments, full || 1);
   if (isButtonElement(addButton)) {
     // stays focusable while full, so keyboard users can reach the reason and pressing it says why
@@ -989,6 +997,7 @@ function selectSegment(index: number, shouldSeek?: boolean) {
 }
 
 const NO_ROOM_FOR_SEGMENT = "Shorten a segment to make room for another";
+const KEEP_ONE_SEGMENT = "Keep at least one segment. Trim it to shorten the video";
 
 function addSegment() {
   const c = selectedClip(session);
@@ -996,7 +1005,8 @@ function addSegment() {
   let full = videoDuration() || c.probeData?.duration || 0;
   if (full <= 0) return;
   if (!SegmentEditing.canAddSegment(clipSegments(c, full), full)) {
-    notify(NO_ROOM_FOR_SEGMENT + ".", "err");
+    // a held or repeated key replaces this message instead of queuing copies
+    notify(NO_ROOM_FOR_SEGMENT + ".", "err", undefined, { key: "segment-no-room" });
     return;
   }
   try {
@@ -1032,7 +1042,10 @@ function removeActiveSegment() {
   let full = videoDuration() || c.probeData?.duration || 0;
   let segments = clipSegments(c, full);
   let active = activeSegmentIndex(c, segments);
-  if (segments.length <= 1) return;
+  if (segments.length <= 1) {
+    notify(KEEP_ONE_SEGMENT + ".", "err", undefined, { key: "segment-keep-one" });
+    return;
+  }
   segments = SegmentEditing.removeSegment(segments, active, full);
   active = Math.min(active, segments.length - 1);
   setClipSegments(c, segments, active);
@@ -1662,11 +1675,11 @@ function initTimelineResizer() {
   const addSegmentStep = recorded("add segment", addSegment);
 
   host.TuckShortcuts?.registerAction("timeline.add-segment", {
+    // a full timeline still takes the key, so adding says why it can't
     enabled: function () {
       const clip = selectedClip(session);
       if (!clip) return false;
-      let full = videoDuration() || clip.probeData?.duration || 0;
-      return full > 0 && SegmentEditing.canAddSegment(clipSegments(clip, full), full);
+      return (videoDuration() || clip.probeData?.duration || 0) > 0;
     },
     execute: addSegmentStep,
   });

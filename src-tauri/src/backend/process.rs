@@ -818,6 +818,7 @@ impl BackendCommand {
             | Self::ClearLutHistory
             | Self::GetQueueState
             | Self::CancelItem { .. }
+            | Self::RemoveItem { .. }
             | Self::CancelAllItems
             | Self::ClearCompleted
             | Self::MoveItem { .. }

@@ -206,3 +206,29 @@ test("settings save errors remain visible and leave recovery enabled", async ({
   await expect(page.getByRole("dialog", { name: "Settings" })).toBeVisible();
   expect(failures.pageErrors).toEqual([]);
 });
+
+test("a settings change that didn't save says so until Try again saves it", async ({ page }) => {
+  const fixture = healthyBackendFixture();
+  fixture.responseSequences = {
+    saveSettings: [{ ok: false, error: "Settings could not be saved" }, { ok: true }],
+  };
+  await installFakeBackend(page, fixture);
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Settings" }).click();
+  await page.getByRole("button", { name: "Queue", exact: true }).click();
+  const openOutput = page.getByRole("switch", { name: "Show the last export in its folder" });
+  await page.getByText("Show the last export in its folder", { exact: true }).click();
+
+  const status = page.locator("#settings-status");
+  const retry = page.getByRole("button", { name: "Try again" });
+  // the choice stays on screen for the retry, and the header says it isn't saved
+  await expect(status).toHaveText("Not saved");
+  await expect(retry).toBeVisible();
+  await expect(openOutput).toBeChecked();
+
+  await retry.click();
+  await expect(status).toHaveText("Saved");
+  await expect(retry).toBeHidden();
+  await expect(openOutput).toBeChecked();
+});

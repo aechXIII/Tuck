@@ -117,6 +117,7 @@ async function downloadAndInstallUpdate(): Promise<void> {
     button.textContent = "Download & install";
   };
   const api = getBackendClient();
+  button.textContent = "Starting download…";
   try {
     await downloadUpdate(api, button);
   } catch (error) {
@@ -125,14 +126,25 @@ async function downloadAndInstallUpdate(): Promise<void> {
     toast(`Update failed: ${message}`, "err");
     return;
   }
+  // a dialog closed during the download means "not now": Tuck never restarts by itself
+  if (!button.isConnected || !byId("mod-overlay")?.classList.contains("open")) {
+    toast("The update is downloaded. Install it when you’re ready.", "info", {
+      label: "Install",
+      run: () => void installWhenIdle(api, null),
+    }, { key: "update-ready" });
+    return;
+  }
+  await installWhenIdle(api, restoreOffer);
+}
 
-  // installing closes Tuck, so running exports are never stopped without asking
+// installing closes Tuck, so running exports are never stopped without asking
+async function installWhenIdle(api: BackendClient, restoreOffer: (() => void) | null): Promise<void> {
   const count = await activeExports(api);
   if (count === 0) {
     await installUpdate(api, restoreOffer);
     return;
   }
-  restoreOffer();
+  restoreOffer?.();
   const question = stopExportsQuestion(count, "update");
   confirmToast(question.message, () => void installUpdate(api, null), {
     title: question.title,

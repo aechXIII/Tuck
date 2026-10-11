@@ -51,6 +51,7 @@ export interface QueueApi {
   toggleExports: () => void;
   // opens Exports with focus on this export's row
   showExport: (itemId: string) => void;
+  removeQueueItem: (itemId: string) => Promise<void>;
 }
 
 export function installQueue(deps: QueueDeps): QueueApi {
@@ -203,6 +204,26 @@ export function installQueue(deps: QueueDeps): QueueApi {
     }
     detail.title = detail.textContent ?? "";
     element.append(detail);
+    // a failed export can hand over its log; failed and cancelled ones can leave the list
+    if (row.kind === "failed" || row.kind === "cancelled") {
+      const more = doc.createElement("span");
+      more.className = "exports-more";
+      const link = (label: string, action: string, name: string): HTMLButtonElement => {
+        const button = doc.createElement("button");
+        button.type = "button";
+        button.className = "exports-link";
+        button.textContent = label;
+        button.setAttribute("aria-label", name);
+        button.dataset.actionClick = action;
+        button.dataset.itemId = row.id;
+        return button;
+      };
+      if (row.kind === "failed") {
+        more.append(link("Copy details", "export-item-copy-details", `Copy details for ${row.name}`));
+      }
+      more.append(link("Remove", "export-item-remove", `Remove ${row.name} from Exports`));
+      element.append(more);
+    }
     if (row.kind === "running" && row.progress !== null) {
       const bar = doc.createElement("span");
       bar.className = "exports-bar";
@@ -492,6 +513,22 @@ export function installQueue(deps: QueueDeps): QueueApi {
     }
   }
 
+  // takes a finished, failed or cancelled export off the list; focus moves to the row that takes its place
+  async function removeQueueItem(itemId: string): Promise<void> {
+    if (!itemId) return;
+    const rows = Array.from(byId("exports-list")?.querySelectorAll<HTMLElement>(".exports-row") ?? []);
+    const index = rows.findIndex((row) => row.querySelector(`[data-item-id="${CSS.escape(itemId)}"]`));
+    const r = await legacyBackendResult(client().removeItem(itemId));
+    if (!r.ok) {
+      toast(withReason("Couldn’t remove that export.", r.error), "err");
+      return;
+    }
+    await pollQueue();
+    const after = Array.from(byId("exports-list")?.querySelectorAll<HTMLElement>(".exports-row") ?? []);
+    const next = after[Math.min(Math.max(index, 0), after.length - 1)]?.querySelector<HTMLElement>("button");
+    (next ?? byId("qstatus"))?.focus();
+  }
+
   async function openResult(path: string): Promise<void> {
     if (!path) return;
     try {
@@ -695,6 +732,7 @@ export function installQueue(deps: QueueDeps): QueueApi {
     copyDiagnostics,
     toggleExports,
     showExport,
+    removeQueueItem,
   };
 }
 

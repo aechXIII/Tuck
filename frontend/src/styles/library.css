@@ -226,6 +226,11 @@
 .c-line .c-to.over {
   color: var(--warn);
 }
+/* stands where the new estimate will go, so the row keeps its shape while settings are planned */
+.c-line .c-pending {
+  flex: 0 0 auto;
+  color: var(--dim);
+}
 .c-line.run {
   color: var(--accent-light);
 }

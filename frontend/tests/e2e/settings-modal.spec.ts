@@ -95,7 +95,8 @@ test("a rejected save keeps the change visible and explains why", async ({ page 
   await page.getByRole("radio", { name: "Teal" }).check();
   await expect(page.getByText("Settings could not be written.")).toBeVisible();
   await expect(page.locator("html")).not.toHaveAttribute("data-accent", "teal");
-  await expect(page.locator("#settings-status")).toHaveText("");
+  // never "Saved" for a change that wasn't; the header says it isn't saved instead
+  await expect(page.locator("#settings-status")).toHaveText("Not saved");
 });
 
 test("the dialog keeps one size on every page and fits the minimum window", async ({ page }) => {

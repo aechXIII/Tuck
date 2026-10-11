@@ -116,3 +116,28 @@ test("a failed installer start keeps the update offer usable", async ({ page }) 
   await expect(page.getByRole("button", { name: "Later" })).toBeEnabled();
   expect(await calledMethods(page)).not.toContain("closeWindow");
 });
+
+test("closing the update dialog during the download never installs by itself", async ({ page }) => {
+  const fixture = updateFixture(true);
+  fixture.responses.downloadUpdate = { ok: true };
+  fixture.responseSequences = {
+    getDownloadProgress: [
+      { downloading: true, progress: 40 },
+      { downloading: true, progress: 80 },
+      { downloading: false, done: true, progress: 100 },
+    ],
+  };
+  fixture.responses.installUpdate = { ok: true };
+  await installFakeBackend(page, fixture);
+  await page.goto("/");
+
+  const install = page.getByRole("button", { name: "Download & install" });
+  await install.click();
+  await expect(page.locator("#update-install")).toHaveText(/Starting download…|Downloading/);
+  await page.keyboard.press("Escape");
+
+  await expect(page.locator(".toast")).toContainText("The update is downloaded.");
+  expect(await calledMethods(page)).not.toContain("installUpdate");
+  await page.locator(".toast").getByRole("button", { name: "Install" }).click();
+  await expect.poll(() => calledMethods(page)).toContain("installUpdate");
+});

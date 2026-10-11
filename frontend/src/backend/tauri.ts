@@ -69,6 +69,7 @@ type TauriBackendCommand =
   | { command: "enqueue_batch"; payload: { requests: readonly PlanRequest[] } }
   | { command: "get_queue_state" }
   | { command: "cancel_item"; payload: { item_id: string } }
+  | { command: "remove_item"; payload: { item_id: string } }
   | { command: "cancel_all_items" }
   | { command: "clear_completed" }
   | { command: "move_item"; payload: { item_id: string; new_index: number } }
@@ -477,6 +478,14 @@ class TauriTransport implements TauriBackendClient {
     return this.#request(
       "cancelItem",
       { command: "cancel_item", payload: { item_id: itemId } },
+      isJsonObject,
+    );
+  }
+
+  removeItem(itemId: string): Promise<BackendResult<EmptyPayload>> {
+    return this.#request(
+      "removeItem",
+      { command: "remove_item", payload: { item_id: itemId } },
       isJsonObject,
     );
   }

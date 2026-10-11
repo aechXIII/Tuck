@@ -405,6 +405,30 @@
 .exports-detail.failed {
   color: color-mix(in srgb, var(--warn) 85%, var(--text));
 }
+/* quiet text actions under a failed or cancelled export */
+.exports-more {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 2px;
+  margin-left: -6px;
+}
+.exports-link {
+  padding: 2px 6px;
+  border: 0;
+  border-radius: var(--r-chip);
+  background: transparent;
+  color: var(--accent-light);
+  font: 600 11px var(--font);
+  cursor: pointer;
+}
+.exports-link:hover {
+  background: var(--raised-2);
+  color: var(--text);
+}
+.exports-link:focus-visible {
+  outline: 2px solid var(--accent-light);
+  outline-offset: 1px;
+}
 .exports-sizes {
   font-family: var(--mono);
   font-size: 10.5px;

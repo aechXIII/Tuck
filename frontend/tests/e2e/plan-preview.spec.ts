@@ -60,3 +60,44 @@ test("a plan answered after the settings changed never shows its estimate", asyn
   await answerPlans(page, fresh, 50, 48);
   await expect(row.locator(".c-to")).toHaveText("48.0 MB");
 });
+
+test("while new settings are planned the row keeps a placeholder, and a slider drag asks once", async ({ page }) => {
+  const fixture = healthyBackendFixture();
+  fixture.responses.pickFiles = { ok: true, files: [VIDEO] };
+  fixture.responses.probeFile = {
+    ok: true,
+    data: { duration: 12, width: 1920, height: 1080, fps: 30, has_audio: true, file_size: 1_048_576 },
+  };
+  fixture.responses.getMediaUrl = { ok: true, url: "https://media.test/estimate", token: "estimate" };
+  fixture.responses.getThumbnail = { ok: true, thumbnail: "" };
+  fixture.holdMethods = ["createPlan"];
+  await page.route("https://media.test/**", (route) => route.abort());
+  await page.setViewportSize({ width: 1240, height: 800 });
+  await installFakeBackend(page, fixture);
+  await page.goto("/");
+  await page.locator("#btn-add").click();
+  const row = page.locator(".clip").filter({ hasText: "Estimate.mp4" });
+
+  await expect.poll(async () => (await planCalls(page)).length).toBeGreaterThan(0);
+  await answerPlans(page, await planCalls(page), 10, 9.5);
+  await expect(row.locator(".c-to")).toHaveText("9.5 MB");
+
+  // twenty values in quick succession, as a drag sends them, become one plan request
+  const before = (await planCalls(page)).length;
+  await page.locator("#sz-slider").evaluate((slider: HTMLInputElement) => {
+    for (let value = 20; value <= 39; value += 1) {
+      slider.value = String(value);
+      slider.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+  });
+  await expect.poll(async () => (await planCalls(page)).length).toBe(before + 1);
+  await page.waitForTimeout(300);
+  expect((await planCalls(page)).length).toBe(before + 1);
+
+  // the old estimate is gone, but the row keeps its place for the new one
+  await expect(row.locator(".c-to")).toHaveCount(0);
+  await expect(row.locator(".c-pending")).toHaveText("…");
+  await answerPlans(page, (await planCalls(page)).slice(before), 39, 37);
+  await expect(row.locator(".c-to")).toHaveText("37.0 MB");
+  await expect(row.locator(".c-pending")).toHaveCount(0);
+});

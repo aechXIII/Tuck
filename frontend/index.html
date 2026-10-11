@@ -53,7 +53,7 @@
         class="tb-icon-btn"
         id="btn-undo"
         data-action-click="history-undo"
-        disabled
+        aria-disabled="true"
         data-tip="Undo"
         data-shortcut-commands="edit.undo"
         data-shortcut-label="Undo"
@@ -69,7 +69,7 @@
         class="tb-icon-btn"
         id="btn-redo"
         data-action-click="history-redo"
-        disabled
+        aria-disabled="true"
         data-tip="Redo"
         data-shortcut-commands="edit.redo"
         data-shortcut-label="Redo"
@@ -1135,7 +1135,7 @@
             data-tip="Remove segment"
             aria-label="Remove active segment"
             aria-keyshortcuts="Delete Backspace"
-            disabled
+            aria-disabled="true"
           >
             <svg viewBox="0 0 16 16" aria-hidden="true">
               <path d="M3 4.5h10M6 4.5V3h4v1.5M5 4.5l.6 8.5h4.8l.6-8.5" />
@@ -1647,6 +1647,7 @@
             <span class="settings-head-spacer"></span>
             <span id="settings-autosave" class="settings-autosave" hidden>Changes save automatically</span>
             <span id="settings-status" class="settings-status" role="status"></span>
+            <button type="button" id="settings-retry" class="settings-retry" hidden>Try again</button>
             <button
               type="button"
               id="settings-close"

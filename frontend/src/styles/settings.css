@@ -257,6 +257,26 @@ body.settings-open .settings-dialog {
 .settings-status.on {
   color: var(--text);
 }
+/* a change that didn't save stays on screen for a retry, and the header says so until it does */
+.settings-status.failed {
+  color: var(--warn);
+}
+.settings-retry {
+  padding: 2px 6px;
+  border: 0;
+  border-radius: var(--r-chip);
+  background: transparent;
+  color: var(--accent-light);
+  font: 600 12px var(--font);
+  cursor: pointer;
+}
+.settings-retry:hover {
+  background: var(--raised-2);
+  color: var(--text);
+}
+.settings-retry[hidden] {
+  display: none;
+}
 .settings-status.on::before {
   content: "";
   width: 6px;

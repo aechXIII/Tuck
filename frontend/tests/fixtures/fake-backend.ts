@@ -147,6 +147,7 @@ export async function installFakeBackend(
         enqueueWithOptions: (request: unknown) => respond("enqueueWithOptions", [request]),
         enqueueBatch: (requests: unknown) => respond("enqueueBatch", [requests]),
         cancelItem: (itemId: string) => respond("cancelItem", [itemId]),
+        removeItem: (itemId: string) => respond("removeItem", [itemId]),
         cancelAllItems: () => respond("cancelAllItems", []),
         clearCompleted: () => respond("clearCompleted", []),
         moveItem: (itemId: string, newIndex: number) => respond("moveItem", [itemId, newIndex]),

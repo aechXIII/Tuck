@@ -259,10 +259,45 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     }
   }
 
+  // a save that takes a moment says so; a quick one goes straight to "Saved"
+  const SAVING_NOTE_DELAY_MS = 250;
+  let savingTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function showSaving(): void {
+    clearTimeout(savingTimer);
+    savingTimer = setTimeout(() => {
+      const status = byId("settings-status");
+      if (!status) return;
+      clearTimeout(statusTimer);
+      status.classList.remove("on", "failed");
+      status.textContent = "Saving…";
+    }, SAVING_NOTE_DELAY_MS);
+  }
+
+  // the changed values stay on the page, so Try again (or the next change) saves them
+  function showNotSaved(canRetry: boolean): void {
+    clearTimeout(savingTimer);
+    clearTimeout(statusTimer);
+    const status = byId("settings-status");
+    const note = byId("settings-autosave");
+    if (status) {
+      status.classList.remove("on");
+      status.classList.add("failed");
+      status.textContent = "Not saved";
+    }
+    if (note) note.hidden = true;
+    const retry = byId("settings-retry");
+    if (retry) retry.hidden = !canRetry;
+  }
+
   function showSaved(): void {
+    clearTimeout(savingTimer);
     const status = byId("settings-status");
     const note = byId("settings-autosave");
     if (!status || !note) return;
+    const retry = byId("settings-retry");
+    if (retry) retry.hidden = true;
+    status.classList.remove("failed");
     const autosaves = !note.hidden || status.classList.contains("on");
     status.textContent = "Saved";
     status.classList.add("on");
@@ -852,8 +887,11 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       note.hidden = false;
       byId<HTMLInputElement>(target)?.setAttribute("aria-invalid", "true");
       byId(target)?.closest(".set-input")?.classList.add("invalid");
+      // the field has to change before saving again can work
+      showNotSaved(false);
     } else {
       toast(message, "err");
+      showNotSaved(true);
     }
     return false;
   }
@@ -868,10 +906,16 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     saving = saving.then(() => {
       markSettingsDirty();
       const patch = pagePatch();
-      return settingsDirty && patch && page === savingPage ? persistSettings(patch) : undefined;
+      if (!settingsDirty || !patch || page !== savingPage) return undefined;
+      showSaving();
+      return persistSettings(patch);
     });
     return saving;
   }
+
+  byId("settings-retry")?.addEventListener("click", () => {
+    void autosave();
+  });
 
   async function loadSettings(): Promise<SettingsRecord> {
     return (await legacyBackendResult(client().getSettings())) as SettingsRecord;
@@ -1170,6 +1214,23 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     await open("media");
     showSaved();
     return true;
+  }
+
+  // the check can take a few seconds; the button says so and ignores repeat presses meanwhile
+  async function checkForUpdatesNow(target: HTMLElement): Promise<void> {
+    if (target.dataset.pending === "true") return;
+    const label = target.lastChild;
+    const text = label?.textContent ?? "";
+    target.dataset.pending = "true";
+    target.setAttribute("aria-disabled", "true");
+    if (label) label.textContent = "Checking…";
+    try {
+      await deps.checkForUpdates();
+    } finally {
+      delete target.dataset.pending;
+      target.removeAttribute("aria-disabled");
+      if (label) label.textContent = text;
+    }
   }
 
   async function refreshEncoders(): Promise<void> {
@@ -2195,7 +2256,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         "clear-ffmpeg": () => void clearTool("set-ffmpeg"),
         "clear-ffprobe": () => void clearTool("set-ffprobe"),
         "refresh-encoders": () => void refreshEncoders(),
-        "check-updates": () => void deps.checkForUpdates(),
+        "check-updates": (target) => void checkForUpdatesNow(target),
         "copy-diagnostics": () => void deps.copyDiagnostics(),
         "open-support": (target) => void openSupportFolder(target.dataset.settingsValue ?? "logs"),
         "export-settings": () => void exportSettings(),

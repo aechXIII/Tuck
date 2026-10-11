@@ -207,11 +207,12 @@ textarea,
   stroke-linejoin: round;
   fill: none;
 }
-.tb-icon-btn:hover:not(:disabled) {
+.tb-icon-btn:hover:not(:disabled, [aria-disabled="true"]) {
   background: var(--raised);
   color: var(--text);
 }
-.tb-icon-btn:disabled {
+.tb-icon-btn:disabled,
+.tb-icon-btn[aria-disabled="true"] {
   color: var(--dim);
   opacity: 0.4;
   cursor: default;

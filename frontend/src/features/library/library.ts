@@ -492,11 +492,17 @@ export function createLibrary(host: LibraryHost): LibraryApi {
     }
     const size = clip._fileSize ? formatBytes(clip._fileSize) : "";
     const estimateMb = plan ? Number(plan.estimated_size_mb) : NaN;
+    if (!plan && clip._hadEstimate) {
+      // an estimate for the old settings would be wrong, so it goes; the row keeps its shape
+      // with a placeholder until the new plan lands
+      return { from: size, pending: true };
+    }
     if (!plan || plan.workflow === "upscale" || !Number.isFinite(estimateMb) || estimateMb <= 0) {
       return size ? { from: size } : null;
     }
     const target = Number(plan.target_size_mb);
     const over = Number.isFinite(target) && target > 0 && estimateMb > target + 0.1;
+    clip._hadEstimate = true;
     return { from: size, to: formatBytes(estimateMb * 1024 * 1024), over };
   }
 

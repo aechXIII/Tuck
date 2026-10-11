@@ -102,6 +102,8 @@ export interface EditorClip {
   // what the finished export still has to say, e.g. the encoder it fell back to
   _resultNote?: string;
   _resultNoteDetail?: string;
+  // the row has shown a size estimate, so it keeps its place while new settings are planned
+  _hadEstimate?: boolean;
   _queueError?: string;
   _previewRequestId?: number;
   // the Library picture: undefined until asked for, "" when there is none

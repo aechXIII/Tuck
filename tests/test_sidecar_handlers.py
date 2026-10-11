@@ -22,6 +22,10 @@ class RecordingApi:
         self.calls.append(("cancel_item", item_id))
         return {"ok": True, "canceled_id": item_id}
 
+    def remove_item(self, item_id: str) -> dict[str, object]:
+        self.calls.append(("remove_item", item_id))
+        return {"ok": True}
+
     def get_queue_state(self) -> dict[str, object]:
         self.calls.append(("get_queue_state", None))
         return {"items": [], "current_id": None, "pending_ids": []}
@@ -97,6 +101,15 @@ def test_cancellation_request_is_bound_through_the_allowlist() -> None:
     assert api.calls == [("cancel_item", "item-4")]
     assert response.ok is True
     assert response.result == {"canceled_id": "item-4"}
+
+
+def test_removing_a_finished_export_is_bound_through_the_allowlist() -> None:
+    api = RecordingApi()
+
+    response = dispatch(api, _request("remove_item", {"item_id": "item-9"}))
+
+    assert api.calls == [("remove_item", "item-9")]
+    assert response.ok is True
 
 
 def test_storage_paths_are_available_only_through_the_allowlisted_empty_request() -> None:

@@ -234,6 +234,10 @@ def _cancel_item(api: BridgeAPI, params: dict[str, object]) -> object:
     return api.cancel_item(_string(params, "item_id"))
 
 
+def _remove_item(api: BridgeAPI, params: dict[str, object]) -> object:
+    return api.remove_item(_string(params, "item_id"))
+
+
 def _cancel_all_items(api: BridgeAPI, params: dict[str, object]) -> object:
     _empty(params)
     return api.cancel_all_items()
@@ -462,6 +466,7 @@ _HANDLERS: dict[str, Handler] = {
     "release_media_token": _release_media_token,
     "create_plan": _create_plan,
     "cancel_item": _cancel_item,
+    "remove_item": _remove_item,
     "cancel_all_items": _cancel_all_items,
     "clear_completed": _clear_completed,
     "move_item": _move_item,

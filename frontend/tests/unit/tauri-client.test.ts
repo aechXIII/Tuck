@@ -167,6 +167,24 @@ test("clear LUT history validates success and preserves backend failures", async
   if (!failed.ok) assert.match(failed.error.message, /save LUT history/);
 });
 
+test("a finished export is removed from the list by its id", async () => {
+  const calls: unknown[] = [];
+  const client = createTauriBackendClient(async (command, args) => {
+    calls.push({ command, args });
+    return { ok: true };
+  });
+  assert.equal((await client.removeItem("item-9")).ok, true);
+  assert.deepEqual(calls, [
+    { command: "backend_request", args: { command: { command: "remove_item", payload: { item_id: "item-9" } } } },
+  ]);
+  const refused = await createTauriBackendClient(async () => ({
+    ok: false,
+    error: "This export can't be removed while it runs. Cancel it first.",
+  })).removeItem("item-1");
+  assert.equal(refused.ok, false);
+  if (!refused.ok) assert.match(refused.error.message, /Cancel it first/);
+});
+
 test("generic Send To shortcuts are managed one kind at a time", async () => {
   const calls: unknown[] = [];
   const client = createTauriBackendClient(async (command, args) => {

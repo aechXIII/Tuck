@@ -49,3 +49,20 @@ test("Undo only changes the video on screen, and names the step it undoes", asyn
   await expect(page.locator(".tl-segment")).toHaveCount(1);
   await expect(page.locator("#btn-redo")).toHaveAttribute("aria-label", "Redo split");
 });
+
+test("Undo stays reachable when empty, and Remove segment says why it can't act", async ({ page }) => {
+  await open(page);
+  const undo = page.locator("#btn-undo");
+  await expect(undo).toHaveAttribute("aria-disabled", "true");
+  await expect(undo).toHaveAttribute("data-tip", "Undo (Ctrl+Z)");
+  await expect(undo).not.toHaveAttribute("disabled", "");
+
+  const remove = page.locator("#btn-segment-remove");
+  await expect(remove).toHaveAttribute("aria-disabled", "true");
+  await expect(remove).toHaveAttribute("data-tip", /Keep at least one segment/);
+  await remove.focus();
+  await expect(remove).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".toast")).toContainText("Keep at least one segment.");
+  await expect(page.locator(".tl-segment")).toHaveCount(1);
+});

@@ -107,6 +107,22 @@ class TestBridgeQueueState:
 
         assert api.clear_completed() == {"ok": True, "count": 1}
 
+    def test_remove_item_drops_a_failed_export_but_never_a_running_one(self):
+        api = BridgeAPI()
+        failed = QueueItem(plan=EncodePlan(source="a.mp4", output="a_out.mp4"))
+        failed.state = QueueState.FAILED
+        running = QueueItem(plan=EncodePlan(source="b.mp4", output="b_out.mp4"))
+        running.state = QueueState.RUNNING
+        api._queue._items[failed.id] = failed
+        api._queue._items[running.id] = running
+
+        assert api.remove_item(failed.id) == {"ok": True}
+        assert failed.id not in api._queue._items
+        result = api.remove_item(running.id)
+        assert result["ok"] is False
+        assert "Cancel it first" in str(result["error"])
+        assert running.id in api._queue._items
+
 
 def test_bridge_reuses_probe_metadata_for_unchanged_video(tmp_path, monkeypatch):
     source = tmp_path / "clip.mp4"

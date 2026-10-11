@@ -178,3 +178,28 @@ test("a step with no percentage sweeps, and with Animations off shows a still da
   await expect(fill).toHaveCSS("animation-name", "none");
   await expect(fill).toHaveCSS("width", /^\d/);
 });
+
+test("a failed export offers its details and can leave the list; a cancelled one can leave too", async ({ page }) => {
+  const fixture = fixtureWith([VIDEO]);
+  fixture.responses.getQueueState = {
+    items: [
+      { id: "f1", source: "Alpha.mp4", source_path: VIDEO, state: "failed", error: "FFmpeg stopped" },
+      { id: "c1", source: "Bravo.mp4", source_path: "C:\videos\Bravo.mp4", state: "cancelled" },
+    ],
+  };
+  fixture.responses.getDiagnostics = { ok: true, text: "diagnostics for f1" };
+  await open(page, fixture);
+  await page.locator("#qstatus").click();
+  const list = page.locator("#exports-list");
+
+  await expect(list.getByRole("button", { name: "Copy details for Alpha.mp4" })).toBeVisible();
+  await expect(list.getByRole("button", { name: "Copy details for Bravo.mp4" })).toHaveCount(0);
+  await expect(list.getByRole("button", { name: "Remove Bravo.mp4 from Exports" })).toBeVisible();
+
+  await list.getByRole("button", { name: "Copy details for Alpha.mp4" }).click();
+  await expect.poll(() => callCount(page, "getDiagnostics")).toBe(1);
+
+  await list.getByRole("button", { name: "Remove Alpha.mp4 from Exports" }).click();
+  await expect.poll(() => page.evaluate(() =>
+    window.__tuckFakeBackendCalls?.find((call) => call.method === "removeItem")?.args[0])).toBe("f1");
+});

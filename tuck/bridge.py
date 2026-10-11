@@ -489,6 +489,15 @@ class BridgeAPI:
         ok = self._queue.cancel(str(item_id))
         return {"ok": ok}
 
+    def remove_item(self, item_id: str) -> BridgeResult:
+        # a running export is cancelled first; the queue never drops one mid-encode
+        if self._queue.remove(str(item_id)):
+            return {"ok": True}
+        return {
+            "ok": False,
+            "error": "This export can't be removed while it runs. Cancel it first.",
+        }
+
     def cancel_all_items(self) -> BridgeResult:
         self._queue.cancel_all()
         return {"ok": True}

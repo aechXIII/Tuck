@@ -161,18 +161,35 @@ export function installEditorRuntime(
   const shortcutHost: { TuckShortcuts?: ShortcutsApi } = {};
   shortcuts = installShortcuts(shortcutHost);
 
+  // Undo and Redo stay focusable when there is nothing to do, so their tooltip can say so;
+  // aria-disabled marks them unavailable, and a press then does nothing
+  function historyButton(id: string): { disabled: boolean } | null {
+    const button = byId<HTMLButtonElement>(id);
+    if (!button) return null;
+    return {
+      get disabled() {
+        return button.getAttribute("aria-disabled") === "true";
+      },
+      set disabled(value: boolean) {
+        button.disabled = false;
+        button.setAttribute("aria-disabled", String(value));
+      },
+    };
+  }
+
   history = installHistory(
     {
       getClip: (path) => session.clips[path],
       selectedPath: () => session.selPath,
       refreshUiForClip: () => refreshEditor(),
-      undoButton: () => byId<HTMLButtonElement>("btn-undo"),
-      redoButton: () => byId<HTMLButtonElement>("btn-redo"),
+      undoButton: () => historyButton("btn-undo"),
+      redoButton: () => historyButton("btn-redo"),
       labelButtons: (undo, redo) => {
         const steps = [["btn-undo", "Undo", undo], ["btn-redo", "Redo", redo]] as const;
         for (const [id, verb, step] of steps) {
           const button = byId<HTMLButtonElement>(id);
           if (!button) continue;
+          // an empty history keeps teaching the key; the dimmed, aria-disabled button says the rest
           const label = step ? `${verb} ${step}` : verb;
           button.dataset.shortcutLabel = label;
           button.setAttribute("aria-label", label);
@@ -590,6 +607,8 @@ export function installEditorRuntime(
         "export-item-cancel": (target) => void queue.cancelQueueItem(target.dataset.itemId ?? ""),
         "export-item-retry": (target) => void queue.retryQueueItem(target.dataset.itemId ?? ""),
         "export-item-show": (target) => void queue.openResult(target.dataset.resultPath ?? ""),
+        "export-item-copy-details": (target) => void queue.copyDiagnostics(target.dataset.itemId ?? ""),
+        "export-item-remove": (target) => void queue.removeQueueItem(target.dataset.itemId ?? ""),
         "modal-close-overlay": (target, event) => {
           if (event.target === target) closeActiveModal();
         },

@@ -182,6 +182,14 @@ class DeterministicFakeBackend implements BackendClient {
     );
   }
 
+  removeItem(itemId: string) {
+    return this.#record(
+      "removeItem",
+      [itemId],
+      this.#responses.removeItem ?? success({}),
+    );
+  }
+
   cancelItem(itemId: string) {
     return this.#record(
       "cancelItem",

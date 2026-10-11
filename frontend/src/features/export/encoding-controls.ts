@@ -731,6 +731,9 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     snapProf();
   }
 
+  const SIZE_PREVIEW_DELAY_MS = 120;
+  let sizePreviewTimer: ReturnType<typeof setTimeout> | undefined;
+
   function onSize(value: string): void {
     const size = parseInt(value, 10);
     if (!size || size < 2) return;
@@ -741,7 +744,9 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     input("sz-slider").setAttribute("aria-valuemax", input("sz-slider").max);
     updateSizePresets(size);
     resizeSizeInput();
-    void reqPreview();
+    // a drag sends a value for every pixel; the plan waits for a short pause instead
+    clearTimeout(sizePreviewTimer);
+    sizePreviewTimer = setTimeout(() => void reqPreview(), SIZE_PREVIEW_DELAY_MS);
     updateDirty();
   }
 
@@ -1022,6 +1027,8 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     if (!clip || !clip.probed) return;
     if (!videoSettingsValid() || !lut.valid()) {
       clip.planData = null;
+      // settings that can't be planned have no estimate, so no placeholder waits for one
+      clip._hadEstimate = false;
       delete clip._previewRequestId;
       return;
     }
@@ -1052,6 +1059,10 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
         const generalError = el("export-plan-error");
         generalError.textContent = field === "lut" || field === "frame_blending" ? "" : message;
         generalError.hidden = !generalError.textContent;
+        if (!r.ok) {
+          clip._hadEstimate = false;
+          deps.renderClips?.();
+        }
       }
       if (
         r.ok &&

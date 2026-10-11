@@ -332,6 +332,28 @@ test("update check failures fall back to a visible error toast", async ({ page }
   await expect(page.getByRole("alert")).toContainText("Update check failed: GitHub unreachable");
 });
 
+test("Check for updates says it is checking and ignores repeat presses", async ({ page }) => {
+  const fixture = exportFixture();
+  fixture.responses.checkForUpdates = { ok: true, available: false };
+  fixture.holdMethods = ["checkForUpdates"];
+  await page.setViewportSize({ width: 1240, height: 800 });
+  await installFakeBackend(page, fixture);
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Settings" }).click();
+  await page.locator("#settings-nav-about").click();
+  const check = page.locator("#settings-page").getByRole("button", { name: /Check for updates|Checking/ });
+  await check.click();
+  await expect(check).toHaveText("Checking…");
+  await expect(check).toHaveAttribute("aria-disabled", "true");
+  await check.click({ force: true });
+  expect(await calls(page, "checkForUpdates")).toHaveLength(1);
+
+  await page.evaluate(() => window.__tuckReleaseHeld?.("checkForUpdates", { ok: true, available: false }));
+  await expect(check).toHaveText("Check for updates");
+  await expect(check).not.toHaveAttribute("aria-disabled", "true");
+});
+
 test("the settings dialog traps Tab focus inside the dialog", async ({ page }) => {
   await page.setViewportSize({ width: 1240, height: 800 });
   await installFakeBackend(page, exportFixture());

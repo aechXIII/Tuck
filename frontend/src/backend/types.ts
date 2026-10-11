@@ -179,6 +179,8 @@ export interface DomainBackendClient {
   enqueueWithOptions(request: PlanRequest): Promise<BackendResult<JsonObject>>;
   enqueueBatch(requests: readonly PlanRequest[]): Promise<BackendResult<JsonObject>>;
   cancelItem(itemId: string): Promise<BackendResult<EmptyPayload>>;
+  // drops a finished, failed, cancelled or waiting export from the list; a running one must be cancelled first
+  removeItem(itemId: string): Promise<BackendResult<EmptyPayload>>;
   cancelAllItems(): Promise<BackendResult<EmptyPayload>>;
   clearCompleted(): Promise<BackendResult<EmptyPayload>>;
   moveItem(itemId: string, newIndex: number): Promise<BackendResult<EmptyPayload>>;

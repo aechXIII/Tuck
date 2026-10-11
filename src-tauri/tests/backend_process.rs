@@ -15,6 +15,16 @@ fn finite_commands_serialize_to_allowlisted_sidecar_requests() {
         }),
     );
     assert_eq!(
+        serde_json::to_value(BackendCommand::RemoveItem {
+            item_id: "item-9".into(),
+        })
+        .expect("Tauri command should serialize"),
+        json!({
+            "command": "remove_item",
+            "payload": {"item_id": "item-9"},
+        }),
+    );
+    assert_eq!(
         BackendCommand::ProbeFile {
             path: "C:\\media\\clip.mp4".into(),
         }

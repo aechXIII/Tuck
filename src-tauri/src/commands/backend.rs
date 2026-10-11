@@ -69,6 +69,9 @@ pub enum BackendCommand {
     CancelItem {
         item_id: String,
     },
+    RemoveItem {
+        item_id: String,
+    },
     CancelAllItems,
     ClearCompleted,
     MoveItem {
@@ -191,6 +194,7 @@ impl BackendCommand {
             Self::EnqueueBatch { requests } => ("enqueue_batch", json!({ "requests": requests })),
             Self::GetQueueState => ("get_queue_state", json!({})),
             Self::CancelItem { item_id } => ("cancel_item", json!({ "item_id": item_id })),
+            Self::RemoveItem { item_id } => ("remove_item", json!({ "item_id": item_id })),
             Self::CancelAllItems => ("cancel_all_items", json!({})),
             Self::ClearCompleted => ("clear_completed", json!({})),
             Self::MoveItem { item_id, new_index } => (
