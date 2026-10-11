@@ -468,6 +468,10 @@ export function installTransform(host: TransformHost): TransformApi {
     return closest;
   }
 
+  // the crop box fades in only when crop is turned on for the video already showing; switching
+  // videos or repainting while its details load must not replay it
+  let lastCropPaint: { path: string; cropOff: boolean } | null = null;
+
   function paintCropOverlay(): void {
     const ui = doc.getElementById("crop-ui");
     const selection = doc.getElementById("crop-selection");
@@ -478,10 +482,17 @@ export function installTransform(host: TransformHost): TransformApi {
       return;
     }
 
-    if ((clip.cropAspect || "off") === "off") {
+    const cropOff = (clip.cropAspect || "off") === "off";
+    const turnedOn = !cropOff && lastCropPaint?.path === clip.path && lastCropPaint.cropOff;
+    lastCropPaint = { path: clip.path, cropOff };
+    if (cropOff) {
       ui.classList.remove("on");
       paintTransformPreview(clip, size);
       return;
+    }
+    if (turnedOn) {
+      ui.classList.add("entering");
+      ui.addEventListener("animationend", () => ui.classList.remove("entering"), { once: true });
     }
 
     const editor = cropEditorGeometry(clip, size);
@@ -785,6 +796,11 @@ export function installTransform(host: TransformHost): TransformApi {
     }
   }
 
+  // once one tooltip has shown, the next one along a toolbar appears at once, with no wait or fade
+  const TOOLTIP_DELAY_MS = 350;
+  const TOOLTIP_WARM_MS = 300;
+  let tooltipWarmUntil = 0;
+
   function hideTransformTooltip(): void {
     if (tooltipTimer) {
       clock.clearTimeout(tooltipTimer);
@@ -792,7 +808,8 @@ export function installTransform(host: TransformHost): TransformApi {
     }
     tooltipTarget = null;
     const tooltip = doc.getElementById("transform-tooltip");
-    if (tooltip) tooltip.classList.remove("show");
+    if (tooltip?.classList.contains("show")) tooltipWarmUntil = Date.now() + TOOLTIP_WARM_MS;
+    tooltip?.classList.remove("show", "instant");
   }
 
   function positionTransformTooltip(target: HTMLElement, tooltip: HTMLElement): void {
@@ -823,7 +840,8 @@ export function installTransform(host: TransformHost): TransformApi {
     hideTransformTooltip();
     if (tooltipPointerActive) return;
     tooltipTarget = target;
-    tooltipTimer = clock.setTimeout(() => {
+    const reveal = (instant: boolean): void => {
+      tooltipTimer = 0;
       if (tooltipTarget !== target || !target.isConnected) {
         hideTransformTooltip();
         return;
@@ -831,10 +849,12 @@ export function installTransform(host: TransformHost): TransformApi {
       const tooltip = doc.getElementById("transform-tooltip");
       if (!tooltip) return;
       tooltip.textContent = target.dataset.tip || "";
+      tooltip.classList.toggle("instant", instant);
       tooltip.classList.add("show");
       positionTransformTooltip(target, tooltip);
-      tooltipTimer = 0;
-    }, 350);
+    };
+    if (Date.now() < tooltipWarmUntil) reveal(true);
+    else tooltipTimer = clock.setTimeout(() => reveal(false), TOOLTIP_DELAY_MS);
   }
 
   function tipTarget(event: Event): HTMLElement | null {
@@ -873,6 +893,10 @@ export function installTransform(host: TransformHost): TransformApi {
       tooltipPointerActive = true;
       hideTransformTooltip();
     };
+    // Esc dismisses the tooltip; it doesn't stop Esc from closing anything else
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === "Escape" && tooltipTarget) hideTransformTooltip();
+    };
     const endTooltipPointerGesture = (): void => {
       hideTransformTooltip();
     };
@@ -890,7 +914,9 @@ export function installTransform(host: TransformHost): TransformApi {
     doc.addEventListener("pointerup", endTooltipPointerGesture, true);
     doc.addEventListener("pointercancel", endTooltipPointerGesture, true);
     doc.addEventListener("mousemove", onMouseMove, true);
+    doc.addEventListener("keydown", onKeyDown);
     cleanups.push(() => {
+      doc.removeEventListener("keydown", onKeyDown);
       doc.removeEventListener("mouseover", onMouseOver);
       doc.removeEventListener("mouseout", onMouseOut);
       doc.removeEventListener("focusin", onFocusIn);

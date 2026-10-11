@@ -10,6 +10,7 @@ import {
 } from "../editor/session.ts";
 import { confirmToast, toast } from "../editor/toast.ts";
 import { formatTarget, withReason } from "../editor/format.ts";
+import { EASE_OUT, motionEnabled } from "../../ui/motion.ts";
 import type { DetachedHistory } from "../history/history.ts";
 import { createPreviewController, type PreviewController } from "../preview/preview-controller.ts";
 import { alignToQueueOrder, isQueueActive } from "../queue/queue-view.ts";
@@ -163,7 +164,7 @@ export function createLibrary(host: LibraryHost): LibraryApi {
 
   // the stylesheet's animation switch can't reach script-driven animations, so it is checked here
   function motionOn(): boolean {
-    return documentRef.documentElement.dataset.motion !== "off";
+    return motionEnabled(documentRef);
   }
 
   // a short wait, so a preview that arrives quickly never flashes the loading note
@@ -626,6 +627,47 @@ export function createLibrary(host: LibraryHost): LibraryApi {
     await syncPendingQueueToClipOrder();
   }
 
+  // what each card showed last time, so only real changes move: a video that just arrived, a
+  // picture that just loaded, or an export that just finished
+  let cardsShown = new Map<string, { queueState: string; thumbnail: string }>();
+
+  function animateCardChanges(models: readonly ClipCardModel[]): void {
+    const before = cardsShown;
+    cardsShown = new Map(models.map((model) => [
+      model.path,
+      { queueState: model.queueState || "", thumbnail: model.thumbnail || "" },
+    ]));
+    if (!motionOn()) return;
+    let entering = 0;
+    for (const card of byId("clips")?.querySelectorAll<HTMLElement>(".clip[data-clip-path]") ?? []) {
+      const path = card.dataset.clipPath;
+      if (!path || typeof card.animate !== "function") continue;
+      const was = before.get(path);
+      const now = cardsShown.get(path);
+      if (!was) {
+        // new videos fade up one after another; past the sixth they simply appear
+        if (entering < 6) {
+          card.animate(
+            [{ opacity: 0, transform: "translateY(6px)" }, { opacity: 1, transform: "none" }],
+            { duration: 160, easing: EASE_OUT, delay: entering * 30, fill: "backwards" },
+          );
+        }
+        entering += 1;
+        continue;
+      }
+      if (!was.thumbnail && now?.thumbnail) {
+        card.querySelector(".c-thumb img")?.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 160, easing: EASE_OUT });
+      }
+      const wasActive = was.queueState === "running" || was.queueState === "pending";
+      if (wasActive && now?.queueState === "completed") {
+        card.querySelector(".c-line")?.animate(
+          [{ opacity: 0, transform: "translateY(2px)" }, { opacity: 1, transform: "none" }],
+          { duration: 160, easing: EASE_OUT },
+        );
+      }
+    }
+  }
+
   function cardTops(): Map<string, number> {
     const tops = new Map<string, number>();
     for (const card of byId("clips")?.querySelectorAll<HTMLElement>(".clip[data-clip-path]") ?? []) {
@@ -831,6 +873,7 @@ export function createLibrary(host: LibraryHost): LibraryApi {
       for (const item of group.items) appendLibraryClip(section, item);
       cdiv.appendChild(section);
     }
+    animateCardChanges(models);
     updateLibrarySummary(models);
     host.updateActionButtons?.();
   }
@@ -950,6 +993,8 @@ export function createLibrary(host: LibraryHost): LibraryApi {
   }
 
   function undoRemoval(): void {
+    // the cards around a returning video slide over to make room
+    const before = cardTops();
     const restoring = removedClips;
     removedClips = [];
     let reselect: string | null = null;
@@ -968,6 +1013,7 @@ export function createLibrary(host: LibraryHost): LibraryApi {
     const target = reselect ?? (session.selPath ? null : session.clipOrder[0] ?? null);
     if (target) selectClip(target);
     else renderClips();
+    settleCards(before);
     const order = orderedClipKeys();
     thumbnails.add(order.filter((path) => session.clips[path]?._thumbnail === undefined));
     probes.add(order.filter((path) => {
@@ -989,10 +1035,13 @@ export function createLibrary(host: LibraryHost): LibraryApi {
   }
 
   function removeClip(path: string): void {
+    // the cards below a removed video slide up into its place instead of jumping
+    const before = cardTops();
     const removed = takeClip(path);
     if (!removed) return;
     removedClips.push(removed);
     afterRemoval(removed.selected);
+    settleCards(before);
     offerUndo();
   }
 

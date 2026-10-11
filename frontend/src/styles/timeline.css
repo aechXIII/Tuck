@@ -684,6 +684,12 @@ body.task-cut #timeline-audio-tools {
   background: var(--tl-tool-fill);
   color: var(--text);
 }
+.timeline-tool-group .dock-text-btn:active:not(:disabled, [aria-disabled="true"]),
+.timeline-tool-group .dock-toggle:active:not(:disabled),
+.dock-fit-btn:active:not(:disabled),
+.dock-zoom-btn:active:not(:disabled) {
+  background: color-mix(in srgb, var(--tl-tool-fill) 78%, #000);
+}
 
 .timeline-tool-group .dock-text-btn:focus-visible,
 .timeline-tool-group .dock-toggle:focus-visible,
@@ -1203,6 +1209,9 @@ body.task-cut #timeline-audio-tools {
   mask-image: var(--kf-mask, none);
 }
 /* a dragged start can land on any keyframe, so every one shows in full */
+.kf-lane.kf-arriving i.kf {
+  animation: surface-fade var(--dur-surface) var(--ease-out);
+}
 .kf-lane.dragging {
   -webkit-mask-image: none;
   mask-image: none;
@@ -1579,6 +1588,9 @@ body.timeline-scrubbing #seq-playhead-time {
 .dock-text-btn:hover {
   background: var(--raised);
   color: var(--text);
+}
+.dock-text-btn:active:not(:disabled, [aria-disabled="true"]) {
+  background: var(--raised-2);
 }
 .dock-text-btn:focus-visible {
   outline: 2px solid var(--accent-light);

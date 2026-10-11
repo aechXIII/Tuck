@@ -163,8 +163,11 @@
   display: none;
 }
 .profile-menu::backdrop { background: transparent; }
-.profile-menu:popover-open > * { animation: profile-menu-enter 150ms cubic-bezier(0.22, 1, 0.36, 1); }
-@keyframes profile-menu-enter { from { opacity: 0; } to { opacity: 1; } }
+/* the menu is joined to its trigger (square corners on that side, no gap), so it must not move:
+   sliding it would open a seam. it is revealed from the joined edge instead, as if the card grows
+   into the list, and it closes at once so the card and menu round off together */
+.profile-menu:popover-open { animation: joined-reveal-down var(--dur-surface) var(--ease-out); }
+.profile-menu[data-side="above"]:popover-open { animation-name: joined-reveal-up; }
 .profile-search-row { padding: 4px 10px 9px; }
 .profile-search-row input { box-sizing: border-box; width: 100%; height: 27px; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--text); font: 400 12px var(--font); outline: none; }
 .profile-search-row:focus-within { box-shadow: inset 0 -2px var(--accent-light); }
@@ -513,6 +516,22 @@
 .export-actions > summary:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+/* the export button's label; a new phrase rises in, so it needs a box that can move */
+.label-swap {
+  display: inline-block;
+}
+/* the menu opens upward from its arrow, so it rises into place */
+.export-actions[open] .export-actions-menu {
+  animation: surface-rise var(--dur-surface) var(--ease-out);
+}
+/* the LUT menu opens on top of its own row and takes its place, so it unfolds downward from there */
+#lut-picker-popup:popover-open {
+  animation: joined-reveal-down var(--dur-surface) var(--ease-out);
+}
+/* an error under a field drops in beside the setting it is about; no shake, no flash */
+:is(#export-plan-error, #video-error, #blend-error, #lut-error):not([hidden]) {
+  animation: surface-drop var(--dur-surface) var(--ease-out);
 }
 .export-actions-menu {
   position: absolute;

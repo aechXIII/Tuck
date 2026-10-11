@@ -318,6 +318,20 @@ body:not(.task-cut) #stage-controls [data-cut-only] {
   background: var(--action-hover);
   color: var(--on-accent);
 }
+/* held buttons answer at once: Play, a lone round button, shrinks a touch; the transport row
+   around it only darkens, so the row stays still */
+#btn-play {
+  transition: transform var(--dur-quick) var(--ease-out);
+}
+#btn-play:active:not(:disabled, [aria-disabled="true"]) {
+  transform: scale(0.94);
+  background: color-mix(in srgb, var(--action) 86%, #000);
+  transition-duration: var(--dur-press);
+}
+.pbtn:not(#btn-play):active:not(:disabled, [aria-disabled="true"]) {
+  background: var(--raised-2);
+  color: var(--text);
+}
 #ptime {
   color: var(--muted);
   font-size: 11px;

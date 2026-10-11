@@ -22,8 +22,10 @@
 }
 #crop-ui.on {
   display: block;
-  /* fades in once as crop mode opens; the box and handles then follow the pointer with no easing */
-  animation: crop-enter 140ms ease-out;
+}
+/* fades in as crop is turned on; the box and handles then follow the pointer with no easing */
+#crop-ui.on.entering {
+  animation: crop-enter var(--dur-surface) var(--ease-out);
 }
 @keyframes crop-enter {
   from { opacity: 0; }
@@ -179,6 +181,9 @@ body.crop-dragging * {
   cursor: pointer;
   font: 600 10px var(--font);
 }
+#transform-fields .transform-segment button:active:not(:disabled) {
+  background: color-mix(in srgb, var(--raised-2) 82%, #000);
+}
 .transform-segment button:hover {
   background: var(--raised);
   color: var(--text);
@@ -233,4 +238,7 @@ body.crop-dragging * {
   opacity: 1;
   visibility: visible;
   transition-delay: 0s;
+}
+#transform-tooltip.show.instant {
+  transition: none;
 }

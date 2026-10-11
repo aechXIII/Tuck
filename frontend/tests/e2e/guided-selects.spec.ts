@@ -139,7 +139,7 @@ test("Settings dropdowns don't linger after moving between pages", async ({ page
     return bounds.top >= 8 && bounds.bottom <= innerHeight - 8 && bounds.left >= 8 && bounds.right <= innerWidth - 8;
   });
   expect(fits).toBe(true);
-  expect(await popup.evaluate(element => getComputedStyle(element).animationName)).toBe("select-enter");
+  expect(await popup.evaluate(element => getComputedStyle(element).animationName)).toMatch(/^surface-(drop|rise)$/);
   await picker.press("Escape");
   for (let index = 0; index < 3; index++) {
     await page.getByRole("button", { name: "Files & names", exact: true }).click();

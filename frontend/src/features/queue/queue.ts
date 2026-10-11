@@ -3,6 +3,7 @@ import { SegmentEditing } from "../timeline/segments.ts";
 import { legacyBackendResult } from "../editor/backend-compat.ts";
 import { formatBytes, formatTime, withReason } from "../editor/format.ts";
 import { announce, confirmToast, toast } from "../editor/toast.ts";
+import { EASE_OUT, motionEnabled } from "../../ui/motion.ts";
 import type { EditorClip } from "../editor/types.ts";
 import type { EditorSession } from "../editor/session.ts";
 import {
@@ -120,6 +121,8 @@ export function installQueue(deps: QueueDeps): QueueApi {
     const panel = byId("exports-panel");
     const status = byId("qstatus");
     exportsOpen = open && lastItems.length > 0;
+    // the panel's own opening motion covers its first paint, so its rows don't each animate too
+    if (!exportsOpen) shownRowIds = null;
     if (panel && exportsOpen) {
       closeTicket += 1;
       panel.classList.remove("closing");
@@ -162,6 +165,7 @@ export function installQueue(deps: QueueDeps): QueueApi {
   function exportRowElement(doc: Document, row: ExportRow): HTMLElement {
     const element = doc.createElement("div");
     element.className = `exports-row ${row.kind}`;
+    element.dataset.exportId = row.id;
     const name = doc.createElement("span");
     name.className = "exports-name";
     name.textContent = row.name;
@@ -235,6 +239,9 @@ export function installQueue(deps: QueueDeps): QueueApi {
     return element;
   }
 
+  // the exports already listed while the panel is open; null until the panel's first paint
+  let shownRowIds: Set<string> | null = null;
+
   function renderExports(items: readonly QueueItem[]): void {
     const list = byId("exports-list");
     if (!list) return;
@@ -260,6 +267,19 @@ export function installQueue(deps: QueueDeps): QueueApi {
     group("Waiting", rows.waiting);
     group("Finished", rows.finished);
     list.replaceChildren(...nodes);
+    // an export added while the list is open fades into its place, once; polls never replay it
+    const listed = new Set([...rows.running, ...rows.waiting, ...rows.finished].map((row) => row.id));
+    if (shownRowIds && motionEnabled(doc)) {
+      for (const element of list.querySelectorAll<HTMLElement>(".exports-row")) {
+        const id = element.dataset.exportId ?? "";
+        if (!id || shownRowIds.has(id) || typeof element.animate !== "function") continue;
+        element.animate(
+          [{ opacity: 0, transform: "translateY(4px)" }, { opacity: 1, transform: "none" }],
+          { duration: 160, easing: EASE_OUT },
+        );
+      }
+    }
+    shownRowIds = listed;
     if (focused?.id) {
       const match = Array.from(list.querySelectorAll<HTMLElement>("button")).find(
         (button) => button.dataset.itemId === focused.id && button.dataset.actionClick === focused.action,

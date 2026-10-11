@@ -5,6 +5,7 @@ import type { EditorSession } from "../editor/session.ts";
 import { formatBytes, formatTimeToHundredths } from "../editor/format.ts";
 import { toast } from "../editor/toast.ts";
 import { isQueueActive, queuedVideoLabel } from "../queue/queue-view.ts";
+import { swapLabel } from "../../ui/motion.ts";
 import { createCutState, cutSegmentStatus, cutStartUnchecked, cutTime, cutTrackSummary, encodedSeconds, mediaSeconds, reduceCutState, shownSegment } from "./cut-state.ts";
 
 interface CutControlsDeps {
@@ -279,14 +280,15 @@ export function installCutControls(deps: CutControlsDeps) {
     const one = element<HTMLButtonElement>("btn-one");
     // a cut already in the queue shows its export, and the button opens it in Exports
     const queued = !busy && !!clip && exporting(clip);
-    one.textContent = busy ? "Exporting…"
+    const label = busy ? "Exporting…"
       : queued ? queuedVideoLabel(clip._queueState, clip._statusText, clip._progress, clip._progressIndeterminate)
       : reading ? "Reading keyframes…" : "Export cut";
+    swapLabel(one, label);
     one.disabled = queued ? false : !clip || !exportable(clip) || busy || waiting;
     if (queued) {
       one.dataset.queued = "true";
       one.dataset.tip = "Show in Exports";
-      one.setAttribute("aria-label", `${one.textContent}. Show in Exports`);
+      one.setAttribute("aria-label", `${label}. Show in Exports`);
     } else if (one.dataset.queued === "true") {
       delete one.dataset.queued;
       delete one.dataset.tip;

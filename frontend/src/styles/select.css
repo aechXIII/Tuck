@@ -8,7 +8,8 @@
 .select-trigger:disabled { color: var(--disabled-text); opacity: 1; cursor: default; }
 :is(.select-trigger, .select-popup) svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
 .select-popup { position: fixed; inset: auto; box-sizing: border-box; max-width: calc(100vw - 16px); margin: 0; padding: 6px; border: 0; border-radius: var(--r-surf); background: var(--raised); color: var(--text); box-shadow: 0 6px 18px rgb(0 0 0 / .25); overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--raised-2) transparent; }
-.select-popup:popover-open { animation: select-enter 110ms ease-out; }
+.select-popup:popover-open { animation: surface-drop var(--dur-surface) var(--ease-out); }
+.select-popup[data-side="above"]:popover-open { animation-name: surface-rise; }
 .select-popup::backdrop { background: transparent; }
 .select-search { display: flex; align-items: center; gap: 8px; position: sticky; top: -6px; z-index: 1; min-height: 33px; padding: 3px 10px 7px; background: var(--raised); color: var(--muted); }
 .select-search > input { flex: 1; min-width: 0; width: 100%; height: 27px; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--text); outline: none; box-shadow: none; font: 400 12px var(--font); }
@@ -24,4 +25,3 @@
 .select-option[aria-disabled="true"] { opacity: .55; cursor: default; }
 .select-empty { margin: 10px; color: var(--muted); font: 400 11px/1.5 var(--font); }
 .select-popup [hidden] { display: none; }
-@keyframes select-enter { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }

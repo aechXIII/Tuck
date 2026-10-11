@@ -282,6 +282,10 @@ export function renderKeyframeStrip(
       unread.style.left = percent(coverage * duration, duration);
       ticks.append(unread);
     }
+    // the first keyframes a video shows fade in together; later updates while reading, and every
+    // redraw after that, appear at once so the lane never flickers
+    const first = strip.times.length > 0 && !lane.querySelector("i.kf");
+    lane.classList.toggle("kf-arriving", first);
     lane.replaceChildren(ticks);
   }
   const width = lane.getBoundingClientRect().width;

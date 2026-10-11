@@ -161,6 +161,8 @@ export function installSelectControls(
       popup.style.maxHeight = `${placement.maxHeight}px`;
       popup.style.left = `${placement.left}px`;
       popup.style.top = `${placement.top}px`;
+      // the opening motion moves away from the trigger, up or down
+      popup.dataset.side = placement.top < anchor.top ? "above" : "below";
     }
 
     function close(restoreFocus = false): void {

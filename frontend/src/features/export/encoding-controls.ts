@@ -17,6 +17,7 @@ import { profileChangeSummary, profileSummary } from "../profiles/profile-summar
 import { pickerProfiles } from "../profiles/profile-list.ts";
 import type { EditorClip } from "../editor/types.ts";
 import { isQueueActive, queuedVideoLabel } from "../queue/queue-view.ts";
+import { swapLabel } from "../../ui/motion.ts";
 import type { EditorSession } from "../editor/session.ts";
 import {
   buildPlanRequest,
@@ -307,7 +308,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     const one = el<HTMLButtonElement>("btn-one");
     const all = el<HTMLButtonElement>("btn-all");
     // the settings are shared; this button acts on the selected video only
-    one.textContent = up ? "Upscale this video" : "Compress this video";
+    let label = up ? "Upscale this video" : "Compress this video";
     one.disabled = !selReady || !blending.valid() || !lut.valid() || !videoSettingsValid();
     const alreadyQueued = readiness.ready.filter((path) => isQueueActive(session.clips[path]?._queueState)).length;
     const exported = readiness.ready.length + readiness.loading.length - alreadyQueued;
@@ -317,15 +318,16 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     const selected = session.selPath ? session.clips[session.selPath] : null;
     const queued = !!selected && isQueueActive(selected._queueState);
     if (enqueueBusyShown) {
-      one.textContent = "Adding to queue…";
+      label = "Adding to queue…";
       one.disabled = true;
       all.disabled = true;
     } else if (selected && queued) {
       // the button shows the export already on its way and opens it, so a press can't queue it twice
-      showQueuedState(one, selected);
+      label = showQueuedState(one, selected);
     } else {
       clearQueuedState(one);
     }
+    swapLabel(one, label);
     const copy = el<HTMLButtonElement>("btn-copy");
     copy.hidden = !queued || enqueueBusyShown;
     copy.disabled = one.disabled && !queued;
@@ -1120,13 +1122,13 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     updateDirty();
   }
 
-  function showQueuedState(button: HTMLButtonElement, clip: EditorClip): void {
+  function showQueuedState(button: HTMLButtonElement, clip: EditorClip): string {
     const label = queuedVideoLabel(clip._queueState, clip._statusText, clip._progress, clip._progressIndeterminate);
-    button.textContent = label;
     button.disabled = false;
     button.dataset.queued = "true";
     button.dataset.tip = "Show in Exports";
     button.setAttribute("aria-label", `${label}. Show in Exports`);
+    return label;
   }
 
   function clearQueuedState(button: HTMLButtonElement): void {

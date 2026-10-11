@@ -67,6 +67,13 @@
   --inspector-content-inset: var(--panel-inset);
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --workspace-motion: 180ms var(--ease-out);
+  /* one short family for occasional surfaces; precise and repeated actions don't animate at all */
+  --dur-press: 80ms;
+  --dur-quick: 120ms;
+  --dur-surface: 160ms;
+  --dur-surface-out: 120ms;
+  /* things that slide across the screen, like a moving thumb, ease both ways */
+  --ease-move: cubic-bezier(0.45, 0, 0.2, 1);
   --z-workspace-backdrop: 30;
   --z-workspace-panel: 40;
   --z-exports: 50;
@@ -216,6 +223,10 @@ textarea,
   color: var(--dim);
   opacity: 0.4;
   cursor: default;
+}
+.tb-icon-btn:active:not(:disabled, [aria-disabled="true"]) {
+  background: var(--raised-2);
+  color: var(--text);
 }
 .tb-icon-btn:focus-visible {
   outline: 2px solid var(--accent-light);
@@ -1485,6 +1496,34 @@ label.toggle-row {
 }
 .mod-overlay.open {
   display: flex;
+  animation: surface-fade var(--dur-surface) var(--ease-out);
+}
+/* dialogs rise into place over a fading backdrop, the same way Settings opens */
+.mod-overlay.open .mod-box {
+  animation: dialog-rise var(--dur-surface) var(--ease-out);
+}
+/* menus and popups drop from their trigger; one that opens upward rises instead */
+@keyframes surface-drop {
+  from { opacity: 0; transform: translateY(-4px); }
+}
+@keyframes surface-rise {
+  from { opacity: 0; transform: translateY(4px); }
+}
+@keyframes surface-fade {
+  from { opacity: 0; }
+}
+@keyframes dialog-rise {
+  from { opacity: 0; transform: translateY(6px); }
+}
+/* a menu joined to its trigger is uncovered from that edge; the clip reaches 24 px past the other
+   sides so its shadow is there from the start, and ends wider than the box so nothing pops */
+@keyframes joined-reveal-down {
+  from { clip-path: inset(0 -24px 100% -24px); }
+  to { clip-path: inset(-24px -24px -24px -24px); }
+}
+@keyframes joined-reveal-up {
+  from { clip-path: inset(100% -24px 0 -24px); }
+  to { clip-path: inset(-24px -24px -24px -24px); }
 }
 .mod-box {
   background: var(--raised);
@@ -1871,6 +1910,8 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
     display: block;
     border: 0;
     background: rgba(4, 4, 8, 0.62);
+    /* the backdrop arrives with the drawer instead of appearing first */
+    animation: surface-fade var(--workspace-motion);
   }
 }
 @media (max-width: 719px) {

@@ -340,6 +340,14 @@ function pauseToastTimer(): void {
   activeToast.remaining -= Date.now() - activeToast.started;
 }
 
+// a notice must not run out while nobody can see it, such as when Tuck is minimised
+if (typeof document !== "undefined") {
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) pauseToastTimer();
+    else resumeToastTimer();
+  });
+}
+
 function resumeToastTimer(): void {
   if (!activeToast || activeToast.timer || activeToast.closing) return;
   activeToast.started = Date.now();

@@ -203,3 +203,34 @@ test("a failed export offers its details and can leave the list; a cancelled one
   await expect.poll(() => page.evaluate(() =>
     window.__tuckFakeBackendCalls?.find((call) => call.method === "removeItem")?.args[0])).toBe("f1");
 });
+
+test("after one tooltip has shown, the next one along the toolbar appears at once, and Esc hides it", async ({ page }) => {
+  await open(page, fixtureWith([VIDEO]));
+  const tooltip = page.locator("#transform-tooltip");
+  await page.locator("#btn-seq-split").hover();
+  await expect(tooltip).toHaveClass(/show/);
+  await expect(tooltip).not.toHaveClass(/instant/);
+
+  await page.locator("#btn-segment-remove").hover();
+  await expect(tooltip).toHaveClass(/show/);
+  await expect(tooltip).toHaveClass(/instant/);
+  await expect(tooltip).toContainText("Keep at least one segment");
+
+  await page.keyboard.press("Escape");
+  await expect(tooltip).not.toHaveClass(/show/);
+});
+
+test("removing a video slides the cards below into its place, and Undo brings it back the same way", async ({ page }) => {
+  await open(page, fixtureWith([VIDEO, "C:\videos\Bravo.mp4", "C:\videos\Charlie.mp4"]));
+  await expect(page.locator(".clip")).toHaveCount(3);
+  const slides = () => page.locator("#clips").evaluate((list) =>
+    list.getAnimations({ subtree: true }).filter((animation) => (animation.effect as KeyframeEffect | null)?.target?.classList.contains("clip")).length);
+
+  await page.getByRole("button", { name: "Remove Alpha.mp4" }).click();
+  await expect(page.locator(".clip")).toHaveCount(2);
+  expect(await slides()).toBeGreaterThan(0);
+
+  await page.locator(".toast").getByRole("button", { name: "Undo" }).click();
+  await expect(page.locator(".clip")).toHaveCount(3);
+  expect(await slides()).toBeGreaterThan(0);
+});

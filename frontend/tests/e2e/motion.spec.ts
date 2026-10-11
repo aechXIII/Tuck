@@ -20,12 +20,12 @@ for (const reducedMotion of ["reduce", "no-preference"] as const) {
       });
       await page.locator("#insp-tab-export").click();
       await page.locator("#prof-pick").click();
-      await expect(page.locator("#prof-options")).toHaveCSS("animation-name", "profile-menu-enter");
+      await expect(page.locator("#prof-menu")).toHaveCSS("animation-name", /joined-reveal-(down|up)/);
       await expect(page.locator("#prof-menu")).toHaveCSS("opacity", "1");
       await expect(page.locator("#prof-menu")).toHaveCSS("transform", "none");
       await page.keyboard.press("Escape");
       await page.locator("#export-res-select-trigger").click();
-      await expect(page.locator("#export-res-select-popup")).toHaveCSS("animation-name", "select-enter");
+      await expect(page.locator("#export-res-select-popup")).toHaveCSS("animation-name", /surface-(drop|rise)/);
       await page.keyboard.press("Escape");
       await page.getByRole("button", { name: "Settings", exact: true }).click();
       await expect(page.locator(".settings-dialog")).toHaveCSS("animation-name", "settings-enter");
