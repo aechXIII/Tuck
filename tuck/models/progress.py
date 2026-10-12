@@ -29,6 +29,8 @@ class EncodeProgress:
     current_time: float = 0.0
     duration: float = 0.0
     speed: float | None = None
+    # pictures a second while frames are blended, for comparing with other blending tools
+    fps: float | None = None
     eta_seconds: float | None = None
     pass_number: int | None = None
     total_passes: int | None = None
@@ -45,6 +47,7 @@ class EncodeProgress:
             "current_time": round(float(self.current_time), 3),
             "duration": round(float(self.duration), 3),
             "speed": round(float(self.speed), 2) if self.speed is not None else None,
+            "fps": round(float(self.fps), 1) if self.fps is not None else None,
             "eta_seconds": round(float(self.eta_seconds), 1)
             if self.eta_seconds is not None
             else None,

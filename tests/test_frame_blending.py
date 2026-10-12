@@ -200,7 +200,7 @@ def test_prepared_video_preserves_fractional_fps(timestamped_source, tmp_path):
     plan = make_blend_plan(source, info)
     plan.target_fps = 30000 / 1001
     path = tmp_path / "prepared.nut"
-    prepare_blended_video(plan, path, lambda: None, lambda _: None)
+    prepare_blended_video(plan, path, lambda: None, lambda *_: None)
     with av.open(str(path)) as container:
         frames = list(container.decode(video=0))
         assert len(frames) == 30
@@ -273,9 +273,14 @@ def test_full_encode_audio_duration_and_pixels(timestamped_source, two_pass, mon
     assert [event.current_time for event in blending] == sorted(
         event.current_time for event in blending
     )
+    # nothing is blended before the first event, and every later one has a measured rate
+    assert blending[0].fps is None
+    assert all(event.fps is not None and event.fps > 0 for event in blending[1:])
     last_blending = progress.index(blending[-1])
     assert progress[last_blending + 1].stage.value in {"encoding", "pass_1"}
     assert all(event.stage.value != "preparing" for event in progress[last_blending + 1 :])
+    # encoding the blended video afterwards is not blending
+    assert all(event.fps is None for event in progress[last_blending + 1 :])
     assert progress[-1].percent == 100
     assert len(commands) >= 2
     assert len(set(commands)) == 1
@@ -476,7 +481,9 @@ def test_memory_and_disk_limits_are_actionable(timestamped_source, tmp_path, mon
     monkeypatch.setattr(blending, "MAX_BUFFER_BYTES", 256 * 1024**2)
     monkeypatch.setattr(blending, "MAX_TEMP_BYTES", -1)
     with pytest.raises(ValueError, match="16 GiB"):
-        blending.prepare_blended_video(plan, tmp_path / "limited.nut", lambda: None, lambda _: None)
+        blending.prepare_blended_video(
+            plan, tmp_path / "limited.nut", lambda: None, lambda *_: None
+        )
 
 
 @pytest.mark.ffmpeg
@@ -738,7 +745,9 @@ def test_temporary_size_limit_includes_flushed_packets(timestamped_source, tmp_p
     plan.target_fps = 1
     monkeypatch.setattr(blending, "MAX_TEMP_BYTES", 0)
     with pytest.raises(ValueError, match="16 GiB"):
-        blending.prepare_blended_video(plan, tmp_path / "flushed.nut", lambda: None, lambda _: None)
+        blending.prepare_blended_video(
+            plan, tmp_path / "flushed.nut", lambda: None, lambda *_: None
+        )
 
 
 def test_vegas_weights_and_timestamp_integrals():
@@ -1152,6 +1161,27 @@ def test_simple_blends_export_without_the_prepared_video(grid_source, monkeypatc
         video = container.streams.video[0]
         assert sum(1 for _ in container.decode(video)) == 65
         assert container.streams.audio
+
+
+def test_ffmpeg_reports_fps_only_while_it_blends():
+    import sys
+    from fractions import Fraction
+
+    from tuck.encoding.frame_blending import TmixBlend
+    from tuck.encoding.runner import FFmpegEngine
+
+    # a stand-in for FFmpeg that has run long enough to measure its rate
+    child = (
+        "import sys\n"
+        "sys.stderr.write('fps=143.21\\nout_time_us=500000\\nspeed=2.4x\\nprogress=end\\n')\n"
+    )
+    engine = FFmpegEngine()
+    for blend, fps in ((None, None), (TmixBlend(Fraction(60), ()), 143.21)):
+        engine._tmix = blend
+        updates = []
+        engine._run_pass([sys.executable, "-c", child], 1.0, updates.append, pass_num=1)
+        assert updates[-1].percent == 50
+        assert updates[-1].fps == fps
 
 
 def _pictures(count, closed, fail_at=None):

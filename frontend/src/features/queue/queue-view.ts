@@ -38,6 +38,8 @@ export interface QueueItem {
   readonly progress?: number;
   readonly progress_info?: {
     readonly speed?: number;
+    // pictures a second, sent only while frames are blended
+    readonly fps?: number | null;
     readonly eta_seconds?: number | null;
     readonly indeterminate?: boolean;
     readonly stage?: string;
@@ -432,6 +434,11 @@ export function exportRows(
   return {running, waiting, finished, saved};
 }
 
+// whole numbers once it is fast enough that a tenth no longer matters
+function formatFps(fps: number): string {
+  return `${fps < 10 ? fps.toFixed(1) : Math.round(fps)} fps`;
+}
+
 // plain encoding needs no verb; other steps such as a second pass or a cut's joining say theirs
 function runningDetail(
   item: QueueItem,
@@ -446,6 +453,7 @@ function runningDetail(
   else if (item.status_text && item.status_text !== "Encoding") parts.push(item.status_text);
   if (!info.indeterminate) {
     if (progress > 0) parts.push(`${progress}%`);
+    if (info.fps != null && info.fps > 0) parts.push(formatFps(info.fps));
     if (info.eta_seconds != null && info.eta_seconds >= 0) parts.push(`${formatDuration(info.eta_seconds)} left`);
   }
   return parts.join(" · ") || "Starting";

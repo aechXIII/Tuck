@@ -99,6 +99,17 @@ test("a running item shows its name, how far it is and what is left", () => {
   assert.equal(starting.detail, "Starting");
 });
 
+test("blending shows how many pictures a second it makes", () => {
+  const detail = (progress: number, fps: number | null, status_text = "") => reduceQueueSnapshot(emptyQueueView(), {
+    items: [{ id: "a", source: "clip.mp4", state: "running", progress, status_text, progress_info: { fps, eta_seconds: progress ? 30 : null } }],
+  }, (seconds) => `${seconds}s`).detail;
+  assert.equal(detail(0, 84.6, "Blending frames (37%)"), "Blending frames (37%) · 85 fps");
+  assert.equal(detail(0, 2.345, "Blending frames (3%)"), "Blending frames (3%) · 2.3 fps");
+  // FFmpeg blending the simple cases itself reports its own rate with the encode
+  assert.equal(detail(42, 143.2), "42% · 143 fps · 30s left");
+  assert.equal(detail(42, null), "42% · 30s left");
+});
+
 test("a finished queue says it is done and keeps its failures", () => {
   const view = reduceQueueSnapshot(emptyQueueView(), {
     items: [{ id: "c", state: "completed" }, { id: "d", state: "failed" }],

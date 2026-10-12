@@ -312,7 +312,7 @@ class FFmpegEngine:
                         if self._cancel_event.is_set():
                             raise EncodeCancelled("Encoding cancelled by user")
 
-                    def blend_progress(fraction: float) -> None:
+                    def blend_progress(fraction: float, fps: float | None = None) -> None:
                         _emit(
                             on_progress,
                             EncodeProgress(
@@ -320,6 +320,7 @@ class FFmpegEngine:
                                 stage=EncodeStage.PREPARING,
                                 current_time=fraction * total_duration,
                                 duration=total_duration,
+                                fps=fps,
                                 message=f"Blending frames ({int(fraction * 100)}%)",
                             ),
                         )
@@ -810,6 +811,8 @@ class FFmpegEngine:
             total_passes=total_passes,
             retry_number=retry_number,
             max_retries=max_retries,
+            # this FFmpeg run blends the frames itself, so its fps is the blending rate
+            report_fps=self._tmix is not None,
         )
         tracker.set_pass(pass_num)
         _emit(on_progress, tracker.snapshot())

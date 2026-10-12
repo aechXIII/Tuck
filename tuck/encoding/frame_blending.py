@@ -609,12 +609,24 @@ def prepare_blended_video(
     plan: EncodePlan,
     destination: Path,
     check_cancel: Callable[[], None],
-    progress: Callable[[float], None],
+    progress: Callable[[float, float | None], None],
 ) -> None:
+    """Write the blended video, reporting the fraction done and blended pictures a second."""
     info = plan.source_info
     if info is None:
         raise ValueError("Frame blending requires source metadata")
     fps = Fraction(plan.target_fps).limit_denominator(100_000)
+    started = time.monotonic()
+    # monotonic() only ticks every 15.6 ms on Windows, so a quick first frame would read as
+    # taking no time and the rate would go missing
+    rate_started = time.perf_counter()
+    frames_done = 0
+
+    def frame_rate() -> float | None:
+        # an average since the start, like the fps FFmpeg reports
+        elapsed = time.perf_counter() - rate_started
+        return frames_done / elapsed if frames_done and elapsed > 0 else None
+
     with av.open(str(destination), "w", format="nut") as output:
         stream = output.add_stream("ffv1", rate=fps)
         if not isinstance(stream, VideoStream):
@@ -625,7 +637,7 @@ def prepare_blended_video(
         # FFV1 encodes slices in parallel; one thread per slice keeps up with blending
         stream.codec_context.thread_count = 0
         stream.codec_context.options = {"slices": "24"}
-        last_progress = time.monotonic()
+        last_progress = started
 
         def write(index: int, pixels: PixelArray) -> None:
             frame = av.VideoFrame.from_ndarray(pixels, format="rgb24")
@@ -634,16 +646,17 @@ def prepare_blended_video(
                 output.mux(packet)
 
         def written(index: int, done: Future[None]) -> None:
-            nonlocal last_progress
+            nonlocal last_progress, frames_done
             done.result()
             if destination.stat().st_size > MAX_TEMP_BYTES:
                 raise ValueError(
                     "Frame blending temporary video exceeds 16 GiB; export a shorter selection"
                 )
+            frames_done = index + 1
             now = time.monotonic()
             fraction = float((index + 1) / fps) / plan.effective_duration
             if fraction < 1 and (index == 0 or now - last_progress >= 0.25):
-                progress(fraction)
+                progress(fraction, frame_rate())
                 last_progress = now
 
         # one thread encodes, in order, while the next pictures are decoded and blended;
@@ -665,4 +678,4 @@ def prepare_blended_video(
         raise ValueError(
             "Frame blending temporary video exceeds 16 GiB; export a shorter selection"
         )
-    progress(1.0)
+    progress(1.0, frame_rate())

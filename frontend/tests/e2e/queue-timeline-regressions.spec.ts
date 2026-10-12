@@ -88,10 +88,10 @@ test("blending preparation shows its progress in the queue and Library", async (
   await page.evaluate(() => {
     (window as Window & { __tuckReleaseHeld?: (method: string, value: unknown) => void }).__tuckReleaseHeld?.("getQueueState", {
       ok: true,
-      items: [{ id: "blending", source: "clip.mp4", source_path: "/mnt/exchange/clip.mp4", state: "running", progress: 0, status_text: "Blending frames (37%)" }],
+      items: [{ id: "blending", source: "clip.mp4", source_path: "/mnt/exchange/clip.mp4", state: "running", progress: 0, status_text: "Blending frames (37%)", progress_info: { fps: 84.6 } }],
     });
   });
-  await expect(page.locator("#qbar")).toContainText("Blending frames (37%)");
+  await expect(page.locator("#qeta")).toHaveText("Blending frames (37%) · 85 fps");
   await expect(page.locator("#clips")).toContainText("Blending frames (37%)");
   await expect(page.locator("#qprog")).toHaveAttribute("value", "0");
 });

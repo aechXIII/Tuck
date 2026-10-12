@@ -7,6 +7,7 @@ from ..models.progress import EncodeProgress, EncodeStage
 
 _TIME_RE = re.compile(r"time=(\d+):(\d+):(\d+(?:\.\d+)?)")
 _SPEED_RE = re.compile(r"speed=\s*([0-9.]+)x")
+_FPS_RE = re.compile(r"\bfps=\s*([0-9.]+)")
 
 
 def parse_ffmpeg_time(line: str) -> float | None:
@@ -27,6 +28,18 @@ def parse_ffmpeg_speed(line: str) -> float | None:
         return None
 
 
+def parse_ffmpeg_fps(line: str) -> float | None:
+    m = _FPS_RE.search(line)
+    if not m:
+        return None
+    try:
+        fps = float(m.group(1))
+    except ValueError:
+        return None
+    # FFmpeg reports 0 until it has run for a second
+    return fps if fps > 0 else None
+
+
 class ProgressTracker:
     def __init__(
         self,
@@ -36,17 +49,20 @@ class ProgressTracker:
         retry_number: int | None = None,
         max_retries: int | None = None,
         window: int = 8,
+        report_fps: bool = False,
     ) -> None:
         self.duration = max(0.0, float(duration))
         self.total_passes = max(1, int(total_passes))
         self.retry_number = retry_number
         self.max_retries = max_retries
+        self.report_fps = report_fps
         self.pass_number = 1
         self.stage = EncodeStage.ENCODING
         self._samples: deque[float] = deque(maxlen=max(3, window))
         self._last_percent = 0.0
         self._last_time = 0.0
         self._last_speed: float | None = None
+        self._last_fps: float | None = None
         self._record_time: float | None = None
         self._record_speed: float | None = None
 
@@ -70,6 +86,9 @@ class ProgressTracker:
         if key == "speed":
             self._record_speed = parse_ffmpeg_speed(line)
             return None
+        if key == "fps":
+            self._note_fps(parse_ffmpeg_fps(line))
+            return None
         if key in ("out_time", "out_time_ms"):
             return None
         if key == "progress" and value in ("continue", "end"):
@@ -83,7 +102,12 @@ class ProgressTracker:
         speed = parse_ffmpeg_speed(line)
         if speed is not None:
             self._last_speed = speed
+        self._note_fps(parse_ffmpeg_fps(line))
         return self.update(current, speed=self._last_speed)
+
+    def _note_fps(self, fps: float | None) -> None:
+        if self.report_fps and fps is not None:
+            self._last_fps = fps
 
     def update(self, current_time: float, speed: float | None = None) -> EncodeProgress:
         current_time = max(0.0, float(current_time))
@@ -119,6 +143,7 @@ class ProgressTracker:
             current_time=current_time,
             duration=self.duration,
             speed=self._last_speed,
+            fps=self._last_fps,
             eta_seconds=eta,
             pass_number=self.pass_number,
             total_passes=self.total_passes,
@@ -134,6 +159,7 @@ class ProgressTracker:
             current_time=self._last_time,
             duration=self.duration,
             speed=self._last_speed,
+            fps=self._last_fps,
             eta_seconds=self._estimate_eta(
                 (self._last_time / self.duration) if self.duration > 0 else 0.0
             ),
