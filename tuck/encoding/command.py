@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 from fractions import Fraction
 from pathlib import Path
+from struct import pack
 from typing import TYPE_CHECKING
 
 from ..models import (
@@ -137,30 +138,52 @@ def _tmix_time(seconds: Fraction) -> str:
 
 
 def _tmix_graph(blend: TmixBlend, video_filters: list[str]) -> list[str]:
-    """Blend each segment with tmix, keep one picture per output frame, then join."""
+    """Blend the selected source pictures, then join segments on the output clock."""
     rate = blend.rate
     parts: list[str] = []
     labels: list[str] = []
     for index, piece in enumerate(blend.pieces):
+        count = len(piece.weights)
         weights = " ".join(format(float(weight), ".9g") for weight in piece.weights)
+        # FFmpeg parses weights as float32; nearly equal text can select its uniform fast mode
+        parsed_weights = {pack("f", float(weight)) for weight in weights.split()}
+        # uniform tmix rounds halves up, while mix rounds to even; odd unit sums have no ties
+        same_rounding = len(parsed_weights) > 1 or (
+            count % 2 == 1 and parsed_weights == {pack("f", 1.0)}
+        )
+        clock = [f"settb={rate.denominator}/{rate.numerator}", "setpts=N"]
         chain = [
             f"trim=start={_tmix_time(piece.start)}:end={_tmix_time(piece.end)}",
             "setpts=PTS-STARTPTS",
-            f"tmix=frames={len(piece.weights)}:weights='{weights}'",
-            f"select='between(n\\,{piece.first}\\,{piece.last})"
-            f"*not(mod(n-{piece.first}\\,{piece.step}))'",
         ]
+        source = "[0:v]"
+        if count > 1 and piece.step > 1 and same_rounding:
+            samples = [f"blend{index}_sample{offset}" for offset in range(count)]
+            selected = [f"blend{index}_selected{offset}" for offset in range(count)]
+            # tmix fills its initial window with the first picture, including partial windows
+            chain += [f"tpad=start={count - 1}:start_mode=clone", f"split={count}"]
+            parts.append(source + ",".join(chain) + "".join(f"[{label}]" for label in samples))
+            for offset, (sample, output) in enumerate(zip(samples, selected, strict=True)):
+                first, last = piece.first + offset, piece.last + offset
+                selection = (
+                    f"select='between(n\\,{first}\\,{last})*not(mod(n-{first}\\,{piece.step}))'"
+                )
+                parts.append(f"[{sample}]{','.join([selection, *clock])}[{output}]")
+            source = "".join(f"[{label}]" for label in selected)
+            chain = [f"mix=inputs={count}:weights='{weights}':duration=shortest"]
+        else:
+            chain += [
+                f"tmix=frames={count}:weights='{weights}'",
+                f"select='between(n\\,{piece.first}\\,{piece.last})"
+                f"*not(mod(n-{piece.first}\\,{piece.step}))'",
+            ]
         if piece.lead or piece.trail:
             chain.append(
                 f"tpad=start_mode=clone:start={piece.lead}:stop_mode=clone:stop={piece.trail}"
             )
         # number the kept pictures on the output grid; fps then gives each its length
-        chain += [
-            f"settb={rate.denominator}/{rate.numerator}",
-            "setpts=N",
-            f"fps={rate.numerator}/{rate.denominator}",
-        ]
-        parts.append(f"[0:v]{','.join(chain)}[blend{index}]")
+        chain += [*clock, f"fps={rate.numerator}/{rate.denominator}"]
+        parts.append(f"{source}{','.join(chain)}[blend{index}]")
         labels.append(f"[blend{index}]")
     joined = labels[0]
     if len(labels) > 1:

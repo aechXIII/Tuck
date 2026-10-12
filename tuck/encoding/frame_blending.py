@@ -52,7 +52,7 @@ SUPPORTED_FORMATS = frozenset(
 SUPPORTED_TRANSFERS = frozenset(
     {"bt709", "smpte170m", "iec61966-2-1", "linear", "gamma22", "gamma28"}
 )
-# planar YUV that tmix blends in place, as the source is decoded
+# planar YUV that FFmpeg blends directly, as the source is decoded
 TMIX_FORMATS = frozenset(
     {"yuv420p", "yuv422p", "yuv444p", "yuvj420p", "yuvj422p", "yuvj444p", "gray"}
 )
@@ -440,7 +440,7 @@ def blended_frames(
 
 @dataclass(frozen=True)
 class TmixPiece:
-    """One segment blended by FFmpeg's tmix filter instead of the frame-by-frame path."""
+    """One segment blended directly by FFmpeg instead of the frame-by-frame path."""
 
     # trim points halfway between source frames, on FFmpeg's input clock
     start: Fraction
@@ -524,7 +524,7 @@ def _output_indices(
 
 
 def tmix_blend(plan: EncodePlan) -> TmixBlend | None:
-    """FFmpeg's tmix filter for blends it can reproduce, or None to blend frame by frame.
+    """A direct FFmpeg blend plan, or None to blend frame by frame.
 
     It covers equal weights on constant-rate video whose frame rate is a whole multiple of the
     output rate, like 180 to 60 FPS. Pictures match the frame-by-frame path except where the

@@ -1014,6 +1014,75 @@ def test_ffmpeg_blending_matches_frame_by_frame_away_from_cuts(grid_source, segm
 
 
 @pytest.mark.ffmpeg
+@pytest.mark.parametrize("amount", [0.5, 1, 2, 4])
+@pytest.mark.parametrize("segments", [[(0, 6)], [(4.2, 5.1), (0.513, 1.7)]])
+def test_selected_mix_matches_legacy_tmix_pixels_and_timestamps(grid_source, amount, segments):
+    import shutil
+    import subprocess
+
+    from tuck.encoding.command import _tmix_graph, _tmix_time
+    from tuck.encoding.frame_blending import tmix_blend
+    from tuck.models import Segment
+
+    source, info = grid_source
+    plan = grid_plan(source, info, [Segment(start, end) for start, end in segments], amount=amount)
+    blend = tmix_blend(plan)
+    assert blend is not None
+    # keep the old graph as an independent reference, including cut-edge clones and rounding
+    legacy = []
+    for index, piece in enumerate(blend.pieces):
+        weights = " ".join(format(float(weight), ".9g") for weight in piece.weights)
+        chain = [
+            f"trim=start={_tmix_time(piece.start)}:end={_tmix_time(piece.end)}",
+            "setpts=PTS-STARTPTS",
+            f"tmix=frames={len(piece.weights)}:weights='{weights}'",
+            f"select='between(n\\,{piece.first}\\,{piece.last})"
+            f"*not(mod(n-{piece.first}\\,{piece.step}))'",
+        ]
+        if piece.lead or piece.trail:
+            chain.append(
+                f"tpad=start_mode=clone:start={piece.lead}:stop_mode=clone:stop={piece.trail}"
+            )
+        chain += [
+            f"settb={blend.rate.denominator}/{blend.rate.numerator}",
+            "setpts=N",
+            f"fps={blend.rate.numerator}/{blend.rate.denominator}",
+        ]
+        legacy.append(f"[0:v]{','.join(chain)}[blend{index}]")
+    labels = "".join(f"[blend{index}]" for index in range(len(blend.pieces)))
+    if len(blend.pieces) > 1:
+        legacy.append(f"{labels}concat=n={len(blend.pieces)}:v=1:a=0[blended]")
+        labels = "[blended]"
+    legacy.append(f"{labels}null[vout]")
+
+    def frame_checksums(graph):
+        return subprocess.run(
+            [
+                shutil.which("ffmpeg") or "ffmpeg",
+                "-v",
+                "error",
+                "-i",
+                str(source),
+                "-filter_complex",
+                ";".join(graph),
+                "-map",
+                "[vout]",
+                "-fps_mode",
+                "passthrough",
+                "-pix_fmt",
+                "yuv420p",
+                "-f",
+                "framemd5",
+                "-",
+            ],
+            check=True,
+            capture_output=True,
+        ).stdout
+
+    assert frame_checksums(_tmix_graph(blend, [])) == frame_checksums(legacy)
+
+
+@pytest.mark.ffmpeg
 def test_ffmpeg_blending_is_only_used_where_it_can_match(grid_source, tmp_path):
     import shutil
     import subprocess
