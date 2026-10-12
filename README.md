@@ -22,8 +22,8 @@
 ---
 
 Tuck is a simple video editor for Windows and Linux, built around FFmpeg.
-Trim clips, edit audio, crop or resize videos, and export to a file size or
-resolution you choose.
+Trim clips or cut them without re-encoding, edit audio, crop or resize videos,
+and export to a file size or resolution you choose.
 
 <img src="docs/screenshots/Tuck_GUI.png" alt="Tuck editor">
 
@@ -66,9 +66,8 @@ FFmpeg/ffprobe, and the plugins used for video previews.
 - If the AppImage reports that FUSE is missing, run
   it with `./Tuck-*-x86_64.AppImage --appimage-extract-and-run` (or
   `tuck --appimage-extract-and-run` after using the installer script).
-- Tuck draws with the GPU when your computer has a real graphics driver, and
-  without it in virtual machines. If the GPU drawing crashes, Tuck restarts and
-  draws without it from then on, until the next update.
+- Tuck uses the GPU for smoother previews. In a virtual machine, or after a
+  crash, it switches to software drawing.
 - If the window stays blank, launch with
   `WEBKIT_DISABLE_COMPOSITING_MODE=1 ./Tuck-*-x86_64.AppImage` to draw without
   the GPU.
@@ -87,38 +86,32 @@ FFmpeg/ffprobe, and the plugins used for video previews.
 - **Lossless cut:** Remove parts of a video and join the rest without re-encoding. See [Lossless cut](#lossless-cut).
 - **Compression and upscaling:** Compress to a chosen file-size limit, or upscale to 1440p, 4K, or a custom resolution. Choose a target-size preset of 20, 50, 200, or 500 MB, or enter your own limit.
 - **Encoding queue:** Queue multiple videos, reorder pending exports, cancel a pending or running export, and retry failed or cancelled exports. Use software encoding on either platform or supported NVIDIA and AMD hardware on Windows.
+- **Settings:** Change keyboard shortcuts, the accent color and interface size, choose where exports are saved and what happens when a file name is taken, and hide parts of Tuck you don't use.
 - **Profiles and Windows integration:** Save reusable profiles, import or export profiles, drag videos into Tuck, and add Tuck or a specific profile to File Explorer's **Send To** menu.
 
 ## Use
 
 1. Add one or more videos and select the clip you want to edit.
 2. Make any timeline, audio, crop, or sizing changes.
-3. Choose **Compress** or **Upscale** and select a profile, or choose **Lossless cut**. Then start
-   the export.
+3. Choose **Compress**, **Upscale**, or **Lossless cut** at the bottom of the window. For Compress
+   and Upscale, pick a profile in the Export Inspector. Then start the export.
+
+Press `?` to see every keyboard shortcut. You can change them in **Settings > Keyboard**.
 
 ## Lossless cut
 
-Choose **Lossless cut** in the Export Inspector to keep the parts you select and join them into one
-file, without re-encoding. It works with most videos, including MP4, MOV, MKV, WebM, MPEG-TS and AVI
-files. The cut keeps the source's file type, its audio tracks, subtitles, chapters and attachments.
-Tuck reads the video's keyframes first.
+Lossless cut keeps the parts you choose and joins them without re-encoding, so the video keeps its
+full quality. It works with MP4, MOV, MKV, WebM, MPEG-TS and AVI, and keeps audio tracks, subtitles
+and chapters.
 
-- **On keyframes** copies the video exactly as it is. A copied part can only start on a keyframe,
-  so a cut that starts between keyframes starts at the next one. The cut list and the timeline show
-  where each cut really starts. **Move to keyframes** moves your cuts there.
-- The end of a part can move back a few frames, so that every copied frame can still be decoded.
-  The cut list shows how many frames.
-- Audio is copied in whole packets, so a cut can include a few milliseconds of sound from just
-  outside the part you kept. Turn **Include audio** off if that matters.
-- **Exact (Beta)** keeps the frames you chose. It re-encodes only the frames between each cut and
-  the nearest keyframe, and copies the rest. It works with H.264, HEVC, AV1, VP9 and VP8 video in
-  MP4, MOV, MKV and WebM files.
-- Press `[` and `]` to move the playhead to the previous or next keyframe. With a segment handle
-  focused, they move that edge instead.
+- **On keyframes** copies the video as it is. Each part has to start on a keyframe, so it can start
+  a little later than you set. The Inspector tells you when that happens.
+- **Exact (Beta)** keeps the exact frames you chose by re-encoding a few frames at each cut.
+- Press `[` and `]` to jump between keyframes.
+- To cut every video in the Library at once, use **Export all cuts**.
 
-Tuck checks every cut before saving it. If the check fails, nothing is saved. When a file has
-something Tuck cannot fully check, such as keyframes it cannot confirm as clean starting points, the
-cut is still saved and marked **Not checked**, with the reason in the Inspector.
+Every cut is checked before it's saved. If Tuck can't check something, the cut is still saved and
+marked **Not checked**.
 
 ## Command line (Windows)
 

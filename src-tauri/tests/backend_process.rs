@@ -104,7 +104,7 @@ async fn pending_requests_route_out_of_order_responses_once() {
 #[tokio::test]
 async fn process_reports_malformed_output_and_does_not_leave_a_pending_request() {
     let process = BackendProcess::launch(fake_sidecar(
-        "import json, sys\nprint(json.dumps({'kind':'event','protocol':1,'event':'backend_ready','payload':{'backend_version':'0.5.1','pid':1,'capabilities':{'protocol':1}}}), flush=True)\nprint('{not json}', flush=True)\nfor _ in sys.stdin: pass",
+        "import json, sys\nprint(json.dumps({'kind':'event','protocol':1,'event':'backend_ready','payload':{'backend_version':'TUCK_VERSION','pid':1,'capabilities':{'protocol':1}}}), flush=True)\nprint('{not json}', flush=True)\nfor _ in sys.stdin: pass",
     ))
     .await
     .expect("sidecar should report readiness before malformed output");
@@ -125,7 +125,7 @@ async fn process_reports_malformed_output_and_does_not_leave_a_pending_request()
 #[tokio::test]
 async fn process_returns_stderr_diagnostics_after_early_exit() {
     let process = BackendProcess::launch(fake_sidecar(
-        "import json, sys\nprint(json.dumps({'kind':'event','protocol':1,'event':'backend_ready','payload':{'backend_version':'0.5.1','pid':1,'capabilities':{'protocol':1}}}), flush=True)\nprint('sidecar startup diagnostic', file=sys.stderr, flush=True)",
+        "import json, sys\nprint(json.dumps({'kind':'event','protocol':1,'event':'backend_ready','payload':{'backend_version':'TUCK_VERSION','pid':1,'capabilities':{'protocol':1}}}), flush=True)\nprint('sidecar startup diagnostic', file=sys.stderr, flush=True)",
     ))
     .await
     .expect("sidecar should report readiness before it exits");
@@ -150,7 +150,7 @@ async fn process_returns_stderr_diagnostics_after_early_exit() {
 #[tokio::test]
 async fn crash_diagnostics_keep_the_end_of_a_long_stderr() {
     let process = BackendProcess::launch(fake_sidecar(
-        "import json, sys\nprint(json.dumps({'kind':'event','protocol':1,'event':'backend_ready','payload':{'backend_version':'0.5.1','pid':1,'capabilities':{'protocol':1}}}), flush=True)\nsys.stderr.write('startup noise\\n' * 10000)\nsys.stderr.write('Traceback: the real crash\\n')\nsys.stderr.flush()",
+        "import json, sys\nprint(json.dumps({'kind':'event','protocol':1,'event':'backend_ready','payload':{'backend_version':'TUCK_VERSION','pid':1,'capabilities':{'protocol':1}}}), flush=True)\nsys.stderr.write('startup noise\\n' * 10000)\nsys.stderr.write('Traceback: the real crash\\n')\nsys.stderr.flush()",
     ))
     .await
     .expect("sidecar should report readiness before it crashes");
@@ -178,7 +178,7 @@ async fn crash_diagnostics_keep_the_end_of_a_long_stderr() {
 #[tokio::test]
 async fn request_timeout_removes_the_pending_entry() {
     let process = BackendProcess::launch(fake_sidecar(
-        "import json, sys\nprint(json.dumps({'kind':'event','protocol':1,'event':'backend_ready','payload':{'backend_version':'0.5.1','pid':1,'capabilities':{'protocol':1}}}), flush=True)\nfor _ in sys.stdin: pass",
+        "import json, sys\nprint(json.dumps({'kind':'event','protocol':1,'event':'backend_ready','payload':{'backend_version':'TUCK_VERSION','pid':1,'capabilities':{'protocol':1}}}), flush=True)\nfor _ in sys.stdin: pass",
     ))
     .await
     .expect("sidecar should start");
@@ -219,7 +219,7 @@ async fn real_sidecar_completes_health_and_graceful_shutdown() {
 #[tokio::test]
 async fn sidecar_receives_the_authoritative_desktop_platform() {
     let process = BackendProcess::launch(fake_sidecar(
-        "import json, os, sys\nprint(json.dumps({'kind':'event','protocol':1,'event':'backend_ready','payload':{'backend_version':'0.5.1'}}), flush=True)\nfor line in sys.stdin:\n request = json.loads(line)\n print(json.dumps({'kind':'response','protocol':1,'id':request['id'],'ok':True,'result':{'platform': os.environ['TUCK_DESKTOP_PLATFORM']}}), flush=True)",
+        "import json, os, sys\nprint(json.dumps({'kind':'event','protocol':1,'event':'backend_ready','payload':{'backend_version':'TUCK_VERSION'}}), flush=True)\nfor line in sys.stdin:\n request = json.loads(line)\n print(json.dumps({'kind':'response','protocol':1,'id':request['id'],'ok':True,'result':{'platform': os.environ['TUCK_DESKTOP_PLATFORM']}}), flush=True)",
     ))
     .await
     .expect("sidecar should start");
@@ -378,9 +378,12 @@ fn development_sidecar() -> BackendLaunchConfig {
 }
 
 fn fake_sidecar(script: &str) -> BackendLaunchConfig {
+    // the shell only accepts a backend of its own minor version, so the fake one reports
+    // whatever version is being built
+    let script = script.replace("TUCK_VERSION", env!("CARGO_PKG_VERSION"));
     BackendLaunchConfig::command(
         development_python(),
-        ["-u", "-c", script],
+        ["-u", "-c", script.as_str()],
         repository_root(),
         temporary_data_root("fake-sidecar"),
     )

@@ -1,20 +1,84 @@
 # Changelog
 
-## Unreleased
+## [0.6.0] - 2026-10-12
+
+### Lossless cut
+
+Cut the parts you don't want out of a video without re-encoding it. Pick Lossless cut at the
+bottom of the window, keep the parts you want on the timeline, and export. The video keeps its
+full quality and saves much faster than a compressed export.
+
+- Works with MP4, MOV, MKV, WebM, MPEG-TS and AVI
+- Keeps audio tracks, subtitles and chapters
+- Keyframes on the timeline, with `[` and `]` to jump between them
+- Exact cuts (Beta) for cuts that don't land on a keyframe
 
 ### Added
 
-- Lossless cut: remove parts of a video without re-encoding. Cuts keep the source's file type,
-  audio tracks, subtitles and chapters
-- Exact cuts (Beta) that re-encode only the frames next to each cut, for H.264, HEVC, AV1, VP9
-  and VP8 video
-- Keyframes on the timeline, with `[` and `]` to jump between them
+- Custom keyboard shortcuts
+- Shortcuts for cut points, playback speed and removing videos
+- Search in Settings
+- Accent colors and interface size
+- Option to turn off animations
+- Graphite and Violet timeline styles
+- Time shown as seconds, timecode or frames
+- More choices for where exports are saved
+- Keep original file dates
+- Replace files with the same name
+- Notifications when exports finish
+- Export progress on the Windows taskbar
+- Keep the PC awake while exporting
+- Run exports in the background
+- Reopen last videos on start
+- Choose which task Tuck opens with
+- Choose how far the arrow keys skip
+- Loop playback toggle
+- Pinned and hidden profiles
+- Hide tasks and panels
+- Choose which Send To shortcuts to add
+- Back up, restore and reset settings
+- HDR to SDR conversion
+- Undo for removing videos
+- Remove videos from the Library after they export
+- Remove failed exports from the queue
+- Warning before closing or updating during exports
+- Export warnings for parts of a video that can't be kept
+- Restart option after a crash
 
 ### Changed
 
-- Frame blending is much faster, and a selection late in a long video starts blending right away
+- Updated editor layout
+- Updated Settings layout
+- New title bar on Windows with Snap Layouts
+- Clearer timeline waveform, toolbar and trim handles
+- Faster loading of videos and thumbnails
+- Faster NVIDIA exports
+- Faster frame blending
+- Unreadable videos grouped under Needs attention
+- Better quality at the same file size
+- Clearer error messages
+- Clearer export progress in the queue
+- Undo and Redo only change the selected video
+- Notice when exports fall back to the CPU
+- Exports keep text subtitles
+- Only the first audio track of a video is exported
+- More video formats play in the preview
 - Smoother video previews on Linux
 - Faster first video import after starting Tuck on Linux
+- Preview note when a video's picture can't be shown, such as HEVC on Windows
+
+### Fixed
+
+- Settings not saving with profiles from another Tuck version
+- Exports failing on file names with letters like ą, ж or あ
+- Cancel sometimes needing a second click
+- Numbered file names after a crash
+- Clear done removing videos from the Library
+- One unreadable video blocking Compress all
+- Deleted profiles coming back
+- Repeated frames in phone videos when limiting frame rate
+- Tuck not coming to the front from Send To
+- AV1 videos failing to export on Linux
 
 ## [0.5.2] - 2026-09-19
 
