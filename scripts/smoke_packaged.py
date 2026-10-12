@@ -161,18 +161,38 @@ class Sidecar:
                 self.proc.wait(timeout=5)
 
 
-def _running(image: str, platform_name: str) -> list[str]:
+def _running(executable: Path, platform_name: str) -> set[int]:
+    """Processes started from this exact file.
+
+    Matching by name would also count a Tuck the user has open, or any other ffmpeg.
+    """
     if platform_name == "linux":
-        result = subprocess.run(
-            ["ps", "-eo", "pid=,comm="], capture_output=True, text=True, check=True
-        )
-        return [row for row in result.stdout.splitlines() if row.split()[-1:] == [image]]
+        found: set[int] = set()
+        for entry in Path("/proc").iterdir():
+            if not entry.name.isdigit():
+                continue
+            try:
+                if executable.samefile(entry / "exe"):
+                    found.add(int(entry.name))
+            except OSError:
+                continue
+        return found
+    query = (
+        f"Get-CimInstance Win32_Process -Filter \"Name='{executable.name}'\" | "
+        'ForEach-Object { "$($_.ProcessId)|$($_.ExecutablePath)" }'
+    )
     out = subprocess.run(
-        ["tasklist", "/FO", "CSV", "/NH", "/FI", f"IMAGENAME eq {image}"],
+        ["powershell", "-NoProfile", "-NonInteractive", "-Command", query],
         capture_output=True,
         text=True,
     ).stdout
-    return [row for row in out.splitlines() if image.lower() in row.lower()]
+    wanted = os.path.normcase(str(executable.resolve()))
+    found = set()
+    for row in out.splitlines():
+        pid, _, path = row.strip().partition("|")
+        if pid.isdigit() and path and os.path.normcase(path) == wanted:
+            found.add(int(pid))
+    return found
 
 
 def _make_fixture(
@@ -183,7 +203,7 @@ def _make_fixture(
     duration: int = 3,
     size: str = "640x480",
 ) -> None:
-    ffmpeg = app_root / "ffmpeg" / ("ffmpeg" if platform_name == "linux" else "ffmpeg.exe")
+    ffmpeg = _bundled_ffmpeg(app_root, platform_name)
     # a high-entropy source (mandelbrot + grain) so compressed size scales with
     # bitrate; a flat testsrc compresses to a fixed tiny size and can stall the
     # size-target rate-control loop
@@ -248,15 +268,18 @@ def _encode_scenario(app_root: Path, platform_name: str, work: Path) -> None:
     car.shutdown()
 
 
-def _cancel_scenario(app_root: Path, platform_name: str, work: Path) -> set[str]:
+def _bundled_ffmpeg(app_root: Path, platform_name: str) -> Path:
+    return app_root / "ffmpeg" / ("ffmpeg" if platform_name == "linux" else "ffmpeg.exe")
+
+
+def _cancel_scenario(app_root: Path, platform_name: str, work: Path) -> set[int]:
     """Returns the ffmpeg PIDs seen before shutdown, for the caller's cleanup check."""
     long_src = work / "long.mp4"
     _make_fixture(app_root, platform_name, long_src, duration=6, size="854x480")
     car = Sidecar(app_root, platform_name)
     car.start(work / "data-cancel")
 
-    ffmpeg_name = "ffmpeg" if platform_name == "linux" else "ffmpeg.exe"
-    ffmpeg_before = set(_running(ffmpeg_name, platform_name))
+    ffmpeg_before = _running(_bundled_ffmpeg(app_root, platform_name), platform_name)
     request = {"source": str(long_src)}  # default veryslow preset -> slow enough to catch
     enq = car.call("enqueue_with_options", {"request": request}, timeout=120)
     item_id = enq.get("item_id")
@@ -291,26 +314,30 @@ def run(app_root: Path, platform_name: str) -> None:
         raise SmokeError(f"{sidecar_name} not found in {app_root}")
 
     work = Path(tempfile.mkdtemp(prefix="tuck-smoke-"))
+    try:
+        print("[1/3] encode a fixture to completion")
+        _encode_scenario(app_root, platform_name, work)
 
-    print("[1/3] encode a fixture to completion")
-    _encode_scenario(app_root, platform_name, work)
+        print("[2/3] cancel a running encode")
+        ffmpeg_before = _cancel_scenario(app_root, platform_name, work)
 
-    print("[2/3] cancel a running encode")
-    ffmpeg_before = _cancel_scenario(app_root, platform_name, work)
-
-    print("[3/3] process cleanup after shutdown")
-    time.sleep(1.0)
-    lingering_sidecar = _running(sidecar_name, platform_name)
-    ffmpeg_name = "ffmpeg" if platform_name == "linux" else "ffmpeg.exe"
-    lingering_ffmpeg = set(_running(ffmpeg_name, platform_name)) - ffmpeg_before
-    if lingering_sidecar:
-        raise SmokeError(f"{sidecar_name} still running after shutdown: {lingering_sidecar}")
-    if lingering_ffmpeg:
-        raise SmokeError(
-            f"{ffmpeg_name} spawned by the encode is still running: {lingering_ffmpeg}"
-        )
-    print(f"  ok: no lingering {sidecar_name} / {ffmpeg_name}")
-    print("\nSMOKE OK")
+        print("[3/3] process cleanup after shutdown")
+        time.sleep(1.0)
+        ffmpeg = _bundled_ffmpeg(app_root, platform_name)
+        lingering_sidecar = _running(app_root / sidecar_name, platform_name)
+        lingering_ffmpeg = _running(ffmpeg, platform_name) - ffmpeg_before
+        if lingering_sidecar:
+            raise SmokeError(
+                f"{sidecar_name} still running after shutdown: {sorted(lingering_sidecar)}"
+            )
+        if lingering_ffmpeg:
+            raise SmokeError(
+                f"{ffmpeg.name} spawned by the encode is still running: {sorted(lingering_ffmpeg)}"
+            )
+        print(f"  ok: no lingering {sidecar_name} / {ffmpeg.name}")
+        print("\nSMOKE OK")
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
 
 
 def main() -> int:

@@ -222,6 +222,10 @@ def load_lock() -> dict[str, object]:
         == ["libx264", "libx265", "libzimg", "libdav1d"],
         "Linux FFmpeg must statically link x264, x265, zimg, and dav1d",
     )
+    _require(
+        output.get("unused_runtime_dependencies") == ["libdrm", "libxcb"],
+        "Linux FFmpeg must not need libdrm or libxcb",
+    )
     return lock
 
 
@@ -396,6 +400,8 @@ def validate_ffmpeg_runtime(lock: dict[str, object], directory: Path) -> None:
     )
     for forbidden in output["forbidden_runtime_dependencies"]:
         _require(forbidden not in ldd.stdout, f"FFmpeg must statically link {forbidden}")
+    for unused in output["unused_runtime_dependencies"]:
+        _require(unused not in ldd.stdout, f"FFmpeg must not need {unused}")
 
 
 def stage_ffmpeg(
@@ -752,11 +758,11 @@ def main() -> int:
         output = _build_ffmpeg(lock, _extract_sources(sources))
         validate_ffmpeg_runtime(lock, output)
         staged, provenance = stage_ffmpeg(lock, output, source_archive)
-        plugin_lock = load_gst_dav1d_lock()
-        staged_plugin = stage_gst_dav1d(plugin_lock, *build_gst_dav1d(plugin_lock))
         if args.skip_pyinstaller:
             print("done (media tools only)")
             return 0
+        plugin_lock = load_gst_dav1d_lock()
+        staged_plugin = stage_gst_dav1d(plugin_lock, *build_gst_dav1d(plugin_lock))
         if args.assemble_only:
             _require(
                 (DIST / "tuck-sidecar").is_file(), "No existing dist/linux/sidecar build to reuse"

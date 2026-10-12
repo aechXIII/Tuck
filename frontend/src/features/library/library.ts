@@ -12,7 +12,12 @@ import { confirmToast, toast } from "../editor/toast.ts";
 import { formatTarget, withReason } from "../editor/format.ts";
 import { EASE_OUT, motionEnabled } from "../../ui/motion.ts";
 import type { DetachedHistory } from "../history/history.ts";
-import { createPreviewController, type PreviewController } from "../preview/preview-controller.ts";
+import {
+  createPreviewController,
+  missingPictureMessage,
+  type PreviewController,
+} from "../preview/preview-controller.ts";
+import { fetchPlatformCapabilities } from "../../platform/capabilities.ts";
 import { alignToQueueOrder, isQueueActive } from "../queue/queue-view.ts";
 import { mediaToolsMessage, missingMediaTools } from "../../state/settings-state.ts";
 import { SegmentEditing } from "../timeline/segments.ts";
@@ -201,7 +206,11 @@ export function createLibrary(host: LibraryHost): LibraryApi {
     return status;
   }
 
-  function setPreviewStatus(state: "ready" | "loading" | "unavailable", hasPicture = false): void {
+  function setPreviewStatus(
+    state: "ready" | "loading" | "unavailable",
+    hasPicture = false,
+    reason = "",
+  ): void {
     if (previewLoadingTimer !== null) {
       clearTimeout(previewLoadingTimer);
       previewLoadingTimer = null;
@@ -219,9 +228,9 @@ export function createLibrary(host: LibraryHost): LibraryApi {
     if (state === "unavailable") {
       if (loading) loading.hidden = true;
       if (message) {
-        message.textContent = hasPicture
+        message.textContent = reason || (hasPicture
           ? "Preview unavailable"
-          : "Can’t show a preview of this video.";
+          : "Can’t show a preview of this video.");
       }
       if (retry) retry.hidden = false;
       status.hidden = false;
@@ -290,7 +299,17 @@ export function createLibrary(host: LibraryHost): LibraryApi {
         video.style.display = "block";
         // the loading picture stays on top until this video has a frame to show
         video.onloadeddata = () => {
-          if (shown === stageMedia) revealVideo();
+          if (shown !== stageMedia) return;
+          if (video.videoWidth) {
+            revealVideo();
+            return;
+          }
+          const path = session.selPath;
+          if (!path) return;
+          const codec = session.clips[path]?.probeData?.video_codec;
+          void fetchPlatformCapabilities().then((caps) => {
+            if (shown === stageMedia) void loadThumb(path, missingPictureMessage(codec, caps.platform));
+          });
         };
         video.onerror = () => {
           if (shown === stageMedia && session.selPath) void loadThumb(session.selPath);
@@ -879,7 +898,7 @@ export function createLibrary(host: LibraryHost): LibraryApi {
   }
 
   // a preview that failed to play falls back to the video's picture and says so
-  async function loadThumb(path: string): Promise<void> {
+  async function loadThumb(path: string, reason = ""): Promise<void> {
     if (!hasBackendClient() || session.selPath !== path) return;
     let shown = false;
     try {
@@ -892,7 +911,7 @@ export function createLibrary(host: LibraryHost): LibraryApi {
     } catch {
       if (session.selPath !== path) return;
     }
-    setPreviewStatus("unavailable", shown);
+    setPreviewStatus("unavailable", shown, reason);
   }
 
   function selectClip(path: string): void {

@@ -165,6 +165,9 @@ def test_all_intra_video_can_start_on_any_frame(tools, encoders, tmp_path):
 
 
 def test_other_tracks_keep_their_packet_timing(tools, encoders, tmp_path):
+    for name in ("libx264", "libopus"):
+        if f" {name} " not in encoders:
+            pytest.skip(f"{name} is not available")
     subtitle = tmp_path / "s.srt"
     subtitle.write_text("1\n00:00:01,000 --> 00:00:02,000\nHello\n", encoding="utf-8")
     path = tmp_path / "tracks.mkv"

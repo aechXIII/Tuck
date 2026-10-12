@@ -34,6 +34,20 @@ def _sidecar_processes(sidecar: Path) -> set[int]:
     return processes
 
 
+def launch_environment(base: dict[str, str], app_root: Path, data_root: Path) -> dict[str, str]:
+    """The environment an AppImage run gets, for the extracted AppRun.
+
+    The AppImage runtime sets APPDIR. Without it the bundled launcher points GStreamer at the
+    host's plugins, and Tuck skips its own AppImage setup, so the smoke would test neither.
+    """
+    return dict(
+        base,
+        APPDIR=str(app_root),
+        TUCK_SIDECAR_DATA_ROOT=str(data_root),
+        TUCK_DESKTOP_PLATFORM="linux",
+    )
+
+
 def _tuck_window_is_visible() -> bool:
     result = subprocess.run(
         ["xwininfo", "-root", "-tree"], capture_output=True, text=True, check=True
@@ -64,12 +78,7 @@ def run(artifact: Path) -> None:
         sidecar = next(app_root.rglob("tuck-sidecar"), None)
         if not app_run.is_file() or sidecar is None:
             raise GuiSmokeError("The AppImage does not contain AppRun and tuck-sidecar.")
-        data_root = workdir / "data"
-        environment = dict(
-            os.environ,
-            TUCK_SIDECAR_DATA_ROOT=str(data_root),
-            TUCK_DESKTOP_PLATFORM="linux",
-        )
+        environment = launch_environment(dict(os.environ), app_root, workdir / "data")
         process = subprocess.Popen(
             [str(app_run)],
             cwd=app_root,

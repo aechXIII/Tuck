@@ -13,6 +13,17 @@ export interface PreviewMedia {
   seek(seconds: number): void;
 }
 
+// WebView2 plays the sound of a video whose picture it can't decode, such as HEVC without
+// Microsoft's extension, and reports no error, so the stage has to say why it stays still
+export function missingPictureMessage(
+  videoCodec: string | undefined,
+  platform: "windows" | "linux" | null,
+): string {
+  if (videoCodec === "hevc" && platform === "windows")
+    return "Previewing HEVC needs the HEVC Video Extensions from the Microsoft Store. Export still works.";
+  return "This video’s picture can’t be shown here. Export still works.";
+}
+
 export interface PreviewCoordinatorHost {
   clip(path: string): EditorClip | undefined;
   selectedPath(): string | null;

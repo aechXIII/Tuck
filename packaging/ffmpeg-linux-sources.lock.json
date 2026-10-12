@@ -11,8 +11,8 @@
   },
   "recipe": {
     "path": "packaging/build-ffmpeg-linux.sh",
-    "sha256": "649a30ace25e23c2283dc8d3b551c26780917e2a25a28915f9c33bb7809ac777",
-    "size_bytes": 2581,
+    "sha256": "b2b7bc4f7c0530ced09b4998cce9d8614fe4df3e87b2f84abf850450bb392ca4",
+    "size_bytes": 2758,
     "description": "Build x264, x265, zimg, and dav1d as static libraries, then link them into dynamically libc-linked FFmpeg and ffprobe."
   },
   "sources": [
@@ -93,6 +93,8 @@
         "--enable-libx265",
         "--enable-libzimg",
         "--enable-libdav1d",
+        "--disable-libdrm",
+        "--disable-libxcb",
         "--enable-static",
         "--disable-shared"
       ],
@@ -126,6 +128,10 @@
       "libx265",
       "libzimg",
       "libdav1d"
+    ],
+    "unused_runtime_dependencies": [
+      "libdrm",
+      "libxcb"
     ]
   }
 }

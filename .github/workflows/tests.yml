@@ -10,8 +10,47 @@ permissions:
   contents: read
 
 jobs:
+  # the tests run against the FFmpeg Tuck ships (7.1), not whatever the runner's package
+  # manager has; Ubuntu 22.04 only offers 4.4, which lacks options the test fixtures use
+  linux-ffmpeg:
+    name: Bundled FFmpeg (Linux)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Restore the FFmpeg build
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: build/ffmpeg-linux-sources/output
+          key: linux-ffmpeg-${{ hashFiles('packaging/ffmpeg-linux-sources.lock.json', 'packaging/build-ffmpeg-linux.sh') }}
+
+      - name: Install the build tools
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential nasm cmake pkg-config autoconf automake libtool meson ninja-build
+
+      - name: Build FFmpeg from its locked sources
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: python scripts/build_linux.py --skip-pyinstaller
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-ffmpeg
+          path: |
+            build/ffmpeg-linux-sources/output/ffmpeg
+            build/ffmpeg-linux-sources/output/ffprobe
+          retention-days: 1
+
   python:
     name: Python ${{ matrix.python-version }} (${{ matrix.os }})
+    needs: linux-ffmpeg
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -36,17 +75,23 @@ jobs:
       - name: Install FFmpeg (Windows)
         if: runner.os == 'Windows'
         run: |
-          choco install ffmpeg --yes --no-progress
+          choco install ffmpeg --version 7.1.1 --yes --no-progress
           ffmpeg -version
           ffprobe -version
 
-      - name: Install FFmpeg (Linux)
+      - name: Download the bundled FFmpeg (Linux)
+        if: runner.os == 'Linux'
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-ffmpeg
+          path: ${{ runner.temp }}/ffmpeg
+
+      - name: Install the bundled FFmpeg (Linux)
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
-          ffmpeg -version
-          ffprobe -version
+          chmod +x "$RUNNER_TEMP/ffmpeg/ffmpeg" "$RUNNER_TEMP/ffmpeg/ffprobe"
+          echo "$RUNNER_TEMP/ffmpeg" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/ffmpeg/ffmpeg" -version
 
       - name: Ruff format check
         run: ruff format --check tuck/ tests/ scripts/
@@ -71,6 +116,7 @@ jobs:
 
   frontend:
     name: Frontend (${{ matrix.os }})
+    needs: linux-ffmpeg
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -92,15 +138,22 @@ jobs:
       - name: Install FFmpeg (Windows)
         if: runner.os == 'Windows'
         run: |
-          choco install ffmpeg --yes --no-progress
+          choco install ffmpeg --version 7.1.1 --yes --no-progress
           ffmpeg -version
 
-      - name: Install FFmpeg (Linux)
+      - name: Download the bundled FFmpeg (Linux)
+        if: runner.os == 'Linux'
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-ffmpeg
+          path: ${{ runner.temp }}/ffmpeg
+
+      - name: Install the bundled FFmpeg (Linux)
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
-          ffmpeg -version
+          chmod +x "$RUNNER_TEMP/ffmpeg/ffmpeg" "$RUNNER_TEMP/ffmpeg/ffprobe"
+          echo "$RUNNER_TEMP/ffmpeg" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/ffmpeg/ffmpeg" -version
 
       - name: Typecheck
         run: npm run typecheck
@@ -116,6 +169,7 @@ jobs:
 
   rust:
     name: Rust (${{ matrix.os }})
+    needs: linux-ffmpeg
     env:
       # source tests use the development sidecar, not packaged resources
       TAURI_CONFIG: '{"bundle":{"resources":[]}}'
@@ -162,16 +216,29 @@ jobs:
       - name: Install FFmpeg (Windows)
         if: runner.os == 'Windows'
         run: |
-          choco install ffmpeg --yes --no-progress
+          choco install ffmpeg --version 7.1.1 --yes --no-progress
           ffmpeg -version
           ffprobe -version
 
-      - name: Install FFmpeg and desktop dependencies (Linux)
+      - name: Download the bundled FFmpeg (Linux)
+        if: runner.os == 'Linux'
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-ffmpeg
+          path: ${{ runner.temp }}/ffmpeg
+
+      - name: Install the bundled FFmpeg (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          chmod +x "$RUNNER_TEMP/ffmpeg/ffmpeg" "$RUNNER_TEMP/ffmpeg/ffprobe"
+          echo "$RUNNER_TEMP/ffmpeg" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/ffmpeg/ffmpeg" -version
+
+      - name: Install desktop dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            ffmpeg \
             libwebkit2gtk-4.1-dev \
             libgtk-3-dev \
             librsvg2-dev \

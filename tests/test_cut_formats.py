@@ -393,6 +393,12 @@ def probe_video(tools, path, entries):
 
 def test_hevc_tag_timescale_and_ten_bit_video_are_kept(tools, encoders, tmp_path):
     need(encoders, "libx265")
+    formats = subprocess.run(
+        [tools.ffmpeg, "-hide_banner", "-h", "encoder=libx265"], capture_output=True, text=True
+    ).stdout
+    # builds with an 8-bit x265, like the one Tuck bundles on Linux, can't make this source
+    if "yuv420p10le" not in formats:
+        pytest.skip("libx265 here can't encode 10-bit video")
     source = make(
         tools,
         tmp_path / "phone.mp4",

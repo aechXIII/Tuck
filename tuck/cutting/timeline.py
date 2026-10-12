@@ -65,6 +65,8 @@ class StreamPackets:
     packets: tuple[PacketTime, ...]
     # the container's own duration for this track, when it states one
     declared_duration: Fraction | None = None
+    # one tick of the track's time base, the finest step its timestamps can show
+    tick: Fraction | None = None
 
 
 @dataclass(frozen=True)
@@ -414,6 +416,7 @@ def read_timeline(
                         else "unknown",
                         _relative_packets(packets, base, origin),
                         _declared_duration(stream),
+                        base,
                     )
                 )
             return MediaTimeline(

@@ -80,6 +80,46 @@ test("a preview that fails to play falls back to the picture, and removal clears
   await expect(page.locator(".tl-segment")).toHaveCount(0);
 });
 
+// a WAV plays like an HEVC video does in WebView2 without its extension: sound, no picture
+function silentWav(seconds: number): Buffer {
+  const rate = 8000;
+  const data = Buffer.alloc(rate * seconds * 2);
+  const header = Buffer.alloc(44);
+  header.write("RIFF", 0);
+  header.writeUInt32LE(36 + data.length, 4);
+  header.write("WAVEfmt ", 8);
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20);
+  header.writeUInt16LE(1, 22);
+  header.writeUInt32LE(rate, 24);
+  header.writeUInt32LE(rate * 2, 28);
+  header.writeUInt16LE(2, 32);
+  header.writeUInt16LE(16, 34);
+  header.write("data", 36);
+  header.writeUInt32LE(data.length, 40);
+  return Buffer.concat([header, data]);
+}
+
+test("a preview that plays sound but no picture keeps the picture and says why", async ({ page }) => {
+  const fixture = previewFixture();
+  fixture.responses.probeFile = {
+    ok: true,
+    data: { duration: 2, width: 1920, height: 1080, fps: 30, has_audio: true, video_codec: "hevc" },
+  };
+  fixture.responses.getMediaUrl = { ok: true, url: "https://media.test/harbour", token: "token-harbour" };
+  fixture.responses.getThumbnail = { ok: true, thumbnail: PICTURE };
+  await page.route("https://media.test/**", (route) =>
+    route.fulfill({ status: 200, contentType: "audio/wav", body: silentWav(2) }));
+  await installFakeBackend(page, fixture);
+  await page.goto("/");
+  await addVideo(page);
+
+  await expect(page.locator("#preview-status")).toContainText(
+    "Previewing HEVC needs the HEVC Video Extensions from the Microsoft Store. Export still works.",
+  );
+  await expect(page.locator("#media-viewport #thumb")).toHaveAttribute("src", PICTURE);
+});
+
 test("switching videos shows the new video's own picture while its preview loads, never the last video", async ({ page }) => {
   const fixture = previewFixture();
   fixture.startup.files = [VIDEO, "C:\\media\\Sunset.mp4"];

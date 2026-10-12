@@ -61,21 +61,39 @@ def test_workflows_never_use_the_retired_ffmpeg_action() -> None:
         assert "AnimMouse/setup-ffmpeg" not in _read(workflow)
 
 
-def test_windows_runners_install_ffmpeg_through_chocolatey() -> None:
+# the tests run against the FFmpeg release Tuck bundles, not whatever the runner offers
+PINNED_CHOCO_FFMPEG = "choco install ffmpeg --version 7.1.1 --yes --no-progress"
+
+
+def test_windows_runners_install_the_bundled_ffmpeg_release() -> None:
     for workflow in (TESTS_YML, RELEASE_YML):
-        assert "choco install ffmpeg --yes --no-progress" in _read(workflow)
+        text = _read(workflow)
+        assert PINNED_CHOCO_FFMPEG in text
+        assert "choco install ffmpeg --yes" not in text
 
 
-def test_linux_runners_install_ffmpeg_for_the_test_suite() -> None:
-    # The Linux AppImage compiles its own FFmpeg from locked sources; the test
-    # suite only needs a system ffmpeg for the -m ffmpeg cases.
-    assert "apt-get install -y ffmpeg" in _read(TESTS_YML)
+def test_linux_test_jobs_use_the_ffmpeg_built_from_the_locked_sources() -> None:
+    text = _read(TESTS_YML)
+    jobs = _jobs(text)
+    assert "scripts/build_linux.py --skip-pyinstaller" in jobs["linux-ffmpeg"]
+    # Ubuntu 22.04's own FFmpeg is 4.4, older than the options the test fixtures use
+    assert "apt-get install -y ffmpeg" not in text
+    for name in ("python", "frontend", "rust"):
+        assert "needs: linux-ffmpeg" in jobs[name]
+        assert "name: linux-ffmpeg" in jobs[name]
+
+
+def test_linux_release_tests_run_against_the_ffmpeg_it_builds() -> None:
+    linux = _jobs(_read(RELEASE_YML))["build-linux"]
+    assert not re.search(r"^\s+ffmpeg$", linux, re.MULTILINE)
+    assert 'export PATH="$PWD/packaging/staging/linux/ffmpeg:$PATH"' in linux
+    assert linux.index("./scripts/build-linux.sh") < linux.index('pytest -m "not slow"')
 
 
 def test_frontend_job_installs_ffmpeg_before_rendered_tests() -> None:
     frontend = _jobs(_read(TESTS_YML))["frontend"]
-    assert "choco install ffmpeg --yes --no-progress" in frontend
-    assert "apt-get install -y ffmpeg" in frontend
+    assert PINNED_CHOCO_FFMPEG in frontend
+    assert "name: linux-ffmpeg" in frontend
     assert frontend.index("ffmpeg -version") < frontend.index("npm run test:e2e")
 
 

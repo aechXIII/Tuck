@@ -207,6 +207,10 @@ def _validate_linux_lock(lock: dict) -> None:
         == ["libx264", "libx265", "libzimg", "libdav1d"],
         "Linux FFmpeg output must require static x264, x265, zimg, and dav1d linkage",
     )
+    _require_provenance(
+        output.get("unused_runtime_dependencies") == ["libdrm", "libxcb"],
+        "Linux FFmpeg output must rule out libdrm and libxcb",
+    )
 
 
 def _validate_linux_source_archive(app_root: Path, manifest: dict, lock: dict) -> None:
@@ -340,6 +344,11 @@ def _validate_linux_ffmpeg_runtime(app_root: Path, lock: dict) -> None:
         _require_provenance(
             forbidden not in ldd.stdout,
             f"packaged FFmpeg dynamically links {forbidden} instead of its static library",
+        )
+    # systems without screen-capture libraries must still run the bundled ffmpeg
+    for unused in lock["output"]["unused_runtime_dependencies"]:
+        _require_provenance(
+            unused not in ldd.stdout, f"packaged FFmpeg needs {unused}, which it never uses"
         )
 
 

@@ -449,6 +449,36 @@ def test_irregular_aac_timing_is_marked_as_not_checked(media_tools, tmp_path):
     assert any(note.code == "unverified_audio" for note in result.unverified)
 
 
+def test_matroska_millisecond_audio_timing_is_not_a_gap(media_tools, tmp_path):
+    source = create_source(media_tools, tmp_path / "source.mp4", duration=6)
+    irregular = tmp_path / "irregular.mp4"
+    media_tools.run(
+        [
+            "-v",
+            "error",
+            "-y",
+            "-i",
+            str(source),
+            "-c:v",
+            "copy",
+            "-af",
+            "asetpts=PTS+gte(T\\,2)/TB",
+            "-c:a",
+            "aac",
+            str(irregular),
+        ]
+    )
+    regular_mkv, irregular_mkv = tmp_path / "regular.mkv", tmp_path / "irregular.mkv"
+    for mp4, mkv in ((source, regular_mkv), (irregular, irregular_mkv)):
+        media_tools.run(["-v", "error", "-y", "-i", str(mp4), "-c", "copy", str(mkv)])
+
+    # Matroska rounds every AAC packet start to a whole millisecond
+    regular = analyzer()(regular_mkv, Event(), lambda _: None, ffprobe=media_tools.ffprobe)
+    assert all(note.code != "unverified_audio" for note in regular.unverified)
+    gapped = analyzer()(irregular_mkv, Event(), lambda _: None, ffprobe=media_tools.ffprobe)
+    assert any(note.code == "unverified_audio" for note in gapped.unverified)
+
+
 def test_faststart_video_truncated_at_packet_boundary_is_marked_incomplete(media_tools, tmp_path):
     import av
 

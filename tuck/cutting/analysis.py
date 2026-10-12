@@ -264,11 +264,14 @@ def _unverified_notes(path: str, timeline: MediaTimeline) -> tuple[CutIssue, ...
         typical = durations[len(durations) // 2]
         # one packet stretched over a pause is a gap in disguise
         stretched = longest > 2 * typical
+        # Matroska keeps times in whole milliseconds, so AAC packets of 23.2 ms land up to one
+        # tick away from where the last one ended; that is rounding, not a gap
+        slack = other.tick or Fraction(0)
         if (
             shifted
             or stretched
             or any(
-                later.start != earlier.start + earlier.duration
+                abs(later.start - (earlier.start + earlier.duration)) > slack
                 for earlier, later in itertools.pairwise(packets)
                 if earlier.duration
             )

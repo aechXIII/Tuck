@@ -208,6 +208,11 @@ def test_linux_ffmpeg_lock_completely_pins_the_source_build() -> None:
         "libzimg",
         "libdav1d",
     ]
+    # ffmpeg must start on systems without screen-capture libraries
+    assert output["unused_runtime_dependencies"] == ["libdrm", "libxcb"]
+    assert {"--disable-libdrm", "--disable-libxcb"} <= set(
+        output["license"]["configure_flags_required"]
+    )
 
 
 def test_both_ffmpeg_builds_decode_av1_in_software() -> None:
@@ -328,6 +333,22 @@ def test_dav1d_plugin_lock_pins_an_immutable_crate_archive(tmp_path: Path, monke
         monkeypatch.setattr(build_linux, "GST_DAV1D_LOCK_PATH", lock_path)
         with pytest.raises(build_linux.BuildError, match="provenance is incomplete"):
             build_linux.load_gst_dav1d_lock()
+
+
+def test_appimage_gui_smoke_runs_apprun_as_the_appimage_runtime_would(tmp_path: Path) -> None:
+    spec = importlib.util.spec_from_file_location(
+        "smoke_appimage_gui_for_test", _REPO / "scripts" / "smoke_appimage_gui.py"
+    )
+    assert spec is not None and spec.loader is not None
+    smoke = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(smoke)
+    app_root = tmp_path / "squashfs-root"
+
+    environment = smoke.launch_environment({"DISPLAY": ":0"}, app_root, tmp_path / "data")
+
+    assert environment["APPDIR"] == str(app_root)
+    assert environment["DISPLAY"] == ":0"
+    assert environment["TUCK_SIDECAR_DATA_ROOT"] == str(tmp_path / "data")
 
 
 def test_linux_package_verifier_requires_the_staged_dav1d_plugin(tmp_path: Path) -> None:

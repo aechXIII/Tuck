@@ -344,6 +344,8 @@ for (const width of [1440,960]) {
     await setup(page,{moved:true});
     if (width === 960) await page.getByRole("button",{name:"Inspector",exact:true}).click();
     await page.locator("#wf-l").click();
+    // a lossless cut folds the audio tools away; measure the toolbar once they're gone
+    await expect(page.locator("#timeline-audio-tools")).toBeHidden();
     await expect(page.locator("#snap-all")).toBeVisible();
     await expect(page.locator(".edge-chip")).toBeVisible();
     await expect(page.locator("#btn-one")).toBeEnabled();
@@ -692,9 +694,9 @@ test("at 960 the cut Inspector leaves the timeline usable by keyboard", async ({
   await expect(page.locator("#tl-in")).toBeFocused();
   await page.keyboard.press("]");
   await expect(page.locator("#tl-in")).toHaveAttribute("aria-valuenow","4");
-  // trimming shows Reset; the toolbar still fits
+  // a lossless cut folds the audio tools away; trimming shows Reset and the toolbar still fits
+  await expect(page.getByRole("button",{name:"Add audio"})).toBeHidden();
   expect(await page.evaluate(() => { const row = document.getElementById("timeline-row")!; return row.scrollWidth - row.clientWidth; })).toBeLessThanOrEqual(1);
-  await expect(page.getByRole("button",{name:"Add audio"})).toBeVisible();
   // the Inspector stops above the player bar, which stays usable
   const inspector = (await page.locator("#right").boundingBox())!;
   const bar = (await page.locator("#player-bar").boundingBox())!;

@@ -64,6 +64,8 @@ meson setup "$build_dir/dav1d" "$dav1d" \
 ninja -C "$build_dir/dav1d" -j "$jobs"
 ninja -C "$build_dir/dav1d" install
 
+# screen capture would link the build host's libdrm and libxcb; Tuck never captures, and a
+# system without them must still run ffmpeg
 pushd "$ffmpeg" >/dev/null
 PKG_CONFIG_PATH="$prefix/lib/pkgconfig" ./configure \
   --prefix="$prefix" \
@@ -72,6 +74,8 @@ PKG_CONFIG_PATH="$prefix/lib/pkgconfig" ./configure \
   --enable-libx265 \
   --enable-libzimg \
   --enable-libdav1d \
+  --disable-libdrm \
+  --disable-libxcb \
   --enable-static \
   --disable-shared \
   --disable-debug \
