@@ -286,6 +286,24 @@ def _validate_linux_source_archive(app_root: Path, manifest: dict, lock: dict) -
         )
 
 
+def _validate_linux_gstreamer_plugins(app_root: Path, manifest: dict) -> None:
+    plugins = manifest.get("gstreamer_plugins")
+    _require_provenance(
+        isinstance(plugins, list)
+        and any(
+            isinstance(plugin, dict) and plugin.get("element") == "dav1ddec" for plugin in plugins
+        ),
+        "Linux packages must include the dav1d GStreamer plugin",
+    )
+    for plugin in plugins:
+        path = app_root / plugin["file"]
+        _require_provenance(path.is_file(), f"bundled {plugin['file']} is missing")
+        _require_provenance(
+            _sha256(path) == plugin["sha256"] and path.stat().st_size == plugin["size_bytes"],
+            f"bundled {plugin['file']} does not match the staging manifest",
+        )
+
+
 def _validate_linux_ffmpeg_runtime(app_root: Path, lock: dict) -> None:
     ffmpeg = app_root / "ffmpeg" / "ffmpeg"
     buildconf = subprocess.run(
@@ -371,13 +389,17 @@ def inspect_tree(app_root: Path, manifest: dict, lock_path: Path) -> None:
     if manifest.get("platform") == "linux":
         _validate_linux_source_archive(app_root, manifest, lock)
         _validate_linux_ffmpeg_runtime(app_root, lock)
+        _validate_linux_gstreamer_plugins(app_root, manifest)
         bundled_wayland_client = app_root.parent / "libwayland-client.so.0"
         if bundled_wayland_client.exists():
             raise VerifyError(
                 "Linux AppImages must use the host libwayland-client to avoid "
                 "Wayland/EGL ABI conflicts"
             )
-        print("  ok: source archive, GPL build configuration, codecs, filters, and libc linkage")
+        print(
+            "  ok: source archive, GPL build configuration, codecs, filters, libc linkage, "
+            "and GStreamer plugins"
+        )
 
     if manifest.get("platform") != "linux":
         webview2 = json.loads(WEBVIEW2_LOCK.read_text(encoding="utf-8"))

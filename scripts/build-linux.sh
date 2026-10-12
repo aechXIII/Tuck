@@ -5,7 +5,8 @@
 # Rust/Cargo, the Tauri Linux system dependencies, CMake, NASM, pkg-config,
 # Autoconf, Automake, Libtool, Meson, Ninja, a native C/C++ compiler, the GStreamer 1.0 tools
 # and base/good/bad/libav plugin packages (bundled into the AppImage for editor
-# preview playback), and network access for the pinned Python and FFmpeg source
+# preview playback), the GStreamer 1.0 development files (for the dav1d preview
+# plugin), and network access for the pinned Python, FFmpeg and plugin source
 # inputs. AppImage builds may also require FUSE to run the resulting artifact on
 # the build host.
 
@@ -41,6 +42,12 @@ for command in "$python_bin" npm cargo xvfb-run xwininfo cmake gcc g++ make nasm
     exit 1
   fi
 done
+
+# the dav1d preview plugin is built against the same GStreamer the AppImage bundles
+if ! pkg-config --exists gstreamer-1.0 gstreamer-base-1.0 gstreamer-video-1.0; then
+  echo "The GStreamer development files are missing. Install libgstreamer1.0-dev and libgstreamer-plugins-base1.0-dev." >&2
+  exit 1
+fi
 
 # bundleMediaFramework copies the host's GStreamer plugins into the AppImage.
 # Without a working autoaudiosink the packaged editor cannot play a preview, so
@@ -81,10 +88,9 @@ if [[ -z "$appimage" ]]; then
   exit 1
 fi
 
-# The app forces WebKit's portable renderer (see platform::prepare_runtime_environment),
-# but the GTK deployment can still bundle an older libwayland-client than the host
-# Mesa stack. Drop it so anything that does reach Wayland/EGL uses one ABI.
-echo "==> Removing the bundled Wayland client library"
+# The GTK deployment can bundle an older libwayland-client than the host Mesa stack.
+# Drop it so anything that reaches Wayland/EGL uses one ABI.
+echo "==> Removing the bundled Wayland client library and adding the dav1d plugin"
 appimage_work="$(mktemp -d -t tuck-appimage-wayland-XXXXXX)"
 trap 'rm -rf "$appimage_work"' EXIT
 (
@@ -97,6 +103,14 @@ if [[ ! -e "$bundled_wayland_client" ]]; then
   exit 1
 fi
 rm -f "$bundled_wayland_client"
+# the AppImage bundler adds a RUNPATH to every library it deploys, so the plugin is
+# added here instead, unchanged, and the package check can match it to its build hash
+dav1d_plugin="packaging/staging/linux/gstreamer/libgstdav1d.so"
+if [[ ! -f "$dav1d_plugin" ]]; then
+  echo "$dav1d_plugin is missing." >&2
+  exit 1
+fi
+install -Dm755 "$dav1d_plugin" "$appimage_work/squashfs-root/usr/lib/Tuck/gstreamer/libgstdav1d.so"
 appimage_offset="$("$root/$appimage" --appimage-offset)"
 rebuilt_appimage="$appimage_work/Tuck.AppImage"
 head -c "$appimage_offset" "$appimage" > "$rebuilt_appimage"
@@ -106,10 +120,10 @@ cat "$appimage_work/payload.squashfs" >> "$rebuilt_appimage"
 chmod +x "$rebuilt_appimage"
 mv "$rebuilt_appimage" "$appimage"
 
-# The Wayland strip rewrites the AppImage payload, so any signature Tauri wrote
-# during the build no longer matches. Re-sign the final bytes.
+# Rewriting the AppImage payload means any signature Tauri wrote during the build
+# no longer matches. Re-sign the final bytes.
 if [[ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]]; then
-  echo "==> Re-signing the AppImage after the Wayland-client strip"
+  echo "==> Re-signing the rewritten AppImage"
   npm run tauri signer sign -- "$appimage"
 fi
 

@@ -1,10 +1,11 @@
 """Build the Linux x86_64 sidecar resource tree for Tuck's AppImage.
 
 Run this on native Ubuntu 22.04 x86_64. It needs Python 3.10+, venv support,
-network access to the locked FFmpeg, x264, x265, zimg, and dav1d source archives, and the
-native compiler toolchain required by PyInstaller. This script builds the media
-tools from those verified sources, preserves the exact inputs and recipe in the
-staging tree, and builds the Python sidecar. ``scripts/build-linux.sh`` builds
+network access to the locked FFmpeg, x264, x265, zimg, and dav1d source archives and the
+locked dav1d GStreamer plugin crate, Cargo, the GStreamer development files, and the native
+compiler toolchain required by PyInstaller. This script builds the media tools and the plugin
+from those verified sources, preserves the exact FFmpeg inputs and recipe in the staging tree,
+and builds the Python sidecar. ``scripts/build-linux.sh`` builds
 the AppImage from that tree.
 """
 
@@ -27,6 +28,7 @@ from urllib.request import urlopen
 
 ROOT = Path(__file__).resolve().parent.parent
 LOCK_PATH = ROOT / "packaging" / "ffmpeg-linux-sources.lock.json"
+GST_DAV1D_LOCK_PATH = ROOT / "packaging" / "gst-dav1d-linux.lock.json"
 CONSTRAINTS = ROOT / "packaging" / "sidecar-constraints.txt"
 BUILD_REQUIREMENTS = ROOT / "packaging" / "build-requirements.txt"
 SPEC = ROOT / "scripts" / "tuck-sidecar-linux.spec"
@@ -36,12 +38,18 @@ THIRD_PARTY_NOTICES = ROOT / "packaging" / "THIRD_PARTY_NOTICES_LINUX.md"
 CACHE_DIR = ROOT / "build" / "toolcache"
 FFMPEG_SOURCE_CACHE = CACHE_DIR / "ffmpeg-linux-sources"
 FFMPEG_BUILD = ROOT / "build" / "ffmpeg-linux-sources"
+# the FFmpeg recipe installs its static libraries here, dav1d among them
+FFMPEG_PREFIX = FFMPEG_BUILD / "work" / "prefix"
+GST_DAV1D_SOURCE_CACHE = CACHE_DIR / "gst-dav1d"
+GST_DAV1D_BUILD = ROOT / "build" / "gst-dav1d"
 BUILD_VENV = ROOT / "build" / "linux-sidecar-venv"
 DIST_ROOT = ROOT / "dist" / "linux"
 DIST = DIST_ROOT / "sidecar"
 STAGING = ROOT / "packaging" / "staging" / "linux"
 STAGING_APP = STAGING / "app"
 STAGING_FFMPEG = STAGING / "ffmpeg"
+STAGING_GSTREAMER = STAGING / "gstreamer"
+STAGING_PLUGIN_LICENSES = STAGING / "licenses"
 SOURCE_BUNDLE_NAME = "ffmpeg-source.tar.xz"
 # zimg keeps its own permissive license inside the GPL build
 SOURCE_LICENSES = {
@@ -51,6 +59,8 @@ SOURCE_LICENSES = {
     "zimg": "WTFPL",
     "dav1d": "BSD-2-Clause",
 }
+GST_DAV1D_LICENSE = "MIT OR Apache-2.0"
+GST_DAV1D_URL_PREFIX = "https://static.crates.io/crates/gst-plugin-dav1d/"
 
 
 class BuildError(RuntimeError):
@@ -253,30 +263,34 @@ def ensure_source_archives(lock: dict[str, object]) -> list[tuple[dict[str, obje
     ]
 
 
+def _extract_archive(archive_path: Path, root: str, destination: Path) -> None:
+    with tarfile.open(archive_path, "r:*") as archive:
+        members = archive.getmembers()
+        _require(members, f"Source archive is empty: {archive_path.name}")
+        for member in members:
+            member_path = Path(member.name)
+            _require(
+                not member_path.is_absolute()
+                and ".." not in member_path.parts
+                and member_path.parts
+                and member_path.parts[0] == root
+                and (member.isfile() or member.isdir() or member.issym()),
+                f"Unsafe or unexpected source archive member: {member.name}",
+            )
+        # zimg links a few example sources from its docs; no recipe builds them, so links
+        # are never written and can't point a later write outside the source tree
+        archive.extractall(
+            destination, members=[member for member in members if not member.issym()]
+        )
+
+
 def _extract_sources(sources: list[tuple[dict[str, object], Path]]) -> Path:
     source_root = FFMPEG_BUILD / "source"
     shutil.rmtree(source_root, ignore_errors=True)
     source_root.mkdir(parents=True)
     for source, archive_path in sources:
         root = str(source["archive_root"])
-        with tarfile.open(archive_path, "r:*") as archive:
-            members = archive.getmembers()
-            _require(members, f"Source archive is empty: {archive_path.name}")
-            for member in members:
-                member_path = Path(member.name)
-                _require(
-                    not member_path.is_absolute()
-                    and ".." not in member_path.parts
-                    and member_path.parts
-                    and member_path.parts[0] == root
-                    and (member.isfile() or member.isdir() or member.issym()),
-                    f"Unsafe or unexpected source archive member: {member.name}",
-                )
-            # zimg links a few example sources from its docs; no recipe builds them, so links
-            # are never written and can't point a later write outside the source tree
-            archive.extractall(
-                source_root, members=[member for member in members if not member.issym()]
-            )
+        _extract_archive(archive_path, root, source_root)
         license_info = source["license"]
         _require(isinstance(license_info, dict), "Linux FFmpeg source license is invalid")
         license_path = source_root / root / str(license_info["text_path"])
@@ -423,6 +437,134 @@ def stage_ffmpeg(
     return staged, provenance
 
 
+def load_gst_dav1d_lock() -> dict[str, object]:
+    _require(
+        GST_DAV1D_LOCK_PATH.is_file(), f"Missing dav1d plugin lock file: {GST_DAV1D_LOCK_PATH}"
+    )
+    lock = json.loads(GST_DAV1D_LOCK_PATH.read_text(encoding="utf-8"))
+    _require(isinstance(lock, dict), "dav1d plugin lock must be a JSON object")
+    _require(lock.get("lockfile_version") == 1, "Unsupported dav1d plugin lock file version")
+    _require(
+        lock.get("platform") == "linux" and lock.get("architecture") == "x86_64",
+        "dav1d plugin lock is not for Linux x86_64",
+    )
+    source = _validate_file_record(lock.get("source"), "dav1d plugin source")
+    root = source.get("archive_root")
+    license_info = source.get("license")
+    text_paths = license_info.get("text_paths") if isinstance(license_info, dict) else None
+    _require(
+        source.get("name") == "gst-plugin-dav1d"
+        and isinstance(source.get("version"), str)
+        and bool(source["version"])
+        and str(source["url"]).startswith(GST_DAV1D_URL_PREFIX)
+        and isinstance(root, str)
+        and root == Path(root).name
+        and bool(root)
+        and isinstance(license_info, dict)
+        and license_info.get("spdx") == GST_DAV1D_LICENSE
+        and isinstance(text_paths, list)
+        and bool(text_paths)
+        and all(isinstance(path, str) and path for path in text_paths),
+        "dav1d plugin source provenance is incomplete",
+    )
+    output = lock.get("output")
+    _require(
+        isinstance(output, dict)
+        and output.get("file") == "libgstdav1d.so"
+        and output.get("element") == "dav1ddec"
+        and output.get("forbidden_runtime_dependencies") == ["libdav1d"],
+        "dav1d plugin output requirements are incomplete",
+    )
+    return lock
+
+
+def build_gst_dav1d(lock: dict[str, object]) -> tuple[Path, Path]:
+    """Build the dav1d GStreamer plugin against the static dav1d from the FFmpeg build.
+
+    WebKitGTK otherwise decodes AV1 with the bundled libaom decoder, which is several times
+    slower. Returns the plugin and its extracted crate, which holds the license texts.
+    """
+    source = lock["source"]
+    _require(isinstance(source, dict), "dav1d plugin source is invalid")
+    archive = _ensure_download(source, GST_DAV1D_SOURCE_CACHE)
+    source_root = GST_DAV1D_BUILD / "source"
+    shutil.rmtree(source_root, ignore_errors=True)
+    source_root.mkdir(parents=True)
+    _extract_archive(archive, str(source["archive_root"]), source_root)
+    crate = source_root / str(source["archive_root"])
+    # the crate's own lock file pins every dependency, so --locked builds the same tree
+    _require((crate / "Cargo.lock").is_file(), "dav1d plugin crate has no Cargo.lock")
+    pkgconfig = FFMPEG_PREFIX / "lib" / "pkgconfig"
+    _require(
+        (pkgconfig / "dav1d.pc").is_file() and (FFMPEG_PREFIX / "lib" / "libdav1d.a").is_file(),
+        "The FFmpeg build did not leave a static dav1d for the plugin",
+    )
+    target = GST_DAV1D_BUILD / "target"
+    print("  build   dav1d GStreamer plugin from the locked crate")
+    subprocess.run(
+        [
+            "cargo",
+            "build",
+            "--release",
+            "--locked",
+            "--manifest-path",
+            str(crate / "Cargo.toml"),
+        ],
+        check=True,
+        cwd=crate,
+        env={
+            **os.environ,
+            "PKG_CONFIG_PATH": str(pkgconfig),
+            "SYSTEM_DEPS_DAV1D_LINK": "static",
+            "CARGO_TARGET_DIR": str(target),
+        },
+    )
+    output = lock["output"]
+    _require(isinstance(output, dict), "dav1d plugin output requirements are invalid")
+    plugin = target / "release" / str(output["file"])
+    _require(plugin.is_file(), "The dav1d plugin build did not produce libgstdav1d.so")
+    ldd = subprocess.run(["ldd", str(plugin)], capture_output=True, text=True, check=True)
+    _require("libgstreamer-1.0" in ldd.stdout, "The dav1d plugin must link GStreamer")
+    for forbidden in output["forbidden_runtime_dependencies"]:
+        _require(forbidden not in ldd.stdout, f"The dav1d plugin must statically link {forbidden}")
+    return plugin, crate
+
+
+def stage_gst_dav1d(lock: dict[str, object], plugin: Path, crate: Path) -> dict[str, object]:
+    source = lock["source"]
+    output = lock["output"]
+    _require(isinstance(source, dict), "dav1d plugin source is invalid")
+    _require(isinstance(output, dict), "dav1d plugin output requirements are invalid")
+    license_info = source["license"]
+    _require(isinstance(license_info, dict), "dav1d plugin license is invalid")
+    shutil.rmtree(STAGING_GSTREAMER, ignore_errors=True)
+    shutil.rmtree(STAGING_PLUGIN_LICENSES, ignore_errors=True)
+    STAGING_GSTREAMER.mkdir(parents=True)
+    destination = STAGING_GSTREAMER / plugin.name
+    shutil.copy2(plugin, destination)
+    destination.chmod(0o755)
+    license_dir = STAGING_PLUGIN_LICENSES / str(source["name"])
+    license_dir.mkdir(parents=True)
+    for text_path in license_info["text_paths"]:
+        license_file = crate / str(text_path)
+        _require(license_file.is_file(), f"dav1d plugin license text missing: {text_path}")
+        shutil.copy2(license_file, license_dir / Path(str(text_path)).name)
+    print(f"  stage   gstreamer/{plugin.name}")
+    return {
+        "file": f"gstreamer/{plugin.name}",
+        "sha256": _sha256(destination),
+        "size_bytes": destination.stat().st_size,
+        "element": output["element"],
+        "source": {
+            "name": source["name"],
+            "version": source["version"],
+            "sha256": source["sha256"],
+            "lock_file": GST_DAV1D_LOCK_PATH.relative_to(ROOT).as_posix(),
+            "lock_sha256": _sha256(GST_DAV1D_LOCK_PATH),
+        },
+    }
+
+
 def _venv_python(venv: Path) -> Path:
     return venv / "bin" / "python"
 
@@ -501,11 +643,17 @@ def _copytree(source: Path, destination: Path) -> None:
 
 
 def assemble_app(
-    dist: Path, staged_ffmpeg: list[dict[str, object]], provenance: dict[str, object]
+    dist: Path,
+    staged_ffmpeg: list[dict[str, object]],
+    provenance: dict[str, object],
+    staged_plugin: dict[str, object],
 ) -> dict[str, object]:
     shutil.rmtree(STAGING_APP, ignore_errors=True)
     _copytree(dist, STAGING_APP)
     _copytree(STAGING_FFMPEG, STAGING_APP / "ffmpeg")
+    # the GStreamer plugin stays out of the bundled resources: the AppImage bundler would
+    # rewrite it, so build-linux.sh adds it to the finished payload byte for byte
+    _copytree(STAGING_PLUGIN_LICENSES, STAGING_APP / "licenses")
     shutil.copy2(LICENSE, STAGING_APP / "LICENSE")
     shutil.copy2(THIRD_PARTY_NOTICES, STAGING_APP / "THIRD_PARTY_NOTICES.md")
     sidecar = STAGING_APP / "tuck-sidecar"
@@ -522,12 +670,16 @@ def assemble_app(
         "sidecar_executable": "tuck-sidecar",
         "ffmpeg": staged_ffmpeg,
         "ffmpeg_provenance": provenance,
+        "gstreamer_plugins": [staged_plugin],
         "expected_present": [
             "tuck-sidecar",
             "_internal",
             "ffmpeg/ffmpeg",
             "ffmpeg/ffprobe",
             "ffmpeg/source/ffmpeg-source.tar.xz",
+            "gstreamer/libgstdav1d.so",
+            "licenses/gst-plugin-dav1d/LICENSE-MIT",
+            "licenses/gst-plugin-dav1d/LICENSE-APACHE",
             "LICENSE",
             "THIRD_PARTY_NOTICES.md",
             "_internal/licenses/av/LICENSE.txt",
@@ -600,6 +752,8 @@ def main() -> int:
         output = _build_ffmpeg(lock, _extract_sources(sources))
         validate_ffmpeg_runtime(lock, output)
         staged, provenance = stage_ffmpeg(lock, output, source_archive)
+        plugin_lock = load_gst_dav1d_lock()
+        staged_plugin = stage_gst_dav1d(plugin_lock, *build_gst_dav1d(plugin_lock))
         if args.skip_pyinstaller:
             print("done (media tools only)")
             return 0
@@ -616,7 +770,7 @@ def main() -> int:
             print("[5/6] PyInstaller")
             dist = run_pyinstaller(python)
         print("[6/6] assemble Linux staging tree")
-        assemble_app(dist, staged, provenance)
+        assemble_app(dist, staged, provenance, staged_plugin)
         print(f"\nOK  staging tree at {STAGING_APP}")
         return 0
     except (BuildError, OSError, subprocess.CalledProcessError, tarfile.TarError) as exc:

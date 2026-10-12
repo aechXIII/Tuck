@@ -16,6 +16,14 @@ The AppImage includes `ffmpeg/source/ffmpeg-source.tar.xz` with the five
 source archives, the build recipe and the license files. If it is missing,
 ask for a copy through Tuck's GitHub repository.
 
+## AV1 preview decoder
+
+`gstreamer/libgstdav1d.so` lets video previews decode AV1 with dav1d. It is
+built from `gst-plugin-dav1d` 0.15.4 (MIT or Apache-2.0) and the Rust crates in
+its `Cargo.lock`, and includes the same dav1d 1.5.1 (BSD-2-Clause) as FFmpeg,
+linked statically. The lock file is `packaging/gst-dav1d-linux.lock.json`, and
+the plugin's license files are in `licenses/gst-plugin-dav1d/`.
+
 ## Desktop shell
 
 `Tuck` is built with Tauri 2 and the Rust crates in `src-tauri/Cargo.lock`

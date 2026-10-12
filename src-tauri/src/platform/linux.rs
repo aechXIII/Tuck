@@ -98,7 +98,11 @@ pub fn prepare_runtime_environment() {
                 // the AppImage's own launcher sets both to the mounted folder, so they
                 // are replaced rather than defaulted
                 std::env::set_var("GST_PLUGIN_SYSTEM_PATH_1_0", &gstreamer.plugins);
-                std::env::set_var("GST_PLUGIN_PATH_1_0", &gstreamer.plugins);
+                let search = std::iter::once(&gstreamer.plugins).chain(&gstreamer.tuck_plugins);
+                match std::env::join_paths(search) {
+                    Ok(paths) => std::env::set_var("GST_PLUGIN_PATH_1_0", paths),
+                    Err(_) => std::env::set_var("GST_PLUGIN_PATH_1_0", &gstreamer.plugins),
+                }
                 set_default_env("GST_REGISTRY_1_0", &gstreamer.registry);
             }
             Ok(None) => {}
@@ -110,12 +114,19 @@ pub fn prepare_runtime_environment() {
 
 #[derive(Debug, PartialEq, Eq)]
 struct GstreamerPaths {
+    /// the GStreamer plugins bundled from the build distribution
     plugins: PathBuf,
+    /// plugins Tuck builds itself, such as the dav1d AV1 decoder, which
+    /// replaces the much slower libaom one for previews
+    tuck_plugins: Option<PathBuf>,
     registry: PathBuf,
 }
 
-/// Points a symlink at a fixed path in Tuck's cache folder to the bundled
-/// GStreamer plugins, and returns it with a plugin cache file of Tuck's own.
+/// Tauri bundles Tuck's resources under `usr/lib/<product name>` in the AppImage.
+const TUCK_PLUGIN_DIR: &str = "usr/lib/Tuck/gstreamer";
+
+/// Points symlinks at fixed paths in Tuck's cache folder to the bundled GStreamer
+/// plugins and to Tuck's own, and returns them with a plugin cache file of Tuck's own.
 ///
 /// GStreamer caches each plugin by its file path. An AppImage mounts at a new
 /// random path on every launch, so the cache never matched and the first video of
@@ -130,19 +141,31 @@ fn stable_gstreamer_plugins(appdir: &Path, cache: &Path) -> io::Result<Option<Gs
     }
     let folder = cache.join("gstreamer");
     std::fs::create_dir_all(&folder)?;
-    let plugins = folder.join("plugins");
+    let plugins = point_link(&folder, "plugins", &bundled)?;
+    let own = appdir.join(TUCK_PLUGIN_DIR);
+    let tuck_plugins = if own.is_dir() {
+        Some(point_link(&folder, "tuck-plugins", &own)?)
+    } else {
+        None
+    };
+    Ok(Some(GstreamerPaths {
+        plugins,
+        tuck_plugins,
+        registry: folder.join("registry.bin"),
+    }))
+}
+
+fn point_link(folder: &Path, name: &str, target: &Path) -> io::Result<PathBuf> {
+    let link = folder.join(name);
     // replace the link in one step, so it never points nowhere
-    let pending = folder.join(format!("plugins.{}", std::process::id()));
+    let pending = folder.join(format!("{name}.{}", std::process::id()));
     let _ = std::fs::remove_file(&pending);
-    std::os::unix::fs::symlink(&bundled, &pending)?;
-    if let Err(error) = std::fs::rename(&pending, &plugins) {
+    std::os::unix::fs::symlink(target, &pending)?;
+    if let Err(error) = std::fs::rename(&pending, &link) {
         let _ = std::fs::remove_file(&pending);
         return Err(error);
     }
-    Ok(Some(GstreamerPaths {
-        plugins,
-        registry: folder.join("registry.bin"),
-    }))
+    Ok(link)
 }
 
 fn renderer_choice() -> RendererChoice {
@@ -572,8 +595,10 @@ mod tests {
         for mount in [&first, &second] {
             std::fs::create_dir_all(mount.join("usr/lib/gstreamer-1.0")).unwrap();
         }
+        std::fs::create_dir_all(first.join(TUCK_PLUGIN_DIR)).unwrap();
         let expected = GstreamerPaths {
             plugins: cache.join("gstreamer/plugins"),
+            tuck_plugins: Some(cache.join("gstreamer/tuck-plugins")),
             registry: cache.join("gstreamer/registry.bin"),
         };
         assert_eq!(
@@ -584,15 +609,21 @@ mod tests {
             std::fs::read_link(&expected.plugins).unwrap(),
             first.join("usr/lib/gstreamer-1.0")
         );
-        // the next launch mounts somewhere else; the link follows it
-        stable_gstreamer_plugins(&second, &cache).unwrap();
+        assert_eq!(
+            std::fs::read_link(cache.join("gstreamer/tuck-plugins")).unwrap(),
+            first.join(TUCK_PLUGIN_DIR)
+        );
+        // the next launch mounts somewhere else; the links follow it. A build
+        // without plugins of its own leaves Tuck's plugin folder off the path
+        let next = stable_gstreamer_plugins(&second, &cache).unwrap().unwrap();
         assert_eq!(
             std::fs::read_link(&expected.plugins).unwrap(),
             second.join("usr/lib/gstreamer-1.0")
         );
+        assert_eq!(next.tuck_plugins, None);
         assert_eq!(
             std::fs::read_dir(cache.join("gstreamer")).unwrap().count(),
-            1
+            2
         );
         let _ = std::fs::remove_dir_all(&base);
     }

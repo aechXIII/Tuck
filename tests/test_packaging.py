@@ -308,6 +308,49 @@ def test_linux_build_leaves_source_links_out_of_the_extracted_tree(
     assert not (source_root / "source" / "doc" / "example.h").exists()
 
 
+def test_dav1d_plugin_lock_pins_an_immutable_crate_archive(tmp_path: Path, monkeypatch) -> None:
+    build_linux = _build_linux_module()
+    source = build_linux.load_gst_dav1d_lock()["source"]
+
+    assert source["url"].startswith("https://static.crates.io/crates/gst-plugin-dav1d/")
+    assert source["filename"] == source["url"].rsplit("/", 1)[1]
+    assert source["license"]["spdx"] == "MIT OR Apache-2.0"
+
+    for change in (
+        {"url": "https://gitlab.freedesktop.org/gstreamer/gst-plugins-rs/-/archive/x.tar.gz"},
+        {"license": {"spdx": "GPL-2.0-or-later", "text_paths": ["COPYING"]}},
+        {"license": {"spdx": "MIT OR Apache-2.0", "text_paths": []}},
+    ):
+        lock = json.loads(build_linux.GST_DAV1D_LOCK_PATH.read_text(encoding="utf-8"))
+        lock["source"].update(change)
+        lock_path = tmp_path / "gst-dav1d-linux.lock.json"
+        lock_path.write_text(json.dumps(lock), encoding="utf-8")
+        monkeypatch.setattr(build_linux, "GST_DAV1D_LOCK_PATH", lock_path)
+        with pytest.raises(build_linux.BuildError, match="provenance is incomplete"):
+            build_linux.load_gst_dav1d_lock()
+
+
+def test_linux_package_verifier_requires_the_staged_dav1d_plugin(tmp_path: Path) -> None:
+    verify_package = _verify_package_module()
+    plugin = tmp_path / "gstreamer" / "libgstdav1d.so"
+    plugin.parent.mkdir()
+    plugin.write_bytes(b"plugin")
+    record = {
+        "file": "gstreamer/libgstdav1d.so",
+        "sha256": hashlib.sha256(b"plugin").hexdigest(),
+        "size_bytes": 6,
+        "element": "dav1ddec",
+    }
+
+    verify_package._validate_linux_gstreamer_plugins(tmp_path, {"gstreamer_plugins": [record]})
+
+    plugin.write_bytes(b"changed")
+    with pytest.raises(verify_package.VerifyError, match="does not match the staging manifest"):
+        verify_package._validate_linux_gstreamer_plugins(tmp_path, {"gstreamer_plugins": [record]})
+    with pytest.raises(verify_package.VerifyError, match="must include the dav1d"):
+        verify_package._validate_linux_gstreamer_plugins(tmp_path, {"gstreamer_plugins": []})
+
+
 def test_linux_package_verifier_rejects_incomplete_source_provenance() -> None:
     verify_package = _verify_package_module()
     incomplete = json.loads(_LINUX_LOCK.read_text(encoding="utf-8"))

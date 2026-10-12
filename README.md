@@ -176,7 +176,8 @@ npm run tauri dev
 
 Build the x86-64 AppImage on Ubuntu 22.04. In addition to the development
 dependencies, install CMake, NASM, pkg-config, a C/C++ compiler, Xvfb, squashfs-tools,
-and the GStreamer tools and base/good/bad/libav plugins. The build script checks
+the GStreamer tools and base/good/bad/libav plugins, and the GStreamer development
+files (`libgstreamer1.0-dev`, `libgstreamer-plugins-base1.0-dev`). The build script checks
 for required tools and runs the packaged smoke test.
 
 ```bash

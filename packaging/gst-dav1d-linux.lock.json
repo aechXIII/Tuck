@@ -1,0 +1,29 @@
+{
+  "lockfile_version": 1,
+  "purpose": "Reproducible source input for the dav1d AV1 decoder plugin that the Linux AppImage adds to WebKitGTK's GStreamer. The builder accepts only this crate archive, verifies its bytes before extraction, and builds it with the Cargo.lock it ships, linked against the dav1d built from the FFmpeg source lock.",
+  "platform": "linux",
+  "architecture": "x86_64",
+  "source": {
+    "name": "gst-plugin-dav1d",
+    "version": "0.15.4",
+    "filename": "gst-plugin-dav1d-0.15.4.crate",
+    "url": "https://static.crates.io/crates/gst-plugin-dav1d/gst-plugin-dav1d-0.15.4.crate",
+    "size_bytes": 25543,
+    "sha256": "7fb7daa1c1746763b29ca941453d74d447a2106f6fd5e4ad563e4ed4db93ee96",
+    "archive_root": "gst-plugin-dav1d-0.15.4",
+    "license": {
+      "spdx": "MIT OR Apache-2.0",
+      "text_paths": [
+        "LICENSE-MIT",
+        "LICENSE-APACHE"
+      ]
+    }
+  },
+  "output": {
+    "file": "libgstdav1d.so",
+    "element": "dav1ddec",
+    "forbidden_runtime_dependencies": [
+      "libdav1d"
+    ]
+  }
+}
