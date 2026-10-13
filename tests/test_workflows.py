@@ -79,6 +79,14 @@ def test_itch_workflow_verifies_existing_packages_before_upload() -> None:
     assert text.count("gh release view --json tagName --jq .tagName") == 2
 
 
+def test_itch_workflow_pushes_individual_files_for_direct_downloads() -> None:
+    text = _read(ITCH_YML)
+    assert 'files=("itch-upload/$channel"/*)' in text
+    assert '"${#files[@]}" -ne 1' in text
+    assert 'butler/butler push "${files[0]}"' in text
+    assert 'butler/butler push "itch-upload/$channel"' not in text
+
+
 # --- FFmpeg provisioning -------------------------------------------------------
 
 

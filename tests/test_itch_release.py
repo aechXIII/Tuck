@@ -62,7 +62,7 @@ def publisher():
     return importlib.import_module("scripts.prepare_itch")
 
 
-def test_prepares_verified_packages_with_sources_and_notices(release_files, tmp_path, monkeypatch):
+def test_prepares_verified_single_file_downloads(release_files, tmp_path, monkeypatch):
     module = publisher()
     calls = []
     monkeypatch.setattr(module.signatures, "verify", lambda **kwargs: calls.append(kwargs))
@@ -72,11 +72,11 @@ def test_prepares_verified_packages_with_sources_and_notices(release_files, tmp_
     assert len(calls) == 1
     for platform, channel in (("windows", "windows-installer"), ("linux", "linux-appimage")):
         name = bm.artifact_name(platform, version)
+        assert [file.name for file in (output / channel).iterdir()] == [name]
         assert (output / channel / name).read_bytes() == (downloads / name).read_bytes()
-        assert (output / channel / bm.NOTICES[platform]).is_file()
-        assert (output / channel / "LICENSE").read_bytes() == (ROOT / "LICENSE").read_bytes()
-        assert f"/tree/v{version}" in (output / channel / "SOURCE.txt").read_text()
-    assert (output / "ffmpeg-sources" / "Tuck-FFmpeg-Windows-Sources.tar.xz").is_file()
+    source = "Tuck-FFmpeg-Windows-Sources.tar.xz"
+    assert [file.name for file in (output / "ffmpeg-sources").iterdir()] == [source]
+    assert (output / "ffmpeg-sources" / source).read_bytes() == (downloads / source).read_bytes()
 
 
 @pytest.mark.parametrize("name", ["windows", "sources"])

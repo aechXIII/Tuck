@@ -89,7 +89,12 @@ jobs:
           # an older retry must not replace a newer stable release
           test "$(gh release view --json tagName --jq .tagName)" = "$RELEASE_TAG"
           for channel in windows-installer linux-appimage ffmpeg-sources; do
-            butler/butler push "itch-upload/$channel" "$ITCH_PROJECT:$channel" --userversion "${RELEASE_TAG#v}"
+            files=("itch-upload/$channel"/*)
+            if [ "${#files[@]}" -ne 1 ] || [ ! -f "${files[0]}" ]; then
+              echo "::error::Expected one verified file for $channel"
+              exit 1
+            fi
+            butler/butler push "${files[0]}" "$ITCH_PROJECT:$channel" --userversion "${RELEASE_TAG#v}"
           done
           printf 'Uploaded %s to https://%s.itch.io/%s\n' \
             "$RELEASE_TAG" "${ITCH_PROJECT%/*}" "${ITCH_PROJECT#*/}" >> "$GITHUB_STEP_SUMMARY"

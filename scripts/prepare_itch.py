@@ -1,4 +1,4 @@
-"""Verify a published GitHub release and prepare its itch.io download folders."""
+"""Verify a published GitHub release and prepare its individual itch.io downloads."""
 
 from __future__ import annotations
 
@@ -69,29 +69,17 @@ def prepare(downloads: Path, metadata: Path, root: Path, output: Path, tag: str)
             raise ValueError(f"The downloaded notice does not match the release source: {notice}")
     signatures.verify(config=root / "src-tauri/tauri.conf.json", artifacts=downloads)
 
-    # each channel carries the license and the exact corresponding source reference
-    source_text = (
-        f"Tuck {version} source code and build instructions:\n"
-        f"https://github.com/aechXIII/Tuck/tree/{tag}\n\n"
-        "Windows FFmpeg corresponding sources are in the ffmpeg-sources download.\n"
-        "Third-party licenses and source links are in the included notices.\n"
-    )
+    # licenses are inside the packages; one file per channel avoids a ZIP wrapper
     for platform, channel in CHANNELS.items():
         folder = output / channel
         folder.mkdir(parents=True)
         name = bm.artifact_name(platform, version)
-        for filename in (name, name + ".sha256", name + ".sig", bm.NOTICES[platform]):
-            shutil.copyfile(downloads / filename, folder / filename)
-        shutil.copyfile(root / "LICENSE", folder / "LICENSE")
-        (folder / "SOURCE.txt").write_text(source_text, encoding="utf-8")
+        shutil.copyfile(downloads / name, folder / name)
         if platform == "linux":
             (folder / name).chmod(0o755)
     folder = output / "ffmpeg-sources"
     folder.mkdir()
     shutil.copyfile(downloads / SOURCES, folder / SOURCES)
-    bm.write_checksum(folder / SOURCES)
-    shutil.copyfile(downloads / bm.NOTICES["windows"], folder / bm.NOTICES["windows"])
-    (folder / "SOURCE.txt").write_text(source_text, encoding="utf-8")
 
 
 def main() -> None:
