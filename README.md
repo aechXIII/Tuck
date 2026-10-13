@@ -79,7 +79,7 @@ FFmpeg/ffprobe, and the plugins used for video previews.
 ## Features
 
 - **Timeline editing:** Split a video into segments, trim or remove unwanted parts, and mute source audio or individual fragments.
-- **Audio editing:** Add new audio files and position them on the timeline. Imported audio can be moved, trimmed, split, muted, or given its own volume level.
+- **Audio editing:** Each audio track of a video, like separate game and mic tracks, gets its own row with mute and volume. Add new audio files and position them on the timeline. Imported audio can be moved, trimmed, split, muted, or given its own volume level.
 - **Crop and resize:** Crop directly in the preview, rotate in 90-degree steps, flip the
   picture horizontally or vertically, and choose **Fit**, **Fill**, or **Stretch** for the
   output frame.

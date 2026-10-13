@@ -1,13 +1,15 @@
 # Changelog
 
-## Unreleased
+## [0.6.1] - 2026-10-13
+
+### Added
+
+- Separate timeline rows for each audio track, with their own mute and volume
+- Frame blending speed in export progress
 
 ### Changed
 
-- Exports keep every audio track of a video, such as separate game and mic tracks, instead of
-  only the first
-- Each audio track of a video shows on the timeline and in the mixer, with its own mute and
-  volume
+- Exports keep all audio tracks instead of only the first
 
 ## [0.6.0] - 2026-10-12
 
