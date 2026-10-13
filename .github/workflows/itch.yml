@@ -1,0 +1,95 @@
+name: Upload to itch.io
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Latest stable GitHub release tag (for example v0.6.1)"
+        type: string
+        required: true
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+    secrets:
+      BUTLER_API_KEY:
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: itch-${{ vars.ITCH_PROJECT }}
+  cancel-in-progress: false
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      RELEASE_TAG: ${{ inputs.tag }}
+      ITCH_PROJECT: ${{ vars.ITCH_PROJECT }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate the destination and tag
+        run: python -m scripts.prepare_itch --tag "$RELEASE_TAG" --project "$ITCH_PROJECT" --validate-only
+
+      - name: Download the published GitHub packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test "$(gh release view --json tagName --jq .tagName)" = "$RELEASE_TAG"
+          gh release view "$RELEASE_TAG" --json tagName,isDraft,isPrerelease > release.json
+          gh release download "$RELEASE_TAG" --dir downloads
+
+      - name: Read the corresponding release source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+          path: release-source
+          persist-credentials: false
+
+      - name: Verify and prepare the downloads
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y minisign
+          python -m scripts.prepare_itch --tag "$RELEASE_TAG" --project "$ITCH_PROJECT"
+          python release-source/scripts/windows_ffmpeg.py --verify-source downloads/Tuck-FFmpeg-Windows-Sources.tar.xz
+
+      - name: Install verified butler
+        env:
+          BUTLER_VERSION: "15.32.0"
+          BUTLER_SHA256: "2335971394ef6596f95ded0833e85ee28755e13761716ef4c91d6b11f69162f5"
+        run: |
+          curl --fail --location --retry 3 \
+            "https://broth.itch.zone/butler/linux-amd64/$BUTLER_VERSION/archive/default" -o butler.zip
+          printf '%s  butler.zip\n' "$BUTLER_SHA256" | sha256sum --check --strict
+          unzip -q butler.zip -d butler
+          chmod +x butler/butler
+          butler/butler version
+
+      - name: Upload the verified packages
+        env:
+          BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -z "$BUTLER_API_KEY" ]; then
+            echo "::error::Add the repository Actions secret BUTLER_API_KEY."
+            exit 1
+          fi
+          # an older retry must not replace a newer stable release
+          test "$(gh release view --json tagName --jq .tagName)" = "$RELEASE_TAG"
+          for channel in windows-installer linux-appimage ffmpeg-sources; do
+            butler/butler push "itch-upload/$channel" "$ITCH_PROJECT:$channel" --userversion "${RELEASE_TAG#v}"
+          done
+          printf 'Uploaded %s to https://%s.itch.io/%s\n' \
+            "$RELEASE_TAG" "${ITCH_PROJECT%/*}" "${ITCH_PROJECT#*/}" >> "$GITHUB_STEP_SUMMARY"

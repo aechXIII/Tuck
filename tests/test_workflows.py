@@ -15,6 +15,7 @@ from pathlib import Path
 WORKFLOWS = Path(".github/workflows")
 TESTS_YML = WORKFLOWS / "tests.yml"
 RELEASE_YML = WORKFLOWS / "release.yml"
+ITCH_YML = WORKFLOWS / "itch.yml"
 
 
 def _read(path: Path) -> str:
@@ -51,6 +52,31 @@ def _jobs(workflow_text: str) -> dict[str, str]:
         if current:
             jobs[current].append(line)
     return {name: "\n".join(body) for name, body in jobs.items()}
+
+
+def test_itch_upload_follows_public_release_and_uses_only_its_credential() -> None:
+    job = _jobs(_read(RELEASE_YML))["itch"]
+    assert "needs: publish" in job
+    assert "startsWith(github.ref, 'refs/tags/v')" in job
+    assert "vars.ITCH_PROJECT != ''" in job
+    assert "uses: ./.github/workflows/itch.yml" in job
+    assert re.findall(r"secrets\.([A-Z_]+)", job) == ["BUTLER_API_KEY"]
+
+
+def test_itch_workflow_verifies_existing_packages_before_upload() -> None:
+    text = _read(ITCH_YML)
+    assert "workflow_dispatch:" in text and "workflow_call:" in text
+    assert "contents: read" in text and "cancel-in-progress: false" in text
+    assert 'gh release download "$RELEASE_TAG"' in text
+    assert "--verify-source downloads/Tuck-FFmpeg-Windows-Sources.tar.xz" in text
+    assert text.index("sha256sum --check --strict") < text.index("unzip -q butler.zip")
+    assert text.index("python -m scripts.prepare_itch --tag") < text.index("butler/butler push")
+    assert text.index("--verify-source") < text.index(
+        "BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}"
+    )
+    assert "TAURI_SIGNING_PRIVATE_KEY" not in text
+    assert '"${RELEASE_TAG#v}"' in text
+    assert text.count("gh release view --json tagName --jq .tagName") == 2
 
 
 # --- FFmpeg provisioning -------------------------------------------------------
