@@ -79,7 +79,9 @@ export interface AudioTimelineApi {
   trackColor: (index: number) => string;
   toggleSourceMute: () => void;
   toggleTrackMute: (trackId: string) => void;
+  toggleSourceTrackMute: (streamIndex: number) => void;
   setSourceGain: (value: string | number) => void;
+  setSourceTrackGain: (streamIndex: number, value: string | number) => void;
   setTrackGain: (trackId: string, value: string | number) => void;
   removeTrack: (trackId: string) => void;
   getSelectedClipRange: () => AudioClipRangeInfo | null;
@@ -126,6 +128,16 @@ export interface PanelsApi {
   getWorkspaceViewportMode: () => string;
   readonly inspectorSettingsSave: Promise<void>;
   dispose: () => void;
+}
+
+// mixer rows for the source's second audio track onwards are "source:1", "source:2", ...
+const SOURCE_TRACK_PREFIX = "source:";
+
+// the source audio track a mixer row stands for, counted from 0, or 0 for any other row
+function sourceTrackIndex(rowId: string): number {
+  if (!rowId.startsWith(SOURCE_TRACK_PREFIX)) return 0;
+  const index = Number(rowId.slice(SOURCE_TRACK_PREFIX.length));
+  return Number.isInteger(index) && index > 0 ? index : 0;
 }
 
 interface MixerRowModel {
@@ -526,6 +538,13 @@ export function installPanels(host: PanelsHost): PanelsApi {
     return root;
   }
 
+  function setGain(rowId: string, value: string | number): void {
+    const streamIndex = sourceTrackIndex(rowId);
+    if (rowId === "source") host.AudioTimeline?.setSourceGain(value);
+    else if (streamIndex) host.AudioTimeline?.setSourceTrackGain(streamIndex, value);
+    else host.AudioTimeline?.setTrackGain(rowId, value);
+  }
+
   function renderAudioMixerList(): void {
     const mixerHost = byId("audio-track-mixer");
     const count = byId("audio-track-count");
@@ -557,6 +576,19 @@ export function installPanels(host: PanelsHost): PanelsApi {
         color: "var(--audio-clip-fill)",
       });
       trackNumber = 2;
+      (state.sourceExtraTracks ?? []).forEach((extra, index) => {
+        rows.push({
+          id: SOURCE_TRACK_PREFIX + (index + 1),
+          code: "A" + trackNumber,
+          name: "Source audio " + (index + 2),
+          role: "Original",
+          muted: extra.muted,
+          gain: extra.gainDb,
+          removable: false,
+          color: "var(--audio-clip-fill)",
+        });
+        trackNumber += 1;
+      });
     }
     state.tracks.forEach((track, index) => {
       rows.push({
@@ -588,10 +620,7 @@ export function installPanels(host: PanelsHost): PanelsApi {
       appendMixerRow(mixerHost, row);
     });
 
-    const bindTracks: Array<{ id: string }> = state.tracks.map((track) => ({
-      id: track.id,
-    }));
-    if (clip.probeData && clip.probeData.has_audio) bindTracks.push({ id: "source" });
+    const bindTracks: Array<{ id: string }> = rows.map((row) => ({ id: row.id }));
     bindTracks.forEach((track) => {
       const row = Array.prototype.find.call(
         mixerHost.querySelectorAll(".mixer-row"),
@@ -605,7 +634,9 @@ export function installPanels(host: PanelsHost): PanelsApi {
       const removeBtn = row.querySelector(".mixer-remove");
       if (muteButton instanceof HTMLElement) {
         muteButton.addEventListener("click", () => {
+          const streamIndex = sourceTrackIndex(track.id);
           if (track.id === "source") host.AudioTimeline?.toggleSourceMute();
+          else if (streamIndex) host.AudioTimeline?.toggleSourceTrackMute(streamIndex);
           else host.AudioTimeline?.toggleTrackMute(track.id);
         });
       }
@@ -616,8 +647,7 @@ export function installPanels(host: PanelsHost): PanelsApi {
         slider.addEventListener("input", () => {
           const output = row.querySelector(".mixer-db");
           if (output) output.textContent = formatGainDb(slider.value);
-          if (track.id === "source") host.AudioTimeline?.setSourceGain(slider.value);
-          else host.AudioTimeline?.setTrackGain(track.id, slider.value);
+          setGain(track.id, slider.value);
         });
         slider.addEventListener("change", () => {
           host.History?.commit();
@@ -628,8 +658,7 @@ export function installPanels(host: PanelsHost): PanelsApi {
           slider.value = "0";
           const output = row.querySelector(".mixer-db");
           if (output) output.textContent = formatGainDb(0);
-          if (track.id === "source") host.AudioTimeline?.setSourceGain(0);
-          else host.AudioTimeline?.setTrackGain(track.id, 0);
+          setGain(track.id, 0);
           host.History?.commit();
         });
       }

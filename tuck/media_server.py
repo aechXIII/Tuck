@@ -588,16 +588,19 @@ class MediaServer:
                 return None
 
     def generate_waveform(
-        self, file_path: str | Path, timeout: float = _WAVEFORM_TIMEOUT
+        self, file_path: str | Path, timeout: float = _WAVEFORM_TIMEOUT, *, track: int = 0
     ) -> str | None:
         file_path = Path(file_path).resolve()
         if not file_path.is_file() or self._thumb_dir is None:
             return None
 
         stat = file_path.stat()
+        # the first track keeps the key it always had, so its cached pictures stay valid
+        track_key = f":a{track}" if track else ""
         cache_key = hashlib.sha256(
             (
                 f"waveform:v{_WAVEFORM_CACHE_VERSION}:{file_path}:{stat.st_size}:{stat.st_mtime_ns}"
+                f"{track_key}"
             ).encode()
         ).hexdigest()[:32]
         waveform_path = self._thumb_dir / f"waveform_{cache_key}.png"
@@ -611,7 +614,7 @@ class MediaServer:
             return None
 
         try:
-            if not _run_waveform_ffmpeg(ffmpeg, file_path, waveform_path, timeout):
+            if not _run_waveform_ffmpeg(ffmpeg, file_path, waveform_path, timeout, track):
                 return None
             return _cached_file_or_none(waveform_path)
         except (OSError, subprocess.TimeoutExpired) as exc:
@@ -626,9 +629,11 @@ class _WaveformLevels(NamedTuple):
     width: int
 
 
-def _run_waveform_ffmpeg(ffmpeg: str, file_path: Path, waveform_path: Path, timeout: float) -> bool:
+def _run_waveform_ffmpeg(
+    ffmpeg: str, file_path: Path, waveform_path: Path, timeout: float, track: int = 0
+) -> bool:
     started = time.monotonic()
-    levels = _waveform_levels(ffmpeg, file_path, timeout)
+    levels = _waveform_levels(ffmpeg, file_path, timeout, track)
     remaining_timeout = max(0.1, timeout - (time.monotonic() - started))
     gain_filter = f"volume={levels.gain_db:g}dB," if levels.gain_db > 0 else ""
     command = [
@@ -641,7 +646,7 @@ def _run_waveform_ffmpeg(ffmpeg: str, file_path: Path, waveform_path: Path, time
         str(file_path),
         "-filter_complex",
         (
-            "aformat=channel_layouts=mono,"
+            f"[0:a:{track}]aformat=channel_layouts=mono,"
             f"{gain_filter}"
             # a solid white shape on transparency; the timeline uses it as a mask and colours it
             f"showwavespic=s={levels.width}x{_WAVEFORM_HEIGHT}:"
@@ -670,7 +675,9 @@ def _run_waveform_ffmpeg(ffmpeg: str, file_path: Path, waveform_path: Path, time
     return True
 
 
-def _waveform_levels(ffmpeg: str, file_path: Path, timeout: float) -> _WaveformLevels:
+def _waveform_levels(
+    ffmpeg: str, file_path: Path, timeout: float, track: int = 0
+) -> _WaveformLevels:
     """Measures the audio once to pick how its waveform is drawn and how wide it is.
 
     A failed measurement falls back to the square-root peak drawing at the smallest width.
@@ -685,7 +692,7 @@ def _waveform_levels(ffmpeg: str, file_path: Path, timeout: float) -> _WaveformL
         "-i",
         str(file_path),
         "-map",
-        "0:a:0",
+        f"0:a:{track}",
         "-af",
         "aformat=channel_layouts=mono,volumedetect",
         "-f",

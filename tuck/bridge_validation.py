@@ -12,6 +12,7 @@ from .models import (
     PlanRequest,
     PlanValidationError,
     Segment,
+    SourceTrackSetting,
     VideoTransform,
 )
 from .models.encoding_policy import (
@@ -184,6 +185,15 @@ def _parse_audio_tracks(
     return tracks
 
 
+def _parse_source_track_settings(raw: dict[str, Any]) -> list[SourceTrackSetting] | None:
+    if "source_audio_extra_tracks" not in raw:
+        return None
+    value = raw["source_audio_extra_tracks"]
+    if not isinstance(value, list):
+        raise ValueError("source_audio_extra_tracks must be an array")
+    return [SourceTrackSetting.from_dict(item) for item in value]
+
+
 def parse_plan_request(
     raw: dict[str, Any],
     validate_path_fn: Callable[[str], str],
@@ -222,6 +232,7 @@ def parse_plan_request(
         source_audio_muted=_opt_bool(raw, "source_audio_muted"),
         source_audio_gain_db=_opt_float(raw, "source_audio_gain_db"),
         source_audio_segments=_parse_optional_segments(raw, "source_audio_segments"),
+        source_audio_extra_tracks=_parse_source_track_settings(raw),
         audio_tracks=_parse_audio_tracks(raw, validate_path_fn),
         scaler=_opt_str(raw, "scaler"),
         video_encoder=_opt_str(raw, "video_encoder"),

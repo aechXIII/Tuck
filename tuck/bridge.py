@@ -283,11 +283,16 @@ class BridgeAPI:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
-    def get_waveform(self, path: str) -> BridgeResult:
+    def get_waveform(self, path: str, track: int = 0) -> BridgeResult:
         try:
             path = self._validate_path(path)
-            self._probe_audio_once(path)
-            waveform = self._media_server.generate_waveform(path)
+            if isinstance(track, bool) or not isinstance(track, int) or track < 0:
+                raise ValueError("track must be a whole number >= 0")
+            if track == 0:
+                self._probe_audio_once(path)
+            elif track >= self._probe_once(path).audio_stream_count:
+                raise ValueError(f"This video has no audio track {track + 1}")
+            waveform = self._media_server.generate_waveform(path, track=track)
             if not waveform:
                 return {"ok": False, "error": "Could not generate audio waveform"}
             token = self._media_server.register_file(waveform)

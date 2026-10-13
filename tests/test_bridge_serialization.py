@@ -152,7 +152,7 @@ def test_plan_and_queue_carry_warnings_and_the_encoder_that_ran() -> None:
         output="out.mp4",
         source_info=info,
         tone_map_hdr=True,
-        warnings=["This video has 2 audio tracks. Only the first is kept."],
+        warnings=["Subtitles aren't kept when the video is cut into several parts."],
     )
     item = QueueItem(
         plan=plan,
@@ -164,7 +164,9 @@ def test_plan_and_queue_carry_warnings_and_the_encoder_that_ran() -> None:
     assert video_info_dict(info)["audio_stream_count"] == 2
     preview = plan_preview_dict(plan)
     assert preview["tone_map_hdr"] is True
-    assert preview["warnings"] == ["This video has 2 audio tracks. Only the first is kept."]
+    assert preview["warnings"] == [
+        "Subtitles aren't kept when the video is cut into several parts."
+    ]
     queued = queue_item_dict(item)
     assert queued["warnings"] == preview["warnings"]
     assert queued["effective_encoder"] == "libx264"

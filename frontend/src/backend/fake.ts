@@ -67,10 +67,10 @@ class DeterministicFakeBackend implements BackendClient {
     );
   }
 
-  getWaveform(path: string) {
+  getWaveform(path: string, track?: number) {
     return this.#record(
       "getWaveform",
-      [path],
+      track ? [path, track] : [path],
       this.#responses.getWaveform ?? success({ url: "" }),
     );
   }

@@ -264,6 +264,8 @@ class VideoInfo:
     # 0 when the reader didn't report it
     average_fps: float = 0.0
     audio_stream_count: int = 0
+    # codec of each audio track, in file order; empty when the reader didn't list them
+    audio_codecs: list[str] = field(default_factory=list)
     # codec of each subtitle track, in file order
     subtitle_codecs: list[str] = field(default_factory=list)
 
@@ -555,6 +557,58 @@ class AudioTrack:
         return track
 
 
+def _validate_gain_db(name: str, value: object) -> None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{name} must be a number")
+    if not math.isfinite(float(value)) or value < -60 or value > 12:
+        raise ValueError(f"{name} must be between -60 and 12")
+
+
+# more tracks than any recording has, so a request can't ask for unbounded work
+MAX_SOURCE_AUDIO_TRACKS = 64
+
+
+@dataclass(frozen=True)
+class SourceTrackSetting:
+    """Mute and volume of one of the source's audio tracks after the first"""
+
+    muted: bool = False
+    gain_db: float = 0.0
+
+    @classmethod
+    def from_dict(cls, data: object) -> SourceTrackSetting:
+        if not isinstance(data, dict):
+            raise ValueError("source audio track settings must be objects")
+        unknown = set(data) - {"muted", "gain_db"}
+        if unknown:
+            raise ValueError(f"unknown source audio track field: {sorted(unknown)[0]}")
+        muted = data.get("muted", False)
+        if not isinstance(muted, bool):
+            raise ValueError("source audio track muted must be a boolean")
+        gain_db = data.get("gain_db", 0.0)
+        _validate_gain_db("source audio track gain_db", gain_db)
+        return cls(muted=muted, gain_db=float(gain_db))
+
+
+@dataclass(frozen=True)
+class SourceAudioTrack:
+    """A source audio track the export keeps, by its place among the source's audio tracks"""
+
+    index: int
+    gain_db: float = 0.0
+
+    @classmethod
+    def from_dict(cls, data: object) -> SourceAudioTrack:
+        if not isinstance(data, dict):
+            raise ValueError("source_audio_tracks items must be objects")
+        index = data.get("index")
+        if isinstance(index, bool) or not isinstance(index, int) or index < 0:
+            raise ValueError("source audio track index must be a whole number >= 0")
+        gain_db = data.get("gain_db", 0.0)
+        _validate_gain_db("source audio track gain_db", gain_db)
+        return cls(index=index, gain_db=float(gain_db))
+
+
 def validate_audio_tracks(
     tracks: list[AudioTrack],
     timeline_duration: float | None = None,
@@ -682,6 +736,8 @@ class PlanRequest:
     source_audio_muted: bool | None = None
     source_audio_gain_db: float | None = None
     source_audio_segments: list[Segment] | None = None
+    # the source's second audio track onwards; source_audio_muted and _gain_db cover the first
+    source_audio_extra_tracks: list[SourceTrackSetting] | None = None
     audio_tracks: list[AudioTrack] | None = None
 
     scaler: str | None = None
@@ -801,6 +857,15 @@ class PlanRequest:
                 or self.source_audio_gain_db > 12
             ):
                 raise ValueError("source_audio_gain_db must be between -60 and 12")
+        if self.source_audio_extra_tracks is not None:
+            if not isinstance(self.source_audio_extra_tracks, list):
+                raise ValueError("source_audio_extra_tracks must be an array")
+            if len(self.source_audio_extra_tracks) > MAX_SOURCE_AUDIO_TRACKS:
+                raise ValueError("source_audio_extra_tracks has too many tracks")
+            if not all(
+                isinstance(item, SourceTrackSetting) for item in self.source_audio_extra_tracks
+            ):
+                raise ValueError("source_audio_extra_tracks items must be track settings")
         if self.audio_tracks is not None:
             if not isinstance(self.audio_tracks, list):
                 raise ValueError("audio_tracks must be an array")
@@ -868,6 +933,10 @@ class EncodePlan:
     source_audio_muted: bool = False
     source_audio_gain_db: float = 0.0
     source_audio_segments: list[Segment] | None = None
+    # the source audio tracks the export keeps, each as its own output track with its own
+    # volume; added audio is mixed into the first. None is a plan from before tracks were
+    # chosen, which keeps the first one only
+    source_audio_tracks: list[SourceAudioTrack] | None = None
     audio_tracks: list[AudioTrack] = field(default_factory=list)
     two_pass: bool = True
     preset: str = "medium"
@@ -930,6 +999,19 @@ class EncodePlan:
         full = float(self.source_info.duration) if self.source_info is not None else 0.0
         return bool(full > 0 and segment.end < full - 0.001)
 
+    @property
+    def kept_source_tracks(self) -> list[SourceAudioTrack]:
+        if self.source_audio_tracks is not None:
+            return list(self.source_audio_tracks)
+        if self.source_audio_muted:
+            return []
+        return [SourceAudioTrack(0, self.source_audio_gain_db)]
+
+    @property
+    def total_audio_bitrate(self) -> int:
+        """audio_bitrate is per track, and each kept source audio track is written at it"""
+        return self.audio_bitrate * max(1, len(self.kept_source_tracks))
+
     def to_dict(self) -> dict[str, Any]:
         import dataclasses
 
@@ -949,6 +1031,7 @@ class EncodePlan:
         transform_data = data.pop("transform", None)
         segments_data = data.pop("segments", None)
         source_audio_segments_data = data.pop("source_audio_segments", None)
+        source_audio_tracks_data = data.pop("source_audio_tracks", None)
         audio_tracks_data = data.pop("audio_tracks", None)
         for field_name, default in [
             ("resolution_mode", RES_MODE_SOURCE),
@@ -1012,6 +1095,12 @@ class EncodePlan:
                     plan.source_audio_segments,
                     float(plan.source_info.duration) if plan.source_info is not None else None,
                 )
+        if source_audio_tracks_data is not None:
+            if not isinstance(source_audio_tracks_data, list):
+                raise ValueError("source_audio_tracks must be an array")
+            plan.source_audio_tracks = [
+                SourceAudioTrack.from_dict(item) for item in source_audio_tracks_data
+            ]
         if audio_tracks_data is not None:
             if not isinstance(audio_tracks_data, list):
                 raise ValueError("audio_tracks must be an array")

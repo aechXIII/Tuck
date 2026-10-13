@@ -340,7 +340,10 @@ export function installEditorRuntime(
       trackColor: audio.trackColor,
       toggleSourceMute: audio.toggleSourceMute,
       toggleTrackMute: audio.toggleTrackMute,
+      toggleSourceTrackMute: audio.toggleSourceTrackMute,
       setSourceGain: (value) => audio.setSourceGain(Number(value)),
+      setSourceTrackGain: (streamIndex, value) =>
+        audio.setSourceTrackGain(streamIndex, Number(value)),
       setTrackGain: (trackId, value) => audio.setTrackGain(trackId, Number(value)),
       removeTrack: audio.removeTrack,
       getSelectedClipRange: panelAudioRange,

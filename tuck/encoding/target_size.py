@@ -68,7 +68,9 @@ def calculate_target_size_bitrates(
     hardware_encoder: bool = False,
     min_video_bitrate: int = MIN_VIDEO_BITRATE,
     overhead_factor: float = AUDIO_OVERHEAD_FACTOR,
+    audio_tracks: int = 1,
 ) -> TargetSizePlan:
+    """audio_bitrate, in and out, is per track; the audio budget covers all of them"""
     if duration_s <= 0:
         raise ValueError(f"Invalid encode duration for target size: {duration_s:.3f}s")
     if target_size < 1024:
@@ -82,14 +84,14 @@ def calculate_target_size_bitrates(
             f"Target size ({format_size(target_size)}) is too small after applying a safety margin."
         )
 
+    tracks = max(1, audio_tracks)
     audio_br = min(max(int(audio_bitrate), 0), MAX_AUDIO_BITRATE)
-    audio_size = (audio_br / 8.0) * duration_s
+    audio_size = (audio_br * tracks / 8.0) * duration_s
 
     max_audio_budget = effective_target * 0.15
     if audio_br > 0 and audio_size > max_audio_budget:
-        audio_size = max_audio_budget
-        audio_br = max(8_000, int((audio_size * 8.0) / duration_s))
-        audio_size = (audio_br / 8.0) * duration_s
+        audio_br = max(8_000, int((max_audio_budget * 8.0) / duration_s / tracks))
+        audio_size = (audio_br * tracks / 8.0) * duration_s
 
     video_size_budget = effective_target - audio_size
     if video_size_budget <= 0:

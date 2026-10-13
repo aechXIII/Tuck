@@ -27,6 +27,8 @@ from tuck.models import (
     RCM_VBR,
     WORKFLOW_COMPRESSION,
     WORKFLOW_UPSCALE,
+    AudioClip,
+    AudioTrack,
     CropRect,
     EncodePlan,
     EncodeProgress,
@@ -35,6 +37,7 @@ from tuck.models import (
     PlanRequest,
     Profile,
     Segment,
+    SourceAudioTrack,
     VideoInfo,
     VideoTransform,
 )
@@ -2300,6 +2303,58 @@ class TestStreamMapping:
         assert "[0:a:0]" in graph
         assert "[0:a]" not in graph
 
+    def test_added_audio_is_mixed_into_the_first_track_only(self, tmp_path):
+        music = AudioTrack(
+            "music",
+            "Music",
+            [AudioClip(str(tmp_path / "music.wav"), 0.0, 0.0, 1.0, 1.0)],
+        )
+        plan = _small_plan(
+            tmp_path / "in.mkv",
+            tmp_path / "out.mp4",
+            source_audio_tracks=[SourceAudioTrack(0), SourceAudioTrack(1)],
+            audio_tracks=[music],
+        )
+        cmd = build_base_cmd("ffmpeg", plan, Path(plan.source))
+        assert _maps(cmd) == ["[vout]", "[aout]", "[aout1]"]
+        parts = cmd[cmd.index("-filter_complex") + 1].split(";")
+        first = next(part for part in parts if part.endswith("[aout]"))
+        second = next(part for part in parts if part.endswith("[aout1]"))
+        assert first.startswith("[mix0][mix1]amix=inputs=2")
+        assert any(part.startswith("[1:a:0]") and part.endswith("[mix1]") for part in parts)
+        assert second == "[t1mix0]anull[aout1]"
+        assert any(part.startswith("[0:a:1]") and part.endswith("[t1sa0]") for part in parts)
+
+    def test_each_source_track_gets_its_own_volume(self, tmp_path):
+        plan = _small_plan(
+            tmp_path / "in.mkv",
+            tmp_path / "out.mp4",
+            source_audio_muted=True,
+            source_audio_gain_db=-12.0,
+            source_audio_tracks=[SourceAudioTrack(1, 3.0), SourceAudioTrack(2)],
+        )
+        cmd = build_base_cmd("ffmpeg", plan, Path(plan.source))
+        assert _maps(cmd) == ["[vout]", "[aout]", "[aout1]"]
+        parts = cmd[cmd.index("-filter_complex") + 1].split(";")
+        second = next(part for part in parts if part.startswith("[0:a:1]"))
+        third = next(part for part in parts if part.startswith("[0:a:2]"))
+        assert not any(part.startswith("[0:a:0]") for part in parts)
+        assert any(part.startswith("[sa0]volume=3.00dB") for part in parts)
+        assert second.endswith("[sa0]")
+        assert third.endswith("[t1sa0]")
+        assert "-12.00dB" not in cmd[cmd.index("-filter_complex") + 1]
+
+    def test_subtitles_come_after_every_audio_track(self, tmp_path):
+        info = _small_info(tmp_path / "in.mkv", subtitle_codecs=["subrip"])
+        plan = _small_plan(
+            tmp_path / "in.mkv",
+            tmp_path / "out.mp4",
+            source_info=info,
+            source_audio_tracks=[SourceAudioTrack(0), SourceAudioTrack(1)],
+        )
+        cmd = build_base_cmd("ffmpeg", plan, Path(plan.source))
+        assert _maps(cmd) == ["0:v:0", "0:a:0?", "0:a:1?", "0:s:0?"]
+
     def test_first_text_track_is_kept_as_mov_text(self, tmp_path):
         info = _small_info(tmp_path / "in.mkv", subtitle_codecs=["hdmv_pgs_subtitle", "subrip"])
         plan = _small_plan(tmp_path / "in.mkv", tmp_path / "out.mp4", source_info=info)
@@ -2419,22 +2474,102 @@ class TestRealExports:
             data = _run_ffprobe_json(ffprobe, source, "probing")
             assert data["format"]["filename"] == str(source)
 
-    def test_only_the_first_audio_track_is_encoded(self, tmp_path):
+    @pytest.mark.parametrize(
+        ("segments", "gain", "source_audio_segments"),
+        [
+            # no edits, so the tracks are mapped straight through
+            (None, 0.0, None),
+            # cut, with the first track joined to the video concat
+            ([Segment(0.0, 0.4), Segment(0.6, 1.0)], 0.0, None),
+            # cut with a volume change, through the source audio chain
+            ([Segment(0.0, 0.4), Segment(0.6, 1.0)], -3.0, None),
+            # source audio split apart from the video
+            ([Segment(0.0, 1.0)], 0.0, [Segment(0.0, 0.3), Segment(0.6, 1.0)]),
+        ],
+    )
+    def test_every_audio_track_is_encoded(self, tmp_path, segments, gain, source_audio_segments):
         ffmpeg = _ffmpeg_or_skip()
         source = tmp_path / "tracks.mkv"
         _make_clip(
             ffmpeg,
             source,
             *("-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", "-ac:a:1", "6"),
-            audio_tracks=2,
+            audio_tracks=3,
         )
         info = probe(source)
-        assert info.audio_stream_count == 2
+        assert info.audio_stream_count == 3
+        assert info.audio_codecs == ["aac", "aac", "aac"]
         output = FFmpegEngine().encode(
-            _small_plan(source, tmp_path / "out.mp4", source_info=info, audio_channels=2)
+            _small_plan(
+                source,
+                tmp_path / "out.mp4",
+                source_info=info,
+                audio_channels=2,
+                source_audio_tracks=[SourceAudioTrack(index, gain) for index in range(3)],
+                segments=segments or [],
+                source_audio_segments=source_audio_segments,
+            )
         )
-        streams = _probe_streams(output, "-show_entries", "stream=codec_type")
-        assert streams.count("audio") == 1
+        durations = _probe_streams(
+            output, "-select_streams", "a", "-show_entries", "stream=duration"
+        )
+        expected = sum(segment.duration for segment in segments) if segments else 1.0
+        assert len(durations) == 3
+        for duration in durations:
+            assert float(duration) == pytest.approx(expected, abs=0.1)
+
+    def test_copied_audio_tracks_keep_their_order(self, tmp_path):
+        ffmpeg = _ffmpeg_or_skip()
+        source = tmp_path / "tracks.mkv"
+        _make_clip(
+            ffmpeg,
+            source,
+            *("-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", "-ac:a:1", "6"),
+            audio_tracks=3,
+        )
+        info = probe(source)
+        output = FFmpegEngine().encode(
+            _small_plan(
+                source,
+                tmp_path / "out.mp4",
+                source_info=info,
+                copy_audio=True,
+                source_audio_tracks=[SourceAudioTrack(index) for index in range(3)],
+            )
+        )
+        channels = _probe_streams(
+            output, "-select_streams", "a", "-show_entries", "stream=channels"
+        )
+        assert channels == ["1", "6", "1"]
+
+    @pytest.mark.parametrize("copy_audio", [True, False])
+    def test_muted_source_tracks_are_left_out(self, tmp_path, copy_audio):
+        ffmpeg = _ffmpeg_or_skip()
+        source = tmp_path / "tracks.mkv"
+        _make_clip(
+            ffmpeg,
+            source,
+            *("-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", "-ac:a:1", "6"),
+            audio_tracks=3,
+        )
+        info = probe(source)
+        # the first track is muted; cutting and turning the third down sends both through filters
+        overrides = (
+            {"copy_audio": True, "source_audio_tracks": [SourceAudioTrack(1), SourceAudioTrack(2)]}
+            if copy_audio
+            else {
+                "audio_channels": 2,
+                "segments": [Segment(0.0, 0.4), Segment(0.6, 1.0)],
+                "source_audio_tracks": [SourceAudioTrack(1), SourceAudioTrack(2, -6.0)],
+            }
+        )
+        output = FFmpegEngine().encode(
+            _small_plan(source, tmp_path / "out.mp4", source_info=info, **overrides)
+        )
+        channels = _probe_streams(
+            output, "-select_streams", "a", "-show_entries", "stream=channels"
+        )
+        assert channels == (["6", "1"] if copy_audio else ["2", "2"])
 
     @pytest.mark.parametrize(
         ("container", "codec", "segments", "gain"),

@@ -13,6 +13,7 @@ from tuck.models import (
     PlanRequest,
     Profile,
     Segment,
+    SourceTrackSetting,
     VideoInfo,
     map_source_range_to_output,
     source_audio_output_pieces,
@@ -353,3 +354,43 @@ def test_encode_plan_round_trip_preserves_source_audio_segments() -> None:
     restored = EncodePlan.from_dict(original.to_dict())
 
     assert restored.source_audio_segments == original.source_audio_segments
+
+
+def test_bridge_reads_the_settings_of_the_other_source_tracks(tmp_path: Path) -> None:
+    video = tmp_path / "video.mkv"
+    video.write_bytes(b"video")
+
+    request = parse_plan_request(
+        {
+            "source": str(video),
+            "source_audio_extra_tracks": [{"muted": True}, {"gain_db": -3.5}, {}],
+        },
+        lambda path: str(Path(path).resolve()),
+    )
+
+    assert request.source_audio_extra_tracks == [
+        SourceTrackSetting(muted=True),
+        SourceTrackSetting(gain_db=-3.5),
+        SourceTrackSetting(),
+    ]
+
+
+@pytest.mark.parametrize(
+    "tracks",
+    [
+        {"muted": True},
+        [{"muted": "yes"}],
+        [{"gain_db": 40}],
+        [{"gain_db": float("nan")}],
+        [{"volume": 1}],
+        [{}] * 65,
+    ],
+)
+def test_bridge_rejects_bad_source_track_settings(tmp_path: Path, tracks: object) -> None:
+    video = tmp_path / "video.mkv"
+    video.write_bytes(b"video")
+    with pytest.raises(ValueError):
+        parse_plan_request(
+            {"source": str(video), "source_audio_extra_tracks": tracks},
+            lambda path: str(Path(path).resolve()),
+        ).validate()

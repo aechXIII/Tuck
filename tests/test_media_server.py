@@ -2,6 +2,7 @@ import hashlib
 import socket
 import subprocess
 import threading
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from urllib.error import HTTPError
@@ -760,6 +761,33 @@ class TestMediaServer:
         assert "colors=0xffffff" in waveform_filter
         assert "draw=full" in waveform_filter
 
+    def test_each_audio_track_has_its_own_waveform(self, tmp_path, monkeypatch):
+        source = tmp_path / "recording.mkv"
+        source.write_bytes(b"video")
+        server = MediaServer()
+        server.set_thumbnail_cache_dir(tmp_path / "thumbs")
+        monkeypatch.setattr("tuck.media_server.find_ffmpeg", lambda: "ffmpeg")
+        calls = []
+
+        def fake_run(command, **_kwargs):
+            calls.append(command)
+            if "volumedetect" in " ".join(command):
+                return SimpleNamespace(returncode=0, stderr=b"max_volume: -12.0 dB")
+            Path(command[-1]).write_bytes(b"png")
+            return SimpleNamespace(returncode=0, stderr=b"")
+
+        monkeypatch.setattr("tuck.media_server.subprocess.run", fake_run)
+
+        first = server.generate_waveform(source)
+        second = server.generate_waveform(source, track=1)
+
+        assert first is not None and second is not None and first != second
+        assert len(calls) == 4
+        assert calls[0][calls[0].index("-map") + 1] == "0:a:0"
+        assert calls[1][calls[1].index("-filter_complex") + 1].startswith("[0:a:0]")
+        assert calls[2][calls[2].index("-map") + 1] == "0:a:1"
+        assert calls[3][calls[3].index("-filter_complex") + 1].startswith("[0:a:1]")
+
     def test_generate_waveform_ignores_legacy_linear_cache(self, tmp_path, monkeypatch):
         source = tmp_path / "quiet-video.mp4"
         source.write_bytes(b"video")
@@ -917,3 +945,34 @@ class TestBridgeMediaIntegration:
         api = BridgeAPI()
         resp = api.release_media_token(None)  # type: ignore[arg-type]
         assert resp["ok"]
+
+
+class TestWaveformTracks:
+    def test_bridge_refuses_an_audio_track_the_video_does_not_have(self, tmp_path, monkeypatch):
+        import tuck.settings as settings_mod
+
+        monkeypatch.setattr(settings_mod, "_config_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
+        monkeypatch.setattr("tuck.bridge.get_media_server", MediaServer)
+
+        from tuck.bridge import BridgeAPI
+        from tuck.models import VideoInfo
+
+        api = BridgeAPI()
+        video = tmp_path / "recording.mkv"
+        video.write_bytes(b"video")
+        info = VideoInfo(str(video), 1.0, 320, 240, 25.0, "h264", has_audio=True)
+        monkeypatch.setattr(api, "_probe_once", lambda _path: replace(info, audio_stream_count=2))
+        asked = []
+        monkeypatch.setattr(
+            api._media_server,
+            "generate_waveform",
+            lambda path, *, track: asked.append(track) or None,
+        )
+
+        missing = api.get_waveform(str(video), 2)
+        assert missing == {"ok": False, "error": "This video has no audio track 3"}
+        assert api.get_waveform(str(video), -1)["ok"] is False
+        assert api.get_waveform(str(video), 1)["ok"] is False
+        assert asked == [1]

@@ -11,6 +11,7 @@ export interface ProbeData {
   readonly height?: number;
   readonly fps?: number;
   readonly has_audio?: boolean;
+  readonly audio_stream_count?: number;
   readonly format?: string;
   readonly video_codec?: string;
   readonly audio_codec?: string;
@@ -50,6 +51,16 @@ export interface AudioTrack {
   [key: string]: unknown;
 }
 
+// one of the source's audio tracks after the first; it follows the source audio edits and
+// is exported as its own track
+export interface SourceAudioTrackState {
+  muted: boolean;
+  gainDb: number;
+  waveformUrl: string;
+  waveformToken: string;
+  waveformLoading: boolean;
+}
+
 export interface AudioTimelineState {
   enabled: boolean;
   sourceMuted: boolean;
@@ -57,6 +68,8 @@ export interface AudioTimelineState {
   sourceWaveformUrl: string;
   sourceWaveformToken: string;
   sourceWaveformLoading: boolean;
+  // the source's second audio track onwards, filled in once the video is probed
+  sourceExtraTracks?: SourceAudioTrackState[];
   tracks: AudioTrack[];
 }
 

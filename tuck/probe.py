@@ -299,9 +299,11 @@ def _video_info(source: Path, file_size: int, data: dict) -> VideoInfo:
     variable_frame_rate = (
         True if nominal_fps and average_fps and abs(nominal_fps - average_fps) > 0.001 else None
     )
-    audio_stream_count = sum(
-        1 for stream in data.get("streams", []) if stream.get("codec_type") == "audio"
-    )
+    audio_codecs = [
+        str(stream.get("codec_name", ""))
+        for stream in data.get("streams", [])
+        if stream.get("codec_type") == "audio"
+    ]
     subtitle_codecs = [
         str(stream.get("codec_name", ""))
         for stream in data.get("streams", [])
@@ -311,7 +313,8 @@ def _video_info(source: Path, file_size: int, data: dict) -> VideoInfo:
     return VideoInfo(
         variable_frame_rate=variable_frame_rate,
         average_fps=average_fps or 0.0,
-        audio_stream_count=audio_stream_count,
+        audio_stream_count=len(audio_codecs),
+        audio_codecs=audio_codecs,
         subtitle_codecs=subtitle_codecs,
         sample_aspect_ratio=video_stream.get("sample_aspect_ratio", "1:1"),
         pixel_format=video_stream.get("pix_fmt", ""),

@@ -29,6 +29,7 @@ from tuck.models import (
     QueueItem,
     QueueState,
     Segment,
+    SourceAudioTrack,
     VideoInfo,
     VideoTransform,
     dicts_to_profiles,
@@ -102,6 +103,29 @@ class TestSegments:
         assert restored.segments == plan.segments
         assert restored.trim_start == 0
         assert restored.trim_end == 0
+
+    def test_kept_source_tracks_survive_a_saved_queue(self):
+        plan = EncodePlan(
+            source="source.mkv",
+            output="output.mp4",
+            source_audio_tracks=[SourceAudioTrack(1, -3.0), SourceAudioTrack(2)],
+        )
+        restored = EncodePlan.from_dict(plan.to_dict())
+        assert restored.source_audio_tracks == plan.source_audio_tracks
+        assert restored.kept_source_tracks == plan.source_audio_tracks
+
+    @pytest.mark.parametrize(("muted", "kept"), [(False, [SourceAudioTrack(0, -2.0)]), (True, [])])
+    def test_plans_saved_before_track_choice_keep_the_first_track(self, muted, kept):
+        data = EncodePlan(
+            source="source.mkv",
+            output="output.mp4",
+            source_audio_muted=muted,
+            source_audio_gain_db=-2.0,
+        ).to_dict()
+        data.pop("source_audio_tracks")
+        restored = EncodePlan.from_dict(data)
+        assert restored.source_audio_tracks is None
+        assert restored.kept_source_tracks == kept
 
     def test_stored_legacy_trim_plan_becomes_canonical(self):
         data = EncodePlan(

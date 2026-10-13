@@ -14,6 +14,10 @@ class RecordingApi:
         self.calls.append(("probe_file", path))
         return {"ok": True, "data": {"path": path}}
 
+    def get_waveform(self, path: str, track: int = 0) -> dict[str, object]:
+        self.calls.append(("get_waveform", (path, track)))
+        return {"ok": True, "url": "http://127.0.0.1/w", "token": "t"}
+
     def move_item(self, item_id: str, new_index: int) -> dict[str, object]:
         self.calls.append(("move_item", (item_id, new_index)))
         return {"ok": True}
@@ -230,3 +234,17 @@ def test_refused_retry_keeps_its_code_for_the_page(monkeypatch) -> None:
         assert error.message.startswith("This video changed")
     # only declared codes pass through
     assert retry_refused_with("disk_on_fire").code != "DISK_ON_FIRE"
+
+
+def test_waveform_takes_an_optional_audio_track() -> None:
+    api = RecordingApi()
+
+    first = dispatch(api, _request("get_waveform", {"path": "C:/clip.mkv"}))
+    second = dispatch(api, _request("get_waveform", {"path": "C:/clip.mkv", "track": 2}))
+
+    assert first.ok is True and second.ok is True
+    assert api.calls == [("get_waveform", ("C:/clip.mkv", 0)), ("get_waveform", ("C:/clip.mkv", 2))]
+    for track in (-1, "2", True, 1.5, None):
+        response = dispatch(api, _request("get_waveform", {"path": "C:/clip.mkv", "track": track}))
+        assert response.ok is False
+    assert len(api.calls) == 2

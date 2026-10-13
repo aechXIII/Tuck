@@ -31,6 +31,9 @@ pub enum BackendCommand {
     },
     GetWaveform {
         path: String,
+        // a video's second audio track is 1; the first is asked for without it
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        track: Option<u32>,
     },
     GetThumbnail {
         path: String,
@@ -165,7 +168,13 @@ impl BackendCommand {
             Self::Health => ("health", json!({})),
             Self::ProbeFile { path } => ("probe_file", json!({ "path": path })),
             Self::ProbeAudioFile { path } => ("probe_audio_file", json!({ "path": path })),
-            Self::GetWaveform { path } => ("get_waveform", json!({ "path": path })),
+            Self::GetWaveform { path, track } => {
+                let mut payload = json!({ "path": path });
+                if let Some(track) = track {
+                    payload["track"] = json!(track);
+                }
+                ("get_waveform", payload)
+            }
             Self::GetThumbnail { path } => ("get_thumbnail", json!({ "path": path })),
             Self::GetMediaUrl { path } => ("get_media_url", json!({ "path": path })),
             Self::ReleaseMediaToken { token } => ("release_media_token", json!({ "token": token })),
@@ -419,6 +428,38 @@ mod tests {
         .to_sidecar_request("r2")
         .unwrap();
         assert_eq!(plain["params"], json!({"path": "/media/a.mp4"}));
+    }
+
+    #[test]
+    fn waveform_forwards_the_audio_track_only_when_given() {
+        let second = serde_json::from_value::<BackendCommand>(json!({
+            "command": "get_waveform",
+            "payload": {"path": "/media/a.mkv", "track": 1},
+        }))
+        .unwrap()
+        .to_sidecar_request("r1")
+        .unwrap();
+        assert_eq!(
+            second["params"],
+            json!({"path": "/media/a.mkv", "track": 1})
+        );
+
+        let first = serde_json::from_value::<BackendCommand>(json!({
+            "command": "get_waveform",
+            "payload": {"path": "/media/a.mkv"},
+        }))
+        .unwrap()
+        .to_sidecar_request("r2")
+        .unwrap();
+        assert_eq!(first["params"], json!({"path": "/media/a.mkv"}));
+
+        for track in [json!(-1), json!("1"), json!(1.5)] {
+            assert!(serde_json::from_value::<BackendCommand>(json!({
+                "command": "get_waveform",
+                "payload": {"path": "/media/a.mkv", "track": track},
+            }))
+            .is_err());
+        }
     }
 
     #[test]

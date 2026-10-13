@@ -586,7 +586,7 @@ class FFmpegEngine:
         if effective_duration <= 0 and plan.source_info is not None:
             effective_duration = float(plan.source_info.duration or 0)
 
-        audio_size = (plan.audio_bitrate / 8) * effective_duration
+        audio_size = (plan.total_audio_bitrate / 8) * effective_duration
         video_size = (plan.video_bitrate / 8) * effective_duration
         overhead = plan.target_size * AUDIO_OVERHEAD_FACTOR
         plan.estimated_size = int(video_size + audio_size + overhead)

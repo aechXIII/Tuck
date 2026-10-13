@@ -387,3 +387,29 @@ test("plan warnings are optional and must be plain sentences when present", asyn
   assert.equal((await plan({ warnings: "HDR" }).createPlan({ source: "s" })).ok, false);
   assert.equal((await plan({ warnings: [1] }).createPlan({ source: "s" })).ok, false);
 });
+
+test("waveform requests name the audio track only after the first", async () => {
+  const payloads: unknown[] = [];
+  const client = createTauriBackendClient(async (_command, args) => {
+    payloads.push((args.command as { payload: unknown }).payload);
+    return { url: "http://127.0.0.1/w", token: "t" };
+  });
+
+  assert.deepEqual(await client.getWaveform("C:\clip.mkv"), {
+    ok: true,
+    value: { url: "http://127.0.0.1/w", token: "t" },
+  });
+  await client.getWaveform("C:\clip.mkv", 0);
+  await client.getWaveform("C:\clip.mkv", 2);
+  assert.deepEqual(payloads, [
+    { path: "C:\clip.mkv" },
+    { path: "C:\clip.mkv" },
+    { path: "C:\clip.mkv", track: 2 },
+  ]);
+});
+
+test("a waveform the backend can't make keeps its error", async () => {
+  const client = createTauriBackendClient(async () => ({ ok: false, error: "This video has no audio track 3" }));
+  const result = await client.getWaveform("C:\clip.mkv", 2);
+  assert.equal(result.ok, false);
+});

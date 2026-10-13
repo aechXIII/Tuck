@@ -27,6 +27,8 @@ from tuck.models import (
     PlanRequest,
     Profile,
     Segment,
+    SourceAudioTrack,
+    SourceTrackSetting,
     VideoInfo,
     VideoTransform,
     find_profile_by_id,
@@ -1135,22 +1137,89 @@ class TestPlanStages:
         )
         assert result.tone_map_hdr is False
 
-    def test_extra_audio_tracks_are_reported_as_dropped(self, tmp_path):
+    def test_every_audio_track_is_kept(self, tmp_path):
         source = self._source(tmp_path)
+        info = self._info(source, audio_stream_count=3, audio_codecs=["aac"] * 3)
+        result = plan(source, Profile(name="Tracks", two_pass=False), source_info=info)
+        assert result.source_audio_tracks == [
+            SourceAudioTrack(0),
+            SourceAudioTrack(1),
+            SourceAudioTrack(2),
+        ]
+        assert result.warnings == []
+
+    def test_each_source_audio_track_keeps_its_own_mute_and_volume(self, tmp_path):
+        source = self._source(tmp_path)
+        info = self._info(source, audio_stream_count=3, audio_codecs=["aac"] * 3)
+        request = PlanRequest(
+            source_audio_muted=True,
+            source_audio_extra_tracks=[SourceTrackSetting(gain_db=-6.0)],
+        )
         result = plan(
+            source, Profile(name="Tracks", two_pass=False), request=request, source_info=info
+        )
+        # the first is muted, the second turned down, and the third, which has no settings, kept
+        assert result.source_audio_tracks == [SourceAudioTrack(1, -6.0), SourceAudioTrack(2)]
+        assert result.total_audio_bitrate == 2 * result.audio_bitrate
+
+        all_muted = plan(
             source,
             Profile(name="Tracks", two_pass=False),
-            source_info=self._info(source, audio_stream_count=3),
+            request=PlanRequest(
+                source_audio_muted=True,
+                source_audio_extra_tracks=[SourceTrackSetting(muted=True)] * 2,
+            ),
+            source_info=info,
         )
-        assert result.warnings == ["This video has 3 audio tracks. Only the first is kept."]
+        assert all_muted.source_audio_tracks == []
+        assert all_muted.audio_bitrate == 0
 
-        muted = plan(
+        off = plan(
             source,
             Profile(name="Tracks", two_pass=False),
             request=PlanRequest(audio_enabled=False),
-            source_info=self._info(source, audio_stream_count=3),
+            source_info=info,
         )
-        assert muted.warnings == []
+        assert off.source_audio_tracks == []
+
+    def test_the_size_budget_pays_for_every_audio_track(self, tmp_path):
+        source = self._source(tmp_path)
+        profile = Profile(name="Size", two_pass=False, target_size_bytes=8 * 1024 * 1024)
+        one = plan(source, profile, source_info=self._info(source))
+        three = plan(
+            source,
+            profile,
+            source_info=self._info(source, audio_stream_count=3, audio_codecs=["aac"] * 3),
+        )
+        assert three.audio_bitrate == one.audio_bitrate
+        assert three.total_audio_bitrate == 3 * one.audio_bitrate
+        assert three.video_bitrate < one.video_bitrate
+        assert three.estimated_size <= profile.target_size_bytes
+
+    @pytest.mark.parametrize(
+        ("codecs", "copied"),
+        [(["aac", "aac"], True), (["aac", "pcm_s16le"], False)],
+    )
+    def test_original_audio_is_copied_only_when_every_track_can_be(self, tmp_path, codecs, copied):
+        source = self._source(tmp_path)
+        result = plan(
+            source,
+            Profile(name="Keep", two_pass=False, keep_audio=True),
+            source_info=self._info(source, audio_stream_count=2, audio_codecs=codecs),
+        )
+        assert result.copy_audio is copied
+        assert result.audio_bitrate == 128_000
+        assert len(result.source_audio_tracks or []) == 2
+
+    def test_a_volume_change_on_another_track_reencodes_the_audio(self, tmp_path):
+        source = self._source(tmp_path)
+        result = plan(
+            source,
+            Profile(name="Keep", two_pass=False, keep_audio=True),
+            request=PlanRequest(source_audio_extra_tracks=[SourceTrackSetting(gain_db=3.0)]),
+            source_info=self._info(source, audio_stream_count=2, audio_codecs=["aac", "aac"]),
+        )
+        assert result.copy_audio is False
 
     def test_one_text_subtitle_track_is_kept_without_a_warning(self, tmp_path):
         source = self._source(tmp_path)

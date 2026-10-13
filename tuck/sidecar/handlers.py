@@ -201,7 +201,13 @@ def _probe_audio_file(api: BridgeAPI, params: dict[str, object]) -> object:
 
 
 def _get_waveform(api: BridgeAPI, params: dict[str, object]) -> object:
-    return api.get_waveform(_string(params, "path"))
+    if set(params) == {"path"}:
+        return api.get_waveform(_string(params, "path"))
+    path = params.get("path")
+    track = params.get("track")
+    if set(params) != {"path", "track"} or not isinstance(path, str) or not _count(track):
+        raise _ParameterError
+    return api.get_waveform(path, track)
 
 
 def _get_thumbnail(api: BridgeAPI, params: dict[str, object]) -> object:

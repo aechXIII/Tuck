@@ -132,7 +132,8 @@ export async function installFakeBackend(
       const api = {
         probeFile: (path: string) => respond("probeFile", [path]),
         probeAudioFile: (path: string) => respond("probeAudioFile", [path]),
-        getWaveform: (path: string) => respond("getWaveform", [path]),
+        getWaveform: (path: string, track?: number) =>
+          respond("getWaveform", track ? [path, track] : [path]),
         getThumbnail: (path: string) => respond("getThumbnail", [path]),
         listLuts: () => respond("listLuts", []),
         clearLutHistory: () => respond("clearLutHistory", []),

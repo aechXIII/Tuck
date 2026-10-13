@@ -157,7 +157,7 @@ class TestBuildDiagnostics:
             output="out.mp4",
             video_encoder="auto",
             tone_map_hdr=True,
-            warnings=["This video has 2 audio tracks. Only the first is kept."],
+            warnings=["Subtitles aren't kept when the video is cut into several parts."],
         )
         text = build_diagnostics(
             plan=plan,
@@ -167,4 +167,4 @@ class TestBuildDiagnostics:
         assert "effective encoder: libx264" in text
         assert "encoder fallback: Used software encoding" in text
         assert "hdr: tone-mapped to SDR" in text
-        assert "plan warning: This video has 2 audio tracks." in text
+        assert "plan warning: Subtitles aren't kept when the video is cut" in text

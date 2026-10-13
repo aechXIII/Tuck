@@ -31,6 +31,8 @@ from .models import (
     PlanValidationError,
     Profile,
     Segment,
+    SourceAudioTrack,
+    SourceTrackSetting,
     VideoInfo,
     VideoTransform,
     audio_independent_from_pieces,
@@ -85,6 +87,7 @@ def plan(
     source_audio_muted = options.source_audio_muted
     source_audio_gain_db = options.source_audio_gain_db
     source_audio_segments = options.source_audio_segments
+    source_audio_extra_tracks = options.source_audio_extra_tracks
     audio_tracks = options.audio_tracks
     keep_audio = options.keep_audio
     scaler = options.scaler
@@ -277,12 +280,16 @@ def plan(
         not track.muted and any(not clip.muted for clip in track.clips) for track in audio_tracks
     )
     source_audio_pieces = source_audio_output_pieces(segments, source_audio_segments)
+    kept_tracks = kept_source_tracks(
+        info, source_audio_muted, source_audio_gain_db, source_audio_extra_tracks
+    )
     source_audio = (
         audio_enabled
-        and info.has_audio
-        and not source_audio_muted
+        and bool(kept_tracks)
         and (source_audio_segments is None or bool(source_audio_pieces))
     )
+    if not source_audio:
+        kept_tracks = []
     imported_audio = audio_enabled and imported_audio
     audio_independent = source_audio_segments is not None and audio_independent_from_pieces(
         source_audio_pieces, segments
@@ -291,7 +298,7 @@ def plan(
         source_audio
         and (
             len(segments) > 1
-            or abs(source_audio_gain_db) > 1e-9
+            or any(abs(track.gain_db) > 1e-9 for track in kept_tracks)
             or audio_independent
             or blending.enabled
         )
@@ -307,8 +314,8 @@ def plan(
         else:
             audio_br = min(max(audio_br or info.audio_bitrate or 128_000, 8_000), MAX_AUDIO_BITRATE)
     elif keep_audio and info.audio_bitrate > 0:
-        copy_audio = True
-        audio_br = info.audio_bitrate
+        copy_audio = audio_tracks_share_codec(info, kept_tracks)
+        audio_br = info.audio_bitrate if copy_audio else min(info.audio_bitrate, MAX_AUDIO_BITRATE)
     elif keep_audio:
         audio_br = min(max(audio_br, 0), MAX_AUDIO_BITRATE)
     else:
@@ -319,8 +326,10 @@ def plan(
         copy_audio = False
         audio_br = min(info.audio_bitrate or audio_br, MAX_AUDIO_BITRATE)
 
+    # audio_br is per track, and every kept source track is exported at it
+    source_audio_tracks = max(1, len(kept_tracks))
+
     tone_map_hdr, warnings = plan_colors(info)
-    warnings += audio_track_warnings(info, source_audio)
     warnings += subtitle_warnings(info, len(segments))
 
     is_upscale = workflow == WORKFLOW_UPSCALE
@@ -343,7 +352,9 @@ def plan(
                 f"minimum ({MIN_VIDEO_BITRATE // 1000} kbps)"
             )
         video_br = explicit_br
-        estimated_total = estimate_size_from_bitrate(effective_duration, video_br, audio_br)
+        estimated_total = estimate_size_from_bitrate(
+            effective_duration, video_br, audio_br * source_audio_tracks
+        )
 
         if estimated_total > target_size:
             raise ValueError(
@@ -361,6 +372,7 @@ def plan(
             audio_br,
             hardware_encoder=hardware,
             min_video_bitrate=MIN_VIDEO_BITRATE,
+            audio_tracks=source_audio_tracks,
         )
         video_br = ts_plan.video_bitrate
         audio_br = ts_plan.audio_bitrate
@@ -395,6 +407,7 @@ def plan(
         source_audio_muted=source_audio_muted,
         source_audio_gain_db=source_audio_gain_db,
         source_audio_segments=source_audio_segments,
+        source_audio_tracks=kept_tracks,
         audio_tracks=audio_tracks,
         two_pass=two_pass,
         preset=preset,
@@ -505,10 +518,30 @@ def plan_colors(info: VideoInfo) -> tuple[bool, list[str]]:
     return False, [HDR_NOT_CONVERTED_WARNING]
 
 
-def audio_track_warnings(info: VideoInfo, source_audio: bool) -> list[str]:
-    if not source_audio or info.audio_stream_count <= 1:
+def kept_source_tracks(
+    info: VideoInfo,
+    first_muted: bool,
+    first_gain_db: float,
+    extra: list[SourceTrackSetting],
+) -> list[SourceAudioTrack]:
+    """The source audio tracks an export keeps; a track nobody set is kept at full volume"""
+    if not info.has_audio:
         return []
-    return [f"This video has {info.audio_stream_count} audio tracks. Only the first is kept."]
+    kept = [] if first_muted else [SourceAudioTrack(0, first_gain_db)]
+    for index in range(1, max(1, info.audio_stream_count)):
+        setting = extra[index - 1] if index - 1 < len(extra) else SourceTrackSetting()
+        if not setting.muted:
+            kept.append(SourceAudioTrack(index, setting.gain_db))
+    return kept
+
+
+def audio_tracks_share_codec(info: VideoInfo, kept: list[SourceAudioTrack]) -> bool:
+    """Copying is only safe when every kept track matches the probed first one"""
+    return all(
+        info.audio_codecs[track.index] == info.audio_codec
+        for track in kept
+        if track.index < len(info.audio_codecs)
+    )
 
 
 def subtitle_warnings(info: VideoInfo, segment_count: int) -> list[str]:

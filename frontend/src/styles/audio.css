@@ -39,12 +39,14 @@
 .seq-audio-clip:hover {
   background-color: var(--tl-audio-hover);
 }
+.seq-row.audio.source-extra.selected .seq-audio-clip.selected,
 #source-audio-track.selected .seq-audio-clip.selected,
 .seq-row.audio.imported .seq-audio-clip.selected {
   overflow: visible;
   background-color: var(--tl-audio-selected);
   box-shadow: none;
 }
+.seq-row.audio.source-extra.selected .seq-audio-clip.selected .audio-waveform,
 #source-audio-track.selected .seq-audio-clip.selected .audio-waveform,
 .seq-row.audio.imported .seq-audio-clip.selected .audio-waveform {
   background: var(--tl-wave-selected);
@@ -77,6 +79,7 @@
 }
 /* muted clips sink below the lane's other clips, so they read as off rather than highlighted */
 .seq-audio-clip.muted,
+.seq-row.audio.source-extra.muted .seq-audio-clip,
 #source-audio-track.muted .seq-audio-clip,
 .seq-row.audio.imported.muted .seq-audio-clip {
   background-color: var(--sink);
@@ -87,7 +90,9 @@
 }
 /* a muted clip that is selected keeps the selected fill, so the selection doesn't vanish with
    the sound */
+.seq-row.audio.source-extra.selected .seq-audio-clip.selected.muted,
 #source-audio-track.selected .seq-audio-clip.selected.muted,
+.seq-row.audio.source-extra.muted.selected .seq-audio-clip.selected,
 #source-audio-track.muted.selected .seq-audio-clip.selected,
 .seq-row.audio.imported .seq-audio-clip.selected.muted,
 .seq-row.audio.imported.muted .seq-audio-clip.selected {
@@ -96,6 +101,7 @@
   filter: none;
   opacity: 1;
 }
+.seq-row.audio.source-extra.muted .seq-audio-clip.selected,
 #source-audio-track.muted .seq-audio-clip.selected {
   background-color: var(--raised);
   box-shadow: inset 0 0 0 1px var(--raised-2);
@@ -103,6 +109,7 @@
   opacity: 0.52;
 }
 .seq-audio-clip.muted .audio-waveform,
+.seq-row.audio.source-extra.muted .seq-audio-clip .audio-waveform,
 #source-audio-track.muted .seq-audio-clip .audio-waveform,
 .seq-row.audio.imported.muted .seq-audio-clip .audio-waveform {
   filter: grayscale(1);
@@ -123,6 +130,7 @@
   white-space: nowrap;
   pointer-events: none;
 }
+.seq-row.audio.source-extra.muted .audio-muted-indicator,
 #source-audio-track.muted .audio-muted-indicator,
 .seq-row.audio.imported.muted .audio-muted-indicator {
   display: none;
@@ -163,6 +171,7 @@
 }
 .seq-audio-clip:hover .clip-edge,
 .seq-audio-clip:focus-visible .clip-edge,
+.seq-row.audio.source-extra.selected .seq-audio-clip.selected .clip-edge,
 #source-audio-track.selected .seq-audio-clip.selected .clip-edge,
 .seq-audio-clip.imported.selected .clip-edge,
 .seq-audio-clip .clip-edge.dragging {

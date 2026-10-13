@@ -16,6 +16,8 @@ from ..models import (
     AudioTrack,
     EncodePlan,
     Segment,
+    SourceAudioTrack,
+    TimelineAudioPiece,
     audio_independent_from_pieces,
     map_source_range_to_output,
     source_audio_output_pieces,
@@ -29,9 +31,11 @@ if TYPE_CHECKING:
 
 scaler_to_ffmpeg_flag = _filters.scaler_to_ffmpeg_flag
 
-# probe describes the first audio track, so every path encodes that one; left to itself FFmpeg
-# would pick the track with the most channels when nothing is filtered
-SOURCE_AUDIO = "0:a:0"
+
+def _source_audio(track: int) -> str:
+    # tracks are always mapped by number; left to itself FFmpeg would pick the one with the
+    # most channels and drop the rest
+    return f"0:a:{track}"
 
 
 def fmt_ffmpeg_time(seconds: float) -> str:
@@ -41,20 +45,109 @@ def fmt_ffmpeg_time(seconds: float) -> str:
 
 
 def _segment_atrim(
-    graph_parts: list[str], segment: Segment, label: str, *, preserve_offset: bool = False
+    graph_parts: list[str],
+    segment: Segment,
+    label: str,
+    *,
+    stream: str,
+    preserve_offset: bool = False,
 ) -> None:
     start = fmt_ffmpeg_time(segment.start)
     end = fmt_ffmpeg_time(segment.end)
     if preserve_offset:
         duration = fmt_ffmpeg_time(segment.duration)
         graph_parts.append(
-            f"[{SOURCE_AUDIO}]atrim=start={start}:end={end},asetpts=PTS-{start}/TB,"
+            f"[{stream}]atrim=start={start}:end={end},asetpts=PTS-{start}/TB,"
             f"aresample=async=1:first_pts=0,apad=whole_dur={duration},"
             f"atrim=duration={duration}[{label}]"
         )
     else:
+        graph_parts.append(f"[{stream}]atrim=start={start}:end={end},asetpts=PTS-STARTPTS[{label}]")
+
+
+def _source_audio_chain(
+    graph_parts: list[str],
+    plan: EncodePlan,
+    segments: list[Segment],
+    source_pieces: list[TimelineAudioPiece],
+    *,
+    track: SourceAudioTrack,
+    position: int,
+    audio_independent: bool,
+    blending: bool,
+    output_duration: str,
+) -> list[str]:
+    """One source audio track with the timeline's source audio edits, as labels to mix"""
+    stream = _source_audio(track.index)
+    # the first output track keeps the plain labels; the others are told apart by a prefix
+    prefix = f"t{position}" if position else ""
+    mix_inputs: list[str] = []
+    if audio_independent:
+        for piece in source_pieces:
+            filters = [
+                f"atrim=start={fmt_ffmpeg_time(piece.source_start)}:"
+                f"end={fmt_ffmpeg_time(piece.source_end)}",
+                "asetpts=PTS-STARTPTS",
+            ]
+            if blending:
+                # retain silence before delayed source audio on the shared video clock
+                filters[-1] = f"asetpts=PTS-{fmt_ffmpeg_time(piece.source_start)}/TB"
+                filters.append("aresample=async=1:first_pts=0")
+            if abs(track.gain_db) > 1e-9:
+                filters.append(f"volume={track.gain_db:.2f}dB")
+            filters.extend(
+                [
+                    f"adelay={max(0, round(piece.output_start * 1000))}:all=1",
+                    "asetpts=PTS-STARTPTS",
+                    f"apad=whole_dur={output_duration}",
+                    f"atrim=duration={output_duration}",
+                ]
+            )
+            mix_label = f"{prefix}mix{len(mix_inputs)}"
+            graph_parts.append(f"[{stream}]{','.join(filters)}[{mix_label}]")
+            mix_inputs.append(f"[{mix_label}]")
+        return mix_inputs
+
+    source_audio_inputs: list[str] = []
+    for index, segment in enumerate(segments):
+        _segment_atrim(
+            graph_parts,
+            segment,
+            f"{prefix}sa{index}",
+            stream=stream,
+            preserve_offset=blending,
+        )
+        source_audio_inputs.append(f"[{prefix}sa{index}]")
+    if not source_audio_inputs:
+        graph_parts.append(f"[{stream}]asetpts=PTS-STARTPTS[{prefix}sa0]")
+        source_audio_inputs.append(f"[{prefix}sa0]")
+    source_audio_label = f"{prefix}sa0"
+    if len(source_audio_inputs) > 1:
         graph_parts.append(
-            f"[{SOURCE_AUDIO}]atrim=start={start}:end={end},asetpts=PTS-STARTPTS[{label}]"
+            "".join(source_audio_inputs)
+            + f"concat=n={len(source_audio_inputs)}:v=0:a=1[{prefix}sacat]"
+        )
+        source_audio_label = f"{prefix}sacat"
+    source_filters: list[str] = []
+    if abs(track.gain_db) > 1e-9:
+        source_filters.append(f"volume={track.gain_db:.2f}dB")
+    source_filters.extend(
+        [
+            f"apad=whole_dur={output_duration}",
+            f"atrim=duration={output_duration}",
+        ]
+    )
+    graph_parts.append(f"[{source_audio_label}]{','.join(source_filters)}[{prefix}mix0]")
+    return [f"[{prefix}mix0]"]
+
+
+def _mix_to(graph_parts: list[str], mix_inputs: list[str], label: str) -> None:
+    if len(mix_inputs) == 1:
+        graph_parts.append(f"{mix_inputs[0]}anull[{label}]")
+    else:
+        graph_parts.append(
+            "".join(mix_inputs) + f"amix=inputs={len(mix_inputs)}:duration=longest:"
+            f"dropout_transition=0:normalize=0[{label}]"
         )
 
 
@@ -306,28 +399,25 @@ def build_base_cmd(
     audio_independent = plan.source_audio_segments is not None and audio_independent_from_pieces(
         source_pieces, segments
     )
+    kept_tracks = plan.kept_source_tracks
     source_audio_active = bool(
         include_audio
         and plan.audio_enabled
         and source_has_audio
-        and not plan.source_audio_muted
+        and kept_tracks
         and (plan.audio_bitrate > 0 or plan.copy_audio)
         and (plan.source_audio_segments is None or bool(source_pieces))
     )
+    source_gain_edits = any(abs(track.gain_db) > 1e-9 for track in kept_tracks)
     audio_filters_required = bool(imported_clips) or bool(
         source_audio_active
-        and (
-            len(segments) > 1
-            or abs(plan.source_audio_gain_db) > 1e-9
-            or audio_independent
-            or blending
-        )
+        and (len(segments) > 1 or source_gain_edits or audio_independent or blending)
     )
     timeline_audio_edits = bool(
         plan.audio_enabled
         and (
             project_imported_clips
-            or (source_has_audio and abs(plan.source_audio_gain_db) > 1e-9)
+            or (source_has_audio and source_gain_edits)
             or (source_audio_active and audio_independent)
         )
     )
@@ -432,7 +522,7 @@ def build_base_cmd(
                 source_audio_active
                 and len(segments) > 1
                 and not imported_inputs
-                and abs(plan.source_audio_gain_db) <= 1e-9
+                and not source_gain_edits
                 and not audio_independent
             )
             source_audio_inputs: list[str] = []
@@ -444,7 +534,12 @@ def build_base_cmd(
                 )
                 video_inputs.append(f"[v{index}]")
                 if combined_source_concat:
-                    _segment_atrim(graph_parts, segment, f"a{index}")
+                    _segment_atrim(
+                        graph_parts,
+                        segment,
+                        f"a{index}",
+                        stream=_source_audio(kept_tracks[0].index),
+                    )
                     source_audio_inputs.append(f"[a{index}]")
 
             if not video_inputs:
@@ -480,64 +575,41 @@ def build_base_cmd(
                     graph_parts.append(f"[{source_label}]null[vout]")
 
         mix_inputs: list[str] = []
+        # the other source tracks, each its own output track after the first
+        extra_audio_labels: list[str] = []
         output_duration = fmt_ffmpeg_time(plan.effective_duration)
-        if source_audio_active and audio_filters_required and not combined_source_concat:
-            if audio_independent:
-                for piece in source_pieces:
-                    filters = [
-                        f"atrim=start={fmt_ffmpeg_time(piece.source_start)}:"
-                        f"end={fmt_ffmpeg_time(piece.source_end)}",
-                        "asetpts=PTS-STARTPTS",
-                    ]
-                    if blending:
-                        # retain silence before delayed source audio on the shared video clock
-                        filters[-1] = f"asetpts=PTS-{fmt_ffmpeg_time(piece.source_start)}/TB"
-                        filters.append("aresample=async=1:first_pts=0")
-                    if abs(plan.source_audio_gain_db) > 1e-9:
-                        filters.append(f"volume={plan.source_audio_gain_db:.2f}dB")
-                    filters.extend(
-                        [
-                            f"adelay={max(0, round(piece.output_start * 1000))}:all=1",
-                            "asetpts=PTS-STARTPTS",
-                            f"apad=whole_dur={output_duration}",
-                            f"atrim=duration={output_duration}",
-                        ]
-                    )
-                    mix_label = f"mix{len(mix_inputs)}"
-                    graph_parts.append(f"[{SOURCE_AUDIO}]{','.join(filters)}[{mix_label}]")
-                    mix_inputs.append(f"[{mix_label}]")
-            else:
-                source_audio_inputs: list[str] = []
+        if combined_source_concat:
+            # the first track rides along with the video concat; the others get the same cuts
+            for position, track in enumerate(kept_tracks[1:], start=1):
+                cut_inputs: list[str] = []
                 for index, segment in enumerate(segments):
-                    _segment_atrim(
-                        graph_parts,
-                        segment,
-                        f"sa{index}",
-                        preserve_offset=blending,
-                    )
-                    source_audio_inputs.append(f"[sa{index}]")
-                if not source_audio_inputs:
-                    graph_parts.append(f"[{SOURCE_AUDIO}]asetpts=PTS-STARTPTS[sa0]")
-                    source_audio_inputs.append("[sa0]")
-                source_audio_label = "sa0"
-                if len(source_audio_inputs) > 1:
-                    graph_parts.append(
-                        "".join(source_audio_inputs)
-                        + f"concat=n={len(source_audio_inputs)}:v=0:a=1[sacat]"
-                    )
-                    source_audio_label = "sacat"
-                source_filters: list[str] = []
-                if abs(plan.source_audio_gain_db) > 1e-9:
-                    source_filters.append(f"volume={plan.source_audio_gain_db:.2f}dB")
-                source_filters.extend(
-                    [
-                        f"apad=whole_dur={output_duration}",
-                        f"atrim=duration={output_duration}",
-                    ]
+                    label = f"t{position}a{index}"
+                    _segment_atrim(graph_parts, segment, label, stream=_source_audio(track.index))
+                    cut_inputs.append(f"[{label}]")
+                graph_parts.append(
+                    "".join(cut_inputs) + f"concat=n={len(cut_inputs)}:v=0:a=1[aout{position}]"
                 )
-                graph_parts.append(f"[{source_audio_label}]{','.join(source_filters)}[mix0]")
-                mix_inputs.append("[mix0]")
+                extra_audio_labels.append(f"[aout{position}]")
+        elif source_audio_active and audio_filters_required:
+            for position, track in enumerate(kept_tracks):
+                track_inputs = _source_audio_chain(
+                    graph_parts,
+                    plan,
+                    segments,
+                    source_pieces,
+                    track=track,
+                    position=position,
+                    audio_independent=audio_independent,
+                    blending=blending,
+                    output_duration=output_duration,
+                )
+                if position == 0:
+                    mix_inputs.extend(track_inputs)
+                else:
+                    _mix_to(graph_parts, track_inputs, f"aout{position}")
+                    extra_audio_labels.append(f"[aout{position}]")
 
+        # added audio is mixed into the first track only
         for input_index, track, clip in imported_inputs:
             mapped = map_source_range_to_output(segments, clip.timeline_start, clip.timeline_end)
             if not mapped:
@@ -558,18 +630,14 @@ def build_base_cmd(
                 mix_inputs.append(f"[{mix_label}]")
 
         if mix_inputs:
-            if len(mix_inputs) == 1:
-                graph_parts.append(f"{mix_inputs[0]}anull[aout]")
-            else:
-                graph_parts.append(
-                    "".join(mix_inputs) + f"amix=inputs={len(mix_inputs)}:duration=longest:"
-                    "dropout_transition=0:normalize=0[aout]"
-                )
+            _mix_to(graph_parts, mix_inputs, "aout")
             filtered_audio = True
 
         cmd += ["-filter_complex", ";".join(graph_parts), "-map", "[vout]"]
         if filtered_audio:
             cmd += ["-map", "[aout]"]
+            for label in extra_audio_labels:
+                cmd += ["-map", label]
         if subtitle_map and prepared_video is None and blend is None:
             # subtitles read from the start of the source would run on past the trimmed
             # picture; the blending paths already end the output at the piece's length
@@ -578,7 +646,8 @@ def build_base_cmd(
         # explicit maps, so FFmpeg's own stream choice can't swap tracks or pick subtitles
         cmd += ["-map", "0:v:0"]
         if source_audio_active:
-            cmd += ["-map", f"{SOURCE_AUDIO}?"]
+            for track in kept_tracks:
+                cmd += ["-map", f"{_source_audio(track.index)}?"]
         if video_filters:
             cmd += ["-vf", join_video_filters(video_filters)]
     if subtitle_map:

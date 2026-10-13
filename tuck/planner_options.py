@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TypedDict
 
-from .models import AppSettings, AudioTrack, PlanRequest, Profile, Segment
+from .models import AppSettings, AudioTrack, PlanRequest, Profile, Segment, SourceTrackSetting
 from .models.encoding_policy import (
     native_preset_for_encoder,
     normalize_legacy_rc_matrix,
@@ -64,6 +64,7 @@ class PlanOptions:
     source_audio_muted: bool
     source_audio_gain_db: float
     source_audio_segments: list[Segment] | None
+    source_audio_extra_tracks: list[SourceTrackSetting]
     audio_tracks: list[AudioTrack]
     keep_audio: bool
     scaler: str
@@ -88,6 +89,7 @@ def resolve_plan_options(profile: Profile, request: PlanRequest | None) -> PlanO
     source_audio_muted = False
     source_audio_gain_db = 0.0
     source_audio_segments: list[Segment] | None = None
+    source_audio_extra_tracks: list[SourceTrackSetting] = []
     audio_tracks: list[AudioTrack] = []
     keep_audio = bool(profile.keep_audio)
     scaler = profile.scaler or "neighbor"
@@ -117,6 +119,8 @@ def resolve_plan_options(profile: Profile, request: PlanRequest | None) -> PlanO
             source_audio_gain_db = float(request.source_audio_gain_db)
         if request.source_audio_segments is not None:
             source_audio_segments = list(request.source_audio_segments)
+        if request.source_audio_extra_tracks is not None:
+            source_audio_extra_tracks = list(request.source_audio_extra_tracks)
         if request.audio_tracks is not None:
             audio_tracks = list(request.audio_tracks)
         if request.keep_audio is not None:
@@ -177,6 +181,7 @@ def resolve_plan_options(profile: Profile, request: PlanRequest | None) -> PlanO
         source_audio_muted=source_audio_muted,
         source_audio_gain_db=source_audio_gain_db,
         source_audio_segments=source_audio_segments,
+        source_audio_extra_tracks=source_audio_extra_tracks,
         audio_tracks=audio_tracks,
         keep_audio=keep_audio,
         scaler=scaler,

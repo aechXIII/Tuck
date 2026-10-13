@@ -173,7 +173,8 @@ export interface DomainBackendClient {
   loadLut(path: string): Promise<BackendResult<LutPayload>>;
   probeFile(path: string): Promise<BackendResult<DataPayload>>;
   probeAudioFile(path: string): Promise<BackendResult<DataPayload>>;
-  getWaveform(path: string): Promise<BackendResult<UrlPayload>>;
+  // track counts a video's audio tracks from 0; leaving it out asks for the first
+  getWaveform(path: string, track?: number): Promise<BackendResult<UrlPayload>>;
   getThumbnail(path: string): Promise<BackendResult<ThumbnailPayload>>;
   getMediaUrl(path: string): Promise<BackendResult<UrlPayload>>;
   releaseMediaToken(token: string): Promise<BackendResult<EmptyPayload>>;

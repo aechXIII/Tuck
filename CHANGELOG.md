@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Exports keep every audio track of a video, such as separate game and mic tracks, instead of
+  only the first
+- Each audio track of a video shows on the timeline and in the mixer, with its own mute and
+  volume
+
 ## [0.6.0] - 2026-10-12
 
 ### Lossless cut

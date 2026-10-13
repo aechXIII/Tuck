@@ -5,6 +5,7 @@ import type {
   AudioClip,
   AudioTimelineState,
   AudioTrack,
+  SourceAudioTrackState,
 } from "../editor/types.ts";
 import { confirmToast, toast, type ConfirmIntent } from "../editor/toast.ts";
 import { recordedCommand } from "../history/history.ts";
@@ -270,10 +271,47 @@ export function installAudioTimeline(host: AudioTimelineHost) {
     }
     const normalized: AudioTimelineModel = {
       ...clip.audioTimeline,
+      sourceExtraTracks: sizedExtraTracks(
+        clip.audioTimeline.sourceExtraTracks ?? [],
+        sourceTrackCount(clip) - 1,
+      ),
       tracks: clip.audioTimeline.tracks.map(normalizeAudioTrack),
     };
     clip.audioTimeline = normalized;
     return normalized;
+  }
+
+  function sourceTrackCount(clip: EditorClip): number {
+    if (!clip.probeData || !clip.probeData.has_audio) return 0;
+    const count = Number(clip.probeData.audio_stream_count);
+    return Number.isInteger(count) && count > 1 ? count : 1;
+  }
+
+  // keeps the settings of tracks already shown, so probing again never resets a mute
+  function sizedExtraTracks(
+    tracks: SourceAudioTrackState[],
+    count: number,
+  ): SourceAudioTrackState[] {
+    const sized = tracks.slice(0, Math.max(0, count));
+    while (sized.length < count) {
+      sized.push({
+        muted: false,
+        gainDb: 0,
+        waveformUrl: "",
+        waveformToken: "",
+        waveformLoading: false,
+      });
+    }
+    return sized;
+  }
+
+  function extraTracks(state: AudioTimelineState | null | undefined): SourceAudioTrackState[] {
+    return state?.sourceExtraTracks ?? [];
+  }
+
+  // the source's audio tracks are counted from 1 in the interface, like most players do
+  function sourceTrackName(streamIndex: number): string {
+    return "Source audio " + (streamIndex + 1);
   }
 
   function sourceDuration(clip: EditorClip | null | undefined) {
@@ -363,7 +401,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
     return Object.assign(core.sourceRangeState(selected.clip, selected.track.sourceDuration), {
       clipId: selected.clip.id,
       trackId: selected.track.id,
-      code: "A" + (index + 2),
+      code: "A" + (index + 2 + extraTracks(videoClip?.audioTimeline).length),
       name: selected.track.name,
       color: trackColor(index),
       waveformUrl: selected.track.waveformUrl || "",
@@ -416,6 +454,9 @@ export function installAudioTimeline(host: AudioTimelineHost) {
     let sourceGroupSelected = selectedTrackId === "source";
     if (videoTrack) videoTrack.classList.toggle("selected", sourceGroupSelected);
     if (sourceTrack) sourceTrack.classList.toggle("selected", sourceGroupSelected);
+    byId("source-extra-tracks")
+      ?.querySelectorAll(".seq-row.source-extra")
+      .forEach((row) => row.classList.toggle("selected", sourceGroupSelected));
 
     Array.from(documentRef.querySelectorAll("#tl-segments .tl-segment")).forEach(
       function(segment) {
@@ -485,7 +526,24 @@ export function installAudioTimeline(host: AudioTimelineHost) {
   }
 
   function paintSourceLane(clip: EditorClip | null | undefined, state: AudioTimelineState, total: number) {
-    let lane = byId("source-audio-lane");
+    fillSourceLane(byId("source-audio-lane"), clip, state, total, state.sourceWaveformUrl);
+    const extras = extraTracks(state);
+    byId("source-extra-tracks")
+      ?.querySelectorAll<HTMLElement>(".source-lane[data-source-track]")
+      .forEach((lane) => {
+        const extra = arrayItem(extras, Number(lane.dataset.sourceTrack) - 1);
+        if (extra) fillSourceLane(lane, clip, state, total, extra.waveformUrl);
+      });
+  }
+
+  // every source audio track shows the same pieces, since they all follow the video's segments
+  function fillSourceLane(
+    lane: HTMLElement | null,
+    clip: EditorClip | null | undefined,
+    state: AudioTimelineState,
+    total: number,
+    waveformUrl: string,
+  ) {
     if (!lane) return;
     lane.replaceChildren();
     if (!clip || !state || total <= 0) return;
@@ -499,7 +557,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
           segment,
           index,
           index === videoActive,
-          state,
+          waveformUrl,
           total,
           index > 0 &&
             timelineItemsTouch(arrayItem(videoSegs, index - 1)?.end ?? 0, segment.start),
@@ -510,7 +568,66 @@ export function installAudioTimeline(host: AudioTimelineHost) {
     });
   }
 
-  function sourceAudioBlock(segment: SegmentLike, index: number, selected: boolean, state: AudioTimelineState, total: number, touchesPrevious: boolean, touchesNext: boolean, ) {
+  function renderSourceExtraTracks(
+    clip: EditorClip | null | undefined,
+    state: AudioTimelineState,
+    total: number,
+  ) {
+    const container = byId("source-extra-tracks");
+    if (!container) return;
+    const focusedTrack = documentRef.activeElement
+      ?.closest<HTMLElement>(".seq-row.source-extra")?.dataset.sourceTrack;
+    container.replaceChildren();
+    const hasAudio = !!(clip && clip.probeData && clip.probeData.has_audio);
+    const cut = cutTask();
+    extraTracks(state).forEach((extra, index) => {
+      const streamIndex = index + 1;
+      const name = sourceTrackName(streamIndex);
+      const muted = !cut && extra.muted;
+      const row = documentRef.createElement("div");
+      row.className = "seq-row audio source-extra" + (muted ? " muted" : "");
+      row.classList.toggle("disabled", !hasAudio || !(cut || state.enabled));
+      row.dataset.sourceTrack = String(streamIndex);
+      row.setAttribute("aria-label", name + " track" + (muted ? ", muted" : ""));
+
+      const head = documentRef.createElement("div");
+      head.className = "seq-head";
+      const iconEl = documentRef.createElement("span");
+      iconEl.className = "seq-track-icon";
+      iconEl.setAttribute("aria-hidden", "true");
+      iconEl.innerHTML =
+        '<svg viewBox="0 0 16 16"><path d="M2 6v4M5 3v10M8 5v6M11 2v12M14 6v4"></path></svg>';
+      const nameEl = documentRef.createElement("span");
+      nameEl.className = "seq-track-name";
+      nameEl.textContent = name;
+      nameEl.title = name;
+      const muteEl = documentRef.createElement("button");
+      muteEl.type = "button";
+      muteEl.className = "seq-track-mute" + (muted ? " muted" : "");
+      muteEl.dataset.trackAction = "mute";
+      muteEl.disabled = cut || !state.enabled || !hasAudio;
+      muteEl.innerHTML =
+        '<svg viewBox="0 0 16 16" aria-hidden="true">' +
+        '<path d="M1.5 6h2.3l3.4-3v10l-3.4-3H1.5z"></path>' +
+        '<path class="track-sound-waves" d="M10 5.1a4 4 0 0 1 0 5.8M12 3.3a6.5 6.5 0 0 1 0 9.4"></path>' +
+        '<path class="track-mute-cross" d="M10.4 6.2l3.4 3.6M13.8 6.2l-3.4 3.6"></path>' +
+        "</svg>";
+      muteEl.dataset.tip = (muted ? "Unmute " : "Mute ") + name;
+      muteEl.setAttribute("aria-pressed", muted ? "true" : "false");
+      muteEl.setAttribute("aria-label", muteEl.dataset.tip);
+      head.append(iconEl, nameEl, muteEl);
+
+      const lane = documentRef.createElement("div");
+      lane.className = "seq-lane audio-lane source-lane";
+      lane.dataset.sourceTrack = String(streamIndex);
+      row.append(head, lane);
+      container.appendChild(row);
+      fillSourceLane(lane, clip, state, total, extra.waveformUrl);
+      if (String(streamIndex) === focusedTrack) muteEl.focus();
+    });
+  }
+
+  function sourceAudioBlock(segment: SegmentLike, index: number, selected: boolean, waveformUrl: string, total: number, touchesPrevious: boolean, touchesNext: boolean, ) {
     let block = documentRef.createElement("div");
     let muted = !!segment.muted && !cutTask();
     block.className =
@@ -526,12 +643,12 @@ export function installAudioTimeline(host: AudioTimelineHost) {
     );
     block.style.left = pct(segment.start, total);
     block.style.width = pct(Math.max(0, segment.end - segment.start), total);
-    if (state.sourceWaveformUrl) {
+    if (waveformUrl) {
       let wave = documentRef.createElement("div");
       wave.className = "audio-waveform";
       wave.style.setProperty(
         "--wave-image",
-        "url('" + state.sourceWaveformUrl.replace(/'/g, "%27") + "')",
+        "url('" + waveformUrl.replace(/'/g, "%27") + "')",
       );
       wave.style.setProperty(
         "--wave-size",
@@ -734,6 +851,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
       byId("source-audio-label")?.setAttribute("disabled", "");
       let emptyLane = byId("source-audio-lane");
       if (emptyLane) emptyLane.replaceChildren();
+      byId("source-extra-tracks")?.replaceChildren();
       let tracks = byId("imported-audio-tracks");
       if (tracks) tracks.replaceChildren();
       if (typeof host.syncTimelineTrackCount === "function") host.syncTimelineTrackCount(0);
@@ -752,6 +870,9 @@ export function installAudioTimeline(host: AudioTimelineHost) {
       master.setAttribute("aria-label", "Include audio in export");
     }
     renderSourceTrack(clip, state, total);
+    // undo can bring back track settings from before a picture arrived
+    loadSourceExtraWaveforms(clip);
+    renderSourceExtraTracks(clip, state, total);
     let tracks = byId("imported-audio-tracks");
     if (!tracks) return;
     const focusedMute = documentRef.activeElement?.closest(".seq-track-mute");
@@ -762,8 +883,9 @@ export function installAudioTimeline(host: AudioTimelineHost) {
       tracks.appendChild(row);
       if (track.id === focusedTrackId) row.querySelector<HTMLButtonElement>(".seq-track-mute")?.focus();
     });
+    // the source's other tracks are as tall as added ones, so they count the same
     if (typeof host.syncTimelineTrackCount === "function")
-      host.syncTimelineTrackCount(state.tracks.length);
+      host.syncTimelineTrackCount(state.tracks.length + extraTracks(state).length);
     paintMixer(clip);
     paintTimelineSelection();
     updatePlayheads(sourceTime(), total);
@@ -1333,6 +1455,44 @@ export function installAudioTimeline(host: AudioTimelineHost) {
     loadWaveform(clip, state, clip.path);
   }
 
+  function loadSourceExtraWaveforms(clip: EditorClip | null | undefined) {
+    if (!clip) return;
+    const state = ensureState(clip);
+    extraTracks(state).forEach((extra, index) => {
+      if (extra.waveformUrl || extra.waveformLoading) return;
+      extra.waveformLoading = true;
+      void loadExtraWaveform(clip, index + 1);
+    });
+  }
+
+  async function loadExtraWaveform(clip: EditorClip, streamIndex: number) {
+    if (!hasBackendClient()) return;
+    // each track has its own picture, so its requests are told apart from the first track's
+    const key = clip.path + "\u0000" + streamIndex;
+    const generation = nextWaveformGeneration(key);
+    const clipPath = clip.path;
+    // undo can replace the track settings while the request is pending, so the live one is
+    // looked up again when the picture arrives
+    const live = () => arrayItem(extraTracks(clip.audioTimeline), streamIndex - 1);
+    try {
+      const result = await getBackendClient().getWaveform(clip.path, streamIndex);
+      if (currentWaveformGeneration(key) !== generation) return;
+      const extra = live();
+      if (!extra || clip.path !== clipPath) {
+        if (result.ok) releaseToken(result.value.token);
+        return;
+      }
+      extra.waveformLoading = false;
+      if (!result.ok) return;
+      extra.waveformUrl = result.value.url;
+      extra.waveformToken = result.value.token ?? "";
+      if (selectedVideo() === clip) render();
+    } catch (err) {
+      const extra = live();
+      if (extra) extra.waveformLoading = false;
+    }
+  }
+
   async function addPaths(paths: string[], rejected: unknown[] | null | undefined) {
     let videoClip = selectedVideo();
     if (!videoClip) {
@@ -1420,6 +1580,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
     const state = ensureState(videoClip);
     if (!state) return;
     releaseToken(state.sourceWaveformToken);
+    extraTracks(state).forEach((extra) => releaseToken(extra.waveformToken));
     state.tracks.forEach(function(track) {
       releaseToken(track.mediaToken);
       releaseToken(track.waveformToken);
@@ -1458,6 +1619,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
         }>;
       }>;
       source_audio_segments?: Array<{ start: number; end: number }>;
+      source_audio_extra_tracks?: Array<{ muted: boolean; gain_db: number }>;
     } = {
       audio_enabled: !!state.enabled,
       source_audio_muted: !!state.sourceMuted,
@@ -1506,6 +1668,12 @@ export function installAudioTimeline(host: AudioTimelineHost) {
       payload.source_audio_segments = keptAudio.map(function(segment: SegmentLike) {
         return { start: segment.start, end: segment.end };
       });
+    const extras = extraTracks(state);
+    if (extras.length)
+      payload.source_audio_extra_tracks = extras.map((extra) => ({
+        muted: !!extra.muted,
+        gain_db: Number(extra.gainDb) || 0,
+      }));
     return payload;
   }
 
@@ -1523,6 +1691,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
       if (clip) {
         ensureState(clip);
         loadSourceWaveform(clip);
+        loadSourceExtraWaveforms(clip);
       }
       render();
     },
@@ -1530,6 +1699,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
       ensureState(clip);
       if (selectedVideo() === clip) {
         loadSourceWaveform(clip);
+        loadSourceExtraWaveforms(clip);
         render();
       }
     },
@@ -1633,6 +1803,23 @@ export function installAudioTimeline(host: AudioTimelineHost) {
       if (!state) return;
       state.sourceGainDb = Math.max(-60, Math.min(12, Number(value) || 0));
       applyPreviewVolume();
+      setPlanDirty(clip);
+    },
+    // streamIndex counts the source's audio tracks from 0, so the second track is 1
+    toggleSourceTrackMute: recorded("mute track", function(streamIndex: number) {
+      let clip = selectedVideo();
+      const extra = arrayItem(extraTracks(ensureState(clip)), streamIndex - 1);
+      if (!extra) return;
+      selectedTrackId = "source";
+      extra.muted = !extra.muted;
+      render();
+      setPlanDirty(clip);
+    }),
+    setSourceTrackGain: function(streamIndex: number, value: number) {
+      let clip = selectedVideo();
+      const extra = arrayItem(extraTracks(ensureState(clip)), streamIndex - 1);
+      if (!extra) return;
+      extra.gainDb = Math.max(-60, Math.min(12, Number(value) || 0));
       setPlanDirty(clip);
     },
     toggleTrackMute: recorded("mute track", function(trackId: string) {
@@ -1775,6 +1962,19 @@ export function installAudioTimeline(host: AudioTimelineHost) {
 
   let sourceLane = documentRef.getElementById("source-audio-lane");
   if (sourceLane) sourceLane.addEventListener("pointerdown", onLanePointerDown);
+  // the source's other track rows are rebuilt on every render, like imported ones
+  const sourceExtraTracks = documentRef.getElementById("source-extra-tracks");
+  sourceExtraTracks?.addEventListener("click", (event) => {
+    const button = isElement(event.target) ? event.target.closest<HTMLElement>("[data-track-action]") : null;
+    const streamIndex = Number(button?.closest<HTMLElement>(".seq-row.source-extra")?.dataset.sourceTrack);
+    if (!button || !Number.isInteger(streamIndex)) return;
+    event.stopPropagation();
+    apiObject.toggleSourceTrackMute(streamIndex);
+  });
+  sourceExtraTracks?.addEventListener("pointerdown", (event) => {
+    const lane = isElement(event.target) ? event.target.closest<HTMLElement>(".audio-lane") : null;
+    if (lane && sourceExtraTracks.contains(lane)) onLanePointerDown(event, lane);
+  });
   // imported track rows are rebuilt on every render; their stable container handles them
   const importedTracks = documentRef.getElementById("imported-audio-tracks");
   importedTracks?.addEventListener("click", (event) => {

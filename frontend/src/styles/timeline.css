@@ -581,6 +581,7 @@ body.tl-segment-dragging * {
 /* mutes belong to Compress and Upscale, so a lossless cut hides the track mute buttons and dims
    added audio, which the cut leaves out; the rows keep their space so the timeline height holds */
 body.task-cut #source-audio-label,
+body.task-cut .seq-row.source-extra .seq-track-mute,
 body.task-cut .seq-row.imported .seq-track-mute {
   visibility: hidden;
 }

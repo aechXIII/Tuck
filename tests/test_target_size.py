@@ -54,6 +54,21 @@ class TestTargetSizePlanning:
         assert plan.audio_bitrate <= 320_000
         assert plan.video_bitrate >= MIN_VIDEO_BITRATE
 
+    def test_audio_budget_covers_every_track(self):
+        target = 30 * 1024 * 1024
+        one = calculate_target_size_bitrates(target, 60.0, 128_000)
+        three = calculate_target_size_bitrates(target, 60.0, 128_000, audio_tracks=3)
+        assert three.audio_bitrate == 128_000
+        assert three.video_bitrate < one.video_bitrate
+        assert three.estimated_size <= target
+
+    def test_shared_audio_cap_is_split_between_tracks(self):
+        target = 5 * 1024 * 1024
+        plan = calculate_target_size_bitrates(target, 60.0, 320_000, audio_tracks=4)
+        audio_bytes = plan.audio_bitrate * 4 / 8 * 60.0
+        assert audio_bytes <= plan.effective_target * 0.15
+        assert plan.audio_bitrate >= 8_000
+
     def test_copied_audio_is_reserved(self):
         target = 10 * 1024 * 1024
         no_audio = calculate_target_size_bitrates(target, 60.0, 0)

@@ -55,7 +55,7 @@ type TauriBackendCommand =
   | { command: "health" }
   | { command: "probe_file"; payload: { path: string } }
   | { command: "probe_audio_file"; payload: { path: string } }
-  | { command: "get_waveform"; payload: { path: string } }
+  | { command: "get_waveform"; payload: { path: string; track?: number } }
   | { command: "get_thumbnail"; payload: { path: string } }
   | { command: "get_media_url"; payload: { path: string } }
   | { command: "release_media_token"; payload: { token: string } }
@@ -360,10 +360,10 @@ class TauriTransport implements TauriBackendClient {
     );
   }
 
-  getWaveform(path: string): Promise<BackendResult<UrlPayload>> {
+  getWaveform(path: string, track?: number): Promise<BackendResult<UrlPayload>> {
     return this.#request(
       "getWaveform",
-      { command: "get_waveform", payload: { path } },
+      { command: "get_waveform", payload: track ? { path, track } : { path } },
       isUrlPayload,
     );
   }
