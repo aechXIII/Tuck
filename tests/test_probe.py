@@ -76,6 +76,26 @@ def test_probe_audio_accepts_audio_only_files(tmp_path, monkeypatch) -> None:
     assert info.bitrate == 900_000
 
 
+@pytest.mark.parametrize("reader", [probe, probe_audio])
+def test_ffprobe_fallback_reads_relative_dash_prefixed_paths(tmp_path, monkeypatch, reader):
+    ffmpeg = find_ffmpeg()
+    if not ffmpeg or not find_ffprobe():
+        pytest.skip("ffmpeg and ffprobe are needed to check fallback paths")
+    source = tmp_path / "-clip.mp4"
+    assert _ffmpeg(ffmpeg, [*_VIDEO, *_AUDIO, *_X264, "-c:a", "aac", str(source)])
+
+    def unreadable_by_pyav(_source):
+        raise ValueError("use the fallback reader")
+
+    monkeypatch.setattr("tuck.probe._read_with_pyav", unreadable_by_pyav)
+    monkeypatch.chdir(tmp_path)
+
+    info = reader(source.name)
+
+    assert info.duration == pytest.approx(2, abs=0.1)
+    assert info.path == source.name
+
+
 @pytest.mark.parametrize(
     ("value", "expected"),
     [(0, 0), (90, 90), (-90, 270), (180, 180), (270, 270), (360, 0)],

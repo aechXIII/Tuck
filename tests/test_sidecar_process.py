@@ -10,9 +10,13 @@ import threading
 from collections.abc import Iterator
 from pathlib import Path
 from typing import BinaryIO
+from urllib.error import HTTPError
+from urllib.request import urlopen
 
+import av
 import pytest
 
+from tuck.media_tools import find_ffmpeg
 from tuck.sidecar.protocol import Event
 from tuck.sidecar.server import run_server
 
@@ -176,6 +180,85 @@ def sidecar(tmp_path: Path) -> Iterator[SidecarProcess]:
 
 def _request(request_id: str, method: str, params: dict[str, object]) -> dict[str, object]:
     return {"kind": "request", "protocol": 1, "id": request_id, "method": method, "params": params}
+
+
+def test_subprocess_serves_and_releases_exact_audio_tracks(
+    sidecar: SidecarProcess, tmp_path: Path
+) -> None:
+    ffmpeg = find_ffmpeg()
+    if not ffmpeg:
+        pytest.skip("FFmpeg is required to generate multiple audio tracks")
+    source = tmp_path / "recording.mp4"
+    subprocess.run(
+        [
+            ffmpeg,
+            "-nostdin",
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=size=64x64:rate=10:duration=1",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:duration=1",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=880:duration=1",
+            "-map",
+            "0:v",
+            "-map",
+            "1:a",
+            "-map",
+            "2:a",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "ultrafast",
+            "-c:a",
+            "aac",
+            "-disposition:a:0",
+            "0",
+            "-disposition:a:1",
+            "default",
+            str(source),
+        ],
+        capture_output=True,
+        check=True,
+        timeout=30,
+    )
+    assert sidecar.receive()["event"] == "backend_ready"
+    urls = []
+    for track in (0, 1):
+        request_id = f"audio-{track}"
+        sidecar.send(_request(request_id, "get_media_url", {"path": str(source), "track": track}))
+        response = sidecar.receive(timeout=20)
+        assert response["id"] == request_id
+        assert response["ok"] is True, response
+        result = response["result"]
+        urls.append(result["url"])
+        with (
+            urlopen(result["url"], timeout=5) as served,
+            av.open(io.BytesIO(served.read())) as audio,
+        ):
+            assert len(audio.streams.audio) == 1
+            assert len(audio.streams.video) == 0
+            assert next(audio.decode(audio=0)).samples > 0
+        sidecar.send(
+            _request(f"release-{track}", "release_media_token", {"token": result["token"]})
+        )
+        assert sidecar.receive()["ok"] is True
+        with pytest.raises(HTTPError) as rejected:
+            urlopen(result["url"], timeout=5)
+        assert rejected.value.code == 403
+    assert urls[0] != urls[1]
+    sidecar.send(_request("invalid-audio", "get_media_url", {"path": str(source), "track": 2}))
+    assert sidecar.receive()["ok"] is False
+    sidecar.send(_request("shutdown", "shutdown", {}))
+    assert sidecar.receive()["ok"] is True
+    assert sidecar.process.wait(timeout=5) == 0
 
 
 def test_subprocess_emits_readiness_then_health_and_orderly_shutdown(

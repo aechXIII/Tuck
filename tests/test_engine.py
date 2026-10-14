@@ -1343,6 +1343,213 @@ class TestHardwareFallback:
 
 
 class TestTargetSizeRetries:
+    def test_refinement_allocation_failure_keeps_previous_result(
+        self, engine, tmp_path, monkeypatch
+    ):
+        import tempfile
+
+        output = tmp_path / "output.mp4"
+        plan = EncodePlan(
+            source="source.mp4",
+            output=str(output),
+            video_bitrate=1_000_000,
+            estimated_size=9_000,
+            target_size=10_000,
+            two_pass=False,
+            rate_control_method=RCM_CBR,
+        )
+        allocate = tempfile.mkstemp
+        calls = 0
+
+        def allocate_once(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            if calls > 1:
+                raise OSError("No space left on device")
+            return allocate(*args, **kwargs)
+
+        def encode_once(_ffmpeg, _plan, _source, destination, *_args, **_kwargs):
+            destination.write_bytes(b"a" * 4_000)
+            return destination
+
+        monkeypatch.setattr("tuck.encoding.runner.tempfile.mkstemp", allocate_once)
+        monkeypatch.setattr(engine, "_encode_single_pass", encode_once)
+        monkeypatch.setattr(engine, "_left_bitrate_unused", lambda *_args: False)
+
+        result = engine._encode_with_retry("ffmpeg", plan, Path(plan.source), output, 10.0, None)
+
+        assert result.read_bytes() == b"a" * 4_000
+        assert plan.video_bitrate == 1_000_000
+        assert plan.estimated_size == 9_000
+        assert set(tmp_path.iterdir()) == {output}
+
+    @pytest.mark.parametrize(
+        "refinements, expected_byte, expected_size, expected_bitrate",
+        [
+            (["failure"], b"a", 4_000, 1_000_000),
+            (["os_error"], b"a", 4_000, 1_000_000),
+            (["missing", "missing"], b"a", 4_000, 1_000_000),
+            (["empty", "empty"], b"a", 4_000, 1_000_000),
+            ([12_000, 11_000], b"a", 4_000, 1_000_000),
+            ([3_000], b"a", 4_000, 1_000_000),
+            ([4_100], b"b", 4_100, 1_080_000),
+            ([6_000, "failure"], b"b", 6_000, 1_080_000),
+        ],
+    )
+    def test_refinement_publishes_best_under_target_result(
+        self,
+        engine,
+        tmp_path,
+        monkeypatch,
+        refinements,
+        expected_byte,
+        expected_size,
+        expected_bitrate,
+    ):
+        source = tmp_path / "source.mp4"
+        source.write_bytes(b"source")
+        output = tmp_path / "output.mp4"
+        plan = EncodePlan(
+            source=str(source),
+            output=str(output),
+            video_bitrate=1_000_000,
+            estimated_size=9_000,
+            audio_bitrate=0,
+            target_size=10_000,
+            two_pass=False,
+            rate_control_method=RCM_CBR,
+        )
+        monkeypatch.setattr("tuck.encoding.runner.find_ffmpeg", lambda: "ffmpeg")
+        monkeypatch.setattr(
+            "tuck.encoding.runner.get_available_encoders", lambda: frozenset({"libx264"})
+        )
+        monkeypatch.setattr(engine, "_left_bitrate_unused", lambda *_args: False)
+        outcomes = iter([4_000, *refinements])
+        attempt_paths = []
+        attempt_plans = []
+        metadata = {}
+
+        def encode_once(_ffmpeg, attempt_plan, _source, destination, *_args, **_kwargs):
+            attempt_paths.append(destination)
+            attempt_plans.append(attempt_plan)
+            outcome = next(outcomes)
+            if outcome == "failure":
+                destination.write_bytes(b"partial")
+                raise EncodeError("refinement failed")
+            if outcome == "os_error":
+                raise OSError(12, "Cannot allocate memory")
+            if outcome == "missing":
+                destination.unlink(missing_ok=True)
+            elif outcome == "empty":
+                destination.write_bytes(b"")
+            else:
+                marker = bytes([ord("a") + len(attempt_paths) - 1])
+                destination.write_bytes(marker * outcome)
+                metadata[marker] = (attempt_plan.video_bitrate, attempt_plan.estimated_size)
+            return destination
+
+        monkeypatch.setattr(engine, "_encode_single_pass", encode_once)
+        result = engine.encode(plan)
+
+        assert result == output
+        assert result.read_bytes() == expected_byte * expected_size
+        selected_plan = attempt_plans[-1]
+        assert selected_plan.video_bitrate == expected_bitrate
+        assert (selected_plan.video_bitrate, selected_plan.estimated_size) == metadata[
+            expected_byte
+        ]
+        assert engine.resolved_encoder == "libx264"
+        assert engine.encoder_fallback == ""
+        assert len(set(attempt_paths)) == len(attempt_paths)
+        assert all(path != source and path != output for path in attempt_paths)
+        assert source.read_bytes() == b"source"
+        assert set(tmp_path.iterdir()) == {source, output}
+
+    @pytest.mark.parametrize("failure", ["cancel", "encode_error", "os_error"])
+    def test_refinement_cancellation_discards_saved_candidate(
+        self, engine, tmp_path, monkeypatch, failure
+    ):
+        source = tmp_path / "source.mp4"
+        source.write_bytes(b"source")
+        output = tmp_path / "output.mp4"
+        output.write_bytes(b"existing export")
+        plan = EncodePlan(
+            source=str(source),
+            output=str(output),
+            replace_existing=True,
+            video_bitrate=1_000_000,
+            target_size=10_000,
+            two_pass=False,
+            rate_control_method=RCM_CBR,
+        )
+        monkeypatch.setattr("tuck.encoding.runner.find_ffmpeg", lambda: "ffmpeg")
+        monkeypatch.setattr(
+            "tuck.encoding.runner.get_available_encoders", lambda: frozenset({"libx264"})
+        )
+        monkeypatch.setattr(engine, "_left_bitrate_unused", lambda *_args: False)
+        calls = 0
+
+        def encode_once(_ffmpeg, _plan, _source, destination, *_args, **_kwargs):
+            nonlocal calls
+            calls += 1
+            destination.write_bytes(b"a" * 4_000)
+            if calls == 2:
+                engine.cancel()
+                if failure == "cancel":
+                    raise EncodeCancelled("Encoding cancelled by user")
+                if failure == "os_error":
+                    raise OSError(12, "Cannot allocate memory")
+                raise EncodeError("process stopped after cancellation")
+            return destination
+
+        monkeypatch.setattr(engine, "_encode_single_pass", encode_once)
+        with pytest.raises(EncodeCancelled):
+            engine.encode(plan)
+
+        assert output.read_bytes() == b"existing export"
+        assert source.read_bytes() == b"source"
+        assert set(tmp_path.iterdir()) == {source, output}
+
+    def test_attempt_os_error_without_saved_candidate_propagates(
+        self, engine, tmp_path, monkeypatch
+    ):
+        output = tmp_path / "output.mp4"
+        plan = EncodePlan(source="source.mp4", output=str(output), two_pass=False)
+        error = OSError(12, "Cannot allocate memory")
+
+        def fail(*_args, **_kwargs):
+            raise error
+
+        monkeypatch.setattr(engine, "_encode_single_pass", fail)
+        with pytest.raises(OSError) as caught:
+            engine._encode_with_retry("ffmpeg", plan, Path(plan.source), output, 10.0, None)
+
+        assert caught.value is error
+        assert not list(tmp_path.iterdir())
+
+    def test_saved_candidate_replace_os_error_propagates(self, engine, tmp_path, monkeypatch):
+        output = tmp_path / "output.mp4"
+        output.mkdir()
+        plan = EncodePlan(
+            source="source.mp4",
+            output=str(output),
+            video_bitrate=1_000_000,
+            target_size=10_000,
+            two_pass=False,
+        )
+
+        def encode_once(_ffmpeg, _plan, _source, destination, *_args, **_kwargs):
+            destination.write_bytes(b"a" * 4_000)
+            return destination
+
+        monkeypatch.setattr(engine, "_encode_single_pass", encode_once)
+        monkeypatch.setattr(engine, "_left_bitrate_unused", lambda *_args: False)
+        with pytest.raises(OSError):
+            engine._encode_with_retry("ffmpeg", plan, Path(plan.source), output, 10.0, None)
+
+        assert set(tmp_path.iterdir()) == {output}
+        assert output.is_dir()
+
     def test_undershoot_retries_then_stops_when_the_output_stops_growing(self, engine, tmp_path):
         output = tmp_path / "output.mp4"
         plan = EncodePlan(
@@ -1355,18 +1562,23 @@ class TestTargetSizeRetries:
             rate_control_method=RCM_CBR,
         )
         calls = 0
+        bitrates = []
 
-        def encode_once(*_args, **_kwargs):
+        def encode_once(_ffmpeg, attempt_plan, _source, destination, *_args, **_kwargs):
             nonlocal calls
             calls += 1
+            bitrates.append(attempt_plan.video_bitrate)
             # a content-limited source: raising the bitrate does not add bytes
-            output.write_bytes(b"x" * 4_000_000)
-            return output
+            destination.write_bytes(b"x" * 4_000_000)
+            return destination
 
         engine._encode_single_pass = encode_once
         result = engine._encode_with_retry("ffmpeg", plan, Path(plan.source), output, 10.0, None)
         assert result == output
-        assert plan.video_bitrate > 1_000_000, "the first undershoot must raise the bitrate"
+        assert bitrates == [1_000_000, 1_080_000]
+        assert plan.video_bitrate == 1_000_000, (
+            "keep the metadata of the equally sized first output"
+        )
         assert calls == 2, "stop after the retry that did not grow the output, not at the limit"
 
     def test_undershoot_is_accepted_when_the_video_left_its_bitrate_unused(
@@ -1384,12 +1596,12 @@ class TestTargetSizeRetries:
         )
         calls = 0
 
-        def encode_once(*_args, **_kwargs):
+        def encode_once(_ffmpeg, _plan, _source, destination, *_args, **_kwargs):
             nonlocal calls
             calls += 1
             # a small test pattern cannot use 5 Mbps, so more bitrate would change nothing
-            output.write_bytes(real_video_path.read_bytes())
-            return output
+            destination.write_bytes(real_video_path.read_bytes())
+            return destination
 
         engine._encode_single_pass = encode_once
         result = engine._encode_with_retry("ffmpeg", plan, Path(plan.source), output, 3.0, None)
@@ -1410,9 +1622,9 @@ class TestTargetSizeRetries:
         )
         sizes = iter([2_000_000, 4_000_000, 7_000_000])
 
-        def encode_once(*_args, **_kwargs):
-            output.write_bytes(b"x" * next(sizes))
-            return output
+        def encode_once(_ffmpeg, _plan, _source, destination, *_args, **_kwargs):
+            destination.write_bytes(b"x" * next(sizes))
+            return destination
 
         engine._encode_single_pass = encode_once
         engine._encode_with_retry("ffmpeg", plan, Path(plan.source), output, 10.0, None)
@@ -1434,10 +1646,10 @@ class TestTargetSizeRetries:
         )
         seen = []
 
-        def encode_once(_ffmpeg, attempt_plan, *_args, **_kwargs):
+        def encode_once(_ffmpeg, attempt_plan, _source, destination, *_args, **_kwargs):
             seen.append(attempt_plan.transform.crop)
-            output.write_bytes(b"x" * 4_000_000)
-            return output
+            destination.write_bytes(b"x" * 4_000_000)
+            return destination
 
         engine._encode_single_pass = encode_once
 

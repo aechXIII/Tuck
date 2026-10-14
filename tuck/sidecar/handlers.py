@@ -215,7 +215,13 @@ def _get_thumbnail(api: BridgeAPI, params: dict[str, object]) -> object:
 
 
 def _get_media_url(api: BridgeAPI, params: dict[str, object]) -> object:
-    return api.get_media_url(_string(params, "path"))
+    if set(params) == {"path"}:
+        return api.get_media_url(_string(params, "path"))
+    path = params.get("path")
+    track = params.get("track")
+    if set(params) != {"path", "track"} or not isinstance(path, str) or not _count(track):
+        raise _ParameterError
+    return api.get_media_url(path, track)
 
 
 def _release_media_token(api: BridgeAPI, params: dict[str, object]) -> object:

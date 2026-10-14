@@ -217,7 +217,7 @@ class BridgeAPI:
         except (OSError, ValueError) as exc:
             return {"ok": False, "error": str(exc)}
 
-    def get_media_url(self, path: str) -> BridgeResult:
+    def get_media_url(self, path: str, track: int | None = None) -> BridgeResult:
 
         try:
             path = self._validate_path(path)
@@ -226,6 +226,24 @@ class BridgeAPI:
         # the page asks for any path it likes, so only the video and audio Tuck opens are served
         if Path(path).suffix.lower() not in VIDEO_EXTENSIONS | AUDIO_EXTENSIONS:
             return {"ok": False, "error": f"Unsupported media file type: {Path(path).name}"}
+        if track is not None:
+            try:
+                if isinstance(track, bool) or not isinstance(track, int) or track < 0:
+                    raise ValueError("track must be a whole number >= 0")
+                info = self._probe_once(path)
+                count = max(1, info.audio_stream_count) if info.has_audio else 0
+                if track >= count:
+                    raise ValueError(f"This video has no audio track {track + 1}")
+                audio = self._media_server.generate_audio_preview(path, track=track)
+                if not audio:
+                    return {
+                        "ok": False,
+                        "error": f"Could not preview audio track {track + 1}. Export still works.",
+                    }
+                token = self._media_server.register_file(audio)
+                return {"ok": True, "url": self._media_server.get_url(token), "token": token}
+            except (OSError, ValueError, RuntimeError) as exc:
+                return {"ok": False, "error": str(exc)}
         try:
             token = self._media_server.register_file(path)
             url = self._media_server.get_url(token)

@@ -40,6 +40,8 @@ pub enum BackendCommand {
     },
     GetMediaUrl {
         path: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        track: Option<u32>,
     },
     ReleaseMediaToken {
         token: String,
@@ -176,7 +178,13 @@ impl BackendCommand {
                 ("get_waveform", payload)
             }
             Self::GetThumbnail { path } => ("get_thumbnail", json!({ "path": path })),
-            Self::GetMediaUrl { path } => ("get_media_url", json!({ "path": path })),
+            Self::GetMediaUrl { path, track } => {
+                let mut payload = json!({ "path": path });
+                if let Some(track) = track {
+                    payload["track"] = json!(track);
+                }
+                ("get_media_url", payload)
+            }
             Self::ReleaseMediaToken { token } => ("release_media_token", json!({ "token": token })),
             Self::AnalyzeCut { path, work_id } => {
                 ("analyze_cut", json!({ "path": path, "work_id": work_id }))
@@ -457,6 +465,29 @@ mod tests {
             assert!(serde_json::from_value::<BackendCommand>(json!({
                 "command": "get_waveform",
                 "payload": {"path": "/media/a.mkv", "track": track},
+            }))
+            .is_err());
+        }
+    }
+
+    #[test]
+    fn media_url_forwards_an_explicit_audio_track() {
+        for track in [None, Some(0), Some(1)] {
+            let mut payload = json!({"path": "/media/a.mkv"});
+            if let Some(track) = track {
+                payload["track"] = json!(track);
+            }
+            let request = serde_json::from_value::<BackendCommand>(json!({
+                "command": "get_media_url", "payload": payload,
+            }))
+            .unwrap()
+            .to_sidecar_request("r1")
+            .unwrap();
+            assert_eq!(request["params"], payload);
+        }
+        for track in [json!(-1), json!(true), json!("1"), json!(1.5)] {
+            assert!(serde_json::from_value::<BackendCommand>(json!({
+                "command": "get_media_url", "payload": {"path": "/media/a.mkv", "track": track},
             }))
             .is_err());
         }

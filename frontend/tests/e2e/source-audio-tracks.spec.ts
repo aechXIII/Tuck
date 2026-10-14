@@ -7,7 +7,7 @@ const WAVEFORM = "data:image/svg+xml," + encodeURIComponent(
   '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="24"><path d="M20 4v16M60 2v20" stroke="white"/></svg>',
 );
 
-async function open(page: Page, audioStreamCount: number | undefined): Promise<void> {
+async function open(page: Page, audioStreamCount: number | undefined, waveform = WAVEFORM): Promise<void> {
   const fixture = healthyBackendFixture();
   fixture.responses.pickFiles = { ok: true, files: [VIDEO] };
   fixture.responses.probeFile = {
@@ -17,7 +17,7 @@ async function open(page: Page, audioStreamCount: number | undefined): Promise<v
       ...(audioStreamCount === undefined ? {} : { audio_stream_count: audioStreamCount }),
     },
   };
-  fixture.responses.getWaveform = { ok: true, url: WAVEFORM, token: "waveform-token" };
+  fixture.responses.getWaveform = { ok: true, url: waveform, token: "waveform-token" };
   fixture.responses.getMediaUrl = { ok: true, url: "", token: "media-token" };
   fixture.responses.getThumbnail = { ok: true, thumbnail: "" };
   fixture.responses.releaseMediaToken = { ok: true };
@@ -56,6 +56,22 @@ test("each of a video's audio tracks has a timeline row with its own waveform", 
   await page.getByRole("button", { name: "Split at playhead" }).click();
   await expect(page.locator("#source-audio-lane .seq-audio-clip")).toHaveCount(2);
   await expect(rows.nth(0).locator(".seq-audio-clip")).toHaveCount(2);
+});
+
+test("multitrack preview asks for each exact audio stream and reports unavailable audio", async ({ page }) => {
+  await open(page, 2);
+  await expect.poll(() => page.evaluate(() => (window.__tuckFakeBackendCalls ?? [])
+    .filter((call) => call.method === "getMediaUrl" && call.args.length === 2)
+    .map((call) => call.args))).toEqual([[VIDEO, 0], [VIDEO, 1]]);
+  await expect(page.locator("#source-audio-preview-status")).toContainText("Could not preview source audio");
+});
+
+test("an empty waveform response leaves the mixer responsive and does not retry itself", async ({ page }) => {
+  await open(page, 2, "");
+  await page.locator("#insp-tab-edit").click({ timeout: 3000 });
+  await page.locator("#audio-track-mixer").getByRole("button", { name: "Mute Source audio 2", exact: true }).click({ timeout: 3000 });
+  await expect(page.locator("#source-extra-tracks .seq-row")).toHaveClass(/muted/);
+  expect(await page.evaluate(() => (window.__tuckFakeBackendCalls ?? []).filter((call) => call.method === "getWaveform").length)).toBeLessThan(10);
 });
 
 test("a muted track is left out of the export and the mute can be undone", async ({ page }) => {

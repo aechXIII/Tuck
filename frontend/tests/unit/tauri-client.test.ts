@@ -7,6 +7,24 @@ import {
   hasTauriInvoke,
 } from "../../src/backend/tauri.ts";
 
+test("media URL requests preserve explicit source track zero and later tracks", async () => {
+  const calls: Record<string, unknown>[] = [];
+  const client = createTauriBackendClient(async (_command, args) => {
+    calls.push(args);
+    return { url: "http://127.0.0.1/audio", token: "audio" };
+  });
+  for (const track of [undefined, 0, 1]) assert.equal((await client.getMediaUrl("clip.mkv", track)).ok, true);
+  assert.deepEqual(calls.map((args) => args.command), [
+    { command: "get_media_url", payload: { path: "clip.mkv" } },
+    { command: "get_media_url", payload: { path: "clip.mkv", track: 0 } },
+    { command: "get_media_url", payload: { path: "clip.mkv", track: 1 } },
+  ]);
+  const failed = createTauriBackendClient(async () => { throw { code: "BACKEND_REJECTED", message: "Could not preview audio track 2", details: {} }; });
+  const result = await failed.getMediaUrl("clip.mkv", 1);
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.equal(result.error.message, "Could not preview audio track 2");
+});
+
 test("Tauri transport maps probe requests through the finite backend command", async () => {
   const calls: Array<{ command: string; args: Record<string, unknown> }> = [];
   const client = createTauriBackendClient(async (command, args) => {

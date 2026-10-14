@@ -6,6 +6,7 @@ import logging
 import os
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from collections.abc import Callable
@@ -411,7 +412,7 @@ class FFmpegEngine:
         )
 
     def _apply_retry_decision(
-        self, plan: EncodePlan, output: Path, actual_size: int, attempt: int, max_attempts: int
+        self, plan: EncodePlan, actual_size: int, attempt: int, max_attempts: int
     ) -> bool:
         decision = decide_retry(
             actual_size=actual_size,
@@ -431,7 +432,6 @@ class FFmpegEngine:
         )
         plan.video_bitrate = decision.new_video_bitrate
         self._recalc_plan(plan)
-        self._cleanup_output(output)
         return True
 
     @staticmethod
@@ -507,65 +507,137 @@ class FFmpegEngine:
         max_attempts = 1 if is_upscale or is_explicit else DEFAULT_MAX_RETRIES + 1
         attempt = 0
         previous_size: int | None = None
+        attempt_outputs: list[Path] = []
+        best_result: Path | None = None
+        best_size = 0
+        best_bitrate = plan.video_bitrate
+        best_estimated_size = plan.estimated_size
 
-        while attempt < max_attempts:
-            if attempt > 0:
-                self._emit_retry_progress(on_progress, total_duration, attempt, max_attempts)
+        def accept(result: Path) -> Path:
+            if self._cancel_event.is_set():
+                raise EncodeCancelled("Encoding cancelled by user")
+            if best_result is not None:
+                result = best_result
+                plan.video_bitrate = best_bitrate
+                plan.estimated_size = best_estimated_size
+            result.replace(output)
+            return output
 
-            result = self._run_one_attempt(
-                ffmpeg, plan, source, output, total_duration, on_progress, attempt, max_attempts
-            )
+        try:
+            while attempt < max_attempts:
+                if self._cancel_event.is_set():
+                    raise EncodeCancelled("Encoding cancelled by user")
+                if attempt > 0:
+                    self._emit_retry_progress(on_progress, total_duration, attempt, max_attempts)
 
-            if not result.is_file() or result.stat().st_size == 0:
-                if attempt < max_attempts - 1:
-                    self._cleanup_output(output)
+                # each attempt gets its own file so refinement cannot destroy a usable export
+                try:
+                    fd, attempt_name = tempfile.mkstemp(
+                        prefix="attempt-", suffix=".mp4", dir=output.parent
+                    )
+                except OSError as exc:
+                    if best_result is None:
+                        raise
+                    logger.warning(
+                        "Keeping the under-target export; cannot start refinement: %s", exc
+                    )
+                    return accept(best_result)
+                os.close(fd)
+                attempt_output = Path(attempt_name)
+                attempt_outputs.append(attempt_output)
+                # FFmpeg refuses an existing output, including the empty reservation
+                attempt_output.unlink()
+                try:
+                    result = self._run_one_attempt(
+                        ffmpeg,
+                        plan,
+                        source,
+                        attempt_output,
+                        total_duration,
+                        on_progress,
+                        attempt,
+                        max_attempts,
+                    )
+                except OSError as exc:
+                    if self._cancel_event.is_set():
+                        raise EncodeCancelled("Encoding cancelled by user") from exc
+                    if best_result is None:
+                        raise
+                    logger.warning(
+                        "Keeping the under-target export after refinement failed: %s", exc
+                    )
+                    return accept(best_result)
+                if self._cancel_event.is_set():
+                    raise EncodeCancelled("Encoding cancelled by user")
+
+                if not result.is_file() or result.stat().st_size == 0:
+                    self._cleanup_output(attempt_output)
+                    if attempt >= max_attempts - 1:
+                        raise EncodeError("Output file is missing or empty after encoding")
                     attempt += 1
                     continue
-                raise EncodeError("Output file is missing or empty after encoding")
 
-            if is_upscale:
-                logger.info("Upscale encode complete: %s", format_size(result.stat().st_size))
-                return result
+                if is_upscale:
+                    logger.info("Upscale encode complete: %s", format_size(result.stat().st_size))
+                    return accept(result)
 
-            self._emit_verifying_progress(on_progress, total_duration, attempt, max_attempts)
-            actual_size = result.stat().st_size
+                self._emit_verifying_progress(on_progress, total_duration, attempt, max_attempts)
+                actual_size = result.stat().st_size
 
-            if is_explicit:
-                return self._finalize_explicit(result, plan, actual_size)
+                if is_explicit:
+                    return accept(self._finalize_explicit(result, plan, actual_size))
 
-            # A source that cannot fill the size budget will not get closer with
-            # more bitrate. Once a bitrate-raising retry barely grows the output,
-            # stop: an under-target file is already the requested result, and
-            # further retries only burn a full re-encode each.
-            if previous_size is not None and is_content_limited(
-                previous_size, actual_size, plan.target_size
-            ):
-                logger.info(
-                    "Output size %s is content-limited (grew %.1f%% on more bitrate); accepting",
-                    format_size(actual_size),
-                    (actual_size / max(previous_size, 1) - 1.0) * 100.0,
-                )
-                return self._finalize_within_target(result, plan, actual_size, max_attempts)
+                # size ranks how closely an output fills the budget, not its image quality
+                if actual_size <= plan.target_size and actual_size > best_size:
+                    if best_result is not None:
+                        self._cleanup_output(best_result)
+                    best_result = result
+                    best_size = actual_size
+                    best_bitrate = plan.video_bitrate
+                    best_estimated_size = plan.estimated_size
 
-            # the same holds before any retry when the output shows the encoder left much of
-            # its bitrate unused: raising that bitrate would repeat the encode for nothing
-            if actual_size < plan.target_size * UNDERSHOOT_RATIO and self._left_bitrate_unused(
-                result, plan
-            ):
-                logger.info(
-                    "Output size %s is content-limited (video bitrate left unused); accepting",
-                    format_size(actual_size),
-                )
-                return self._finalize_within_target(result, plan, actual_size, max_attempts)
+                # more bitrate cannot help when the preceding refinement barely grew the file
+                if previous_size is not None and is_content_limited(
+                    previous_size, actual_size, plan.target_size
+                ):
+                    logger.info(
+                        "Output size %s is content-limited "
+                        "(grew %.1f%% on more bitrate); accepting",
+                        format_size(actual_size),
+                        (actual_size / max(previous_size, 1) - 1.0) * 100.0,
+                    )
+                    return accept(result)
 
-            previous_size = actual_size
-            if self._apply_retry_decision(plan, output, actual_size, attempt, max_attempts):
-                attempt += 1
-                continue
+                # unused bitrate shows the same limit before spending another full encode
+                if actual_size < plan.target_size * UNDERSHOOT_RATIO and self._left_bitrate_unused(
+                    result, plan
+                ):
+                    logger.info(
+                        "Output size %s is content-limited (video bitrate left unused); accepting",
+                        format_size(actual_size),
+                    )
+                    return accept(result)
 
-            return self._finalize_within_target(result, plan, actual_size, max_attempts)
+                previous_size = actual_size
+                if self._apply_retry_decision(plan, actual_size, attempt, max_attempts):
+                    if result != best_result:
+                        self._cleanup_output(result)
+                    attempt += 1
+                    continue
 
-        raise EncodeError("Encoding failed after all retries")
+                return accept(self._finalize_within_target(result, plan, actual_size, max_attempts))
+
+            raise EncodeError("Encoding failed after all retries")
+        except EncodeError as exc:
+            if self._cancel_event.is_set():
+                raise EncodeCancelled("Encoding cancelled by user") from exc
+            if best_result is None:
+                raise
+            logger.warning("Keeping the under-target export after refinement failed: %s", exc)
+            return accept(best_result)
+        finally:
+            for attempt_output in attempt_outputs:
+                self._cleanup_output(attempt_output)
 
     @staticmethod
     def _left_bitrate_unused(result: Path, plan: EncodePlan) -> bool:

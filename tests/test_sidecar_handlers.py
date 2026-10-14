@@ -18,6 +18,10 @@ class RecordingApi:
         self.calls.append(("get_waveform", (path, track)))
         return {"ok": True, "url": "http://127.0.0.1/w", "token": "t"}
 
+    def get_media_url(self, path: str, track: int | None = None) -> dict[str, object]:
+        self.calls.append(("get_media_url", (path, track)))
+        return {"ok": True, "url": "http://127.0.0.1/a", "token": "a"}
+
     def move_item(self, item_id: str, new_index: int) -> dict[str, object]:
         self.calls.append(("move_item", (item_id, new_index)))
         return {"ok": True}
@@ -248,3 +252,24 @@ def test_waveform_takes_an_optional_audio_track() -> None:
         response = dispatch(api, _request("get_waveform", {"path": "C:/clip.mkv", "track": track}))
         assert response.ok is False
     assert len(api.calls) == 2
+
+
+def test_media_url_takes_an_optional_audio_track() -> None:
+    api = RecordingApi()
+    for params in (
+        {"path": "clip.mkv"},
+        {"path": "clip.mkv", "track": 0},
+        {"path": "clip.mkv", "track": 1},
+    ):
+        assert dispatch(api, _request("get_media_url", params)).ok is True
+    assert api.calls == [
+        ("get_media_url", ("clip.mkv", None)),
+        ("get_media_url", ("clip.mkv", 0)),
+        ("get_media_url", ("clip.mkv", 1)),
+    ]
+    for track in (-1, "2", True, 1.5, None):
+        assert (
+            dispatch(api, _request("get_media_url", {"path": "clip.mkv", "track": track})).ok
+            is False
+        )
+    assert len(api.calls) == 3

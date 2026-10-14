@@ -12,6 +12,7 @@ import { recordedCommand } from "../history/history.ts";
 import * as SegmentEditing from "../timeline/segments.ts";
 import * as TimelineCore from "../timeline/timeline-core.ts";
 import * as core from "./audio-core.ts";
+import { browserSourcePreviewPlayers, createSourceAudioPreview } from "./source-audio-preview.ts";
 
 const waveformGenerations = new Map<string, number>();
 
@@ -193,6 +194,15 @@ export function installAudioTimeline(host: AudioTimelineHost) {
   const windowRef = host.windowRef ?? window;
   const notify = host.toast ?? toast;
   const confirm = host.confirmToast ?? confirmToast;
+  const sourcePreview = createSourceAudioPreview({
+    request: (path, track) => getBackendClient().getMediaUrl(path, track),
+    release: async (token) => { await getBackendClient().releaseMediaToken(token); },
+    player: browserSourcePreviewPlayers(documentRef, windowRef),
+    status(message) {
+      const status = byId("source-audio-preview-status");
+      if (status) { status.textContent = message ?? ""; status.hidden = !message; }
+    },
+  });
 
   let selectedClipId: string | null = null;
   let selectedTrackId = "source";
@@ -1312,6 +1322,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
   // source audio at its own level, with no added tracks
   function sourcePreviewVolume(clip: EditorClip, state: AudioTimelineState, time: number) {
     if (!clip.probeData?.has_audio) return 0;
+    if (sourceTrackCount(clip) > 1) return 0;
     if (cutTask()) {
       let kept = SegmentEditing.segmentsForClip(clip, sourceDuration(clip));
       return SegmentEditing.segmentIndexAtTime(kept, time, 0.02) >= 0 ? previewBaseVolume() : 0;
@@ -1346,6 +1357,19 @@ export function installAudioTimeline(host: AudioTimelineHost) {
     let base = previewBaseVolume();
     video.volume = sourcePreviewVolume(videoClip, state, time);
     let cut = cutTask();
+    if (sourceTrackCount(videoClip) > 1 && hasBackendClient()) {
+      // the browser may choose a later default stream; every mixer row needs its exact stream
+      sourcePreview.select(videoClip.path, sourceTrackCount(videoClip));
+      const audible = cut
+        ? SegmentEditing.segmentIndexAtTime(SegmentEditing.segmentsForClip(videoClip, total), time, 0.02) >= 0
+        : state.enabled && sourceAudioAudibleAt(videoClip, time);
+      sourcePreview.sync(time, video.playbackRate || 1, audible ? base : 0, !video.paused, [
+        { muted: !cut && state.sourceMuted, gainDb: cut ? 0 : state.sourceGainDb },
+        ...extraTracks(state).map((track) => ({ muted: !cut && track.muted, gainDb: cut ? 0 : track.gainDb })),
+      ]);
+    } else {
+      void sourcePreview.clear();
+    }
     state.tracks.forEach(function(track: AudioTrackState) {
       let element = previewElement(track);
       if (!element) return;
@@ -1420,6 +1444,11 @@ export function installAudioTimeline(host: AudioTimelineHost) {
     try {
       let result = await getBackendClient().getWaveform(path);
       if (currentWaveformGeneration(path) !== generation) return;
+      if (result.ok && !result.value.url) {
+        releaseToken(result.value.token);
+        releaseSourceLoading();
+        return;
+      }
       if (selectedVideo() !== clip || clip.path !== clipPath || !result.ok || !clip.audioTimeline) {
         releaseSourceLoading();
         return;
@@ -1484,6 +1513,10 @@ export function installAudioTimeline(host: AudioTimelineHost) {
       }
       extra.waveformLoading = false;
       if (!result.ok) return;
+      if (!result.value.url) {
+        releaseToken(result.value.token);
+        return;
+      }
       extra.waveformUrl = result.value.url;
       extra.waveformToken = result.value.token ?? "";
       if (selectedVideo() === clip) render();
@@ -1577,6 +1610,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
   }
 
   function disposeClip(videoClip: EditorClip | null | undefined) {
+    if (selectedVideo() === videoClip) void sourcePreview.clear();
     const state = ensureState(videoClip);
     if (!state) return;
     releaseToken(state.sourceWaveformToken);
@@ -1686,6 +1720,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
     render: render,
     trackColor: trackColor,
     selectVideo: function(clip: EditorClip | null | undefined) {
+      void sourcePreview.clear();
       stopPreviewElements();
       setTimelineSelection("source", null);
       if (clip) {
@@ -1998,6 +2033,8 @@ export function installAudioTimeline(host: AudioTimelineHost) {
     video.addEventListener("pause", syncPreview);
     video.addEventListener("timeupdate", syncPreview);
     video.addEventListener("seeked", syncPreview);
+    video.addEventListener("seeking", syncPreview);
+    video.addEventListener("ratechange", syncPreview);
   }
   function canSetSelectionBoundary() {
     let clip = selectedVideo();

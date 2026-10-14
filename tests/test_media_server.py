@@ -2,7 +2,9 @@ import hashlib
 import socket
 import subprocess
 import threading
+from array import array
 from dataclasses import replace
+from itertools import pairwise
 from pathlib import Path
 from types import SimpleNamespace
 from urllib.error import HTTPError
@@ -761,6 +763,258 @@ class TestMediaServer:
         assert "colors=0xffffff" in waveform_filter
         assert "draw=full" in waveform_filter
 
+    @pytest.mark.parametrize("kind", ["waveform", "audio_preview"])
+    def test_generated_media_is_published_whole_and_shared(self, tmp_path, monkeypatch, kind):
+        source = tmp_path / "music.mp3"
+        source.write_bytes(b"audio")
+        cache = tmp_path / "thumbs"
+        server = MediaServer()
+        server.set_thumbnail_cache_dir(cache)
+        monkeypatch.setattr("tuck.media_server.find_ffmpeg", lambda: "ffmpeg")
+        entered = threading.Event()
+        release = threading.Event()
+        started = threading.Event()
+        outputs = []
+        results = []
+        errors = []
+
+        def fake_run(command, **_kwargs):
+            if "volumedetect" in " ".join(command):
+                return SimpleNamespace(returncode=0, stderr=b"max_volume: -12 dB")
+            output = Path(command[-1])
+            outputs.append(output)
+            output.write_bytes(b"partial")
+            entered.set()
+            assert release.wait(timeout=5)
+            output.write_bytes(b"complete")
+            return SimpleNamespace(returncode=0, stderr=b"")
+
+        monkeypatch.setattr("tuck.media_server.subprocess.run", fake_run)
+        generate = getattr(server, "generate_" + kind)
+
+        def request():
+            started.set()
+            try:
+                results.append(generate(source, track=0))
+            except Exception as error:
+                errors.append(error)
+
+        first = threading.Thread(target=request)
+        second = threading.Thread(target=request)
+        first.start()
+        try:
+            assert entered.wait(timeout=5)
+            # public cache files must never expose the writer's unfinished bytes
+            assert not list(cache.glob("*.png"))
+            assert not list(cache.glob("*.m4a"))
+            started.clear()
+            second.start()
+            assert started.wait(timeout=5)
+        finally:
+            release.set()
+            first.join(timeout=5)
+            if second.ident is not None:
+                second.join(timeout=5)
+
+        assert not errors
+        assert not first.is_alive() and not second.is_alive()
+        assert len(outputs) == 1
+        assert len(results) == 2 and results[0] == results[1] is not None
+        assert Path(results[0]).read_bytes() == b"complete"
+        assert outputs[0].suffix == (".png" if kind == "waveform" else ".m4a")
+        assert not outputs[0].exists()
+        assert list(cache.iterdir()) == [Path(results[0])]
+
+    @pytest.mark.parametrize("kind", ["waveform", "audio_preview"])
+    @pytest.mark.parametrize("failure", ["exit", "timeout", "io"])
+    def test_failed_generated_media_cleans_only_its_partial_file(
+        self, tmp_path, monkeypatch, kind, failure
+    ):
+        source = tmp_path / "music.mp3"
+        source.write_bytes(b"audio")
+        cache = tmp_path / "thumbs"
+        server = MediaServer()
+        server.set_thumbnail_cache_dir(cache)
+        existing = cache / "other.png"
+        existing.write_bytes(b"valid cache")
+        monkeypatch.setattr("tuck.media_server.find_ffmpeg", lambda: "ffmpeg")
+
+        def fake_run(command, **_kwargs):
+            if "volumedetect" in " ".join(command):
+                return SimpleNamespace(returncode=0, stderr=b"max_volume: -12 dB")
+            Path(command[-1]).write_bytes(b"partial")
+            if failure == "timeout":
+                raise subprocess.TimeoutExpired(command, 1)
+            if failure == "io":
+                raise OSError("write failed")
+            return SimpleNamespace(returncode=1, stderr=b"encoding failed")
+
+        monkeypatch.setattr("tuck.media_server.subprocess.run", fake_run)
+        generate = getattr(server, "generate_" + kind)
+
+        assert generate(source, track=0) is None
+        assert list(cache.iterdir()) == [existing]
+        assert existing.read_bytes() == b"valid cache"
+
+    @pytest.mark.parametrize("kind", ["waveform", "audio_preview"])
+    def test_failed_writer_preserves_another_servers_completed_media(
+        self, tmp_path, monkeypatch, kind
+    ):
+        source = tmp_path / "music.mp3"
+        source.write_bytes(b"audio")
+        cache = tmp_path / "thumbs"
+        first_server = MediaServer()
+        second_server = MediaServer()
+        first_server.set_thumbnail_cache_dir(cache)
+        second_server.set_thumbnail_cache_dir(cache)
+        monkeypatch.setattr("tuck.media_server.find_ffmpeg", lambda: "ffmpeg")
+        entered = threading.Event()
+        release = threading.Event()
+        outputs = []
+        first_results = []
+
+        def fake_run(command, **_kwargs):
+            if "volumedetect" in " ".join(command):
+                return SimpleNamespace(returncode=0, stderr=b"max_volume: -12 dB")
+            output = Path(command[-1])
+            outputs.append(output)
+            if len(outputs) == 1:
+                output.write_bytes(b"partial")
+                entered.set()
+                assert release.wait(timeout=5)
+                return SimpleNamespace(returncode=1, stderr=b"first writer failed")
+            output.write_bytes(b"complete")
+            return SimpleNamespace(returncode=0, stderr=b"")
+
+        monkeypatch.setattr("tuck.media_server.subprocess.run", fake_run)
+        first_generate = getattr(first_server, "generate_" + kind)
+        second_generate = getattr(second_server, "generate_" + kind)
+        first = threading.Thread(
+            target=lambda: first_results.append(first_generate(source, track=0))
+        )
+        first.start()
+        try:
+            assert entered.wait(timeout=5)
+            completed = second_generate(source, track=0)
+            assert completed is not None
+            assert Path(completed).read_bytes() == b"complete"
+        finally:
+            release.set()
+            first.join(timeout=5)
+
+        assert first_results == [None]
+        assert len(outputs) == 2 and outputs[0] != outputs[1]
+        assert Path(completed).read_bytes() == b"complete"
+        assert list(cache.iterdir()) == [Path(completed)]
+
+    @pytest.mark.parametrize("origin", [0, 5])
+    def test_audio_previews_select_exact_tracks_and_keep_delayed_audio(self, tmp_path, origin):
+        ffmpeg = find_ffmpeg()
+        if not ffmpeg:
+            pytest.skip("ffmpeg is needed to check audio preview extraction")
+        source = tmp_path / "two-tracks.mkv"
+        created = subprocess.run(
+            [
+                ffmpeg,
+                "-nostdin",
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=size=64x64:rate=10:duration=1.5",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:sample_rate=48000:duration=1.5",
+                "-itsoffset",
+                "0.4",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=880:sample_rate=48000:duration=1.1",
+                "-map",
+                "0:v",
+                "-map",
+                "1:a",
+                "-map",
+                "2:a",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "ultrafast",
+                "-c:a",
+                "aac",
+                "-disposition:a:0",
+                "0",
+                "-disposition:a:1",
+                "default",
+                "-output_ts_offset",
+                str(origin),
+                str(source),
+            ],
+            capture_output=True,
+            timeout=30,
+        )
+        assert created.returncode == 0, created.stderr.decode(errors="replace")
+        server = MediaServer()
+        server.set_thumbnail_cache_dir(tmp_path / "cache")
+        first = server.generate_audio_preview(source, track=0)
+        second = server.generate_audio_preview(source, track=1)
+        assert first and second and first != second
+        assert server.generate_audio_preview(source, track=1) == second
+        assert server.generate_audio_preview(source, track=2) is None
+        assert sorted((tmp_path / "cache").iterdir()) == sorted([Path(first), Path(second)])
+
+        def samples(path):
+            data = array("f")
+            with av.open(path) as media:
+                assert len(media.streams.audio) == 1
+                assert media.streams.audio[0].codec_context.name == "aac"
+                assert media.duration / 1_000_000 == pytest.approx(origin + 1.5, abs=0.08)
+                resampler = av.AudioResampler(format="flt", layout="mono", rate=48000)
+                for frame in media.decode(audio=0):
+                    for converted in resampler.resample(frame):
+                        data.extend(array("f", bytes(converted.planes[0])[: converted.samples * 4]))
+            return data
+
+        for path, frequency in [(first, 440), (second, 880)]:
+            audio = samples(path)
+            start = origin * 48000
+            region = audio[start + 38400 : start + 52800]
+            crossings = sum(left <= 0 < right for left, right in pairwise(region))
+            assert crossings / 0.3 == pytest.approx(frequency, abs=10)
+            if origin:
+                assert max(abs(value) for value in audio[: start - 4800]) < 0.001
+            if path == second:
+                assert max(abs(value) for value in audio[start : start + 14400]) < 0.001
+            else:
+                assert max(abs(value) for value in audio[start : start + 14400]) > 0.01
+
+    def test_audio_preview_cache_changes_with_the_source_and_survives_missing_ffmpeg(
+        self, tmp_path, monkeypatch
+    ):
+        source = tmp_path / "music.mp3"
+        source.write_bytes(b"original")
+        server = MediaServer()
+        server.set_thumbnail_cache_dir(tmp_path / "cache")
+        monkeypatch.setattr("tuck.media_server.find_ffmpeg", lambda: "ffmpeg")
+
+        def fake_run(command, **_kwargs):
+            Path(command[-1]).write_bytes(source.read_bytes())
+            return SimpleNamespace(returncode=0, stderr=b"")
+
+        monkeypatch.setattr("tuck.media_server.subprocess.run", fake_run)
+        original = server.generate_audio_preview(source, track=0)
+        source.write_bytes(b"replacement source")
+        replacement = server.generate_audio_preview(source, track=0)
+
+        assert original and replacement and original != replacement
+        assert Path(original).read_bytes() == b"original"
+        assert Path(replacement).read_bytes() == b"replacement source"
+        monkeypatch.setattr("tuck.media_server.find_ffmpeg", lambda: None)
+        assert server.generate_audio_preview(source, track=0) == replacement
+
     def test_each_audio_track_has_its_own_waveform(self, tmp_path, monkeypatch):
         source = tmp_path / "recording.mkv"
         source.write_bytes(b"video")
@@ -788,7 +1042,10 @@ class TestMediaServer:
         assert calls[2][calls[2].index("-map") + 1] == "0:a:1"
         assert calls[3][calls[3].index("-filter_complex") + 1].startswith("[0:a:1]")
 
-    def test_generate_waveform_ignores_legacy_linear_cache(self, tmp_path, monkeypatch):
+    @pytest.mark.parametrize("legacy_prefix", ["waveform", "waveform:v10"])
+    def test_generate_waveform_ignores_legacy_linear_cache(
+        self, tmp_path, monkeypatch, legacy_prefix
+    ):
         source = tmp_path / "quiet-video.mp4"
         source.write_bytes(b"video")
         cache = tmp_path / "thumbs"
@@ -797,7 +1054,7 @@ class TestMediaServer:
 
         stat = source.stat()
         legacy_key = hashlib.sha256(
-            f"waveform:{source.resolve()}:{stat.st_size}:{stat.st_mtime_ns}".encode()
+            f"{legacy_prefix}:{source.resolve()}:{stat.st_size}:{stat.st_mtime_ns}".encode()
         ).hexdigest()[:32]
         (cache / f"waveform_{legacy_key}.png").write_bytes(b"legacy")
 

@@ -72,6 +72,86 @@ test("preview URLs bind to the selected source and ignore stale responses", asyn
   assert.equal(clips.get("B.mp4")?.mediaToken, "token-b");
   assert.equal(clips.get("A.mp4")?.mediaToken, null);
   assert.deepEqual(thumbs, []);
+  assert.deepEqual(released, ["token-a"]);
+});
+
+test("a media response arriving after disposal gives its token back", async () => {
+  const media = deferred<BackendResult<UrlPayload>>();
+  const clip = createEditorClip("late.mp4");
+  const released: string[] = [];
+  const urls: string[] = [];
+  setBackendClient({
+    ...createFakeBackendClient({}).client,
+    getMediaUrl: async () => media.promise,
+    releaseMediaToken: async (token) => {
+      released.push(token);
+      return { ok: true, value: {} };
+    },
+  });
+  const preview = createPreviewController({
+    clip: () => clip,
+    selectedPath: () => clip.path,
+    media: {
+      showLoading() {}, showThumbnail() {}, showUnavailable() {}, clear() {}, seek() {},
+      showUrl: (url) => urls.push(url),
+    },
+  });
+  preview.select(clip.path);
+  await preview.dispose();
+  media.resolve({ ok: true, value: { url: "media://late", token: "late-token" } });
+  await settleAsyncWork();
+  assert.deepEqual(urls, []);
+  assert.deepEqual(released, ["late-token"]);
+  assert.equal(clip.mediaToken, null);
+});
+
+test("retrying the same video releases the old token without releasing the replacement", async () => {
+  const clip = createEditorClip("retry.mp4");
+  const released: string[] = [];
+  let count = 0;
+  setBackendClient({
+    ...createFakeBackendClient({}).client,
+    getMediaUrl: async () => ({ ok: true, value: { url: `media://${++count}`, token: `token-${count}` } }),
+    releaseMediaToken: async (token) => {
+      released.push(token);
+      return { ok: true, value: {} };
+    },
+  });
+  const preview = createPreviewController({
+    clip: () => clip,
+    selectedPath: () => clip.path,
+    media: {
+      showLoading() {}, showUrl() {}, showThumbnail() {}, showUnavailable() {}, clear() {}, seek() {},
+    },
+  });
+  preview.select(clip.path);
+  await settleAsyncWork();
+  preview.select(clip.path);
+  await settleAsyncWork();
+  assert.deepEqual(released, ["token-1"]);
+  assert.equal(clip.mediaToken, "token-2");
+  await preview.dispose();
+  assert.deepEqual(released, ["token-1", "token-2"]);
+});
+
+test("a media result with no playable URL releases its unused token", async () => {
+  const clip = createEditorClip("picture.mp4");
+  const backend = createFakeBackendClient({
+    getMediaUrl: { ok: true, value: { url: "", token: "unused-token" } },
+    getThumbnail: { ok: true, value: { thumbnail: "picture://still" } },
+  });
+  setBackendClient(backend.client);
+  const preview = createPreviewController({
+    clip: () => clip,
+    selectedPath: () => clip.path,
+    media: {
+      showLoading() {}, showUrl() {}, showThumbnail() {}, showUnavailable() {}, clear() {}, seek() {},
+    },
+  });
+  preview.select(clip.path);
+  await settleAsyncWork();
+  assert.deepEqual(backend.calls.filter((call) => call.method === "releaseMediaToken").map((call) => call.args), [["unused-token"]]);
+  assert.equal(clip.mediaToken, null);
 });
 
 test("disposing a preview releases its media token exactly once", async () => {

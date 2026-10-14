@@ -139,7 +139,7 @@ export async function installFakeBackend(
         clearLutHistory: () => respond("clearLutHistory", []),
         loadLut: (path: string) => respond("loadLut", [path]),
         pickLutFile: () => respond("pickLutFile", []),
-        getMediaUrl: (path: string) => respond("getMediaUrl", [path]),
+        getMediaUrl: (path: string, track?: number) => respond("getMediaUrl", track === undefined ? [path] : [path, track]),
         releaseMediaToken: (token: string) => respond("releaseMediaToken", [token]),
         createPlan: (request: unknown) => respond("createPlan", [request]),
         analyzeCut: (path: string, workId: string) => respond("analyzeCut", [path, workId]),

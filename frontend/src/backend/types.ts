@@ -176,7 +176,7 @@ export interface DomainBackendClient {
   // track counts a video's audio tracks from 0; leaving it out asks for the first
   getWaveform(path: string, track?: number): Promise<BackendResult<UrlPayload>>;
   getThumbnail(path: string): Promise<BackendResult<ThumbnailPayload>>;
-  getMediaUrl(path: string): Promise<BackendResult<UrlPayload>>;
+  getMediaUrl(path: string, track?: number): Promise<BackendResult<UrlPayload>>;
   releaseMediaToken(token: string): Promise<BackendResult<EmptyPayload>>;
   createPlan(request: CutPlanRequest): Promise<BackendResult<CutPlanPayload>>;
   createPlan(request: PlanRequest): Promise<BackendResult<DataPayload>>;

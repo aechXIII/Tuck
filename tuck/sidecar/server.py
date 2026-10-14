@@ -134,7 +134,10 @@ def run_server(
             work = RequestWork()
             with work_lock:
                 request_work.add(work)
-            executor = media if request.method in MEDIA_METHODS else control
+            media_request = request.method in MEDIA_METHODS or (
+                request.method == "get_media_url" and "track" in request.params
+            )
+            executor = media if media_request else control
             future = executor.submit(dispatch, api, request, work)
             future.add_done_callback(
                 lambda completed, request_id=request.request_id, work=work: complete(

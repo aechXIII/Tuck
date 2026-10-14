@@ -136,6 +136,7 @@ def _run_ffprobe_json(ffprobe_path: str, source: Path, context: str) -> dict:
         "json",
         "-show_format",
         "-show_streams",
+        "--",
         str(source),
     ]
 

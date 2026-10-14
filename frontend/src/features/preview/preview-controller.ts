@@ -38,12 +38,10 @@ export interface PreviewController {
 
 export function createPreviewController(host: PreviewCoordinatorHost): PreviewController {
   let generation = 0;
-  let selectedPath: string | null = null;
+  let selectedClip: EditorClip | undefined;
 
-  async function releaseToken(clip: EditorClip | undefined): Promise<void> {
-    const token = clip?.mediaToken;
+  async function releaseValue(token: string | null | undefined): Promise<void> {
     if (!token) return;
-    clip.mediaToken = null;
     try {
       await getBackendClient().releaseMediaToken(token);
     } catch {
@@ -51,16 +49,26 @@ export function createPreviewController(host: PreviewCoordinatorHost): PreviewCo
     }
   }
 
+  async function releaseToken(clip: EditorClip | undefined): Promise<void> {
+    const token = clip?.mediaToken;
+    if (clip) clip.mediaToken = null;
+    await releaseValue(token);
+  }
+
   async function load(path: string, requestId: number): Promise<void> {
     const clip = host.clip(path);
     try {
       const response = await legacyBackendResult(getBackendClient().getMediaUrl(path));
-      if (requestId !== generation || host.selectedPath() !== path) return;
+      if (requestId !== generation || host.selectedPath() !== path || host.clip(path) !== clip) {
+        await releaseValue(typeof response.token === "string" ? response.token : null);
+        return;
+      }
       if (response.ok && typeof response.url === "string" && response.url) {
         host.media.showUrl(response.url);
         if (clip && typeof response.token === "string") clip.mediaToken = response.token;
         return;
       }
+      await releaseValue(typeof response.token === "string" ? response.token : null);
       if (typeof response.thumbnail === "string" && response.thumbnail) {
         host.media.showThumbnail(response.thumbnail);
         host.media.showUnavailable(true);
@@ -91,8 +99,8 @@ export function createPreviewController(host: PreviewCoordinatorHost): PreviewCo
 
   return {
     select(path) {
-      const previous = selectedPath !== path ? host.clip(selectedPath ?? "") : undefined;
-      selectedPath = path;
+      const previous = selectedClip;
+      selectedClip = path ? host.clip(path) : undefined;
       generation += 1;
       const requestId = generation;
       // the old video leaves the stage before its media link is given back
@@ -106,8 +114,8 @@ export function createPreviewController(host: PreviewCoordinatorHost): PreviewCo
     },
     async dispose() {
       generation += 1;
-      const clip = selectedPath ? host.clip(selectedPath) : undefined;
-      selectedPath = null;
+      const clip = selectedClip;
+      selectedClip = undefined;
       host.media.clear();
       await releaseToken(clip);
     },

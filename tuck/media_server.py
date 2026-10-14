@@ -8,8 +8,10 @@ import os
 import re
 import secrets
 import subprocess
+import tempfile
 import threading
 import time
+from collections.abc import Callable
 from fractions import Fraction
 from functools import lru_cache
 from pathlib import Path
@@ -95,7 +97,8 @@ _WAVEFORM_COLUMNS_PER_SECOND = 96
 # tall enough to stay sharp in the tallest timeline rows
 _WAVEFORM_HEIGHT = 192
 _WAVEFORM_TIMEOUT = 60
-_WAVEFORM_CACHE_VERSION = 10
+_WAVEFORM_CACHE_VERSION = 11
+_AUDIO_PREVIEW_CACHE_VERSION = 2
 _WAVEFORM_TARGET_PEAK_DB = -1.0
 _WAVEFORM_MAX_GAIN_DB = 60.0
 # audio this dense (peak close to its average, like mastered music) fills the whole row when its
@@ -324,6 +327,16 @@ def _cached_file_or_none(path: Path) -> str | None:
     return None
 
 
+def _publish_generated_media(output: Path, write: Callable[[Path], bool]) -> str | None:
+    # each writer owns its workspace; a failed attempt must never remove another result
+    with tempfile.TemporaryDirectory(prefix=".media-", dir=output.parent) as workspace:
+        partial = Path(workspace) / output.name
+        if not write(partial) or not _cached_file_or_none(partial):
+            return None
+        os.replace(partial, output)
+    return str(output)
+
+
 def _write_thumbnail_in_process(file_path: Path, thumb_path: Path, timeout: float) -> bool:
     """Write the thumbnail with PyAV, so no ffmpeg process has to start.
 
@@ -470,7 +483,7 @@ class MediaServer:
         self._running = False
 
         self._thumb_dir: Path | None = None
-        self._thumb_locks: dict[str, threading.Lock] = {}
+        self._cache_locks: dict[str, threading.Lock] = {}
 
     @property
     def port(self) -> int:
@@ -562,7 +575,7 @@ class MediaServer:
         # the Library and the player can ask for the same picture at once; the second waits
         # for the first and reuses its file instead of writing the same output again
         with self._lock:
-            thumb_lock = self._thumb_locks.setdefault(cache_key, threading.Lock())
+            thumb_lock = self._cache_locks.setdefault(cache_key, threading.Lock())
         with thumb_lock:
             cached = _cached_file_or_none(thumb_path)
             if cached:
@@ -604,22 +617,106 @@ class MediaServer:
             ).encode()
         ).hexdigest()[:32]
         waveform_path = self._thumb_dir / f"waveform_{cache_key}.png"
-        cached = _cached_file_or_none(waveform_path)
-        if cached:
-            return cached
+        with self._lock:
+            waveform_lock = self._cache_locks.setdefault(cache_key, threading.Lock())
+        with waveform_lock:
+            cached = _cached_file_or_none(waveform_path)
+            if cached:
+                return cached
 
-        ffmpeg = find_ffmpeg()
-        if not ffmpeg:
-            logger.warning("Cannot generate waveform: ffmpeg not found")
-            return None
-
-        try:
-            if not _run_waveform_ffmpeg(ffmpeg, file_path, waveform_path, timeout, track):
+            ffmpeg = find_ffmpeg()
+            if not ffmpeg:
+                logger.warning("Cannot generate waveform: ffmpeg not found")
                 return None
-            return _cached_file_or_none(waveform_path)
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            logger.warning("Waveform generation failed for %s: %s", file_path.name, exc)
+
+            try:
+                return _publish_generated_media(
+                    waveform_path,
+                    lambda partial: _run_waveform_ffmpeg(
+                        ffmpeg, file_path, partial, timeout, track
+                    ),
+                )
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                logger.warning("Waveform generation failed for %s: %s", file_path.name, exc)
         return None
+
+    def generate_audio_preview(
+        self, file_path: str | Path, *, track: int, timeout: float = _WAVEFORM_TIMEOUT
+    ) -> str | None:
+        file_path = Path(file_path).resolve()
+        if not file_path.is_file() or self._thumb_dir is None:
+            return None
+        stat = file_path.stat()
+        cache_key = hashlib.sha256(
+            (
+                f"audio-preview:v{_AUDIO_PREVIEW_CACHE_VERSION}:{file_path}:"
+                f"{stat.st_size}:{stat.st_mtime_ns}:a{track}"
+            ).encode()
+        ).hexdigest()[:32]
+        preview_path = self._thumb_dir / f"audio_{cache_key}.m4a"
+        with self._lock:
+            preview_lock = self._cache_locks.setdefault(cache_key, threading.Lock())
+        with preview_lock:
+            cached = _cached_file_or_none(preview_path)
+            if cached:
+                return cached
+            ffmpeg = find_ffmpeg()
+            if not ffmpeg:
+                logger.warning("Cannot generate audio preview: ffmpeg not found")
+                return None
+            try:
+                return _publish_generated_media(
+                    preview_path,
+                    lambda partial: _run_audio_preview_ffmpeg(
+                        ffmpeg, file_path, partial, timeout, track
+                    ),
+                )
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                logger.warning("Audio preview generation failed for %s: %s", file_path.name, exc)
+        return None
+
+
+def _run_audio_preview_ffmpeg(
+    ffmpeg: str, source: Path, output: Path, timeout: float, track: int
+) -> bool:
+    command = [
+        ffmpeg,
+        "-nostdin",
+        "-y",
+        "-v",
+        "error",
+        "-copyts",
+        "-i",
+        str(source),
+        "-map",
+        f"0:a:{track}",
+        # keep the source clock, including nonzero starts and delayed audio tracks
+        "-af",
+        "aresample=async=1:first_pts=0",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "192k",
+        "-movflags",
+        "+faststart",
+        str(output),
+    ]
+    result = subprocess.run(
+        command,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        timeout=timeout,
+        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+    )
+    if result.returncode != 0:
+        logger.warning(
+            "Audio preview ffmpeg failed for %s (rc=%d): %s",
+            source.name,
+            result.returncode,
+            result.stderr.decode(errors="replace")[-500:],
+        )
+        return False
+    return True
 
 
 class _WaveformLevels(NamedTuple):

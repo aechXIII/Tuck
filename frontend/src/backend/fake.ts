@@ -99,10 +99,10 @@ class DeterministicFakeBackend implements BackendClient {
     return this.#record("pickLutFile", [], this.#responses.pickLutFile ?? success({path:""}));
   }
 
-  getMediaUrl(path: string) {
+  getMediaUrl(path: string, track?: number) {
     return this.#record(
       "getMediaUrl",
-      [path],
+      track === undefined ? [path] : [path, track],
       this.#responses.getMediaUrl ?? success({ url: "" }),
     );
   }

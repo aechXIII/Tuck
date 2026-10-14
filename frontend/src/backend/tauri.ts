@@ -400,10 +400,10 @@ class TauriTransport implements TauriBackendClient {
     }
   }
 
-  getMediaUrl(path: string): Promise<BackendResult<UrlPayload>> {
+  getMediaUrl(path: string, track?: number): Promise<BackendResult<UrlPayload>> {
     return this.#request(
       "getMediaUrl",
-      { command: "get_media_url", payload: { path } },
+      { command: "get_media_url", payload: { path, ...(track === undefined ? {} : { track }) } },
       isUrlPayload,
     );
   }
