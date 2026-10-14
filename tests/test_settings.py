@@ -262,11 +262,11 @@ class TestMigration:
 
     def test_map_old_default_name_discord_free_8mb(self):
         result = _map_old_default_name("Discord Free (8 MB)")
-        assert result == "discord-10mb"
+        assert result == PROFILE_ID_DISCORD_FREE
 
     def test_map_old_default_name_discord_free_10mb(self):
         result = _map_old_default_name("Discord Free (10 MB)")
-        assert result == "discord-10mb"
+        assert result == PROFILE_ID_DISCORD_FREE
 
     def test_map_old_default_name_nitro_basic(self):
         result = _map_old_default_name("Discord Nitro Basic (50 MB)")
@@ -278,11 +278,11 @@ class TestMigration:
 
     def test_map_old_default_name_custom(self):
         result = _map_old_default_name("Custom")
-        assert result == "discord-10mb"
+        assert result == PROFILE_ID_DISCORD_FREE
 
     def test_map_old_default_name_unknown(self):
         result = _map_old_default_name("Unknown Profile")
-        assert result == "discord-10mb"
+        assert result == PROFILE_ID_DISCORD_FREE
 
     def test_migrate_v1_profiles_get_limit_modes(self, tmp_path, monkeypatch):
 
@@ -318,7 +318,7 @@ class TestMigration:
 
         found = None
         for p in profiles:
-            if p.profile_id == "discord-10mb":
+            if p.profile_id == PROFILE_ID_DISCORD_FREE:
                 found = p
                 break
         assert found is not None
@@ -508,7 +508,7 @@ class TestMigration:
 
         found = None
         for p in profiles:
-            if p.profile_id == "discord-10mb":
+            if p.profile_id == PROFILE_ID_DISCORD_FREE:
                 found = p
                 break
         assert found is not None

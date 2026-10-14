@@ -22,6 +22,7 @@ from rich.table import Table
 from rich.theme import Theme
 
 from . import __version__
+from .models import PROFILE_ID_DISCORD_FREE
 
 if TYPE_CHECKING:
     from .planner_options import OutputOptions
@@ -120,8 +121,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p_compress.add_argument(
         "--profile",
         "-p",
-        default="discord-10mb",
-        help="Compression profile (default: discord-10mb)",
+        default=PROFILE_ID_DISCORD_FREE,
+        help="Compression profile (default: discord-free; discord-10mb is also accepted)",
     )
     p_compress.add_argument("--size", type=float, help="Target file size in MB (overrides profile)")
     p_compress.add_argument("--output", "-o", help="Output path (single file mode only)")
@@ -432,7 +433,9 @@ def _encode_and_report(plan) -> Path | None:
 def _resolve_console_profile(mgr, profile_id: str | None):
     from .models import find_profile_by_id
 
-    resolved_id = profile_id or str(mgr.get_setting("default_profile_id", "") or "discord-10mb")
+    resolved_id = profile_id or str(
+        mgr.get_setting("default_profile_id", "") or PROFILE_ID_DISCORD_FREE
+    )
     profile = find_profile_by_id(mgr.get_profiles(), resolved_id)
     if profile is None:
         print(f"Error: Profile not found: {resolved_id}")

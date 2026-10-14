@@ -25,7 +25,7 @@ const speed: Readonly<Record<string, string>> = {
 };
 
 const sizing: Readonly<Record<string, string>> = {
-  fit: "Keep the whole frame; add padding if needed",
+  fit: "Keep the whole frame within the output dimensions; no padding",
   fill: "Fill the frame; crop edges if needed",
   stretch: "Match the output dimensions exactly",
 };

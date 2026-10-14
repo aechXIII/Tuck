@@ -1345,6 +1345,18 @@ class TestProfileShortcutNames:
 
 
 class TestProfileShortcutFiles:
+    def test_legacy_profile_shortcut_can_be_listed_repaired_and_removed(
+        self, tmp_path, monkeypatch
+    ):
+        _profile_bat_mode(monkeypatch, tmp_path)
+        old = install_profile_shortcut("discord-10mb", "Discord Free - 20MB")
+        assert "--profile-id discord-10mb" in old.read_text()
+        assert list_sendto_shortcuts()[0]["profile_id"] == "discord-free"
+        assert repair_profile_shortcut("discord-free", "Discord Free - 20MB")
+        assert "--profile-id discord-free" in old.read_text()
+        assert uninstall_profile_shortcut("discord-10mb")
+        assert not old.exists()
+
     def test_install_names_the_shortcut_after_the_profile(self, tmp_path, monkeypatch):
         _profile_bat_mode(monkeypatch, tmp_path)
 

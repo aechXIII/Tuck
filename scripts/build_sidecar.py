@@ -13,7 +13,7 @@ Steps, in order, each failing the build on any mismatch:
    ``packaging/sidecar-constraints.txt`` plus ``packaging/build-requirements.txt``.
 4. Run PyInstaller with ``scripts/tuck-sidecar.spec`` -> ``dist/sidecar/``.
 5. Assemble ``packaging/staging/app/`` (sidecar + CLI + ffmpeg + notices +
-   ``tuck.cmd`` + ``LICENSE``) - the exact tree Tauri bundles as resources.
+   ``bin/tuck.cmd`` + ``LICENSE``) - the exact tree Tauri bundles as resources.
 6. Write ``packaging/staging/manifest.json`` for ``scripts/verify_package.py``.
 """
 
@@ -167,7 +167,8 @@ def assemble_app(dist: Path, staged_ffmpeg: list[dict]) -> dict:
             raise BuildError(f"ffmpeg staging lost: {name}")
     for required in (TUCK_CMD, TUCK_PATH_PS1):
         _require(required.is_file(), f"Missing {required}")
-    shutil.copy2(TUCK_CMD, STAGING_APP / "tuck.cmd")
+    (STAGING_APP / "bin").mkdir()
+    shutil.copy2(TUCK_CMD, STAGING_APP / "bin" / "tuck.cmd")
     shutil.copy2(TUCK_PATH_PS1, STAGING_APP / "tuck-path.ps1")
     shutil.copy2(LICENSE, STAGING_APP / "LICENSE")
     webview2 = json.loads(WEBVIEW2_LOCK.read_text(encoding="utf-8"))
@@ -200,7 +201,7 @@ def assemble_app(dist: Path, staged_ffmpeg: list[dict]) -> dict:
             "ffmpeg/ffprobe.exe",
             "ffmpeg/ffmpeg-LICENSE.txt",
             "ffmpeg/build-manifest.json",
-            "tuck.cmd",
+            "bin/tuck.cmd",
             "tuck-path.ps1",
             "LICENSE",
             "THIRD_PARTY_NOTICES.md",

@@ -6,12 +6,14 @@
   logic is testable and the installer script stays free of shell-escaping.
   Reads the raw registry value and retains its REG_SZ or REG_EXPAND_SZ type, so
   entries such as %USERPROFILE%\bin keep expanding after a PATH edit. Exit 0
-  means PATH changed; exit 10 means the requested state was already present.
-  The installer must write its AddedToPath marker only after a successful add.
+  means an entry was added or removed; exit 10 means no ownership change.
+  BeforeDir can move an existing entry without claiming ownership of it.
+  The installer must write its ownership marker only after a successful add.
 #>
 param(
     [Parameter(Mandatory)][ValidateSet('add', 'remove')][string]$Action,
     [Parameter(Mandatory)][string]$Dir,
+    [string]$BeforeDir = '',
     # allows tests to exercise the transformation without changing the user's PATH
     [AllowEmptyString()][string]$PathValue,
     # selects an HKCU subkey for isolated registry-value-kind tests
@@ -25,10 +27,10 @@ function Normalize-PathEntry([string]$Value) {
     if ($entry.Length -ge 2 -and $entry.StartsWith('"') -and $entry.EndsWith('"')) {
         $entry = $entry.Substring(1, $entry.Length - 2).Trim()
     }
-    return $entry.TrimEnd('\', '/').ToUpperInvariant()
+    return [Environment]::ExpandEnvironmentVariables($entry).TrimEnd('\', '/').ToUpperInvariant()
 }
 
-if ([string]::IsNullOrWhiteSpace($Dir) -or $Dir.Contains(';')) {
+if ([string]::IsNullOrWhiteSpace($Dir) -or $Dir.Contains(';') -or $BeforeDir.Contains(';')) {
     throw 'Dir must be a non-empty PATH entry.'
 }
 
@@ -68,13 +70,32 @@ $matching = @(
     }
 )
 
+$reordered = $false
 if ($Action -eq 'add') {
+    $before = -1
+    if ($BeforeDir) {
+        $beforeTarget = Normalize-PathEntry $BeforeDir
+        for ($index = 0; $index -lt $parts.Count; $index++) {
+            if ((Normalize-PathEntry $parts[$index]) -eq $beforeTarget) {
+                $before = $index
+                break
+            }
+        }
+    }
     if ($matching.Count -ne 0) {
+        # the CLI must precede a retained editor folder, even if bin was added by the user
+        if ($before -ge 0 -and $matching[0] -gt $before) {
+            $entry = $parts[$matching[0]]
+            $parts.RemoveAt($matching[0])
+            $parts.Insert($before, $entry)
+            $reordered = $true
+        }
         $status = 'already_present'
         $exitCode = 10
     }
     else {
-        [void]$parts.Add($Dir)
+        if ($before -ge 0) { $parts.Insert($before, $Dir) }
+        else { [void]$parts.Add($Dir) }
         $status = 'added'
         $exitCode = 0
     }
@@ -85,8 +106,7 @@ else {
         $exitCode = 10
     }
     else {
-        # add appends Tuck's entry, so remove one trailing match rather than deleting
-        # every equivalent entry another program or the user may have added later
+        # remove one trailing match so equivalent entries added by the user survive
         $parts.RemoveAt($matching[$matching.Count - 1])
         $status = 'removed'
         $exitCode = 0
@@ -95,7 +115,7 @@ else {
 
 $updated = $parts -join ';'
 if (-not $usingPathValue) {
-    if ($exitCode -eq 0) {
+    if ($exitCode -eq 0 -or $reordered) {
         $kind = if ($null -eq $pathKind) {
             [Microsoft.Win32.RegistryValueKind]::String
         }

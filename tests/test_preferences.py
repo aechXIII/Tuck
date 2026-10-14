@@ -902,7 +902,7 @@ class TestPickerAndPlayback:
         assert api.save_settings(patch) == {"ok": True}
         settings = api.get_settings()
         assert settings["skip_seconds"] == "10"
-        assert settings["pinned_profile_ids"] == ["sharing", "discord-10mb"]
+        assert settings["pinned_profile_ids"] == ["sharing", "discord-free"]
 
     @pytest.mark.parametrize(
         "patch",

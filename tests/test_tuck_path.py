@@ -20,7 +20,9 @@ pytestmark = pytest.mark.skipif(
 _SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "tuck-path.ps1"
 
 
-def _run_path_action(action: str, directory: str, current: str) -> tuple[int, dict[str, str]]:
+def _run_path_action(
+    action: str, directory: str, current: str, before: str = ""
+) -> tuple[int, dict[str, str]]:
     powershell = shutil.which("powershell") or shutil.which("pwsh")
     if powershell is None:
         pytest.skip("PowerShell is required to test the Windows installer PATH script")
@@ -39,6 +41,7 @@ def _run_path_action(action: str, directory: str, current: str) -> tuple[int, di
             directory,
             "-PathValue",
             current,
+            *(["-BeforeDir", before] if before else []),
         ],
         capture_output=True,
         text=True,
@@ -92,6 +95,31 @@ def test_add_initializes_an_empty_user_path() -> None:
 
     assert code == 0
     assert result == {"status": "added", "path": r"C:\Tuck"}
+
+
+def test_bin_goes_before_a_retained_app_folder_without_changing_other_entries() -> None:
+    code, result = _run_path_action(
+        "add", r"C:\Tuck\bin", r"%USERPROFILE%\bin;C:\Tuck;C:\Tools", before=r"C:\Tuck"
+    )
+    assert code == 0
+    assert result["path"] == r"%USERPROFILE%\bin;C:\Tuck\bin;C:\Tuck;C:\Tools"
+
+
+def test_bin_precedes_an_equivalent_expandable_app_folder(monkeypatch) -> None:
+    monkeypatch.setenv("TUCK_PATH_TEST_ROOT", r"C:\Tuck")
+    code, result = _run_path_action(
+        "add", r"C:\Tuck\bin", r"%TUCK_PATH_TEST_ROOT%;C:\Tools", before=r"C:\Tuck"
+    )
+    assert code == 0
+    assert result["path"] == r"C:\Tuck\bin;%TUCK_PATH_TEST_ROOT%;C:\Tools"
+
+
+def test_existing_bin_after_the_editor_moves_before_it_without_claiming_ownership() -> None:
+    code, result = _run_path_action(
+        "add", r"C:\Tuck\bin", r"C:\Tuck;C:\Tools;C:\Tuck\bin", before=r"C:\Tuck"
+    )
+    assert code == 10
+    assert result["path"] == r"C:\Tuck\bin;C:\Tuck;C:\Tools"
 
 
 def test_add_reports_existing_equivalent_entry_without_claiming_ownership() -> None:

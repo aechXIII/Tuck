@@ -197,7 +197,8 @@ class TestCLIIntegration:
         code = cli_main(["profiles", "list"])
         assert code == 0
         captured = capsys.readouterr()
-        assert "discord-10mb" in captured.out
+        assert "discord-free" in captured.out
+        assert "discord-10mb" not in captured.out
         assert "discord-50mb" in captured.out
         assert "discord-500mb" in captured.out
 

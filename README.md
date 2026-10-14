@@ -121,12 +121,16 @@ The installer adds `tuck` to `PATH`. Open a new terminal after installing Tuck.
 tuck profiles list
 tuck probe clip.mp4
 tuck compress clip.mp4 --profile discord-50mb
+tuck compress clip.mp4 --profile discord-free
 tuck compress clip.mp4 --size 25
 tuck upscale clip.mp4 --to 1440p
 tuck upscale clip.mp4 --resolution 2560x1440
 ```
 
 Run `tuck --help` for the complete command list.
+
+The `discord-free` profile targets 20 MB. The old `discord-10mb` ID is still accepted.
+An existing custom `discord-free` profile keeps its settings and receives an unused ID.
 
 ## Support
 

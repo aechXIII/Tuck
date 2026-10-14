@@ -159,7 +159,11 @@ class SettingsBackupService:
         except (TypeError, ValueError, KeyError) as exc:
             raise ValueError(f"A profile in this backup is damaged: {exc}") from exc
         values = {key: value for key, value in settings.items() if key in BACKUP_KEYS}
-        return migrate_appearance_preferences(values), restored
+        from .models import migrate_profile_ids, profile_id_migrations
+
+        return migrate_appearance_preferences(
+            migrate_profile_ids(values, profile_id_migrations(profiles))
+        ), restored
 
 
 def _path_exists(key: str, settings: dict[str, object]) -> bool:

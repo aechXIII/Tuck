@@ -30,6 +30,44 @@ _VERIFY_PACKAGE = _REPO / "scripts" / "verify_package.py"
 _BUILD_LINUX = _REPO / "scripts" / "build_linux.py"
 
 
+def test_windows_staging_puts_only_the_cli_wrapper_in_bin(tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(_REPO / "scripts"))
+    import build_sidecar
+
+    staging = tmp_path / "staging"
+    ffmpeg = staging / "ffmpeg"
+    ffmpeg.mkdir(parents=True)
+    (ffmpeg / "ffmpeg.exe").write_bytes(b"media tool")
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "TuckCli.exe").write_bytes(b"cli")
+    (dist / "tuck-sidecar.exe").write_bytes(b"sidecar")
+    bootstrapper = tmp_path / "webview.exe"
+    bootstrapper.write_bytes(b"bootstrapper")
+    lock = tmp_path / "webview.json"
+    lock.write_text(
+        json.dumps(
+            {
+                "filename": bootstrapper.name,
+                "size_bytes": bootstrapper.stat().st_size,
+                "sha256": hashlib.sha256(bootstrapper.read_bytes()).hexdigest(),
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(build_sidecar, "STAGING", staging)
+    monkeypatch.setattr(build_sidecar, "STAGING_APP", staging / "app")
+    monkeypatch.setattr(build_sidecar, "STAGING_FFMPEG", ffmpeg)
+    monkeypatch.setattr(build_sidecar, "WEBVIEW2_BOOTSTRAPPER", bootstrapper)
+    monkeypatch.setattr(build_sidecar, "WEBVIEW2_LOCK", lock)
+    manifest = build_sidecar.assemble_app(dist, [{"file": "ffmpeg/ffmpeg.exe"}])
+    assert (staging / "app/bin/tuck.cmd").read_bytes() == build_sidecar.TUCK_CMD.read_bytes()
+    assert (staging / "app/TuckCli.exe").read_bytes() == b"cli"
+    assert not (staging / "app/tuck.cmd").exists()
+    assert "bin/tuck.cmd" in manifest["expected_present"]
+    assert "tuck.cmd" not in manifest["expected_present"]
+
+
 class _Settings:
     def __init__(self, values: dict[str, str]) -> None:
         self._values = values

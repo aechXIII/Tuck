@@ -2,7 +2,7 @@
 ;
 ; installer responsibilities:
 ;   * remove a Tuck 0.4.x per-user install before upgrading;
-;   * keep Tuck's install folder on the per-user PATH (marker under HKCU\Software\Tuck);
+;   * keep the CLI folder on the per-user PATH (markers under HKCU\Software\Tuck);
 ;   * install / remove the Explorer "Send To" shortcuts through TuckCli.exe, which
 ;     validates Tuck ownership before touching any shortcut.
 ;
@@ -29,6 +29,38 @@
     Abort
   ${Loop}
   Pop $0
+!macroend
+
+!macro TuckRemoveOwnedPath markerKey markerName directory pathKey
+  ReadRegDWORD $R1 HKCU "${markerKey}" "${markerName}"
+  ${If} $R1 = 1
+    nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$INSTDIR\tuck-path.ps1" -Action remove -Dir "${directory}" -RegistrySubKey "${pathKey}"'
+    Pop $R0
+    ${If} $R0 = 0
+    ${OrIf} $R0 = 10
+      DeleteRegValue HKCU "${markerKey}" "${markerName}"
+      DeleteRegKey /ifempty HKCU "${markerKey}"
+    ${Else}
+      MessageBox MB_OK|MB_ICONEXCLAMATION "Tuck could not remove ${directory} from PATH (exit code $R0). You can remove it manually from your user PATH." /SD IDOK
+    ${EndIf}
+  ${EndIf}
+!macroend
+
+!macro TuckAddCommandPath markerKey pathKey
+  ; bin must precede an editor folder the user added themselves
+  nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$INSTDIR\tuck-path.ps1" -Action add -Dir "$INSTDIR\bin" -BeforeDir "$INSTDIR" -RegistrySubKey "${pathKey}"'
+  Pop $R0
+  ${If} $R0 = 0
+    WriteRegDWORD HKCU "${markerKey}" "AddedBinToPath" 1
+  ${EndIf}
+  ${If} $R0 = 0
+  ${OrIf} $R0 = 10
+    ; remove the legacy entry only after the CLI folder is usable
+    !insertmacro TuckRemoveOwnedPath "${markerKey}" "AddedToPath" "$INSTDIR" "${pathKey}"
+    Delete "$INSTDIR\tuck.cmd"
+  ${Else}
+    MessageBox MB_OK|MB_ICONEXCLAMATION "Tuck was installed, but its command-line tools could not be added to PATH (exit code $R0). The desktop app will still work." /SD IDOK
+  ${EndIf}
 !macroend
 
 !macro NSIS_HOOK_PREINSTALL
@@ -91,16 +123,7 @@
 !macro NSIS_HOOK_POSTINSTALL
   !insertmacro TuckEnsureWebView2 HKLM "SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" HKCU "Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" "$INSTDIR\MicrosoftEdgeWebView2Setup.exe"
 
-  ; keep the install folder on the per-user PATH and record that Tuck added it
-  nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$INSTDIR\tuck-path.ps1" -Action add -Dir "$INSTDIR"'
-  Pop $R0
-  ${If} $R0 = 0
-    WriteRegDWORD HKCU "Software\Tuck" "AddedToPath" 1
-  ${ElseIf} $R0 = 10
-    ; the folder was already present, so Tuck must not claim ownership
-  ${Else}
-    MessageBox MB_OK|MB_ICONEXCLAMATION "Tuck was installed, but its command-line tools could not be added to PATH (exit code $R0). The desktop app will still work."
-  ${EndIf}
+  !insertmacro TuckAddCommandPath "Software\Tuck" "Environment"
 
   ; only the "Tuck" editor shortcut is added here; the others are opt-in from Settings
   ; TuckCli checks Tuck ownership before it touches any Send To shortcut
@@ -119,17 +142,6 @@
     MessageBox MB_OK|MB_ICONEXCLAMATION "Tuck could not remove every Send To shortcut (exit code $R0). You may remove remaining Tuck shortcuts from the Windows SendTo folder."
   ${EndIf}
 
-  ; undo the PATH entry only if Tuck was the one that added it
-  ReadRegDWORD $R1 HKCU "Software\Tuck" "AddedToPath"
-  ${If} $R1 = 1
-    nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$INSTDIR\tuck-path.ps1" -Action remove -Dir "$INSTDIR"'
-    Pop $R0
-    ${If} $R0 = 0
-    ${OrIf} $R0 = 10
-      DeleteRegValue HKCU "Software\Tuck" "AddedToPath"
-      DeleteRegKey /ifempty HKCU "Software\Tuck"
-    ${Else}
-      MessageBox MB_OK|MB_ICONEXCLAMATION "Tuck could not remove its command-line folder from PATH (exit code $R0). You can remove $INSTDIR manually from your user PATH."
-    ${EndIf}
-  ${EndIf}
+  !insertmacro TuckRemoveOwnedPath "Software\Tuck" "AddedBinToPath" "$INSTDIR\bin" "Environment"
+  !insertmacro TuckRemoveOwnedPath "Software\Tuck" "AddedToPath" "$INSTDIR" "Environment"
 !macroend

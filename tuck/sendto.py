@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .desktop_platform import is_linux_desktop
+from .models import normalize_profile_id
 from .models.encoding_policy import WORKFLOW_COMPRESSION, WORKFLOW_UPSCALE
 
 logger = logging.getLogger(__name__)
@@ -214,7 +215,12 @@ def _owned_profile_id(path: Path) -> str | None:
 
 
 def _owned_profile_files(profile_id: str) -> list[Path]:
-    return [path for path in _profile_shortcut_entries() if _owned_profile_id(path) == profile_id]
+    return [
+        path
+        for path in _profile_shortcut_entries()
+        if (owned_id := _owned_profile_id(path)) is not None
+        and normalize_profile_id(owned_id) == normalize_profile_id(profile_id)
+    ]
 
 
 def _choose_profile_stem(profile_id: str, profile_name: str, owned: list[Path]) -> str:
@@ -590,7 +596,7 @@ def list_sendto_shortcuts() -> list[dict[str, str]]:
         result.append(
             {
                 "name": entry.stem,
-                "profile_id": profile_id,
+                "profile_id": normalize_profile_id(profile_id),
                 "path": str(entry),
                 "type": "profile",
                 "status": "ok",

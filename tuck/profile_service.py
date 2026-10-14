@@ -16,6 +16,7 @@ from .models import (
     find_profile_by_id,
     import_profiles_json,
     merge_imported_profiles,
+    normalize_profile_id,
 )
 from .settings import ProfilesUnreadableError, SettingsManager
 
@@ -111,6 +112,7 @@ class ProfileService:
         return {"ok": True, "profile_id": validated.profile_id}
 
     def delete(self, profile_id: str) -> BridgeResult:
+        profile_id = normalize_profile_id(profile_id)
         profiles = self._settings.get_profiles()
         found = find_profile_by_id(profiles, profile_id)
         if found is None:
@@ -138,6 +140,7 @@ class ProfileService:
         return {"ok": True}
 
     def update(self, profile_id: str, profile: object) -> BridgeResult:
+        profile_id = normalize_profile_id(profile_id)
         if not isinstance(profile, dict):
             return {"ok": False, "error": "Expected profile object"}
 
@@ -151,7 +154,10 @@ class ProfileService:
         except ValueError as exc:
             return {"ok": False, "error": str(exc)}
 
-        if "profile_id" in data and data["profile_id"] != found.profile_id:
+        if "profile_id" in data and (
+            not isinstance(data["profile_id"], str)
+            or normalize_profile_id(data["profile_id"]) != found.profile_id
+        ):
             return {"ok": False, "error": "profile_id cannot be changed"}
         if "schema_version" in data:
             return {"ok": False, "error": "schema_version cannot be changed"}

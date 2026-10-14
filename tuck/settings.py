@@ -54,8 +54,10 @@ from .models import (
     Profile,
     dicts_to_profiles,
     find_profile_by_id,
-    import_profiles_json,
+    migrate_profile_ids,
+    profile_id_migrations,
     profiles_to_dicts,
+    read_profiles_json,
 )
 from .models.export_preferences import (
     DEFAULT_OUTPUT_SUBFOLDER,
@@ -261,6 +263,7 @@ class SettingsManager:
         self._lock = threading.RLock()
         self._settings: AppSettings | None = None
         self._profiles: list[Profile] | None = None
+        self._profile_id_migrations: dict[str, str] = {}
 
         self._settings_snapshot: dict | None = None
         self._profiles_snapshot: list[dict] | None = None
@@ -286,8 +289,8 @@ class SettingsManager:
         with self._lock:
             if self._settings is not None:
                 return self._settings
-            self._settings = self._load_settings()
             self._profiles = self._load_profiles()
+            self._settings = self._load_settings()
             self._settings.profiles = profiles_to_dicts(self._profiles)
             return self._settings
 
@@ -322,12 +325,12 @@ class SettingsManager:
             sp = settings_path()
             pp = profiles_path()
 
-            if self._settings_snapshot is not None and sp.exists():
-                self._reload_and_merge_settings_if_stale(sp)
-
             profiles_readable = True
             if self._profiles_snapshot is not None and pp.exists():
                 profiles_readable = self._reload_and_merge_profiles_if_stale(pp)
+
+            if self._settings_snapshot is not None and sp.exists():
+                self._reload_and_merge_settings_if_stale(sp)
 
             # profiles from another Tuck build are left on disk untouched; only a
             # profile change would overwrite them, so that one is refused up front
@@ -347,6 +350,9 @@ class SettingsManager:
                     "version": PROFILE_SCHEMA_VERSION,
                     "profiles": profiles_to_dicts(self._profiles),
                 }
+                if self._profile_id_migrations:
+                    # an older settings backup still needs these ids after profiles are migrated
+                    wrapped["profile_id_migrations"] = self._profile_id_migrations
                 profiles_data = json.dumps(wrapped, indent=2, ensure_ascii=False)
                 _atomic_write(pp, profiles_data, backup_validator=_is_profiles_document)
 
@@ -385,6 +391,10 @@ class SettingsManager:
         disk_profile_dicts: list[dict] = disk_data.get("profiles", [])
         if not isinstance(disk_profile_dicts, list):
             return True
+
+        self._profile_id_migrations = profile_id_migrations(
+            disk_profile_dicts, disk_data.get("profile_id_migrations")
+        )
 
         if disk_profile_dicts == self._profiles_snapshot:
             return True  # no external change
@@ -490,6 +500,7 @@ class SettingsManager:
         return getattr(s, key, default)
 
     def set_setting(self, key: str, value) -> None:
+        value = migrate_profile_ids({key: value})[key]
         with self._lock:
             s = self.load()
             if hasattr(s, key):
@@ -521,8 +532,9 @@ class SettingsManager:
             try:
                 if not candidate.exists():
                     continue
-                profiles = import_profiles_json(candidate)
+                profiles, replacements = read_profiles_json(candidate)
                 profiles = self._migrate_profiles(profiles)
+                self._profile_id_migrations = replacements
                 self._profiles_snapshot = profiles_to_dicts(profiles)
                 return profiles
             except (OSError, json.JSONDecodeError, TypeError, ValueError, KeyError):
@@ -533,6 +545,10 @@ class SettingsManager:
         return defaults
 
     def _migrate_settings(self, data: dict) -> dict:
+        replacements = self._profile_id_migrations if data.get("profile_ids_version") != 1 else None
+        data = migrate_profile_ids(data, replacements)
+        # settings and profiles are separate atomic writes, so do not remap new selections twice
+        data["profile_ids_version"] = 1
         data = migrate_appearance_preferences(data)
         version = data.get("version", 0)
 
@@ -727,26 +743,27 @@ def get_settings_manager() -> SettingsManager:
 
 
 _OLD_NAME_MAP = {
-    "Discord Free (8 MB)": "discord-10mb",
-    "Discord Free (10 MB)": "discord-10mb",
-    "Discord Free - 10MB": "discord-10mb",
-    "Discord Free (20 MB)": "discord-10mb",
-    "Discord Free - 20MB": "discord-10mb",
+    "Discord Free (8 MB)": PROFILE_ID_DISCORD_FREE,
+    "Discord Free (10 MB)": PROFILE_ID_DISCORD_FREE,
+    "Discord Free - 10MB": PROFILE_ID_DISCORD_FREE,
+    "Discord Free (20 MB)": PROFILE_ID_DISCORD_FREE,
+    "Discord Free - 20MB": PROFILE_ID_DISCORD_FREE,
     "Discord Nitro Basic (50 MB)": "discord-50mb",
     "Discord Nitro Basic - 50MB": "discord-50mb",
     "Discord Nitro (500 MB)": "discord-500mb",
     "Discord Nitro - 500MB": "discord-500mb",
     "Discord Nitro (100 MB)": "discord-50mb",
-    "Custom": "discord-10mb",
-    "discord-10mb": "discord-10mb",
+    "Custom": PROFILE_ID_DISCORD_FREE,
+    "discord-10mb": PROFILE_ID_DISCORD_FREE,
+    "discord-free": PROFILE_ID_DISCORD_FREE,
     "discord-50mb": "discord-50mb",
     "discord-500mb": "discord-500mb",
-    "custom": "discord-10mb",
-    "tuck-default": "discord-10mb",
-    "Tuck Default (100 MB)": "discord-10mb",
+    "custom": PROFILE_ID_DISCORD_FREE,
+    "tuck-default": PROFILE_ID_DISCORD_FREE,
+    "Tuck Default (100 MB)": PROFILE_ID_DISCORD_FREE,
 }
 
 
 def _map_old_default_name(name: str) -> str:
 
-    return _OLD_NAME_MAP.get(name, "discord-10mb")
+    return _OLD_NAME_MAP.get(name, PROFILE_ID_DISCORD_FREE)

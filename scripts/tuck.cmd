@@ -1,2 +1,2 @@
 @echo off
-"%~dp0TuckCli.exe" %*
+"%~dp0..\TuckCli.exe" %*

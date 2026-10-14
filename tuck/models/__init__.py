@@ -196,8 +196,7 @@ from .transforms import (
 )
 from .ui_preferences import DEFAULT_CUT_SUFFIX, START_TASK_LAST
 
-# Keep the old ID so saved settings, CLI commands, and Send To shortcuts still work
-PROFILE_ID_DISCORD_FREE = "discord-10mb"
+PROFILE_ID_DISCORD_FREE = "discord-free"
 PROFILE_ID_DISCORD_NITRO_BASIC = "discord-50mb"
 PROFILE_ID_DISCORD_NITRO = "discord-500mb"
 PROFILE_ID_1440P_UPSCALE = "1440p-upscale"
@@ -220,6 +219,34 @@ MIN_TARGET_SIZE_BYTES = 2 * 1024 * 1024
 MIN_SEGMENT_DURATION = 0.05
 
 PROFILE_SCHEMA_VERSION = 6
+
+
+def normalize_profile_id(profile_id: str) -> str:
+    # old commands, saved profiles, and Send To shortcuts keep resolving to one preset
+    return PROFILE_ID_DISCORD_FREE if profile_id == "discord-10mb" else profile_id
+
+
+def migrate_profile_ids(
+    data: dict[str, Any], collisions: dict[str, str] | None = None
+) -> dict[str, Any]:
+    migrated = dict(data)
+    replacements = collisions or {}
+    for key in ("default_profile_id", "last_compress_profile_id", "last_upscale_profile_id"):
+        value = migrated.get(key)
+        if isinstance(value, str):
+            migrated[key] = replacements.get(value, normalize_profile_id(value))
+    for key in ("pinned_profile_ids", "hidden_profile_ids"):
+        value = migrated.get(key)
+        if isinstance(value, list):
+            ids = [
+                replacements.get(item, normalize_profile_id(item))
+                if isinstance(item, str)
+                else item
+                for item in value
+            ]
+            migrated[key] = [item for index, item in enumerate(ids) if item not in ids[:index]]
+    return migrated
+
 
 # SMPTE ST 2084 (PQ) and ARIB STD-B67 (HLG), in ffprobe's names
 HDR_TRANSFERS = frozenset({"smpte2084", "arib-std-b67"})
@@ -1172,6 +1199,7 @@ class Profile:
         if not self._ID_RE.match(self.profile_id):
             msg = f"Invalid profile_id {self.profile_id!r}: must match {self._ID_RE.pattern}"
             raise ValueError(msg)
+        self.profile_id = normalize_profile_id(self.profile_id)
         if self.schema_version < 1:
             self.schema_version = PROFILE_SCHEMA_VERSION
         if self.transform_intent is not None and not isinstance(
@@ -1233,6 +1261,8 @@ class Profile:
             "qp": data.get("qp", 23),
         }
         merged = {**defaults_v3, **data}
+        if isinstance(merged.get("profile_id"), str):
+            merged["profile_id"] = normalize_profile_id(merged["profile_id"])
         if (
             data.get("profile_id") in (PROFILE_ID_1440P_UPSCALE, PROFILE_ID_4K_UPSCALE)
             and data.get("schema_version", 1) < 3
@@ -1316,6 +1346,7 @@ class QueueItem:
 class AppSettings:
     version: int = 1
     default_profile_id: str = PROFILE_ID_DISCORD_FREE
+    profile_ids_version: int = 1
     default_scaler: str = SCALER_NEIGHBOR
     output_dir: str = ""
     ffmpeg_path: str = ""
@@ -1372,6 +1403,7 @@ class AppSettings:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> AppSettings:
+        data = migrate_profile_ids(data)
         valid_keys = {f.name for f in fields(cls)}
         filtered = {k: v for k, v in data.items() if k in valid_keys}
         return cls(**filtered)
@@ -1461,7 +1493,34 @@ def profiles_to_dicts(profiles: list[Profile]) -> list[dict[str, Any]]:
 
 
 def dicts_to_profiles(data: list[dict[str, Any]]) -> list[Profile]:
-    return [Profile.from_dict(d) for d in data]
+    replacements = profile_id_migrations(data)
+    return [
+        Profile.from_dict({**d, "profile_id": replacements[d["profile_id"]]})
+        if isinstance(d.get("profile_id"), str) and d["profile_id"] in replacements
+        else Profile.from_dict(d)
+        for d in data
+    ]
+
+
+def profile_id_migrations(data: list[dict[str, Any]], previous: object = None) -> dict[str, str]:
+    ids = {
+        entry["profile_id"]
+        for entry in data
+        if isinstance(entry, dict) and isinstance(entry.get("profile_id"), str)
+    }
+    if "discord-10mb" not in ids or PROFILE_ID_DISCORD_FREE not in ids:
+        if isinstance(previous, dict):
+            target = previous.get(PROFILE_ID_DISCORD_FREE)
+            if isinstance(target, str) and target in ids and target != PROFILE_ID_DISCORD_FREE:
+                return {PROFILE_ID_DISCORD_FREE: target}
+        return {}
+    # a previously imported custom profile may already use the new built-in id
+    replacement = f"{PROFILE_ID_DISCORD_FREE}-custom"
+    suffix = 2
+    while replacement in ids:
+        replacement = f"{PROFILE_ID_DISCORD_FREE}-custom-{suffix}"
+        suffix += 1
+    return {PROFILE_ID_DISCORD_FREE: replacement}
 
 
 def export_profiles_json(profiles: list[Profile], path: Path) -> None:
@@ -1481,6 +1540,11 @@ def export_profiles_json(profiles: list[Profile], path: Path) -> None:
 
 
 def import_profiles_json(path: Path) -> list[Profile]:
+    profiles, _ = read_profiles_json(path)
+    return profiles
+
+
+def read_profiles_json(path: Path) -> tuple[list[Profile], dict[str, str]]:
     raw = path.read_text(encoding="utf-8")
     if not raw.strip():
         raise ValueError("Profile file is empty")
@@ -1503,7 +1567,9 @@ def import_profiles_json(path: Path) -> list[Profile]:
         raise ValueError("'profiles' must be a list")
     if not profiles_data:
         raise ValueError("Profile file contains no profiles")
-    return dicts_to_profiles(profiles_data)
+    return dicts_to_profiles(profiles_data), profile_id_migrations(
+        profiles_data, data.get("profile_id_migrations")
+    )
 
 
 _PROFILE_REQUIRED = frozenset({"name", "profile_id"})
@@ -1814,6 +1880,7 @@ def estimate_size_from_bitrate(
 
 
 def find_profile_by_id(profiles: list[Profile], profile_id: str) -> Profile | None:
+    profile_id = normalize_profile_id(profile_id)
     for p in profiles:
         if p.profile_id == profile_id:
             return p
