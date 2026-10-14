@@ -10,6 +10,7 @@ import tempfile
 import threading
 import time
 from collections.abc import Callable
+from io import TextIOWrapper
 from pathlib import Path
 from typing import Any
 
@@ -49,6 +50,7 @@ from .failures import describe_ffmpeg_failure, is_cuda_decode_failure, is_progre
 
 # load native array libraries before sidecar workers block on Windows stdio
 from .frame_blending import TmixBlend, prepare_blended_video, tmix_blend
+from .frame_stream import FrameStream, can_stream_blend
 from .progress import ProgressTracker
 from .target_size import (
     DEFAULT_MAX_RETRIES,
@@ -156,6 +158,7 @@ class FFmpegEngine:
         self._prepared_video: Path | None = None
         self._tmix: TmixBlend | None = None
         self._cuda_decode = False
+        self._stream_plan: EncodePlan | None = None
         self._cut_runner = CutRunner()
         self._low_priority = False
 
@@ -265,6 +268,7 @@ class FFmpegEngine:
         self._resolved_encoder = ""
         self._encoder_fallback = ""
         self._cuda_decode = False
+        self._stream_plan = None
         if isinstance(plan, CutPlan):
             self._last_stderr = ""
             try:
@@ -310,7 +314,9 @@ class FFmpegEngine:
                 self._cuda_decode = can_cuda_decode_blend(plan, self._tmix) and bool(
                     get_available_encoders() & NVENC_ENCODERS
                 )
-                if plan.frame_blending.enabled and self._tmix is None:
+                if self._tmix is None and can_stream_blend(plan):
+                    self._stream_plan = plan
+                elif plan.frame_blending.enabled and self._tmix is None:
                     # the export workspace removes the blended video with everything else
                     self._prepared_video = transaction.workspace / "video.nut"
 
@@ -381,6 +387,7 @@ class FFmpegEngine:
             self._prepared_video = None
             self._tmix = None
             self._cuda_decode = False
+            self._stream_plan = None
 
     def _run_one_attempt(
         self,
@@ -824,6 +831,7 @@ class FFmpegEngine:
                 prepared_video=self._prepared_video,
                 blend=self._tmix,
                 cuda_decode=self._cuda_decode,
+                streamed_video=self._stream_plan is not None,
             ),
             str(output),
         ]
@@ -865,7 +873,9 @@ class FFmpegEngine:
             if len(stderr_lines) > _MAX_STDERR_LINES:
                 del stderr_lines[:-_MAX_STDERR_LINES]
 
-    def _spawn_ffmpeg(self, cmd: list[str], creationflags: int) -> subprocess.Popen:
+    def _spawn_ffmpeg(
+        self, cmd: list[str], creationflags: int, *, stream_video: bool = False
+    ) -> subprocess.Popen:
         if self._low_priority and sys.platform == "win32":
             creationflags |= subprocess.BELOW_NORMAL_PRIORITY_CLASS
         with self._lock:
@@ -875,8 +885,8 @@ class FFmpegEngine:
                 raise EncodeCancelled("Encoding cancelled by user")
             proc = subprocess.Popen(
                 cmd,
-                # only the sidecar may read requests from its stdin pipe
-                stdin=subprocess.DEVNULL,
+                # a private pipe carries frames; FFmpeg never inherits the sidecar request pipe
+                stdin=subprocess.PIPE if stream_video else subprocess.DEVNULL,
                 # progress and diagnostics come from stderr; ffmpeg's stdout is
                 # unused, and an unread stdout pipe deadlocks a verbose encode
                 stdout=subprocess.DEVNULL,
@@ -912,17 +922,31 @@ class FFmpegEngine:
             retry_number=retry_number,
             max_retries=max_retries,
             # this FFmpeg run blends the frames itself, so its fps is the blending rate
-            report_fps=self._tmix is not None,
+            report_fps=self._tmix is not None or self._stream_plan is not None,
         )
         tracker.set_pass(pass_num)
         _emit(on_progress, tracker.snapshot())
 
-        proc = self._spawn_ffmpeg(cmd, creationflags)
+        proc = (
+            self._spawn_ffmpeg(cmd, creationflags, stream_video=True)
+            if self._stream_plan is not None
+            else self._spawn_ffmpeg(cmd, creationflags)
+        )
 
         stderr_lines: list[str] = []
         returncode: int | None = None
+        stream: FrameStream | None = None
 
         try:
+            if self._stream_plan is not None:
+                assert isinstance(proc.stdin, TextIOWrapper)
+
+                def check_cancel() -> None:
+                    if self._cancel_event.is_set():
+                        raise EncodeCancelled("Encoding cancelled by user")
+
+                stream = FrameStream(self._stream_plan, check_cancel, self._kill_process_tree)
+                stream.start(proc.stdin.buffer)
             self._consume_stderr(proc, tracker, on_progress, stderr_lines)
             proc.wait(timeout=3600 * 24)
             returncode = proc.returncode
@@ -942,6 +966,11 @@ class FFmpegEngine:
             if proc.poll() is None:
                 self._kill_process_tree()
                 proc.wait()
+            if stream is not None:
+                stream.stop()
+                stream.join()
+            if self._stream_plan is not None and proc.stdin is not None:
+                proc.stdin.close()
             if proc.stderr is not None:
                 proc.stderr.close()
             with self._lock:
@@ -950,6 +979,9 @@ class FFmpegEngine:
 
         if self._cancel_event.is_set():
             raise EncodeCancelled("Encoding cancelled by user")
+
+        if stream is not None and stream.error is not None:
+            raise stream.error
 
         if returncode is not None and returncode != 0:
             full_tail = "".join(stderr_lines)

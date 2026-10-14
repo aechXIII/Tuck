@@ -116,6 +116,7 @@ def create_build_env(base_python: str) -> Path:
 
 
 def run_pyinstaller(py: Path) -> Path:
+    subprocess.run([str(py), str(ROOT / "scripts" / "build_native_blending.py")], check=True)
     dist = ROOT / "dist" / "sidecar"
     work = ROOT / "build" / "sidecar-pyinstaller"
     for path in (dist, work):
@@ -140,6 +141,10 @@ def run_pyinstaller(py: Path) -> Path:
     )
     _require((dist / "tuck-sidecar.exe").is_file(), "PyInstaller did not produce tuck-sidecar.exe")
     _require((dist / "TuckCli.exe").is_file(), "PyInstaller did not produce TuckCli.exe")
+    _require(
+        (dist / "_internal" / "native_blending.dll").is_file(),
+        "PyInstaller did not include the native blending helper",
+    )
     return dist
 
 
@@ -188,6 +193,7 @@ def assemble_app(dist: Path, staged_ffmpeg: list[dict]) -> dict:
             "tuck-sidecar.exe",
             "TuckCli.exe",
             "_internal",
+            "_internal/native_blending.dll",
             "_internal/licenses/av/LICENSE.txt",
             "_internal/licenses/numpy/LICENSE.txt",
             "ffmpeg/ffmpeg.exe",

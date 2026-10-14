@@ -641,6 +641,7 @@ def create_build_env(base_python: str) -> Path:
 
 
 def run_pyinstaller(python: Path) -> Path:
+    subprocess.run([str(python), str(ROOT / "scripts" / "build_native_blending.py")], check=True)
     work = ROOT / "build" / "linux-sidecar-pyinstaller"
     shutil.rmtree(DIST_ROOT, ignore_errors=True)
     shutil.rmtree(work, ignore_errors=True)
@@ -664,6 +665,10 @@ def run_pyinstaller(python: Path) -> Path:
     sidecar = DIST / "tuck-sidecar"
     _require(sidecar.is_file(), "PyInstaller did not produce tuck-sidecar")
     _require(os.access(sidecar, os.X_OK), "PyInstaller sidecar is not executable")
+    _require(
+        (DIST / "_internal" / "libnative_blending.so").is_file(),
+        "PyInstaller did not include the native blending helper",
+    )
     _require(not (DIST / "TuckCli").exists(), "Linux staging must not contain a CLI executable")
     return DIST
 
@@ -704,6 +709,7 @@ def assemble_app(
         "expected_present": [
             "tuck-sidecar",
             "_internal",
+            "_internal/libnative_blending.so",
             "ffmpeg/ffmpeg",
             "ffmpeg/ffprobe",
             "ffmpeg/source/ffmpeg-source.tar.xz",

@@ -393,14 +393,19 @@ def build_base_cmd(
     prepared_video: Path | None = None,
     blend: TmixBlend | None = None,
     cuda_decode: bool = False,
+    streamed_video: bool = False,
 ) -> list[str]:
+    if streamed_video and (prepared_video is not None or blend is not None):
+        raise ValueError("An export can use only one blended video input")
+    if streamed_video and (plan.source_info is None or plan.target_fps <= 0):
+        raise ValueError("Streamed blending needs source dimensions and a positive output rate")
     # explicit progress records are flushed independently of console status output
     cmd = [ffmpeg, "-hide_banner", "-loglevel", "info", "-nostats", "-progress", "pipe:2"]
 
     segments = plan.effective_segments
     single_segment = len(segments) == 1
     # both blending paths put video on the output frame grid from the source clock
-    blending = prepared_video is not None or blend is not None
+    blending = prepared_video is not None or blend is not None or streamed_video
     cuda_decode = bool(
         cuda_decode and prepared_video is None and can_cuda_decode_blend(plan, blend)
     )
@@ -467,6 +472,9 @@ def build_base_cmd(
     if prepared_video is not None:
         cmd += ["-i", str(prepared_video)]
         input_count += 1
+    elif streamed_video:
+        cmd += ["-f", "nut", "-i", "pipe:0"]
+        input_count += 1
 
     subtitle_map = ""
     if subtitle_track is not None:
@@ -500,7 +508,7 @@ def build_base_cmd(
     if filtered_timeline:
         graph_parts: list[str] = []
         combined_source_concat = False
-        if prepared_video is not None:
+        if prepared_video is not None or streamed_video:
             info = plan.source_info
             ratio = info.sample_aspect_ratio if info else "1:1"
             sar = (

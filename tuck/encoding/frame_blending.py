@@ -5,7 +5,7 @@ import os
 import threading
 import time
 from collections import deque
-from collections.abc import Callable, Generator, Iterator
+from collections.abc import Callable, Generator
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from fractions import Fraction
@@ -19,6 +19,7 @@ from numpy.typing import NDArray
 
 from ..models import EncodePlan, Segment, VideoInfo
 from ..models.frame_blending import FrameBlending, interval_weight, vegas_weights
+from . import native_blending
 
 PixelArray = NDArray[np.uint8]
 FloatArray = NDArray[np.float32]
@@ -260,13 +261,21 @@ def _blend(
     """One output picture from its weighted source pictures."""
     if linear is not None:
         total = sum(weight for _, weight in weighted)
-        result = np.zeros(weighted[0][0].shape, dtype=np.float32)
-        for pixels, weight in weighted:
-            result += linear[pixels] * np.float32(weight / total)
+        weights = [np.float32(weight / total) for _, weight in weighted]
+        result = native_blending.accumulate_linear(
+            [pixels for pixels, _ in weighted], weights, linear
+        )
+        if result is None:
+            result = np.zeros(weighted[0][0].shape, dtype=np.float32)
+            for (pixels, _), weight in zip(weighted, weights, strict=True):
+                result += linear[pixels] * weight
         result = from_linear(np.clip(result, 0, 1), transfer)
         return np.rint(np.clip(result, 0, 1) * 255).astype(np.uint8)
     # fixed point in place: far less memory traffic than a float copy of every picture
     weights = _integer_weights([weight for _, weight in weighted])
+    native = native_blending.blend_encoded([pixels for pixels, _ in weighted], weights)
+    if native is not None:
+        return native
     total, scratch = _sums(weighted[0][0].shape)
     total.fill(0)
     for (pixels, _), weight in zip(weighted, weights, strict=True):
@@ -298,7 +307,7 @@ def _workers() -> int:
 def blended_frames(
     plan: EncodePlan,
     check_cancel: Callable[[], None],
-) -> Iterator[PixelArray]:
+) -> Generator[PixelArray, None, None]:
     info = plan.source_info
     if info is None:
         raise ValueError("Frame blending requires source metadata")
@@ -640,7 +649,7 @@ def prepare_blended_video(
         last_progress = started
 
         def write(index: int, pixels: PixelArray) -> None:
-            frame = av.VideoFrame.from_ndarray(pixels, format="rgb24")
+            frame = av.VideoFrame.from_numpy_buffer(pixels, format="rgb24")
             frame.pts, frame.time_base = index, 1 / fps
             for packet in stream.encode(frame):
                 output.mux(packet)

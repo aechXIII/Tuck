@@ -9,6 +9,9 @@ from importlib.metadata import distribution
 from pathlib import Path
 
 _root = Path(SPECPATH).parent.resolve()
+_native_blending = _root / "build" / "native" / "libnative_blending.so"
+if not _native_blending.is_file():
+    raise FileNotFoundError("Build the native blending helper with scripts/build_native_blending.py")
 _dependency_licenses = [
     (str(distribution(name).locate_file(path)), f"licenses/{name}")
     for name in ("av", "numpy")
@@ -31,6 +34,7 @@ _hiddenimports = [
     "tuck.encoding.capabilities",
     "tuck.encoding.command",
     "tuck.encoding.filters",
+    "tuck.encoding.native_blending",
     "tuck.encoding.progress",
     "tuck.encoding.runner",
     "tuck.encoding.target_size",
@@ -90,7 +94,7 @@ _excludes = [
 a = Analysis(
     [str(_entry)],
     pathex=[str(_root)],
-    binaries=[],
+    binaries=[(str(_native_blending), ".")],
     datas=_dependency_licenses,
     hiddenimports=_hiddenimports,
     hookspath=[],
