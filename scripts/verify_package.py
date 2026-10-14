@@ -138,6 +138,21 @@ def _validate_linux_lock(lock: dict) -> None:
         and recipe["size_bytes"] > 0,
         "Linux FFmpeg lock recipe provenance is incomplete",
     )
+    inputs = recipe.get("inputs", [])
+    _require_provenance(
+        isinstance(inputs, list)
+        and len(inputs) == 2
+        and all(isinstance(record, dict) for record in inputs)
+        and {record.get("path") for record in inputs}
+        == {"packaging/ffmpeg-mix-integer.h", "packaging/ffmpeg-mix-integer.patch"}
+        and all(
+            _valid_sha256(record.get("sha256"))
+            and isinstance(record.get("size_bytes"), int)
+            and record["size_bytes"] > 0
+            for record in inputs
+        ),
+        "Linux FFmpeg mixing input provenance is incomplete",
+    )
     sources = lock.get("sources")
     _require_provenance(
         isinstance(sources, list) and len(sources) == len(_LINUX_SOURCE_LICENSES),
@@ -250,6 +265,7 @@ def _validate_linux_source_archive(app_root: Path, manifest: dict, lock: dict) -
         "ffmpeg-source/manifest.json",
         "ffmpeg-source/build-ffmpeg-linux.sh",
         *[f"ffmpeg-source/sources/{source['filename']}" for source in lock["sources"]],
+        *[f"ffmpeg-source/{Path(record['path']).name}" for record in lock["recipe"]["inputs"]],
     }
     with tarfile.open(archive_path, "r:xz") as archive:
         members = {member.name: member for member in archive.getmembers() if member.isfile()}
@@ -288,6 +304,15 @@ def _validate_linux_source_archive(app_root: Path, manifest: dict, lock: dict) -
             and hashlib.sha256(recipe_bytes).hexdigest() == lock["recipe"]["sha256"],
             "FFmpeg source recipe does not match the lock",
         )
+        for record in lock["recipe"]["inputs"]:
+            contents = archive.extractfile(members[f"ffmpeg-source/{Path(record['path']).name}"])
+            _require_provenance(contents is not None, "FFmpeg mixing input could not be read")
+            data = contents.read()
+            _require_provenance(
+                len(data) == record["size_bytes"]
+                and hashlib.sha256(data).hexdigest() == record["sha256"],
+                "FFmpeg mixing input does not match the lock",
+            )
 
 
 def _validate_linux_gstreamer_plugins(app_root: Path, manifest: dict) -> None:

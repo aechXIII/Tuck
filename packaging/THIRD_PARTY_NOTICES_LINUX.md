@@ -13,7 +13,7 @@ x265, zimg and dav1d are linked statically. The lock file is
 `packaging/ffmpeg-linux-sources.lock.json`.
 
 The AppImage includes `ffmpeg/source/ffmpeg-source.tar.xz` with the five
-source archives, the build recipe and the license files. If it is missing,
+source archives, the mixing patch, the build recipe and the license files. If it is missing,
 ask for a copy through Tuck's GitHub repository.
 
 ## AV1 preview decoder

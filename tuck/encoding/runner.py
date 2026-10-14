@@ -33,7 +33,7 @@ from ..models import (
     EncodePlan,
 )
 from ..models.cutting import CutPlan
-from ..models.encoding_policy import validate_encoder_supported_on_desktop
+from ..models.encoding_policy import NVENC_ENCODERS, validate_encoder_supported_on_desktop
 from ..models.progress import EncodeProgress, EncodeStage
 from ..output_paths import copy_file_dates
 from ..output_transaction import OutputTransaction
@@ -44,8 +44,8 @@ from .capabilities import (
     hardware_failure_kind,
     is_hardware_encoder,
 )
-from .command import build_base_cmd
-from .failures import describe_ffmpeg_failure, is_progress_line
+from .command import build_base_cmd, can_cuda_decode_blend
+from .failures import describe_ffmpeg_failure, is_cuda_decode_failure, is_progress_line
 
 # load native array libraries before sidecar workers block on Windows stdio
 from .frame_blending import TmixBlend, prepare_blended_video, tmix_blend
@@ -155,6 +155,7 @@ class FFmpegEngine:
         self._encoder_fallback: str = ""
         self._prepared_video: Path | None = None
         self._tmix: TmixBlend | None = None
+        self._cuda_decode = False
         self._cut_runner = CutRunner()
         self._low_priority = False
 
@@ -263,6 +264,7 @@ class FFmpegEngine:
     ) -> Path:
         self._resolved_encoder = ""
         self._encoder_fallback = ""
+        self._cuda_decode = False
         if isinstance(plan, CutPlan):
             self._last_stderr = ""
             try:
@@ -305,6 +307,9 @@ class FFmpegEngine:
                     raise EncodeCancelled("Encoding cancelled by user")
                 # FFmpeg blends simple cases itself; the rest are blended frame by frame first
                 self._tmix = tmix_blend(plan) if plan.frame_blending.enabled else None
+                self._cuda_decode = can_cuda_decode_blend(plan, self._tmix) and bool(
+                    get_available_encoders() & NVENC_ENCODERS
+                )
                 if plan.frame_blending.enabled and self._tmix is None:
                     # the export workspace removes the blended video with everything else
                     self._prepared_video = transaction.workspace / "video.nut"
@@ -375,6 +380,7 @@ class FFmpegEngine:
         finally:
             self._prepared_video = None
             self._tmix = None
+            self._cuda_decode = False
 
     def _run_one_attempt(
         self,
@@ -389,8 +395,9 @@ class FFmpegEngine:
     ) -> Path:
         retry_number = attempt + 1 if attempt > 0 else None
         max_retries = max_attempts if attempt > 0 else None
-        if plan.two_pass:
-            return self._encode_two_pass(
+        encode = self._encode_two_pass if plan.two_pass else self._encode_single_pass
+        try:
+            return encode(
                 ffmpeg,
                 plan,
                 source,
@@ -400,16 +407,26 @@ class FFmpegEngine:
                 retry_number=retry_number,
                 max_retries=max_retries,
             )
-        return self._encode_single_pass(
-            ffmpeg,
-            plan,
-            source,
-            output,
-            total_duration,
-            on_progress,
-            retry_number=retry_number,
-            max_retries=max_retries,
-        )
+        except EncodeError as exc:
+            if not self._cuda_decode or not is_cuda_decode_failure(exc.stderr):
+                raise
+            if self._cancel_event.is_set():
+                raise EncodeCancelled("Encoding cancelled by user") from exc
+            self._cuda_decode = False
+            logger.warning("CUDA decoding failed; retrying with software decoding: %s", exc.stderr)
+            self._cleanup_output(output)
+            _emit(
+                on_progress,
+                EncodeProgress(
+                    percent=0.0,
+                    stage=EncodeStage.PREPARING,
+                    message="Retrying with software decoding",
+                ),
+            )
+            # restart both passes so their statistics use the same decoded pictures
+            return self._run_one_attempt(
+                ffmpeg, plan, source, output, total_duration, on_progress, attempt, max_attempts
+            )
 
     def _apply_retry_decision(
         self, plan: EncodePlan, actual_size: int, attempt: int, max_attempts: int
@@ -697,7 +714,7 @@ class FFmpegEngine:
                     ["taskkill", "/F", "/T", "/PID", str(pid)],
                     stdin=subprocess.DEVNULL,
                     capture_output=True,
-                    creationflags=subprocess.CREATE_NO_WINDOW,
+                    creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
                     timeout=10,
                 )
         except Exception:
@@ -728,6 +745,7 @@ class FFmpegEngine:
                     include_audio=False,
                     prepared_video=self._prepared_video,
                     blend=self._tmix,
+                    cuda_decode=self._cuda_decode,
                 ),
                 "-pass",
                 "1",
@@ -754,7 +772,12 @@ class FFmpegEngine:
 
             pass2_cmd = [
                 *build_base_cmd(
-                    ffmpeg, plan, source, prepared_video=self._prepared_video, blend=self._tmix
+                    ffmpeg,
+                    plan,
+                    source,
+                    prepared_video=self._prepared_video,
+                    blend=self._tmix,
+                    cuda_decode=self._cuda_decode,
                 ),
                 "-pass",
                 "2",
@@ -795,7 +818,12 @@ class FFmpegEngine:
     ) -> Path:
         cmd = [
             *build_base_cmd(
-                ffmpeg, plan, source, prepared_video=self._prepared_video, blend=self._tmix
+                ffmpeg,
+                plan,
+                source,
+                prepared_video=self._prepared_video,
+                blend=self._tmix,
+                cuda_decode=self._cuda_decode,
             ),
             str(output),
         ]

@@ -9,8 +9,20 @@
   },
   "recipe": {
     "path": "packaging/build-ffmpeg-windows.sh",
-    "size_bytes": 5065,
-    "sha256": "34cf64bf3235ee47c95626210c6de75ddc8c55aff8b4ab6e38e08c0e743d6d21"
+    "size_bytes": 5297,
+    "sha256": "aa0fa562c9f9c131e367f4e8615cb82891ed426415412154b4ffdedf2a719d10",
+    "inputs": [
+      {
+        "path": "packaging/ffmpeg-mix-integer.h",
+        "size_bytes": 2099,
+        "sha256": "de898563d85ae77981e7301b29b38fe62e8577f76afc76f51a8f265ae7d76d57"
+      },
+      {
+        "path": "packaging/ffmpeg-mix-integer.patch",
+        "size_bytes": 3366,
+        "sha256": "62aabd55325b09eaa1d5e3a66012fedb8934707aa2aba1655f64d7a14e02187f"
+      }
+    ]
   },
   "sources": [
     {

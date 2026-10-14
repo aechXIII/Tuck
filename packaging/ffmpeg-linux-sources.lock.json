@@ -11,9 +11,21 @@
   },
   "recipe": {
     "path": "packaging/build-ffmpeg-linux.sh",
-    "sha256": "b2b7bc4f7c0530ced09b4998cce9d8614fe4df3e87b2f84abf850450bb392ca4",
-    "size_bytes": 2758,
-    "description": "Build x264, x265, zimg, and dav1d as static libraries, then link them into dynamically libc-linked FFmpeg and ffprobe."
+    "sha256": "a771cfa441789b4539b6a4d94e9c1ffbe5329c2f56c11f899caf4347bbeac04c",
+    "size_bytes": 2956,
+    "description": "Build x264, x265, zimg, and dav1d as static libraries, then link them into dynamically libc-linked FFmpeg and ffprobe.",
+    "inputs": [
+      {
+        "path": "packaging/ffmpeg-mix-integer.h",
+        "size_bytes": 2099,
+        "sha256": "de898563d85ae77981e7301b29b38fe62e8577f76afc76f51a8f265ae7d76d57"
+      },
+      {
+        "path": "packaging/ffmpeg-mix-integer.patch",
+        "size_bytes": 3366,
+        "sha256": "62aabd55325b09eaa1d5e3a66012fedb8934707aa2aba1655f64d7a14e02187f"
+      }
+    ]
   },
   "sources": [
     {

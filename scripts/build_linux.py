@@ -197,6 +197,23 @@ def load_lock() -> dict[str, object]:
         recipe_file.stat().st_size == recipe["size_bytes"], "FFmpeg recipe size does not match lock"
     )
     _require(_sha256(recipe_file) == recipe["sha256"], "FFmpeg recipe SHA-256 does not match lock")
+    inputs = recipe.get("inputs", [])
+    _require(
+        isinstance(inputs, list)
+        and len(inputs) == 2
+        and all(isinstance(record, dict) for record in inputs)
+        and {record.get("path") for record in inputs}
+        == {"packaging/ffmpeg-mix-integer.h", "packaging/ffmpeg-mix-integer.patch"},
+        "Incomplete FFmpeg mixing inputs",
+    )
+    for record in inputs:
+        path = ROOT / str(record["path"])
+        _require(
+            path.is_file()
+            and path.stat().st_size == record.get("size_bytes")
+            and _sha256(path) == record.get("sha256"),
+            "FFmpeg mixing input does not match lock",
+        )
     _source_entries(lock)
     output = lock.get("output")
     _require(isinstance(output, dict), "Linux FFmpeg output requirements are invalid")
@@ -325,6 +342,13 @@ def build_source_archive(
             entries.extend(
                 (f"ffmpeg-source/sources/{source['filename']}", archive.read_bytes())
                 for source, archive in sources
+            )
+            entries.extend(
+                (
+                    f"ffmpeg-source/{Path(str(record['path'])).name}",
+                    (ROOT / str(record["path"])).read_bytes(),
+                )
+                for record in recipe["inputs"]
             )
             for name, contents in sorted(entries):
                 info = tarfile.TarInfo(name)

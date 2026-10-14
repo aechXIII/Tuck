@@ -229,6 +229,23 @@ def test_both_ffmpeg_builds_decode_av1_in_software() -> None:
         assert "--enable-libdav1d" in recipe
 
 
+def test_both_ffmpeg_recipes_pin_the_same_mixing_code() -> None:
+    records = []
+    for lock_path in (_LOCK, _LINUX_LOCK):
+        lock = json.loads(lock_path.read_text(encoding="utf-8"))
+        inputs = lock["recipe"].get("inputs", [])
+        assert {record["path"] for record in inputs} == {
+            "packaging/ffmpeg-mix-integer.h",
+            "packaging/ffmpeg-mix-integer.patch",
+        }
+        for record in inputs:
+            data = (_REPO / record["path"]).read_bytes()
+            assert len(data) == record["size_bytes"]
+            assert hashlib.sha256(data).hexdigest() == record["sha256"]
+        records.append(inputs)
+    assert records[0] == records[1]
+
+
 def test_both_ffmpeg_locks_require_the_tone_map_filters() -> None:
     from tuck.encoding.capabilities import TONE_MAP_FILTERS
 
@@ -285,6 +302,55 @@ def test_linux_build_rejects_incomplete_source_provenance(tmp_path: Path, monkey
 
     with pytest.raises(build_linux.BuildError, match="provenance is incomplete"):
         build_linux.load_lock()
+
+
+@pytest.mark.parametrize("tamper", [False, True])
+def test_linux_source_archive_verifies_mixing_inputs(tmp_path: Path, monkeypatch, tamper) -> None:
+    import io
+    import tarfile
+
+    build_linux = _build_linux_module()
+    verify_package = _verify_package_module()
+    lock = build_linux.load_lock()
+    sources = []
+    for record in lock["sources"]:
+        source = tmp_path / record["filename"]
+        source.write_bytes(record["name"].encode())
+        record["size_bytes"] = source.stat().st_size
+        record["sha256"] = hashlib.sha256(source.read_bytes()).hexdigest()
+        sources.append((record, source))
+    lock_path = tmp_path / "packaging" / "ffmpeg-linux-sources.lock.json"
+    lock_path.parent.mkdir()
+    lock_path.write_text(json.dumps(lock), encoding="utf-8")
+    monkeypatch.setattr(build_linux, "LOCK_PATH", lock_path)
+    monkeypatch.setattr(build_linux, "FFMPEG_BUILD", tmp_path / "build")
+    monkeypatch.setattr(verify_package, "ROOT", tmp_path)
+    bundle = build_linux.build_source_archive(lock, sources)
+    target = tmp_path / "app" / "ffmpeg" / "source" / "ffmpeg-source.tar.xz"
+    target.parent.mkdir(parents=True)
+    with tarfile.open(bundle) as original, tarfile.open(target, "w:xz") as output:
+        for member in original.getmembers():
+            contents = original.extractfile(member).read()
+            if tamper and member.name.endswith("ffmpeg-mix-integer.h"):
+                contents = b"X" * len(contents)
+            output.addfile(member, io.BytesIO(contents))
+    manifest = {
+        "ffmpeg_provenance": {
+            "lock_file": "packaging/ffmpeg-linux-sources.lock.json",
+            "lock_sha256": hashlib.sha256(lock_path.read_bytes()).hexdigest(),
+            "recipe": lock["recipe"],
+            "source_archive": {
+                "file": "ffmpeg/source/ffmpeg-source.tar.xz",
+                "size_bytes": target.stat().st_size,
+                "sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
+            },
+        }
+    }
+    if tamper:
+        with pytest.raises(verify_package.VerifyError, match="mixing input does not match"):
+            verify_package._validate_linux_source_archive(tmp_path / "app", manifest, lock)
+    else:
+        verify_package._validate_linux_source_archive(tmp_path / "app", manifest, lock)
 
 
 def test_linux_build_leaves_source_links_out_of_the_extracted_tree(

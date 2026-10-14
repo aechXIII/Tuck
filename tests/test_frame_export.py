@@ -297,7 +297,8 @@ def test_hdr_frame_uses_the_export_tone_mapping(source, tmp_path):
             "-i",
             str(source),
             "-vf",
-            "format=yuv420p10le,setparams=color_trc=smpte2084:color_primaries=bt2020:colorspace=bt2020nc",
+            "lutrgb=r=160:g=160:b=160,format=yuv420p10le,"
+            "setparams=color_trc=smpte2084:color_primaries=bt2020:colorspace=bt2020nc",
             "-pix_fmt",
             "yuv420p10le",
             "-c:v",
@@ -319,10 +320,28 @@ def test_hdr_frame_uses_the_export_tone_mapping(source, tmp_path):
     assert result["ok"], result
     assert result["warnings"] == []
     assert read_png(output).shape == (540, 960, 3)
-    # converting tagged PQ directly to RGB clips this red to 255; tone mapping
-    # keeps the display-referred highlight below that clipped result
-    red = read_png(output)[270, 480]
-    assert 20 < red[0] < 250
+    # neutral gray avoids gamut clipping from saturated BT.2020 colors
+    direct = tmp_path / "direct.png"
+    subprocess.run(
+        [
+            find_ffmpeg(),
+            "-y",
+            "-i",
+            str(hdr),
+            "-frames:v",
+            "1",
+            "-pix_fmt",
+            "rgb24",
+            str(direct),
+        ],
+        capture_output=True,
+        check=True,
+    )
+    mapped = read_png(output)[270, 480]
+    unmapped = read_png(direct)[270, 480]
+    np.testing.assert_allclose(mapped, (mapped[0],) * 3, atol=2)
+    assert 20 < int(mapped[0]) < 250
+    assert int(mapped[0]) > int(unmapped[0]) + 20
 
 
 def test_sidecar_frame_request_validates_envelope_and_reports_published_file(source, tmp_path):

@@ -98,6 +98,56 @@ def is_progress_line(line: str) -> bool:
     return bool(_PROGRESS_LINE_RE.match(line.strip()))
 
 
+def is_cuda_decode_failure(stderr: str) -> bool:
+    text = stderr.lower()
+    # hardware setup failures can also print the generic "error while decoding" line
+    if any(
+        marker in text
+        for marker in _DISK_FULL_MARKERS + _ACCESS_MARKERS + _INPUT_MARKERS
+        if marker != "error while decoding"
+    ):
+        return False
+    for line in text.splitlines():
+        if "unrecognized hwaccel: cuda" in line or "no such filter: 'hwdownload'" in line:
+            return True
+        if "failed setup for format cuda" in line:
+            return True
+        if "no device available for decoder" in line and "cuda" in line:
+            return True
+        if "[av1 @" in line and any(
+            marker in line
+            for marker in (
+                "hwaccel",
+                "cuda",
+                "hardware is lacking required capabilities",
+                "no decoder surfaces left",
+            )
+        ):
+            return True
+        if "[avhwdevicecontext @" in line and any(
+            marker in line for marker in ("cannot load nvcuda", "cuda_error", "cuda devices")
+        ):
+            return True
+        if "[parsed_hwdownload_" in line and any(
+            marker in line
+            for marker in (
+                "failed to download frame",
+                "the input must have a hardware frame reference",
+                "input frame is not the in the configured hwframe context",
+            )
+        ):
+            return True
+        # a build without AV1 hardware decoding may select dav1d before hwdownload
+        if (
+            "-> hwdownload:" in text
+            and "impossible to convert between the formats" in line
+            and "input from stream 0:0'" in line
+            and "'auto_scale_" in line
+        ):
+            return True
+    return False
+
+
 def describe_ffmpeg_failure(stderr: str, returncode: int) -> str:
     """A calm, user-facing explanation for a failed FFmpeg run."""
     text = stderr.lower()

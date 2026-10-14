@@ -79,6 +79,17 @@ def load_lock() -> dict:
         lock["recipe"]["path"] == "packaging/build-ffmpeg-windows.sh", "Unexpected build recipe"
     )
     verify_file(ROOT / lock["recipe"]["path"], lock["recipe"])
+    inputs = lock["recipe"].get("inputs", [])
+    require(
+        isinstance(inputs, list)
+        and len(inputs) == 2
+        and all(isinstance(record, dict) for record in inputs)
+        and {record.get("path") for record in inputs}
+        == {"packaging/ffmpeg-mix-integer.h", "packaging/ffmpeg-mix-integer.patch"},
+        "Incomplete FFmpeg mixing inputs",
+    )
+    for record in inputs:
+        verify_file(ROOT / record["path"], record)
     return lock
 
 
@@ -135,6 +146,12 @@ def write_source_bundle(lock: dict, sources: list[Path], target: Path) -> None:
         "ffmpeg-source/build-ffmpeg-windows.sh": (ROOT / lock["recipe"]["path"]).read_bytes(),
     }
     entries.update({f"ffmpeg-source/sources/{path.name}": path.read_bytes() for path in sources})
+    entries.update(
+        {
+            f"ffmpeg-source/{Path(record['path']).name}": (ROOT / record["path"]).read_bytes()
+            for record in lock["recipe"]["inputs"]
+        }
+    )
     with tarfile.open(target, "w:xz", preset=0) as bundle:
         for name, data in sorted(entries.items()):
             info = tarfile.TarInfo(name)
@@ -148,6 +165,12 @@ def verify_source_bundle(path: Path) -> None:
     require(path.is_file(), f"Missing Windows FFmpeg source archive: {path}")
     records = {f"ffmpeg-source/sources/{s['filename']}": s for s in lock["sources"]}
     records["ffmpeg-source/build-ffmpeg-windows.sh"] = lock["recipe"]
+    records.update(
+        {
+            f"ffmpeg-source/{Path(record['path']).name}": record
+            for record in lock["recipe"]["inputs"]
+        }
+    )
     records["ffmpeg-source/lock.json"] = {
         "size_bytes": LOCK_PATH.stat().st_size,
         "sha256": sha256(LOCK_PATH),

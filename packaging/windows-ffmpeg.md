@@ -48,6 +48,7 @@ for archive in sources/*; do tar -xf "$archive" -C source; done
 bash build-ffmpeg-windows.sh "$PWD/source" "$PWD/work" "$PWD/output" 4
 ```
 
-Use a new work directory and freshly extracted sources for each build. No
-upstream source patches are applied. `lock.json` records the exact inputs;
+Use a new work directory and freshly extracted sources for each build. The recipe
+applies a locked integer-mixing patch and includes its source header in the source
+archive. `lock.json` records the exact inputs;
 `build-environment.txt` records the toolchain used for the released executables.

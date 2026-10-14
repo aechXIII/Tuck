@@ -14,7 +14,7 @@ FFmpeg, x264 and x265 are GPL-2.0-or-later. dav1d is BSD-2-Clause, zimg is
 WTFPL, zlib uses the zlib license, and the GPU headers are MIT. GPL parts are
 enabled, nonfree parts are not. The license files are in `ffmpeg/`.
 
-The exact sources, lock file and build recipe ship with every release as
+The exact sources, mixing patch, lock file and build recipe ship with every release as
 `Tuck-FFmpeg-Windows-Sources.tar.xz`. `ffmpeg/build-manifest.json` records its
 hash and the hashes of the built files.
 

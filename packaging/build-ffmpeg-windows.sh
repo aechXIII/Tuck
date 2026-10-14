@@ -12,7 +12,7 @@ jobs=$4
 prefix="$build_dir/prefix"
 cross=x86_64-w64-mingw32
 for tool in "$cross-gcc-posix" "$cross-g++-posix" cmake make nasm pkg-config meson ninja \
-  autoconf automake libtoolize; do
+  autoconf automake libtoolize patch; do
   command -v "$tool" >/dev/null || { echo "Missing build tool: $tool" >&2; exit 1; }
 done
 mkdir -p "$build_dir" "$output_dir" "$prefix"
@@ -98,6 +98,10 @@ popd >/dev/null
 make -C "$source_dir/nv-codec-headers-c69278340ab1d5559c7d7bf0edf615dc33ddbba7" install PREFIX="$prefix"
 mkdir -p "$prefix/include/AMF"
 cp -R "$source_dir/AMF-ba07d1b3c7c7ee0d846125cffc1d6d78a020c45a/amf/public/include/"* "$prefix/include/AMF/"
+
+recipe_dir=$(cd "$(dirname "$0")" && pwd)
+patch -d "$source_dir/ffmpeg-7.1.1" -p1 < "$recipe_dir/ffmpeg-mix-integer.patch"
+install -m644 "$recipe_dir/ffmpeg-mix-integer.h" "$source_dir/ffmpeg-7.1.1/libavfilter/mix_integer.h"
 
 mkdir -p "$build_dir/ffmpeg"
 pushd "$build_dir/ffmpeg" >/dev/null

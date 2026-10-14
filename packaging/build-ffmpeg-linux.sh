@@ -14,7 +14,7 @@ output_dir=$3
 jobs=$4
 prefix="$build_dir/prefix"
 
-for command in cmake gcc g++ make nasm pkg-config autoconf automake libtoolize meson ninja; do
+for command in cmake gcc g++ make nasm pkg-config autoconf automake libtoolize meson ninja patch; do
   if ! command -v "$command" >/dev/null 2>&1; then
     echo "$command is required to build the locked Linux FFmpeg sources." >&2
     exit 1
@@ -66,6 +66,10 @@ ninja -C "$build_dir/dav1d" install
 
 # screen capture would link the build host's libdrm and libxcb; Tuck never captures, and a
 # system without them must still run ffmpeg
+recipe_dir=$(cd "$(dirname "$0")" && pwd)
+patch -d "$ffmpeg" -p1 < "$recipe_dir/ffmpeg-mix-integer.patch"
+install -m644 "$recipe_dir/ffmpeg-mix-integer.h" "$ffmpeg/libavfilter/mix_integer.h"
+
 pushd "$ffmpeg" >/dev/null
 PKG_CONFIG_PATH="$prefix/lib/pkgconfig" ./configure \
   --prefix="$prefix" \

@@ -1,0 +1,92 @@
+--- a/libavfilter/vf_mix.c
++++ b/libavfilter/vf_mix.c
+@@ -31,6 +31,8 @@
+ #include "formats.h"
+ #include "framesync.h"
+ #include "video.h"
++#include "libavutil/cpu.h"
++#include "mix_integer.h"
+ 
+ typedef struct MixContext {
+     const AVClass *class;
+@@ -39,6 +41,8 @@
+     int nb_inputs;
+     int nb_threads;
+     int duration;
++    int integer;
++    void (*mix_line_integer)(uint8_t *, uint8_t *const *, int, int);
+     float *weights;
+     float scale;
+     float wfactor;
+@@ -123,6 +127,11 @@
+     MixContext *s = ctx->priv;
+     int ret;
+ 
++    s->mix_line_integer = mix_line_integer_c;
++#if MIX_INTEGER_AVX2
++    if (av_get_cpu_flags() & AV_CPU_FLAG_AVX2)
++        s->mix_line_integer = mix_line_integer_avx2;
++#endif
+     s->tmix = !strcmp(ctx->filter->name, "tmix");
+ 
+     s->frames = av_calloc(s->nb_inputs, sizeof(*s->frames));
+@@ -239,6 +248,38 @@
+ #define CLIPF(x, min, max) (x)
+ #define NOP(x) (x)
+ 
++static int mix_frames_integer(AVFilterContext *ctx, void *arg, int jobnr, int nb_jobs)
++{
++    MixContext *s = ctx->priv;
++    ThreadData *td = arg;
++    uint8_t **src = s->data + jobnr * s->nb_inputs;
++    int *stride = s->linesize + jobnr * s->nb_inputs;
++
++    for (int p = 0; p < s->nb_planes; p++) {
++        const int start = s->height[p] * jobnr / nb_jobs;
++        const int end = s->height[p] * (jobnr + 1) / nb_jobs;
++        uint8_t *dst = td->out->data[p] + start * td->out->linesize[p];
++
++        if (!((1 << p) & s->planes)) {
++            av_image_copy_plane(dst, td->out->linesize[p],
++                                td->in[0]->data[p] + start * td->in[0]->linesize[p],
++                                td->in[0]->linesize[p], s->linesizes[p], end - start);
++            continue;
++        }
++        for (int i = 0; i < s->nb_inputs; i++) {
++            stride[i] = td->in[i]->linesize[p];
++            src[i] = td->in[i]->data[p] + start * stride[i];
++        }
++        for (int y = start; y < end; y++) {
++            s->mix_line_integer(dst, src, s->nb_inputs, s->linesizes[p]);
++            dst += td->out->linesize[p];
++            for (int i = 0; i < s->nb_inputs; i++)
++                src[i] += stride[i];
++        }
++    }
++    return 0;
++}
++
+ static int mix_frames(AVFilterContext *ctx, void *arg, int jobnr, int nb_jobs)
+ {
+     MixContext *s = ctx->priv;
+@@ -253,6 +294,12 @@
+     const float wfactor = s->wfactor;
+     const int max = s->max;
+ 
++    /* odd unit-weight windows have no half ties; integer division matches lrintf */
++    if (!s->tmix && s->integer && s->fast && s->depth <= 8 &&
++        s->weights[0] == 1.f && s->scale == 0.f &&
++        (s->nb_inputs & 1) && s->nb_inputs <= 255)
++        return mix_frames_integer(ctx, arg, jobnr, nb_jobs);
++
+     if (s->tmix && s->fast) {
+         if (s->depth <= 8) {
+             FAST_TMIX_SLICE(uint8_t, uint16_t, nb_inputs >> 1)
+@@ -442,6 +489,7 @@
+         { "longest",  "Duration of longest input",  0, AV_OPT_TYPE_CONST, {.i64=0}, 0, 0, FLAGS, .unit = "duration" },
+         { "shortest", "Duration of shortest input", 0, AV_OPT_TYPE_CONST, {.i64=1}, 0, 0, FLAGS, .unit = "duration" },
+         { "first",    "Duration of first input",    0, AV_OPT_TYPE_CONST, {.i64=2}, 0, 0, FLAGS, .unit = "duration" },
++    { "integer", "use exact integer mixing where possible", OFFSET(integer), AV_OPT_TYPE_BOOL, {.i64=1}, 0, 1, .flags = TFLAGS },
+     { NULL },
+ };
+ 

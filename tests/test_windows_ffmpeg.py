@@ -140,6 +140,39 @@ def test_source_archive_matches_every_locked_input(source_bundle):
     module.verify_source_bundle(bundle)
 
 
+def test_source_archive_includes_verified_mixing_code(source_bundle):
+    import tarfile
+
+    module, bundle, _sources = source_bundle
+    inputs = module.load_lock()["recipe"].get("inputs", [])
+    assert {record["path"] for record in inputs} == {
+        "packaging/ffmpeg-mix-integer.h",
+        "packaging/ffmpeg-mix-integer.patch",
+    }
+    with tarfile.open(bundle) as archive:
+        for record in inputs:
+            member = archive.extractfile(f"ffmpeg-source/{Path(record['path']).name}")
+            assert member is not None
+            contents = member.read()
+            assert len(contents) == record["size_bytes"]
+            assert hashlib.sha256(contents).hexdigest() == record["sha256"]
+
+
+def test_changed_mixing_code_in_source_archive_is_rejected(source_bundle, tmp_path):
+    import tarfile
+
+    module, bundle, _sources = source_bundle
+    altered = tmp_path / "altered.tar.xz"
+    with tarfile.open(bundle) as original, tarfile.open(altered, "w:xz") as output:
+        for member in original.getmembers():
+            contents = original.extractfile(member).read()
+            if member.name.endswith("ffmpeg-mix-integer.h"):
+                contents = b"X" * len(contents)
+            output.addfile(member, io.BytesIO(contents))
+    with pytest.raises(module.BuildError, match="Source SHA-256 mismatch"):
+        module.verify_source_bundle(altered)
+
+
 def test_changed_source_bytes_are_rejected(source_bundle):
     module, bundle, sources = source_bundle
     sources[0].write_bytes(b"X" * sources[0].stat().st_size)

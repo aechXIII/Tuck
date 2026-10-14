@@ -230,7 +230,25 @@ def _tmix_time(seconds: Fraction) -> str:
     return f"{max(0.0, float(seconds)):.6f}"
 
 
-def _tmix_graph(blend: TmixBlend, video_filters: list[str]) -> list[str]:
+def can_cuda_decode_blend(plan: EncodePlan, blend: TmixBlend | None) -> bool:
+    """Support for CUDA's NV12 download; GPU availability is checked separately."""
+    info = plan.source_info
+    return bool(
+        blend is not None
+        and len(blend.pieces) == 1
+        and len(plan.effective_segments) == 1
+        and info is not None
+        and info.video_codec == "av1"
+        and info.pixel_format == "yuv420p"
+        and not info.is_hdr
+        and info.display_rotation == 0
+        and not build_plan_video_filters(replace(plan, apply_fps_filter=False))
+    )
+
+
+def _tmix_graph(
+    blend: TmixBlend, video_filters: list[str], *, cuda_decode: bool = False
+) -> list[str]:
     """Blend the selected source pictures, then join segments on the output clock."""
     rate = blend.rate
     parts: list[str] = []
@@ -245,7 +263,7 @@ def _tmix_graph(blend: TmixBlend, video_filters: list[str]) -> list[str]:
             count % 2 == 1 and parsed_weights == {pack("f", 1.0)}
         )
         clock = [f"settb={rate.denominator}/{rate.numerator}", "setpts=N"]
-        chain = [
+        chain = (["hwdownload", "format=nv12"] if cuda_decode else []) + [
             f"trim=start={_tmix_time(piece.start)}:end={_tmix_time(piece.end)}",
             "setpts=PTS-STARTPTS",
         ]
@@ -374,6 +392,7 @@ def build_base_cmd(
     include_audio: bool = True,
     prepared_video: Path | None = None,
     blend: TmixBlend | None = None,
+    cuda_decode: bool = False,
 ) -> list[str]:
     # explicit progress records are flushed independently of console status output
     cmd = [ffmpeg, "-hide_banner", "-loglevel", "info", "-nostats", "-progress", "pipe:2"]
@@ -382,6 +401,9 @@ def build_base_cmd(
     single_segment = len(segments) == 1
     # both blending paths put video on the output frame grid from the source clock
     blending = prepared_video is not None or blend is not None
+    cuda_decode = bool(
+        cuda_decode and prepared_video is None and can_cuda_decode_blend(plan, blend)
+    )
     trim_start = float(segments[0].start) if single_segment else 0.0
     trim_end = float(segments[0].end) if single_segment else 0.0
     trim_duration = float(segments[0].duration) if single_segment else 0.0
@@ -432,6 +454,9 @@ def build_base_cmd(
 
     if not filtered_timeline and single_segment and trim_start > 0.001:
         cmd += ["-ss", fmt_ffmpeg_time(trim_start)]
+    if cuda_decode:
+        # retry a decoder failure instead of publishing an export with dropped pictures
+        cmd += ["-xerror", "-hwaccel", "cuda", "-hwaccel_output_format", "cuda"]
     cmd += ["-i", str(source)]
     imported_inputs: list[tuple[int, AudioTrack, AudioClip]] = []
     for track, clip in imported_clips:
@@ -514,7 +539,7 @@ def build_base_cmd(
             graph_parts.append(f"[{len(imported_inputs) + 1}:v]{video_chain}[vout]")
             cmd += ["-t", fmt_ffmpeg_time(plan.effective_duration)]
         elif blend is not None:
-            graph_parts.extend(_tmix_graph(blend, video_filters))
+            graph_parts.extend(_tmix_graph(blend, video_filters, cuda_decode=cuda_decode))
             cmd += ["-t", fmt_ffmpeg_time(plan.effective_duration)]
         else:
             video_inputs: list[str] = []
