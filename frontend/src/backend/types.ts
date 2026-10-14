@@ -51,6 +51,7 @@ export interface Settings extends JsonObject {
   readonly shortcut_overrides?: Readonly<Record<string, readonly string[]>>;
   readonly accent_color?: AccentColor;
   readonly interface_size?: InterfaceSize;
+  readonly text_size?: TextSize;
   readonly animations?: boolean;
   readonly time_format?: TimeFormat;
   readonly output_location?: OutputLocation;
@@ -76,6 +77,7 @@ export interface Settings extends JsonObject {
 
 export type AccentColor = "violet" | "blue" | "teal" | "green" | "amber" | "rose";
 export type InterfaceSize = "compact" | "default" | "large";
+export type TextSize = "default" | "large" | "extra_large";
 
 /** What the taskbar button shows for the export queue. */
 export type TaskbarProgressState = "none" | "normal" | "indeterminate" | "error";

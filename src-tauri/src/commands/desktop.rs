@@ -22,24 +22,16 @@ pub enum InterfaceSize {
 
 impl InterfaceSize {
     pub fn zoom(self) -> f64 {
-        match self {
-            Self::Compact => 0.9,
-            Self::Default => 1.0,
-            Self::Large => 1.1,
-        }
+        1.0
     }
 
     /// The smallest window, in logical pixels, that still gives the page its minimum layout.
     pub fn min_window_size(self) -> (f64, f64) {
-        (
-            (MIN_LAYOUT_WIDTH * self.zoom()).round(),
-            (MIN_LAYOUT_HEIGHT * self.zoom()).round(),
-        )
+        (MIN_LAYOUT_WIDTH, MIN_LAYOUT_HEIGHT)
     }
 }
 
-/// Scales the whole interface, like browser zoom. The window's minimum size follows the scale so
-/// a larger interface can't squeeze the layout below its supported size.
+/// Clears page zoom from older density settings and preserves the supported layout size.
 #[tauri::command]
 pub fn set_interface_size(
     window: tauri::WebviewWindow,
@@ -49,7 +41,7 @@ pub fn set_interface_size(
         |_| PublicBackendError::new("INTERNAL_ERROR", "Could not change the interface size.");
     let scale = window.scale_factor().map_err(failed)?;
     let (mut min_width, mut min_height) = size.min_window_size();
-    // on a small screen the larger size can't ask for a window bigger than the screen
+    // keep the minimum within the current screen's usable area
     if let Ok(Some(monitor)) = window.current_monitor() {
         let screen = monitor
             .work_area()
@@ -80,7 +72,7 @@ pub fn set_interface_size(
     Ok(())
 }
 
-// the Snap Layouts overlay sits over the page's maximize button, which moves with the zoom
+// clearing old page zoom also moves the maximize button under its Snap Layouts overlay
 #[cfg(windows)]
 fn place_caption_overlay(window: &tauri::WebviewWindow) {
     let target = window.as_ref().window();
@@ -206,9 +198,24 @@ mod tests {
 
     #[test]
     fn the_minimum_window_keeps_the_layout_at_960_by_640() {
-        assert_eq!(InterfaceSize::Default.min_window_size(), (960.0, 640.0));
-        assert_eq!(InterfaceSize::Large.min_window_size(), (1056.0, 704.0));
-        assert_eq!(InterfaceSize::Compact.min_window_size(), (864.0, 576.0));
+        for size in [
+            InterfaceSize::Compact,
+            InterfaceSize::Default,
+            InterfaceSize::Large,
+        ] {
+            assert_eq!(size.min_window_size(), (960.0, 640.0));
+        }
+    }
+
+    #[test]
+    fn density_never_changes_page_zoom() {
+        for size in [
+            InterfaceSize::Compact,
+            InterfaceSize::Default,
+            InterfaceSize::Large,
+        ] {
+            assert_eq!(size.zoom(), 1.0);
+        }
     }
 
     #[test]

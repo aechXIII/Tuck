@@ -1344,6 +1344,7 @@ class AppSettings:
     shortcut_overrides: dict[str, list[str]] = field(default_factory=dict)
     accent_color: str = "violet"
     interface_size: str = "default"
+    text_size: str = "default"
     animations: bool = True
     time_format: str = "seconds"
     output_location: str = OUTPUT_LOCATION_SOURCE

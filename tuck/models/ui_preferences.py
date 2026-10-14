@@ -121,6 +121,7 @@ FLAG_PREFERENCES: tuple[str, ...] = (
 
 ACCENT_COLORS: tuple[str, ...] = ("violet", "blue", "teal", "green", "amber", "rose")
 INTERFACE_SIZES: tuple[str, ...] = ("compact", "default", "large")
+TEXT_SIZES: tuple[str, ...] = ("default", "large", "extra_large")
 TIMELINE_STYLES: tuple[str, ...] = ("graphite", "violet")
 TIME_FORMATS: tuple[str, ...] = ("seconds", "timecode", "frames")
 # how far Shift with the arrow keys skips, in seconds
@@ -130,11 +131,19 @@ SKIP_LENGTHS: tuple[str, ...] = ("1", "3", "5", "10")
 CHOICE_PREFERENCES: dict[str, tuple[str, ...]] = {
     "accent_color": ACCENT_COLORS,
     "interface_size": INTERFACE_SIZES,
+    "text_size": TEXT_SIZES,
     "timeline_style": TIMELINE_STYLES,
     "time_format": TIME_FORMATS,
     "skip_seconds": SKIP_LENGTHS,
     "name_taken": NAME_TAKEN_CHOICES,
 }
+
+
+def migrate_appearance_preferences(data: dict[str, object]) -> dict[str, object]:
+    # older Large settings enlarged text too; Compact now keeps the default text size
+    if "interface_size" in data and "text_size" not in data:
+        return {**data, "text_size": "large" if data["interface_size"] == "large" else "default"}
+    return data
 
 
 def normalize_choice(key: str, value: object) -> str:

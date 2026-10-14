@@ -19,14 +19,14 @@
 }
 .kbs-dialog-header h2 {
   color: var(--text);
-  font-size: 16px;
+  font-size: calc(16px * var(--text-scale));
   line-height: 1.25;
   letter-spacing: -0.01em;
   text-transform: none;
 }
 .kbs-dialog-header p {
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
   line-height: 1.4;
   margin-top: 4px;
 }
@@ -91,7 +91,7 @@
   justify-content: center;
   font-family: var(--font);
   font-weight: 400;
-  font-size: calc(var(--unit) * 0.32);
+  font-size: calc(var(--unit) * 0.32 * var(--text-scale));
   white-space: nowrap;
   overflow: hidden;
   transition:
@@ -131,7 +131,7 @@
   outline: none;
   padding: 0;
   color: var(--text);
-  font-size: 13px;
+  font-size: calc(13px * var(--text-scale));
   font-family: var(--font);
 }
 .kbs-search input::-webkit-search-cancel-button {
@@ -177,7 +177,7 @@
   flex: none;
   min-width: 60px;
   color: var(--dim);
-  font-size: 11px;
+  font-size: calc(11px * var(--text-scale));
   text-align: right;
   white-space: nowrap;
 }
@@ -202,7 +202,7 @@
 .shortcuts-dialog .kbs-cat {
   color: var(--accent-light);
   font-weight: 650;
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--text-scale));
   text-transform: uppercase;
   letter-spacing: 1px;
   margin: 0 0 4px;
@@ -214,7 +214,7 @@
   align-items: center;
   gap: 12px;
   padding: 5px 0;
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--text-scale));
   color: var(--text);
 }
 .kbs-action {
@@ -229,7 +229,7 @@
 }
 .kbs-note {
   color: var(--dim);
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--text-scale));
   line-height: 1.25;
 }
 .kbs-keys {
@@ -258,14 +258,14 @@
   border-radius: 5px;
   background: var(--input-bg);
   color: var(--text);
-  font: 600 11px/1.25 var(--mono);
+  font: 600 calc(11px * var(--text-scale))/1.25 var(--mono);
   text-align: center;
   white-space: nowrap;
 }
 .kbs-plus,
 .kbs-or {
   color: var(--dim);
-  font: 500 10px/1 var(--font);
+  font: 500 calc(10px * var(--text-scale))/1 var(--font);
 }
 .kbs-sr-label {
   position: absolute;
@@ -287,13 +287,13 @@
   justify-content: center;
   gap: 3px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
   padding: 6px 0 2px;
   text-align: center;
 }
 .kbs-empty strong {
   color: var(--text);
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--text-scale));
   font-weight: 600;
 }
 

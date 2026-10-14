@@ -28,6 +28,17 @@ test("a hidden maximize button gives no target", () => {
   assert.equal(captionAreaFor(box(0, 0, 0, 0), 1240), null);
 });
 
+test("density changes update the maximize target without changing viewport width", () => {
+  const normal = captionAreaFor(box(1148, 0, 46, 40), 1240);
+  const compact = captionAreaFor(box(1148, 0, 46, 36), 1240);
+  const large = captionAreaFor(box(1148, 0, 46, 44), 1240);
+  assert.deepEqual(compact, { right: 46, width: 46, height: 36 });
+  assert.deepEqual(large, { right: 46, width: 46, height: 44 });
+  assert.equal(sameArea(normal, compact), false);
+  assert.equal(sameArea(compact, large), false);
+  assert.equal(sameArea(large, captionAreaFor(box(1148, 0, 46, 44), 1240)), true);
+});
+
 test("an unchanged target is not sent again", () => {
   const area = { right: 46, width: 46, height: 40 };
   assert.equal(sameArea(area, { ...area }), true);

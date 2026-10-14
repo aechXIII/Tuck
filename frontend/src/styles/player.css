@@ -1,7 +1,7 @@
 /* the workspace owns the panel size, so nothing moves when a video's shape changes; inside the
    card the picture sits on a recessed screen with the same small inset on every side */
 #center {
-  --player-inset: 8px;
+  --player-inset: calc(8px * var(--density-scale));
   flex: 1 1 0;
   height: 100%;
   min-height: 0;
@@ -18,11 +18,11 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: calc(10px * var(--density-scale));
 }
 #empty h2 {
   color: var(--dim);
-  font-size: 18px;
+  font-size: calc(18px * var(--text-scale));
   font-weight: 600;
 }
 /* the Library's Add videos sits in a drawer at small window sizes, so the empty screen offers it too */
@@ -35,7 +35,7 @@
   border-radius: 6px;
   background: var(--raised);
   color: var(--text);
-  font: 600 12px var(--font);
+  font: 600 calc(12px * var(--text-scale)) var(--font);
   cursor: pointer;
 }
 #empty-add:hover {
@@ -78,7 +78,7 @@
   border-radius: var(--r-chip);
   background: rgba(17, 17, 19, 0.78);
   color: var(--text);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
   pointer-events: none;
 }
 .preview-status[hidden],
@@ -94,7 +94,7 @@
   border: 0;
   padding: 0;
   color: var(--accent-light);
-  font: 600 12px var(--font);
+  font: 600 calc(12px * var(--text-scale)) var(--font);
   cursor: pointer;
 }
 .preview-status-retry:hover {
@@ -145,14 +145,14 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  column-gap: 12px;
+  column-gap: calc(12px * var(--density-scale));
   padding: 0;
   border: 0;
 }
 .stage-side {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: calc(6px * var(--density-scale));
   min-width: 0;
 }
 .stage-side.end {
@@ -161,7 +161,7 @@
 .stage-center {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: calc(4px * var(--density-scale));
 }
 #stage-controls [data-cut-only] {
   flex-shrink: 0;
@@ -190,7 +190,7 @@ body:not(.task-cut) #stage-controls [data-cut-only] {
 .cut-point {
   display: flex;
   align-items: stretch;
-  height: 28px;
+  height: calc(28px * var(--density-scale));
   margin-right: 6px;
   border-radius: var(--r-ctl);
   background: var(--sink);
@@ -230,7 +230,7 @@ body:not(.task-cut) #stage-controls [data-cut-only] {
   gap: 6px;
   padding: 0 9px 0 2px;
   color: var(--text);
-  font: 500 11px/1 var(--mono);
+  font: 500 calc(11px * var(--text-scale))/1 var(--mono);
   font-variant-numeric: tabular-nums;
 }
 .cut-point.end .cut-point-time {
@@ -272,10 +272,10 @@ body:not(.task-cut) #stage-controls [data-cut-only] {
   border: none;
   color: var(--muted);
   border-radius: var(--r-ctl);
-  width: 30px;
-  height: 30px;
+  width: calc(30px * var(--density-scale));
+  height: calc(30px * var(--density-scale));
   cursor: pointer;
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
   line-height: 1;
   display: inline-flex;
   align-items: center;
@@ -307,13 +307,13 @@ body:not(.task-cut) #stage-controls [data-cut-only] {
   stroke-linejoin: round;
 }
 #btn-play {
-  width: 30px;
-  height: 30px;
+  width: calc(30px * var(--density-scale));
+  height: calc(30px * var(--density-scale));
   margin: 0 4px;
   border-radius: 50%;
   background: var(--action);
   color: var(--on-accent);
-  font-size: 11px;
+  font-size: calc(11px * var(--text-scale));
 }
 #btn-play:hover {
   background: var(--action-hover);
@@ -335,7 +335,7 @@ body:not(.task-cut) #stage-controls [data-cut-only] {
 }
 #ptime {
   color: var(--muted);
-  font-size: 11px;
+  font-size: calc(11px * var(--text-scale));
   font-family: var(--mono);
   white-space: nowrap;
   flex-shrink: 0;
@@ -343,13 +343,13 @@ body:not(.task-cut) #stage-controls [data-cut-only] {
 }
 .speed-chip {
   flex-shrink: 0;
-  height: 20px;
-  padding: 0 6px;
+  height: calc(20px * var(--density-scale));
+  padding: 0 calc(6px * var(--density-scale));
   border: 0;
   border-radius: var(--r-chip);
   background: var(--raised);
   color: var(--accent-light);
-  font: 600 11px var(--mono);
+  font: 600 calc(11px * var(--text-scale)) var(--mono);
   cursor: pointer;
 }
 .speed-chip[hidden] {

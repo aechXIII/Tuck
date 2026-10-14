@@ -74,6 +74,7 @@ from .models.ui_preferences import (
     clean_profile_ids,
     clean_session_files,
     clean_shortcut_overrides,
+    migrate_appearance_preferences,
     normalize_choice,
     normalize_cut_suffix,
     normalize_encode_suffix,
@@ -532,7 +533,7 @@ class SettingsManager:
         return defaults
 
     def _migrate_settings(self, data: dict) -> dict:
-
+        data = migrate_appearance_preferences(data)
         version = data.get("version", 0)
 
         if version < 1:

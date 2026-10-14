@@ -179,7 +179,7 @@ body.crop-dragging * {
   background: transparent;
   color: var(--muted);
   cursor: pointer;
-  font: 600 10px var(--font);
+  font: 600 calc(10px * var(--text-scale)) var(--font);
 }
 #transform-fields .transform-segment button:active:not(:disabled) {
   background: color-mix(in srgb, var(--raised-2) 82%, #000);
@@ -223,7 +223,7 @@ body.crop-dragging * {
   background: var(--raised);
   border: 1px solid var(--border2);
   color: var(--text);
-  font: 500 11px var(--font);
+  font: 500 calc(11px * var(--text-scale)) var(--font);
   padding: 4px 7px;
   border-radius: 5px;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);

@@ -154,5 +154,8 @@ export async function installWindowChrome(win: Window): Promise<void> {
   };
   win.addEventListener("resize", placeMaximizeTarget);
   doc.addEventListener("fullscreenchange", placeMaximizeTarget);
+  const captionResize = new ResizeObserver(placeMaximizeTarget);
+  captionResize.observe(maximize);
+  captionResize.observe(bar);
   placeMaximizeTarget();
 }

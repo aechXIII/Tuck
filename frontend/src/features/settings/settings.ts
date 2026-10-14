@@ -401,7 +401,11 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       h("span", { class: "set-preview-play" }, icon("play")),
       h("span", { class: "set-preview-switch" }),
       h("span", { class: "set-preview-slider" }, h("span")),
-      h("span", { class: "set-preview-clip" }, `S1 · ${EXAMPLE_NAME}.mp4`));
+      h("span", { class: "set-preview-timeline" },
+        h("span", { class: "tl-segment-surface set-preview-clip" },
+          h("span", { class: "tl-segment-badge" }, "S1"),
+          h("span", { class: "tl-segment-copy" },
+            h("span", { class: "tl-segment-label" }, "12s")))));
     return [section("Color", [preview, card(
       row({
         setting: "accent",
@@ -412,13 +416,23 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     )]), section("Layout", card(
       row({
         setting: "interface-size",
-        label: "Interface size",
-        description: "Compact fits more timeline on small screens.",
-        control: choiceGroup("set-interface-size", "Interface size", [
+        label: "Layout density",
+        description: "Change spacing without changing text size.",
+        control: choiceGroup("set-interface-size", "Layout density", [
           { value: "compact", label: "Compact" },
           { value: "default", label: "Default" },
           { value: "large", label: "Large" },
         ], str(s.interface_size, "default"), { "data-settings-change": "save" }),
+      }),
+      row({
+        setting: "text-size",
+        label: "Text size",
+        description: "Change text throughout Tuck, including Settings.",
+        control: choiceGroup("set-text-size", "Text size", [
+          { value: "default", label: "Default" },
+          { value: "large", label: "Large" },
+          { value: "extra_large", label: "Extra large" },
+        ], str(s.text_size, "default"), { "data-settings-change": "save" }),
       }),
       row({
         setting: "timeline-style",
@@ -787,6 +801,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         return {
           accent_color: radio("set-accent", "violet"),
           interface_size: radio("set-interface-size", "default"),
+          text_size: radio("set-text-size", "default"),
           timeline_style: radio("set-timeline-style", "graphite"),
           animations: checked("set-animations"),
         };

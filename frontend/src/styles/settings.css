@@ -15,6 +15,11 @@ body.settings-open .settings-workspace {
   display: flex;
 }
 .settings-dialog {
+  --density-scale: 1;
+  --panel-inset: 12px;
+  --control-height: 33px;
+  --control-small-height: 26px;
+  --row-height: 34px;
   --settings-muted-label: #8d8c93;
   --settings-row-hover: #18181b;
   position: relative;
@@ -29,7 +34,7 @@ body.settings-open .settings-workspace {
   border: 1px solid var(--hair-2);
   border-radius: 14px;
   box-shadow: 0 24px 80px rgba(6, 4, 16, 0.5);
-  font: 400 13px/1.45 var(--font);
+  font: 400 calc(13px * var(--text-scale))/1.45 var(--font);
 }
 body.settings-open .settings-dialog {
   animation: settings-enter var(--dur-surface) var(--ease-out);
@@ -93,7 +98,7 @@ body.settings-open .settings-dialog {
   border-radius: var(--r-ctl);
   background: var(--raised);
   color: var(--text);
-  font: 400 13px var(--font);
+  font: 400 calc(13px * var(--text-scale)) var(--font);
   outline: none;
   appearance: none;
 }
@@ -148,8 +153,8 @@ body.settings-open .settings-dialog {
 .settings-nav-label {
   padding: 0 10px 6px;
   color: var(--settings-muted-label);
-  font-size: 10.5px;
-  line-height: 16px;
+  font-size: calc(10.5px * var(--text-scale));
+  line-height: calc(16px * var(--text-scale));
   font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -165,7 +170,7 @@ body.settings-open .settings-dialog {
   border-radius: 8px;
   background: transparent;
   color: #d9d8dd;
-  font: 400 13px var(--font);
+  font: 400 calc(13px * var(--text-scale)) var(--font);
   text-align: left;
   cursor: pointer;
 }
@@ -193,7 +198,7 @@ body.settings-open .settings-dialog {
 .settings-nav-count {
   margin-left: auto;
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
   font-weight: 400;
 }
 
@@ -218,8 +223,8 @@ body.settings-open .settings-dialog {
   margin: 0;
   overflow: hidden;
   color: var(--text);
-  font-size: 18px;
-  line-height: 24px;
+  font-size: calc(18px * var(--text-scale));
+  line-height: calc(24px * var(--text-scale));
   font-weight: 600;
   letter-spacing: -0.01em;
   text-overflow: ellipsis;
@@ -236,13 +241,13 @@ body.settings-open .settings-dialog {
 }
 .settings-head-count {
   color: var(--muted);
-  font-size: 13px;
+  font-size: calc(13px * var(--text-scale));
   white-space: nowrap;
 }
 .settings-autosave,
 .settings-status {
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
   white-space: nowrap;
 }
 .settings-autosave[hidden] {
@@ -267,7 +272,7 @@ body.settings-open .settings-dialog {
   border-radius: var(--r-chip);
   background: transparent;
   color: var(--accent-light);
-  font: 600 12px var(--font);
+  font: 600 calc(12px * var(--text-scale)) var(--font);
   cursor: pointer;
 }
 .settings-retry:hover {
@@ -296,7 +301,7 @@ body.settings-open .settings-dialog {
   border-radius: var(--r-ctl);
   background: transparent;
   color: var(--muted);
-  font: 600 16px/1 var(--font);
+  font: 600 calc(16px * var(--text-scale))/1 var(--font);
   cursor: pointer;
 }
 .settings-icon-btn:hover,
@@ -340,7 +345,7 @@ body.settings-open .settings-dialog {
   align-items: center;
   gap: 7px;
   color: var(--warn);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
 }
 .settings-editor-note.on::before {
   content: "";
@@ -370,21 +375,21 @@ body.settings-open .settings-dialog {
 .set-section-head h3 {
   margin: 0;
   color: var(--text);
-  font-size: 13px;
-  line-height: 20px;
+  font-size: calc(13px * var(--text-scale));
+  line-height: calc(20px * var(--text-scale));
   font-weight: 600;
   letter-spacing: normal;
   text-transform: none;
 }
 .set-section-head h3.set-crumb {
   color: var(--accent-light);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
   font-weight: 500;
 }
 .set-section-desc {
   margin: 2px 0 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
 }
 .set-section-aside {
   display: flex;
@@ -411,7 +416,7 @@ body.settings-open .settings-dialog {
   margin: 0;
   padding: 10px 16px;
   color: var(--text);
-  font: 400 13px/1.45 var(--font);
+  font: 400 calc(13px * var(--text-scale))/1.45 var(--font);
 }
 /* hairline between rows, inset from the card edge like the profile card */
 .set-row::before {
@@ -456,17 +461,17 @@ body.settings-open .settings-dialog {
 }
 .set-label {
   color: var(--text);
-  font-size: 13px;
+  font-size: calc(13px * var(--text-scale));
   font-weight: 400;
 }
 .set-desc {
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
   line-height: 1.4;
 }
 .set-desc.mono {
   color: #b9b8be;
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--text-scale));
   overflow-wrap: anywhere;
 }
 .set-row-control {
@@ -500,7 +505,7 @@ body.settings-open .settings-dialog {
 .set-row-error {
   flex-basis: 100%;
   color: var(--danger);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
   text-align: right;
 }
 
@@ -508,7 +513,7 @@ body.settings-open .settings-dialog {
 .set-row.toggle-row {
   justify-content: flex-start;
   min-height: 52px;
-  font-size: 13px;
+  font-size: calc(13px * var(--text-scale));
 }
 .set-row.toggle-row input[type="checkbox"] {
   inset-inline-end: 16px;
@@ -530,7 +535,7 @@ body.settings-open .settings-dialog {
   width: 200px;
 }
 .set-row-control .select-trigger {
-  font-size: 13px;
+  font-size: calc(13px * var(--text-scale));
 }
 .set-btn {
   display: inline-flex;
@@ -542,7 +547,7 @@ body.settings-open .settings-dialog {
   border-radius: var(--r-ctl);
   background: var(--raised);
   color: var(--text);
-  font: 500 13px var(--font);
+  font: 500 calc(13px * var(--text-scale)) var(--font);
   white-space: nowrap;
   cursor: pointer;
 }
@@ -627,7 +632,7 @@ body.settings-open .settings-dialog {
   background: transparent;
   box-shadow: none;
   color: var(--text);
-  font: 400 13px var(--font);
+  font: 400 calc(13px * var(--text-scale)) var(--font);
   outline: none;
   appearance: none;
 }
@@ -636,7 +641,7 @@ body.settings-open .settings-dialog {
   opacity: 1;
 }
 .settings-dialog .set-input.mono input {
-  font: 400 12px var(--mono);
+  font: 400 calc(12px * var(--text-scale)) var(--mono);
 }
 .settings-dialog .set-input input::-webkit-inner-spin-button,
 .settings-dialog .set-input input::-webkit-outer-spin-button,
@@ -648,7 +653,7 @@ body.settings-open .settings-dialog {
   flex: none;
   padding-right: 10px;
   color: var(--muted);
-  font: 400 12px var(--font);
+  font: 400 calc(12px * var(--text-scale)) var(--font);
 }
 .set-input:has(input:disabled) {
   opacity: 0.55;
@@ -689,7 +694,7 @@ body.settings-open .settings-dialog {
   border-radius: 999px;
   background: transparent;
   color: var(--muted);
-  font: 500 12.5px var(--font);
+  font: 500 calc(12.5px * var(--text-scale)) var(--font);
   white-space: nowrap;
 }
 .set-choice-option span {
@@ -697,7 +702,7 @@ body.settings-open .settings-dialog {
 }
 .set-choice-option span.mono,
 .set-choice-btn.mono {
-  font: 500 12px var(--mono);
+  font: 500 calc(12px * var(--text-scale)) var(--mono);
 }
 .set-choice-btn {
   cursor: pointer;
@@ -829,20 +834,21 @@ body.settings-open .settings-dialog {
   border-radius: 3px;
   background: var(--accent);
 }
-.set-preview-clip {
+.set-preview-timeline {
   flex: 1;
   min-width: 0;
-  display: flex;
-  align-items: center;
+  container-type: inline-size;
+}
+.set-preview-timeline > .set-preview-clip {
+  position: relative;
   height: 34px;
-  padding: 0 10px;
-  overflow: hidden;
-  border-radius: 6px;
-  background: var(--seg-fill);
-  box-shadow: inset 0 0 0 1.5px var(--accent-light);
+  background: var(--tl-clip-selected);
+}
+.set-preview-clip .tl-segment-badge {
+  color: var(--tl-selected-ink);
+}
+.set-preview-clip .tl-segment-label {
   color: var(--text);
-  font-size: 11.5px;
-  white-space: nowrap;
 }
 
 /* toolbars above lists */
@@ -899,7 +905,7 @@ body.settings-open .settings-dialog {
   border-radius: var(--r-chip);
   background: var(--raised);
   color: var(--muted);
-  font-size: 11px;
+  font-size: calc(11px * var(--text-scale));
   font-weight: 500;
 }
 .set-tag.default {
@@ -939,7 +945,7 @@ body.settings-open .settings-dialog {
   border-radius: 6px;
   background: transparent;
   color: var(--text);
-  font: 400 13px var(--font);
+  font: 400 calc(13px * var(--text-scale)) var(--font);
   text-align: left;
   cursor: pointer;
 }
@@ -986,7 +992,7 @@ body.settings-open .settings-dialog {
   min-width: 120px;
 }
 .set-token-popover button {
-  font: 400 12px var(--mono);
+  font: 400 calc(12px * var(--text-scale)) var(--mono);
 }
 
 /* keyboard shortcuts */
@@ -1007,7 +1013,7 @@ body.settings-open .settings-dialog {
   border-radius: var(--r-ctl);
   background: transparent;
   color: var(--text);
-  font: 400 12px var(--font);
+  font: 400 calc(12px * var(--text-scale)) var(--font);
   cursor: pointer;
 }
 .kb-change:hover {
@@ -1034,16 +1040,16 @@ body.settings-open .settings-dialog {
   border-radius: 5px;
   background: var(--raised);
   color: var(--text);
-  font: 400 11.5px var(--mono);
+  font: 400 calc(11.5px * var(--text-scale)) var(--mono);
 }
 .kb-change .kbs-or {
   margin: 0 3px;
   color: var(--settings-muted-label);
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--text-scale));
 }
 .kb-none {
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
 }
 .kb-row.capturing .kb-change {
   margin-right: 0;
@@ -1051,12 +1057,12 @@ body.settings-open .settings-dialog {
   background: color-mix(in oklab, var(--accent) 12%, var(--sink));
   box-shadow: inset 0 0 0 1.5px var(--accent);
   color: var(--accent-light);
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--text-scale));
 }
 .kb-capture-hint {
   margin-left: 8px;
   color: var(--muted);
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--text-scale));
 }
 .kb-conflict {
   position: relative;
@@ -1065,7 +1071,7 @@ body.settings-open .settings-dialog {
   gap: 10px;
   padding: 10px 16px;
   background: color-mix(in oklab, var(--warn) 9%, var(--sink));
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--text-scale));
 }
 .kb-conflict > svg {
   flex: 0 0 16px;
@@ -1083,7 +1089,7 @@ body.settings-open .settings-dialog {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
 }
 .set-state svg {
   width: 13px;
@@ -1101,7 +1107,7 @@ body.settings-open .settings-dialog {
   color: var(--settings-muted-label);
 }
 .set-path {
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--text-scale));
   overflow-wrap: anywhere;
 }
 .set-chips {
@@ -1118,7 +1124,7 @@ body.settings-open .settings-dialog {
   border-radius: 5px;
   background: var(--raised);
   color: #cfced4;
-  font-size: 11px;
+  font-size: calc(11px * var(--text-scale));
 }
 .set-about {
   min-height: 64px;
@@ -1144,7 +1150,7 @@ body.settings-open .settings-dialog {
   stroke: none;
 }
 .set-about-name {
-  font-size: 15px;
+  font-size: calc(15px * var(--text-scale));
   font-weight: 600;
 }
 .set-about-name .mono {

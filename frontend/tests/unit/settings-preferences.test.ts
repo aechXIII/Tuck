@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { accentColor, applyAppearance, createInterfaceSizer, interfaceSize } from "../../src/features/appearance/appearance.ts";
+import { accentColor, applyAppearance, createInterfaceSizer, interfaceSize, textSize } from "../../src/features/appearance/appearance.ts";
 import { formatClockTime, timeFormat } from "../../src/features/editor/time-format.ts";
 import { createSessionFiles, SESSION_FILES_MAX } from "../../src/features/library/session-files.ts";
 import { finishedNotification, type QueueItem } from "../../src/features/queue/queue-view.ts";
@@ -89,6 +89,9 @@ test("appearance reads stored values defensively and marks the root", () => {
   assert.equal(accentColor("purple"), "violet");
   assert.equal(interfaceSize("large"), "large");
   assert.equal(interfaceSize(2), "default");
+  assert.equal(textSize("large"), "large");
+  assert.equal(textSize("extra_large"), "extra_large");
+  assert.equal(textSize("compact"), "default");
   const root = { dataset: {} as Record<string, string> } as unknown as HTMLElement;
   applyAppearance(root, { accent_color: "rose", animations: false });
   assert.equal(root.dataset.accent, "rose");
@@ -96,6 +99,27 @@ test("appearance reads stored values defensively and marks the root", () => {
   applyAppearance(root, { accent_color: "violet", animations: true });
   assert.equal(root.dataset.accent, undefined);
   assert.equal(root.dataset.motion, undefined);
+});
+
+test("layout density and text size apply independently", () => {
+  const root = { dataset: {} as Record<string, string> } as unknown as HTMLElement;
+  for (const density of ["compact", "default", "large"]) {
+    for (const size of ["default", "large", "extra_large"]) {
+      applyAppearance(root, { interface_size: density, text_size: size });
+      assert.equal(root.dataset.density, density);
+      assert.equal(root.dataset.textSize, size);
+    }
+  }
+});
+
+test("invalid appearance sizes restore defaults without preserving a previous choice", () => {
+  const root = { dataset: {} as Record<string, string> } as unknown as HTMLElement;
+  applyAppearance(root, { interface_size: "compact", text_size: "extra_large" });
+  for (const value of [undefined, null, 2, "huge", {}, []]) {
+    applyAppearance(root, { interface_size: value, text_size: value });
+    assert.equal(root.dataset.density, "default");
+    assert.equal(root.dataset.textSize, "default");
+  }
 });
 
 test("the interface size only calls the window when it changes", async () => {

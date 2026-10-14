@@ -75,11 +75,11 @@ body.timeline-resizing * {
 }
 .timeline-empty-title {
   color: var(--text);
-  font: 650 11px/15px var(--font);
+  font: 650 calc(11px * var(--text-scale))/calc(15px * var(--text-scale)) var(--font);
 }
 .timeline-empty-copy {
   color: var(--muted);
-  font: 500 11px/15px var(--font);
+  font: 500 calc(11px * var(--text-scale))/calc(15px * var(--text-scale)) var(--font);
 }
 #audio-editor.is-loading .timeline-empty-title {
   color: var(--accent-light);
@@ -385,7 +385,7 @@ body.tl-segment-dragging * {
   background: transparent;
   box-shadow: none;
   color: var(--text);
-  font: 700 12px var(--font);
+  font: 700 calc(12px * var(--text-scale)) var(--font);
 }
 .tl-segment-copy {
   flex: 1 1 auto;
@@ -406,7 +406,7 @@ body.tl-segment-dragging * {
   overflow: hidden;
   /* a little lighter than muted text, so it stays readable on Violet's hovered clips */
   color: color-mix(in srgb, var(--muted) 60%, var(--text));
-  font: 500 11.5px/14px var(--font);
+  font: 500 calc(11.5px * var(--text-scale))/calc(14px * var(--text-scale)) var(--font);
   font-variant-numeric: tabular-nums;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -430,8 +430,8 @@ body.tl-segment-dragging * {
   background: rgba(20, 19, 29, 0.96);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
   color: var(--muted);
-  font: 600 9px var(--mono);
-  line-height: 14px;
+  font: 600 calc(9px * var(--text-scale)) var(--mono);
+  line-height: calc(14px * var(--text-scale));
   white-space: nowrap;
   pointer-events: none;
   opacity: 0;
@@ -494,8 +494,22 @@ body.tl-segment-dragging * {
   transform: scale(1.15);
   cursor: ew-resize !important;
 }
+:is(#audio-editor, .set-preview-timeline) {
+  /* selections share the same palette in the timeline and its Settings sample */
+  --tl-lane: #161618;
+  --tl-clip: var(--raised);
+  --tl-clip-hover: #2f3035;
+  --tl-clip-selected: #45464e;
+  --tl-audio: #222226;
+  --tl-audio-hover: #27282c;
+  --tl-audio-selected: #36373d;
+  --tl-wave: #8f8e96;
+  --tl-wave-selected: var(--accent-light);
+  --tl-selected-ink: var(--accent-light);
+  --tl-edge: #b4b3bb;
+}
 #audio-editor {
-  --timeline-head-width: 124px;
+  --timeline-head-width: max(calc(124px * var(--density-scale)), calc(124px * var(--text-scale)));
   --timeline-surface: var(--panel);
   --timeline-line: var(--border);
   --timeline-purple: var(--accent);
@@ -510,17 +524,6 @@ body.tl-segment-dragging * {
      coloured by the style. A fill change alone can't reach 3:1 without dimming the text on it, so
      the white trim handles carry the selection too */
   --tl-inset: 3px;
-  --tl-lane: #161618;
-  --tl-clip: var(--raised);
-  --tl-clip-hover: #2f3035;
-  --tl-clip-selected: #45464e;
-  --tl-audio: #222226;
-  --tl-audio-hover: #27282c;
-  --tl-audio-selected: #36373d;
-  --tl-wave: #8f8e96;
-  --tl-wave-selected: var(--accent-light);
-  --tl-selected-ink: var(--accent-light);
-  --tl-edge: #b4b3bb;
   flex-shrink: 0;
   height: 190px;
   min-height: 170px;
@@ -530,7 +533,7 @@ body.tl-segment-dragging * {
   gap: 4px;
   min-width: 0;
   margin: 0 var(--gutter);
-  padding: 8px 16px 10px;
+  padding: calc(8px * var(--density-scale)) calc(16px * var(--density-scale)) calc(10px * var(--density-scale));
   border-radius: var(--r-card);
   background: var(--panel);
   overflow: hidden;
@@ -617,7 +620,7 @@ body.task-cut #timeline-audio-tools {
   margin: 0 6px 0 4px;
   padding: 0;
   color: var(--tl-tool-text);
-  font: 700 10px/1 var(--font);
+  font: 700 calc(10px * var(--text-scale))/1 var(--font);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   white-space: nowrap;
@@ -653,7 +656,7 @@ body.task-cut #timeline-audio-tools {
   gap: 6px;
   height: 26px;
   padding: 0 8px;
-  font: 500 12px/26px var(--font);
+  font: 500 calc(12px * var(--text-scale))/calc(26px * var(--text-scale)) var(--font);
 }
 
 .timeline-tool-group .dock-text-btn svg,
@@ -717,7 +720,7 @@ body.task-cut #timeline-audio-tools {
   height: 26px;
   padding: 0 6px;
   border-bottom: 0;
-  font: 500 12px var(--font);
+  font: 500 calc(12px * var(--text-scale)) var(--font);
 }
 
 #btn-kf-toggle[hidden] {
@@ -791,7 +794,7 @@ body.task-cut #timeline-audio-tools {
   height: 26px;
   padding: 0 8px;
   cursor: pointer;
-  font: 500 12px/1 var(--font);
+  font: 500 calc(12px * var(--text-scale))/1 var(--font);
 }
 .dock-fit-btn:disabled {
   cursor: default;
@@ -809,7 +812,7 @@ body.task-cut #timeline-audio-tools {
   border: 0;
   color: var(--muted);
   cursor: pointer;
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
   line-height: 1;
   padding: 0;
 }
@@ -834,7 +837,7 @@ body.task-cut #timeline-audio-tools {
   margin-right: 4px;
   padding: 0 8px;
   color: var(--tl-tool-text);
-  font: 500 11.5px var(--mono);
+  font: 500 calc(11.5px * var(--text-scale)) var(--mono);
   font-variant-numeric: tabular-nums;
   text-align: center;
   white-space: nowrap;
@@ -843,7 +846,7 @@ body.task-cut #timeline-audio-tools {
   display: none;
 }
 .tl-time-label {
-  font: 500 12px var(--font);
+  font: 500 calc(12px * var(--text-scale)) var(--font);
 }
 .tl-time-kept {
   color: var(--text);
@@ -867,7 +870,7 @@ body.task-cut #timeline-audio-tools {
   box-sizing: border-box;
   overflow: hidden;
   color: var(--text);
-  font: 500 12.5px var(--mono);
+  font: 500 calc(12.5px * var(--text-scale)) var(--mono);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -903,7 +906,7 @@ body.task-cut #timeline-audio-tools {
   left: 5px;
   transform: none;
   color: var(--dim);
-  font: 600 11px/12px var(--mono);
+  font: 600 calc(11px * var(--text-scale))/calc(12px * var(--text-scale)) var(--mono);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   user-select: none;
@@ -961,7 +964,7 @@ body.task-cut #timeline-audio-tools {
   min-width: 0;
   overflow: hidden;
   color: var(--text);
-  font: 500 12px/1.4 var(--font);
+  font: 500 calc(12px * var(--text-scale))/1.4 var(--font);
   white-space: nowrap;
   text-overflow: ellipsis;
 }
@@ -1094,7 +1097,7 @@ body.task-cut #timeline-audio-tools {
   padding: 4px 6px;
   transform: translateX(-50%);
   border-radius: var(--r-chip);
-  font: 650 10px/1 var(--mono);
+  font: 650 calc(10px * var(--text-scale))/1 var(--mono);
   font-variant-numeric: tabular-nums;
   text-align: center;
   white-space: nowrap;
@@ -1274,7 +1277,7 @@ body.task-cut #timeline-audio-tools {
   background: rgba(20, 19, 29, 0.96);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
   color: var(--muted);
-  font: 600 9px var(--mono);
+  font: 600 calc(9px * var(--text-scale)) var(--mono);
   white-space: nowrap;
 }
 .kf-landing-note::before {
@@ -1377,7 +1380,7 @@ body.task-cut #timeline-audio-tools {
   background: rgba(20, 19, 29, 0.96);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
   color: var(--muted);
-  font: 600 9px var(--mono);
+  font: 600 calc(9px * var(--text-scale)) var(--mono);
   white-space: nowrap;
   cursor: pointer;
 }
@@ -1426,7 +1429,7 @@ body.task-cut #timeline-audio-tools {
   outline-offset: 2px;
 }
 
-:root[data-timeline="violet"] #audio-editor {
+:root[data-timeline="violet"] :is(#audio-editor, .set-preview-timeline) {
   --tl-lane: transparent;
   --tl-clip: color-mix(in srgb, var(--accent) 24%, #26262a);
   --tl-clip-hover: color-mix(in srgb, var(--accent) 30%, #26262a);
@@ -1455,7 +1458,7 @@ body.task-cut #timeline-audio-tools {
     background: none;
     box-shadow: none;
     color: var(--muted);
-    font: 500 11px var(--font);
+    font: 500 calc(11px * var(--text-scale)) var(--font);
     font-variant-numeric: tabular-nums;
   }
 }
@@ -1546,7 +1549,7 @@ body.timeline-scrubbing #seq-playhead-time {
   border: 0;
   border-bottom: 2px solid transparent;
   border-radius: 0;
-  font: 700 10px var(--font);
+  font: 700 calc(10px * var(--text-scale)) var(--font);
   padding: 4px 8px;
   cursor: pointer;
 }
@@ -1575,7 +1578,7 @@ body.timeline-scrubbing #seq-playhead-time {
   align-items: center;
   gap: 5px;
   padding: 0 8px;
-  font: 600 11px var(--font);
+  font: 600 calc(11px * var(--text-scale)) var(--font);
 }
 .dock-text-btn svg {
   width: 12px;

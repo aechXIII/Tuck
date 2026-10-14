@@ -797,6 +797,7 @@ class BridgeAPI:
             },
             "accent_color": s.accent_color,
             "interface_size": s.interface_size,
+            "text_size": s.text_size,
             "animations": s.animations,
             "time_format": s.time_format,
             "output_location": s.output_location,

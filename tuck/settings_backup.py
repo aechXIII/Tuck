@@ -16,6 +16,7 @@ from .models import (
     find_profile_by_id,
     profiles_to_dicts,
 )
+from .models.ui_preferences import migrate_appearance_preferences
 from .settings import ProfilesUnreadableError, SettingsManager
 
 BACKUP_FORMAT = "tuck-settings"
@@ -157,7 +158,8 @@ class SettingsBackupService:
             restored = dicts_to_profiles(profiles)
         except (TypeError, ValueError, KeyError) as exc:
             raise ValueError(f"A profile in this backup is damaged: {exc}") from exc
-        return {key: value for key, value in settings.items() if key in BACKUP_KEYS}, restored
+        values = {key: value for key, value in settings.items() if key in BACKUP_KEYS}
+        return migrate_appearance_preferences(values), restored
 
 
 def _path_exists(key: str, settings: dict[str, object]) -> bool:

@@ -1,12 +1,12 @@
 /* Shared Inspector structure and reference-aligned Video and Audio refinements. */
 .inspector-summary {
-  min-height: 34px;
-  flex: 0 0 34px;
+  min-height: calc(34px * var(--density-scale));
+  flex: 0 0 calc(34px * var(--density-scale));
   display: flex;
   flex-direction: row;
   align-items: center;
   justify-content: flex-start;
-  gap: 8px;
+  gap: calc(8px * var(--density-scale));
   margin-inline: 0;
   padding: 0;
   background: var(--panel);
@@ -16,7 +16,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--text);
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--text-scale));
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -25,7 +25,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--dim);
-  font: 400 10px var(--mono);
+  font: 400 calc(10px * var(--text-scale)) var(--mono);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -33,8 +33,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 9px;
+  gap: calc(8px * var(--density-scale));
+  margin-bottom: calc(9px * var(--density-scale));
 }
 .inspector-label-row .grt {
   margin-bottom: 0;
@@ -42,7 +42,7 @@
 .inspector-label-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: calc(10px * var(--density-scale));
 }
 .inspector-reset,
 .inspector-text-action {
@@ -50,7 +50,7 @@
   background: transparent;
   color: var(--dim);
   cursor: pointer;
-  font: 600 10px var(--font);
+  font: 600 calc(10px * var(--text-scale)) var(--font);
   white-space: nowrap;
 }
 .inspector-reset:hover,
@@ -75,13 +75,13 @@
 }
 
 .audio-master-row {
-  min-height: 34px;
+  min-height: calc(34px * var(--density-scale));
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: calc(12px * var(--density-scale));
   margin-inline: 0;
-  padding: 4px 0;
+  padding: calc(4px * var(--density-scale)) 0;
   border-bottom: 0;
   background: var(--panel);
 }
@@ -96,7 +96,7 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: calc(10px * var(--density-scale));
 }
 #video-inspector-content > .gr:not(#clip-details-card) {
   padding: 0;
@@ -107,7 +107,7 @@
 .adjust-title,
 .audio-section-heading {
   color: var(--dim) !important;
-  font-size: 11px;
+  font-size: calc(11px * var(--text-scale));
   font-weight: 600;
   letter-spacing: 0;
   text-transform: none;
@@ -115,7 +115,7 @@
 #transform-fields .enc-field {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: calc(8px * var(--density-scale));
   margin: 0;
 }
 #transform-fields .enc-field:first-child {
@@ -125,7 +125,7 @@
   flex: 0 0 58px;
   padding-top: 0;
   color: var(--muted);
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--text-scale));
 }
 #transform-fields .enc-field:first-child > label {
   padding-top: 6px;
@@ -133,21 +133,21 @@
 #transform-fields .transform-segment {
   flex: 1;
   min-width: 0;
-  gap: 4px;
+  gap: calc(4px * var(--density-scale));
   padding: 0;
   border: 0;
   border-radius: 0;
   background: transparent;
 }
 #transform-fields .transform-segment button {
-  min-height: 26px;
-  height: 26px;
-  padding: 0 4px;
+  min-height: var(--control-small-height);
+  height: var(--control-small-height);
+  padding: 0 calc(4px * var(--density-scale));
   border: 0;
   border-radius: 5px;
   background: var(--raised);
   color: var(--dim);
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--text-scale));
   font-weight: 600;
 }
 #transform-fields .transform-segment button:hover {
@@ -164,10 +164,10 @@
   box-shadow: inset 0 0 0 1px var(--panel);
 }
 #transform-fields .transform-segment.grid-3 button {
-  height: 26px;
+  height: var(--control-small-height);
   border-radius: 5px;
   background: var(--raised);
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--text-scale));
 }
 #transform-fields .transform-segment.grid-3 button:hover {
   background: var(--raised-2);
@@ -177,7 +177,7 @@
   color: var(--text);
 }
 #transform-fields .transform-segment.grid-3 {
-  gap: 4px;
+  gap: calc(4px * var(--density-scale));
   padding: 0;
   border-radius: 0;
   background: transparent;
@@ -191,12 +191,12 @@
   z-index: 1;
   bottom: 0;
   margin-top: auto;
-  padding: 12px 0 0;
+  padding: calc(12px * var(--density-scale)) 0 0;
   border-top: 1px solid var(--border);
   background: var(--panel);
 }
 #clip-details-card > .grt {
-  margin-bottom: 8px;
+  margin-bottom: calc(8px * var(--density-scale));
 }
 
 /* This video: Transform, then its audio below a rule, in one scroll */
@@ -207,7 +207,7 @@
   display: none;
 }
 #insp-edit:not(.hid) + #insp-audio {
-  margin-top: 18px;
-  padding-top: 14px;
+  margin-top: calc(18px * var(--density-scale));
+  padding-top: calc(14px * var(--density-scale));
   border-top: 1px solid var(--border);
 }

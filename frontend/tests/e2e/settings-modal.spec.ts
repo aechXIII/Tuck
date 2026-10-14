@@ -190,7 +190,8 @@ test("appearance applies at once and is saved", async ({ page }) => {
   await savedWith(page, "animations", false);
   await expect(page.locator("html")).toHaveAttribute("data-motion", "off");
 
-  await page.getByRole("radio", { name: "Large" }).check();
+  await page.getByRole("radiogroup", { name: "Layout density", exact: true })
+    .getByRole("radio", { name: "Large", exact: true }).check();
   await savedWith(page, "interface_size", "large");
   await expect.poll(() => page.evaluate(() =>
     window.__tuckFakeBackendCalls?.filter((call) => call.method === "setInterfaceSize").map((call) => call.args[0]))).toEqual(["large"]);

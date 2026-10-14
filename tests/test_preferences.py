@@ -23,6 +23,7 @@ from tuck.output_paths import copy_file_dates, export_directory
 from tuck.planner import plan
 from tuck.planner_options import output_options
 from tuck.queue import ProcessingQueue
+from tuck.settings import SettingsManager, settings_path
 
 
 @pytest.fixture(autouse=True)
@@ -54,6 +55,15 @@ class TestPreferenceValues:
     def test_unknown_choices_are_rejected(self, key, value):
         with pytest.raises(ValueError, match=key):
             normalize_choice(key, value)
+
+    @pytest.mark.parametrize("value", ["default", "large", "extra_large"])
+    def test_text_size_choices_pass(self, value):
+        assert normalize_choice("text_size", value) == value
+
+    @pytest.mark.parametrize("value", ["compact", "huge", 1.1, None])
+    def test_bad_text_size_choices_are_rejected(self, value):
+        with pytest.raises(ValueError, match="text_size"):
+            normalize_choice("text_size", value)
 
     def test_session_files_drop_repeats_and_keep_order(self):
         assert normalize_session_files(["b.mp4", "a.mp4", "b.mp4"]) == ["b.mp4", "a.mp4"]
@@ -96,6 +106,7 @@ class TestSettingsFile:
         settings = BridgeAPI().get_settings()
         assert settings["accent_color"] == "violet"
         assert settings["interface_size"] == "default"
+        assert settings["text_size"] == "default"
         assert settings["animations"] is True
         assert settings["time_format"] == "seconds"
         assert settings["output_location"] == "source"
@@ -161,6 +172,158 @@ class TestSettingsFile:
         )
         assert result == {"ok": True}
         assert api.get_settings()["last_session_files"] == [str(here)]
+
+
+class TestAppearancePreferences:
+    @pytest.mark.parametrize(
+        ("density", "text_size"),
+        [("compact", "default"), ("default", "default"), ("large", "large")],
+    )
+    def test_older_density_settings_keep_large_text(self, tmp_path, density, text_size):
+        _write_settings(tmp_path, {"version": 1, "interface_size": density})
+        settings = BridgeAPI().get_settings()
+        assert settings["interface_size"] == density
+        assert settings["text_size"] == text_size
+
+    @pytest.mark.parametrize("text_size", ["default", "large", "extra_large"])
+    def test_explicit_text_size_wins_over_older_density(self, tmp_path, text_size):
+        _write_settings(tmp_path, {"version": 1, "interface_size": "large", "text_size": text_size})
+        assert BridgeAPI().get_settings()["text_size"] == text_size
+
+    @pytest.mark.parametrize("text_size", ["compact", None, 1.1])
+    def test_bad_stored_text_size_uses_default_even_with_large_density(self, tmp_path, text_size):
+        _write_settings(tmp_path, {"version": 1, "interface_size": "large", "text_size": text_size})
+        assert BridgeAPI().get_settings()["text_size"] == "default"
+
+    def test_density_and_text_size_save_independently_and_survive_restart(self, monkeypatch):
+        import tuck.settings as settings_mod
+
+        api = BridgeAPI()
+        assert api.save_settings({"interface_size": "compact", "text_size": "extra_large"}) == {
+            "ok": True
+        }
+        assert api.save_settings({"interface_size": "large"}) == {"ok": True}
+        stored = json.loads(settings_path().read_text(encoding="utf-8"))
+        assert stored["interface_size"] == "large"
+        assert stored["text_size"] == "extra_large"
+        monkeypatch.setattr(settings_mod, "_settings_manager", None)
+        restarted = BridgeAPI().get_settings()
+        assert restarted["interface_size"] == "large"
+        assert restarted["text_size"] == "extra_large"
+
+    @pytest.mark.parametrize("text_size", ["compact", None, 1.1])
+    def test_bad_text_size_rejects_the_whole_save(self, text_size):
+        api = BridgeAPI()
+        assert (
+            api.save_settings({"interface_size": "compact", "text_size": text_size})["ok"] is False
+        )
+        settings = api.get_settings()
+        assert settings["interface_size"] == "default"
+        assert settings["text_size"] == "default"
+
+    def test_text_size_merges_another_process_change_without_losing_local_density(self):
+        first = SettingsManager()
+        first.load()
+        first.save()
+        second = SettingsManager()
+        second.load()
+        second.set_setting("text_size", "extra_large")
+        second.save()
+        first.set_setting("interface_size", "compact")
+        first.save()
+        settings = SettingsManager().load()
+        assert settings.interface_size == "compact"
+        assert settings.text_size == "extra_large"
+
+    def test_backup_recovers_text_size_when_primary_is_corrupt(self):
+        manager = SettingsManager()
+        manager.load()
+        manager.set_setting("text_size", "large")
+        manager.save()
+        manager.set_setting("text_size", "extra_large")
+        manager.save()
+        settings_path().write_text("broken", encoding="utf-8")
+        assert SettingsManager().load().text_size == "large"
+
+    def test_backup_reset_and_restore_keep_density_and_text_size(self, tmp_path):
+        api = BridgeAPI()
+        assert api.save_settings({"interface_size": "compact", "text_size": "extra_large"})["ok"]
+        backup = tmp_path / "appearance.json"
+        assert api.export_settings_to_file(str(backup))["ok"]
+        assert api.reset_settings()["ok"]
+        assert api.get_settings()["text_size"] == "default"
+        assert api.get_settings()["interface_size"] == "default"
+        assert api.import_settings_from_file(str(backup))["ok"]
+        settings = api.get_settings()
+        assert settings["interface_size"] == "compact"
+        assert settings["text_size"] == "extra_large"
+
+    @pytest.mark.parametrize(("density", "text_size"), [("compact", "default"), ("large", "large")])
+    def test_older_backup_migrates_density_without_new_text_size(
+        self, tmp_path, density, text_size
+    ):
+        backup = tmp_path / "old-appearance.json"
+        backup.write_text(
+            json.dumps(
+                {"format": "tuck-settings", "version": 1, "settings": {"interface_size": density}}
+            ),
+            encoding="utf-8",
+        )
+        api = BridgeAPI()
+        assert api.save_settings({"text_size": "extra_large"})["ok"]
+        assert api.import_settings_from_file(str(backup))["ok"]
+        assert api.get_settings()["text_size"] == text_size
+
+    def test_bad_backup_text_size_is_rejected_without_changing_density(self, tmp_path):
+        backup = tmp_path / "bad-appearance.json"
+        backup.write_text(
+            json.dumps(
+                {
+                    "format": "tuck-settings",
+                    "version": 1,
+                    "settings": {"interface_size": "large", "text_size": "huge"},
+                }
+            ),
+            encoding="utf-8",
+        )
+        api = BridgeAPI()
+        assert api.import_settings_from_file(str(backup))["ok"] is False
+        assert api.get_settings()["interface_size"] == "default"
+
+    def test_backup_with_explicit_default_text_keeps_it_with_large_density(self, tmp_path):
+        backup = tmp_path / "explicit-appearance.json"
+        backup.write_text(
+            json.dumps(
+                {
+                    "format": "tuck-settings",
+                    "version": 1,
+                    "settings": {"interface_size": "large", "text_size": "default"},
+                }
+            ),
+            encoding="utf-8",
+        )
+        api = BridgeAPI()
+        assert api.save_settings({"text_size": "extra_large"})["ok"]
+        assert api.import_settings_from_file(str(backup))["ok"]
+        assert api.get_settings()["text_size"] == "default"
+
+    def test_partial_backup_without_appearance_keeps_current_text_size(self, tmp_path):
+        backup = tmp_path / "partial.json"
+        backup.write_text(
+            json.dumps(
+                {
+                    "format": "tuck-settings",
+                    "version": 1,
+                    "settings": {"accent_color": "blue", "unknown_setting": "large"},
+                }
+            ),
+            encoding="utf-8",
+        )
+        api = BridgeAPI()
+        assert api.save_settings({"text_size": "extra_large"})["ok"]
+        assert api.import_settings_from_file(str(backup))["ok"]
+        assert api.get_settings()["text_size"] == "extra_large"
+        assert api.get_settings()["accent_color"] == "blue"
 
 
 class TestSavingPreferences:
