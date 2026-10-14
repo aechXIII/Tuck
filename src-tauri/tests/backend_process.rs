@@ -199,6 +199,41 @@ async fn request_timeout_removes_the_pending_entry() {
 }
 
 #[tokio::test]
+async fn real_sidecar_exports_frames_and_rejects_invalid_frame_times() {
+    let data_root = temporary_data_root("frame-export");
+    std::fs::create_dir_all(&data_root).unwrap();
+    let source = repository_root().join("frontend/tests/fixtures/media/two-source-tracks.mp4");
+    let output = data_root.join("frame.png");
+    let process = BackendProcess::launch(
+        BackendLaunchConfig::development(repository_root(), data_root.clone()).unwrap(),
+    )
+    .await
+    .expect("real sidecar starts");
+    let request = json!({"source": source, "output": output, "time": 0.25});
+    let result = process
+        .request(BackendCommand::ExportFrame {
+            request: request.clone(),
+        })
+        .await
+        .expect("frame export succeeds through native IPC");
+    assert_eq!(result["path"], json!(output));
+    assert!(result["width"].as_u64().unwrap() > 0);
+    assert!(result["height"].as_u64().unwrap() > 0);
+    let png = std::fs::read(&output).unwrap();
+    assert!(png.starts_with(b"\x89PNG\r\n\x1a\n"));
+    let mut invalid = request;
+    invalid["time"] = json!(-1);
+    let error = process
+        .request(BackendCommand::ExportFrame { request: invalid })
+        .await
+        .expect_err("Python rejects invalid frame times");
+    assert!(error.message.contains("time"));
+    assert_eq!(std::fs::read(&output).unwrap(), png);
+    process.shutdown().await.expect("graceful shutdown");
+    std::fs::remove_dir_all(data_root).unwrap();
+}
+
+#[tokio::test]
 async fn real_sidecar_completes_health_and_graceful_shutdown() {
     let process = BackendProcess::launch(development_sidecar())
         .await

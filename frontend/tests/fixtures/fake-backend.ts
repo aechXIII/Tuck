@@ -142,6 +142,7 @@ export async function installFakeBackend(
         getMediaUrl: (path: string, track?: number) => respond("getMediaUrl", track === undefined ? [path] : [path, track]),
         releaseMediaToken: (token: string) => respond("releaseMediaToken", [token]),
         createPlan: (request: unknown) => respond("createPlan", [request]),
+        exportFrame: (request: unknown) => respond("exportFrame", [request]),
         analyzeCut: (path: string, workId: string) => respond("analyzeCut", [path, workId]),
         getCutAnalysis: (path: string) => respond("getCutAnalysis", [path]),
         cancelCutWork: (workId: string) => respond("cancelCutWork", [workId]),
@@ -198,7 +199,7 @@ export async function installFakeBackend(
         pickFfmpegFile: () => respond("pickFfmpegFile", []),
         pickFfprobeFile: () => respond("pickFfprobeFile", []),
         pickImportFile: () => respond("pickImportFile", []),
-        pickSaveFile: (defaultName = "profiles.json") => respond("pickSaveFile", [defaultName]),
+        pickSaveFile: (defaultName = "profiles.json",format?: "json" | "png") => respond("pickSaveFile", format ? [defaultName,format] : [defaultName]),
         setInterfaceSize: (size: string) => respond("setInterfaceSize", [size]),
         notifyWhenUnfocused: (title: string, body: string) =>
           respond("notifyWhenUnfocused", [title, body]),

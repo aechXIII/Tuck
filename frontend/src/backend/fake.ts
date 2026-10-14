@@ -3,6 +3,7 @@ import type {
   BackendCall,
   BackendClient,
   BackendResult,
+  FrameExportRequest,
   DiagnosticsContext,
   DataPayload,
   InterfaceSize,
@@ -40,6 +41,10 @@ class DeterministicFakeBackend implements BackendClient {
 
   constructor(responses: FakeBackendResponses) {
     this.#responses = responses;
+  }
+
+  exportFrame(request: FrameExportRequest) {
+    return this.#record("exportFrame",[request],this.#responses.exportFrame ?? notConfigured("Frame export is not configured"));
   }
 
   #record<K extends keyof BackendClient>(
@@ -547,10 +552,10 @@ class DeterministicFakeBackend implements BackendClient {
     );
   }
 
-  pickSaveFile(defaultName = "profiles.json") {
+  pickSaveFile(defaultName = "profiles.json", format?: "json" | "png") {
     return this.#record(
       "pickSaveFile",
-      [defaultName],
+      format ? [defaultName,format] : [defaultName],
       this.#responses.pickSaveFile ?? success({ path: "" }),
     );
   }

@@ -3,6 +3,7 @@ export type ShortcutContext =
   | "global"
   | "editor-no-entry"
   | "editor-no-text-entry"
+  | "editor-no-typing"
   | string;
 
 export interface CommandDefinition {
@@ -42,6 +43,7 @@ export interface CommandState {
   settingsOpen?: boolean;
   formControlFocused?: boolean;
   textEntryFocused?: boolean;
+  typingFocused?: boolean;
 }
 
 export interface KeyboardEventLike {
@@ -281,6 +283,14 @@ const COMMANDS: CommandDefinition[] = [
     label: "Play / pause",
     bindings: ["Space"],
     context: "editor-no-text-entry",
+  },
+  {
+    id: "playback.save-frame",
+    category: "Playback & navigation",
+    column: 0,
+    label: "Save frame",
+    bindings: ["Ctrl+Shift+S"],
+    context: "editor-no-typing",
   },
   {
     id: "playback.step-backward",
@@ -709,6 +719,7 @@ function commandAvailable(
   if (context === "editor-no-entry" && current.formControlFocused) return false;
   if (context === "editor-no-text-entry" && current.textEntryFocused)
     return false;
+  if (context === "editor-no-typing" && current.typingFocused) return false;
   return true;
 }
 

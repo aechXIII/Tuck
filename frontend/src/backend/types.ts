@@ -1,4 +1,6 @@
 import type { CutAnalysisPayload, CutCancellation, CutPlanPayload, CutPlanRequest, KeyframeCursor } from "./cutting-types.ts";
+import type { FrameExportRequest, FrameExportResult } from "./frame-types.ts";
+export type { FrameExportRequest, FrameExportResult, VideoTransformJSON, LutSettingsJSON } from "./frame-types.ts";
 
 export type JsonPrimitive = boolean | number | string | null;
 export type JsonValue = JsonPrimitive | JsonObject | readonly JsonValue[];
@@ -165,6 +167,7 @@ export interface LutPayload extends JsonObject {
 }
 
 export interface DomainBackendClient {
+  exportFrame(request: FrameExportRequest): Promise<BackendResult<FrameExportResult>>;
   analyzeCut(path: string, workId: string): Promise<BackendResult<CutAnalysisPayload>>;
   getCutAnalysis(path: string, keyframes?: KeyframeCursor): Promise<BackendResult<CutAnalysisPayload>>;
   cancelCutWork(workId: string): Promise<BackendResult<CutCancellation>>;
@@ -233,7 +236,7 @@ export interface NativeBackendClient {
   pickFfmpegFile(): Promise<BackendResult<PathSelection>>;
   pickFfprobeFile(): Promise<BackendResult<PathSelection>>;
   pickImportFile(): Promise<BackendResult<PathSelection>>;
-  pickSaveFile(defaultName?: string): Promise<BackendResult<PathSelection>>;
+  pickSaveFile(defaultName?: string, format?: "json" | "png"): Promise<BackendResult<PathSelection>>;
   setInterfaceSize(size: InterfaceSize): Promise<BackendResult<EmptyPayload>>;
   notifyWhenUnfocused(title: string, body: string): Promise<BackendResult<NotificationResult>>;
   setTaskbarProgress(state: TaskbarProgressState, progress: number | null, flash: boolean): Promise<BackendResult<EmptyPayload>>;

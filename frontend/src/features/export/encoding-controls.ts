@@ -5,6 +5,7 @@ import { installCutControls } from "./cut-controls.ts";
 import { createCutState } from "./cut-state.ts";
 import type { CutPlanPreview } from "../../backend/cutting-types.ts";
 import type { BackendClient } from "../../backend/types.ts";
+import type { LutSettingsJSON } from "../../backend/types.ts";
 import { isProbeReady, probeSummary } from "../../state/probe.ts";
 import * as InspectorUi from "../panels/inspector-ui.ts";
 import { cropForAspect, isFullCrop, type CropTransform } from "../transform/crop-geometry.ts";
@@ -48,6 +49,7 @@ import {
 } from "../../platform/capabilities.ts";
 
 export interface EncodingControlsDeps {
+  syncFrameExport?: () => void;
   syncSelects: () => void;
   session: EditorSession;
   byId: <T extends HTMLElement = HTMLElement>(id: string) => T | null;
@@ -68,6 +70,7 @@ export interface EncodingControlsDeps {
 }
 
 export interface EncodingControlsApi {
+  readLut: () => LutSettingsJSON;
   workflow: () => number;
   setWf: (idx: number) => void;
   applyProfile: (forceTransform?: boolean) => void;
@@ -293,6 +296,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
   }
 
   function updateActionButtons(): void {
+    deps.syncFrameExport?.();
     // another video, or none, is selected now; its own plan brings its own notes
     if (warningsPath && warningsPath !== session.selPath) paintPlanWarnings(null);
     if (wf === 2) {
@@ -1820,6 +1824,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
   });
 
   return {
+    readLut: () => lut.read(),
     workflow: () => wf,
     setWf,
     applyProfile,

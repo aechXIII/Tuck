@@ -129,6 +129,7 @@
 #player-bar.on {
   display: flex;
 }
+#btn-save-frame[aria-disabled="true"] { opacity: 0.45; cursor: default; }
 /* in Lossless cut the start and end chips widen the middle; on a narrow player the timeline's
    own time readout and the mute button stand in for the time and the volume slider */
 @container player-bar (max-width: 700px) {

@@ -57,6 +57,7 @@ export interface PlayerApi {
   setPreviewSec: (sec: number | null) => void;
   getPreviewSec: () => number | null;
   flushVideoSeek: () => void;
+  captureFrameTime: () => number;
   /** one step slower (-1) or faster (1) through the playback speeds */
   changeSpeed: (direction: number) => void;
   resetSpeed: () => void;
@@ -270,6 +271,14 @@ export function installPlayer(host: PlayerHost): PlayerApi {
     }
   }
 
+  function captureFrameTime(): number {
+    const video = byId<HTMLVideoElement>("vid");
+    const time = seekWanted ?? (video && !video.paused ? video.currentTime : previewSec ?? video?.currentTime ?? 0);
+    video?.pause();
+    flushVideoSeek();
+    return time;
+  }
+
   function resetSeek(): void {
     seekWanted = null;
     cancelActiveSeek?.();
@@ -420,6 +429,7 @@ export function installPlayer(host: PlayerHost): PlayerApi {
     },
     getPreviewSec: () => previewSec,
     flushVideoSeek,
+    captureFrameTime,
     dispose: () => {
       if (disposed) return;
       disposed = true;

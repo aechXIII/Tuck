@@ -19,6 +19,10 @@ import {
   type TabbableControl,
 } from "./shortcuts.ts";
 
+const NON_TYPING_INPUT = [
+  "range", "checkbox", "radio", "button", "submit", "reset", "color", "file",
+].map(type => `input[type="${type}"]`).join(", ");
+
 export interface FocusTarget {
   focus: () => void;
   matches?: (selectors: string) => boolean;
@@ -80,6 +84,9 @@ export function installShortcutDialog(host: ShortcutDialogHost): ShortcutDialogA
         target.matches("input, select, textarea, button")) ||
         target.isContentEditable)
     );
+    // frame saving can run from a slider without taking over the slider's own arrow keys
+    const nonTypingInputFocused = !!(target && typeof target.matches === "function" &&
+      target.matches(NON_TYPING_INPUT));
     const overlay = byId("mod-overlay");
     return {
       modalOpen: !!(
@@ -93,6 +100,7 @@ export function installShortcutDialog(host: ShortcutDialogHost): ShortcutDialogA
       ),
       formControlFocused,
       textEntryFocused,
+      typingFocused: choiceFocused || (textEntryFocused && !nonTypingInputFocused),
     };
   }
 

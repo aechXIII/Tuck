@@ -122,16 +122,48 @@ pub async fn pick_import_file(window: tauri::Window) -> Result<String, PublicBac
     Ok(path_opt_to_string(file))
 }
 
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SaveFileFormat {
+    Json,
+    Png,
+}
+
+fn save_file_filter(format: Option<SaveFileFormat>) -> (&'static str, &'static [&'static str]) {
+    match format.unwrap_or(SaveFileFormat::Json) {
+        SaveFileFormat::Json => ("JSON", &["json"]),
+        SaveFileFormat::Png => ("PNG image", &["png"]),
+    }
+}
+
+fn save_file_location(default_name: &str) -> (Option<PathBuf>, String) {
+    let path = std::path::Path::new(default_name);
+    if path.is_absolute() {
+        if let (Some(parent), Some(name)) =
+            (path.parent(), path.file_name().and_then(|s| s.to_str()))
+        {
+            return (Some(parent.to_path_buf()), name.to_owned());
+        }
+    }
+    (None, default_name.to_owned())
+}
+
 #[tauri::command]
 pub async fn pick_save_file(
     window: tauri::Window,
     default_name: Option<String>,
+    format: Option<SaveFileFormat>,
 ) -> Result<String, PublicBackendError> {
     let mut dialog = window.dialog().file();
     if let Some(name) = default_name {
+        let (directory, name) = save_file_location(&name);
+        if let Some(directory) = directory {
+            dialog = dialog.set_directory(directory);
+        }
         dialog = dialog.set_file_name(name);
     }
-    let file = dialog.add_filter("JSON", &["json"]).blocking_save_file();
+    let (label, extensions) = save_file_filter(format);
+    let file = dialog.add_filter(label, extensions).blocking_save_file();
     Ok(path_opt_to_string(file))
 }
 
@@ -255,6 +287,46 @@ pub async fn close_window(window: tauri::Window) -> Result<(), PublicBackendErro
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn frame_save_dialog_starts_in_the_source_directory() {
+        let directory = std::env::temp_dir().join("Tuck videos");
+        let output = directory.join("Recording-frame-00-00-03-250.png");
+        assert_eq!(
+            save_file_location(output.to_str().unwrap()),
+            (Some(directory), "Recording-frame-00-00-03-250.png".into())
+        );
+        assert_eq!(
+            save_file_location("profiles.json"),
+            (None, "profiles.json".into())
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn frame_save_dialog_keeps_unc_and_unicode_directories() {
+        assert_eq!(
+            save_file_location(r"\\server\videos\żółć\frame.png"),
+            (
+                Some(PathBuf::from(r"\\server\videos\żółć")),
+                "frame.png".into()
+            )
+        );
+    }
+
+    #[test]
+    fn save_file_filters_preserve_profiles_and_allow_png_frames() {
+        assert_eq!(save_file_filter(None), ("JSON", &["json"][..]));
+        assert_eq!(
+            save_file_filter(Some(SaveFileFormat::Json)),
+            ("JSON", &["json"][..])
+        );
+        assert_eq!(
+            save_file_filter(Some(SaveFileFormat::Png)),
+            ("PNG image", &["png"][..])
+        );
+        assert!(serde_json::from_value::<SaveFileFormat>(serde_json::json!("exe")).is_err());
+    }
 
     #[test]
     fn clipboard_text_empty_is_rejected() {

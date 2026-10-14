@@ -456,7 +456,14 @@ def _cancel_cut_work(api: BridgeAPI, params: dict[str, object]) -> object:
     return api.cancel_cut_work(_string(params, "work_id"))
 
 
+def _export_frame(api: BridgeAPI, params: dict[str, object], work: RequestWork) -> object:
+    if set(params) != {"request"}:
+        raise _ParameterError
+    return api.export_frame(params["request"], work=work)
+
+
 _WORK_HANDLERS: dict[str, Callable[[BridgeAPI, dict[str, object], RequestWork], object]] = {
+    "export_frame": _export_frame,
     "enqueue_with_options": _enqueue_with_options,
     "enqueue_batch": _enqueue_batch,
     "retry_item": _retry_item,

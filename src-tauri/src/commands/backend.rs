@@ -38,6 +38,9 @@ pub enum BackendCommand {
     GetThumbnail {
         path: String,
     },
+    ExportFrame {
+        request: Value,
+    },
     GetMediaUrl {
         path: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -178,6 +181,7 @@ impl BackendCommand {
                 ("get_waveform", payload)
             }
             Self::GetThumbnail { path } => ("get_thumbnail", json!({ "path": path })),
+            Self::ExportFrame { request } => ("export_frame", json!({ "request": request })),
             Self::GetMediaUrl { path, track } => {
                 let mut payload = json!({ "path": path });
                 if let Some(track) = track {
@@ -323,6 +327,25 @@ fn reject_unsupported_backend_command(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn frame_export_forwards_the_request_without_changing_its_fields() {
+        let payload = json!({
+            "source": "/media/recording.mp4", "output": "/pictures/frame.png", "time": 5.75,
+            "transform": {"rotation": 90}, "lut": {"enabled": false}
+        });
+        let command: BackendCommand = serde_json::from_value(json!({
+            "command": "export_frame", "payload": {"request": payload}
+        }))
+        .expect("frame export is allowlisted");
+        let request = command.to_sidecar_request("frame-1").unwrap();
+        assert_eq!(request["method"], "export_frame");
+        assert_eq!(request["params"], json!({"request": payload}));
+        assert!(serde_json::from_value::<BackendCommand>(json!({
+            "command": "export_frame", "payload": {}
+        }))
+        .is_err());
+    }
 
     #[test]
     fn linux_rejects_every_send_to_command_before_sidecar_ipc() {

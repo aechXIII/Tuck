@@ -60,6 +60,7 @@ test("production commands are the source of the existing shortcut guide", () => 
     "edit.undo": ["Ctrl+Z"],
     "edit.redo": ["Ctrl+Shift+Z", "Ctrl+Y"],
     "playback.toggle": ["Space"],
+    "playback.save-frame": ["Ctrl+Shift+S"],
     "playback.step-backward": ["ArrowLeft"],
     "playback.step-forward": ["ArrowRight"],
     "playback.seek-backward": ["Shift+ArrowLeft"],
@@ -125,6 +126,7 @@ test("production commands are the source of the existing shortcut guide", () => 
         column: 0,
         items: [
           { label: "Play / pause", bindings: "Space" },
+          { label: "Save frame", bindings: "Ctrl + Shift + S" },
           {
             label: "Previous / next frame",
             bindings: "← or →",
@@ -814,7 +816,7 @@ test("the production guide renders every physical key with one base keycap style
     ),
   );
 
-  assert.equal(shortcuts.search(shortcuts.sections, "").total, 23);
+  assert.equal(shortcuts.search(shortcuts.sections, "").total, 24);
   assert.deepEqual(
     Array.from(shortcutIds).filter((id) => !renderedIds.has(id)),
     [],

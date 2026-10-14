@@ -182,6 +182,61 @@ def _request(request_id: str, method: str, params: dict[str, object]) -> dict[st
     return {"kind": "request", "protocol": 1, "id": request_id, "method": method, "params": params}
 
 
+def test_subprocess_exports_a_frame_and_keeps_validation_errors_in_the_protocol(
+    sidecar: SidecarProcess, tmp_path: Path
+) -> None:
+    if not find_ffmpeg():
+        pytest.skip("FFmpeg is required to export a frame")
+    source = _ROOT / "frontend/tests/fixtures/media/two-source-tracks.mp4"
+    output = tmp_path / "saved frame.png"
+    assert sidecar.receive()["event"] == "backend_ready"
+    sidecar.send(
+        _request(
+            "frame-1",
+            "export_frame",
+            {
+                "request": {
+                    "source": str(source),
+                    "output": str(output),
+                    "time": 0.25,
+                    "transform": {"rotation": 90},
+                }
+            },
+        )
+    )
+    response = sidecar.receive(timeout=30)
+    assert response["id"] == "frame-1"
+    assert response["ok"] is True, response
+    assert response["result"]["path"] == str(output)
+    assert output.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
+    with av.open(str(output)) as container:
+        frame = next(container.decode(video=0))
+        assert (frame.width, frame.height) == (
+            response["result"]["width"],
+            response["result"]["height"],
+        )
+    original = output.read_bytes()
+    sidecar.send(
+        _request(
+            "frame-invalid",
+            "export_frame",
+            {
+                "request": {
+                    "source": str(source),
+                    "output": str(output),
+                    "time": -1,
+                }
+            },
+        )
+    )
+    invalid = sidecar.receive(timeout=10)
+    assert invalid["id"] == "frame-invalid"
+    assert invalid["ok"] is False
+    assert output.read_bytes() == original
+    sidecar.send(_request("health-after-frame", "health", {}))
+    assert sidecar.receive()["ok"] is True
+
+
 def test_subprocess_serves_and_releases_exact_audio_tracks(
     sidecar: SidecarProcess, tmp_path: Path
 ) -> None:

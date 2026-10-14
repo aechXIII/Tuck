@@ -24,6 +24,8 @@ import { createLibrary, type LibraryApi } from "../library/library.ts";
 import { installPanels, type PanelsApi } from "../panels/panels.ts";
 import type { AudioClipRangeInfo } from "../panels/panels.ts";
 import { installPlayer, type PlayerApi } from "../player/player.ts";
+import { installFrameExport } from "../player/frame-export.ts";
+import { isProbeReady } from "../../state/probe.ts";
 import {
   installShortcutDialog,
   type ShortcutDialogApi,
@@ -116,6 +118,7 @@ export function installEditorRuntime(
   let encoding: EncodingControlsApi;
   let queue: QueueApi;
   let settings: SettingsApi;
+  let frameExport: ReturnType<typeof installFrameExport> | undefined;
 
   const requestPreview = (): void => {
     void encoding?.reqPreview();
@@ -421,6 +424,7 @@ export function installEditorRuntime(
     session,
     byId,
     getBackendClient,
+    syncFrameExport: () => frameExport?.sync(),
     syncSelects: () => selects.sync(windowRef.document),
     syncTransformControls: () => transform.syncTransformControls(),
     paintCropOverlay: () => transform.paintCropOverlay(),
@@ -521,6 +525,25 @@ export function installEditorRuntime(
 
   history.updateButtons();
 
+  frameExport = installFrameExport({
+    byId,
+    notify: toast,
+    client: getBackendClient,
+    ready: () => isProbeReady(session.selPath ? session.clips[session.selPath] : null),
+    capture: () => {
+      const clip = session.selPath ? session.clips[session.selPath] : undefined;
+      if (!clip || !isProbeReady(clip)) return null;
+      const crop = transform.cropTransformForRequest(clip);
+      return {
+        source: clip.path,
+        name: clip.name,
+        time: player.captureFrameTime(),
+        ...(crop ? { transform: crop } : {}),
+        lut: encoding.readLut(),
+      };
+    },
+  });
+
   function refreshEditor(): void {
     library?.renderClips();
     timeline.syncTimelineUI();
@@ -564,6 +587,7 @@ export function installEditorRuntime(
         "player-toggle-play": () => player.togglePlay(),
         "player-toggle-mute": () => player.toggleMute(),
         "player-fullscreen": () => player.toggleFullscreen(),
+        "player-save-frame": () => void frameExport?.save(),
         "transform-crop-aspect": (target) =>
           transform.setCropAspect(target.dataset.aspect ?? "off"),
         "transform-rotation": (target) =>
@@ -684,6 +708,10 @@ export function installEditorRuntime(
     shortcuts.registerAction("playback.toggle", {
       enabled: () => session.selPath !== null,
       execute: player.togglePlay,
+    });
+    shortcuts.registerAction("playback.save-frame", {
+      enabled: () => frameExport?.available() ?? false,
+      execute: () => void frameExport?.save(),
     });
     shortcuts.registerAction("playback.step-backward", {
       enabled: () => session.selPath !== null,

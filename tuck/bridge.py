@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import logging
+import subprocess
 import threading
 from collections.abc import Callable
 from dataclasses import replace
 from functools import partial
 from pathlib import Path
 from typing import Any
+
+from av.error import FFmpegError
 
 from . import __version__
 from .bridge_contract import BridgeResult, JsonValue
@@ -40,6 +43,7 @@ from .encoding.capabilities import (
 )
 from .engine import cleanup_cache, is_ffmpeg_available
 from .engine import get_available_encoders as _engine_available_encoders
+from .frame_export import export_frame
 from .media_server import get_media_server
 from .media_tools import find_ffmpeg, find_ffprobe
 from .models import (
@@ -274,6 +278,17 @@ class BridgeAPI:
             thumb_url = self._media_server.get_url(thumb_token)
             return {"ok": True, "thumbnail": thumb_url}
         return {"ok": False, "error": "Could not generate thumbnail"}
+
+    def export_frame(self, request: object, *, work: RequestWork | None = None) -> BridgeResult:
+        try:
+            return export_frame(request, work=work)
+        except subprocess.CalledProcessError:
+            return {
+                "ok": False,
+                "error": "The source video could not be read. Choose another video",
+            }
+        except (ValueError, OSError, RuntimeError, FFmpegError) as exc:
+            return {"ok": False, "error": str(exc)}
 
     def release_media_token(self, token: str) -> BridgeResult:
 

@@ -7,6 +7,45 @@ import {
   hasTauriInvoke,
 } from "../../src/backend/tauri.ts";
 
+test("frame export sends its snapshot and validates the complete result", async () => {
+  const calls: unknown[] = [];
+  const value = { path: "out.png", width: 1920, height: 1080, time: 3.25, warnings: [] };
+  const client = createTauriBackendClient(async (_command, args) => {
+    calls.push(args);
+    return value;
+  });
+  const request = { source: "input.mp4", output: "out.png", time: 3.25 };
+  assert.deepEqual(await client.exportFrame(request), { ok: true, value });
+  assert.deepEqual(calls, [{ command: { command: "export_frame", payload: { request } } }]);
+  for (const invalid of [
+    { ...value, width: 0 },
+    { ...value, time: NaN },
+    { ...value, warnings: [1] },
+    { ...value, path: 4 },
+    { ...value, height: 1.5 },
+  ]) {
+    assert.equal((await createTauriBackendClient(async () => invalid).exportFrame(request)).ok, false);
+  }
+  const rejected = await createTauriBackendClient(async () => ({
+    ok: false,
+    error: "Could not decode",
+  })).exportFrame(request);
+  assert.equal(rejected.ok, false);
+});
+test("PNG save pickers carry their format while existing JSON calls remain unchanged", async () => {
+  const calls: unknown[] = [];
+  const client = createTauriBackendClient(async (command, args) => {
+    calls.push({ command, args });
+    return null;
+  });
+  assert.deepEqual(await client.pickSaveFile("frame.png", "png"), { ok: true, value: { path: "" } });
+  await client.pickSaveFile("settings.json");
+  assert.deepEqual(calls, [
+    { command: "pick_save_file", args: { defaultName: "frame.png", format: "png" } },
+    { command: "pick_save_file", args: { defaultName: "settings.json" } },
+  ]);
+});
+
 test("media URL requests preserve explicit source track zero and later tracks", async () => {
   const calls: Record<string, unknown>[] = [];
   const client = createTauriBackendClient(async (_command, args) => {

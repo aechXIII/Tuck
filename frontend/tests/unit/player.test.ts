@@ -3,7 +3,7 @@ import test from "node:test";
 import { installPlayer, type PlayerHost } from "../../src/features/player/player.ts";
 
 function setup() {
-  const video = Object.assign(new EventTarget(), {currentTime: 0, paused: true});
+  const video = Object.assign(new EventTarget(), {currentTime: 0, paused: true, pause() {this.paused = true;}});
   const timers = new Map<number, () => void>();
   const frames = new Map<number, FrameRequestCallback>();
   let next = 0;
@@ -38,6 +38,33 @@ test("slow seeks finish before the latest scrub position starts", () => {
     video.dispatchEvent(new Event("seeked"));
     assert.equal(video.currentTime, 7);
   } finally { player.dispose(); }
+});
+
+test("saving a frame captures the latest queued source seek", () => {
+  const { video, player, seek } = setup();
+  try {
+    seek(1);
+    seek(7);
+    assert.equal(video.currentTime, 1);
+    assert.equal(player.captureFrameTime(), 7);
+    player.seekPreview(9);
+    assert.equal(player.captureFrameTime(), 9);
+  } finally {
+    player.dispose();
+  }
+});
+
+test("saving a playing frame pauses at its current source clock", () => {
+  const { video, player } = setup();
+  try {
+    player.setPreviewSec(1);
+    video.currentTime = 3.25;
+    video.paused = false;
+    assert.equal(player.captureFrameTime(), 3.25);
+    assert.equal(video.paused, true);
+  } finally {
+    player.dispose();
+  }
 });
 
 test("changing source or disposing abandons a queued seek", () => {

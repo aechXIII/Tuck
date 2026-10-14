@@ -154,7 +154,9 @@ def join_video_filters(filters: Iterable[str]) -> str:
     return ",".join(filters)
 
 
-def build_plan_video_filters(plan: EncodePlan) -> list[str]:
+def build_plan_video_filters(
+    plan: EncodePlan, *, geometry: TransformGeometry | None = None
+) -> list[str]:
     crop = plan.transform.crop
     source_width = plan.source_info.width if plan.source_info is not None else 0
     source_height = plan.source_info.height if plan.source_info is not None else 0
@@ -167,6 +169,7 @@ def build_plan_video_filters(plan: EncodePlan) -> list[str]:
         source_height = plan.target_height
     filters = build_video_filters(
         transform=plan.transform,
+        geometry=geometry,
         source_width=source_width,
         source_height=source_height,
         scale_width=plan.target_width if plan.apply_scale else 0,

@@ -74,3 +74,20 @@ test("the Settings list names each paired command on its own", () => {
   assert.ok(!labels.includes("Close dialog"));
   assert.equal(new Set(labels).size, labels.length);
 });
+
+test("Save frame appears in the guide and uses configurable editor keys", () => {
+  shortcuts.setShortcutOverrides({ "playback.save-frame": ["Ctrl+Shift+P"] });
+  assert.equal(shortcuts.withShortcut("Save frame", "playback.save-frame"), "Save frame (Ctrl+Shift+P)");
+  assert.ok(shortcuts.editableCommands().some(command => command.id === "playback.save-frame"));
+  assert.ok(shortcuts.search(shortcuts.currentSections(), "save frame").matched > 0);
+  const registry = shortcuts.createRegistry(shortcuts.commands, command => shortcuts.commandBindings(command.id));
+  let saved = 0;
+  registry.registerAction("playback.save-frame", () => { saved++; });
+  const event = { key: "p", ctrlKey: true, shiftKey: true };
+  for (const state of [{ typingFocused: true }, { modalOpen: true }, { settingsOpen: true }]) {
+    assert.equal(registry.dispatch(event, state), null);
+  }
+  assert.equal(registry.dispatch(event, {}), "playback.save-frame");
+  assert.equal(registry.dispatch(event, { formControlFocused: true }), "playback.save-frame");
+  assert.equal(saved, 2);
+});

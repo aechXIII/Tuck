@@ -23,7 +23,9 @@ logger = logging.getLogger(__name__)
 # probes, pictures and waveforms can take many seconds each, and importing a folder asks for
 # many at once; they get their own workers so settings, queue and status requests never wait
 # behind them and time out in the shell while the work carries on here
-MEDIA_METHODS = frozenset({"probe_file", "probe_audio_file", "get_waveform", "get_thumbnail"})
+MEDIA_METHODS = frozenset(
+    {"probe_file", "probe_audio_file", "get_waveform", "get_thumbnail", "export_frame"}
+)
 _CONTROL_WORKERS = 4
 _MEDIA_WORKERS = 4
 

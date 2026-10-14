@@ -2,6 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 
 import { backendFailure, errorMessage, isBackendError } from "./errors.ts";
 import { isCutAnalysisPayload, isCutCancellation, isCutPlanPayload } from "./cutting-types.ts";
+import { isFrameExportResult } from "./frame-types.ts";
+import type { FrameExportRequest, FrameExportResult } from "./frame-types.ts";
 import type { CutAnalysisPayload, CutCancellation, CutPlanPayload, CutPlanRequest, KeyframeCursor } from "./cutting-types.ts";
 import type {
   BackendClient,
@@ -49,6 +51,7 @@ export interface TauriBackendClient extends BackendClient {
 }
 
 type TauriBackendCommand =
+  | { command: "export_frame"; payload: { request: FrameExportRequest } }
   | { command: "clear_lut_history" }
   | { command: "list_luts" }
   | { command: "load_lut"; payload: { path: string } }
@@ -342,6 +345,14 @@ class TauriTransport implements TauriBackendClient {
 
   health(): Promise<BackendResult<JsonObject>> {
     return this.#request("health", { command: "health" }, isJsonObject);
+  }
+
+  exportFrame(request: FrameExportRequest): Promise<BackendResult<FrameExportResult>> {
+    return this.#request(
+      "exportFrame",
+      { command: "export_frame", payload: { request } },
+      isFrameExportResult,
+    );
   }
 
   probeFile(path: string): Promise<BackendResult<DataPayload>> {
@@ -866,9 +877,19 @@ class TauriTransport implements TauriBackendClient {
     }
   }
 
-  async pickSaveFile(defaultName?: string): Promise<BackendResult<PathSelection>> {
+  async pickSaveFile(defaultName?: string, format?: "json" | "png"): Promise<BackendResult<PathSelection>> {
     try {
-      const path = (await this.#invoke("pick_save_file", { defaultName: defaultName ?? "profiles.json" })) as string | null;
+      const path = await this.#invoke("pick_save_file", {
+        defaultName: defaultName ?? "profiles.json",
+        ...(format ? { format } : {}),
+      });
+      if (path !== null && typeof path !== "string") {
+        return backendFailure(
+          "MALFORMED_BACKEND_OUTPUT",
+          "Could not read the selected save path",
+          { method: "pickSaveFile" },
+        );
+      }
       return { ok: true, value: { path: path ?? "" } };
     } catch (error) {
       if (isBackendError(error)) return { ok: false, error };

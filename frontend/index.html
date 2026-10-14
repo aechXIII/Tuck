@@ -387,6 +387,24 @@
               <button
                 type="button"
                 class="pbtn"
+                id="btn-save-frame"
+                data-action-click="player-save-frame"
+                data-shortcut-commands="playback.save-frame"
+                data-shortcut-label="Save frame"
+                aria-label="Save frame"
+                aria-describedby="frame-export-description"
+                data-tip="Save frame"
+                disabled
+              >
+                <svg class="line" viewBox="0 0 16 16" aria-hidden="true">
+                  <path d="M2.5 4.5h3l1-2h3l1 2h3v9h-11Z"></path>
+                  <circle cx="8" cy="8.5" r="2.5"></circle>
+                </svg>
+              </button>
+              <span id="frame-export-description" class="sr-only"></span>
+              <button
+                type="button"
+                class="pbtn"
                 id="btn-fullscreen"
                 data-action-click="player-fullscreen"
                 aria-label="Fullscreen"
