@@ -78,6 +78,37 @@ def test_linear_transfer_known_black_white_result():
     assert float(from_linear(to_linear(np.float32(0.4), "bt709"), "bt709")) == pytest.approx(0.4)
 
 
+@pytest.mark.parametrize(
+    "transfer", ["bt709", "smpte170m", "iec61966-2-1", "linear", "gamma22", "gamma28"]
+)
+def test_linear_finish_reuses_its_owned_buffer_without_changing_quantization(transfer):
+    import numpy as np
+
+    from tuck.encoding import frame_blending
+
+    rng = np.random.default_rng(173)
+    ties = frame_blending.to_linear(
+        (np.arange(255, dtype=np.float32) + np.float32(0.5)) / np.float32(255), transfer
+    )
+    boundaries = np.array([0, 1, 0.0031308, 0.018], dtype=np.float32)
+    edges = np.concatenate([ties, boundaries])
+    values = np.concatenate(
+        [
+            rng.uniform(-0.1, 1.1, 25000).astype(np.float32),
+            edges,
+            np.nextafter(edges, np.float32(-np.inf)),
+            np.nextafter(edges, np.float32(np.inf)),
+        ]
+    )
+    expected = np.rint(
+        np.clip(frame_blending.from_linear(np.clip(values, 0, 1), transfer), 0, 1) * 255
+    ).astype(np.uint8)
+    actual = frame_blending._finish_linear(values, transfer)
+    np.testing.assert_array_equal(actual, expected)
+    np.testing.assert_array_equal(values, expected.astype(np.float32))
+    assert actual.dtype == np.uint8 and actual.flags.c_contiguous
+
+
 def test_unsupported_color_is_explicit():
     from tuck.encoding.frame_blending import validate_blending_source
     from tuck.models import VideoInfo

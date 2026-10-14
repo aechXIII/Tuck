@@ -123,6 +123,25 @@ def from_linear(values: FloatArray, transfer: str) -> FloatArray:
     return np.where(values < 0.018, values * 4.5, 1.099 * values**0.45 - 0.099)
 
 
+def _finish_linear(values: FloatArray, transfer: str) -> PixelArray:
+    # this frame owns the accumulator; reuse it without changing float32 rounding
+    np.clip(values, 0, 1, out=values)
+    if transfer in {"gamma22", "gamma28"}:
+        np.power(values, 1 / (2.2 if transfer == "gamma22" else 2.8), out=values)
+    elif transfer != "linear":
+        srgb = transfer == "iec61966-2-1"
+        mask = values <= 0.0031308 if srgb else values < 0.018
+        low = values * (12.92 if srgb else 4.5)
+        np.power(values, 1 / 2.4 if srgb else 0.45, out=values)
+        np.multiply(values, 1.055 if srgb else 1.099, out=values)
+        np.subtract(values, 0.055 if srgb else 0.099, out=values)
+        np.copyto(values, low, where=mask)
+    np.clip(values, 0, 1, out=values)
+    np.multiply(values, 255, out=values)
+    np.rint(values, out=values)
+    return values.astype(np.uint8)
+
+
 def _source_frames(
     source: Path,
     info: VideoInfo,
@@ -269,8 +288,7 @@ def _blend(
             result = np.zeros(weighted[0][0].shape, dtype=np.float32)
             for (pixels, _), weight in zip(weighted, weights, strict=True):
                 result += linear[pixels] * weight
-        result = from_linear(np.clip(result, 0, 1), transfer)
-        return np.rint(np.clip(result, 0, 1) * 255).astype(np.uint8)
+        return _finish_linear(result, transfer)
     # fixed point in place: far less memory traffic than a float copy of every picture
     weights = _integer_weights([weight for _, weight in weighted])
     native = native_blending.blend_encoded([pixels for pixels, _ in weighted], weights)

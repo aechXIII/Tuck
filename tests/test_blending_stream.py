@@ -4,6 +4,7 @@ import subprocess
 import sys
 import threading
 from dataclasses import replace
+from fractions import Fraction
 from io import BytesIO
 from pathlib import Path
 
@@ -124,10 +125,13 @@ def test_stream_command_rejects_two_simultaneous_blended_inputs(tmp_path):
         )
 
 
-def test_frame_stream_handles_short_writes_and_closes_the_input(tmp_path, monkeypatch):
+@pytest.mark.parametrize("width", [1, 37, 64])
+def test_frame_stream_handles_short_writes_and_closes_the_input(tmp_path, monkeypatch, width):
     from tuck.encoding import frame_stream
 
-    pictures = [np.full((48, 64, 3), value, dtype=np.uint8) for value in (3, 17, 253)]
+    pictures = [
+        np.random.default_rng(i).integers(0, 256, (48, width, 3), dtype=np.uint8) for i in range(3)
+    ]
     monkeypatch.setattr(frame_stream, "blended_frames", lambda *_: (p for p in pictures))
     data = bytearray()
     closed = []
@@ -141,14 +145,23 @@ def test_frame_stream_handles_short_writes_and_closes_the_input(tmp_path, monkey
         def close(self):
             closed.append(True)
 
-    stream = frame_stream.FrameStream(
-        blend_plan(tmp_path), lambda: None, lambda: pytest.fail("aborted")
-    )
+    plan = blend_plan(tmp_path)
+    plan.source_info = replace(plan.source_info, width=width)
+    plan.target_fps = 30000 / 1001
+    stream = frame_stream.FrameStream(plan, lambda: None, lambda: pytest.fail("aborted"))
     stream.start(ShortPipe())
     stream.join()
     assert stream.error is None
     with av.open(BytesIO(data)) as container:
-        decoded = [frame.to_ndarray(format="rgb24") for frame in container.decode(video=0)]
+        assert container.streams.video[0].codec_context.format.name == "rgb24"
+        sizes = [packet.size for packet in container.demux(video=0) if packet.size]
+        assert sizes == [48 * width * 3] * len(pictures)
+    with av.open(BytesIO(data)) as container:
+        frames = list(container.decode(video=0))
+    assert [frame.pts * frame.time_base for frame in frames] == [
+        index * Fraction(1001, 30000) for index in range(len(pictures))
+    ]
+    decoded = [frame.to_ndarray(format="rgb24") for frame in frames]
     for expected, actual in zip(pictures, decoded, strict=True):
         np.testing.assert_array_equal(actual, expected)
     assert closed == [True]
@@ -411,6 +424,61 @@ def test_streamed_export_preserves_fractional_clock_cuts_and_imported_audio(
     plan.audio_tracks = [
         AudioTrack("music", "Music", [AudioClip(plan.source, 0, 0, 0.4, 0.4, gain_db=-3)])
     ]
+    plan.output = str(tmp_path / "streamed.mp4")
+    streamed = runner.FFmpegEngine().encode(plan)
+    monkeypatch.setattr(runner, "can_stream_blend", lambda _: False)
+    plan.output = str(tmp_path / "reference.mp4")
+    reference = runner.FFmpegEngine().encode(plan)
+    assert output_identity(streamed) == output_identity(reference)
+
+
+@pytest.mark.ffmpeg
+@pytest.mark.parametrize("matrix", ["bt709", "smpte170m"])
+@pytest.mark.parametrize("full_range", [False, True])
+@pytest.mark.parametrize("linear_light", [False, True])
+def test_rgb24_stream_matches_prepared_export_for_source_color_ranges(
+    stream_source, tmp_path, monkeypatch, matrix, full_range, linear_light
+):
+    from tuck.encoding import runner
+    from tuck.media_tools import find_ffmpeg
+    from tuck.probe import probe
+
+    plan = stream_source
+    source = tmp_path / "color-source.mkv"
+    range_name = "pc" if full_range else "tv"
+    subprocess.run(
+        [
+            find_ffmpeg(),
+            "-v",
+            "error",
+            "-i",
+            plan.source,
+            "-vf",
+            f"scale=out_color_matrix={matrix}:out_range={range_name}",
+            "-c:v",
+            "ffv1",
+            "-pix_fmt",
+            "yuv420p",
+            "-colorspace",
+            matrix,
+            "-color_range",
+            range_name,
+            "-color_trc",
+            "bt709",
+            "-color_primaries",
+            "bt709",
+            "-c:a",
+            "copy",
+            str(source),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    plan.source = str(source)
+    plan.source_info = probe(str(source))
+    assert plan.source_info.color_space == matrix
+    assert plan.source_info.color_range == range_name
+    plan.frame_blending = FrameBlending(enabled=True, curve="gaussian", linear_light=linear_light)
     plan.output = str(tmp_path / "streamed.mp4")
     streamed = runner.FFmpegEngine().encode(plan)
     monkeypatch.setattr(runner, "can_stream_blend", lambda _: False)

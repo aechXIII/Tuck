@@ -98,8 +98,8 @@ class FrameStream:
                     if not isinstance(stream, VideoStream):
                         raise RuntimeError("Raw video encoding is unavailable")
                     stream.width, stream.height = info.width, info.height
-                    # match the prepared input's RGB packing and fractional output clock
-                    stream.pix_fmt = "bgr0"
+                    # keep RGB buffers packed and preserve the fractional output clock
+                    stream.pix_fmt = "rgb24"
                     stream.time_base = 1 / rate
                     stream.codec_context.thread_count = 1
                     try:

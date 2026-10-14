@@ -93,6 +93,35 @@ def test_linear_matches_float32_product_then_ordered_add_bits(native, width, cou
     np.testing.assert_array_equal(actual.view(np.uint32), expected.view(np.uint32))
 
 
+@pytest.mark.parametrize("fallback", [False, True])
+@pytest.mark.parametrize(
+    "transfer", ["bt709", "smpte170m", "iec61966-2-1", "linear", "gamma22", "gamma28"]
+)
+def test_linear_finish_matches_original_transfers_and_preserves_sources(
+    native, monkeypatch, transfer, fallback
+):
+    from tuck.encoding import frame_blending
+
+    rng = np.random.default_rng(143)
+    pictures = [rng.integers(0, 256, (24, 37, 3), dtype=np.uint8) for _ in range(5)]
+    originals = [picture.copy() for picture in pictures]
+    amounts = [0, 0.13, 2.7, 1.01, 0.6]
+    weights = [np.float32(value / sum(amounts)) for value in amounts]
+    lookup = frame_blending.to_linear(np.arange(256, dtype=np.float32) / np.float32(255), transfer)
+    expected = np.zeros(pictures[0].shape, dtype=np.float32)
+    for picture, weight in zip(pictures, weights, strict=True):
+        expected += lookup[picture] * weight
+    expected = np.rint(
+        np.clip(frame_blending.from_linear(np.clip(expected, 0, 1), transfer), 0, 1) * 255
+    ).astype(np.uint8)
+    if fallback:
+        monkeypatch.setattr(native, "accumulate_linear", lambda *_: None)
+    actual = frame_blending._blend(list(zip(pictures, amounts, strict=True)), lookup, transfer)
+    np.testing.assert_array_equal(actual, expected)
+    for picture, original in zip(pictures, originals, strict=True):
+        np.testing.assert_array_equal(picture, original)
+
+
 @pytest.mark.parametrize(
     "pictures,weights",
     [
