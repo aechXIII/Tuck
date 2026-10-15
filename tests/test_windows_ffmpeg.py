@@ -35,6 +35,7 @@ def test_windows_lock_pins_sources_and_hardware_support():
         "zlib",
         "dav1d",
         "zimg",
+        "mingw-dxva",
     }
     assert {"libx264", "libx265", "h264_nvenc", "hevc_nvenc", "h264_amf", "hevc_amf", "aac"} <= set(
         lock["output"]["encoders"]
