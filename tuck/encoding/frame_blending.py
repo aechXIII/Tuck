@@ -124,22 +124,8 @@ def from_linear(values: FloatArray, transfer: str) -> FloatArray:
 
 
 def _finish_linear(values: FloatArray, transfer: str) -> PixelArray:
-    # this frame owns the accumulator; reuse it without changing float32 rounding
-    np.clip(values, 0, 1, out=values)
-    if transfer in {"gamma22", "gamma28"}:
-        np.power(values, 1 / (2.2 if transfer == "gamma22" else 2.8), out=values)
-    elif transfer != "linear":
-        srgb = transfer == "iec61966-2-1"
-        mask = values <= 0.0031308 if srgb else values < 0.018
-        low = values * (12.92 if srgb else 4.5)
-        np.power(values, 1 / 2.4 if srgb else 0.45, out=values)
-        np.multiply(values, 1.055 if srgb else 1.099, out=values)
-        np.subtract(values, 0.055 if srgb else 0.099, out=values)
-        np.copyto(values, low, where=mask)
-    np.clip(values, 0, 1, out=values)
-    np.multiply(values, 255, out=values)
-    np.rint(values, out=values)
-    return values.astype(np.uint8)
+    result = native_blending.finish_linear(values, transfer)
+    return result if result is not None else native_blending.finish_linear_numpy(values, transfer)
 
 
 def _source_frames(

@@ -123,6 +123,115 @@ def test_linear_finish_matches_original_transfers_and_preserves_sources(
 
 
 @pytest.mark.parametrize(
+    "transfer", ["bt709", "smpte170m", "iec61966-2-1", "linear", "gamma22", "gamma28"]
+)
+def test_native_finish_preserves_byte_boundaries_and_special_values(native, transfer):
+    from tuck.encoding import frame_blending
+
+    encoded = (np.arange(255, dtype=np.float32) + np.float32(0.5)) / np.float32(255)
+    centers = frame_blending.to_linear(encoded, transfer).view(np.uint32)
+    boundaries = (centers[:, None].astype(np.int64) + np.arange(-64, 65)).astype(np.uint32)
+    rng = np.random.default_rng(359)
+    bits = np.concatenate(
+        (
+            boundaries.ravel(),
+            rng.integers(0, 0x3F800001, 100_000, dtype=np.uint32),
+            rng.random(100_000, dtype=np.float32).view(np.uint32),
+            np.array(
+                [
+                    0,
+                    0x80000000,
+                    1,
+                    0x007FFFFF,
+                    0x00800000,
+                    0x3F800000,
+                    0x3F800001,
+                    0x7F7FFFFF,
+                    0x80000001,
+                    0xBF800000,
+                    0xFF7FFFFF,
+                    0x7F800000,
+                    0xFF800000,
+                    0x7FC00000,
+                    0xFFC00000,
+                    0x7FA00001,
+                    0xFFA00001,
+                ],
+                dtype=np.uint32,
+            ),
+        )
+    )
+    values = bits.view(np.float32)
+    nan = np.isnan(values)
+    with np.errstate(invalid="ignore"):
+        expected = np.rint(
+            np.clip(frame_blending.from_linear(np.clip(values, 0, 1), transfer), 0, 1) * 255
+        ).astype(np.uint8)
+        actual = native.finish_linear(values, transfer)
+    assert actual is not None
+    np.testing.assert_array_equal(actual, expected)
+    np.testing.assert_array_equal(values[~nan], expected[~nan].astype(np.float32))
+    assert np.all(np.isnan(values[nan]))
+    assert actual.dtype == np.uint8 and actual.flags.c_contiguous
+
+
+def test_native_finish_rejects_nonmonotonic_quantization(native, monkeypatch):
+    reference = native.finish_linear_numpy
+
+    def nonmonotonic(values, transfer):
+        original = values.view(np.uint32).copy()
+        result = reference(values, transfer)
+        result[original == 0x3DCCCCCE] = 0
+        return result
+
+    native._linear_finish_table.cache_clear()
+    monkeypatch.setattr(native, "finish_linear_numpy", nonmonotonic)
+    try:
+        assert native.finish_linear(np.array([0.5], dtype=np.float32), "linear") is None
+    finally:
+        native._linear_finish_table.cache_clear()
+
+
+def test_native_finish_keeps_shape_and_handles_empty_arrays(native):
+    result = native.finish_linear(np.full((2, 7, 3), 0.5, dtype=np.float32), "linear")
+    assert result is not None and result.shape == (2, 7, 3)
+    np.testing.assert_array_equal(result, np.full((2, 7, 3), 128, dtype=np.uint8))
+    empty = native.finish_linear(np.empty((0, 3), dtype=np.float32), "linear")
+    assert empty is not None and empty.shape == (0, 3)
+
+
+def test_native_finish_failure_is_not_retried_with_numpy(native, monkeypatch):
+    library = native._load_library()
+    monkeypatch.setattr(library, "tuck_finish_linear", lambda *args: -1)
+    with pytest.raises(RuntimeError, match="finishing call failed"):
+        native.finish_linear(np.zeros(3, dtype=np.float32), "linear")
+
+
+def test_existing_native_helper_without_finishing_keeps_other_kernels(native, monkeypatch):
+    library = native._load_library()
+    legacy = SimpleNamespace(
+        tuck_blending_abi=library.tuck_blending_abi,
+        tuck_blend_encoded=library.tuck_blend_encoded,
+        tuck_accumulate_linear=library.tuck_accumulate_linear,
+    )
+    native._load_library.cache_clear()
+    monkeypatch.setattr(ctypes, "CDLL", lambda _: legacy)
+    picture = np.array([[[0, 128, 255]]], dtype=np.uint8)
+    np.testing.assert_array_equal(native.blend_encoded([picture], [65536]), picture)
+    lookup = np.arange(256, dtype=np.float32) / np.float32(255)
+    np.testing.assert_array_equal(
+        native.accumulate_linear([picture], [np.float32(1)], lookup), lookup[picture]
+    )
+    assert native.finish_linear(np.zeros(3, dtype=np.float32), "linear") is None
+
+
+@pytest.mark.parametrize("values", [np.zeros(2), np.zeros(8, np.float32)[::2]])
+def test_invalid_finish_input_never_reaches_native(native, values):
+    with pytest.raises((ValueError, TypeError)):
+        native.finish_linear(values, "bt709")
+
+
+@pytest.mark.parametrize(
     "pictures,weights",
     [
         ([], []),
@@ -167,7 +276,7 @@ def test_invalid_linear_lookup(native, lookup):
 
 
 def test_missing_native_helper_keeps_source_fallback_available(monkeypatch, tmp_path):
-    from tuck.encoding import native_blending
+    from tuck.encoding import frame_blending, native_blending
 
     native_blending._load_library.cache_clear()
     monkeypatch.setattr(native_blending, "_candidate_paths", lambda: [tmp_path / "missing"])
@@ -177,6 +286,10 @@ def test_missing_native_helper_keeps_source_fallback_available(monkeypatch, tmp_
         native_blending.accumulate_linear([picture], [np.float32(1)], np.zeros(256, np.float32))
         is None
     )
+    values = np.array([0, 0.5, 1], dtype=np.float32)
+    assert native_blending.finish_linear(values, "linear") is None
+    np.testing.assert_array_equal(frame_blending._finish_linear(values, "linear"), [0, 128, 255])
+    np.testing.assert_array_equal(values, [0, 128, 255])
     native_blending._load_library.cache_clear()
 
 

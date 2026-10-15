@@ -1,5 +1,6 @@
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
 #ifdef _WIN32
 #define TUCK_EXPORT __declspec(dllexport)
@@ -137,5 +138,28 @@ TUCK_EXPORT int tuck_accumulate_linear(float *out, const uint8_t *const *picture
     (void)use_simd;
 #endif
     accumulate_linear_c(out, pictures, weights, lookup, length, count);
+    return 0;
+}
+
+TUCK_EXPORT int tuck_finish_linear(uint8_t *out, float *values,
+                                   const uint64_t *table, size_t length)
+{
+    if (!out || !values || !table || !length)
+        return -1;
+    for (size_t x = 0; x < length; x++) {
+        uint32_t bits;
+        /* reading the representation must not alias a float through an integer pointer */
+        memcpy(&bits, values + x, sizeof(bits));
+        if (bits >= 0x3f800000u) {
+            /* clip negative values to zero and preserve NumPy's NaN-to-byte result */
+            out[x] = (bits & 0x80000000u) || bits > 0x7f800000u ? 0 : 255;
+            if ((bits & 0x7fffffffu) <= 0x7f800000u)
+                values[x] = (float)out[x];
+            continue;
+        }
+        const uint64_t entry = table[bits >> 16];
+        out[x] = (uint8_t)((entry >> 32) + (bits >= (uint32_t)entry));
+        values[x] = (float)out[x];
+    }
     return 0;
 }
