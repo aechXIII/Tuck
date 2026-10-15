@@ -85,6 +85,11 @@ class DeterministicFakeBackend implements BackendClient {
       this.#responses.getTimelineFrames ?? notConfigured("Timeline pictures are not configured"));
   }
 
+  openLocalDocument(document: "license" | "third_party_notices") {
+    return this.#record("openLocalDocument", [document],
+      this.#responses.openLocalDocument ?? success({}));
+  }
+
   getThumbnail(path: string) {
     return this.#record(
       "getThumbnail",

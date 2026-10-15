@@ -70,3 +70,35 @@ fn main_window_has_only_the_permissions_needed_for_native_commands_and_events() 
     assert!(has_permission("core:window:allow-start-dragging"));
     assert!(has_permission("core:window:allow-internal-toggle-maximize"));
 }
+
+#[test]
+fn bundled_documents_are_allowed_only_from_the_local_main_window() {
+    let mut context: tauri::Context<tauri::Wry> = tauri::generate_context!();
+    let authority = context.runtime_authority_mut();
+    assert!(authority
+        .resolve_access(
+            "open_local_document",
+            "main",
+            "main",
+            &tauri::ipc::Origin::Local
+        )
+        .is_some());
+    assert!(authority
+        .resolve_access(
+            "open_local_document",
+            "other",
+            "other",
+            &tauri::ipc::Origin::Local
+        )
+        .is_none());
+    assert!(authority
+        .resolve_access(
+            "open_local_document",
+            "main",
+            "main",
+            &tauri::ipc::Origin::Remote {
+                url: tauri::Url::parse("https://example.com").unwrap(),
+            },
+        )
+        .is_none());
+}

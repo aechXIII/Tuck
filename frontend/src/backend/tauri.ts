@@ -727,6 +727,15 @@ class TauriTransport implements TauriBackendClient {
     }
   }
 
+  async openLocalDocument(document: "license" | "third_party_notices"): Promise<BackendResult<EmptyPayload>> {
+    try {
+      await this.#invoke("open_local_document", { document });
+      return { ok: true, value: {} };
+    } catch (error) {
+      return this.#finish(isBackendError(error) ? { ok: false, error } : backendFailure("TAURI_INVOKE_FAILED", errorMessage(error, "Could not open the document"), { method: "openLocalDocument" }));
+    }
+  }
+
   installGenericSendto(kind: SendToKind): Promise<BackendResult<EmptyPayload>> {
     return this.#request(
       "installGenericSendto",

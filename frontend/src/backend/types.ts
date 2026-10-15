@@ -233,7 +233,10 @@ export interface DomainBackendClient {
   getIpcMetadata(): Promise<BackendResult<JsonObject>>;
 }
 
+export type LocalDocument = "license" | "third_party_notices";
+
 export interface NativeBackendClient {
+  openLocalDocument(document: LocalDocument): Promise<BackendResult<EmptyPayload>>;
   closeWindow(): Promise<BackendResult<EmptyPayload>>;
   pickLutFile(): Promise<BackendResult<PathSelection>>;
   pickFiles(): Promise<BackendResult<FileSelection>>;

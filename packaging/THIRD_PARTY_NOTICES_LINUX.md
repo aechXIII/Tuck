@@ -59,3 +59,7 @@ libraries come from Ubuntu 22.04 source packages at <https://launchpad.net/ubunt
 For any GPL, LGPL or MPL component in this package, you can also ask for the
 matching source through Tuck's repository for at least three years after
 release, for no more than the cost of sending it.
+
+## Acknowledgments
+
+Some frame blending optimizations were inspired by [Interpolini](https://github.com/Z1xus/interpolini)

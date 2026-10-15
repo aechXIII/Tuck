@@ -19,6 +19,14 @@ test("timeline sprite transport preserves grid, geometry and refinement", async 
   assert.equal(failure.ok, false);
 });
 
+test("bundled documents open through native allowlisted command and report failures", async () => {
+  const calls: unknown[] = [];
+  const client = createTauriBackendClient(async (command, args) => { calls.push({ command, args }); return null; });
+  assert.deepEqual(await client.openLocalDocument("license"), { ok: true, value: {} });
+  assert.deepEqual(calls, [{ command: "open_local_document", args: { document: "license" } }]);
+  assert.equal((await createTauriBackendClient(async () => { throw new Error("Missing document"); }).openLocalDocument("third_party_notices")).ok, false);
+});
+
 test("invalid timeline ranges never reach the desktop transport", async () => {
   let calls = 0;
   const client = createTauriBackendClient(async () => { calls += 1; return {}; });

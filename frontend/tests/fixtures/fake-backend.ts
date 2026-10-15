@@ -141,6 +141,7 @@ export async function installFakeBackend(
           if (!timelineSprites || (typeof result === "object" && result !== null && "ok" in result && result.ok === false)) return result;
           return {ok:true,value:{...timelineSprites,start,step,count,tile_width:150,tile_height:84,columns:count}};
         },
+        openLocalDocument: (document: string) => respond("openLocalDocument", [document]),
         listLuts: () => respond("listLuts", []),
         clearLutHistory: () => respond("clearLutHistory", []),
         loadLut: (path: string) => respond("loadLut", [path]),

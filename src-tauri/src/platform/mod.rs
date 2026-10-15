@@ -1,4 +1,5 @@
 pub mod capabilities;
+pub mod local_documents;
 pub mod opener;
 pub mod startup;
 pub mod window_chrome;

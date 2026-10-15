@@ -212,6 +212,43 @@ test("pictures preserve click-and-drag trim behavior in compact layouts", async 
   await expect(page.locator(".tl-segment.has-frames")).toHaveCount(1);
 });
 
+test("About opens only local documents and retains failures for retry", async ({
+  page,
+}) => {
+  await open(page);
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.locator("#settings-nav-about").click();
+  await page.getByRole("button", { name: "Open license", exact: true }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        window.__tuckFakeBackendCalls?.some(
+          (c) => c.method === "openLocalDocument" && c.args[0] === "license",
+        ),
+      ),
+    )
+    .toBe(true);
+  await page.evaluate(() => {
+    window.tuckBackendClient!.openLocalDocument = async () => ({
+      ok: false,
+      error: {
+        code: "OPEN_FAILED",
+        message: "Could not open the bundled document",
+        details: {},
+      },
+    });
+  });
+  await page
+    .getByRole("button", { name: "Open third-party notices", exact: true })
+    .click();
+  await expect(page.locator("#set-third_party_notices-error")).toContainText(
+    "Could not open the bundled document",
+  );
+  await expect(
+    page.getByRole("button", { name: "Open third-party notices", exact: true }),
+  ).toBeEnabled();
+});
+
 test("frame pictures keep the range label on a solid chip during hover and drag", async ({ page }) => {
   await open(page);
   const segment = page.locator(".tl-segment.has-frames");
@@ -287,3 +324,58 @@ for (const style of ["graphite", "violet"] as const) {
     });
   }
 }
+
+async function holdDocumentOpen(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const host = window as Window & { completeDocumentOpen?: () => void };
+    window.tuckBackendClient!.openLocalDocument = () => new Promise((resolve) => {
+      host.completeDocumentOpen = () => resolve({
+        ok: false,
+        error: { code: "OPEN_FAILED", message: "Could not open this document. Try again.", details: {} },
+      });
+    });
+  });
+}
+
+async function completeDocumentOpen(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const complete = (window as Window & { completeDocumentOpen?: () => void }).completeDocumentOpen;
+    if (!complete) throw new Error("No document request is waiting");
+    complete();
+  });
+}
+
+test("a failed document open restores keyboard focus for retry", async ({ page }) => {
+  await open(page);
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.locator("#settings-nav-about").click();
+  await holdDocumentOpen(page);
+  const notices = page.getByRole("button", { name: "Open third-party notices", exact: true });
+  await notices.focus();
+  await page.keyboard.press("Enter");
+  await expect(notices).toBeDisabled();
+  await completeDocumentOpen(page);
+  await expect(notices).toBeEnabled();
+  await expect(page.locator("#set-third_party_notices-error")).toBeVisible();
+  await expect(notices).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(notices).toBeDisabled();
+  await completeDocumentOpen(page);
+  await expect(notices).toBeFocused();
+});
+
+test("a finished document request leaves focus on another control", async ({ page }) => {
+  await open(page);
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.locator("#settings-nav-about").click();
+  await holdDocumentOpen(page);
+  const notices = page.getByRole("button", { name: "Open third-party notices", exact: true });
+  const license = page.getByRole("button", { name: "Open license", exact: true });
+  await notices.focus();
+  await page.keyboard.press("Enter");
+  await expect(notices).toBeDisabled();
+  await license.focus();
+  await completeDocumentOpen(page);
+  await expect(notices).toBeEnabled();
+  await expect(license).toBeFocused();
+});

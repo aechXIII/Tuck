@@ -103,6 +103,8 @@ export const SETTINGS_INDEX: readonly SettingsEntry[] = [
   { id: "diagnostics", page: "about", label: "Diagnostic report", keywords: "support bug copy problem" },
   { id: "logs", page: "about", label: "Logs", keywords: "folder open support" },
   { id: "settings-folder", page: "about", label: "Settings folder", keywords: "config configuration open" },
+  { id: "license", page: "about", label: "License", keywords: "offline copyright legal" },
+  { id: "third-party-notices", page: "about", label: "Third-party notices", keywords: "third party licenses offline copyright legal" },
   { id: "backup", page: "about", label: "Back up", keywords: "export import settings backup restore file" },
   { id: "reset", page: "about", label: "Reset settings", keywords: "defaults start over" },
 ];

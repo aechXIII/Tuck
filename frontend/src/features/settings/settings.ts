@@ -734,6 +734,20 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
           control: button("Open folder", { action: "open-support", value: "config", icon: "folder", label: "Open settings folder" }),
         }),
       )),
+      section("Licenses", card(
+        row({
+          setting: "license",
+          label: "License",
+          description: "Read Tuck's license.",
+          control: [button("Open", { action: "open-document", value: "license", label: "Open license" }), fieldError("set-license")],
+        }),
+        row({
+          setting: "third-party-notices",
+          label: "Third-party notices",
+          description: "Licenses for bundled software.",
+          control: [button("Open", { action: "open-document", value: "third_party_notices", label: "Open third-party notices" }), fieldError("set-third_party_notices")],
+        }),
+      )),
       section("Your settings", card(
         row({
           setting: "backup",
@@ -1289,6 +1303,34 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       ? await legacyBackendResult(client().openLogsFolder())
       : await legacyBackendResult(client().openConfigFolder());
     if (!result.ok) toast(result.error ?? "Could not open folder.", "err");
+  }
+
+  async function openDocument(target: HTMLElement): Promise<void> {
+    const kind = target.dataset.settingsValue;
+    if (kind !== "license" && kind !== "third_party_notices") return;
+    const control = target as HTMLButtonElement;
+    const note = byId(`set-${kind}-error`);
+    if (control.disabled) return;
+    const wasFocused = document.activeElement === control;
+    control.disabled = true;
+    if (note) note.hidden = true;
+    try {
+      const result = await client().openLocalDocument(kind);
+      if (!result.ok) {
+        const message = result.error.message || "Could not open this document. Try again.";
+        if (note) {
+          note.textContent = message;
+          note.hidden = false;
+        }
+        toast(message, "err");
+      }
+    } finally {
+      control.disabled = false;
+      if (wasFocused && control.isConnected
+        && (document.activeElement === document.body || document.activeElement === control)) {
+        control.focus({ preventScroll: true });
+      }
+    }
   }
 
   async function exportSettings(): Promise<void> {
@@ -2293,6 +2335,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         "check-updates": (target) => void checkForUpdatesNow(target),
         "copy-diagnostics": () => void deps.copyDiagnostics(),
         "open-support": (target) => void openSupportFolder(target.dataset.settingsValue ?? "logs"),
+        "open-document": (target) => void openDocument(target),
         "export-settings": () => void exportSettings(),
         "import-settings": () => void importSettings(),
         "reset-settings": () => resetSettings(),

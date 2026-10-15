@@ -2,12 +2,14 @@ use std::path::PathBuf;
 
 use serde::Deserialize;
 use serde_json::Value;
+use tauri::Manager;
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_dialog::DialogExt;
 
 use crate::backend::{protocol::PublicBackendError, BackendState};
 use crate::commands::backend::BackendCommand;
 use crate::platform::capabilities::{current_capabilities, PlatformCapabilities};
+use crate::platform::local_documents::{open_document_file, open_document_with, LocalDocument};
 use crate::platform::opener::{
     open_app_folder_with_validation, open_with_validation, SystemOpener,
 };
@@ -200,6 +202,32 @@ pub async fn open_output_folder(path: String) -> Result<(), PublicBackendError> 
         .map_err(|_| {
             PublicBackendError::new("INTERNAL_ERROR", "Could not show the export in its folder.")
         })?
+}
+
+#[tauri::command]
+pub async fn open_local_document(
+    app: tauri::AppHandle,
+    document: LocalDocument,
+) -> Result<(), PublicBackendError> {
+    let resources = app.path().resource_dir().map_err(|_| {
+        PublicBackendError::new("DOCUMENT_UNAVAILABLE", "Could not find Tuck's documents.")
+    })?;
+    #[cfg(debug_assertions)]
+    let source_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .map(PathBuf::from);
+    #[cfg(not(debug_assertions))]
+    let source_root: Option<PathBuf> = None;
+    tauri::async_runtime::spawn_blocking(move || {
+        open_document_with(
+            document,
+            &resources,
+            source_root.as_deref(),
+            open_document_file,
+        )
+    })
+    .await
+    .map_err(|_| PublicBackendError::new("INTERNAL_ERROR", "Could not open this document."))?
 }
 
 #[tauri::command]

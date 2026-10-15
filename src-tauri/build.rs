@@ -12,6 +12,7 @@ fn main() {
             "pick_save_file",
             "copy_text",
             "open_output_folder",
+            "open_local_document",
             "open_logs_folder",
             "open_config_folder",
             "close_window",
