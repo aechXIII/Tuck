@@ -25,8 +25,11 @@ from av.filter import Graph
 from av.video.codeccontext import VideoCodecContext
 from av.video.frame import VideoFrame
 
+from .media_filters import UPRIGHT_FILTERS
 from .media_tools import find_ffmpeg, find_ffprobe
 from .probe import first_video_frame
+from .request_work import RequestWork
+from .timeline_frames import TimelineFrames, TimelineSprite
 
 logger = logging.getLogger(__name__)
 
@@ -83,12 +86,6 @@ _THUMBNAIL_SCALE = (
     "force_original_aspect_ratio=decrease"
 )
 _THUMBNAIL_MAX_PACKETS = 1000
-# filters that turn a picture upright, by its counter-clockwise display rotation in degrees
-_UPRIGHT_FILTERS: dict[int, tuple[tuple[str, str], ...]] = {
-    90: (("transpose", "cclock"),),
-    180: (("hflip", ""), ("vflip", "")),
-    270: (("transpose", "clock"),),
-}
 # long files get more columns so they don't turn into stair steps when zoomed in. The cap stays
 # within the GPU texture limit, past which browsers quietly shrink the mask image
 _WAVEFORM_MIN_WIDTH = 8192
@@ -366,7 +363,7 @@ def _write_thumbnail_in_process(file_path: Path, thumb_path: Path, timeout: floa
                 time_base=stream.time_base,
             )
         ]
-        for name, args in _UPRIGHT_FILTERS.get(round(frame.rotation) % 360, ()):
+        for name, args in UPRIGHT_FILTERS.get(round(frame.rotation) % 360, ()):
             nodes.append(graph.add(name, args))
         nodes.append(graph.add("scale", _THUMBNAIL_SCALE))
         nodes.append(graph.add("format", "yuvj420p"))
@@ -484,6 +481,7 @@ class MediaServer:
 
         self._thumb_dir: Path | None = None
         self._cache_locks: dict[str, threading.Lock] = {}
+        self._timeline_frames = TimelineFrames()
 
     @property
     def port(self) -> int:
@@ -599,6 +597,23 @@ class MediaServer:
             except Exception as e:
                 logger.warning("Thumbnail generation failed for %s: %s", file_path.name, e)
                 return None
+
+    def generate_timeline_frames(
+        self,
+        file_path: str | Path,
+        *,
+        start: float,
+        step: float,
+        count: int,
+        mode: str,
+        exact: bool,
+        work: RequestWork | None = None,
+    ) -> TimelineSprite | None:
+        if self._thumb_dir is None:
+            return None
+        return self._timeline_frames.generate(
+            Path(file_path), self._thumb_dir, start, step, count, mode, exact, work
+        )
 
     def generate_waveform(
         self, file_path: str | Path, timeout: float = _WAVEFORM_TIMEOUT, *, track: int = 0

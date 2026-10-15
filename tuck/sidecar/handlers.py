@@ -8,6 +8,7 @@ from ..cutting.serialization import KeyframeCursor
 from ..models.cutting import CUT_ERROR_CODES
 from ..queue import RETRY_REFUSAL_CODES
 from ..request_work import RequestWork
+from ..timeline_frames import validate_timeline_request
 from .protocol import JsonValue, Request, Response
 
 if TYPE_CHECKING:
@@ -462,7 +463,28 @@ def _export_frame(api: BridgeAPI, params: dict[str, object], work: RequestWork) 
     return api.export_frame(params["request"], work=work)
 
 
+def _get_timeline_frames(api: BridgeAPI, params: dict[str, object], work: RequestWork) -> object:
+    path, start, step = params.get("path"), params.get("start"), params.get("step")
+    count, mode, exact = params.get("count"), params.get("mode"), params.get("exact")
+    if (
+        set(params) != {"path", "start", "step", "count", "mode", "exact"}
+        or not isinstance(path, str)
+        or not isinstance(start, (int, float))
+        or not isinstance(step, (int, float))
+        or not isinstance(count, int)
+        or not isinstance(mode, str)
+        or not isinstance(exact, bool)
+    ):
+        raise _ParameterError
+    try:
+        validate_timeline_request(start, step, count, mode, exact)
+    except ValueError:
+        raise _ParameterError from None
+    return api.get_timeline_frames(path, start, step, count, mode, exact, work=work)
+
+
 _WORK_HANDLERS: dict[str, Callable[[BridgeAPI, dict[str, object], RequestWork], object]] = {
+    "get_timeline_frames": _get_timeline_frames,
     "export_frame": _export_frame,
     "enqueue_with_options": _enqueue_with_options,
     "enqueue_batch": _enqueue_batch,

@@ -15,6 +15,13 @@ pub enum SendToKind {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TimelineFrameMode {
+    Center,
+    Whole,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(tag = "command", content = "payload", rename_all = "snake_case")]
 pub enum BackendCommand {
     Health,
@@ -37,6 +44,14 @@ pub enum BackendCommand {
     },
     GetThumbnail {
         path: String,
+    },
+    GetTimelineFrames {
+        path: String,
+        start: f64,
+        step: f64,
+        count: u8,
+        mode: TimelineFrameMode,
+        exact: bool,
     },
     ExportFrame {
         request: Value,
@@ -181,6 +196,31 @@ impl BackendCommand {
                 ("get_waveform", payload)
             }
             Self::GetThumbnail { path } => ("get_thumbnail", json!({ "path": path })),
+            Self::GetTimelineFrames {
+                path,
+                start,
+                step,
+                count,
+                mode,
+                exact,
+            } => {
+                if !start.is_finite()
+                    || *start < 0.0
+                    || !step.is_finite()
+                    || *step <= 0.0
+                    || !(1..=32).contains(count)
+                {
+                    return Err(PublicBackendError::new(
+                        "INVALID_REQUEST",
+                        "Timeline picture parameters are invalid.",
+                    ));
+                }
+                (
+                    "get_timeline_frames",
+                    json!({"path": path, "start": start, "step": step,
+                                             "count": count, "mode": mode, "exact": exact}),
+                )
+            }
             Self::ExportFrame { request } => ("export_frame", json!({ "request": request })),
             Self::GetMediaUrl { path, track } => {
                 let mut payload = json!({ "path": path });
@@ -327,6 +367,36 @@ fn reject_unsupported_backend_command(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn timeline_frames_validate_and_forward_the_source_grid() {
+        let params = json!({"path": "clip.mp4", "start": 4.0, "step": 0.25,
+                           "count": 16, "mode": "center", "exact": true});
+        let command = serde_json::from_value::<BackendCommand>(json!({
+            "command": "get_timeline_frames", "payload": params
+        }));
+        assert!(
+            command.is_ok(),
+            "timeline frames command must be allowlisted"
+        );
+        let request = command.unwrap().to_sidecar_request("timeline").unwrap();
+        assert_eq!(request["params"], params);
+        for (field, value) in [
+            ("start", json!(-1)),
+            ("step", json!(0)),
+            ("count", json!(33)),
+            ("count", json!(true)),
+            ("mode", json!("other")),
+            ("exact", json!(1)),
+        ] {
+            let mut invalid = params.clone();
+            invalid[field] = value;
+            let parsed = serde_json::from_value::<BackendCommand>(json!({
+                "command": "get_timeline_frames", "payload": invalid
+            }));
+            assert!(parsed.is_err() || parsed.unwrap().to_sidecar_request("bad").is_err());
+        }
+    }
 
     #[test]
     fn frame_export_forwards_the_request_without_changing_its_fields() {

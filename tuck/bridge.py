@@ -88,6 +88,7 @@ from .queue import RetryRefused, get_queue
 from .request_work import RequestWork
 from .settings import get_settings_manager
 from .settings_backup import SettingsBackupService
+from .timeline_frames import TILE_HEIGHT, TILE_WIDTH, validate_timeline_request
 
 logger = logging.getLogger(__name__)
 
@@ -315,6 +316,44 @@ class BridgeAPI:
             return {"ok": True, "data": audio_info_dict(info)}
         except Exception as e:
             return {"ok": False, "error": str(e)}
+
+    def get_timeline_frames(
+        self,
+        path: str,
+        start: float,
+        step: float,
+        count: int,
+        mode: str,
+        exact: bool,
+        *,
+        work: RequestWork | None = None,
+    ) -> BridgeResult:
+        try:
+            if not isinstance(path, str):
+                raise ValueError("Choose a source video")
+            validate_timeline_request(start, step, count, mode, exact)
+            path = self._validate_path(path)
+            sprite = self._media_server.generate_timeline_frames(
+                path, start=start, step=step, count=count, mode=mode, exact=exact, work=work
+            )
+            if sprite is None:
+                return {"ok": False, "error": "Could not read timeline pictures"}
+            token = self._media_server.register_file(sprite.path)
+            return {
+                "ok": True,
+                "url": self._media_server.get_url(token),
+                "token": token,
+                "start": sprite.start,
+                "step": sprite.step,
+                "count": sprite.count,
+                "tile_width": TILE_WIDTH,
+                "tile_height": TILE_HEIGHT,
+                "columns": sprite.count,
+            }
+        except TimeoutError:
+            raise
+        except (ValueError, OSError, FFmpegError) as exc:
+            return {"ok": False, "error": str(exc)}
 
     def get_waveform(self, path: str, track: int = 0) -> BridgeResult:
         try:
@@ -792,6 +831,8 @@ class BridgeAPI:
             "cut_suffix": s.cut_suffix,
             "timeline_snap": s.timeline_snap,
             "timeline_keyframes": s.timeline_keyframes,
+            "timeline_frames": s.timeline_frames,
+            "timeline_frame_mode": s.timeline_frame_mode,
             "shortcut_overrides": {
                 command: list(combos) for command, combos in s.shortcut_overrides.items()
             },

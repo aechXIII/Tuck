@@ -80,6 +80,11 @@ class DeterministicFakeBackend implements BackendClient {
     );
   }
 
+  getTimelineFrames(path: string, start: number, step: number, count: number, mode: "center" | "whole", exact: boolean) {
+    return this.#record("getTimelineFrames", [path, start, step, count, mode, exact],
+      this.#responses.getTimelineFrames ?? notConfigured("Timeline pictures are not configured"));
+  }
+
   getThumbnail(path: string) {
     return this.#record(
       "getThumbnail",

@@ -320,9 +320,7 @@ body.tl-segment-dragging * {
   position: absolute;
   top: var(--tl-inset);
   bottom: var(--tl-inset);
-  z-index: 1;
   min-width: 4px;
-  container-type: inline-size;
   overflow: visible;
   padding: 0;
   border: 0;
@@ -333,9 +331,7 @@ body.tl-segment-dragging * {
 .tl-segment-surface {
   position: absolute;
   inset: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  z-index: 1;
   overflow: hidden;
   border: 0;
   border-radius: var(--r-chip);
@@ -348,9 +344,65 @@ body.tl-segment-dragging * {
     border-color 0.12s ease,
     opacity 0.12s ease;
 }
+/* only the text sits above keyframes, leaving the pictures and clip fill below them */
+.tl-segment-content {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  container-type: inline-size;
+  pointer-events: none;
+}
+.tl-segment-labels {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  border-radius: var(--r-chip);
+  pointer-events: none;
+}
 .tl-segment:hover .tl-segment-surface {
   background: var(--tl-clip-hover);
   opacity: 1;
+}
+.tl-frames {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0.75;
+}
+.tl-frame {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background-repeat: no-repeat;
+  pointer-events: none;
+}
+#video-track.selected .tl-segment.active .tl-frames {
+  opacity: 1;
+}
+.tl-segment.has-frames .tl-segment-badge,
+.tl-segment.has-frames .tl-segment-copy {
+  position: relative;
+  z-index: 1;
+  width: fit-content;
+  flex: 0 1 auto;
+  padding: 2px 5px;
+  border-radius: var(--r-chip);
+  background: var(--raised);
+  color: var(--text);
+}
+.tl-segment.has-frames .tl-segment-label {
+  color: var(--text);
+}
+.tl-segment.has-frames .tl-segment-copy {
+  min-width: 0;
+}
+#timeline:has(.has-frames) .kf-lane .kf::before,
+#timeline:has(.has-frames) .kf-guides .kf-guide {
+  box-shadow: 1px 0 0 #141319;
 }
 #video-track.selected .tl-segment.active .tl-segment-surface {
   border-color: var(--accent-light);
@@ -1361,7 +1413,7 @@ body.task-cut #timeline-audio-tools {
 .tl-cut-note.exact::before {
   background: var(--accent-light);
 }
-.tl-segment.has-sliver .tl-segment-surface {
+.tl-segment.has-sliver .tl-segment-labels {
   padding-left: var(--sliver, 0px);
 }
 /* drawn like the segment time bubble, above the cut it describes */
@@ -1464,6 +1516,12 @@ body.task-cut #timeline-audio-tools {
 }
 #video-track.selected .tl-segment.active,
 #video-track.selected .tl-segment.active .tl-segment-label {
+  color: var(--text);
+}
+.tl-segment.has-frames .tl-segment-time,
+#video-track.selected #timeline.segment-dragging .tl-segment.active.has-frames .tl-segment-time {
+  padding: 2px 5px;
+  background: var(--raised);
   color: var(--text);
 }
 #video-track.selected .tl-segment.active .tl-segment-badge {

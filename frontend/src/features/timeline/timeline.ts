@@ -12,6 +12,7 @@ import * as Keyframes from "./keyframes.ts";
 import * as SegmentEditing from "./segments.ts";
 import * as TimelineCore from "./timeline-core.ts";
 import { withShortcut } from "../shortcuts/shortcuts.ts";
+import { frameLayout, FrameStripStore, type FrameSprite } from "./frames.ts";
 
 export interface TimelineHost {
   session: EditorSession;
@@ -136,6 +137,99 @@ let snapOn = true;
   let timelineZoom = 1;
   let TL_ZOOM_MIN = TimelineCore.ZOOM_MIN;
   let TL_SNAP_PX = 8;
+  let frameView: ReturnType<typeof frameLayout> | null = null;
+  const frameStore = new FrameStripStore({
+    request: async (request) => {
+      const result = await getBackendClient().getTimelineFrames(
+        request.path, request.start, request.step, request.count, request.mode, request.exact,
+      );
+      if (!result.ok) throw new Error(result.error.message);
+      return result.value;
+    },
+    release: (token) => {
+      if (hasBackendClient()) void getBackendClient().releaseMediaToken(token).catch(() => {});
+    },
+    changed: paintFrameTiles,
+    load: loadFrameSprite,
+  });
+
+  function loadFrameSprite(sprite: FrameSprite): Promise<boolean> {
+    return new Promise((resolve) => {
+      const image = new windowRef.Image();
+      const timeout = windowRef.setTimeout(() => finish(false), 15_000);
+      function finish(ok: boolean) {
+        windowRef.clearTimeout(timeout);
+        image.onload = image.onerror = null;
+        resolve(ok);
+      }
+      image.onload = () => finish(image.naturalWidth > 0);
+      image.onerror = () => finish(false);
+      image.src = sprite.url;
+    });
+  }
+
+  function paintFrameTiles(): void {
+    const layer = byId("tl-segments");
+    if (!layer) return;
+    const ranges = layer.querySelectorAll<HTMLElement>(".tl-segment");
+    for (const [segment, range] of ranges.entries()) {
+      const surface = range.querySelector<HTMLElement>(".tl-segment-surface");
+      if (!surface) continue;
+      surface.querySelector(".tl-frames")?.remove();
+      range.classList.remove("has-frames");
+      if (!frameView) continue;
+      const pictures = documentRef.createElement("span");
+      pictures.className = "tl-frames";
+      pictures.setAttribute("aria-hidden", "true");
+      for (const tile of frameView.tiles) {
+        if (tile.segment !== segment) continue;
+        const sprite = frameStore.get(tile.index);
+        if (!sprite) continue;
+        const picture = documentRef.createElement("span");
+        picture.className = "tl-frame";
+        picture.dataset.frameIndex = String(tile.index);
+        picture.style.left = tile.left + "px";
+        picture.style.width = frameView.tileWidth + "px";
+        picture.style.backgroundImage = `url(${JSON.stringify(sprite.url)})`;
+        picture.style.backgroundSize = frameView.tileWidth * sprite.columns + "px 100%";
+        const position = Math.round(tile.index - sprite.start / sprite.step);
+        picture.style.backgroundPosition = -position * frameView.tileWidth + "px 0";
+        pictures.append(picture);
+      }
+      if (pictures.childElementCount) {
+        surface.prepend(pictures);
+        range.classList.add("has-frames");
+      }
+    }
+  }
+
+  function refreshFrames(): void {
+    const clip = selectedClip(session);
+    const track = byId("tl-track");
+    const viewport = byId("sequence-frame");
+    const surface = byId("tl-segments")?.querySelector<HTMLElement>(".tl-segment-surface");
+    const duration = clip && probeStatus(clip) === "ready" ? videoDuration() : 0;
+    if (session.appSettings.timeline_frames === false || !clip || !track || !viewport || !surface || !duration || !hasBackendClient()) {
+      frameView = null;
+      frameStore.clear();
+      paintFrameTiles();
+      return;
+    }
+    const bounds = track.getBoundingClientRect();
+    const visible = viewport.getBoundingClientRect();
+    frameView = frameLayout({
+      duration, trackWidth: bounds.width, tileHeight: surface.getBoundingClientRect().height,
+      visibleStart: Math.max(0, visible.left - bounds.left) / bounds.width * duration,
+      visibleEnd: Math.min(bounds.width, visible.right - bounds.left) / bounds.width * duration,
+      segments: clipSegments(clip, duration),
+    });
+    if (frameView.step > 0) frameStore.update({
+      path: session.selPath ?? "", duration, step: frameView.step,
+      mode: session.appSettings.timeline_frame_mode === "whole" ? "whole" : "center",
+      chunks: frameView.chunks, exact: timelineZoom > TL_ZOOM_MIN,
+    });
+    paintFrameTiles();
+  }
 
 let _tlDrag: TimelineDrag | null = null;
 let _MIN_TRIM = SegmentEditing.MIN_DURATION;
@@ -503,6 +597,7 @@ function paintTrimChrome() {
   let removeButton = byId("btn-segment-remove");
   let addButton = byId("btn-segment-add");
   if (!ready) {
+    refreshFrames();
     if (isButtonElement(resetButton)) {
       resetButton.disabled = true;
       resetButton.classList.add("hid");
@@ -600,6 +695,10 @@ function paintTrimChrome() {
     badgeLabel.textContent = segment.badge ?? "";
     let copy = documentRef.createElement("span");
     copy.className = "tl-segment-copy";
+    let content = documentRef.createElement("span");
+    content.className = "tl-segment-content";
+    let labels = documentRef.createElement("span");
+    labels.className = "tl-segment-labels";
     // every segment comes from the selected video, so the clip says how long it is rather than
     // repeating the file name; the full range is in the hover tip and the accessible name
     let nameLabel = documentRef.createElement("span");
@@ -612,13 +711,14 @@ function paintTrimChrome() {
       " · " +
       formatSelectedDuration(segment.end - segment.start);
     copy.append(nameLabel);
-    surface.append(badgeLabel, copy);
-    range.appendChild(surface);
+    labels.append(badgeLabel, copy);
+    content.appendChild(labels);
+    range.append(surface, content);
     let timeLabel = documentRef.createElement("span");
     timeLabel.className = "tl-segment-time";
     timeLabel.setAttribute("aria-hidden", "true");
     timeLabel.textContent = timeText;
-    range.appendChild(timeLabel);
+    content.appendChild(timeLabel);
     let edgeIn = documentRef.createElement("span");
     edgeIn.className = "clip-edge start";
     edgeIn.dataset.edge = "start";
@@ -629,6 +729,7 @@ function paintTrimChrome() {
     segmentsLayer?.appendChild(range);
   }
   paintSelectionFrame(startPct, endPct, segmentColor(active));
+  refreshFrames();
   byId("tl-in")?.setAttribute(
     "aria-valuemin",
     String(active > 0 ? arrayItem(segments, active - 1)?.end ?? 0 : 0),
@@ -1456,6 +1557,7 @@ function applyTimelineZoom(anchorRatio?: number) {
   }
   let full = videoDuration();
   if (full > 0) paintSequenceRuler(full);
+  refreshFrames();
 }
 
 function setTimelineZoom(level: number) {
@@ -1730,6 +1832,7 @@ function initTimelineResizer() {
     nudgeTimelineZoom: nudgeTimelineZoom,
     paintCutOverlay: paintCutOverlay,
     paintTrimChrome: paintTrimChrome,
+    refreshFrames: refreshFrames,
     playbackSegments: playbackSegments,
     removeActiveSegment: recorded("remove segment", removeActiveSegment),
     goToCutPoint: goToCutPoint,
@@ -1760,6 +1863,19 @@ function initTimelineResizer() {
     moveActiveSegment,
   });
   initTimelineResizer();
+  byId("sequence-frame")?.addEventListener("scroll", refreshFrames, {passive:true});
+  let frameResize: ResizeObserver | null = null;
+  if (typeof windowRef.ResizeObserver === "function") {
+    frameResize = new windowRef.ResizeObserver(refreshFrames);
+    for (const id of ["sequence-frame", "tl-track"]) {
+      const element = byId(id);
+      if (element) frameResize.observe(element);
+    }
+  }
+  windowRef.addEventListener("pagehide", () => {
+    frameResize?.disconnect();
+    frameStore.clear();
+  }, {once:true});
   return extended;
 
 }

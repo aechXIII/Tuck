@@ -24,6 +24,11 @@ test("search finds settings by label, keyword, or page, in page order", () => {
   assert.deepEqual(searchSettings("hdr", SETTINGS_INDEX), []);
 });
 
+test("search finds frame visibility and framing", () => {
+  assert.deepEqual(searchSettings("pictures", SETTINGS_INDEX).map((entry) => entry.id), ["timeline-frames"]);
+  assert.deepEqual(searchSettings("HUD", SETTINGS_INDEX).map((entry) => entry.id), ["timeline-frame-mode"]);
+});
+
 test("search finds the switch that removes exported videos from the Library", () => {
   assert.deepEqual(searchSettings("library", SETTINGS_INDEX).map((entry) => entry.id), ["reopen", "remove-exported"]);
   assert.deepEqual(searchSettings("remove", SETTINGS_INDEX).map((entry) => entry.id), ["clear-finished", "remove-exported"]);

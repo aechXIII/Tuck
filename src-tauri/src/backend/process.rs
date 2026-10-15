@@ -850,6 +850,7 @@ impl BackendCommand {
             | Self::ProbeAudioFile { .. }
             | Self::GetWaveform { .. }
             | Self::GetThumbnail { .. }
+            | Self::GetTimelineFrames { .. }
             | Self::ExportFrame { .. }
             | Self::GetMediaUrl { .. }
             | Self::ReleaseMediaToken { .. }

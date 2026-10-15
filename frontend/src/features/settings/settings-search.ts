@@ -61,6 +61,8 @@ export const SETTINGS_INDEX: readonly SettingsEntry[] = [
   { id: "loop", page: "general", label: "Loop playback", keywords: "repeat play again player" },
   { id: "skip-length", page: "general", label: "Skip length", keywords: "seek jump seconds arrow shift player" },
   { id: "time-format", page: "general", label: "Time format", keywords: "timecode frames seconds timeline player clock" },
+  { id: "timeline-frames", page: "general", label: "Show frames", keywords: "timeline video track pictures thumbnails" },
+  { id: "timeline-frame-mode", page: "general", label: "Frames", keywords: "timeline zoom center whole frame HUD details" },
   { id: "accent", page: "appearance", label: "Accent color", keywords: "theme colour violet purple blue teal green amber rose" },
   { id: "interface-size", page: "appearance", label: "Layout density", keywords: "interface size zoom spacing compact large small" },
   { id: "text-size", page: "appearance", label: "Text size", keywords: "font readable readability scaling larger big text" },

@@ -140,6 +140,7 @@ export function installEditorRuntime(
     applyAppearance(windowRef.document.documentElement, session.appSettings);
     void resizeInterface(session.appSettings.interface_size);
     player?.updateTime();
+    timeline.refreshFrames();
   }
 
   function panelAudioRange(): AudioClipRangeInfo | null {

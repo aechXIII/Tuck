@@ -40,6 +40,64 @@ def _write_settings(tmp_path: Path, data: dict) -> None:
     (config / "settings.json").write_text(json.dumps(data), encoding="utf-8")
 
 
+class TestTimelineFramePreferences:
+    def test_old_settings_use_frames_with_center_zoom(self, tmp_path):
+        _write_settings(tmp_path, {"version": 1, "loop_playback": False})
+        settings = SettingsManager().load()
+        assert settings.timeline_frames is True
+        assert settings.timeline_frame_mode == "center"
+        assert settings.loop_playback is False
+
+    def test_frames_round_trip_through_backup_and_reset(self, tmp_path):
+        api = BridgeAPI()
+        assert api.save_settings({"timeline_frames": False, "timeline_frame_mode": "whole"}) == {
+            "ok": True
+        }
+        settings = SettingsManager().load()
+        assert settings.timeline_frames is False
+        assert settings.timeline_frame_mode == "whole"
+        backup = tmp_path / "preferences.json"
+        assert api.export_settings_to_file(str(backup))["ok"]
+        assert api.reset_settings()["ok"]
+        assert api.get_settings()["timeline_frames"] is True
+        assert api.get_settings()["timeline_frame_mode"] == "center"
+        assert api.import_settings_from_file(str(backup))["ok"]
+        assert api.get_settings()["timeline_frames"] is False
+        assert api.get_settings()["timeline_frame_mode"] == "whole"
+
+    @pytest.mark.parametrize(
+        ("key", "value"),
+        [
+            ("timeline_frames", "yes"),
+            ("timeline_frames", 1),
+            ("timeline_frames", None),
+            ("timeline_frame_mode", "zoom"),
+            ("timeline_frame_mode", False),
+            ("timeline_frame_mode", None),
+        ],
+    )
+    def test_invalid_updates_are_rejected_without_other_changes(self, key, value):
+        api = BridgeAPI()
+        result = api.save_settings({"loop_playback": False, key: value})
+        assert result["ok"] is False
+        assert key in result["error"]
+        assert api.get_settings()["loop_playback"] is True
+
+    def test_broken_stored_values_keep_defaults_and_other_settings(self, tmp_path):
+        _write_settings(
+            tmp_path,
+            {
+                "timeline_frames": 0,
+                "timeline_frame_mode": "zoom",
+                "loop_playback": False,
+            },
+        )
+        settings = SettingsManager().load()
+        assert settings.timeline_frames is True
+        assert settings.timeline_frame_mode == "center"
+        assert settings.loop_playback is False
+
+
 class TestPreferenceValues:
     @pytest.mark.parametrize(
         ("key", "value"),

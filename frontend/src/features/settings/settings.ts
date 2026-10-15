@@ -381,6 +381,23 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
           { value: "frames", label: "1902 f", mono: true },
         ], str(s.time_format, "seconds"), { "data-settings-change": "save" }),
       }),
+      switchRow({
+        setting: "timeline-frames",
+        id: "set-timeline-frames",
+        label: "Show frames",
+        description: "Show pictures from the video on the video track.",
+        checked: s.timeline_frames !== false,
+        attributes: { "data-settings-change": "save" },
+      }),
+      row({
+        setting: "timeline-frame-mode",
+        label: "Frames",
+        description: "Zoom to center hides HUDs and makes small details easier to see.",
+        control: choiceGroup("set-timeline-frame-mode", "Frames", [
+          { value: "center", label: "Zoom to center" },
+          { value: "whole", label: "Whole frame" },
+        ], str(s.timeline_frame_mode, "center"), { "data-settings-change": "save" }),
+      }),
     ))];
   }
 
@@ -796,6 +813,8 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
           loop_playback: checked("set-loop"),
           skip_seconds: radio("set-skip", "3"),
           time_format: radio("set-time-format", "seconds"),
+          timeline_frames: checked("set-timeline-frames"),
+          timeline_frame_mode: radio("set-timeline-frame-mode", "center"),
         };
       case "appearance":
         return {

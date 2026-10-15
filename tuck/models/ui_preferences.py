@@ -109,6 +109,7 @@ def normalize_timeline_toggle(key: str, value: object) -> bool:
 FLAG_PREFERENCES: tuple[str, ...] = (
     "timeline_snap",
     "timeline_keyframes",
+    "timeline_frames",
     "animations",
     "reopen_last_videos",
     "keep_file_dates",
@@ -124,6 +125,7 @@ INTERFACE_SIZES: tuple[str, ...] = ("compact", "default", "large")
 TEXT_SIZES: tuple[str, ...] = ("default", "large", "extra_large")
 TIMELINE_STYLES: tuple[str, ...] = ("graphite", "violet")
 TIME_FORMATS: tuple[str, ...] = ("seconds", "timecode", "frames")
+TIMELINE_FRAME_MODES: tuple[str, ...] = ("center", "whole")
 # how far Shift with the arrow keys skips, in seconds
 SKIP_LENGTHS: tuple[str, ...] = ("1", "3", "5", "10")
 
@@ -134,6 +136,7 @@ CHOICE_PREFERENCES: dict[str, tuple[str, ...]] = {
     "text_size": TEXT_SIZES,
     "timeline_style": TIMELINE_STYLES,
     "time_format": TIME_FORMATS,
+    "timeline_frame_mode": TIMELINE_FRAME_MODES,
     "skip_seconds": SKIP_LENGTHS,
     "name_taken": NAME_TAKEN_CHOICES,
 }

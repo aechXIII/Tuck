@@ -1372,6 +1372,8 @@ class AppSettings:
     cut_suffix: str = DEFAULT_CUT_SUFFIX
     timeline_snap: bool = True
     timeline_keyframes: bool = True
+    timeline_frames: bool = True
+    timeline_frame_mode: str = "center"
     shortcut_overrides: dict[str, list[str]] = field(default_factory=dict)
     accent_color: str = "violet"
     interface_size: str = "default"

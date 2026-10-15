@@ -4,6 +4,8 @@ import { backendFailure, errorMessage, isBackendError } from "./errors.ts";
 import { isCutAnalysisPayload, isCutCancellation, isCutPlanPayload } from "./cutting-types.ts";
 import { isFrameExportResult } from "./frame-types.ts";
 import type { FrameExportRequest, FrameExportResult } from "./frame-types.ts";
+import { isTimelineFramesPayload } from "./timeline-frame-types.ts";
+import type { TimelineFrameMode, TimelineFramesPayload } from "./timeline-frame-types.ts";
 import type { CutAnalysisPayload, CutCancellation, CutPlanPayload, CutPlanRequest, KeyframeCursor } from "./cutting-types.ts";
 import type {
   BackendClient,
@@ -51,6 +53,7 @@ export interface TauriBackendClient extends BackendClient {
 }
 
 type TauriBackendCommand =
+  | { command: "get_timeline_frames"; payload: { path: string; start: number; step: number; count: number; mode: TimelineFrameMode; exact: boolean } }
   | { command: "export_frame"; payload: { request: FrameExportRequest } }
   | { command: "clear_lut_history" }
   | { command: "list_luts" }
@@ -376,6 +379,20 @@ class TauriTransport implements TauriBackendClient {
       "getWaveform",
       { command: "get_waveform", payload: track ? { path, track } : { path } },
       isUrlPayload,
+    );
+  }
+
+  getTimelineFrames(path: string, start: number, step: number, count: number, mode: TimelineFrameMode, exact: boolean): Promise<BackendResult<TimelineFramesPayload>> {
+    if (!Number.isFinite(start) || start < 0 || !Number.isFinite(step) || step <= 0
+      || !Number.isInteger(count) || count < 1 || count > 32
+      || (mode !== "center" && mode !== "whole") || typeof exact !== "boolean"
+      || typeof path !== "string" || !path) {
+      return Promise.resolve(backendFailure("INVALID_REQUEST", "Timeline picture parameters are invalid", { method: "getTimelineFrames" }));
+    }
+    return this.#request(
+      "getTimelineFrames",
+      { command: "get_timeline_frames", payload: { path, start, step, count, mode, exact } },
+      isTimelineFramesPayload,
     );
   }
 

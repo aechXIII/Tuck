@@ -24,7 +24,14 @@ logger = logging.getLogger(__name__)
 # many at once; they get their own workers so settings, queue and status requests never wait
 # behind them and time out in the shell while the work carries on here
 MEDIA_METHODS = frozenset(
-    {"probe_file", "probe_audio_file", "get_waveform", "get_thumbnail", "export_frame"}
+    {
+        "probe_file",
+        "probe_audio_file",
+        "get_waveform",
+        "get_thumbnail",
+        "export_frame",
+        "get_timeline_frames",
+    }
 )
 _CONTROL_WORKERS = 4
 _MEDIA_WORKERS = 4

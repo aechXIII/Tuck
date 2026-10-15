@@ -11,6 +11,7 @@ declare global {
 }
 
 export interface FakeBackendFixture {
+  timelineSprites?: {url: string; token: string};
   holdMethods?: readonly (keyof BackendClient)[];
   queueStateAfterEnqueue?: unknown;
   responseSequences?: Partial<Record<keyof BackendClient, unknown[]>>;
@@ -56,7 +57,7 @@ export async function installFakeBackend(
   fixture: FakeBackendFixture,
 ): Promise<void> {
   await page.addInitScript(
-    ({ holdMethods, queueStateAfterEnqueue, responseSequences, responses, startup }) => {
+    ({ holdMethods, queueStateAfterEnqueue, responseSequences, responses, startup, timelineSprites }) => {
       const calls: BackendCall[] = [];
       const held = new Map<string, Array<(value: unknown) => void>>();
       let hasEnqueuedWork = false;
@@ -135,6 +136,11 @@ export async function installFakeBackend(
         getWaveform: (path: string, track?: number) =>
           respond("getWaveform", track ? [path, track] : [path]),
         getThumbnail: (path: string) => respond("getThumbnail", [path]),
+        getTimelineFrames: async (path: string, start: number, step: number, count: number, mode: string, exact: boolean) => {
+          const result = await respond("getTimelineFrames", [path,start,step,count,mode,exact]);
+          if (!timelineSprites || (typeof result === "object" && result !== null && "ok" in result && result.ok === false)) return result;
+          return {ok:true,value:{...timelineSprites,start,step,count,tile_width:150,tile_height:84,columns:count}};
+        },
         listLuts: () => respond("listLuts", []),
         clearLutHistory: () => respond("clearLutHistory", []),
         loadLut: (path: string) => respond("loadLut", [path]),
@@ -224,6 +230,7 @@ export async function installFakeBackend(
       responseSequences: fixture.responseSequences,
       responses: fixture.responses,
       startup: fixture.startup,
+      timelineSprites: fixture.timelineSprites,
     },
   );
 }

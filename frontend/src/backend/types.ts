@@ -1,5 +1,6 @@
 import type { CutAnalysisPayload, CutCancellation, CutPlanPayload, CutPlanRequest, KeyframeCursor } from "./cutting-types.ts";
 import type { FrameExportRequest, FrameExportResult } from "./frame-types.ts";
+import type { TimelineFramesPayload } from "./timeline-frame-types.ts";
 export type { FrameExportRequest, FrameExportResult, VideoTransformJSON, LutSettingsJSON } from "./frame-types.ts";
 
 export type JsonPrimitive = boolean | number | string | null;
@@ -47,6 +48,8 @@ export interface Settings extends JsonObject {
   readonly cut_suffix?: string;
   readonly timeline_snap?: boolean;
   readonly timeline_keyframes?: boolean;
+  readonly timeline_frames?: boolean;
+  readonly timeline_frame_mode?: "center" | "whole";
   /** command id -> chosen key combos; an empty list means every key was removed */
   readonly shortcut_overrides?: Readonly<Record<string, readonly string[]>>;
   readonly accent_color?: AccentColor;
@@ -181,6 +184,7 @@ export interface DomainBackendClient {
   // track counts a video's audio tracks from 0; leaving it out asks for the first
   getWaveform(path: string, track?: number): Promise<BackendResult<UrlPayload>>;
   getThumbnail(path: string): Promise<BackendResult<ThumbnailPayload>>;
+  getTimelineFrames(path: string, start: number, step: number, count: number, mode: "center" | "whole", exact: boolean): Promise<BackendResult<TimelineFramesPayload>>;
   getMediaUrl(path: string, track?: number): Promise<BackendResult<UrlPayload>>;
   releaseMediaToken(token: string): Promise<BackendResult<EmptyPayload>>;
   createPlan(request: CutPlanRequest): Promise<BackendResult<CutPlanPayload>>;
