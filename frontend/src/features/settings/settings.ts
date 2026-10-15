@@ -437,7 +437,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       row({
         setting: "timeline-style",
         label: "Timeline",
-        description: "Graphite keeps clips grey. Violet tints them with the accent color.",
+        description: "Graphite keeps clips gray. Violet tints them with the accent color.",
         control: choiceGroup("set-timeline-style", "Timeline", [
           { value: "graphite", label: "Graphite" },
           { value: "violet", label: "Violet" },
@@ -584,7 +584,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     return [section("When the queue finishes", card(
       flag("show-folder", "set-open-output-folder", "Show the last export in its folder", s.open_output_folder_after_queue === true),
       flag("clear-finished", "set-auto-clear", "Clear finished jobs", s.clear_completed_automatically === true,
-        "Failed and cancelled jobs stay so you can retry them."),
+        "Failed and canceled jobs stay so you can retry them."),
       flag("remove-exported", "set-remove-exported", "Remove videos after they export", s.remove_after_export === true,
         "Finished videos leave the Library."),
       flag("notify", "set-notify", "Notify me", s.notify_when_done !== false,

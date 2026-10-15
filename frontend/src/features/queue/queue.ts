@@ -184,7 +184,7 @@ export function installQueue(deps: QueueDeps): QueueApi {
       // aria-disabled rather than disabled, so a keyboard user's focus stays on the row while it waits
       const pending = rowRequests[row.id];
       if (pending && pending === row.action) {
-        button.textContent = pending === "cancel" ? "Cancelling…" : "Retrying…";
+        button.textContent = pending === "cancel" ? "Canceling…" : "Retrying…";
         button.setAttribute("aria-disabled", "true");
       }
       button.dataset.actionClick = `export-item-${row.action}`;
@@ -580,7 +580,7 @@ export function installQueue(deps: QueueDeps): QueueApi {
   }
 
   function stopAfterCurrent(): void {
-    confirmToast("The export in progress finishes. Exports still waiting in the queue are cancelled.", () => {
+    confirmToast("The export in progress finishes. Exports still waiting in the queue are canceled.", () => {
       void (async (): Promise<void> => {
         const r = await legacyBackendResult(client().stopAfterCurrent());
         if (!r.ok) {
@@ -594,7 +594,7 @@ export function installQueue(deps: QueueDeps): QueueApi {
   }
 
   function cancelAll(): void {
-    confirmToast("The export in progress stops and everything waiting in the queue is cancelled. Finished exports are kept.", () => {
+    confirmToast("The export in progress stops and everything waiting in the queue is canceled. Finished exports are kept.", () => {
       void (async (): Promise<void> => {
         try {
           const r = await legacyBackendResult(client().cancelAllItems());

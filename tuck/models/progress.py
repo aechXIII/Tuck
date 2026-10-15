@@ -89,7 +89,7 @@ class EncodeProgress:
         if stage == EncodeStage.FAILED:
             return "Failed"
         if stage == EncodeStage.CANCELLED:
-            return "Cancelled"
+            return "Canceled"
         if stage == EncodeStage.ENCODING:
             if self.pass_number and self.total_passes and self.total_passes > 1:
                 return f"Pass {self.pass_number} of {self.total_passes}"

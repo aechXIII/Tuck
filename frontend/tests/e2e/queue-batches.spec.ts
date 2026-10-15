@@ -87,7 +87,7 @@ test("cancelling all exports reports a failure honestly and never claims complet
   await page.getByRole("button", { name: "Cancel all" }).click();
   await dialog.getByRole("button", { name: "Cancel exports" }).click();
   await setQueue(page, [item("a", A, "cancelled"), item("b", B, "cancelled")]);
-  await expect(page.locator(".toast", { hasText: "Exports cancelled." })).toBeVisible();
+  await expect(page.locator(".toast", { hasText: "Exports canceled." })).toBeVisible();
   await expect(page.locator(".toast", { hasText: /completed/i })).toHaveCount(0);
 });
 

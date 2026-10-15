@@ -214,7 +214,7 @@ test("export rows group this session's exports and say what each can do", () => 
   assert.deepEqual(rows.waiting.map((row) => [row.id, row.detail, row.action]), [["wait", "Waiting", "cancel"]]);
   assert.deepEqual(rows.finished.map((row) => [row.id, row.kind, row.detail, row.action]), [
     ["bad", "failed", "Failed: Out of disk space", "retry"],
-    ["stop", "cancelled", "Cancelled", "retry"],
+    ["stop", "cancelled", "Canceled", "retry"],
     ["done", "completed", "", "show"],
     ["gone", "completed", "Done", null],
   ]);
@@ -259,9 +259,9 @@ test("a finished batch is summed up once, from that batch only", () => {
     failedIds: [],
   });
   // a cancelled batch says so instead of claiming it completed
-  assert.deepEqual(batchSummary(items, { e: true }), { message: "Export cancelled.", kind: "info", failedIds: [] });
+  assert.deepEqual(batchSummary(items, { e: true }), { message: "Export canceled.", kind: "info", failedIds: [] });
   assert.deepEqual(batchSummary(items, { a: true, e: true }), {
-    message: "1 exported, 1 cancelled.",
+    message: "1 exported, 1 canceled.",
     kind: "info",
     failedIds: [],
   });
@@ -282,7 +282,7 @@ test("cancelling every export finishes the batch without claiming success", () =
       { id: "old", source: "old.mp4", state: "failed" },
     ],
   });
-  assert.deepEqual(done.finishedToast, { message: "Exports cancelled.", kind: "info", failedIds: [] });
+  assert.deepEqual(done.finishedToast, { message: "Exports canceled.", kind: "info", failedIds: [] });
 });
 
 test("exports are watched from when they are first seen waiting or running", () => {

@@ -378,7 +378,7 @@ class FFmpegEngine:
                 )
                 return output
         except EncodeCancelled:
-            _emit(on_progress, EncodeProgress(stage=EncodeStage.CANCELLED, message="Cancelled"))
+            _emit(on_progress, EncodeProgress(stage=EncodeStage.CANCELLED, message="Canceled"))
             raise
         except Exception as exc:
             _emit(on_progress, EncodeProgress(stage=EncodeStage.FAILED, message=str(exc)))

@@ -187,8 +187,8 @@ export function batchSummary(
   }
   if (cancelled) {
     const message = completed.length
-      ? `${completed.length} exported, ${cancelled} cancelled.`
-      : cancelled === 1 ? "Export cancelled." : "Exports cancelled.";
+      ? `${completed.length} exported, ${cancelled} canceled.`
+      : cancelled === 1 ? "Export canceled." : "Exports canceled.";
     return { message, kind: "info", failedIds };
   }
   if (completed.length === 1) {
@@ -342,7 +342,7 @@ export function formatQueueStatus(item: QueueItem | null | undefined, attempt = 
   if (item.state === "running") return `Encoding · ${Math.round(item.progress ?? 0)}%`;
   if (item.state === "completed") return "Completed";
   if (item.state === "failed") return "Failed";
-  if (item.state === "cancelled") return "Cancelled";
+  if (item.state === "cancelled") return "Canceled";
   return item.state ?? "";
 }
 
@@ -422,7 +422,7 @@ export function exportRows(
     } else if (item.state === "failed") {
       finished.push({...base, kind: "failed", detail: item.error ? `Failed: ${item.error}` : "Failed", sizes: null, progress: null, action: "retry"});
     } else if (item.state === "cancelled") {
-      finished.push({...base, kind: "cancelled", detail: "Cancelled", sizes: null, progress: null, action: "retry"});
+      finished.push({...base, kind: "cancelled", detail: "Canceled", sizes: null, progress: null, action: "retry"});
     } else if (item.state === "completed") {
       const from = item.source_path ? sourceSize(item.source_path) : 0;
       const to = Number(item.result_size) || 0;

@@ -258,7 +258,7 @@ class CutRunner:
         except CutAnalysisError as exc:
             if self._cancel.is_set():
                 if on_progress is not None:
-                    on_progress(EncodeProgress(stage=EncodeStage.CANCELLED, message="Cancelled"))
+                    on_progress(EncodeProgress(stage=EncodeStage.CANCELLED, message="Canceled"))
                 raise CutAnalysisError("cut_cancelled", "Cutting was cancelled.") from exc
             if on_progress is not None:
                 on_progress(EncodeProgress(stage=EncodeStage.FAILED, message=str(exc)))

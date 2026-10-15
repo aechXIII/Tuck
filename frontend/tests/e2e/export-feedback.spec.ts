@@ -59,7 +59,7 @@ test("Cancel on an export says it is waiting and ignores repeat presses", async 
   await expect(cancel).toHaveText("Cancel");
 
   await cancel.click();
-  await expect(cancel).toHaveText("Cancelling…");
+  await expect(cancel).toHaveText("Canceling…");
   await expect(cancel).toHaveAttribute("aria-disabled", "true");
   // forced: the button stays focusable while waiting, so a real press still reaches it
   await cancel.click({ force: true });

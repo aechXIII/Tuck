@@ -828,7 +828,7 @@ export function createLibrary(host: LibraryHost): LibraryApi {
       if (!statusLabel && clip._queueState === "pending") statusLabel = "Pending";
       if (!statusLabel && clip._queueState === "running") statusLabel = "Encoding";
       if (!statusLabel && clip._queueState === "failed") statusLabel = "Export failed";
-      if (!statusLabel && clip._queueState === "cancelled") statusLabel = "Cancelled";
+      if (!statusLabel && clip._queueState === "cancelled") statusLabel = "Canceled";
       if (!statusLabel && needsTool) statusLabel = "No FFprobe";
       if (!statusLabel && clip.error) statusLabel = "Can't read file";
       const detail = clip._queueState === "failed" && clip._queueError

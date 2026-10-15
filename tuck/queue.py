@@ -116,7 +116,7 @@ class ProcessingQueue:
             if item.state == QueueState.PENDING:
                 self._remove_pending_id(item_id)
                 item.state = QueueState.CANCELLED
-                item.status_text = "Cancelled"
+                item.status_text = "Canceled"
                 item.finished_at = datetime.now(timezone.utc).isoformat()
                 return True
             if item.state == QueueState.RUNNING:
@@ -144,7 +144,7 @@ class ProcessingQueue:
                 item = self._items.get(item_id)
                 if item and item.state == QueueState.PENDING:
                     item.state = QueueState.CANCELLED
-                    item.status_text = "Cancelled"
+                    item.status_text = "Canceled"
                     item.finished_at = datetime.now(timezone.utc).isoformat()
             self._pending.clear()
         self._cancel_engine()
@@ -230,7 +230,7 @@ class ProcessingQueue:
                 item = self._items.get(item_id)
                 if item and item.state == QueueState.PENDING:
                     item.state = QueueState.CANCELLED
-                    item.status_text = "Cancelled"
+                    item.status_text = "Canceled"
                     item.finished_at = datetime.now(timezone.utc).isoformat()
             self._pending.clear()
             if self._current_item is None:
@@ -350,11 +350,11 @@ class ProcessingQueue:
             except EncodeCancelled:
                 with self._condition:
                     item.state = QueueState.CANCELLED
-                    item.error = "Cancelled by user"
+                    item.error = "Canceled by user"
                     item.error_detail = ""
-                    item.status_text = "Cancelled"
+                    item.status_text = "Canceled"
                     item.progress_info = EncodeProgress(
-                        stage=EncodeStage.CANCELLED, message="Cancelled"
+                        stage=EncodeStage.CANCELLED, message="Canceled"
                     )
                     item.finished_at = datetime.now(timezone.utc).isoformat()
                 logger.info("Cancelled: %s", Path(item.plan.source).name if item.plan else "?")
