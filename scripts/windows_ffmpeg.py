@@ -20,7 +20,17 @@ ROOT = Path(__file__).resolve().parent.parent
 LOCK_PATH = ROOT / "packaging/ffmpeg-sources.lock.json"
 BUILD = ROOT / "build/windows-ffmpeg"
 SOURCE_BUNDLE = "Tuck-FFmpeg-Windows-Sources.tar.xz"
-REQUIRED_SOURCES = {"ffmpeg", "x264", "x265", "nv-codec-headers", "amf", "zlib", "dav1d", "zimg"}
+REQUIRED_SOURCES = {
+    "ffmpeg",
+    "x264",
+    "x265",
+    "nv-codec-headers",
+    "amf",
+    "zlib",
+    "dav1d",
+    "zimg",
+    "mingw-dxva",
+}
 DOWNLOAD_ATTEMPTS = 3
 
 
@@ -245,6 +255,15 @@ def validate_runtime(directory: Path, lock: dict) -> None:
             set(lock["output"][kind]) <= available,
             f"Windows FFmpeg is missing {kind}: {set(lock['output'][kind]) - available}",
         )
+    devices = re.search(
+        r"^\s*Supported hardware devices:\s*([^\r\n]*)",
+        output("-h", "decoder=av1"),
+        re.MULTILINE,
+    )
+    require(
+        devices is not None and "d3d11va" in devices.group(1).split(),
+        "Windows FFmpeg AV1 decoder is missing d3d11va support",
+    )
     subprocess.run([str(directory / "ffprobe.exe"), "-version"], check=True, capture_output=True)
 
 

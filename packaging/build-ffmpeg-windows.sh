@@ -98,6 +98,8 @@ popd >/dev/null
 make -C "$source_dir/nv-codec-headers-c69278340ab1d5559c7d7bf0edf615dc33ddbba7" install PREFIX="$prefix"
 mkdir -p "$prefix/include/AMF"
 cp -R "$source_dir/AMF-ba07d1b3c7c7ee0d846125cffc1d6d78a020c45a/amf/public/include/"* "$prefix/include/AMF/"
+# Ubuntu 22.04's DXVA header predates AV1; keep its toolchain and replace only this header
+install -m644 "$source_dir/mingw-w64-12.0.0/mingw-w64-headers/include/dxva.h" "$prefix/include/dxva.h"
 
 recipe_dir=$(cd "$(dirname "$0")" && pwd)
 patch -d "$source_dir/ffmpeg-7.1.1" -p1 < "$recipe_dir/ffmpeg-mix-integer.patch"
@@ -112,7 +114,7 @@ pushd "$build_dir/ffmpeg" >/dev/null
   --enable-gpl --enable-static --disable-shared --disable-debug --disable-doc --disable-ffplay \
   --enable-libx264 --enable-libx265 --enable-libdav1d --enable-libzimg --enable-zlib \
   --enable-amf --enable-ffnvcodec --enable-nvenc --enable-nvdec \
-  --enable-d3d11va --enable-dxva2 --enable-w32threads \
+  --enable-d3d11va --enable-dxva2 --enable-hwaccel=av1_d3d11va2 --enable-w32threads \
   --pkg-config=pkg-config --pkg-config-flags=--static \
   --extra-cflags="-I$prefix/include" --extra-ldflags="-L$prefix/lib -static" \
   --extra-libs="-lstdc++ -lpthread -lm"

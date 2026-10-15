@@ -7,7 +7,7 @@ import time
 from collections import deque
 from collections.abc import Callable, Generator
 from concurrent.futures import Future, ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from fractions import Fraction
 from pathlib import Path
 
@@ -19,6 +19,7 @@ from numpy.typing import NDArray
 
 from ..models import EncodePlan, Segment, VideoInfo
 from ..models.frame_blending import FrameBlending, interval_weight, vegas_weights
+from ..probe import first_video_frame
 from . import native_blending
 
 PixelArray = NDArray[np.uint8]
@@ -472,17 +473,30 @@ class TmixPiece:
 class TmixBlend:
     rate: Fraction
     pieces: tuple[TmixPiece, ...]
+    weighted: bool = False
+    color_range: str = ""
 
 
 def _frame_grid(
     source: Path, segments: list[Segment], margin: Fraction
 ) -> tuple[Fraction, Fraction] | None:
     """(one frame time, frame step) when every frame near the segments sits on one even grid."""
+    samples = _frame_grid_samples(source, segments, margin)
+    return (samples[0][0], samples[1]) if samples else None
+
+
+def _frame_grid_samples(
+    source: Path, segments: list[Segment], margin: Fraction, progressive_only: bool = False
+) -> tuple[list[Fraction], Fraction] | None:
     times: set[Fraction] = set()
     with av.open(str(source)) as container:
         stream = container.streams.video[0]
         if stream.time_base is None:
             return None
+        if progressive_only:
+            frame = first_video_frame(container, stream, 1000)
+            if frame is None or frame.interlaced_frame:
+                return None
         base = Fraction(stream.time_base)
         origin = Fraction(container.start_time or 0, 1_000_000)
         for segment in segments:
@@ -511,7 +525,129 @@ def _frame_grid(
         inside = [t for t in ordered if Fraction(segment.start) <= t < Fraction(segment.end)]
         if inside and (inside[-1] - inside[0]) / step + 1 != len(inside):
             return None
-    return ordered[0], step
+    return ordered, step
+
+
+def weighted_yuv_blend(plan: EncodePlan) -> TmixBlend | None:
+    """Direct weighted YUV windows for complete, evenly spaced BT.709 SDR clips."""
+    from .filters import build_plan_video_filters
+
+    info = plan.source_info
+    settings = plan.frame_blending
+    if info is None or not settings.enabled:
+        return None
+    validate_blending_source(settings, info, plan.target_fps)
+    segments = plan.effective_segments
+    if (
+        settings.linear_light
+        or (settings.curve == "equal" and not settings.custom_weights)
+        or settings.amount <= 0
+        or info.pixel_format != "yuv420p"
+        or info.variable_frame_rate is True
+        or info.display_rotation != 0
+        or info.color_space != "bt709"
+        or info.color_transfer != "bt709"
+        or info.color_primaries != "bt709"
+        or info.color_range not in {"pc", "tv"}
+        or info.sample_aspect_ratio != "1:1"
+        or len(segments) != 1
+        or segments[0].start != 0
+        or abs(segments[0].end - info.duration) > 0.000501
+        or build_plan_video_filters(replace(plan, apply_fps_filter=False))
+    ):
+        return None
+    fps = Fraction(plan.target_fps).limit_denominator(100_000)
+    try:
+        grid = _frame_grid_samples(Path(plan.source), segments, 1 / fps, True)
+    except FFmpegError:
+        return None
+    if grid is None:
+        return None
+    times, step = grid
+    ratio = 1 / (step * fps)
+    if times[0] != 0 or ratio.denominator != 1 or ratio <= 1:
+        return None
+    exposure = settings.amount / float(fps)
+    reach = math.ceil(exposure / float(step)) + 2
+    if (
+        reach > MAX_WINDOW_FRAMES
+        or reach * info.width * info.height * 3 > MAX_BUFFER_BYTES
+        or info.duration - float(times[-1]) > float(1 / fps + step)
+    ):
+        return None
+    vegas = (
+        vegas_weights(info.fps, float(fps), settings.amount)
+        if settings.curve == "vegas" and not settings.custom_weights
+        else ()
+    )
+    duration = plan.effective_duration
+    count = max(1, math.ceil(duration * fps - 1e-8))
+    pieces: list[TmixPiece] = []
+
+    def window(index: int) -> tuple[int, tuple[Fraction, ...]] | None:
+        center = min(float((Fraction(index) + Fraction(1, 2)) / fps), math.nextafter(duration, 0))
+        opening = center - exposure / 2
+        left, right = max(0.0, opening), min(segments[0].end, center + exposure / 2)
+        first = max(0, math.floor(left / float(step)) - 1)
+        last = min(len(times) - 1, math.ceil(right / float(step)) + 1)
+        weighted = []
+        for source_index in range(first, last + 1):
+            start = float(times[source_index])
+            end = float(times[source_index + 1]) if source_index + 1 < len(times) else info.duration
+            if start >= right or end <= left:
+                continue
+            weight = interval_weight(
+                settings,
+                (max(start, left) - opening) / exposure,
+                (min(end, right) - opening) / exposure,
+                vegas=vegas,
+            )
+            weighted.append((source_index, weight))
+        if not weighted or sum(weight for _, weight in weighted) <= 0:
+            held = min(len(times) - 1, math.floor(center / float(step)))
+            return (held, (Fraction(_WEIGHT_ONE),)) if center < info.duration else None
+        quantized = _integer_weights([weight for _, weight in weighted])
+        while quantized and not quantized[0]:
+            weighted.pop(0)
+            quantized.pop(0)
+        while quantized and not quantized[-1]:
+            weighted.pop()
+            quantized.pop()
+        return weighted[-1][0], tuple(Fraction(weight) for weight in quantized)
+
+    def append(index: int, length: int) -> bool:
+        selected = window(index)
+        if selected is None:
+            return False
+        end, weights = selected
+        piece = TmixPiece(
+            Fraction(0),
+            times[-1] + step,
+            weights,
+            end,
+            end + (length - 1) * ratio.numerator,
+            ratio.numerator,
+            0,
+            0,
+        )
+        if pieces and pieces[-1].weights == weights and pieces[-1].last + piece.step == end:
+            pieces[-1] = replace(pieces[-1], last=piece.last)
+        else:
+            pieces.append(piece)
+        return True
+
+    # only the cut edges and the final held source picture need individual windows
+    first_full = min(count, max(0, math.ceil(exposure * float(fps) / 2 - 0.5)))
+    last_full = min(count - 1, math.floor((float(times[-1]) - exposure / 2) * float(fps) - 0.5))
+    for index in range(first_full):
+        if not append(index, 1):
+            return None
+    if last_full >= first_full and not append(first_full, last_full - first_full + 1):
+        return None
+    for index in range(max(first_full, last_full + 1), count):
+        if not append(index, 1):
+            return None
+    return TmixBlend(fps, tuple(pieces), weighted=True, color_range=info.color_range)
 
 
 def _output_indices(

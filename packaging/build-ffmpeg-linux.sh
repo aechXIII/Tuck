@@ -26,6 +26,9 @@ x265="$source_dir/multicoreware-x265_git-aa7f602f7592"
 zimg="$source_dir/zimg-f819b14e8f39d1282400b0d9543e8ef73c1b2bbd"
 dav1d="$source_dir/dav1d-1.5.1"
 ffmpeg="$source_dir/ffmpeg-7.1.1"
+nvcodec="$source_dir/nv-codec-headers-c69278340ab1d5559c7d7bf0edf615dc33ddbba7"
+libdrm="$source_dir/libdrm-2.4.124"
+libva="$source_dir/libva-2.24.1"
 
 rm -rf "$build_dir" "$output_dir"
 mkdir -p "$build_dir" "$output_dir"
@@ -64,8 +67,33 @@ meson setup "$build_dir/dav1d" "$dav1d" \
 ninja -C "$build_dir/dav1d" -j "$jobs"
 ninja -C "$build_dir/dav1d" install
 
-# screen capture would link the build host's libdrm and libxcb; Tuck never captures, and a
-# system without them must still run ffmpeg
+# the driver is loaded only when CUDA decoding is selected
+make -C "$nvcodec" PREFIX="$prefix" install
+
+# link the VAAPI loader statically; the host's GPU driver stays optional at runtime
+meson setup "$build_dir/libdrm" "$libdrm" \
+  --prefix "$prefix" --libdir lib --buildtype release --default-library static \
+  -Db_pic=true -Dintel=disabled -Dradeon=disabled -Damdgpu=disabled \
+  -Dnouveau=disabled -Dvmwgfx=disabled -Domap=disabled -Dexynos=disabled \
+  -Dfreedreno=disabled -Dtegra=disabled -Dvc4=disabled -Detnaviv=disabled \
+  -Dcairo-tests=disabled -Dman-pages=disabled -Dvalgrind=disabled -Dtests=false
+ninja -C "$build_dir/libdrm" -j "$jobs"
+ninja -C "$build_dir/libdrm" install
+
+# upstream hardcodes shared targets, so use its default-library selection instead
+sed -i \
+  -e 's/^libva = shared_library(/libva = library(/' \
+  -e 's/^  libva_drm = shared_library(/  libva_drm = library(/' \
+  "$libva/va/meson.build"
+PKG_CONFIG_PATH="$prefix/lib/pkgconfig" meson setup "$build_dir/libva" "$libva" \
+  --prefix "$prefix" --libdir lib --sysconfdir /etc \
+  --buildtype release --default-library static -Db_pic=true \
+  -Dwith_x11=no -Dwith_wayland=no -Dwith_glx=no -Ddisable_drm=false \
+  -Ddriverdir=/usr/lib/x86_64-linux-gnu/dri:/usr/lib/dri:/usr/lib64/dri
+ninja -C "$build_dir/libva" -j "$jobs"
+ninja -C "$build_dir/libva" install
+
+# screen capture would link the host's libxcb; Tuck never captures
 recipe_dir=$(cd "$(dirname "$0")" && pwd)
 patch -d "$ffmpeg" -p1 < "$recipe_dir/ffmpeg-mix-integer.patch"
 install -m644 "$recipe_dir/ffmpeg-mix-integer.h" "$ffmpeg/libavfilter/mix_integer.h"
@@ -78,6 +106,11 @@ PKG_CONFIG_PATH="$prefix/lib/pkgconfig" ./configure \
   --enable-libx265 \
   --enable-libzimg \
   --enable-libdav1d \
+  --enable-ffnvcodec \
+  --enable-nvdec \
+  --disable-nvenc \
+  --enable-vaapi \
+  --disable-encoder=av1_vaapi,h264_vaapi,hevc_vaapi,mjpeg_vaapi,mpeg2_vaapi,vp8_vaapi,vp9_vaapi \
   --disable-libdrm \
   --disable-libxcb \
   --enable-static \

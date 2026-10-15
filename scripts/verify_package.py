@@ -31,6 +31,7 @@ import json
 import os
 import queue
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -58,6 +59,9 @@ _LINUX_SOURCE_LICENSES = {
     "x265": "GPL-2.0-or-later",
     "zimg": "WTFPL",
     "dav1d": "BSD-2-Clause",
+    "nv-codec-headers": "MIT",
+    "libva": "MIT",
+    "libdrm": "MIT",
 }
 
 
@@ -210,21 +214,24 @@ def _validate_linux_lock(lock: dict) -> None:
         and output.get("executables") == ["ffmpeg", "ffprobe"]
         and isinstance(output.get("required_encoders"), list)
         and bool(output["required_encoders"])
+        and isinstance(output.get("forbidden_encoders"), list)
+        and bool(output["forbidden_encoders"])
         and isinstance(output.get("required_decoders"), list)
         and bool(output["required_decoders"])
         and isinstance(output.get("required_filters"), list)
         and bool(output["required_filters"])
+        and output.get("required_hwaccels") == ["cuda", "vaapi"]
         and output.get("runtime_dependency") == "libc.so.6",
         "Linux FFmpeg output provenance is incomplete",
     )
     _require_provenance(
         output.get("forbidden_runtime_dependencies")
-        == ["libx264", "libx265", "libzimg", "libdav1d"],
-        "Linux FFmpeg output must require static x264, x265, zimg, and dav1d linkage",
+        == ["libx264", "libx265", "libzimg", "libdav1d", "libva", "libdrm"],
+        "Linux FFmpeg output must require static codec and VAAPI library linkage",
     )
     _require_provenance(
-        output.get("unused_runtime_dependencies") == ["libdrm", "libxcb"],
-        "Linux FFmpeg output must rule out libdrm and libxcb",
+        output.get("unused_runtime_dependencies") == ["libxcb"],
+        "Linux FFmpeg output must rule out libxcb",
     )
 
 
@@ -339,7 +346,7 @@ def _validate_linux_ffmpeg_runtime(app_root: Path, lock: dict) -> None:
         [str(ffmpeg), "-hide_banner", "-buildconf"], capture_output=True, text=True, check=True
     )
     output = buildconf.stdout + buildconf.stderr
-    configure_flags = {line.strip() for line in output.splitlines()}
+    configure_flags = set(shlex.split(output))
     for flag in lock["output"]["license"]["configure_flags_required"]:
         _require_provenance(
             flag in configure_flags, f"packaged FFmpeg build configuration is missing {flag}"
@@ -360,6 +367,19 @@ def _validate_linux_ffmpeg_runtime(app_root: Path, lock: dict) -> None:
         table = result.stdout + result.stderr
         for name in names:
             _require_provenance(f" {name}" in table, f"packaged FFmpeg is missing {kind} {name}")
+        if command == "-encoders":
+            for name in lock["output"]["forbidden_encoders"]:
+                _require_provenance(
+                    f" {name}" not in table, f"packaged FFmpeg must not include encoder {name}"
+                )
+    hwaccels = subprocess.run(
+        [str(ffmpeg), "-hide_banner", "-hwaccels"], capture_output=True, text=True, check=True
+    )
+    for name in lock["output"]["required_hwaccels"]:
+        _require_provenance(
+            name in (hwaccels.stdout + hwaccels.stderr).splitlines(),
+            f"packaged FFmpeg is missing hardware acceleration {name}",
+        )
     ldd = subprocess.run(["ldd", str(ffmpeg)], capture_output=True, text=True, check=True)
     _require_provenance(
         lock["output"]["runtime_dependency"] in ldd.stdout,

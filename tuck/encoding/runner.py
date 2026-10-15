@@ -34,7 +34,7 @@ from ..models import (
     EncodePlan,
 )
 from ..models.cutting import CutPlan
-from ..models.encoding_policy import NVENC_ENCODERS, validate_encoder_supported_on_desktop
+from ..models.encoding_policy import validate_encoder_supported_on_desktop
 from ..models.progress import EncodeProgress, EncodeStage
 from ..output_paths import copy_file_dates
 from ..output_transaction import OutputTransaction
@@ -45,12 +45,13 @@ from .capabilities import (
     hardware_failure_kind,
     is_hardware_encoder,
 )
-from .command import build_base_cmd, can_cuda_decode_blend
-from .failures import describe_ffmpeg_failure, is_cuda_decode_failure, is_progress_line
+from .command import build_base_cmd, can_hardware_decode_blend
+from .failures import describe_ffmpeg_failure, is_hardware_decode_failure, is_progress_line
 
 # load native array libraries before sidecar workers block on Windows stdio
-from .frame_blending import TmixBlend, prepare_blended_video, tmix_blend
+from .frame_blending import TmixBlend, prepare_blended_video, tmix_blend, weighted_yuv_blend
 from .frame_stream import FrameStream, can_stream_blend
+from .hardware_decoding import HardwareDecode, choose_hardware_decode
 from .progress import ProgressTracker
 from .target_size import (
     DEFAULT_MAX_RETRIES,
@@ -157,7 +158,7 @@ class FFmpegEngine:
         self._encoder_fallback: str = ""
         self._prepared_video: Path | None = None
         self._tmix: TmixBlend | None = None
-        self._cuda_decode = False
+        self._hardware_decode: HardwareDecode | None = None
         self._stream_plan: EncodePlan | None = None
         self._cut_runner = CutRunner()
         self._low_priority = False
@@ -267,7 +268,7 @@ class FFmpegEngine:
     ) -> Path:
         self._resolved_encoder = ""
         self._encoder_fallback = ""
-        self._cuda_decode = False
+        self._hardware_decode = None
         self._stream_plan = None
         if isinstance(plan, CutPlan):
             self._last_stderr = ""
@@ -310,9 +311,15 @@ class FFmpegEngine:
                 if self._cancel_event.is_set():
                     raise EncodeCancelled("Encoding cancelled by user")
                 # FFmpeg blends simple cases itself; the rest are blended frame by frame first
-                self._tmix = tmix_blend(plan) if plan.frame_blending.enabled else None
-                self._cuda_decode = can_cuda_decode_blend(plan, self._tmix) and bool(
-                    get_available_encoders() & NVENC_ENCODERS
+                self._tmix = (
+                    weighted_yuv_blend(plan) or tmix_blend(plan)
+                    if plan.frame_blending.enabled
+                    else None
+                )
+                self._hardware_decode = (
+                    choose_hardware_decode(ffmpeg_path, get_available_encoders())
+                    if can_hardware_decode_blend(plan, self._tmix)
+                    else None
                 )
                 if self._tmix is None and can_stream_blend(plan):
                     self._stream_plan = plan
@@ -386,7 +393,7 @@ class FFmpegEngine:
         finally:
             self._prepared_video = None
             self._tmix = None
-            self._cuda_decode = False
+            self._hardware_decode = None
             self._stream_plan = None
 
     def _run_one_attempt(
@@ -415,12 +422,17 @@ class FFmpegEngine:
                 max_retries=max_retries,
             )
         except EncodeError as exc:
-            if not self._cuda_decode or not is_cuda_decode_failure(exc.stderr):
+            if self._hardware_decode is None or not is_hardware_decode_failure(
+                exc.stderr, self._hardware_decode.backend
+            ):
                 raise
             if self._cancel_event.is_set():
                 raise EncodeCancelled("Encoding cancelled by user") from exc
-            self._cuda_decode = False
-            logger.warning("CUDA decoding failed; retrying with software decoding: %s", exc.stderr)
+            backend = self._hardware_decode.backend
+            self._hardware_decode = None
+            logger.warning(
+                "%s decoding failed; retrying with software decoding: %s", backend, exc.stderr
+            )
             self._cleanup_output(output)
             _emit(
                 on_progress,
@@ -752,7 +764,7 @@ class FFmpegEngine:
                     include_audio=False,
                     prepared_video=self._prepared_video,
                     blend=self._tmix,
-                    cuda_decode=self._cuda_decode,
+                    hardware_decode=self._hardware_decode,
                 ),
                 "-pass",
                 "1",
@@ -784,7 +796,7 @@ class FFmpegEngine:
                     source,
                     prepared_video=self._prepared_video,
                     blend=self._tmix,
-                    cuda_decode=self._cuda_decode,
+                    hardware_decode=self._hardware_decode,
                 ),
                 "-pass",
                 "2",
@@ -830,7 +842,7 @@ class FFmpegEngine:
                 source,
                 prepared_video=self._prepared_video,
                 blend=self._tmix,
-                cuda_decode=self._cuda_decode,
+                hardware_decode=self._hardware_decode,
                 streamed_video=self._stream_plan is not None,
             ),
             str(output),

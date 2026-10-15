@@ -9,10 +9,13 @@ The package also includes the components below.
 They statically link FFmpeg 7.1.1, x264, x265 3.6, dav1d 1.5.1, zimg 3.0.6
 and zlib 1.3.1, and use the NVIDIA (12.2.72.0) and AMD AMF (1.4.35) headers for
 hardware encoding through your GPU drivers.
+The AV1 hardware decoder uses the DXVA header from MinGW-w64 12.0.0.
 
 FFmpeg, x264 and x265 are GPL-2.0-or-later. dav1d is BSD-2-Clause, zimg is
 WTFPL, zlib uses the zlib license, and the GPU headers are MIT. GPL parts are
 enabled, nonfree parts are not. The license files are in `ffmpeg/`.
+The DXVA header is LGPL-2.1-or-later; its license notice is in
+`ffmpeg/mingw-dxva-LICENSE.txt` and its source is in the source archive below.
 
 The exact sources, mixing patch, lock file and build recipe ship with every release as
 `Tuck-FFmpeg-Windows-Sources.tar.xz`. `ffmpeg/build-manifest.json` records its

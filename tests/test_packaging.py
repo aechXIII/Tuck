@@ -219,14 +219,29 @@ def test_linux_ffmpeg_lock_completely_pins_the_source_build() -> None:
     assert hashlib.sha256(recipe_path.read_bytes()).hexdigest() == recipe["sha256"]
 
     sources = {source["name"]: source for source in lock["sources"]}
-    assert set(sources) == {"ffmpeg", "x264", "x265", "zimg", "dav1d"}
+    assert set(sources) == {
+        "ffmpeg",
+        "x264",
+        "x265",
+        "zimg",
+        "dav1d",
+        "nv-codec-headers",
+        "libva",
+        "libdrm",
+    }
     for name, source in sources.items():
         assert source["url"].startswith("https://")
         assert len(source["sha256"]) == 64
         assert source["size_bytes"] > 0
         assert source["archive_root"]
         assert source["license"] == {
-            "spdx": {"zimg": "WTFPL", "dav1d": "BSD-2-Clause"}.get(name, "GPL-2.0-or-later"),
+            "spdx": {
+                "zimg": "WTFPL",
+                "dav1d": "BSD-2-Clause",
+                "nv-codec-headers": "MIT",
+                "libva": "MIT",
+                "libdrm": "MIT",
+            }.get(name, "GPL-2.0-or-later"),
             "text_path": source["license"]["text_path"],
         }
     for name in ("x265", "zimg"):
@@ -245,9 +260,11 @@ def test_linux_ffmpeg_lock_completely_pins_the_source_build() -> None:
         "libx265",
         "libzimg",
         "libdav1d",
+        "libva",
+        "libdrm",
     ]
     # ffmpeg must start on systems without screen-capture libraries
-    assert output["unused_runtime_dependencies"] == ["libdrm", "libxcb"]
+    assert output["unused_runtime_dependencies"] == ["libxcb"]
     assert {"--disable-libdrm", "--disable-libxcb"} <= set(
         output["license"]["configure_flags_required"]
     )
@@ -265,6 +282,93 @@ def test_both_ffmpeg_builds_decode_av1_in_software() -> None:
         recipe = (_REPO / lock["recipe"]["path"]).read_text(encoding="utf-8")
         assert dav1d["archive_root"] in recipe
         assert "--enable-libdav1d" in recipe
+
+
+def test_linux_gpu_decoding_has_pinned_headers_and_keeps_cpu_encoding():
+    windows = json.loads(_LOCK.read_text(encoding="utf-8"))
+    linux = json.loads(_LINUX_LOCK.read_text(encoding="utf-8"))
+    headers = next((item for item in linux["sources"] if item["name"] == "nv-codec-headers"), None)
+    assert headers == next(
+        item for item in windows["sources"] if item["name"] == "nv-codec-headers"
+    )
+    flags = set(linux["output"]["license"]["configure_flags_required"])
+    assert {"--enable-ffnvcodec", "--enable-nvdec", "--disable-nvenc"} <= flags
+    assert "hwdownload" in linux["output"]["required_filters"]
+
+
+def test_linux_vaapi_uses_locked_static_libraries() -> None:
+    build_linux = _build_linux_module()
+    lock = build_linux.load_lock()
+    sources = {source["name"]: source for source in lock["sources"]}
+
+    assert sources["libva"]["version"] == "2.24.1"
+    assert sources["libva"]["license"]["spdx"] == "MIT"
+    assert sources["libdrm"]["version"] == "2.4.124"
+    assert sources["libdrm"]["license"]["spdx"] == "MIT"
+    assert "--enable-vaapi" in lock["output"]["license"]["configure_flags_required"]
+    assert set(lock["output"]["required_hwaccels"]) == {"cuda", "vaapi"}
+    assert {"libva", "libdrm"} <= set(lock["output"]["forbidden_runtime_dependencies"])
+
+
+def test_linux_vaapi_searches_system_driver_paths_across_distributions() -> None:
+    recipe = (_REPO / "packaging/build-ffmpeg-linux.sh").read_text(encoding="utf-8")
+
+    assert "-Ddriverdir=/usr/lib/x86_64-linux-gnu/dri:/usr/lib/dri:/usr/lib64/dri" in recipe
+
+
+@pytest.mark.parametrize(
+    ("hardware", "forbidden_encoder"),
+    [(None, None), ("cuda", None), ("vaapi", None), (None, "h264_vaapi"), (None, "h264_nvenc")],
+)
+@pytest.mark.parametrize("validator", ["build", "package"])
+def test_linux_runtime_validation_requires_gpu_decode_and_cpu_encoding(
+    tmp_path: Path, monkeypatch, hardware: str | None, forbidden_encoder: str | None, validator: str
+) -> None:
+    build_linux = _build_linux_module()
+    lock = build_linux.load_lock()
+    output = lock["output"]
+    output["required_hwaccels"] = ["cuda", "vaapi"]
+    flags = [
+        f"--disable-encoder='{flag.removeprefix('--disable-encoder=')}'"
+        if flag.startswith("--disable-encoder=")
+        else flag
+        for flag in output["license"]["configure_flags_required"]
+    ]
+    responses = {
+        "-buildconf": "\n".join(flags),
+        "-encoders": "\n".join(f" {name}" for name in output["required_encoders"]),
+        "-decoders": "\n".join(f" {name}" for name in output["required_decoders"]),
+        "-filters": "\n".join(f" {name}" for name in output["required_filters"]),
+        "-hwaccels": "Hardware acceleration methods:\n"
+        + "\n".join(name for name in ("cuda", "vaapi") if name != hardware),
+    }
+    if forbidden_encoder:
+        responses["-encoders"] += f"\n {forbidden_encoder}"
+    responses[str(tmp_path / "ffmpeg")] = "libc.so.6"
+    responses[str(tmp_path / "ffmpeg" / "ffmpeg")] = "libc.so.6"
+    monkeypatch.setattr(
+        build_linux.subprocess,
+        "run",
+        lambda args, **_kwargs: subprocess.CompletedProcess(args, 0, responses[args[-1]], ""),
+    )
+
+    if validator == "build":
+        validate = build_linux.validate_ffmpeg_runtime
+        error = build_linux.BuildError
+        args = (lock, tmp_path)
+    else:
+        verify_package = _verify_package_module()
+        validate = verify_package._validate_linux_ffmpeg_runtime
+        error = verify_package.VerifyError
+        args = (tmp_path, lock)
+    if hardware:
+        with pytest.raises(error, match=f"missing hardware acceleration {hardware}"):
+            validate(*args)
+    elif forbidden_encoder:
+        with pytest.raises(error, match=f"must not include encoder {forbidden_encoder}"):
+            validate(*args)
+    else:
+        validate(*args)
 
 
 def test_both_ffmpeg_recipes_pin_the_same_mixing_code() -> None:
@@ -309,17 +413,18 @@ def test_ffmpeg_recipes_build_the_locked_zimg() -> None:
 
 
 @pytest.mark.parametrize("license_id", ["GPL-2.0-or-later", None])
-def test_linux_lock_requires_zimg_under_its_own_license(
-    tmp_path: Path, monkeypatch, license_id: str | None
+@pytest.mark.parametrize("source_name", ["zimg", "libva", "libdrm"])
+def test_linux_lock_requires_each_library_under_its_own_license(
+    tmp_path: Path, monkeypatch, license_id: str | None, source_name: str
 ) -> None:
     build_linux = _build_linux_module()
     verify_package = _verify_package_module()
     lock = json.loads(_LINUX_LOCK.read_text(encoding="utf-8"))
-    zimg = next(source for source in lock["sources"] if source["name"] == "zimg")
+    library = next(source for source in lock["sources"] if source["name"] == source_name)
     if license_id is None:
-        lock["sources"].remove(zimg)
+        lock["sources"].remove(library)
     else:
-        zimg["license"]["spdx"] = license_id
+        library["license"]["spdx"] = license_id
     lock_path = tmp_path / "ffmpeg-linux-sources.lock.json"
     lock_path.write_text(json.dumps(lock), encoding="utf-8")
     monkeypatch.setattr(build_linux, "LOCK_PATH", lock_path)

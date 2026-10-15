@@ -18,6 +18,12 @@ from tuck.models import ENCODER_AUTO_COMPRESSION, EncodePlan, FrameBlending, Vid
 from tuck.models.encoding_policy import RCM_CRF, WORKFLOW_UPSCALE
 
 
+@pytest.fixture(autouse=True)
+def keep_rgb_stream_under_test(monkeypatch):
+    # these cases exercise the RGB producer's buffers, errors and lifecycle
+    monkeypatch.setattr("tuck.encoding.runner.weighted_yuv_blend", lambda _: None)
+
+
 def blend_plan(tmp_path: Path) -> EncodePlan:
     source = tmp_path / "source.mkv"
     return EncodePlan(

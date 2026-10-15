@@ -98,34 +98,69 @@ def is_progress_line(line: str) -> bool:
     return bool(_PROGRESS_LINE_RE.match(line.strip()))
 
 
-def is_cuda_decode_failure(stderr: str) -> bool:
+def is_hardware_decode_failure(stderr: str, backend: str = "cuda") -> bool:
     text = stderr.lower()
     # hardware setup failures can also print the generic "error while decoding" line
+    access_markers = _ACCESS_MARKERS
+    if "hardware device setup failed for decoder: operation not permitted" in text:
+        # FFmpeg repeats this device error as an output-open error before touching the file
+        access_markers = tuple(
+            marker for marker in access_markers if marker != "operation not permitted"
+        )
+    # a device-node permission failure happens before FFmpeg opens any media files
+    device_init_failed = "for option 'init_hw_device'" in text
     if any(
         marker in text
-        for marker in _DISK_FULL_MARKERS + _ACCESS_MARKERS + _INPUT_MARKERS
+        for marker in _DISK_FULL_MARKERS
+        + (() if device_init_failed else access_markers)
+        + _INPUT_MARKERS
         if marker != "error while decoding"
     ):
         return False
+    if device_init_failed:
+        return True
     for line in text.splitlines():
-        if "unrecognized hwaccel: cuda" in line or "no such filter: 'hwdownload'" in line:
+        if "unknown decoder 'av1'" in line:
             return True
-        if "failed setup for format cuda" in line:
+        if f"unrecognized hwaccel: {backend}" in line or "no such filter: 'hwdownload'" in line:
             return True
-        if "no device available for decoder" in line and "cuda" in line:
+        if f"failed setup for format {'d3d11' if backend == 'd3d11va' else backend}" in line:
+            return True
+        if "no device available for decoder" in line and backend in line:
             return True
         if "[av1 @" in line and any(
             marker in line
             for marker in (
                 "hwaccel",
-                "cuda",
+                "hw accel start frame fail",
+                "hw accel decode slice fail",
+                "hw accel end frame fail",
+                backend,
                 "hardware is lacking required capabilities",
+                "doesn't support hardware accelerated av1 decoding",
                 "no decoder surfaces left",
+                "no support for codec",
+                "no decoder device for codec",
+                "failed to create decode",
+                "failed to sync surface",
+                "failed to end picture decode",
             )
         ):
             return True
         if "[avhwdevicecontext @" in line and any(
-            marker in line for marker in ("cannot load nvcuda", "cuda_error", "cuda devices")
+            marker in line
+            for marker in (
+                "cannot load nvcuda",
+                "cannot load libcuda",
+                "cuda_error",
+                "cuda devices",
+                "no va display found",
+                "failed to initialise vaapi",
+                "failed to initialize vaapi",
+                "failed to create direct3d device",
+                "failed to find d3d11va adapter",
+                "failed to load d3d11 library",
+            )
         ):
             return True
         if "[parsed_hwdownload_" in line and any(
@@ -134,6 +169,7 @@ def is_cuda_decode_failure(stderr: str) -> bool:
                 "failed to download frame",
                 "the input must have a hardware frame reference",
                 "input frame is not the in the configured hwframe context",
+                "invalid output format",
             )
         ):
             return True

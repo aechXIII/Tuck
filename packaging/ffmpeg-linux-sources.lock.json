@@ -11,9 +11,9 @@
   },
   "recipe": {
     "path": "packaging/build-ffmpeg-linux.sh",
-    "sha256": "a771cfa441789b4539b6a4d94e9c1ffbe5329c2f56c11f899caf4347bbeac04c",
-    "size_bytes": 2956,
-    "description": "Build x264, x265, zimg, and dav1d as static libraries, then link them into dynamically libc-linked FFmpeg and ffprobe.",
+    "sha256": "202e8e7e28acff3c15be3f69dc37d558647f12618e0a8961c180b4a18112e38c",
+    "size_bytes": 4561,
+    "description": "Build codec libraries, libva, and libdrm statically, then link them into dynamically libc-linked FFmpeg and ffprobe with optional NVIDIA and VAAPI hardware decoding.",
     "inputs": [
       {
         "path": "packaging/ffmpeg-mix-integer.h",
@@ -94,6 +94,47 @@
         "spdx": "BSD-2-Clause",
         "text_path": "COPYING"
       }
+    },
+    {
+      "name": "nv-codec-headers",
+      "version": "12.2.72.0",
+      "revision": "c69278340ab1d5559c7d7bf0edf615dc33ddbba7",
+      "filename": "nv-codec-headers-c69278340ab1d5559c7d7bf0edf615dc33ddbba7.tar.gz",
+      "url": "https://codeload.github.com/FFmpeg/nv-codec-headers/tar.gz/c69278340ab1d5559c7d7bf0edf615dc33ddbba7",
+      "archive_root": "nv-codec-headers-c69278340ab1d5559c7d7bf0edf615dc33ddbba7",
+      "size_bytes": 80959,
+      "sha256": "0d06ccc7410671e8ea075f29abb7c1f6c793574d8c768dc1bc96b142797b6628",
+      "license": {
+        "spdx": "MIT",
+        "text_path": "include/ffnvcodec/nvEncodeAPI.h"
+      }
+    },
+    {
+      "name": "libva",
+      "version": "2.24.1",
+      "filename": "libva-2.24.1.tar.gz",
+      "url": "https://codeload.github.com/intel/libva/tar.gz/refs/tags/2.24.1",
+      "size_bytes": 306278,
+      "sha256": "0b4a3649ee8d683b9cce2ef094df4fb039d276c0cef7e49337c43d3b297b9f42",
+      "archive_root": "libva-2.24.1",
+      "license": {
+        "spdx": "MIT",
+        "text_path": "COPYING"
+      },
+      "revision": "710eb465c6277ee2cac3e6948767b01eebe7e77a"
+    },
+    {
+      "name": "libdrm",
+      "version": "2.4.124",
+      "filename": "libdrm-2.4.124.tar.xz",
+      "url": "https://dri.freedesktop.org/libdrm/libdrm-2.4.124.tar.xz",
+      "size_bytes": 481244,
+      "sha256": "ac36293f61ca4aafaf4b16a2a7afff312aa4f5c37c9fbd797de9e3c0863ca379",
+      "archive_root": "libdrm-2.4.124",
+      "license": {
+        "spdx": "MIT",
+        "text_path": "xf86drm.c"
+      }
     }
   ],
   "output": {
@@ -108,7 +149,12 @@
         "--disable-libdrm",
         "--disable-libxcb",
         "--enable-static",
-        "--disable-shared"
+        "--disable-shared",
+        "--enable-ffnvcodec",
+        "--enable-nvdec",
+        "--disable-nvenc",
+        "--enable-vaapi",
+        "--disable-encoder=av1_vaapi,h264_vaapi,hevc_vaapi,mjpeg_vaapi,mpeg2_vaapi,vp8_vaapi,vp9_vaapi"
       ],
       "configure_flags_forbidden": [
         "--enable-nonfree",
@@ -124,7 +170,8 @@
       "libx265"
     ],
     "required_decoders": [
-      "libdav1d"
+      "libdav1d",
+      "av1"
     ],
     "required_filters": [
       "amix",
@@ -132,18 +179,45 @@
       "crop",
       "scale",
       "zscale",
-      "tonemap"
+      "tonemap",
+      "mix",
+      "select",
+      "split",
+      "fps",
+      "hwdownload",
+      "format",
+      "trim",
+      "setpts",
+      "settb",
+      "setparams"
     ],
     "runtime_dependency": "libc.so.6",
     "forbidden_runtime_dependencies": [
       "libx264",
       "libx265",
       "libzimg",
-      "libdav1d"
+      "libdav1d",
+      "libva",
+      "libdrm"
     ],
     "unused_runtime_dependencies": [
-      "libdrm",
       "libxcb"
+    ],
+    "required_hwaccels": [
+      "cuda",
+      "vaapi"
+    ],
+    "forbidden_encoders": [
+      "av1_nvenc",
+      "h264_nvenc",
+      "hevc_nvenc",
+      "av1_vaapi",
+      "h264_vaapi",
+      "hevc_vaapi",
+      "mjpeg_vaapi",
+      "mpeg2_vaapi",
+      "vp8_vaapi",
+      "vp9_vaapi"
     ]
   }
 }
