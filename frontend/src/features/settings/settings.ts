@@ -80,7 +80,7 @@ export interface SettingsDeps {
   session: EditorSession;
   byId: <T extends HTMLElement = HTMLElement>(id: string) => T | null;
   getBackendClient: () => BackendClient;
-  reloadEditorSettings: () => Promise<void>;
+  reloadEditorSettings: (preserveExportSettings?: boolean) => Promise<void>;
   setAvailableEncoders: (encoders: string[]) => void;
   copyDiagnostics: () => void | Promise<void>;
   checkForUpdates: () => void | Promise<void>;
@@ -923,7 +923,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         snapshot = settingsSnapshot(patch);
         markSettingsDirty();
       }
-      await deps.reloadEditorSettings();
+      await deps.reloadEditorSettings(true);
       showSaved();
       return true;
     }

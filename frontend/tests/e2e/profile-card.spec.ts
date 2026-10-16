@@ -3,9 +3,9 @@ import { healthyBackendFixture, installFakeBackend } from "../fixtures/fake-back
 
 const MB = 1024 * 1024;
 
-async function open(page: Page, video = { width: 1920, height: 1080, fps: 30 }, profileCount = 2, profileName = "Discord", saveError = "", saveInUpscale = false) {
+async function open(page: Page, video = { width: 1920, height: 1080, fps: 30 }, profileCount = 2, profileName = "Discord", saveError = "", saveInUpscale = false, customResolution = false, preferencesInUpscale = false) {
   const fixture = healthyBackendFixture();
-  const base = { workflow: "compression", resolution_mode: "source", fps_mode: "source", video_encoder: "libx264", preset: "medium", audio_bitrate: 128000 };
+  const base = { workflow: "compression", resolution_mode: customResolution ? "custom" : "source", ...(customResolution ? { custom_width: 1920, custom_height: 1080 } : {}), fps_mode: "source", video_encoder: "libx264", preset: "medium", audio_bitrate: 128000 };
   fixture.startup.files = ["C:\\videos\\Morning ride.mp4"];
   fixture.responses.probeFile = { ok: true, data: { duration: 12, ...video, has_audio: true, file_size: 15_000_000 } };
   fixture.responses.createPlan = { ok: true, data: { video_bitrate_kbps: 1200, segment_count: 1, selected_duration: 12 } };
@@ -31,6 +31,12 @@ async function open(page: Page, video = { width: 1920, height: 1080, fps: 30 }, 
         ? { ...profile, custom_width: 2560, custom_height: 1440 } : profile),
     }] };
   }
+  if (preferencesInUpscale) {
+    fixture.responses.getSettings = {
+      ...settings, last_task: "upscale", last_upscale_profile_id: "upscale-4k",
+    };
+    fixture.responseSequences = { getSettings: [settings] };
+  }
   if (saveError) fixture.responses.updateProfile = { ok: false, error: saveError };
   await installFakeBackend(page, fixture);
   await page.goto("/");
@@ -40,6 +46,95 @@ async function open(page: Page, video = { width: 1920, height: 1080, fps: 30 }, 
 async function setSize(page: Page, mb: string) {
   await page.locator("#sz-badge").fill(mb);
   await page.locator("#sz-badge").dispatchEvent("change");
+}
+
+test("saving General preferences keeps incomplete custom export settings", async ({ page }) => {
+  await open(page);
+  await page.locator("#export-res-select-trigger").click();
+  await page.locator("#export-res-select-popup").getByRole("option", { name: "Custom\u2026", exact: true }).click();
+  await page.locator("#res-w").fill("1");
+  await page.locator("#res-h").fill("720");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: "General", exact: true }).click();
+  await page.getByRole("radiogroup", { name: "Time format", exact: true })
+    .getByRole("radio", { name: "1902 f", exact: true }).check();
+  await expect(page.locator("#settings-status")).toHaveText("Saved");
+  await page.getByRole("button", { name: "Close settings", exact: true }).click();
+  await expect(page.locator("#res-w")).toHaveValue("1");
+  await expect(page.locator("#res-h")).toHaveValue("720");
+  await expect(page.locator("#use-source-res")).not.toBeChecked();
+  await expect(page.locator("#prof-changed")).toBeVisible();
+  await expect(page.locator("#btn-one")).toBeDisabled();
+  await page.getByRole("button", { name: "Discard", exact: true }).click();
+  await expect(page.locator("#use-source-res")).toBeChecked();
+  await expect(page.locator("#btn-one")).toBeEnabled();
+});
+
+for (const width of [1240, 960]) {
+  for (const upscale of [false, true]) {
+    test(`saving preferences preserves unsaved ${upscale ? "Upscale" : "Compress"} export settings at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: width === 960 ? 640 : 800 });
+      await open(page, { width: 2560, height: 1440, fps: 60 }, 2, "Discord", "", false, false, upscale);
+      if (upscale) await page.locator("#wf-u").click();
+      if (width === 960) await page.getByRole("button", { name: "Inspector", exact: true }).click();
+      if (!upscale) await setSize(page, "25");
+      await page.locator("#export-res-select-trigger").click();
+      await page.locator("#export-res-select-popup").getByRole("option", { name: "1280 \u00d7 720", exact: true }).click();
+      const dirty = page.locator("#prof-changed");
+      await expect(dirty).toBeVisible();
+      await page.getByRole("button", { name: "Settings", exact: true }).click();
+      await page.getByRole("button", { name: "Appearance", exact: true }).click();
+      await page.getByRole("radiogroup", { name: "Layout density", exact: true })
+        .getByRole("radio", { name: "Compact", exact: true }).check();
+      await expect(page.locator("#settings-status")).toHaveText("Saved");
+      await page.getByRole("button", { name: "Close settings", exact: true }).click();
+      await expect(page.locator("#res-w")).toHaveValue("1280");
+      await expect(page.locator("#res-h")).toHaveValue("720");
+      await expect(page.locator("#use-source-res")).not.toBeChecked();
+      if (!upscale) await expect(page.locator("#sz-badge")).toHaveValue("25");
+      await expect(dirty).toBeVisible();
+      await expect.poll(() => page.evaluate(() => window.__tuckFakeBackendCalls
+        ?.filter(call => call.method === "createPlan").at(-1)?.args[0]))
+        .toMatchObject({ resolution_mode: "custom", custom_width: 1280, custom_height: 720 });
+      expect(await page.evaluate(() => window.__tuckFakeBackendCalls
+        ?.filter(call => call.method === "updateProfile"))).toHaveLength(0);
+      await page.getByRole("button", { name: "Discard", exact: true }).click();
+      await expect(dirty).toBeHidden();
+      await expect(page.locator("#res-w")).toHaveValue(upscale ? "3840" : "2560");
+      if (!upscale) await expect(page.locator("#sz-badge")).toHaveValue("10");
+    });
+  }
+}
+
+for (const width of [1240, 960]) {
+  for (const source of [true, false]) {
+    test(`Appearance changes preserve the ${source ? "source" : "custom"} resolution summary at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: width === 960 ? 640 : 800 });
+      await open(page, { width: 2560, height: 1440, fps: 60 }, 2, "Discord", "", false, !source);
+      if (width === 960) await page.getByRole("button", { name: "Inspector", exact: true }).click();
+      const resolution = source ? "2560×1440" : "1920×1080";
+      await expect(page.locator("#export-summary-detail")).toContainText(resolution);
+      await page.getByRole("button", { name: "Settings", exact: true }).click();
+      await page.getByRole("button", { name: "Appearance", exact: true }).click();
+      await page.getByRole("radiogroup", { name: "Layout density", exact: true })
+        .getByRole("radio", { name: "Compact", exact: true }).check();
+      await expect(page.locator("#settings-status")).toHaveText("Saved");
+      await page.getByRole("button", { name: "Close settings", exact: true }).click();
+      await expect(page.locator("#use-source-res")).toBeChecked({ checked: source });
+      await expect(page.locator("#res-w")).toHaveValue(source ? "2560" : "1920");
+      await expect(page.locator("#res-h")).toHaveValue(source ? "1440" : "1080");
+      await expect(page.locator("#export-summary-detail")).toContainText(resolution);
+      const request = await page.evaluate(() => window.__tuckFakeBackendCalls
+        ?.filter(call => call.method === "createPlan").at(-1)?.args[0]);
+      expect(request).toMatchObject({ resolution_mode: source ? "source" : "custom" });
+      if (source) {
+        expect(request).not.toHaveProperty("custom_width");
+        expect(request).not.toHaveProperty("custom_height");
+      } else {
+        expect(request).toMatchObject({ custom_width: 1920, custom_height: 1080 });
+      }
+    });
+  }
 }
 
 for (const width of [1240, 960]) {

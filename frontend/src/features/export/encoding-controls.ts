@@ -80,7 +80,7 @@ export interface EncodingControlsApi {
   toggleProfileMenu: () => void;
   // switches profile; unsaved changes to the old one can be brought back from the note
   chooseProfile: (profileId: string) => void;
-  loadSettings: () => Promise<void>;
+  loadSettings: (preserveExportSettings?: boolean) => Promise<void>;
   // picks the task on launch, or when a Send To shortcut asks for one while Tuck is open
   openTask: (launch: unknown, atStart: boolean) => void;
   reqPreview: () => Promise<void>;
@@ -487,7 +487,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
   });
   input("blend-fps-input").addEventListener("input", () => onFpsSlider(input("blend-fps-input").value));
 
-  async function loadSettings(): Promise<void> {
+  async function loadSettings(preserveExportSettings = false): Promise<void> {
     platformCapabilities = await fetchPlatformCapabilities();
     const s = await legacyBackendResult(client().getSettings());
     void lut.refreshLibrary();
@@ -512,7 +512,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     const task = taskIndex(launchTask({start:"last", last:s.last_task, hidden}));
     if (task === 2 && wf !== 2) refilter();
     if (task !== wf) setWf(task);
-    else refilter();
+    else refilter(preserveExportSettings);
     applyTaskVisibility();
     applySectionVisibility();
   }
@@ -547,7 +547,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     }
   }
 
-  function refilter(): void {
+  function refilter(preserveExportSettings = false): void {
     if (wf === 2) { cutting.refresh(); return; }
     const up = wf === 1;
     const targetWf = up ? "upscale" : "compression";
@@ -563,6 +563,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
       lastId ?? "",
     );
     const sel = select("prof-sel");
+    const previousId = sel.value;
     sel.replaceChildren();
     if (!matching.length) {
       renderProfileCard();
@@ -578,7 +579,9 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
       if (lastId && profile.profile_id === lastId) selectedIndex = index;
     });
     sel.selectedIndex = Math.max(selectedIndex, 0);
-    applyProfile();
+    // saving preferences must not replace the current export edits with the saved profile
+    if (preserveExportSettings && sel.value === previousId) updateDirty();
+    else applyProfile();
     void reqPreview();
   }
 
@@ -663,6 +666,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     input("use-source-res").checked = wf === 0 && p.resolution_mode !== "custom";
     input("res-w").value = String(num(p.custom_width) || num(p.max_width) || 1920);
     input("res-h").value = String(num(p.custom_height) || num(p.max_height) || 1080);
+    syncResolutionToClip();
     onResMode();
     const useSourceFps = p.fps_mode !== "custom";
     input("use-source-fps").checked = useSourceFps;

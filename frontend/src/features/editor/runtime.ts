@@ -469,8 +469,8 @@ export function installEditorRuntime(
     byId,
     getBackendClient,
     syncSelects: () => selects.sync(windowRef.document),
-    reloadEditorSettings: async () => {
-      await encoding.loadSettings();
+    reloadEditorSettings: async (preserveExportSettings = false) => {
+      await encoding.loadSettings(preserveExportSettings);
       panels.applyVisibility(hiddenParts(session.appSettings.hidden_ui));
       applyPreferences();
       sessionFiles.sync(library.orderedClipKeys());
