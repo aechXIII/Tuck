@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import os
 import shutil
+import sys
 from pathlib import Path
 
 from .desktop_platform import is_linux_desktop
-from .packaged import bundled_media_tool
+from .packaged import bundled_media_tool, is_frozen
 from .settings import get_settings_manager
 
 _WINDOWS_LOCATIONS = {
@@ -19,6 +21,18 @@ _WINDOWS_LOCATIONS = {
         Path(r"C:\Program Files (x86)\ffmpeg\bin\ffprobe.exe"),
     ),
 }
+
+
+def media_tool_environment() -> dict[str, str]:
+    environment = dict(os.environ)
+    if sys.platform == "linux" and is_frozen():
+        # host graphics drivers must not load PyInstaller's bundled Python libraries
+        original = environment.get("LD_LIBRARY_PATH_ORIG")
+        if original is None:
+            environment.pop("LD_LIBRARY_PATH", None)
+        else:
+            environment["LD_LIBRARY_PATH"] = original
+    return environment
 
 
 def _find_tool(name: str, setting_name: str) -> str | None:

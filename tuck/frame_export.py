@@ -15,7 +15,7 @@ from .bridge_contract import JsonValue
 from .bridge_validation import validate_path
 from .encoding.filters import build_plan_video_filters, join_video_filters
 from .lut import snapshot_lut
-from .media_tools import find_ffmpeg
+from .media_tools import find_ffmpeg, media_tool_environment
 from .models import EncodePlan, TransformGeometry, VideoTransform
 from .models.lut import LutSettings
 from .models.transforms import oriented_dimensions
@@ -118,6 +118,7 @@ def _run_ffmpeg(command: list[str], work: RequestWork) -> None:
     with tempfile.TemporaryFile() as errors:
         process = subprocess.Popen(
             command,
+            env=media_tool_environment(),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=errors,

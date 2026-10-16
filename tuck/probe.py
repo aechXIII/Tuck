@@ -143,6 +143,7 @@ def _run_ffprobe_json(ffprobe_path: str, source: Path, context: str) -> dict:
     try:
         result = subprocess.run(
             cmd,
+            env=media_tools.media_tool_environment(),
             stdin=subprocess.DEVNULL,
             capture_output=True,
             # ffprobe writes UTF-8 JSON whatever the Windows code page is

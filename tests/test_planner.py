@@ -73,14 +73,14 @@ class TestScaleResolution:
         assert h2 == 1080
 
 
-def test_linux_rejects_saved_hardware_profile_when_planning(monkeypatch) -> None:
-    profile = Profile(name="Hardware", video_encoder="h264_nvenc", two_pass=False)
+def test_linux_rejects_saved_amf_profile_when_planning(monkeypatch) -> None:
+    profile = Profile(name="Hardware", video_encoder="h264_amf", two_pass=False)
     monkeypatch.setenv("TUCK_DESKTOP_PLATFORM", "linux")
 
     with pytest.raises(ValueError, match="not supported on Linux"):
         resolve_plan_options(profile, None)
 
-    assert profile.video_encoder == "h264_nvenc"
+    assert profile.video_encoder == "h264_amf"
 
 
 class TestCropPlanning:
@@ -883,11 +883,19 @@ class TestEncoderRateControlCompatibility:
         with pytest.raises(ValueError, match="not supported for h264_amf"):
             validate_rc_method_for_encoder("crf", "h264_amf")
 
-    def test_all_six_encoders_in_allowlist(self):
-        """All six encoders are in the valid set."""
+    def test_all_eight_encoders_in_allowlist(self):
         from tuck.models.encoding_policy import VALID_VIDEO_ENCODERS
 
-        expected = {"libx264", "libx265", "h264_nvenc", "hevc_nvenc", "h264_amf", "hevc_amf"}
+        expected = {
+            "libx264",
+            "libx265",
+            "h264_nvenc",
+            "hevc_nvenc",
+            "h264_amf",
+            "hevc_amf",
+            "h264_vaapi",
+            "hevc_vaapi",
+        }
         assert expected == VALID_VIDEO_ENCODERS
 
     def test_invalid_encoder_rejected(self):

@@ -40,16 +40,28 @@ AUTO_ENCODERS: frozenset[str] = frozenset(
     {ENCODER_AUTO, ENCODER_AUTO_COMPRESSION, ENCODER_AUTO_FAST}
 )
 VALID_VIDEO_ENCODERS: frozenset[str] = frozenset(
-    {"libx264", "libx265", "h264_nvenc", "hevc_nvenc", "h264_amf", "hevc_amf"}
+    {
+        "libx264",
+        "libx265",
+        "h264_nvenc",
+        "hevc_nvenc",
+        "h264_amf",
+        "hevc_amf",
+        "h264_vaapi",
+        "hevc_vaapi",
+    }
 )
 VALID_VIDEO_ENCODER_CHOICES: frozenset[str] = VALID_VIDEO_ENCODERS | AUTO_ENCODERS
 CPU_ENCODERS: frozenset[str] = frozenset({"libx264", "libx265"})
 NVENC_ENCODERS: frozenset[str] = frozenset({"h264_nvenc", "hevc_nvenc"})
 AMF_ENCODERS: frozenset[str] = frozenset({"h264_amf", "hevc_amf"})
+VAAPI_ENCODERS: frozenset[str] = frozenset({"h264_vaapi", "hevc_vaapi"})
 
 
 def validate_encoder_supported_on_desktop(video_encoder: str) -> None:
-    if is_linux_desktop() and video_encoder in NVENC_ENCODERS | AMF_ENCODERS:
+    if video_encoder in VAAPI_ENCODERS and not is_linux_desktop():
+        raise ValueError(f"Hardware encoder '{video_encoder}' is only supported on Linux.")
+    if is_linux_desktop() and video_encoder in AMF_ENCODERS:
         raise ValueError(
             f"Hardware encoder '{video_encoder}' is not supported on Linux. "
             "Choose libx264, libx265, or Auto."
@@ -102,7 +114,7 @@ def validate_rc_method_for_encoder(rc_method: str, video_encoder: str) -> None:
                 f"rate_control_method '{rc_method}' not supported for {video_encoder}; "
                 "use crf or cbr"
             )
-    elif (video_encoder in NVENC_ENCODERS or video_encoder in AMF_ENCODERS) and rc_method not in (
+    elif video_encoder in NVENC_ENCODERS | AMF_ENCODERS | VAAPI_ENCODERS and rc_method not in (
         RCM_CQ,
         RCM_CQP,
         RCM_CBR,
@@ -151,7 +163,7 @@ def validate_rate_control_matrix(
             raise ValueError("Software Upscale requires CRF or an explicit bitrate method.")
         if (
             not is_auto
-            and video_encoder in NVENC_ENCODERS | AMF_ENCODERS
+            and video_encoder in NVENC_ENCODERS | AMF_ENCODERS | VAAPI_ENCODERS
             and rate_control_method == RCM_CRF
         ):
             raise ValueError(

@@ -108,9 +108,9 @@ PKG_CONFIG_PATH="$prefix/lib/pkgconfig" ./configure \
   --enable-libdav1d \
   --enable-ffnvcodec \
   --enable-nvdec \
-  --disable-nvenc \
+  --enable-nvenc \
   --enable-vaapi \
-  --disable-encoder=av1_vaapi,h264_vaapi,hevc_vaapi,mjpeg_vaapi,mpeg2_vaapi,vp8_vaapi,vp9_vaapi \
+  --disable-encoder=av1_nvenc,av1_vaapi,mjpeg_vaapi,mpeg2_vaapi,vp8_vaapi,vp9_vaapi \
   --disable-libdrm \
   --disable-libxcb \
   --enable-static \

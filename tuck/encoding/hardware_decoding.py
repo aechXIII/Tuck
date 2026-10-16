@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Literal
 
 from ..desktop_platform import is_linux_desktop
+from ..media_tools import media_tool_environment
 from ..models.encoding_policy import NVENC_ENCODERS
 
 logger = logging.getLogger(__name__)
@@ -63,6 +64,7 @@ def device_available(ffmpeg_path: str, decoder: HardwareDecode) -> bool:
                 "null",
                 "-",
             ],
+            env=media_tool_environment(),
             stdin=subprocess.DEVNULL,
             capture_output=True,
             timeout=15,

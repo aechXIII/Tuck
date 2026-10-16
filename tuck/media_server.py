@@ -26,7 +26,7 @@ from av.video.codeccontext import VideoCodecContext
 from av.video.frame import VideoFrame
 
 from .media_filters import UPRIGHT_FILTERS
-from .media_tools import find_ffmpeg, find_ffprobe
+from .media_tools import find_ffmpeg, find_ffprobe, media_tool_environment
 from .probe import first_video_frame
 from .request_work import RequestWork
 from .timeline_frames import TimelineFrames, TimelineSprite
@@ -409,6 +409,7 @@ def _thumbnail_seek_time(file_path: Path) -> str:
         ]
         result = subprocess.run(
             cmd_probe,
+            env=media_tool_environment(),
             stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
@@ -454,6 +455,7 @@ def _run_thumbnail_ffmpeg(
     ]
     result = subprocess.run(
         cmd,
+        env=media_tool_environment(),
         stdin=subprocess.DEVNULL,
         capture_output=True,
         timeout=timeout,
@@ -718,6 +720,7 @@ def _run_audio_preview_ffmpeg(
     ]
     result = subprocess.run(
         command,
+        env=media_tool_environment(),
         stdin=subprocess.DEVNULL,
         capture_output=True,
         timeout=timeout,
@@ -770,6 +773,7 @@ def _run_waveform_ffmpeg(
     ]
     result = subprocess.run(
         command,
+        env=media_tool_environment(),
         stdin=subprocess.DEVNULL,
         capture_output=True,
         timeout=remaining_timeout,
@@ -813,6 +817,7 @@ def _waveform_levels(
     ]
     result = subprocess.run(
         command,
+        env=media_tool_environment(),
         stdin=subprocess.DEVNULL,
         capture_output=True,
         timeout=timeout,

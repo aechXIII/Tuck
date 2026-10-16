@@ -1847,7 +1847,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
   async function hydrateEditor(caps: PlatformCapabilities): Promise<void> {
     editorCapabilities = caps;
     editorSnapshot = "";
-    populateEncoderSelect(select("pe-enc"), encodersForPlatform(session.availEncoders, caps), supportsHardwareEncoders(caps));
+    populateEncoderSelect(select("pe-enc"), encodersForPlatform(session.availEncoders, caps), supportsHardwareEncoders(caps), caps.platform);
     let p: ProfileListEntry | undefined;
     if (settingsProfileId) {
       const profiles = (await legacyBackendResult(client().getProfilesJson())) as unknown as ProfileListEntry[] | { ok: false };

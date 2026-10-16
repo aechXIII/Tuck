@@ -5,7 +5,6 @@ import math
 from dataclasses import replace
 from pathlib import Path
 
-from .desktop_platform import is_linux_desktop
 from .encoding.capabilities import can_tone_map_hdr
 from .encoding.target_size import (
     MAX_AUDIO_BITRATE,
@@ -47,6 +46,7 @@ from .models import (
 from .models.encoding_policy import (
     AMF_ENCODERS,
     NVENC_ENCODERS,
+    VAAPI_ENCODERS,
 )
 from .output_paths import export_directory, resolve_output_collision
 from .planner_options import resolve_plan_options
@@ -363,8 +363,8 @@ def plan(
                 f"Lower the explicit bitrate or choose a larger profile."
             )
     else:
-        hardware = video_encoder in NVENC_ENCODERS | AMF_ENCODERS
-        if video_encoder in (ENCODER_AUTO, ENCODER_AUTO_FAST) and not is_linux_desktop():
+        hardware = video_encoder in NVENC_ENCODERS | AMF_ENCODERS | VAAPI_ENCODERS
+        if video_encoder in (ENCODER_AUTO, ENCODER_AUTO_FAST):
             hardware = True
         ts_plan = calculate_target_size_bitrates(
             target_size,

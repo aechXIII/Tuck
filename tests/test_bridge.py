@@ -995,7 +995,7 @@ class TestBridgePlanRequest:
         req = api._parse_plan_request(raw)
         assert req.video_encoder == "libx265"
 
-    def test_parse_plan_request_rejects_linux_hardware_encoder(self, tmp_path, monkeypatch):
+    def test_parse_plan_request_rejects_linux_amf_encoder(self, tmp_path, monkeypatch):
         import tuck.settings as settings_mod
 
         monkeypatch.setenv("TUCK_DESKTOP_PLATFORM", "linux")
@@ -1006,9 +1006,7 @@ class TestBridgePlanRequest:
         test_file.write_text("dummy")
 
         with pytest.raises(ValueError, match="not supported on Linux"):
-            BridgeAPI()._parse_plan_request(
-                {"source": str(test_file), "video_encoder": "h264_nvenc"}
-            )
+            BridgeAPI()._parse_plan_request({"source": str(test_file), "video_encoder": "h264_amf"})
 
     def test_parse_plan_request_video_encoder_invalid(self, tmp_path, monkeypatch):
         """Invalid video_encoder is rejected."""

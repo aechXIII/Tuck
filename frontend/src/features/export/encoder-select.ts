@@ -22,12 +22,13 @@ export function populateEncoderSelect(
   select: HTMLSelectElement,
   available: readonly string[],
   includeHardwareEncoders = true,
+  platform?: "windows" | "linux",
 ): void {
   let current = select.value || "auto_compression";
-  const ids = encoderIds(available, current, includeHardwareEncoders);
+  const ids = encoderIds(available, current, includeHardwareEncoders, platform);
   select.replaceChildren();
   for (const id of ids) {
-    const unavailable = encoderUnavailable(available, id);
+    const unavailable = encoderUnavailable(available, id, platform);
     select.appendChild(
       option(id, encoderLabel(id) + (unavailable ? " (unavailable)" : ""), unavailable),
     );

@@ -693,4 +693,35 @@ mod tests {
             assert_eq!(envelope["params"]["request"], request);
         }
     }
+
+    #[test]
+    fn hardware_encoding_requests_reach_the_sidecar_unchanged() {
+        for encoder in ["h264_vaapi", "hevc_vaapi", "h264_nvenc", "hevc_nvenc"] {
+            let preset = if encoder.ends_with("_nvenc") {
+                "p5"
+            } else {
+                "balanced"
+            };
+            let request = json!({
+                "source": "clip.mp4",
+                "video_encoder": encoder,
+                "preset": preset,
+                "rate_control_method": "vbr",
+                "target_size_bytes": 10485760,
+                "two_pass": false
+            });
+            for command in [
+                BackendCommand::CreatePlan {
+                    request: request.clone(),
+                },
+                BackendCommand::EnqueueWithOptions {
+                    request: request.clone(),
+                },
+            ] {
+                assert!(reject_unsupported_backend_command(&command, "linux").is_ok());
+                let envelope = command.to_sidecar_request("vaapi-1").unwrap();
+                assert_eq!(envelope["params"]["request"], request);
+            }
+        }
+    }
 }

@@ -101,7 +101,7 @@ test("upscale CRF maps quality value to crf and a cpu tune passes through", () =
   assert.equal(req.tune, "grain");
 });
 
-test("Linux request replaces an imported hardware profile encoder before submission", () => {
+test("degraded platform replaces an imported hardware encoder before submission", () => {
   const req = buildPlanRequest(
     form({ workflow: "upscale", encoder: "h264_nvenc", preset: "p7", rateControl: "CQ" }),
     { source: "s", platformCapabilities: linuxCapabilities },
@@ -145,7 +145,7 @@ test("profile payload keeps CQP when the current profile used CQP", () => {
   assert.equal(data.name, "My profile");
 });
 
-test("Linux profile save replaces an imported hardware encoder", () => {
+test("degraded platform normalizes an imported hardware profile before saving", () => {
   const data = buildProfilePayload(
     form({ workflow: "upscale", encoder: "hevc_nvenc", preset: "p7", rateControl: "CQ" }),
     {
@@ -159,6 +159,51 @@ test("Linux profile save replaces an imported hardware encoder", () => {
   assert.equal(data.video_encoder, "libx264");
   assert.equal(data.preset, "medium");
   assert.equal(data.rate_control_method, "crf");
+});
+
+test("Linux VAAPI requests and profiles preserve hardware quality settings", () => {
+  const caps = { ...linuxCapabilities, hardwareAcceleration: true };
+  const state = form({ workflow: "upscale", encoder: "hevc_vaapi", preset: "quality", rateControl: "CQ", qualityValue: 20 });
+  const request = buildPlanRequest(state, { source: "/media/clip.mp4", platformCapabilities: caps });
+  assert.equal(request.video_encoder, "hevc_vaapi");
+  assert.equal(request.preset, "quality");
+  assert.equal(request.rate_control_method, "cq");
+  assert.equal(request.cq, 20);
+  assert.equal(request.two_pass, false);
+  const profile = buildProfilePayload(state, {
+    name: "GPU clips", currentProfile: { rate_control_method: "cqp", qp: 19 },
+    clip: null, platformCapabilities: caps,
+  });
+  assert.equal(profile.video_encoder, "hevc_vaapi");
+  assert.equal(profile.preset, "quality");
+  assert.equal(profile.rate_control_method, "cqp");
+  assert.equal(profile.qp, 20);
+});
+
+test("Linux NVENC requests and profiles retain NVIDIA presets and quality", () => {
+  const caps = { ...linuxCapabilities, hardwareAcceleration: true };
+  for (const encoder of ["h264_nvenc", "hevc_nvenc"]) {
+    const state = form({ workflow: "upscale", encoder, preset: "p7", rateControl: "CQ", qualityValue: 19 });
+    const request = buildPlanRequest(state, { source: "/media/clip.mp4", platformCapabilities: caps });
+    assert.equal(request.video_encoder, encoder);
+    assert.equal(request.preset, "p7");
+    assert.equal(request.cq, 19);
+    assert.equal(request.two_pass, false);
+    const profile = buildProfilePayload(state, { name: "NVIDIA clips", currentProfile: null, clip: null, platformCapabilities: caps });
+    assert.equal(profile.video_encoder, encoder);
+    assert.equal(profile.preset, "p7");
+    assert.equal(profile.rate_control_method, "cq");
+  }
+});
+
+test("Windows normalizes an imported VAAPI profile before planning", () => {
+  const request = buildPlanRequest(
+    form({ workflow: "upscale", encoder: "h264_vaapi", preset: "quality", rateControl: "CQ" }),
+    { source: "clip.mp4", platformCapabilities: { ...linuxCapabilities, platform: "windows", hardwareAcceleration: true } },
+  );
+  assert.equal(request.video_encoder, "libx264");
+  assert.equal(request.preset, "medium");
+  assert.equal(request.rate_control_method, "crf");
 });
 
 test("profile payload writes transform intent when the clip touched it", () => {

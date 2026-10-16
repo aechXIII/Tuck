@@ -902,6 +902,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
       select("enc-sel"),
       caps ? encodersForPlatform(availEncoders(), caps) : availEncoders(),
       caps ? supportsHardwareEncoders(caps) : true,
+      caps?.platform,
     );
   }
 

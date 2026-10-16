@@ -12,6 +12,8 @@ const ENCODER_LABELS: Readonly<Record<string, string>> = {
   hevc_nvenc: "NVIDIA H.265 · Hardware",
   h264_amf: "AMD H.264 · Hardware",
   hevc_amf: "AMD H.265 · Hardware",
+  h264_vaapi: "VAAPI H.264 · Hardware",
+  hevc_vaapi: "VAAPI H.265 · Hardware",
 };
 
 const ALL_ENCODERS: readonly string[] = [
@@ -23,6 +25,8 @@ const ALL_ENCODERS: readonly string[] = [
   "hevc_nvenc",
   "h264_amf",
   "hevc_amf",
+  "h264_vaapi",
+  "hevc_vaapi",
 ];
 
 export function encoderLabel(id: string): string {
@@ -41,13 +45,22 @@ export function isSoftwareEncoder(encoder: string): boolean {
   return encoder === "libx264" || encoder === "libx265";
 }
 
+export function encoderSupportedOnPlatform(encoder: string, platform: "windows" | "linux"): boolean {
+  if (["h264_vaapi", "hevc_vaapi"].includes(encoder)) return platform === "linux";
+  if (["h264_amf", "hevc_amf"].includes(encoder)) return platform === "windows";
+  // keep unknown backend names in diagnostics; the selection list has its own allowlist
+  return true;
+}
+
 export function encoderIds(
   available: readonly string[],
   current: string,
   includeHardwareEncoders = true,
+  platform?: "windows" | "linux",
 ): string[] {
-  const avail = available.length ? available : ALL_ENCODERS.slice(2);
+  const avail = available.length ? available : platform === "linux" ? ["libx264", "libx265"] : ALL_ENCODERS.slice(2);
   return ALL_ENCODERS.filter((id) => {
+    if (platform && !encoderSupportedOnPlatform(id, platform)) return false;
     if (!includeHardwareEncoders && !isSoftwareEncoder(id)) return false;
     return (
       id === "auto_compression" ||
@@ -58,7 +71,8 @@ export function encoderIds(
   });
 }
 
-export function encoderUnavailable(available: readonly string[], id: string): boolean {
+export function encoderUnavailable(available: readonly string[], id: string, platform?: "windows" | "linux"): boolean {
+  if (id.endsWith("_vaapi") || (platform === "linux" && !isAutoEncoder(id) && !isSoftwareEncoder(id))) return !available.includes(id);
   return !isAutoEncoder(id) && available.length > 0 && available.indexOf(id) < 0;
 }
 
@@ -137,6 +151,7 @@ export function encoderDisplaySummary(encoders: readonly string[]): string {
   if (encoders.some((x) => x.indexOf("nvenc") >= 0)) labels.push("NVIDIA");
   if (encoders.some((x) => x.indexOf("amf") >= 0)) labels.push("AMD");
   if (encoders.some((x) => x.indexOf("qsv") >= 0)) labels.push("Intel");
+  if (encoders.some((x) => x.endsWith("_vaapi"))) labels.push("VAAPI");
   if (encoders.some((x) => x.indexOf("libx") === 0)) labels.push("CPU");
   return labels.join(" · ") || "None detected";
 }

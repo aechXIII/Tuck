@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
 import { hasTauriInvoke } from "../backend/index.ts";
-import { isSoftwareEncoder } from "../features/export/encoder-options.ts";
+import { encoderSupportedOnPlatform, isSoftwareEncoder } from "../features/export/encoder-options.ts";
 
 export interface PlatformCapabilities {
   platform: "windows" | "linux";
@@ -98,10 +98,11 @@ export function encodersForPlatform(
   caps: PlatformCapabilities,
 ): string[] {
   return supportsHardwareEncoders(caps)
-    ? [...encoders]
+    ? encoders.filter((encoder) => encoderSupportedOnPlatform(encoder, caps.platform))
     : encoders.filter((encoder) => isSoftwareEncoder(encoder));
 }
 
 export function encoderForPlatform(encoder: string, caps: PlatformCapabilities): string {
-  return !supportsHardwareEncoders(caps) && !isSoftwareEncoder(encoder) ? "libx264" : encoder;
+  return (!supportsHardwareEncoders(caps) && !isSoftwareEncoder(encoder)) ||
+    !encoderSupportedOnPlatform(encoder, caps.platform) ? "libx264" : encoder;
 }

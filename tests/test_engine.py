@@ -45,6 +45,73 @@ from tuck.planner import plan as make_plan
 from tuck.probe import _run_ffprobe_json, probe
 
 
+@pytest.mark.parametrize("encoder,codec", [("h264_vaapi", "h264"), ("hevc_vaapi", "hevc")])
+def test_vaapi_encodes_unfiltered_segments_with_source_audio(
+    real_video_path, tmp_path, encoder, codec
+):
+    from tuck.desktop_platform import is_linux_desktop
+    from tuck.encoding.vaapi import choose_encode_device
+
+    if not is_linux_desktop():
+        pytest.skip("VAAPI encoding requires the Linux desktop backend")
+    ffmpeg = find_ffmpeg()
+    if not ffmpeg or choose_encode_device(ffmpeg, encoder) is None:
+        pytest.skip(f"{encoder} has no usable VAAPI render device")
+    _check_hardware_segment_export(real_video_path, tmp_path, encoder, codec, "balanced")
+
+
+@pytest.mark.parametrize("encoder,codec", [("h264_nvenc", "h264"), ("hevc_nvenc", "hevc")])
+def test_linux_nvenc_encodes_unfiltered_segments_with_source_audio(
+    real_video_path, tmp_path, encoder, codec
+):
+    from tuck.desktop_platform import is_linux_desktop
+    from tuck.encoding.capabilities import get_available_encoders
+
+    if not is_linux_desktop():
+        pytest.skip("This regression requires the Linux NVIDIA encoding backend")
+    if encoder not in get_available_encoders(refresh=True):
+        pytest.skip(f"{encoder} requires a usable NVIDIA GPU and installed encode driver")
+    _check_hardware_segment_export(real_video_path, tmp_path, encoder, codec, "p4")
+
+
+def _check_hardware_segment_export(real_video_path, tmp_path, encoder, codec, preset):
+    import av
+
+    info = probe(real_video_path)
+    segments = [Segment(0.2, 0.8), Segment(1.2, 2.2)]
+    duration = sum(segment.duration for segment in segments)
+    output = tmp_path / f"segments-{encoder}.mp4"
+    plan = EncodePlan(
+        source=str(real_video_path),
+        output=str(output),
+        source_info=info,
+        video_encoder=encoder,
+        preset=preset,
+        two_pass=False,
+        workflow=WORKFLOW_UPSCALE,
+        rate_control_method=RCM_CQP,
+        qp=23,
+        segments=segments,
+        audio_bitrate=128_000,
+    )
+
+    assert FFmpegEngine().encode(plan) == output
+    result = probe(output)
+    assert result.video_codec == codec
+    assert result.has_audio and result.audio_codec == "aac"
+    assert result.duration == pytest.approx(duration, abs=0.05)
+    with av.open(str(output)) as container:
+        assert len(container.streams.audio) == 1
+        frames = list(container.decode(video=0))
+        assert len(frames) == round(duration * info.fps)
+        assert frames[0].time == pytest.approx(0, abs=0.001)
+    with av.open(str(output)) as container:
+        audio_duration = sum(
+            frame.samples / frame.sample_rate for frame in container.decode(audio=0)
+        )
+        assert audio_duration == pytest.approx(duration, abs=0.05)
+
+
 def _create_synthetic_video(path: Path, duration: float = 3.0) -> bool:
 
     from tuck.media_tools import find_ffmpeg

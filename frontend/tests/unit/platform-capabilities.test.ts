@@ -35,16 +35,16 @@ test("Linux capabilities hide Windows integrations but keep the updater", async 
     sendToIntegration: false,
     publicCli: false,
     automaticUpdater: true,
-    hardwareAcceleration: false,
+    hardwareAcceleration: true,
     customTitleBar: false,
     packaged: false,
   };
   assert.equal(shouldShowSendTo(caps), false);
   assert.equal(shouldShowUpdater(caps), true);
-  assert.equal(supportsHardwareEncoders(caps), false);
+  assert.equal(supportsHardwareEncoders(caps), true);
   assert.equal(usesCustomTitleBar(caps), false);
-  assert.deepEqual(encodersForPlatform(["libx264", "h264_nvenc", "hevc_amf"], caps), ["libx264"]);
-  assert.equal(encoderForPlatform("h264_nvenc", caps), "libx264");
+  assert.deepEqual(encodersForPlatform(["libx264", "h264_nvenc", "hevc_amf"], caps), ["libx264", "h264_nvenc"]);
+  assert.equal(encoderForPlatform("hevc_amf", caps), "libx264");
 });
 
 test("fallback on invoke failure still hides integrations", async () => {

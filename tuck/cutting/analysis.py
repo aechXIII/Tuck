@@ -21,7 +21,7 @@ from threading import Event
 import av
 from av.error import FFmpegError
 
-from ..media_tools import find_ffprobe
+from ..media_tools import find_ffprobe, media_tool_environment
 from ..models.cutting import (
     AnalysisProgress,
     Chapter,
@@ -159,6 +159,7 @@ def read_inventory(
                 str(path),
             ],
             # only the sidecar may read requests from its stdin pipe
+            env=media_tool_environment(),
             stdin=subprocess.DEVNULL,
             stdout=output,
             stderr=errors,

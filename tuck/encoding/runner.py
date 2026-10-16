@@ -20,7 +20,7 @@ from av.error import FFmpegError
 from ..cutting.analysis import CutAnalysisError
 from ..cutting.runner import CutRunner
 from ..formatting import format_size
-from ..media_tools import find_ffmpeg
+from ..media_tools import find_ffmpeg, media_tool_environment
 from ..models import (
     AUDIO_OVERHEAD_FACTOR,
     ENCODER_AUTO,
@@ -34,7 +34,11 @@ from ..models import (
     EncodePlan,
 )
 from ..models.cutting import CutPlan
-from ..models.encoding_policy import validate_encoder_supported_on_desktop
+from ..models.encoding_policy import (
+    VAAPI_ENCODERS,
+    native_preset_for_encoder,
+    validate_encoder_supported_on_desktop,
+)
 from ..models.progress import EncodeProgress, EncodeStage
 from ..output_paths import copy_file_dates
 from ..output_transaction import OutputTransaction
@@ -60,6 +64,7 @@ from .target_size import (
     is_content_limited,
     left_bitrate_unused,
 )
+from .vaapi import VaapiEncodeDevice, choose_encode_device
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +78,8 @@ ProgressCallback = Callable[[Any], None]
 def _execution_plan(requested_plan: EncodePlan, encoder: str, auto: bool) -> EncodePlan:
     plan = copy.deepcopy(requested_plan)
     plan.video_encoder = encoder
+    if encoder in VAAPI_ENCODERS or auto:
+        plan.preset = native_preset_for_encoder(plan.preset, encoder)
     if not auto:
         return plan
     if requested_plan.video_encoder == ENCODER_AUTO_COMPRESSION and not is_hardware_encoder(
@@ -99,6 +106,8 @@ _ENCODER_FAMILY_NAMES = {
     "hevc_nvenc": "NVIDIA",
     "h264_amf": "AMD",
     "hevc_amf": "AMD",
+    "h264_vaapi": "VAAPI",
+    "hevc_vaapi": "VAAPI",
 }
 
 
@@ -159,6 +168,7 @@ class FFmpegEngine:
         self._prepared_video: Path | None = None
         self._tmix: TmixBlend | None = None
         self._hardware_decode: HardwareDecode | None = None
+        self._vaapi_device: VaapiEncodeDevice | None = None
         self._stream_plan: EncodePlan | None = None
         self._cut_runner = CutRunner()
         self._low_priority = False
@@ -193,6 +203,11 @@ class FFmpegEngine:
             else (requested,)
         )
         if not was_auto and requested not in available and available:
+            if is_hardware_encoder(requested):
+                raise EncodeError(
+                    f"Encoder '{requested}' is not available. Check that FFmpeg supports it "
+                    "and the graphics driver is installed, or choose Auto."
+                )
             raise EncodeError(
                 f"Encoder '{requested}' is not available in this FFmpeg installation. "
                 f"Available encoders: {sorted(available)}. "
@@ -230,6 +245,17 @@ class FFmpegEngine:
             if was_auto:
                 logger.info("Auto encoder attempt: %s", encoder)
             try:
+                self._vaapi_device = (
+                    choose_encode_device(ffmpeg_path, encoder)
+                    if encoder in VAAPI_ENCODERS
+                    else None
+                )
+                if encoder in VAAPI_ENCODERS and self._vaapi_device is None:
+                    raise EncodeError(
+                        "VAAPI could not start. Check the graphics driver and render device access "
+                        "or choose software encoding.",
+                        stderr="Failed to create a VAAPI device for encoding",
+                    )
                 result = self._encode_with_retry(
                     ffmpeg_path,
                     attempt_plan,
@@ -269,6 +295,7 @@ class FFmpegEngine:
         self._resolved_encoder = ""
         self._encoder_fallback = ""
         self._hardware_decode = None
+        self._vaapi_device = None
         self._stream_plan = None
         if isinstance(plan, CutPlan):
             self._last_stderr = ""
@@ -394,6 +421,7 @@ class FFmpegEngine:
             self._prepared_video = None
             self._tmix = None
             self._hardware_decode = None
+            self._vaapi_device = None
             self._stream_plan = None
 
     def _run_one_attempt(
@@ -794,6 +822,7 @@ class FFmpegEngine:
                     prepared_video=self._prepared_video,
                     blend=self._tmix,
                     hardware_decode=self._hardware_decode,
+                    vaapi_device=self._vaapi_device,
                 ),
                 "-pass",
                 "1",
@@ -826,6 +855,7 @@ class FFmpegEngine:
                     prepared_video=self._prepared_video,
                     blend=self._tmix,
                     hardware_decode=self._hardware_decode,
+                    vaapi_device=self._vaapi_device,
                 ),
                 "-pass",
                 "2",
@@ -872,6 +902,7 @@ class FFmpegEngine:
                 prepared_video=self._prepared_video,
                 blend=self._tmix,
                 hardware_decode=self._hardware_decode,
+                vaapi_device=self._vaapi_device,
                 streamed_video=self._stream_plan is not None,
             ),
             str(output),
@@ -926,6 +957,7 @@ class FFmpegEngine:
                 raise EncodeCancelled("Encoding cancelled by user")
             proc = subprocess.Popen(
                 cmd,
+                env=media_tool_environment(),
                 # a private pipe carries frames; FFmpeg never inherits the sidecar request pipe
                 stdin=subprocess.PIPE if stream_video else subprocess.DEVNULL,
                 # progress and diagnostics come from stderr; ffmpeg's stdout is

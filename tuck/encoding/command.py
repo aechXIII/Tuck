@@ -23,13 +23,20 @@ from ..models import (
     map_source_range_to_output,
     source_audio_output_pieces,
 )
-from ..models.encoding_policy import AMF_ENCODERS, CPU_ENCODERS, NVENC_ENCODERS
+from ..models.encoding_policy import (
+    AMF_ENCODERS,
+    CPU_ENCODERS,
+    NVENC_ENCODERS,
+    VAAPI_ENCODERS,
+    native_preset_for_encoder,
+)
 from . import filters as _filters
 from .filters import build_plan_video_filters, join_video_filters
 
 if TYPE_CHECKING:
     from .frame_blending import TmixBlend
     from .hardware_decoding import HardwareDecode
+    from .vaapi import VaapiEncodeDevice
 
 scaler_to_ffmpeg_flag = _filters.scaler_to_ffmpeg_flag
 
@@ -377,6 +384,43 @@ def _rate_control_args(plan: EncodePlan) -> list[str]:
     rc_method = plan.rate_control_method
     bitrate = plan.video_bitrate if plan.video_bitrate > 0 else _FALLBACK_BITRATE
     maxrate, bufsize = vbr_limits(bitrate)
+    if encoder in VAAPI_ENCODERS:
+        preset = native_preset_for_encoder(plan.preset, encoder)
+        # FFmpeg clamps this speed/quality choice to the driver's supported range
+        args = ["-compression_level", str({"speed": 7, "balanced": 4, "quality": 1}[preset])]
+        if rc_method in (RCM_CQ, RCM_CQP):
+            return [
+                *args,
+                "-rc_mode",
+                "CQP",
+                "-qp",
+                str(plan.cq if rc_method == RCM_CQ else plan.qp),
+            ]
+        if rc_method == RCM_CBR:
+            return [
+                *args,
+                "-rc_mode",
+                "CBR",
+                "-b:v",
+                str(bitrate),
+                "-maxrate",
+                str(bitrate),
+                "-bufsize",
+                str(bitrate),
+            ]
+        if rc_method == RCM_VBR:
+            return [
+                *args,
+                "-rc_mode",
+                "VBR",
+                "-b:v",
+                str(bitrate),
+                "-maxrate",
+                str(maxrate),
+                "-bufsize",
+                str(bufsize),
+            ]
+        raise ValueError("VAAPI encoding requires CQP, CQ, CBR, or VBR rate control")
     if encoder in CPU_ENCODERS:
         args = ["-preset", plan.preset]
         if plan.tune:
@@ -446,13 +490,19 @@ def build_base_cmd(
     blend: TmixBlend | None = None,
     hardware_decode: HardwareDecode | None = None,
     streamed_video: bool = False,
+    vaapi_device: VaapiEncodeDevice | None = None,
 ) -> list[str]:
+    vaapi = plan.video_encoder in VAAPI_ENCODERS
+    if vaapi and vaapi_device is None:
+        raise ValueError("VAAPI encoding requires a probed render device")
     if streamed_video and (prepared_video is not None or blend is not None):
         raise ValueError("An export can use only one blended video input")
     if streamed_video and (plan.source_info is None or plan.target_fps <= 0):
         raise ValueError("Streamed blending needs source dimensions and a positive output rate")
     # explicit progress records are flushed independently of console status output
     cmd = [ffmpeg, "-hide_banner", "-loglevel", "info", "-nostats", "-progress", "pipe:2"]
+    if vaapi_device is not None and vaapi:
+        cmd += vaapi_device.init_args
 
     segments = plan.effective_segments
     single_segment = len(segments) == 1
@@ -730,6 +780,10 @@ def build_base_cmd(
             _mix_to(graph_parts, mix_inputs, "aout")
             filtered_audio = True
 
+        if vaapi:
+            # upload only after all software filters, including the blend's final colour tags
+            graph_parts = [part.replace("[vout]", "[vsoftware]") for part in graph_parts]
+            graph_parts.append("[vsoftware]format=nv12,hwupload[vout]")
         cmd += ["-filter_complex", ";".join(graph_parts), "-map", "[vout]"]
         if filtered_audio:
             cmd += ["-map", "[aout]"]
@@ -745,6 +799,8 @@ def build_base_cmd(
         if source_audio_active:
             for track in kept_tracks:
                 cmd += ["-map", f"{_source_audio(track.index)}?"]
+        if vaapi:
+            video_filters += ["format=nv12", "hwupload"]
         if video_filters:
             cmd += ["-vf", join_video_filters(video_filters)]
     if subtitle_map:
@@ -754,7 +810,8 @@ def build_base_cmd(
 
     cmd += ["-c:v", plan.video_encoder, *_rate_control_args(plan)]
 
-    cmd += ["-pix_fmt", "yuv420p"]
+    if not vaapi:
+        cmd += ["-pix_fmt", "yuv420p"]
     if plan.tone_map_hdr:
         # the tone-mapped picture is BT.709 SDR, so say so instead of keeping the HDR tags
         cmd += ["-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709"]

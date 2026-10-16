@@ -24,12 +24,10 @@ pub fn is_packaged() -> bool {
 }
 
 pub fn capabilities_for_target(platform: &str, packaged: bool) -> PlatformCapabilities {
-    // Linux shares the signed auto-updater with Windows (packaged AppImage only,
-    // enforced in commands::updates); Send To, the public CLI, and hardware
-    // encoders stay Windows-only for 0.5.0.
+    // available hardware codecs are determined by the backend's encoding probes
     let (send_to, public_cli, updater, hardware_acceleration) = match platform {
         "windows" => (true, true, true, true),
-        "linux" => (false, false, true, false),
+        "linux" => (false, false, true, true),
         _ => (false, false, false, false),
     };
     PlatformCapabilities {
@@ -78,7 +76,7 @@ mod tests {
         assert!(!caps.send_to_integration);
         assert!(!caps.public_cli);
         assert!(caps.automatic_updater);
-        assert!(!caps.hardware_acceleration);
+        assert!(caps.hardware_acceleration);
         assert!(!caps.custom_title_bar);
     }
 

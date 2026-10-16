@@ -290,7 +290,7 @@ def test_both_ffmpeg_builds_decode_av1_in_software() -> None:
         assert "--enable-libdav1d" in recipe
 
 
-def test_linux_gpu_decoding_has_pinned_headers_and_keeps_cpu_encoding():
+def test_linux_gpu_encoding_and_decoding_have_pinned_headers():
     windows = json.loads(_LOCK.read_text(encoding="utf-8"))
     linux = json.loads(_LINUX_LOCK.read_text(encoding="utf-8"))
     headers = next((item for item in linux["sources"] if item["name"] == "nv-codec-headers"), None)
@@ -298,8 +298,15 @@ def test_linux_gpu_decoding_has_pinned_headers_and_keeps_cpu_encoding():
         item for item in windows["sources"] if item["name"] == "nv-codec-headers"
     )
     flags = set(linux["output"]["license"]["configure_flags_required"])
-    assert {"--enable-ffnvcodec", "--enable-nvdec", "--disable-nvenc"} <= flags
+    assert {"--enable-ffnvcodec", "--enable-nvdec", "--enable-nvenc"} <= flags
     assert "hwdownload" in linux["output"]["required_filters"]
+
+
+def test_linux_bundle_requires_h264_and_hevc_nvenc_without_av1() -> None:
+    output = _build_linux_module().load_lock()["output"]
+    assert {"h264_nvenc", "hevc_nvenc"} <= set(output["required_encoders"])
+    assert not {"h264_nvenc", "hevc_nvenc"} & set(output["forbidden_encoders"])
+    assert "av1_nvenc" in output["forbidden_encoders"]
 
 
 def test_linux_vaapi_uses_locked_static_libraries() -> None:
@@ -322,13 +329,34 @@ def test_linux_vaapi_searches_system_driver_paths_across_distributions() -> None
     assert "-Ddriverdir=/usr/lib/x86_64-linux-gnu/dri:/usr/lib/dri:/usr/lib64/dri" in recipe
 
 
+def test_linux_bundle_requires_supported_vaapi_encoders_and_upload() -> None:
+    lock = _build_linux_module().load_lock()
+    output = lock["output"]
+    assert {"h264_vaapi", "hevc_vaapi"} <= set(output["required_encoders"])
+    assert "hwupload" in output["required_filters"]
+    assert not {"h264_vaapi", "hevc_vaapi"} & set(output["forbidden_encoders"])
+
+
 @pytest.mark.parametrize(
-    ("hardware", "forbidden_encoder"),
-    [(None, None), ("cuda", None), ("vaapi", None), (None, "h264_vaapi"), (None, "h264_nvenc")],
+    ("hardware", "forbidden_encoder", "missing_encoder"),
+    [
+        (None, None, None),
+        ("cuda", None, None),
+        ("vaapi", None, None),
+        (None, "av1_vaapi", None),
+        (None, "av1_nvenc", None),
+        (None, None, "h264_nvenc"),
+        (None, None, "hevc_nvenc"),
+    ],
 )
 @pytest.mark.parametrize("validator", ["build", "package"])
 def test_linux_runtime_validation_requires_gpu_decode_and_cpu_encoding(
-    tmp_path: Path, monkeypatch, hardware: str | None, forbidden_encoder: str | None, validator: str
+    tmp_path: Path,
+    monkeypatch,
+    hardware: str | None,
+    forbidden_encoder: str | None,
+    missing_encoder: str | None,
+    validator: str,
 ) -> None:
     build_linux = _build_linux_module()
     lock = build_linux.load_lock()
@@ -342,7 +370,9 @@ def test_linux_runtime_validation_requires_gpu_decode_and_cpu_encoding(
     ]
     responses = {
         "-buildconf": "\n".join(flags),
-        "-encoders": "\n".join(f" {name}" for name in output["required_encoders"]),
+        "-encoders": "\n".join(
+            f" {name}" for name in output["required_encoders"] if name != missing_encoder
+        ),
         "-decoders": "\n".join(f" {name}" for name in output["required_decoders"]),
         "-filters": "\n".join(f" {name}" for name in output["required_filters"]),
         "-hwaccels": "Hardware acceleration methods:\n"
@@ -372,6 +402,9 @@ def test_linux_runtime_validation_requires_gpu_decode_and_cpu_encoding(
             validate(*args)
     elif forbidden_encoder:
         with pytest.raises(error, match=f"must not include encoder {forbidden_encoder}"):
+            validate(*args)
+    elif missing_encoder:
+        with pytest.raises(error, match=f"missing encoder {missing_encoder}"):
             validate(*args)
     else:
         validate(*args)

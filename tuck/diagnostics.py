@@ -10,7 +10,7 @@ from typing import Any
 
 from . import __version__
 from .encoding.capabilities import get_encoder_capabilities
-from .media_tools import find_ffmpeg
+from .media_tools import find_ffmpeg, media_tool_environment
 from .models import EncodePlan
 from .models.cutting import CutPlan
 from .probe import is_ffprobe_available
@@ -35,6 +35,7 @@ def _run_version(cmd: list[str]) -> str:
     try:
         result = subprocess.run(
             cmd,
+            env=media_tool_environment(),
             stdin=subprocess.DEVNULL,
             capture_output=True,
             encoding="utf-8",
