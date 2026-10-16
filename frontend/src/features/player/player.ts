@@ -1,6 +1,11 @@
 import type { EditorClip } from "../editor/types.ts";
 import type { SegmentRange } from "../timeline/segments.ts";
-import { playbackTarget as defaultPlaybackTarget } from "../timeline/segments.ts";
+import {
+  hasPlacement,
+  sourceTimeAt,
+  timelineTimeAt,
+  playbackTarget as defaultPlaybackTarget,
+} from "../timeline/segments.ts";
 
 type Segment = SegmentRange;
 
@@ -27,7 +32,8 @@ export interface PlayerHost {
   videoDuration: () => number;
   setPlayheadUI: (seconds: number, full: number) => void;
   Timeline?: { isDragging: () => boolean };
-  AudioTimeline?: { applyPreviewVolume: () => void };
+  AudioTimeline?: { applyPreviewVolume: () => void; syncPreview?: () => void };
+  setPreviewGap?: (gap: boolean) => void;
   SegmentEditing?: {
     playbackTarget: (
       segments: readonly Segment[],
@@ -43,6 +49,11 @@ export interface PlayerHost {
 }
 
 export interface PlayerApi {
+  isPlaying: () => boolean;
+  /** project position for placed segments, source position for legacy segments */
+  timelineTime: () => number;
+  /** no source frame exists in a project gap */
+  sourceTime: () => number | null;
   togglePlay: () => void;
   seekBy: (seconds: number) => void;
   stepFrame: (direction: number) => void;
@@ -114,6 +125,21 @@ export function installPlayer(host: PlayerHost): PlayerApi {
   let seekRaf = 0;
   let cancelActiveSeek: (() => void) | null = null;
   let disposed = false;
+  let projectPosition: number | null = null;
+  let projectPlaying = false;
+  let projectSegment = -1;
+  let previewGap = false;
+  let lastFrameTime: number | null = null;
+  let playAttempt = 0;
+  let playbackRanges = copyPlaybackRanges();
+  let sourcePositionPending = true;
+  let awaitingMetadata = host.byId<HTMLVideoElement>("vid")?.readyState === 0;
+
+  function copyPlaybackRanges(): Segment[] {
+    return host.playbackSegments().map(({ start, end, sourceStart }) => ({
+      start, end, ...(sourceStart == null ? {} : { sourceStart }),
+    }));
+  }
 
   function byId<T extends HTMLElement = HTMLElement>(id: string): T | null {
     return host.byId<T>(id);
@@ -130,9 +156,192 @@ export function installPlayer(host: PlayerHost): PlayerApi {
     return defaultPlaybackTarget(mutable, time, tolerance);
   }
 
+  function placed(): boolean {
+    return hasPlacement(host.playbackSegments());
+  }
+
+  function syncPlaybackRanges(): void {
+    if (disposed || awaitingMetadata) return;
+    const segments = host.playbackSegments();
+    if (segments.length === playbackRanges.length && segments.every((segment, index) => {
+      const previous = playbackRanges[index];
+      return previous && previous.start === segment.start && previous.end === segment.end && previous.sourceStart === segment.sourceStart;
+    })) return;
+    const previousRanges = playbackRanges;
+    playbackRanges = copyPlaybackRanges();
+    const wasPlaced = hasPlacement(previousRanges);
+    const nowPlaced = hasPlacement(segments);
+    if (!wasPlaced && !nowPlaced) return;
+    const video = byId<HTMLVideoElement>("vid");
+    if (!video) return;
+    const playing = wasPlaced ? projectPlaying : !video.paused;
+    const wasGap = previewGap;
+    let time = wasPlaced ? projectPosition ?? previewSec ?? 0 : video.currentTime;
+    const previous = previousRanges[projectSegment];
+    if (wasPlaced && playing && !wasGap && previous) {
+      time = previous.start + video.currentTime - (previous.sourceStart ?? previous.start);
+    }
+    // undo can change the source mapping without changing the media element's source
+    const source = nowPlaced ? sourceTimeAt(segments, time) : null;
+    if (playing || source == null) resetSeek();
+    playAttempt++;
+    lastFrameTime = null;
+    projectSegment = -1;
+    projectPlaying = nowPlaced && playing;
+    if (nowPlaced) {
+      setProjectPosition(time, playing);
+      if (!playing && source != null) queueVideoSeek(source);
+      if (playing) startFrameLoop(video);
+    } else {
+      projectPosition = null;
+      setGap(false);
+      if (wasGap) video.currentTime = time;
+      previewSec = video.currentTime;
+      byId("btn-play")?.classList.toggle("playing", playing);
+      if (playing && video.paused) playVideo(video);
+      if (!playing) stopFrameLoop();
+      host.AudioTimeline?.syncPreview?.();
+    }
+  }
+
+  function timelineTime(): number {
+    syncPlaybackRanges();
+    const video = byId<HTMLVideoElement>("vid");
+    if (!placed()) return video?.currentTime ?? 0;
+    if (projectPosition == null) {
+      projectPosition = previewSec ?? (awaitingMetadata ? 0 : timelineTimeAt(host.playbackSegments(), video?.currentTime ?? 0));
+    }
+    if (projectPlaying && !previewGap && projectSegment >= 0 && video) {
+      const segment = host.playbackSegments()[projectSegment];
+      if (segment) {
+        const time = segment.start + video.currentTime - (segment.sourceStart ?? segment.start);
+        return Math.min(segment.end, Math.max(segment.start, time));
+      }
+    }
+    return projectPosition;
+  }
+
+  function sourceTime(): number | null {
+    syncPlaybackRanges();
+    if (placed()) return sourceTimeAt(host.playbackSegments(), timelineTime());
+    return byId<HTMLVideoElement>("vid")?.currentTime ?? 0;
+  }
+
+  function isPlaying(): boolean {
+    if (!disposed) syncPlaybackRanges();
+    return !disposed && (placed() ? projectPlaying : !(byId<HTMLVideoElement>("vid")?.paused ?? true));
+  }
+
+  function setGap(gap: boolean): void {
+    if (previewGap === gap) return;
+    previewGap = gap;
+    host.setPreviewGap?.(gap);
+  }
+
+  function syncProjectUI(): void {
+    host.setPlayheadUI(projectPosition ?? 0, host.videoDuration());
+    host.AudioTimeline?.syncPreview?.();
+  }
+
+  function setPlaying(playing: boolean): void {
+    projectPlaying = playing;
+    byId("btn-play")?.classList.toggle("playing", playing);
+    if (!playing) {
+      playAttempt++;
+      stopFrameLoop();
+    }
+    host.AudioTimeline?.syncPreview?.();
+  }
+
+  function playVideo(video: HTMLVideoElement): void {
+    const attempt = ++playAttempt;
+    try {
+      const result = video.play();
+      if (result && typeof result.catch === "function") {
+        result.catch(() => {
+          if (!disposed && attempt === playAttempt) setPlaying(false);
+        });
+      }
+    } catch {
+      if (attempt === playAttempt) setPlaying(false);
+    }
+  }
+
+  function setProjectPosition(time: number, play: boolean): void {
+    const video = byId<HTMLVideoElement>("vid");
+    if (!video) return;
+    const segments = host.playbackSegments();
+    projectPosition = time;
+    projectSegment = segments.findIndex(segment => time >= segment.start && time < segment.end);
+    const source = sourceTimeAt(segments, time);
+    setGap(source == null);
+    if (source == null) {
+      // pausing at a gap can abort an earlier play promise without stopping the project
+      playAttempt++;
+      if (!video.paused) video.pause();
+    } else if (play) {
+      video.currentTime = source;
+      playVideo(video);
+    }
+    syncProjectUI();
+  }
+
+  function finishProject(): void {
+    const segments = host.playbackSegments();
+    const end = segments.at(-1)?.end ?? 0;
+    if (loopEnabled() && end > 0) {
+      setProjectPosition(0, true);
+      return;
+    }
+    projectPosition = end;
+    setPlaying(false);
+    byId<HTMLVideoElement>("vid")?.pause();
+    syncProjectUI();
+  }
+
+  function updateProject(): void {
+    const video = byId<HTMLVideoElement>("vid");
+    if (!video) return;
+    const segments = host.playbackSegments();
+    const segment = segments[projectSegment];
+    if (projectPlaying && !previewGap && segment) {
+      projectPosition = segment.start + video.currentTime - (segment.sourceStart ?? segment.start);
+    }
+    const time = projectPosition ?? timelineTime();
+    if (projectPlaying && time >= (segments.at(-1)?.end ?? 0)) {
+      finishProject();
+      return;
+    }
+    const index = segments.findIndex(item => time >= item.start && time < item.end);
+    if (projectPlaying && (index !== projectSegment || (index < 0) !== previewGap)) {
+      setProjectPosition(time, true);
+    } else {
+      syncProjectUI();
+    }
+  }
+
   function togglePlay(): void {
+    if (disposed) return;
+    if (awaitingMetadata && placed()) return;
+    syncPlaybackRanges();
     const v = byId<HTMLVideoElement>("vid");
     if (!v) return;
+    if (placed()) {
+      if (projectPlaying) {
+        projectPosition = timelineTime();
+        setPlaying(false);
+        v.pause();
+      } else {
+        resetSeek();
+        let time = timelineTime();
+        if (time >= (host.playbackSegments().at(-1)?.end ?? 0)) time = 0;
+        lastFrameTime = null;
+        setPlaying(true);
+        setProjectPosition(time, true);
+        if (projectPlaying) startFrameLoop(v);
+      }
+      return;
+    }
     if (v.paused) {
       const target = playbackTarget(host.playbackSegments(), v.currentTime, 0.04);
       if (target != null) v.currentTime = target;
@@ -145,20 +354,26 @@ export function installPlayer(host: PlayerHost): PlayerApi {
   }
 
   function seekBy(seconds: number): void {
+    syncPlaybackRanges();
     const v = byId<HTMLVideoElement>("vid");
     if (!v) return;
+    if (placed()) {
+      seekPreview(timelineTime() + seconds);
+      return;
+    }
     if (v.duration)
       v.currentTime = Math.max(0, Math.min(v.duration, v.currentTime + seconds));
   }
 
   function stepFrame(direction: number): void {
+    syncPlaybackRanges();
     const v = byId<HTMLVideoElement>("vid");
     if (!v || !Number.isFinite(v.duration)) return;
     const path = host.selPath();
     const clip = path ? host.clips()[path] : undefined;
     const fps = clip?.probeData?.fps || 30;
     if (!v.paused) v.pause();
-    seekPreview(v.currentTime + direction * (1 / fps));
+    seekPreview((placed() ? timelineTime() : v.currentTime) + direction * (1 / fps));
   }
 
   function toggleFullscreen(): void {
@@ -169,9 +384,18 @@ export function installPlayer(host: PlayerHost): PlayerApi {
   }
 
   function continuePlaybackAt(target: number | null | undefined): void {
-    if (looping || target == null) return;
+    if (disposed || looping || target == null) return;
+    if (awaitingMetadata && placed()) return;
+    syncPlaybackRanges();
     const v = byId<HTMLVideoElement>("vid");
     if (!v) return;
+    if (placed()) {
+      lastFrameTime = null;
+      setPlaying(true);
+      setProjectPosition(target, true);
+      if (projectPlaying) startFrameLoop(v);
+      return;
+    }
     looping = true;
     try {
       v.currentTime = target;
@@ -191,6 +415,13 @@ export function installPlayer(host: PlayerHost): PlayerApi {
   }
 
   function loopPlayback(): void {
+    if (placed()) {
+      if (!projectPlaying) return;
+      const segment = host.playbackSegments()[projectSegment];
+      if (segment) projectPosition = segment.end;
+      updateProject();
+      return;
+    }
     if (!loopEnabled()) return;
     const segments = host.playbackSegments();
     const first = segments[0];
@@ -198,8 +429,14 @@ export function installPlayer(host: PlayerHost): PlayerApi {
   }
 
   function updateTime(): void {
+    if (disposed) return;
+    syncPlaybackRanges();
     if (host.Timeline?.isDragging() && previewSec != null) {
       host.setPlayheadUI(previewSec, host.videoDuration());
+      return;
+    }
+    if (placed()) {
+      updateProject();
       return;
     }
     const v = byId<HTMLVideoElement>("vid");
@@ -227,8 +464,21 @@ export function installPlayer(host: PlayerHost): PlayerApi {
     const v = byId<HTMLVideoElement>("vid");
     const full = host.videoDuration();
     if (disposed || !v || !full || !Number.isFinite(full) || !Number.isFinite(sec)) return;
+    syncPlaybackRanges();
     const clamped = Math.max(0, Math.min(full, sec));
     host.setPlayheadUI(clamped, full);
+    let source = clamped;
+    if (placed()) {
+      setPlaying(false);
+      setProjectPosition(clamped, false);
+      const target = sourceTimeAt(host.playbackSegments(), clamped);
+      if (target == null) {
+        resetSeek();
+        v.pause();
+        return;
+      }
+      source = target;
+    }
     if (!v.paused) {
       try {
         v.pause();
@@ -236,7 +486,12 @@ export function installPlayer(host: PlayerHost): PlayerApi {
         /* ignore pause failures during seek */
       }
     }
-    seekWanted = clamped;
+    queueVideoSeek(source);
+  }
+
+  function queueVideoSeek(source: number): void {
+    seekWanted = source;
+    if (awaitingMetadata && placed()) return;
     if (!seekRaf) {
       seekRaf = clock.requestAnimationFrame(() => {
         seekRaf = 0;
@@ -247,7 +502,7 @@ export function installPlayer(host: PlayerHost): PlayerApi {
 
   function flushVideoSeek(): void {
     const v = byId<HTMLVideoElement>("vid");
-    if (disposed || !v || seekWanted == null || seekBusy) return;
+    if (disposed || (awaitingMetadata && placed()) || !v || seekWanted == null || seekBusy) return;
     const sec = seekWanted;
     seekWanted = null;
     if (Math.abs((v.currentTime || 0) - sec) < 0.002) return;
@@ -272,7 +527,17 @@ export function installPlayer(host: PlayerHost): PlayerApi {
   }
 
   function captureFrameTime(): number {
+    syncPlaybackRanges();
     const video = byId<HTMLVideoElement>("vid");
+    if (placed()) {
+      const source = sourceTime();
+      if (source == null) throw new Error("There is no video frame in this timeline gap. Move the playhead onto a video segment.");
+      projectPosition = timelineTime();
+      setPlaying(false);
+      video?.pause();
+      flushVideoSeek();
+      return source;
+    }
     const time = seekWanted ?? (video && !video.paused ? video.currentTime : previewSec ?? video?.currentTime ?? 0);
     video?.pause();
     flushVideoSeek();
@@ -340,19 +605,36 @@ export function installPlayer(host: PlayerHost): PlayerApi {
   }
 
   function startFrameLoop(video: HTMLVideoElement): void {
-    stopFrameLoop();
-    const tick = (): void => {
-      if (disposed || video.paused || video.ended) {
+    if (frameLoop !== null) return;
+    const tick = (timestamp: number): void => {
+      if (disposed || (placed() ? !projectPlaying : video.paused || video.ended)) {
         frameLoop = null;
         return;
       }
+      if (placed()) {
+        if (previewGap && lastFrameTime != null) {
+          // native time owns video segments; only black gaps need a separate clock
+          const elapsed = Math.max(0, timestamp - lastFrameTime) / 1000;
+          projectPosition = (projectPosition ?? 0) + elapsed * (video.playbackRate || 1);
+        }
+        lastFrameTime = timestamp;
+      }
       updateTime();
-      frameLoop = clock.requestAnimationFrame(tick);
+      if (placed() && !projectPlaying) frameLoop = null;
+      else frameLoop = clock.requestAnimationFrame(tick);
     };
     frameLoop = clock.requestAnimationFrame(tick);
   }
 
   function onPlay(): void {
+    if (disposed) return;
+    if (placed()) {
+      setPlaying(true);
+      if (projectSegment < 0 && !previewGap) {
+        const time = timelineTime();
+        projectSegment = host.playbackSegments().findIndex(segment => time >= segment.start && time < segment.end);
+      }
+    }
     const btn = byId("btn-play");
     if (btn) btn.classList.add("playing");
     const video = byId<HTMLVideoElement>("vid");
@@ -360,6 +642,13 @@ export function installPlayer(host: PlayerHost): PlayerApi {
   }
 
   function onPause(): void {
+    if (placed()) {
+      const video = byId<HTMLVideoElement>("vid");
+      if (!video?.paused || (projectPlaying && (previewGap || video.ended))) return;
+      projectPosition = timelineTime();
+      setPlaying(false);
+      return;
+    }
     const btn = byId("btn-play");
     if (btn) btn.classList.remove("playing");
     stopFrameLoop();
@@ -368,6 +657,21 @@ export function installPlayer(host: PlayerHost): PlayerApi {
   function onDurationOrMeta(): void {
     updateTime();
     host.syncTimelineUI?.();
+  }
+
+  function onLoadedMetadata(): void {
+    if (disposed) return;
+    awaitingMetadata = false;
+    syncPlaybackRanges();
+    if (sourcePositionPending && placed()) {
+      // a newly loaded source is at source zero even when its project starts elsewhere
+      const time = projectPosition ?? previewSec ?? 0;
+      setProjectPosition(time, false);
+      const source = sourceTimeAt(host.playbackSegments(), time);
+      if (source != null) queueVideoSeek(source);
+    } else if (seekWanted != null) queueVideoSeek(seekWanted);
+    sourcePositionPending = false;
+    onDurationOrMeta();
   }
 
   function setSpeed(rate: number): void {
@@ -395,22 +699,37 @@ export function installPlayer(host: PlayerHost): PlayerApi {
     setSpeed(1);
   }
 
+  function resetSource(event?: Event): void {
+    awaitingMetadata = event?.type === "emptied";
+    sourcePositionPending = true;
+    playbackRanges = copyPlaybackRanges();
+    resetSeek();
+    stopFrameLoop();
+    projectPosition = null;
+    projectSegment = -1;
+    previewSec = null;
+    lastFrameTime = null;
+    setPlaying(false);
+    setGap(false);
+  }
+
   const vid = byId<HTMLVideoElement>("vid");
   if (vid) {
-    vid.addEventListener("emptied", resetSeek);
-    vid.addEventListener("emptied", stopFrameLoop);
-    vid.addEventListener("error", resetSeek);
-    vid.addEventListener("error", stopFrameLoop);
+    vid.addEventListener("emptied", resetSource);
+    vid.addEventListener("error", resetSource);
     vid.addEventListener("play", onPlay);
     vid.addEventListener("pause", onPause);
     vid.addEventListener("timeupdate", updateTime);
     vid.addEventListener("durationchange", onDurationOrMeta);
-    vid.addEventListener("loadedmetadata", onDurationOrMeta);
+    vid.addEventListener("loadedmetadata", onLoadedMetadata);
     vid.addEventListener("ended", loopPlayback);
   }
   updateMuteIcon();
 
   const api: PlayerApi = {
+    isPlaying,
+    timelineTime,
+    sourceTime,
     togglePlay,
     seekBy,
     stepFrame,
@@ -433,20 +752,17 @@ export function installPlayer(host: PlayerHost): PlayerApi {
     dispose: () => {
       if (disposed) return;
       disposed = true;
-      stopFrameLoop();
+      resetSource();
       if (vid) {
-        vid.removeEventListener("emptied", resetSeek);
-        vid.removeEventListener("emptied", stopFrameLoop);
-        vid.removeEventListener("error", resetSeek);
-        vid.removeEventListener("error", stopFrameLoop);
+        vid.removeEventListener("emptied", resetSource);
+        vid.removeEventListener("error", resetSource);
         vid.removeEventListener("play", onPlay);
         vid.removeEventListener("pause", onPause);
         vid.removeEventListener("timeupdate", updateTime);
         vid.removeEventListener("durationchange", onDurationOrMeta);
-        vid.removeEventListener("loadedmetadata", onDurationOrMeta);
+        vid.removeEventListener("loadedmetadata", onLoadedMetadata);
         vid.removeEventListener("ended", loopPlayback);
       }
-      resetSeek();
       if (active === api) active = null;
     },
   };

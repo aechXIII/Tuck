@@ -4,8 +4,10 @@ export const MIN_DURATION = 0.05;
 export class SegmentTooShortError extends Error {}
 
 export interface SegmentRange {
+  // old edits use source time; positioned edits keep footage separate from timeline geometry
   start: number;
   end: number;
+  sourceStart?: number;
   muted?: boolean;
 }
 
@@ -16,6 +18,7 @@ export interface TimelineViewItem {
   badge: string;
   start: number;
   end: number;
+  sourceStart?: number;
   muted?: boolean;
 }
 
@@ -52,6 +55,7 @@ function copySegment(
     end: end != null ? end : item.end,
   };
   if (item.muted) out.muted = true;
+  if (item.sourceStart != null) out.sourceStart = item.sourceStart + out.start - item.start;
   return out;
 }
 
@@ -89,6 +93,11 @@ export function normalizeSegments(
     const previous = normalized[normalized.length - 1];
     if (previous && start < previous.end - 0.000001)
       throw new Error("segments must be ordered and must not overlap");
+    if (record.sourceStart != null) {
+      const source = finiteNumber(record.sourceStart, "source start");
+      if (source < 0 || source + end - start > resolvedDuration + 0.000001)
+        throw new Error("segment source range exceeds source duration");
+    }
     normalized.push(copySegment(record, start, end));
   }
   return normalized;
@@ -131,6 +140,7 @@ export function timelineViewState(
         end: segment.end,
       };
       if (segment.muted) item.muted = true;
+      if (segment.sourceStart != null) item.sourceStart = segment.sourceStart;
       return item;
     }),
   };
@@ -146,6 +156,32 @@ export function selectedDuration(segments: SegmentRange[]): number {
   return total;
 }
 
+export function hasPlacement(segments: readonly SegmentRange[]): boolean {
+  return segments.some(segment => segment.sourceStart != null);
+}
+
+export function sourceTimeAt(segments: readonly SegmentRange[], time: number): number | null {
+  const segment = segments.find(item => time >= item.start && time < item.end);
+  return segment ? (segment.sourceStart ?? segment.start) + time - segment.start : null;
+}
+
+export function timelineTimeAt(segments: readonly SegmentRange[], source: number, preferred = 0): number {
+  const current = segments[preferred];
+  const contains = (item: SegmentRange) => source >= (item.sourceStart ?? item.start) && source <= (item.sourceStart ?? item.start) + item.end - item.start;
+  const segment = current && contains(current) ? current : segments.find(contains);
+  return segment ? segment.start + source - (segment.sourceStart ?? segment.start) : source;
+}
+
+export interface ExportSegment { start: number; end: number; timeline_start?: number }
+
+export function exportSegments(segments: readonly SegmentRange[]): ExportSegment[] {
+  const positioned = hasPlacement(segments);
+  return segments.map(segment => {
+    const start = segment.sourceStart ?? segment.start;
+    return { start, end: start + segment.end - segment.start, ...(positioned ? { timeline_start: segment.start } : {}) };
+  });
+}
+
 export function isFullSource(
   segments: SegmentRange[],
   duration: number,
@@ -155,6 +191,7 @@ export function isFullSource(
     segments.length === 1 &&
     !!first &&
     first.start <= 0.001 &&
+    (first.sourceStart ?? first.start) <= 0.001 &&
     first.end >= duration - 0.001
   );
 }
@@ -176,9 +213,13 @@ export function editEndpoint(
   const previousEnd = previous ? previous.end : 0;
   const nextStart = next ? next.start : duration;
   if (endpoint === "start") {
-    current.start = Math.max(previousEnd, Math.min(resolved, current.end - MIN_DURATION));
+    const before = current.start;
+    const minimum = current.sourceStart == null ? previousEnd : Math.max(previousEnd, before - current.sourceStart);
+    current.start = Math.max(minimum, Math.min(resolved, current.end - MIN_DURATION));
+    if (current.sourceStart != null) current.sourceStart += current.start - before;
   } else if (endpoint === "end") {
-    current.end = Math.min(nextStart, Math.max(resolved, current.start + MIN_DURATION));
+    const maximum = current.sourceStart == null ? nextStart : Math.min(nextStart, current.start + duration - current.sourceStart);
+    current.end = Math.min(maximum, Math.max(resolved, current.start + MIN_DURATION));
   } else {
     throw new Error("endpoint must be start or end");
   }
@@ -250,6 +291,7 @@ export function addSegment(
   const length = Math.min(requestedDuration, gap.end - gap.start);
   const start = Math.max(gap.start, Math.min(at - length / 2, gap.end - length));
   const added: SegmentRange = { start: start, end: start + length };
+  if (hasPlacement(result)) added.sourceStart = start;
   result.splice(gap.insertAt, 0, added);
   return { segments: result, index: gap.insertAt };
 }
@@ -259,6 +301,7 @@ export function moveSegment(
   index: number,
   start: number,
   duration: number,
+  preserveSource = true,
 ): SegmentRange[] {
   const result = normalizeSegments(segments, duration);
   if (index < 0 || index >= result.length) throw new Error("invalid active segment");
@@ -268,10 +311,31 @@ export function moveSegment(
   const length = current.end - current.start;
   const previous = result[index - 1];
   const next = result[index + 1];
-  const minimum = previous ? previous.end : 0;
-  const maximum = (next ? next.start : duration) - length;
-  current.start = Math.max(minimum, Math.min(resolvedStart, maximum));
+  const source = current.sourceStart ?? current.start;
+  const minimum = Math.max(previous ? previous.end : 0, preserveSource ? 0 : current.start - source);
+  const maximum = Math.min((next ? next.start : duration) - length,
+    preserveSource ? duration : current.start + duration - source - length);
+  const movedStart = Math.max(minimum, Math.min(resolvedStart, maximum));
+  if (Math.abs(movedStart - current.start) < 0.000001) return result;
+  if (preserveSource) {
+    for (const segment of result) segment.sourceStart ??= segment.start;
+  } else if (current.sourceStart != null) {
+    current.sourceStart = source + movedStart - current.start;
+  }
+  current.start = movedStart;
   current.end = current.start + length;
+  return result;
+}
+
+export function slipSegment(segments: SegmentRange[], index: number, delta: number, duration: number): SegmentRange[] {
+  const result = normalizeSegments(segments, duration);
+  const current = result[index];
+  if (!current) throw new Error("invalid active segment");
+  const source = current.sourceStart ?? current.start;
+  const next = Math.max(0, Math.min(duration - (current.end - current.start), source + finiteNumber(delta, "source offset")));
+  if (Math.abs(next - source) < 0.000001) return result;
+  for (const segment of result) segment.sourceStart ??= segment.start;
+  current.sourceStart = next;
   return result;
 }
 
@@ -333,29 +397,26 @@ export function setBoundaryAt(
   if (current) {
     if (endpoint === "start") {
       if (short(current.end - at)) return null;
-      current.start = at;
     } else {
       if (short(at - current.start)) return null;
-      current.end = at;
     }
-    return { segments: result, index: inside };
+    return { segments: editEndpoint(result, inside, endpoint, at, duration), index: inside };
   }
   const following = result.findIndex((segment) => segment.start >= at);
   const insertAt = following === -1 ? result.length : following;
   if (endpoint === "start") {
     const end = result[insertAt]?.start ?? duration;
     if (short(end - at)) return null;
-    result.splice(insertAt, 0, { start: at, end });
+    result.splice(insertAt, 0, { start: at, end, ...(hasPlacement(result) ? { sourceStart: at } : {}) });
     return { segments: result, index: insertAt };
   }
   const previous = result[insertAt - 1];
   if (previous) {
-    previous.end = at;
-    return { segments: result, index: insertAt - 1 };
+    return { segments: editEndpoint(result, insertAt - 1, "end", at, duration), index: insertAt - 1 };
   }
   // before the first segment there is nothing to stretch, so the new one starts with the video
   if (short(at)) return null;
-  result.unshift({ start: 0, end: at });
+  result.unshift({ start: 0, end: at, ...(hasPlacement(result) ? { sourceStart: 0 } : {}) });
   return { segments: result, index: 0 };
 }
 
@@ -368,7 +429,7 @@ export function audioSegmentsForClip(
   for (let i = 0; i < segs.length; i++) {
     const segment = segs[i];
     if (!segment) continue;
-    if (!segment.muted) pieces.push({ start: segment.start, end: segment.end });
+    if (!segment.muted) pieces.push(copySegment(segment));
   }
   return pieces;
 }
@@ -440,6 +501,11 @@ export const SegmentEditing = {
   canAddSegment,
   addSegment,
   moveSegment,
+  slipSegment,
+  hasPlacement,
+  sourceTimeAt,
+  timelineTimeAt,
+  exportSegments,
   removeSegment,
   splitAt,
   audioSegmentsForClip,

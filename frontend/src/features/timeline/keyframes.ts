@@ -107,30 +107,31 @@ export function landingKeyframe(
 // a plan made before the latest edit must not decorate the edited segment. The last end is
 // the analysed stream duration, which can differ from the probed container duration.
 export function planMatches(
-  segment: { start: number; end: number },
+  segment: { start: number; end: number; sourceStart?: number },
   planSegment: CutSegment | null | undefined,
 ): planSegment is CutSegment {
-  return !!planSegment && Math.abs(mediaSeconds(planSegment.requested.start) - segment.start) <= MATCH_EPSILON;
+  return !!planSegment && Math.abs(mediaSeconds(planSegment.requested.start) - (segment.sourceStart ?? segment.start)) <= MATCH_EPSILON;
 }
 
 export function sliverFor(
   index: number,
-  segment: { start: number; end: number },
+  segment: { start: number; end: number; sourceStart?: number },
   planSegment: CutSegment | null | undefined,
 ): CutSliver | null {
   if (!planSegment || !planMatches(segment, planSegment)) return null;
+  const offset = segment.start - (segment.sourceStart ?? segment.start);
   if (planSegment.start_kind === "exact") {
     const start = mediaSeconds(planSegment.resolved.start);
     const whole = !planSegment.copied;
     const copyStart = whole ? mediaSeconds(planSegment.resolved.end) : mediaSeconds(planSegment.copied!.start);
-    return copyStart > start ? {index,requestedStart:start,exportedStart:copyStart,delta:copyStart-start,kind:"exact",whole} : null;
+    return copyStart > start ? {index,requestedStart:start + offset,exportedStart:copyStart + offset,delta:copyStart-start,kind:"exact",whole} : null;
   }
   if (planSegment.start_kind !== "moved") return null;
   const requestedStart = mediaSeconds(planSegment.requested.start);
   const exportedStart = mediaSeconds(planSegment.resolved.start);
   const delta = exportedStart - requestedStart;
-  if (!(delta > 0) || exportedStart >= segment.end) return null;
-  return { index, requestedStart, exportedStart, delta, kind: "moved" };
+  if (!(delta > 0) || exportedStart + offset >= segment.end) return null;
+  return { index, requestedStart: requestedStart + offset, exportedStart: exportedStart + offset, delta, kind: "moved" };
 }
 
 export function deltaText(seconds: number): string {

@@ -16,7 +16,10 @@ export function segmentsAtExportedStarts(
     const segments = segmentsForClip(clip, duration).map((segment, index) => {
       const planned = plan.segments[index];
       if (!planned) throw new Error("the cut plan does not match the timeline");
-      return { ...segment, start: mediaSeconds(planned.resolved.start) };
+      const sourceStart = mediaSeconds(planned.resolved.start);
+      return segment.sourceStart == null ? { ...segment, start: sourceStart } : {
+        ...segment, start: segment.start + sourceStart - segment.sourceStart, sourceStart,
+      };
     });
     return { ok: true, segments: normalizeSegments(segments, duration) };
   } catch (error) {

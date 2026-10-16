@@ -8,6 +8,7 @@ export interface MediaTime extends JsonObject {
 export interface CutRange extends JsonObject {
   readonly start: MediaTime;
   readonly end: MediaTime;
+  readonly timeline_start?: MediaTime;
 }
 export interface CutPlanRequest extends JsonObject {
   readonly operation: "cut";

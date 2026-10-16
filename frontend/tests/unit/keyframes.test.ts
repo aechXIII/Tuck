@@ -32,6 +32,15 @@ function segment(start: number, end: number, exportedStart: number, kind: CutSeg
   };
 }
 
+test("lossless feedback follows the source frames after the video is moved", () => {
+  const placed = { start: 0, end: 20, sourceStart: 10 };
+  const planned = segment(10, 30, 12);
+  assert.equal(Keyframes.planMatches(placed, planned), true);
+  assert.deepEqual(Keyframes.sliverFor(0, placed, planned), {
+    index: 0, requestedStart: 0, exportedStart: 2, delta: 2, kind: "moved",
+  });
+});
+
 test("the strip sorts keyframes and reports full coverage once reading finishes", () => {
   assert.deepEqual(Keyframes.keyframeStrip(analysis(), 120), { times: [0, 2, 4], coverage: 1 });
 });

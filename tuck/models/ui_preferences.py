@@ -110,6 +110,7 @@ FLAG_PREFERENCES: tuple[str, ...] = (
     "timeline_snap",
     "timeline_keyframes",
     "timeline_frames",
+    "timeline_preserve_source",
     "animations",
     "reopen_last_videos",
     "keep_file_dates",

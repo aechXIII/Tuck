@@ -19,6 +19,13 @@ const plan = (segments: CutSegment[]): CutPlanPreview => ({
 });
 const clip = {segments: [{start: 0, end: 5}, {start: 6, end: 9}]};
 
+test("moving a placed cut to its keyframe adjusts the source and timeline together", () => {
+  const placed = { segments: [{ start: 0, end: 5, sourceStart: 4 }] };
+  assert.deepEqual(segmentsAtExportedStarts(placed, plan([segment(500, 900)]), 10), {
+    ok: true, segments: [{ start: 1, end: 5, sourceStart: 5 }],
+  });
+});
+
 test("starts move to where each cut is exported and ends stay", () => {
   const moved = segmentsAtExportedStarts(clip, plan([segment(100, 500), segment(800, 900)]), 10);
   assert.deepEqual(moved.ok && moved.segments.map(({start, end}) => [start, end]), [[1, 5], [8, 9]]);

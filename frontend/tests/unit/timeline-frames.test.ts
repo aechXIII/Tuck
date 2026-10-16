@@ -15,6 +15,13 @@ const geometry = {
   visibleEnd: 20,
 };
 
+test("moved frame tiles show the retained source pictures", () => {
+  const view = frameLayout({ ...geometry, segments: [{ start: 0, end: 5, sourceStart: 10 }] });
+  assert.equal(view.tiles[0]?.index, 10);
+  assert.equal(view.tiles[0]?.left, 0);
+  assert.equal(view.tiles.at(-1)?.index, 14);
+});
+
 test("frame tiles stay on the source grid when a segment is trimmed or split", () => {
   const full = frameLayout({ ...geometry, segments: [{ start: 0, end: 20 }] });
   const cut = frameLayout({

@@ -225,6 +225,9 @@ export function installEditorRuntime(
     renderClips: () => library?.renderClips(),
     reqPreview: requestPreview,
     getPreviewSec: () => player?.getPreviewSec() ?? null,
+    getTimelineTime: () => player?.timelineTime() ?? 0,
+    isPlaying: () => player?.isPlaying() ?? false,
+    seekPreview: (seconds) => player?.seekPreview(seconds),
     setClipSegments: (clip, segments, active) =>
       timeline?.setClipSegments(clip, segments.filter(isSegment), active),
     paintTrimChrome: () => timeline?.paintTrimChrome(),
@@ -294,6 +297,12 @@ export function installEditorRuntime(
     Timeline: timeline,
     AudioTimeline: audio,
     syncTimelineUI: () => timeline.syncTimelineUI(),
+    setPreviewGap: (gap) => {
+      byId("stage")?.classList.toggle("timeline-gap", gap);
+      const caption = byId("timeline-gap-caption");
+      if (caption) caption.hidden = !gap;
+      frameExport?.sync();
+    },
     loopPlayback: () => session.appSettings.loop_playback !== false,
     document: windowRef.document,
   });
@@ -434,7 +443,10 @@ export function installEditorRuntime(
     orderedClipKeys: () => library.orderedClipKeys(),
     audioRequestPayload: (clip) =>
       audio.requestPayload(clip) as Record<string, unknown>,
-    selectCutSegment: (index,time) => { timeline.selectSegment(index,false); player.seekPreview(time); },
+    selectCutSegment: (index, time) => {
+      timeline.selectSegment(index, false);
+      player.seekPreview(SegmentEditing.timelineTimeAt(timeline.playbackSegments(), time, index));
+    },
     moveCutStarts: (clip,plan) => {
       const moved = segmentsAtExportedStarts(clip,plan,clip.probeData?.duration ?? 0);
       if (!moved.ok) {
@@ -530,10 +542,10 @@ export function installEditorRuntime(
     byId,
     notify: toast,
     client: getBackendClient,
-    ready: () => isProbeReady(session.selPath ? session.clips[session.selPath] : null),
+    ready: () => isProbeReady(session.selPath ? session.clips[session.selPath] : null) && player.sourceTime() != null,
     capture: () => {
       const clip = session.selPath ? session.clips[session.selPath] : undefined;
-      if (!clip || !isProbeReady(clip)) return null;
+      if (!clip || !isProbeReady(clip) || player.sourceTime() == null) return null;
       const crop = transform.cropTransformForRequest(clip);
       return {
         source: clip.path,
@@ -551,7 +563,7 @@ export function installEditorRuntime(
     transform.syncTransformControls();
     transform.paintCropOverlay();
     panels.renderClipDetails();
-    if (encoding?.workflow() === 2) requestPreview();
+    requestPreview();
   }
 
   function handleSendto(data: unknown): void {
@@ -749,7 +761,7 @@ export function installEditorRuntime(
           const video = byId<HTMLVideoElement>("vid");
           const duration = timeline.videoDuration() ?? 0;
           if (!video || !duration) return;
-          const point = cutPointNear(timeline.playbackSegments(), video.currentTime, direction, duration);
+          const point = cutPointNear(timeline.playbackSegments(), player.timelineTime(), direction, duration);
           if (point != null) player.seekPreview(point);
         },
       });

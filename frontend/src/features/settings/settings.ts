@@ -371,6 +371,14 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         })), str(s.skip_seconds, "3"), { "data-settings-change": "save" }),
       }),
     )), section("Timeline", card(
+      switchRow({
+        setting: "timeline-preserve-source",
+        id: "set-timeline-preserve-source",
+        label: "Preserve footage when moving clips",
+        description: "Keep trimmed footage when moving video or source audio. Turn off for the old behavior, where moving changes the selected footage.",
+        checked: s.timeline_preserve_source !== false,
+        attributes: { "data-settings-change": "save" },
+      }),
       row({
         setting: "time-format",
         label: "Time format",
@@ -829,6 +837,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
           skip_seconds: radio("set-skip", "3"),
           time_format: radio("set-time-format", "seconds"),
           timeline_frames: checked("set-timeline-frames"),
+          timeline_preserve_source: checked("set-timeline-preserve-source"),
           timeline_frame_mode: radio("set-timeline-frame-mode", "center"),
         };
       case "appearance":

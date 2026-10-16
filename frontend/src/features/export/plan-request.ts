@@ -41,6 +41,7 @@ export interface ExportFormState {
 export interface PlanSegment {
   start: number;
   end: number;
+  timeline_start?: number;
 }
 
 export interface PlanRequestContext {
@@ -128,7 +129,7 @@ export function buildPlanRequest(
   }
   const segments = ctx.segments ?? null;
   if (segments && segments.length) {
-    req.segments = segments.map((segment) => ({ start: segment.start, end: segment.end }));
+    req.segments = segments.map((segment) => ({ ...segment }));
   }
   if (ctx.transform) req.transform = ctx.transform;
   if (ctx.audioPayload) Object.assign(req, ctx.audioPayload);
@@ -228,7 +229,7 @@ export function buildCutRequest({clip,state,frameDuration,duration}: CutRequestC
   const full = clip.probeData?.duration ?? 0;
   // a cut copies the kept segments as they are; crop, filters and the audio timeline's mix,
   // mutes and added tracks stay on the clip for Compress and Upscale
-  const segments = SegmentEditing.segmentsForClip(clip,full);
+  const segments = SegmentEditing.exportSegments(SegmentEditing.segmentsForClip(clip,full));
   const includeAudio = state.includeAudio && clip.probeData?.has_audio !== false;
   return {
     operation:"cut",source:clip.path,precision:state.precision,include_audio:includeAudio,
@@ -236,6 +237,7 @@ export function buildCutRequest({clip,state,frameDuration,duration}: CutRequestC
       start:toTime(segment.start),
       // container duration can include audio padding beyond the last video frame
       end:duration && Math.abs(segment.end-full) < 0.000001 ? duration : toTime(segment.end),
+      ...(segment.timeline_start != null ? {timeline_start:toTime(segment.timeline_start)} : {}),
     })),
   };
 }

@@ -832,6 +832,7 @@ class BridgeAPI:
             "timeline_snap": s.timeline_snap,
             "timeline_keyframes": s.timeline_keyframes,
             "timeline_frames": s.timeline_frames,
+            "timeline_preserve_source": s.timeline_preserve_source,
             "timeline_frame_mode": s.timeline_frame_mode,
             "shortcut_overrides": {
                 command: list(combos) for command, combos in s.shortcut_overrides.items()

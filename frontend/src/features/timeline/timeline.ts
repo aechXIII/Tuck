@@ -60,7 +60,7 @@ export interface TimelineHost {
 
 export type TimelineApi = ReturnType<typeof installTimeline>;
 
-type SegmentLike = { start: number; end: number; muted?: boolean; badge?: string; index?: number };
+type SegmentLike = SegmentEditing.SegmentRange & { badge?: string; index?: number };
 
 // a pressed trim edge waits as "in-pending"/"out-pending" until the pointer really moves
 type TimelineDrag = "in" | "out" | "in-pending" | "out-pending" | "ruler" | "seek" | "segment-pending" | "segment";
@@ -237,6 +237,8 @@ let _MIN_TRIM = SegmentEditing.MIN_DURATION;
 let _segmentDragOffset = 0;
 let _segmentPointerX = 0;
 let _segmentClickTime = 0;
+let _segmentSlip = false;
+let _segmentSlipSource: SegmentEditing.SegmentRange[] = [];
 let _SEGMENT_DRAG_THRESHOLD = 5;
 // a trim follows the pointer from where the edge was grabbed, and only once it moves this far
 let _trimGrabOffset = 0;
@@ -286,11 +288,12 @@ function clipHasTrim(c: EditorClip | null | undefined, fullDur: number) {
 function setClipSegments(c: EditorClip | null | undefined, segments: SegmentLike[], active: unknown) {
   if (!c) return;
   c.segments = segments.map(function(segment: SegmentLike) {
-    const item: { start: number; end: number; muted?: boolean } = {
+    const item: SegmentEditing.SegmentRange = {
       start: segment.start,
       end: segment.end,
     };
     if (segment.muted) item.muted = true;
+    if (segment.sourceStart != null) item.sourceStart = segment.sourceStart;
     return item;
   });
   const requested = typeof active === "number" && Number.isFinite(active) ? active : 0;
@@ -311,10 +314,19 @@ function cutOverlay() {
   if (!clip || !(full > 0) || probeStatus(clip) !== "ready") return null;
   const state = clip.cutState;
   const frame = state?.analysis?.analysis?.frame_duration;
+  const sourceStrip = Keyframes.keyframeStrip(state?.analysis, full);
+  const ranges = clipSegments(clip, full);
+  const placed = SegmentEditing.hasPlacement(ranges);
+  const times = placed ? [...new Set(ranges.flatMap(segment => {
+    const source = segment.sourceStart ?? segment.start;
+    return sourceStrip.times.filter(time => time >= source && time <= source + segment.end - segment.start)
+      .map(time => time + segment.start - source);
+  }))].sort((a, b) => a - b) : sourceStrip.times;
   return {
     clip,
     full,
-    strip: Keyframes.keyframeStrip(state?.analysis, full),
+    strip: { times, coverage: placed && sourceStrip.coverage !== 1 ? null : sourceStrip.coverage },
+    sourceStrip,
     // the last plan stays drawn while a changed request is planned, as in the Inspector
     plan: state?.plan ?? (state?.error ? null : state?.shown) ?? null,
     // half a frame, so the keyframe under the playhead counts as the current one
@@ -325,6 +337,12 @@ function cutOverlay() {
 function keyframesNear(times: readonly number[]) {
   const overlay = keyframesOn ? cutOverlay() : null;
   if (!overlay) return [];
+  const ranges = clipSegments(overlay.clip, overlay.full);
+  const active = ranges[activeSegmentIndex(overlay.clip, ranges)];
+  if (active?.sourceStart != null) {
+    const offset = active.start - active.sourceStart;
+    return times.flatMap(time => Keyframes.keyframeSnapCandidates(overlay.sourceStrip.times, time - offset)).map(time => time + offset);
+  }
   return times.flatMap((time) => Keyframes.keyframeSnapCandidates(overlay.strip.times, time));
 }
 
@@ -673,7 +691,10 @@ function paintTrimChrome() {
         " to " +
         formatSegmentTime(segment.end) +
         (segmentAudioMuted ? ", source audio muted" : "") +
-        ". Click to seek; drag to move",
+        (segment.sourceStart != null ? ". Source " + formatSegmentTime(segment.sourceStart) + " to " + formatSegmentTime(segment.sourceStart + segment.end - segment.start) : "") +
+        (session.appSettings.timeline_preserve_source === false
+          ? ". Click to seek; drag to move and adjust source; Alt+drag to adjust source"
+          : ". Click to seek; drag to move; Alt+drag to adjust source"),
     );
     range.setAttribute(
       "aria-pressed",
@@ -705,9 +726,9 @@ function paintTrimChrome() {
     nameLabel.className = "tl-segment-label";
     nameLabel.textContent = formatSelectedDuration(segment.end - segment.start);
     let timeText =
-      formatSegmentTime(segment.start) +
+      (segment.sourceStart != null ? "Source " : "") + formatSegmentTime(segment.sourceStart ?? segment.start) +
       "–" +
-      formatSegmentTime(segment.end) +
+      formatSegmentTime((segment.sourceStart ?? segment.start) + segment.end - segment.start) +
       " · " +
       formatSelectedDuration(segment.end - segment.start);
     copy.append(nameLabel);
@@ -950,7 +971,7 @@ function segmentSnapCandidates(
 ) {
   let points = [0, full, ...keyframesNear(near)];
   let v = currentVideo();
-  if (v) points.push(v.currentTime);
+  if (v) points.push(host.getPreviewSec?.() ?? v.currentTime);
   for (const [i, segment] of segments.entries()) {
     if (i === active) continue;
     points.push(segment.start, segment.end);
@@ -1062,7 +1083,7 @@ function moveActiveSegment(start: number, snap?: boolean) {
       guide = points.includes(snappedStart) ? snappedStart : snappedStart + duration;
     }
   }
-  segments = SegmentEditing.moveSegment(segments, active, start, full);
+  segments = SegmentEditing.moveSegment(segments, active, start, full, session.appSettings.timeline_preserve_source !== false);
   setClipSegments(c, segments, active);
   const moved = arrayItem(segments, active);
   if (guide != null && landedOn(moved?.start ?? null, snappedStart) != null) {
@@ -1070,6 +1091,17 @@ function moveActiveSegment(start: number, snap?: boolean) {
     lastSnapEdge = guide === snappedStart ? "start" : "end";
   }
   return moved;
+}
+
+function slipActiveSegment(delta: number) {
+  const clip = selectedClip(session);
+  const full = videoDuration();
+  if (!clip || !(full > 0)) return null;
+  const segments = clipSegments(clip, full);
+  const active = activeSegmentIndex(clip, segments);
+  const slipped = SegmentEditing.slipSegment(segments, active, delta, full);
+  setClipSegments(clip, slipped, active);
+  return arrayItem(slipped, active);
 }
 
 function resetSegments() {
@@ -1116,7 +1148,7 @@ function addSegment() {
     let result = SegmentEditing.addSegment(
       clipSegments(c, full),
       full,
-      currentVideo()?.currentTime ?? 0,
+      host.getPreviewSec?.() ?? currentVideo()?.currentTime ?? 0,
       preferredDuration,
     );
     setClipSegments(c, result.segments, result.index);
@@ -1181,7 +1213,8 @@ function onTimelinePointerDown(e: PointerEvent) {
   host.AudioTimeline?.selectVideoTrack?.();
   const edgeCandidate = target?.closest(".clip-edge") ?? null;
   let edge = isHtmlElement(edgeCandidate) ? edgeCandidate : null;
-  const isSegment = target?.classList.contains("tl-segment") ?? false;
+  const segmentTarget = target?.closest<HTMLElement>(".tl-segment");
+  const isSegment = !!segmentTarget;
   if (edge && edge.dataset.edge) {
     let edgeName = edge.dataset.edge;
     let edgeSegmentCandidate = edge.closest(".tl-segment");
@@ -1200,7 +1233,7 @@ function onTimelinePointerDown(e: PointerEvent) {
     if (edge) edge.classList.add("dragging");
     setTrimDragCursor(true);
   } else if (isSegment) {
-    let index = parseInt(target?.dataset.segmentIndex ?? "", 10);
+    let index = parseInt(segmentTarget?.dataset.segmentIndex ?? "", 10);
     let full = videoDuration();
     let segments = playbackSegments();
     const segment = arrayItem(segments, index);
@@ -1209,12 +1242,14 @@ function onTimelinePointerDown(e: PointerEvent) {
     _segmentDragOffset = pointerTime - segment.start;
     _segmentPointerX = e.clientX;
     _segmentClickTime = pointerTime;
+    _segmentSlip = e.altKey;
+    _segmentSlipSource = SegmentEditing.cloneSegments(segments);
     selectSegment(index, false);
     _tlDrag = "segment-pending";
   } else if (target && target.id === "tl-in") beginTrimPress("in", e);
   else if (target && target.id === "tl-out") beginTrimPress("out", e);
   else _tlDrag = "seek";
-  if (_tlDrag === "segment-pending") host.History?.begin?.(session.selPath, "move segment");
+  if (_tlDrag === "segment-pending") host.History?.begin?.(session.selPath, _segmentSlip ? "slip segment" : "move segment");
   if (target?.classList.contains("tl-handle")) {
     target.classList.add("dragging");
     setTrimDragCursor(true);
@@ -1273,7 +1308,15 @@ function processTimelineMove(e: PointerEvent) {
     paintSnapGuide(lastSnapTime);
     host.seekPreview?.(end);
   } else if (_tlDrag === "segment") {
-    let moved = moveActiveSegment(time - _segmentDragOffset);
+    let moved: SegmentEditing.SegmentRange | null;
+    if (_segmentSlip) {
+      const clip = selectedClip(session);
+      if (!clip) return;
+      const active = activeSegmentIndex(clip, _segmentSlipSource);
+      const slipped = SegmentEditing.slipSegment(_segmentSlipSource, active, time - _segmentClickTime, full);
+      setClipSegments(clip, slipped, active);
+      moved = arrayItem(slipped, active);
+    } else moved = moveActiveSegment(time - _segmentDragOffset);
     if (!moved) return;
     paintTrimChrome();
     paintSnapGuide(lastSnapTime);
@@ -1334,6 +1377,7 @@ function finishTimelineDrag(cancelled: boolean) {
   setSegmentDragCursor(false);
   if (_tlDrag === "ruler") setRulerScrubCursor(false);
   _tlDrag = null;
+  _segmentSlipSource = [];
   lastSnapTime = null;
   paintSnapGuide(null);
   if (_kfLanding != null || byId("kf-lane")?.classList.contains("dragging")) {
@@ -1353,7 +1397,7 @@ function finishTimelineDrag(cancelled: boolean) {
 
 function handleTimelineEditKey(e: KeyboardEvent) {
   let v = currentVideo();
-  if (!v || !v.duration) return;
+  if (!v || !(videoDuration() > 0)) return;
   if ((e.key === "[" || e.key === "]") && !e.ctrlKey && !e.altKey && !e.metaKey) {
     moveHandleToKeyframe(e);
     return;
@@ -1365,6 +1409,7 @@ function handleTimelineEditKey(e: KeyboardEvent) {
   );
   if (!intent) return;
   e.preventDefault();
+  host.History?.begin?.(session.selPath, intent.type === "segment" ? (e.altKey ? "slip segment" : "move segment") : intent.endpoint === "start" ? "trim start" : "trim end");
   let full = videoDuration();
   let c = selectedClip(session);
   let segments = clipSegments(c, full);
@@ -1373,10 +1418,9 @@ function handleTimelineEditKey(e: KeyboardEvent) {
     const segment = arrayItem(segments, intent.index);
     if (!segment) return;
     c.activeSegment = intent.index;
-    let moved = moveActiveSegment(
-      segment.start + intent.delta,
-      intent.snap,
-    );
+    const moved = e.altKey
+      ? slipActiveSegment(intent.delta)
+      : moveActiveSegment(segment.start + intent.delta, intent.snap);
     paintTrimChrome();
     if (moved) host.seekPreview?.(moved.start);
   } else {
@@ -1391,6 +1435,10 @@ function handleTimelineEditKey(e: KeyboardEvent) {
   }
   host.renderClips?.();
   host.reqPreview?.();
+  host.History?.commit?.();
+  if (intent.type === "segment") {
+    byId("tl-segments")?.querySelector<HTMLElement>(`[data-segment-index="${intent.index}"]`)?.focus({ preventScroll: true });
+  }
 }
 
 (function bindTimeline() {
@@ -1454,7 +1502,7 @@ function handleTimelineEditKey(e: KeyboardEvent) {
     const resolved = selectedClip(session)?.cutState?.plan?.segments[index]?.resolved.start;
     if (!resolved) return;
     host.AudioTimeline?.selectVideoTrack?.();
-    host.showCutRow?.(index, mediaSeconds(resolved));
+    host.showCutRow?.(index, SegmentEditing.timelineTimeAt(playbackSegments(), mediaSeconds(resolved), index));
   });
 })();
 
@@ -1527,7 +1575,7 @@ function timelineAnchorRatio() {
   let full = videoDuration();
   let video = currentVideo();
   if (!full || !video || !Number.isFinite(video.currentTime)) return 0;
-  return Math.min(1, Math.max(0, video.currentTime / full));
+  return Math.min(1, Math.max(0, (host.getPreviewSec?.() ?? video.currentTime) / full));
 }
 
 function applyTimelineZoom(anchorRatio?: number) {

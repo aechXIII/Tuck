@@ -39,6 +39,9 @@ export interface AudioTimelineHost {
   renderClips?: () => void;
   reqPreview?: () => void;
   getPreviewSec?: () => number | null;
+  getTimelineTime?: () => number;
+  isPlaying?: () => boolean;
+  seekPreview?: (seconds: number) => void;
   setClipSegments?: (clip: EditorClip, segments: unknown[], active?: number) => void;
   paintTrimChrome?: () => void;
   syncTimelineTrackCount?: (count: number) => void;
@@ -58,6 +61,7 @@ export interface AudioTimelineHost {
     begin?: (path: string | null, label?: string) => void;
     commit?: () => void;
     cancel?: () => void;
+    revert?: () => void;
     action?: <T>(path: string | null, fn: () => T, label?: string) => T;
   };
   TuckShortcuts?: {
@@ -93,7 +97,7 @@ interface SelectedAudioClip {
   readonly trackIndex: number;
 }
 
-type SegmentLike = { start: number; end: number; muted?: boolean; badge?: string; index?: number };
+type SegmentLike = SegmentEditing.SegmentRange & { badge?: string; index?: number };
 
 interface PointerGeometry {
   readonly rect: DOMRect;
@@ -105,6 +109,8 @@ interface GroupMoveDrag extends PointerGeometry {
   readonly kind: "group-move";
   readonly index: number;
   readonly offset: number;
+  readonly slip: boolean;
+  readonly originalSegments: SegmentEditing.SegmentRange[];
 }
 
 interface GroupTrimDrag extends PointerGeometry {
@@ -332,6 +338,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
   function sourceTime() {
     const preview = host.getPreviewSec?.();
     if (preview != null) return preview;
+    if (host.getTimelineTime) return host.getTimelineTime();
     let candidate = byId("vid");
     let video = isVideoElement(candidate) ? candidate : null;
     return video ? Number(video.currentTime) || 0 : 0;
@@ -667,7 +674,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
       );
       wave.style.setProperty(
         "--wave-position",
-        core.waveformPositionPct(segment.start, segment.end - segment.start, total) +
+        core.waveformPositionPct(segment.sourceStart ?? segment.start, segment.end - segment.start, total) +
           "% center",
       );
       block.appendChild(wave);
@@ -994,6 +1001,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
       ) {
         if (Number.isInteger(sourceSegmentIndex) && typeof host.selectSegment === "function")
           host.selectSegment(sourceSegmentIndex, false);
+        host.History?.begin?.(session.selPath, edgeName === "start" ? "trim start" : "trim end");
         dragState = {
           kind: "group-trim",
           edge: edgeName,
@@ -1013,11 +1021,14 @@ export function installAudioTimeline(host: AudioTimelineHost) {
       let videoIndex = SegmentEditing.segmentIndexAtTime(videoSegs, time, 0);
       if (videoIndex >= 0 && typeof host.selectSegment === "function")
         host.selectSegment(videoIndex, false);
+      host.History?.begin?.(session.selPath, event.altKey ? "slip segment" : "move segment");
       apiObject.seekSource(time);
       dragState = {
         kind: "group-move",
         index: videoIndex,
         offset: videoIndex >= 0 ? time - (arrayItem(videoSegs, videoIndex)?.start ?? time) : 0,
+        slip: event.altKey,
+        originalSegments: videoSegs,
         startX: event.clientX,
         rect: lane.getBoundingClientRect(),
         total: total,
@@ -1119,22 +1130,29 @@ export function installAudioTimeline(host: AudioTimelineHost) {
       if (Math.abs(event.clientX - dragState.startX) < _DRAG_THRESHOLD) return;
       let time =
         ((event.clientX - dragState.rect.left) / dragState.rect.width) * dragState.total;
-      if (typeof host.moveActiveSegment === "function") {
+      if (dragState.slip) {
+        const clip = selectedVideo();
+        if (clip && dragState.index >= 0) {
+          const delta = (event.clientX - dragState.startX) / dragState.rect.width * dragState.total;
+          const slipped = SegmentEditing.slipSegment(dragState.originalSegments, dragState.index, delta, dragState.total);
+          host.setClipSegments?.(clip, slipped, dragState.index);
+          host.paintTrimChrome?.();
+          const start = slipped[dragState.index]?.start;
+          if (start != null) host.seekPreview?.(start);
+        }
+      } else if (typeof host.moveActiveSegment === "function") {
         let moved = host.moveActiveSegment(time - dragState.offset);
         if (moved && typeof host.paintTrimChrome === "function") host.paintTrimChrome();
+        if (moved) host.seekPreview?.(moved.start);
       }
-      updatePlayheads(
-        Math.max(0, Math.min(dragState.total, time)),
-        dragState.total,
-      );
+      if (!host.seekPreview) updatePlayheads(Math.max(0, Math.min(dragState.total, time)), dragState.total);
       return;
     }
     if (dragState.kind !== "group-trim") return;
     let trimTime =
       ((event.clientX - dragState.rect.left) / dragState.rect.width) * dragState.total;
-    if (dragState.edge === "start" && typeof host.applyTrimStart === "function")
-      host.applyTrimStart(trimTime);
-    else if (typeof host.applyTrimEnd === "function") host.applyTrimEnd(trimTime);
+    const value = dragState.edge === "start" ? host.applyTrimStart?.(trimTime) : host.applyTrimEnd?.(trimTime);
+    if (value != null) host.seekPreview?.(value);
     if (typeof host.paintTrimChrome === "function") host.paintTrimChrome();
   }
 
@@ -1228,25 +1246,31 @@ export function installAudioTimeline(host: AudioTimelineHost) {
     event.preventDefault();
   }
 
-  function onPointerUp() {
+  function finishPointerDrag(cancelled: boolean) {
     if (!dragState) return;
     if (_groupDragRaf) {
       cancelAnimationFrame(_groupDragRaf);
       _groupDragRaf = 0;
     }
-    if (_groupDragEvent) {
+    if (_groupDragEvent && !cancelled) {
       processGroupDragMove(_groupDragEvent);
       _groupDragEvent = null;
     }
     let completedDrag = dragState;
     dragState = null;
+    _groupDragEvent = null;
+    if (cancelled) host.History?.revert?.();
     if (completedDrag.kind === "imported") {
       completedDrag.element.classList.remove("slipping");
     }
     render();
-    setPlanDirty(selectedVideo());
-    host.History?.commit?.();
+    if (!cancelled) {
+      setPlanDirty(selectedVideo());
+      host.History?.commit?.();
+    }
   }
+
+  function onPointerUp(event: PointerEvent) { finishPointerDrag(event.type === "pointercancel"); }
 
   function updateSelectedSourceRange(value: number, finalize: boolean) {
     let videoClip = selectedVideo();
@@ -1338,7 +1362,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
     if (!videoClip || !video) return;
     let state = ensureState(videoClip);
     if (!state) return;
-    let time = Number(video.currentTime) || 0;
+    let time = sourceTime();
     video.volume = sourcePreviewVolume(videoClip, state, time);
     syncPreview();
   }
@@ -1352,7 +1376,8 @@ export function installAudioTimeline(host: AudioTimelineHost) {
     if (!state) return;
     let total = sourceDuration(videoClip);
     // playing video is the clock; paused, the playhead can be ahead of a seek still settling
-    let time = video.paused ? sourceTime() : Number(video.currentTime) || 0;
+    const playing = host.isPlaying?.() ?? !video.paused;
+    let time = playing ? host.getTimelineTime?.() ?? (Number(video.currentTime) || 0) : sourceTime();
     updatePlayheads(time, total);
     let base = previewBaseVolume();
     video.volume = sourcePreviewVolume(videoClip, state, time);
@@ -1363,7 +1388,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
       const audible = cut
         ? SegmentEditing.segmentIndexAtTime(SegmentEditing.segmentsForClip(videoClip, total), time, 0.02) >= 0
         : state.enabled && sourceAudioAudibleAt(videoClip, time);
-      sourcePreview.sync(time, video.playbackRate || 1, audible ? base : 0, !video.paused, [
+      sourcePreview.sync(Number(video.currentTime) || 0, video.playbackRate || 1, audible ? base : 0, playing && audible, [
         { muted: !cut && state.sourceMuted, gainDb: cut ? 0 : state.sourceGainDb },
         ...extraTracks(state).map((track) => ({ muted: !cut && track.muted, gainDb: cut ? 0 : track.gainDb })),
       ]);
@@ -1383,7 +1408,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
           break;
         }
       }
-      if (cut || !state.enabled || track.muted || !active || active.muted || video.paused) {
+      if (cut || !state.enabled || track.muted || !active || active.muted || !playing) {
         if (!element.paused) element.pause();
         return;
       }
@@ -1652,7 +1677,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
           muted: boolean;
         }>;
       }>;
-      source_audio_segments?: Array<{ start: number; end: number }>;
+      source_audio_segments?: Array<{ start: number; end: number; timeline_start?: number }>;
       source_audio_extra_tracks?: Array<{ muted: boolean; gain_db: number }>;
     } = {
       audio_enabled: !!state.enabled,
@@ -1699,9 +1724,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
         );
       });
     if (!followsVideo)
-      payload.source_audio_segments = keptAudio.map(function(segment: SegmentLike) {
-        return { start: segment.start, end: segment.end };
-      });
+      payload.source_audio_segments = SegmentEditing.exportSegments(keptAudio);
     const extras = extraTracks(state);
     if (extras.length)
       payload.source_audio_extra_tracks = extras.map((extra) => ({
@@ -1974,6 +1997,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
       apiObject.removeTrack(selectedTrackId);
     },
     seekSource: function(seconds: number) {
+      if (host.seekPreview) { host.seekPreview(seconds); return; }
       let videoClip = selectedVideo();
       let videoCandidate = byId("vid");
       let video = isVideoElement(videoCandidate) ? videoCandidate : null;
@@ -1990,6 +2014,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
         videoClip,
         Number(videoClip.probeData.duration),
       );
+      if (SegmentEditing.hasPlacement(segments) && host.seekPreview) { host.seekPreview(seconds); return; }
       video.currentTime = core.outputToSourceTime(segments, seconds);
       syncPreview();
     },
@@ -2027,6 +2052,13 @@ export function installAudioTimeline(host: AudioTimelineHost) {
   });
   windowRef.addEventListener("pointermove", onPointerMove);
   windowRef.addEventListener("pointerup", onPointerUp);
+  windowRef.addEventListener("pointercancel", onPointerUp);
+  documentRef.addEventListener("keydown", event => {
+    if (event.key === "Escape" && dragState) {
+      event.preventDefault();
+      finishPointerDrag(true);
+    }
+  });
   let video = documentRef.getElementById("vid");
   if (video) {
     video.addEventListener("play", syncPreview);

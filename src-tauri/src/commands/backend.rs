@@ -695,6 +695,29 @@ mod tests {
     }
 
     #[test]
+    fn video_source_ranges_and_project_positions_reach_the_sidecar_unchanged() {
+        let request = json!({
+            "source": "clip.mp4",
+            "segments": [{ "start": 10.0, "end": 60.0, "timeline_start": 0.0 }],
+            "audio_tracks": [{ "track_id": "song", "clips": [{
+                "source": "song.wav", "source_in": 0.0, "source_out": 60.0,
+                "timeline_start": 0.0, "timeline_duration": 60.0
+            }] }]
+        });
+        for command in [
+            BackendCommand::CreatePlan {
+                request: request.clone(),
+            },
+            BackendCommand::EnqueueWithOptions {
+                request: request.clone(),
+            },
+        ] {
+            let envelope = command.to_sidecar_request("placement-1").unwrap();
+            assert_eq!(envelope["params"]["request"], request);
+        }
+    }
+
+    #[test]
     fn hardware_encoding_requests_reach_the_sidecar_unchanged() {
         for encoder in ["h264_vaapi", "hevc_vaapi", "h264_nvenc", "hevc_nvenc"] {
             let preset = if encoder.ends_with("_nvenc") {

@@ -163,19 +163,19 @@ test("moving a segment preserves its duration and stops at neighboring ranges", 
   ];
 
   assert.deepEqual(segments.moveSegment(source, 1, 5, 10), [
-    { start: 1, end: 2 },
-    { start: 5, end: 7 },
-    { start: 8, end: 9 },
+    { start: 1, end: 2, sourceStart: 1 },
+    { start: 5, end: 7, sourceStart: 4 },
+    { start: 8, end: 9, sourceStart: 8 },
   ]);
   assert.deepEqual(segments.moveSegment(source, 1, 1, 10), [
-    { start: 1, end: 2 },
-    { start: 2, end: 4 },
-    { start: 8, end: 9 },
+    { start: 1, end: 2, sourceStart: 1 },
+    { start: 2, end: 4, sourceStart: 4 },
+    { start: 8, end: 9, sourceStart: 8 },
   ]);
   assert.deepEqual(segments.moveSegment(source, 1, 9, 10), [
-    { start: 1, end: 2 },
-    { start: 6, end: 8 },
-    { start: 8, end: 9 },
+    { start: 1, end: 2, sourceStart: 1 },
+    { start: 6, end: 8, sourceStart: 4 },
+    { start: 8, end: 9, sourceStart: 8 },
   ]);
 });
 

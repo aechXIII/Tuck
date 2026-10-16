@@ -101,12 +101,37 @@ def parse_cut_request(
         raise ValueError("Choose between 1 and 1000 kept segments")
     segments = []
     previous_end = Fraction(0)
+    project_end = Fraction(0)
+    positioned: bool | None = None
     for segment in ranges:
-        if not isinstance(segment, dict) or set(segment) != {"start", "end"}:
+        if not isinstance(segment, dict) or set(segment) not in (
+            {"start", "end"},
+            {"start", "end", "timeline_start"},
+        ):
             raise ValueError("Each segment needs a start and end time")
+        has_position = "timeline_start" in segment
+        if positioned is not None and positioned != has_position:
+            raise ValueError("Kept segments must all include timeline_start or all omit it")
+        positioned = has_position
         start, end = MediaTime.from_dict(segment["start"]), MediaTime.from_dict(segment["end"])
         if start.seconds < previous_end or end.seconds <= start.seconds:
+            if has_position:
+                raise ValueError(
+                    "Lossless cuts need source ranges in order without overlaps. "
+                    "Use Compress or Upscale for slipped or repeated footage."
+                )
             raise ValueError("Kept segments must be in order and must not overlap")
+        if has_position:
+            at = MediaTime.from_dict(segment["timeline_start"]).seconds
+            # source edges and placements each cross the wire rounded to microseconds
+            rounding = Fraction(1, 1_000_000)
+            if at < 0 or at < project_end - rounding:
+                raise ValueError("Kept segments must be in project order and must not overlap")
+            if at > project_end + rounding:
+                raise ValueError(
+                    "Use Compress or Upscale to keep timeline gaps, or close the gaps."
+                )
+            project_end = at + end.seconds - start.seconds
         segments.append(CutRange(start, end))
         previous_end = end.seconds
     directory = raw.get(

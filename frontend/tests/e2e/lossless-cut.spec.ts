@@ -501,6 +501,29 @@ test("the player bar marks the selected segment and steps between keyframes", as
   await expect(page.getByRole("button", {name: "Next frame"})).toBeVisible();
 });
 
+test("a placed lossless row seeks its retained source at the matching project position", async ({page}) => {
+  await setup(page);
+  await page.locator("#btn-snap-toggle").click();
+  const track = (await page.locator("#tl-track").boundingBox())!;
+  const edge = (await page.locator(".tl-segment .clip-edge.start").boundingBox())!;
+  const shift = track.width / 6;
+  const y = edge.y + edge.height / 2;
+  await page.mouse.move(edge.x + edge.width / 2, y);
+  await page.mouse.down();
+  await page.mouse.move(edge.x + edge.width / 2 + shift, y, {steps:5});
+  await page.mouse.up();
+  const clip = (await page.locator(".tl-segment").boundingBox())!;
+  await page.mouse.move(clip.x + 100, y);
+  await page.mouse.down();
+  await page.mouse.move(clip.x + 100 - shift, y, {steps:5});
+  await page.mouse.up();
+  await page.locator("#wf-l").click();
+  const row = page.locator('#cut-list [data-cut-index="0"]');
+  await expect(row).toBeVisible();
+  await row.click();
+  await expect(page.locator("#tl-corner-time")).toHaveText("0:00.00");
+});
+
 test("I past the end of a segment starts a new segment at the playhead", async ({page}) => {
   await setup(page);
   await page.locator("#wf-l").click();

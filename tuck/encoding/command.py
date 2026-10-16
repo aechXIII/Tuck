@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import os
 from dataclasses import replace
 from fractions import Fraction
@@ -21,6 +22,8 @@ from ..models import (
     TimelineAudioPiece,
     audio_independent_from_pieces,
     map_source_range_to_output,
+    positioned_frame_ranges,
+    segment_timeline_duration,
     source_audio_output_pieces,
 )
 from ..models.encoding_policy import (
@@ -107,7 +110,7 @@ def _source_audio_chain(
             filters.extend(
                 [
                     f"adelay={max(0, round(piece.output_start * 1000))}:all=1",
-                    "asetpts=PTS-STARTPTS",
+                    "asetpts=N/SR/TB",
                     f"apad=whole_dur={output_duration}",
                     f"atrim=duration={output_duration}",
                 ]
@@ -158,6 +161,91 @@ def _mix_to(graph_parts: list[str], mix_inputs: list[str], label: str) -> None:
             "".join(mix_inputs) + f"amix=inputs={len(mix_inputs)}:duration=longest:"
             f"dropout_transition=0:normalize=0[{label}]"
         )
+
+
+def _place_video(graph_parts: list[str], segments: list[Segment], fps: float) -> list[str]:
+    # tmix produces only occupied frames; restore their shared project slots
+    result = [part.replace("[vout]", "[vjoined]") for part in graph_parts]
+    ranges = [(first, count) for first, count in positioned_frame_ranges(segments, fps) if count]
+    frames = sum(count for _, count in ranges)
+    # concat can end before its last numbered frame when a short piece loses its duration
+    result.append(
+        f"[vjoined]settb=1/{fps:.9f},setpts=N,tpad=stop_mode=clone:stop=1,"
+        f"fps={fps:.9f}:eof_action=pass,trim=end_frame={frames}[placed_grid]"
+    )
+    count = len(ranges)
+    if count > 1:
+        result.append(f"[placed_grid]split={count}" + "".join(f"[place{i}]" for i in range(count)))
+    source_cursor = 0
+    project_cursor = 0
+    total_frames = math.ceil(segment_timeline_duration(segments) * fps - 1e-8)
+    for index, (first, frames) in enumerate(ranges):
+        label = f"place{index}" if count > 1 else "placed_grid"
+        filters = (
+            f"trim=start_frame={source_cursor}:end_frame={source_cursor + frames},"
+            f"settb=1/{fps:.9f},setpts=N"
+        )
+        gap = max(0, first - project_cursor)
+        if gap:
+            filters += f",tpad=start={gap}:start_mode=add:color=black"
+        if index == count - 1 and first + frames < total_frames:
+            filters += f",tpad=stop={total_frames - first - frames}:stop_mode=add:color=black"
+        result.append(f"[{label}]{filters}[placed{index}]")
+        source_cursor += frames
+        project_cursor = first + frames
+    labels = "".join(f"[placed{i}]" for i in range(count))
+    result.append(labels + (f"concat=n={count}:v=1:a=0" if count > 1 else "null") + "[placed_cat]")
+    result.append(f"[placed_cat]settb=1/{fps:.9f},setpts=N[vout]")
+    return result
+
+
+def _placed_source_video_graph(plan: EncodePlan, filters: list[str], fps: float) -> list[str]:
+    parts = []
+    labels = []
+    cursor = 0
+    rate = Fraction(fps).limit_denominator(100_000)
+    clock = f"settb={rate.denominator}/{rate.numerator},setpts=N"
+    ranges = positioned_frame_ranges(plan.effective_segments, fps)
+    last = max((index for index, (_, count) in enumerate(ranges) if count), default=-1)
+    total_frames = math.ceil(plan.effective_duration * fps - 1e-8)
+    for index, (segment, (first, count)) in enumerate(
+        zip(plan.effective_segments, ranges, strict=True)
+    ):
+        if not count:
+            continue
+        at = segment.timeline_start
+        if at is None:
+            raise ValueError("Placed video requires timeline_start on every segment")
+        # sample on the project grid before joining, so every source edge keeps its phase
+        chain = (
+            f"trim=start={segment.start:.9f}:end={segment.end:.9f},"
+            f"setpts=PTS-({segment.start:.9f}-{at:.9f})/TB,"
+            f"fps={rate.numerator}/{rate.denominator}:start_time={first / fps:.9f}:eof_action=pass,"
+            f"{clock},tpad=stop_mode=clone:stop={count},trim=end_frame={count}"
+        )
+        if first > cursor:
+            chain += f",tpad=start={first - cursor}:start_mode=add:color=black"
+        if index == last and first + count < total_frames:
+            chain += f",tpad=stop={total_frames - first - count}:stop_mode=add:color=black"
+        parts.append(f"[0:v]{chain}[placed_source{index}]")
+        labels.append(f"[placed_source{index}]")
+        cursor = first + count
+    if not labels:
+        count = max(1, math.ceil(plan.effective_duration * fps - 1e-8))
+        parts.append(
+            f"[0:v]trim=end_frame=1,{clock},drawbox=color=black:t=fill,"
+            f"tpad=stop_mode=clone:stop={count},trim=end_frame={count}[placed_black]"
+        )
+        labels.append("[placed_black]")
+    if len(labels) > 1:
+        parts.append("".join(labels) + f"concat=n={len(labels)}:v=1:a=0[placed_joined]")
+        joined = "[placed_joined]"
+    else:
+        joined = labels[0]
+    parts.append(
+        joined + clock + "," + (join_video_filters(filters) if filters else "null") + "[vout]"
+    )
+    return parts
 
 
 def _imported_clip_filters(
@@ -255,7 +343,9 @@ def can_hardware_decode_blend(plan: EncodePlan, blend: TmixBlend | None) -> bool
     )
 
 
-def _tmix_graph(blend: TmixBlend, video_filters: list[str], *, download: bool = False) -> list[str]:
+def _tmix_graph(
+    blend: TmixBlend, video_filters: list[str], *, download: bool = False, positioned: bool = False
+) -> list[str]:
     """Blend the selected source pictures, then join segments on the output clock."""
     if blend.weighted:
         return _weighted_mix_graph(blend, video_filters, download=download)
@@ -302,7 +392,16 @@ def _tmix_graph(blend: TmixBlend, video_filters: list[str], *, download: bool = 
                 f"tpad=start_mode=clone:start={piece.lead}:stop_mode=clone:stop={piece.trail}"
             )
         # number the kept pictures on the output grid; fps then gives each its length
-        chain += [*clock, f"fps={rate.numerator}/{rate.denominator}"]
+        if positioned:
+            frames = (piece.last - piece.first) // piece.step + 1 + piece.lead + piece.trail
+            chain += [
+                *clock,
+                "tpad=stop_mode=clone:stop=1",
+                f"fps={rate.numerator}/{rate.denominator}:eof_action=pass",
+                f"trim=end_frame={frames}",
+            ]
+        else:
+            chain += [*clock, f"fps={rate.numerator}/{rate.denominator}"]
         parts.append(f"{source}{','.join(chain)}[blend{index}]")
         labels.append(f"[blend{index}]")
     joined = labels[0]
@@ -506,8 +605,14 @@ def build_base_cmd(
 
     segments = plan.effective_segments
     single_segment = len(segments) == 1
+    positioned = bool(segments and segments[0].timeline_start is not None)
     # both blending paths put video on the output frame grid from the source clock
     blending = prepared_video is not None or blend is not None or streamed_video
+    placement_fps = (
+        plan.target_fps
+        if blending or plan.apply_fps_filter or plan.source_info is None
+        else plan.source_info.fps
+    )
     if prepared_video is not None or not can_hardware_decode_blend(plan, blend):
         hardware_decode = None
     trim_start = float(segments[0].start) if single_segment else 0.0
@@ -524,8 +629,9 @@ def build_base_cmd(
     imported_clips = project_imported_clips if include_audio and plan.audio_enabled else []
     source_has_audio = plan.source_info is None or plan.source_info.has_audio
     source_pieces = source_audio_output_pieces(segments, plan.source_audio_segments)
-    audio_independent = plan.source_audio_segments is not None and audio_independent_from_pieces(
-        source_pieces, segments
+    audio_independent = positioned or (
+        plan.source_audio_segments is not None
+        and audio_independent_from_pieces(source_pieces, segments)
     )
     kept_tracks = plan.kept_source_tracks
     source_audio_active = bool(
@@ -549,12 +655,12 @@ def build_base_cmd(
             or (source_audio_active and audio_independent)
         )
     )
-    filtered_timeline = len(segments) > 1 or timeline_audio_edits or blending
+    filtered_timeline = len(segments) > 1 or timeline_audio_edits or blending or positioned
     # only a single piece of the source keeps its subtitles in time with the picture, and the
     # analysis pass (include_audio off) writes nothing to carry them into
     subtitle_track = (
         plan.source_info.text_subtitle_track
-        if include_audio and single_segment and plan.source_info is not None
+        if include_audio and single_segment and not positioned and plan.source_info is not None
         else None
     )
 
@@ -611,7 +717,9 @@ def build_base_cmd(
     if filtered_timeline:
         graph_parts: list[str] = []
         combined_source_concat = False
-        if prepared_video is not None or streamed_video:
+        if positioned and not blending:
+            graph_parts.extend(_placed_source_video_graph(plan, video_filters, placement_fps))
+        elif prepared_video is not None or streamed_video:
             info = plan.source_info
             ratio = info.sample_aspect_ratio if info else "1:1"
             sar = (
@@ -651,9 +759,14 @@ def build_base_cmd(
             cmd += ["-t", fmt_ffmpeg_time(plan.effective_duration)]
         elif blend is not None:
             graph_parts.extend(
-                _tmix_graph(blend, video_filters, download=hardware_decode is not None)
+                _tmix_graph(
+                    blend,
+                    video_filters,
+                    download=hardware_decode is not None,
+                    positioned=positioned,
+                )
             )
-            if blend.weighted:
+            if blend.weighted and not positioned:
                 # allow the last held picture its full tick instead of clipping it at audio EOF
                 frames = sum(
                     (piece.last - piece.first) // piece.step + 1 + piece.lead + piece.trail
@@ -758,7 +871,11 @@ def build_base_cmd(
 
         # added audio is mixed into the first track only
         for input_index, track, clip in imported_inputs:
-            mapped = map_source_range_to_output(segments, clip.timeline_start, clip.timeline_end)
+            mapped = (
+                [TimelineAudioPiece(clip.timeline_start, clip.timeline_end, clip.timeline_start)]
+                if positioned
+                else map_source_range_to_output(segments, clip.timeline_start, clip.timeline_end)
+            )
             if not mapped:
                 continue
             for piece in mapped:
@@ -780,6 +897,12 @@ def build_base_cmd(
             _mix_to(graph_parts, mix_inputs, "aout")
             filtered_audio = True
 
+        if positioned:
+            if blend is not None:
+                graph_parts = _place_video(graph_parts, segments, placement_fps)
+            frames = math.ceil(plan.effective_duration * placement_fps - 1e-8)
+            # keep every owned picture when FFmpeg rounds the output time limit to a frame
+            cmd += ["-t", f"{frames / placement_fps:.9f}", "-r", f"{placement_fps:.9f}"]
         if vaapi:
             # upload only after all software filters, including the blend's final colour tags
             graph_parts = [part.replace("[vout]", "[vsoftware]") for part in graph_parts]

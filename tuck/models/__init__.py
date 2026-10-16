@@ -348,12 +348,20 @@ class AudioInfo:
 class Segment:
     start: float
     end: float
+    timeline_start: float | None = None
 
     @property
     def duration(self) -> float:
         return float(self.end - self.start)
 
     def validate(self, source_duration: float | None = None) -> None:
+        if self.timeline_start is not None and (
+            isinstance(self.timeline_start, bool)
+            or not isinstance(self.timeline_start, (int, float))
+            or not math.isfinite(self.timeline_start)
+            or self.timeline_start < 0
+        ):
+            raise ValueError("segment timeline_start must be a finite nonnegative number")
         if isinstance(self.start, bool) or not isinstance(self.start, (int, float)):
             raise ValueError("segment start must be a number")
         if isinstance(self.end, bool) or not isinstance(self.end, (int, float)):
@@ -366,6 +374,10 @@ class Segment:
             raise ValueError("segment start must be >= 0")
         if self.end <= self.start:
             raise ValueError("segment end must be greater than segment start")
+        if self.timeline_start is not None and not math.isfinite(
+            self.timeline_start + self.duration
+        ):
+            raise ValueError("segment timeline_start plus duration must be finite")
         if self.duration < MIN_SEGMENT_DURATION - 1e-9:
             raise ValueError(
                 f"segment is too short ({self.duration:.3f}s). "
@@ -386,17 +398,22 @@ class Segment:
                 )
 
     def to_dict(self) -> dict[str, float]:
-        return {"start": float(self.start), "end": float(self.end)}
+        result = {"start": float(self.start), "end": float(self.end)}
+        if self.timeline_start is not None:
+            result["timeline_start"] = float(self.timeline_start)
+        return result
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Segment:
         if not isinstance(data, dict):
             raise ValueError("segment must be an object")
-        if set(data) != {"start", "end"}:
-            raise ValueError("segment must contain exactly start and end")
+        if set(data) not in ({"start", "end"}, {"start", "end", "timeline_start"}):
+            raise ValueError("segment must contain start and end with optional timeline_start")
         start = data["start"]
         end = data["end"]
-        segment = cls(start=start, end=end)
+        if "timeline_start" in data and data["timeline_start"] is None:
+            raise ValueError("segment timeline_start must be a finite nonnegative number")
+        segment = cls(start=start, end=end, timeline_start=data.get("timeline_start"))
         segment.validate()
         return segment
 
@@ -683,6 +700,8 @@ def map_source_range_to_output(
     pieces: list[TimelineAudioPiece] = []
     output_cursor = 0.0
     for video in video_segments:
+        if video.timeline_start is not None:
+            output_cursor = video.timeline_start
         start = max(float(video.start), float(source_start))
         end = min(float(video.end), float(source_end))
         if end - start >= MIN_SEGMENT_DURATION - 1e-9:
@@ -701,10 +720,28 @@ def source_audio_output_pieces(
     video_segments: list[Segment],
     audio_segments: list[Segment] | None,
 ) -> list[TimelineAudioPiece]:
-    kept = video_segments if audio_segments is None else audio_segments
+    if audio_segments is None:
+        cursor = 0.0
+        result = []
+        for video in video_segments:
+            start = video.timeline_start if video.timeline_start is not None else cursor
+            result.append(TimelineAudioPiece(video.start, video.end, start))
+            cursor += video.duration
+        return result
+    kept = audio_segments
     pieces: list[TimelineAudioPiece] = []
     for audio in kept:
-        pieces.extend(map_source_range_to_output(video_segments, audio.start, audio.end))
+        if audio.timeline_start is None:
+            pieces.extend(map_source_range_to_output(video_segments, audio.start, audio.end))
+            continue
+        for video in video_segments:
+            if video.timeline_start is None:
+                raise ValueError("Placed source audio requires placed video segments")
+            start = max(audio.timeline_start, video.timeline_start)
+            end = min(audio.timeline_start + audio.duration, video.timeline_start + video.duration)
+            if end - start >= MIN_SEGMENT_DURATION - 1e-9:
+                source_start = audio.start + start - audio.timeline_start
+                pieces.append(TimelineAudioPiece(source_start, source_start + end - start, start))
     pieces.sort(key=lambda piece: (piece.output_start, piece.source_start))
     return pieces
 
@@ -721,15 +758,40 @@ def validate_segments(
             raise ValueError(f"segments[{index}] must be a Segment")
         segment.validate(source_duration)
         if previous is not None:
-            if segment.start < previous.start:
+            if (segment.timeline_start is None) != (previous.timeline_start is None):
+                raise ValueError("segments must all include timeline_start or all omit it")
+            start = segment.timeline_start if segment.timeline_start is not None else segment.start
+            previous_start = (
+                previous.timeline_start if previous.timeline_start is not None else previous.start
+            )
+            previous_end = previous_start + previous.duration
+            if start < previous_start:
                 raise ValueError("segments must be ordered chronologically")
-            if segment.start < previous.end - 1e-6:
+            if start < previous_end - 1e-6:
                 raise ValueError(
                     f"segments must not overlap (segment {index} starts at "
-                    f"{segment.start:.3f}s before the previous segment ends at "
-                    f"{previous.end:.3f}s)"
+                    f"{start:.3f}s before the previous segment ends at "
+                    f"{previous_end:.3f}s)"
                 )
         previous = segment
+
+
+def segment_timeline_duration(segments: list[Segment]) -> float:
+    if segments and segments[-1].timeline_start is not None:
+        return float(segments[-1].timeline_start + segments[-1].duration)
+    return float(sum(segment.duration for segment in segments))
+
+
+def positioned_frame_ranges(segments: list[Segment], fps: float) -> list[tuple[int, int]]:
+    ranges = []
+    for segment in segments:
+        if segment.timeline_start is None:
+            raise ValueError("Placed video requires timeline_start on every segment")
+        # shared edges must round once on the project grid, rather than once per clip
+        first = math.ceil(segment.timeline_start * fps - 1e-8)
+        end = math.ceil((segment.timeline_start + segment.duration) * fps - 1e-8)
+        ranges.append((first, end - first))
+    return ranges
 
 
 class PlanValidationError(ValueError):
@@ -1003,6 +1065,10 @@ class EncodePlan:
 
     @property
     def effective_duration(self) -> float:
+        return segment_timeline_duration(self.effective_segments)
+
+    @property
+    def selected_duration(self) -> float:
         return float(sum(segment.duration for segment in self.effective_segments))
 
     @property
@@ -1043,6 +1109,11 @@ class EncodePlan:
         import dataclasses
 
         d = dataclasses.asdict(self)
+        d["segments"] = [segment.to_dict() for segment in self.segments]
+        if self.source_audio_segments is not None:
+            d["source_audio_segments"] = [
+                segment.to_dict() for segment in self.source_audio_segments
+            ]
         if self.source_info is not None:
             d["source_info"] = dataclasses.asdict(self.source_info)
         else:
@@ -1133,9 +1204,16 @@ class EncodePlan:
                 raise ValueError("audio_tracks must be an array")
             plan.audio_tracks = [AudioTrack.from_dict(item) for item in audio_tracks_data]
             source_limit = (
-                float(plan.source_info.duration)
-                if plan.source_info is not None and plan.source_info.duration > 0
-                else plan.effective_duration or None
+                max(
+                    plan.effective_duration,
+                    float(plan.source_info.duration) if plan.source_info is not None else 0.0,
+                )
+                if plan.segments and plan.segments[0].timeline_start is not None
+                else (
+                    float(plan.source_info.duration)
+                    if plan.source_info is not None and plan.source_info.duration > 0
+                    else plan.effective_duration or None
+                )
             )
             validate_audio_tracks(plan.audio_tracks, source_limit)
         return plan
@@ -1373,6 +1451,7 @@ class AppSettings:
     timeline_snap: bool = True
     timeline_keyframes: bool = True
     timeline_frames: bool = True
+    timeline_preserve_source: bool = True
     timeline_frame_mode: str = "center"
     shortcut_overrides: dict[str, list[str]] = field(default_factory=dict)
     accent_color: str = "violet"

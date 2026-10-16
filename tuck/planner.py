@@ -39,6 +39,7 @@ from .models import (
     crop_for_aspect,
     estimate_size_from_bitrate,
     oriented_dimensions,
+    segment_timeline_duration,
     source_audio_output_pieces,
     validate_audio_tracks,
     validate_segments,
@@ -158,7 +159,8 @@ def plan(
         transform = VideoTransform()
     transform.validate_for_source(info.width, info.height)
 
-    effective_duration = sum(segment.duration for segment in segments)
+    effective_duration = segment_timeline_duration(segments)
+    positioned = segments[0].timeline_start is not None
     if effective_duration <= 0:
         raise ValueError(f"Selected duration is zero or negative: {effective_duration:.3f}s")
     if user_selection and effective_duration < 0.05 - 1e-9:
@@ -168,7 +170,11 @@ def plan(
         )
     if source_audio_segments:
         validate_segments(source_audio_segments, float(info.duration))
-    validate_audio_tracks(audio_tracks, float(info.duration), audio_source_durations)
+    validate_audio_tracks(
+        audio_tracks,
+        max(effective_duration, float(info.duration)) if positioned else float(info.duration),
+        audio_source_durations,
+    )
 
     target_size = resolve_target_size(profile, request)
 
@@ -298,6 +304,7 @@ def plan(
         source_audio
         and (
             len(segments) > 1
+            or positioned
             or any(abs(track.gain_db) > 1e-9 for track in kept_tracks)
             or audio_independent
             or blending.enabled

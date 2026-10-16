@@ -31,6 +31,10 @@ test("search finds frame visibility, framing, and offline documents", () => {
   assert.deepEqual(searchSettings("third party", SETTINGS_INDEX).map((entry) => entry.id), ["third-party-notices"]);
 });
 
+test("search finds the old clip movement setting", () => {
+  assert.deepEqual(searchSettings("old drag", SETTINGS_INDEX).map((entry) => entry.id), ["timeline-preserve-source"]);
+});
+
 test("search finds the switch that removes exported videos from the Library", () => {
   assert.deepEqual(searchSettings("library", SETTINGS_INDEX).map((entry) => entry.id), ["reopen", "remove-exported"]);
   assert.deepEqual(searchSettings("remove", SETTINGS_INDEX).map((entry) => entry.id), ["clear-finished", "remove-exported"]);

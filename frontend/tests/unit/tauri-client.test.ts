@@ -7,6 +7,20 @@ import {
   hasTauriInvoke,
 } from "../../src/backend/tauri.ts";
 
+test("placed source ranges reach native planning and keep validation errors", async () => {
+  const request = { source: "clip.mp4", segments: [{ start: 10, end: 60, timeline_start: 0 }] };
+  const calls: unknown[] = [];
+  const client = createTauriBackendClient(async (_command, args) => {
+    calls.push(args);
+    return { data: { effective_duration: 50 } };
+  });
+  assert.deepEqual(await client.createPlan(request), { ok: true, value: { data: { effective_duration: 50 } } });
+  assert.deepEqual(calls, [{ command: { command: "create_plan", payload: { request } } }]);
+  const error = { code: "BACKEND_REJECTED", message: "Video segments overlap on the timeline.", details: { field: "segments" } };
+  const rejected = createTauriBackendClient(async () => { throw error; });
+  assert.deepEqual(await rejected.createPlan(request), { ok: false, error });
+});
+
 test("file copy invokes the native file command and preserves native errors", async () => {
   const calls: unknown[] = [];
   const client = createTauriBackendClient(async (command, args) => {

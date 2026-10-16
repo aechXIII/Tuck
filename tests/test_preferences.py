@@ -40,6 +40,39 @@ def _write_settings(tmp_path: Path, data: dict) -> None:
     (config / "settings.json").write_text(json.dumps(data), encoding="utf-8")
 
 
+class TestTimelineMovementPreferences:
+    def test_old_settings_preserve_footage_by_default(self, tmp_path):
+        _write_settings(tmp_path, {"version": 1, "loop_playback": False})
+        settings = SettingsManager().load()
+        assert settings.timeline_preserve_source is True
+        assert settings.loop_playback is False
+
+    def test_movement_round_trip_through_backup_and_reset(self, tmp_path):
+        api = BridgeAPI()
+        assert api.save_settings({"timeline_preserve_source": False}) == {"ok": True}
+        assert SettingsManager().load().timeline_preserve_source is False
+        backup = tmp_path / "preferences.json"
+        assert api.export_settings_to_file(str(backup))["ok"]
+        assert api.reset_settings()["ok"]
+        assert api.get_settings()["timeline_preserve_source"] is True
+        assert api.import_settings_from_file(str(backup))["ok"]
+        assert api.get_settings()["timeline_preserve_source"] is False
+
+    @pytest.mark.parametrize("value", ["yes", 1, None])
+    def test_invalid_updates_leave_other_preferences_unchanged(self, value):
+        api = BridgeAPI()
+        result = api.save_settings({"loop_playback": False, "timeline_preserve_source": value})
+        assert result["ok"] is False
+        assert "timeline_preserve_source" in result["error"]
+        assert api.get_settings()["loop_playback"] is True
+
+    def test_broken_stored_values_keep_defaults_and_other_settings(self, tmp_path):
+        _write_settings(tmp_path, {"timeline_preserve_source": 0, "loop_playback": False})
+        settings = SettingsManager().load()
+        assert settings.timeline_preserve_source is True
+        assert settings.loop_playback is False
+
+
 class TestTimelineFramePreferences:
     def test_old_settings_use_frames_with_center_zoom(self, tmp_path):
         _write_settings(tmp_path, {"version": 1, "loop_playback": False})

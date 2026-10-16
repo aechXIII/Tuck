@@ -17,7 +17,7 @@ from av.error import FFmpegError
 from av.video.stream import VideoStream
 from numpy.typing import NDArray
 
-from ..models import EncodePlan, Segment, VideoInfo
+from ..models import EncodePlan, Segment, VideoInfo, positioned_frame_ranges
 from ..models.frame_blending import FrameBlending, interval_weight, vegas_weights
 from ..probe import first_video_frame
 from . import native_blending
@@ -362,24 +362,40 @@ def blended_frames(
         buffer: deque[tuple[float, float, PixelArray]] = deque()
         segment_index = 0
         output_start = 0.0
-        count = max(1, math.ceil(plan.effective_duration * fps - 1e-8))
+        positioned = segments[0].timeline_start is not None
+        duration = plan.effective_duration if positioned else plan.selected_duration
+        count = max(1, math.ceil(duration * fps - 1e-8))
+        last_segment_index: int | None = None
+        black = np.zeros((info.height, info.width, 3), dtype=np.uint8)
         for index in range(count):
             check_cancel()
             # one global output grid prevents rounding error accumulating at each cut
             midpoint = min(
                 float((Fraction(index) + Fraction(1, 2)) / fps),
-                math.nextafter(plan.effective_duration, 0),
+                math.nextafter(duration, 0),
             )
-            switched = index == 0
+            sample_time = float(Fraction(index) / fps) if positioned else midpoint
+            if positioned:
+                output_start = float(segments[segment_index].timeline_start or 0)
             while (
-                midpoint >= output_start + segments[segment_index].duration
+                sample_time >= output_start + segments[segment_index].duration - 1e-8
                 and segment_index < len(segments) - 1
             ):
                 output_start += segments[segment_index].duration
                 segment_index += 1
+                if positioned:
+                    output_start = float(segments[segment_index].timeline_start or 0)
                 buffer.clear()
-                switched = True
             segment = segments[segment_index]
+            if positioned and sample_time < output_start - 1e-8:
+                done: Future[PixelArray] = Future()
+                done.set_result(black)
+                pending.append(done)
+                while len(pending) > _workers():
+                    yield pending.popleft().result()
+                continue
+            switched = segment_index != last_segment_index
+            last_segment_index = segment_index
             # a later part can start earlier in the source, or far past where reading stopped
             if switched and (
                 current is None
@@ -387,7 +403,10 @@ def blended_frames(
                 or segment.start - current[0] > SEEK_THRESHOLD
             ):
                 open_at(segment.start)
-            center = segment.start + midpoint - output_start
+            center = min(
+                segment.start + midpoint - output_start,
+                math.nextafter(segment.end, segment.start),
+            )
             left = max(segment.start, center - exposure / 2)
             right = min(segment.end, center + exposure / 2)
             while buffer and buffer[0][1] <= left:
@@ -437,7 +456,7 @@ def blended_frames(
                 held = next((p for start, end, p in buffer if start <= center < end), None)
                 if held is None:
                     raise ValueError("No source frame covers this timeline interval")
-                done: Future[PixelArray] = Future()
+                done = Future()
                 done.set_result(held)
                 pending.append(done)
             # blend a few pictures at once, but hand them out in order
@@ -580,12 +599,21 @@ def weighted_yuv_blend(plan: EncodePlan) -> TmixBlend | None:
         if settings.curve == "vegas" and not settings.custom_weights
         else ()
     )
-    duration = plan.effective_duration
+    duration = plan.selected_duration
     count = max(1, math.ceil(duration * fps - 1e-8))
+    sample_shift = 0.0
+    if segments[0].timeline_start is not None:
+        first, count = positioned_frame_ranges(segments, float(fps))[0]
+        if not count:
+            return None
+        sample_shift = float(first / fps) - segments[0].timeline_start
     pieces: list[TmixPiece] = []
 
     def window(index: int) -> tuple[int, tuple[Fraction, ...]] | None:
-        center = min(float((Fraction(index) + Fraction(1, 2)) / fps), math.nextafter(duration, 0))
+        center = min(
+            float((Fraction(index) + Fraction(1, 2)) / fps) + sample_shift,
+            math.nextafter(duration, 0),
+        )
         opening = center - exposure / 2
         left, right = max(0.0, opening), min(segments[0].end, center + exposure / 2)
         first = max(0, math.floor(left / float(step)) - 1)
@@ -637,8 +665,11 @@ def weighted_yuv_blend(plan: EncodePlan) -> TmixBlend | None:
         return True
 
     # only the cut edges and the final held source picture need individual windows
-    first_full = min(count, max(0, math.ceil(exposure * float(fps) / 2 - 0.5)))
-    last_full = min(count - 1, math.floor((float(times[-1]) - exposure / 2) * float(fps) - 0.5))
+    first_full = min(count, max(0, math.ceil((exposure / 2 - sample_shift) * float(fps) - 0.5)))
+    last_full = min(
+        count - 1,
+        math.floor((float(times[-1]) - exposure / 2 - sample_shift) * float(fps) - 0.5),
+    )
     for index in range(first_full):
         if not append(index, 1):
             return None
@@ -654,6 +685,13 @@ def _output_indices(
     segments: list[Segment], fps: Fraction, total: float
 ) -> list[tuple[int, int, float]]:
     """(first output frame, frame count, output start) per segment, as blended_frames assigns."""
+    if segments and segments[0].timeline_start is not None:
+        return [
+            (first, count, float(segment.timeline_start or 0))
+            for segment, (first, count) in zip(
+                segments, positioned_frame_ranges(segments, float(fps)), strict=True
+            )
+        ]
     count = max(1, math.ceil(total * fps - 1e-8))
     ranges: list[list[int]] = [[] for _ in segments]
     starts = [0.0] * len(segments)
@@ -711,7 +749,7 @@ def tmix_blend(plan: EncodePlan) -> TmixBlend | None:
     length = exposure / step  # blur window in source frames
     pieces = []
     for segment, (first_index, count, output_start) in zip(
-        segments, _output_indices(segments, fps, plan.effective_duration), strict=True
+        segments, _output_indices(segments, fps, plan.selected_duration), strict=True
     ):
         if not count:
             continue

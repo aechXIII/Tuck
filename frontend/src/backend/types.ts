@@ -49,6 +49,7 @@ export interface Settings extends JsonObject {
   readonly timeline_snap?: boolean;
   readonly timeline_keyframes?: boolean;
   readonly timeline_frames?: boolean;
+  readonly timeline_preserve_source?: boolean;
   readonly timeline_frame_mode?: "center" | "whole";
   /** command id -> chosen key combos; an empty list means every key was removed */
   readonly shortcut_overrides?: Readonly<Record<string, readonly string[]>>;

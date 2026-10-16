@@ -11,6 +11,7 @@ export interface CropRect {
 export interface Segment {
   readonly start: number;
   readonly end: number;
+  readonly sourceStart?: number;
   readonly muted?: boolean;
 }
 

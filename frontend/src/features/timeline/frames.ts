@@ -36,6 +36,7 @@ interface FrameGeometry {
   readonly segments: readonly {
     readonly start: number;
     readonly end: number;
+    readonly sourceStart?: number;
   }[];
 }
 
@@ -62,8 +63,9 @@ export function frameLayout(view: FrameGeometry) {
     const end = Math.min(segment.end, visibleEnd);
     if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start)
       return;
-    const first = Math.max(0, Math.floor(start / step));
-    const last = Math.ceil(end / step);
+    const source = segment.sourceStart ?? segment.start;
+    const first = Math.max(0, Math.floor((source + start - segment.start) / step));
+    const last = Math.ceil((source + end - segment.start) / step);
     for (
       let index = first;
       index < last && tiles.length < MAX_VISIBLE_TILES;
@@ -72,7 +74,7 @@ export function frameLayout(view: FrameGeometry) {
       tiles.push({
         segment: segmentIndex,
         index,
-        left: (index * step - segment.start) * pixelsPerSecond,
+        left: (index * step - source) * pixelsPerSecond,
       });
       chunks.add(Math.floor(index / CHUNK_SIZE));
     }

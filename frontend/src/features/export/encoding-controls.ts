@@ -986,7 +986,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
   function buildRequest(source: string, requestId?: number): Record<string, unknown> {
     const form = readForm();
     const clip = session.clips[source];
-    let segments: { start: number; end: number }[] | null = null;
+    let segments: { start: number; end: number; timeline_start?: number }[] | null = null;
     let transform: CropTransform | null = null;
     let audioPayload: Record<string, unknown> | null = null;
     if (clip) {
@@ -996,10 +996,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
         clip.trimStart != null ||
         clip.trimEnd != null;
       if (full > 0 && edited) {
-        segments = SegmentEditing.segmentsForClip(clip, full).map((segment) => ({
-          start: segment.start,
-          end: segment.end,
-        }));
+        segments = SegmentEditing.exportSegments(SegmentEditing.segmentsForClip(clip, full));
       }
       const profile = selectedProfile();
       if (clip.transformOverride || !profile || !profile.transform_intent) {

@@ -65,6 +65,18 @@
   display: none;
 }
 /* says the selected video's preview is still coming, or can't be shown, from a corner of the picture */
+#timeline-gap-caption {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  background: #000;
+  z-index: 1;
+}
+#timeline-gap-caption[hidden] { display: none; }
+#stage.timeline-gap :is(#media-viewport, #crop-ui, .preview-status) { visibility: hidden; }
+
 .preview-status {
   position: absolute;
   left: 10px;
