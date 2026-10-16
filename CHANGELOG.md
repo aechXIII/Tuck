@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.6.2] - 2026-10-16
+
+### Added
+
+- Video frames on the timeline
+- Save video frames as PNG
+
+### Changed
+
+- Faster frame blending
+- GPU decoding for AV1 frame blending on supported NVIDIA and AMD GPUs
+- Less memory used during frame blending
+- Separate layout density and text size controls
+
+### Fixed
+
+- Export settings resetting after saving preferences
+- Exports failing to retry after encoder errors
+- Preview playback and waveforms for videos with multiple audio tracks
+- Windows command-line lookup
+- Compatibility with older profiles
+
 ## [0.6.1] - 2026-10-13
 
 ### Added

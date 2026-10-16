@@ -91,6 +91,12 @@ def _verify_package_module():
     return module
 
 
+def test_package_verifier_expects_the_current_version():
+    from tuck import __version__
+
+    assert __version__ == _verify_package_module().EXPECTED_VERSION
+
+
 def _build_linux_module():
     spec = importlib.util.spec_from_file_location("build_linux_for_test", _BUILD_LINUX)
     assert spec is not None and spec.loader is not None

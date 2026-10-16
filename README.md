@@ -78,15 +78,16 @@ FFmpeg/ffprobe, and the plugins used for video previews.
 
 ## Features
 
-- **Timeline editing:** Split a video into segments, trim or remove unwanted parts, and mute source audio or individual fragments.
+- **Timeline editing:** See video frames on the track, split videos into segments, trim or remove parts, and mute source audio or individual fragments.
 - **Audio editing:** Each audio track of a video, like separate game and mic tracks, gets its own row with mute and volume. Add new audio files and position them on the timeline. Imported audio can be moved, trimmed, split, muted, or given its own volume level.
 - **Crop and resize:** Crop directly in the preview, rotate in 90-degree steps, flip the
   picture horizontally or vertically, and choose **Fit**, **Fill**, or **Stretch** for the
   output frame.
+- **Save frames:** Save a video frame as a full-resolution PNG.
 - **Lossless cut:** Remove parts of a video and join the rest without re-encoding. See [Lossless cut](#lossless-cut).
 - **Compression and upscaling:** Compress to a chosen file-size limit, or upscale to 1440p, 4K, or a custom resolution. Choose a target-size preset of 20, 50, 200, or 500 MB, or enter your own limit.
 - **Encoding queue:** Queue multiple videos, reorder pending exports, cancel a pending or running export, and retry failed or cancelled exports. Use software encoding on either platform or supported NVIDIA and AMD hardware on Windows.
-- **Settings:** Change keyboard shortcuts, the accent color and interface size, choose where exports are saved and what happens when a file name is taken, and hide parts of Tuck you don't use.
+- **Settings:** Change keyboard shortcuts, the accent color, layout density and text size, choose where exports are saved and what happens when a file name is taken, and hide parts of Tuck you don't use.
 - **Profiles and Windows integration:** Save reusable profiles, import or export profiles, drag videos into Tuck, and add Tuck or a specific profile to File Explorer's **Send To** menu.
 
 ## Use
@@ -188,3 +189,5 @@ Windows releases provide a separate FFmpeg source archive alongside the installe
 ## License
 
 Tuck is available under the [GNU General Public License v3.0 only](LICENSE).
+
+The license and third-party notices are also available offline in **Settings > About**.

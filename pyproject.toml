@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tuck"
-version = "0.6.1"
+version = "0.6.2"
 description = "Desktop video compressor, cropper, and upscaler."
 readme = "README.md"
 license = {text = "GPL-3.0-only"}
@@ -97,7 +97,7 @@ markers = [
 ]
 
 [tool.bumpversion]
-current_version = "0.6.1"
+current_version = "0.6.2"
 parse = "(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)"
 serialize = ["{major}.{minor}.{patch}"]
 search = "{current_version}"
@@ -129,3 +129,8 @@ replace = "version = \"{new_version}\""
 filename = "src-tauri/tauri.conf.json"
 search = "\"version\": \"{current_version}\""
 replace = "\"version\": \"{new_version}\""
+
+[[tool.bumpversion.files]]
+filename = "scripts/verify_package.py"
+search = "EXPECTED_VERSION = \"{current_version}\""
+replace = "EXPECTED_VERSION = \"{new_version}\""

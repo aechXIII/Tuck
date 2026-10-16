@@ -420,9 +420,10 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       h("span", { class: "set-preview-slider" }, h("span")),
       h("span", { class: "set-preview-timeline" },
         h("span", { class: "tl-segment-surface set-preview-clip" },
-          h("span", { class: "tl-segment-badge" }, "S1"),
-          h("span", { class: "tl-segment-copy" },
-            h("span", { class: "tl-segment-label" }, "12s")))));
+          h("span", { class: "tl-segment-labels" },
+            h("span", { class: "tl-segment-badge" }, "S1"),
+            h("span", { class: "tl-segment-copy" },
+              h("span", { class: "tl-segment-label" }, "12s"))))));
     return [section("Color", [preview, card(
       row({
         setting: "accent",

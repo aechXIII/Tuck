@@ -31,6 +31,27 @@ async function start(page: Page, settings: Record<string, unknown> = {}) {
   await page.getByRole("button", { name: "Appearance", exact: true }).click();
 }
 
+async function expectSegmentPreviewFits(page: Page) {
+  const geometry = await page.locator(".set-preview-clip").evaluate(sample => {
+    const clip = sample.getBoundingClientRect();
+    const track = sample.parentElement!.getBoundingClientRect();
+    const badge = sample.querySelector(".tl-segment-badge")!.getBoundingClientRect();
+    const duration = sample.querySelector(".tl-segment-label")!.getBoundingClientRect();
+    return {
+      clipWidth: clip.width,
+      trackWidth: track.width,
+      centerDifference: Math.abs(badge.top + badge.height / 2 - duration.top - duration.height / 2),
+      fits: [badge, duration].every(label => label.left >= clip.left && label.right <= clip.right
+        && label.top >= clip.top && label.bottom <= clip.bottom),
+      separate: badge.right < duration.left,
+    };
+  });
+  expect(geometry.clipWidth).toBeCloseTo(geometry.trackWidth, 1);
+  expect(geometry.centerDifference).toBeLessThan(1);
+  expect(geometry.fits).toBe(true);
+  expect(geometry.separate).toBe(true);
+}
+
 test("layout density and text size change independently and keep Settings readable", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await start(page);
@@ -87,6 +108,7 @@ test("the segment sample follows both timeline styles and the current segment la
     expect(colors.sample).toBe(colors.actual);
     expect(colors.outline).toBe("none");
     expect(colors.label).toBe("S112s");
+    await expectSegmentPreviewFits(page);
   }
 });
 
@@ -144,6 +166,7 @@ for (const width of [1440, 960]) {
         expect(geometry.overflow).toBe(false);
         expect(geometry.clipped).toEqual([]);
         expect(geometry.focusable).toBe(true);
+        await expectSegmentPreviewFits(page);
       }
     }
     await page.getByRole("button", { name: "Close settings", exact: true }).click();
