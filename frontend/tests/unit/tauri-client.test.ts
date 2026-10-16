@@ -7,6 +7,20 @@ import {
   hasTauriInvoke,
 } from "../../src/backend/tauri.ts";
 
+test("file copy invokes the native file command and preserves native errors", async () => {
+  const calls: unknown[] = [];
+  const client = createTauriBackendClient(async (command, args) => {
+    calls.push({ command, args });
+  });
+  const path = "C:\\videos\\録画 #1.mp4";
+  assert.deepEqual(await client.copyFile(path), { ok: true, value: {} });
+  assert.deepEqual(calls, [{ command: "copy_file_to_clipboard", args: { path } }]);
+  const error = { code: "CLIPBOARD_UNAVAILABLE", message: "Clipboard is busy.", details: {} };
+  const failed = createTauriBackendClient(async () => { throw error; });
+  assert.deepEqual(await failed.copyFile(path), { ok: false, error });
+  assert.equal((await createTauriBackendClient(async () => { throw new Error("Offline"); }).copyFile(path)).ok, false);
+});
+
 test("frame export sends its snapshot and validates the complete result", async () => {
   const calls: unknown[] = [];
   const value = { path: "out.png", width: 1920, height: 1080, time: 3.25, warnings: [] };

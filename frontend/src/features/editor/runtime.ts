@@ -635,6 +635,7 @@ export function installEditorRuntime(
         "export-item-cancel": (target) => void queue.cancelQueueItem(target.dataset.itemId ?? ""),
         "export-item-retry": (target) => void queue.retryQueueItem(target.dataset.itemId ?? ""),
         "export-item-show": (target) => void queue.openResult(target.dataset.resultPath ?? ""),
+        "export-item-copy-file": (target) => void queue.copyResult(target.dataset.itemId ?? ""),
         "export-item-copy-details": (target) => void queue.copyDiagnostics(target.dataset.itemId ?? ""),
         "export-item-remove": (target) => void queue.removeQueueItem(target.dataset.itemId ?? ""),
         "modal-close-overlay": (target, event) => {

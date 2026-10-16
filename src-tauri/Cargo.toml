@@ -27,9 +27,10 @@ tokio = { version = "1.53.1", features = ["io-util", "macros", "process", "rt-mu
 
 [target.'cfg(windows)'.dependencies]
 webview2-com = "=0.38.2"
-windows = { version = "0.61.3", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_Security", "Win32_System_JobObjects", "Win32_System_LibraryLoader", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging"] }
+windows = { version = "0.61.3", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_Security", "Win32_System_DataExchange", "Win32_System_JobObjects", "Win32_System_LibraryLoader", "Win32_System_Memory", "Win32_System_Ole", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 windows-core = "0.61.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"
 libc = "0.2"
 webkit2gtk = { version = "2.0.2", features = ["v2_20"] }

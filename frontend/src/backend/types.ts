@@ -222,6 +222,7 @@ export interface DomainBackendClient {
   getDownloadProgress(): Promise<BackendResult<DownloadProgress>>;
   installUpdate(): Promise<BackendResult<EmptyPayload>>;
   openOutputFolder(path: string): Promise<BackendResult<EmptyPayload>>;
+  copyFile(path: string): Promise<BackendResult<EmptyPayload>>;
   installGenericSendto(kind: SendToKind): Promise<BackendResult<EmptyPayload>>;
   removeGenericSendto(kind: SendToKind): Promise<BackendResult<EmptyPayload>>;
   repairGenericSendto(kind: SendToKind): Promise<BackendResult<EmptyPayload>>;

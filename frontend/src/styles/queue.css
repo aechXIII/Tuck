@@ -385,6 +385,22 @@
 .exports-row.running {
   background: var(--raised);
 }
+.exports-actions {
+  grid-row: 1 / span 2;
+  grid-column: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.exports-copy {
+  min-width: calc(78px * var(--text-scale));
+}
+.exports-copy-error {
+  grid-column: 1 / -1;
+  color: var(--warn);
+  font-size: calc(11px * var(--text-scale));
+  overflow-wrap: anywhere;
+}
 .exports-name {
   min-width: 0;
   overflow: hidden;

@@ -434,6 +434,10 @@ class DeterministicFakeBackend implements BackendClient {
     );
   }
 
+  copyFile(path: string) {
+    return this.#record("copyFile", [path], this.#responses.copyFile ?? notConfigured("File clipboard is not configured"));
+  }
+
   installGenericSendto(kind: SendToKind) {
     return this.#record(
       "installGenericSendto",

@@ -196,6 +196,31 @@ pub async fn copy_text(app: tauri::AppHandle, text: String) -> Result<(), Public
 }
 
 #[tauri::command]
+pub async fn copy_file_to_clipboard(
+    window: tauri::Window,
+    path: String,
+) -> Result<(), PublicBackendError> {
+    use crate::platform::file_clipboard::{copy_file, validate_file_path};
+    let path = tauri::async_runtime::spawn_blocking(move || validate_file_path(&path))
+        .await
+        .map_err(|_| {
+            PublicBackendError::new("INTERNAL_ERROR", "Could not check the file to copy.")
+        })??;
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    let target = window.clone();
+    window
+        .run_on_main_thread(move || {
+            let _ = sender.send(copy_file(&target, &path));
+        })
+        .map_err(|_| {
+            PublicBackendError::new("INTERNAL_ERROR", "Could not access the clipboard.")
+        })?;
+    receiver.await.map_err(|_| {
+        PublicBackendError::new("INTERNAL_ERROR", "Could not copy the file. Try again.")
+    })?
+}
+
+#[tauri::command]
 pub async fn open_output_folder(path: String) -> Result<(), PublicBackendError> {
     tauri::async_runtime::spawn_blocking(move || open_with_validation(&path, &SystemOpener))
         .await

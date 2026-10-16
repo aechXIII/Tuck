@@ -4,6 +4,7 @@ import { legacyBackendResult } from "../editor/backend-compat.ts";
 import { formatBytes, formatTime, withReason } from "../editor/format.ts";
 import { announce, confirmToast, toast } from "../editor/toast.ts";
 import { EASE_OUT, motionEnabled } from "../../ui/motion.ts";
+import { createExportFileCopy } from "./export-file-copy.ts";
 import type { EditorClip } from "../editor/types.ts";
 import type { EditorSession } from "../editor/session.ts";
 import {
@@ -48,6 +49,7 @@ export interface QueueApi {
   cancelQueueItem: (itemId: string) => Promise<void>;
   retryQueueItem: (itemId: string) => Promise<void>;
   openResult: (path: string) => Promise<void>;
+  copyResult: (itemId: string) => Promise<void>;
   stopAfterCurrent: () => void;
   cancelAll: () => void;
   clearDone: (announce?: boolean) => Promise<void>;
@@ -99,6 +101,7 @@ export function installQueue(deps: QueueDeps): QueueApi {
 
   let exportsOpen = false;
   let lastItems: readonly QueueItem[] = [];
+  const fileCopy = createExportFileCopy(path => client().copyFile(path), () => renderExports(lastItems));
 
   let closeTicket = 0;
 
@@ -190,7 +193,23 @@ export function installQueue(deps: QueueDeps): QueueApi {
       button.dataset.actionClick = `export-item-${row.action}`;
       button.dataset.itemId = row.id;
       if (row.action === "show") button.dataset.resultPath = row.resultPath;
-      element.append(button);
+      if (row.action === "show") {
+        const actions = doc.createElement("span");
+        actions.className = "exports-actions";
+        const copy = doc.createElement("button");
+        const state = fileCopy.state(row.id, row.resultPath);
+        copy.type = "button";
+        copy.className = "exports-btn exports-copy";
+        copy.textContent = state.label;
+        copy.setAttribute("aria-label", `Copy file for ${row.name}`);
+        if (state.disabled) copy.setAttribute("aria-disabled", "true");
+        copy.dataset.actionClick = "export-item-copy-file";
+        copy.dataset.itemId = row.id;
+        actions.append(copy, button);
+        element.append(actions);
+      } else {
+        element.append(button);
+      }
     }
     const detail = doc.createElement("span");
     detail.className = row.kind === "failed" ? "exports-detail failed" : "exports-detail";
@@ -211,6 +230,13 @@ export function installQueue(deps: QueueDeps): QueueApi {
     }
     detail.title = detail.textContent ?? "";
     element.append(detail);
+    const copyError = fileCopy.state(row.id, row.resultPath).error;
+    if (copyError) {
+      const error = doc.createElement("span");
+      error.className = "exports-copy-error";
+      error.textContent = `${copyError} Use Show to find the file.`;
+      element.append(error);
+    }
     // a failed export can hand over its log; failed and cancelled ones can leave the list
     if (row.kind === "failed" || row.kind === "cancelled") {
       const more = doc.createElement("span");
@@ -569,6 +595,15 @@ export function installQueue(deps: QueueDeps): QueueApi {
     (next ?? byId("qstatus"))?.focus();
   }
 
+  async function copyResult(itemId: string): Promise<void> {
+    const item = queueItemsById[itemId];
+    if (item?.state !== "completed" || !item.result_path) return;
+    const path = item.result_path;
+    const result = await fileCopy.copy(itemId, path);
+    if (result === "copied") toast("File copied to clipboard.", "ok");
+    else if (result === "error") toast(fileCopy.state(itemId, path).error, "err");
+  }
+
   async function openResult(path: string): Promise<void> {
     if (!path) return;
     try {
@@ -766,6 +801,7 @@ export function installQueue(deps: QueueDeps): QueueApi {
     cancelQueueItem,
     retryQueueItem,
     openResult,
+    copyResult,
     stopAfterCurrent,
     cancelAll,
     clearDone,

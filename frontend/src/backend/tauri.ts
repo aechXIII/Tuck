@@ -718,6 +718,15 @@ class TauriTransport implements TauriBackendClient {
     }
   }
 
+  async copyFile(path: string): Promise<BackendResult<EmptyPayload>> {
+    try {
+      await this.#invoke("copy_file_to_clipboard", { path });
+      return { ok: true, value: {} };
+    } catch (error) {
+      return this.#finish(isBackendError(error) ? { ok: false, error } : backendFailure("TAURI_INVOKE_FAILED", errorMessage(error, "Could not copy file. Try again."), { method: "copyFile" }));
+    }
+  }
+
   async openOutputFolder(path: string): Promise<BackendResult<EmptyPayload>> {
     try {
       await this.#invoke("open_output_folder", { path });
