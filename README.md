@@ -190,4 +190,10 @@ Windows releases provide a separate FFmpeg source archive alongside the installe
 
 Tuck is available under the [GNU General Public License v3.0 only](LICENSE).
 
+Third-party notices are available for [Windows](packaging/THIRD_PARTY_NOTICES.md) and [Linux](packaging/THIRD_PARTY_NOTICES_LINUX.md).
+
 The license and third-party notices are also available offline in **Settings > About**.
+
+## Acknowledgments
+
+Some frame blending optimizations were inspired by [Interpolini](https://github.com/Z1xus/interpolini).
