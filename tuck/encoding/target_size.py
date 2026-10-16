@@ -8,9 +8,10 @@ from ..models import AUDIO_OVERHEAD_FACTOR
 MIN_VIDEO_BITRATE = 50_000
 MAX_AUDIO_BITRATE = 320_000
 DEFAULT_MAX_RETRIES = 2
-OVERSHOOT_RETRY_FACTOR = 0.90
-UNDERSHOOT_RATIO = 0.75
-UNDERSHOOT_BOOST_FACTOR = 1.08
+UNDERSHOOT_RATIO = 0.95
+MAX_REFINEMENT_FACTOR = 2.0
+SOFTWARE_TARGET_RATIO = 0.97
+HARDWARE_TARGET_RATIO = 0.95
 HARDWARE_SAFETY_EXTRA = 0.02
 # growth below this between a retry and the one before it means more bitrate is
 # not producing more bytes: the source is content-limited and further retries
@@ -133,29 +134,30 @@ def decide_retry(
     max_attempts: int,
     *,
     hardware_encoder: bool = False,
+    non_video_size: int = 0,
 ) -> RetryDecision:
     if attempt >= max_attempts - 1:
         return RetryDecision(False, current_video_bitrate, "retry limit reached")
+    if actual_size <= 0 or target_size <= 0 or current_video_bitrate <= 0:
+        return RetryDecision(False, current_video_bitrate, "size or bitrate unavailable")
+    oversized = actual_size > target_size
+    if not oversized and actual_size >= target_size * UNDERSHOOT_RATIO:
+        return RetryDecision(False, current_video_bitrate, "within acceptable range")
 
-    if actual_size > target_size:
-        factor = OVERSHOOT_RETRY_FACTOR
-        if hardware_encoder:
-            factor = 0.88
-        overshoot_ratio = actual_size / max(target_size, 1)
-        if overshoot_ratio > 1.25:
-            factor = min(factor, 0.82)
-        new_br = max(MIN_VIDEO_BITRATE, int(current_video_bitrate * factor))
+    # audio packets and container bytes stay fixed when only video bitrate changes
+    fixed_size = non_video_size if 0 <= non_video_size < actual_size else 0
+    target_ratio = HARDWARE_TARGET_RATIO if hardware_encoder else SOFTWARE_TARGET_RATIO
+    video_budget = max(0, int(target_size * target_ratio) - fixed_size)
+    measured_video_size = actual_size - fixed_size
+    corrected = int(current_video_bitrate * video_budget / measured_video_size)
+    if oversized:
+        new_br = max(MIN_VIDEO_BITRATE, min(corrected, current_video_bitrate - 1))
         if new_br >= current_video_bitrate:
-            new_br = max(
-                MIN_VIDEO_BITRATE, current_video_bitrate - max(1000, current_video_bitrate // 20)
-            )
+            return RetryDecision(False, current_video_bitrate, "minimum video bitrate reached")
         return RetryDecision(True, new_br, "output exceeded target size")
 
-    if actual_size < target_size * UNDERSHOOT_RATIO and current_video_bitrate > MIN_VIDEO_BITRATE:
-        room = target_size / max(actual_size, 1)
-        boost = min(UNDERSHOOT_BOOST_FACTOR, 1.0 + (room - 1.0) * 0.25)
-        new_br = int(current_video_bitrate * boost)
-        if new_br > current_video_bitrate:
-            return RetryDecision(True, new_br, "output substantially under target")
-
-    return RetryDecision(False, current_video_bitrate, "within acceptable range")
+    # a short or unusually compressible first output must not cause an unbounded jump
+    new_br = min(corrected, int(current_video_bitrate * MAX_REFINEMENT_FACTOR))
+    if new_br > current_video_bitrate:
+        return RetryDecision(True, new_br, "output substantially under target")
+    return RetryDecision(False, current_video_bitrate, "no room to increase video bitrate")

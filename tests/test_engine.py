@@ -1374,7 +1374,7 @@ class TestTargetSizeRetries:
 
         monkeypatch.setattr("tuck.encoding.runner.tempfile.mkstemp", allocate_once)
         monkeypatch.setattr(engine, "_encode_single_pass", encode_once)
-        monkeypatch.setattr(engine, "_left_bitrate_unused", lambda *_args: False)
+        monkeypatch.setattr(engine, "_measure_video_size", lambda *_args: None)
 
         result = engine._encode_with_retry("ffmpeg", plan, Path(plan.source), output, 10.0, None)
 
@@ -1392,8 +1392,8 @@ class TestTargetSizeRetries:
             (["empty", "empty"], b"a", 4_000, 1_000_000),
             ([12_000, 11_000], b"a", 4_000, 1_000_000),
             ([3_000], b"a", 4_000, 1_000_000),
-            ([4_100], b"b", 4_100, 1_080_000),
-            ([6_000, "failure"], b"b", 6_000, 1_080_000),
+            ([4_100], b"b", 4_100, 2_000_000),
+            ([6_000, "failure"], b"b", 6_000, 2_000_000),
         ],
     )
     def test_refinement_publishes_best_under_target_result(
@@ -1423,7 +1423,7 @@ class TestTargetSizeRetries:
         monkeypatch.setattr(
             "tuck.encoding.runner.get_available_encoders", lambda: frozenset({"libx264"})
         )
-        monkeypatch.setattr(engine, "_left_bitrate_unused", lambda *_args: False)
+        monkeypatch.setattr(engine, "_measure_video_size", lambda *_args: None)
         outcomes = iter([4_000, *refinements])
         attempt_paths = []
         attempt_plans = []
@@ -1486,7 +1486,7 @@ class TestTargetSizeRetries:
         monkeypatch.setattr(
             "tuck.encoding.runner.get_available_encoders", lambda: frozenset({"libx264"})
         )
-        monkeypatch.setattr(engine, "_left_bitrate_unused", lambda *_args: False)
+        monkeypatch.setattr(engine, "_measure_video_size", lambda *_args: None)
         calls = 0
 
         def encode_once(_ffmpeg, _plan, _source, destination, *_args, **_kwargs):
@@ -1543,7 +1543,7 @@ class TestTargetSizeRetries:
             return destination
 
         monkeypatch.setattr(engine, "_encode_single_pass", encode_once)
-        monkeypatch.setattr(engine, "_left_bitrate_unused", lambda *_args: False)
+        monkeypatch.setattr(engine, "_measure_video_size", lambda *_args: None)
         with pytest.raises(OSError):
             engine._encode_with_retry("ffmpeg", plan, Path(plan.source), output, 10.0, None)
 
@@ -1575,7 +1575,7 @@ class TestTargetSizeRetries:
         engine._encode_single_pass = encode_once
         result = engine._encode_with_retry("ffmpeg", plan, Path(plan.source), output, 10.0, None)
         assert result == output
-        assert bitrates == [1_000_000, 1_080_000]
+        assert bitrates == [1_000_000, 2_000_000]
         assert plan.video_bitrate == 1_000_000, (
             "keep the metadata of the equally sized first output"
         )

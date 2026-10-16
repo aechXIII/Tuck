@@ -84,7 +84,7 @@ class TestRetryPolicy:
         assert d.new_video_bitrate < 2_000_000
 
     def test_within_target_no_retry(self):
-        d = decide_retry(9_000_000, 10_000_000, 2_000_000, attempt=0, max_attempts=3)
+        d = decide_retry(9_700_000, 10_000_000, 2_000_000, attempt=0, max_attempts=3)
         assert not d.should_retry
 
     def test_retry_limit(self):
@@ -127,3 +127,64 @@ class TestContentLimited:
     def test_unknown_length_or_bitrate_never_counts_as_unused(self):
         assert not left_bitrate_unused(100, 0.0, 1_000_000)
         assert not left_bitrate_unused(100, 10.0, 0)
+
+
+class TestMeasuredRetryPolicy:
+    def test_large_overshoot_is_corrected_from_measured_size(self):
+        decision = decide_retry(20_000_000, 10_000_000, 2_000_000, 0, 3)
+        assert decision.should_retry
+        assert decision.new_video_bitrate == 970_000
+
+    def test_audio_and_container_bytes_do_not_scale_with_video_bitrate(self):
+        decision = decide_retry(12_000_000, 10_000_000, 2_000_000, 0, 3, non_video_size=3_000_000)
+        assert decision.should_retry
+        assert decision.new_video_bitrate == 1_488_888
+
+    def test_moderate_underfill_is_refined_toward_the_limit(self):
+        decision = decide_retry(8_500_000, 10_000_000, 2_000_000, 0, 3)
+        assert decision.should_retry
+        assert decision.new_video_bitrate == 2_282_352
+
+    def test_refinement_growth_is_bounded(self):
+        decision = decide_retry(1_000_000, 10_000_000, 2_000_000, 0, 3)
+        assert decision.new_video_bitrate == 4_000_000
+
+    def test_hardware_correction_leaves_more_room_for_rate_control_variation(self):
+        decision = decide_retry(
+            12_000_000,
+            10_000_000,
+            2_000_000,
+            0,
+            3,
+            non_video_size=3_000_000,
+            hardware_encoder=True,
+        )
+        assert decision.new_video_bitrate == 1_444_444
+
+    def test_underfill_at_the_minimum_bitrate_can_still_improve(self):
+        decision = decide_retry(5_000_000, 10_000_000, MIN_VIDEO_BITRATE, 0, 3)
+        assert decision.should_retry
+        assert decision.new_video_bitrate > MIN_VIDEO_BITRATE
+
+    def test_overshoot_at_the_minimum_bitrate_does_not_repeat_the_same_encode(self):
+        decision = decide_retry(12_000_000, 10_000_000, MIN_VIDEO_BITRATE, 0, 3)
+        assert not decision.should_retry
+
+    @pytest.mark.parametrize("fixed", [-1, 12_000_000, 13_000_000])
+    def test_invalid_non_video_measurement_uses_whole_file_correction(self, fixed):
+        decision = decide_retry(12_000_000, 10_000_000, 2_000_000, 0, 3, non_video_size=fixed)
+        assert decision.new_video_bitrate == 1_616_666
+
+    @pytest.mark.parametrize("size", [9_500_000, 9_700_000, 10_000_000])
+    def test_near_limit_results_do_not_spend_another_encode(self, size):
+        assert not decide_retry(size, 10_000_000, 2_000_000, 0, 3).should_retry
+
+    def test_fixed_bytes_that_exhaust_the_budget_stop_at_the_minimum(self):
+        decision = decide_retry(12_000_000, 10_000_000, 2_000_000, 0, 3, non_video_size=10_000_000)
+        assert decision.new_video_bitrate == MIN_VIDEO_BITRATE
+
+    @pytest.mark.parametrize(
+        "actual, target, bitrate", [(0, 10, 50_000), (10, 0, 50_000), (10, 20, 0)]
+    )
+    def test_missing_size_or_bitrate_does_not_request_an_encode(self, actual, target, bitrate):
+        assert not decide_retry(actual, target, bitrate, 0, 3).should_retry

@@ -448,7 +448,12 @@ class FFmpegEngine:
             )
 
     def _apply_retry_decision(
-        self, plan: EncodePlan, actual_size: int, attempt: int, max_attempts: int
+        self,
+        plan: EncodePlan,
+        actual_size: int,
+        attempt: int,
+        max_attempts: int,
+        non_video_size: int = 0,
     ) -> bool:
         decision = decide_retry(
             actual_size=actual_size,
@@ -457,6 +462,7 @@ class FFmpegEngine:
             attempt=attempt,
             max_attempts=max_attempts,
             hardware_encoder=is_hardware_encoder(plan.video_encoder),
+            non_video_size=non_video_size,
         )
         if not decision.should_retry:
             return False
@@ -543,6 +549,7 @@ class FFmpegEngine:
         max_attempts = 1 if is_upscale or is_explicit else DEFAULT_MAX_RETRIES + 1
         attempt = 0
         previous_size: int | None = None
+        previous_bitrate = plan.video_bitrate
         attempt_outputs: list[Path] = []
         best_result: Path | None = None
         best_size = 0
@@ -633,8 +640,10 @@ class FFmpegEngine:
                     best_estimated_size = plan.estimated_size
 
                 # more bitrate cannot help when the preceding refinement barely grew the file
-                if previous_size is not None and is_content_limited(
-                    previous_size, actual_size, plan.target_size
+                if (
+                    previous_size is not None
+                    and plan.video_bitrate > previous_bitrate
+                    and is_content_limited(previous_size, actual_size, plan.target_size)
                 ):
                     logger.info(
                         "Output size %s is content-limited "
@@ -644,18 +653,33 @@ class FFmpegEngine:
                     )
                     return accept(result)
 
-                # unused bitrate shows the same limit before spending another full encode
-                if actual_size < plan.target_size * UNDERSHOOT_RATIO and self._left_bitrate_unused(
-                    result, plan
-                ):
-                    logger.info(
-                        "Output size %s is content-limited (video bitrate left unused); accepting",
-                        format_size(actual_size),
-                    )
-                    return accept(result)
+                non_video_size = 0
+                needs_correction = (
+                    actual_size > plan.target_size
+                    or actual_size < plan.target_size * UNDERSHOOT_RATIO
+                )
+                if needs_correction and attempt < max_attempts - 1:
+                    measured = self._measure_video_size(result)
+                    if measured is not None:
+                        video_bytes, duration = measured
+                        if 0 < video_bytes <= actual_size:
+                            non_video_size = actual_size - video_bytes
+                            # unused bitrate reveals a content limit without another full encode
+                            if actual_size < plan.target_size and left_bitrate_unused(
+                                video_bytes, duration, plan.video_bitrate
+                            ):
+                                logger.info(
+                                    "Output size %s is content-limited "
+                                    "(video bitrate left unused); accepting",
+                                    format_size(actual_size),
+                                )
+                                return accept(result)
 
                 previous_size = actual_size
-                if self._apply_retry_decision(plan, actual_size, attempt, max_attempts):
+                previous_bitrate = plan.video_bitrate
+                if self._apply_retry_decision(
+                    plan, actual_size, attempt, max_attempts, non_video_size
+                ):
                     if result != best_result:
                         self._cleanup_output(result)
                     attempt += 1
@@ -675,19 +699,24 @@ class FFmpegEngine:
             for attempt_output in attempt_outputs:
                 self._cleanup_output(attempt_output)
 
-    @staticmethod
-    def _left_bitrate_unused(result: Path, plan: EncodePlan) -> bool:
+    def _measure_video_size(self, result: Path) -> tuple[int, float] | None:
+        if self._cancel_event.is_set():
+            raise EncodeCancelled("Encoding cancelled by user")
         try:
             with av.open(str(result)) as container:
-                if not container.streams.video or not container.duration:
-                    return False
-                # the output's own length, so a source that misstates its length still retries
+                if not container.streams.video or not container.duration or container.duration <= 0:
+                    return None
+                # measure output duration, since the source can misstate its length
                 duration = container.duration / av.time_base
-                video_bytes = sum(p.size for p in container.demux(container.streams.video[0]))
+                video_bytes = 0
+                for packet in container.demux(container.streams.video[0]):
+                    if self._cancel_event.is_set():
+                        raise EncodeCancelled("Encoding cancelled by user")
+                    video_bytes += packet.size
         except (FFmpegError, OSError):
-            # an output that cannot be measured keeps the usual retry
-            return False
-        return left_bitrate_unused(video_bytes, duration, plan.video_bitrate)
+            # an unreadable output keeps whole-file size correction as the fallback
+            return None
+        return video_bytes, duration
 
     def _recalc_plan(self, plan: EncodePlan) -> None:
         effective_duration = plan.effective_duration
