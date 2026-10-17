@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseCustomWeights, weightPreview } from "../../src/features/export/frame-blending.ts";
+import { parseCustomWeights, updateWeightPreview, weightPreview } from "../../src/features/export/frame-blending.ts";
 
 test("custom weights preserve invalid input for validation", () => {
   assert.deepEqual(parseCustomWeights("1, 2 3"), [1, 2, 3]);
@@ -33,4 +33,57 @@ test("Vegas preview remains visible before source rates are known", () => {
   assert.ok(bars.every(value => value > 0));
   assert.equal(bars[0], .5);
   assert.equal(Math.max(...bars), 1);
+});
+
+function fakeChart() {
+  let created = 0;
+  const makeBar = () => {
+    const attributes = new Map<string, string>();
+    const bar = { writes: 0, getAttribute: (name: string) => attributes.get(name) ?? null,
+      setAttribute(name: string, value: string) { attributes.set(name, value); bar.writes++; } };
+    return bar;
+  };
+  type Bar = ReturnType<typeof makeBar>;
+  const chart = {
+    children: [] as Bar[],
+    get childElementCount() { return chart.children.length; },
+    replaceChildren(...bars: Bar[]) { chart.children = bars; },
+    ownerDocument: { createElementNS(namespace: string, name: string) {
+      assert.equal(namespace, "http://www.w3.org/2000/svg");
+      assert.equal(name, "rect");
+      created++;
+      return makeBar();
+    } },
+  };
+  return { chart, created: () => created };
+}
+
+test("weight chart keeps its bars and only rewrites what changed", () => {
+  const { chart, created } = fakeChart();
+  const equal = weightPreview(previewSettings);
+  updateWeightPreview(chart, equal);
+  assert.equal(created(), 32);
+  const bars = [...chart.children];
+  assert.equal(bars[0]!.getAttribute("height"), "42");
+  assert.equal(bars[31]!.getAttribute("x"), "250");
+  const writes = bars.map(bar => bar.writes);
+  for (let refresh = 0; refresh < 100; refresh++) updateWeightPreview(chart, equal);
+  assert.equal(created(), 32);
+  assert.deepEqual(chart.children, bars);
+  assert.deepEqual(bars.map(bar => bar.writes), writes);
+  const rising = weightPreview({...previewSettings, curve:"ascending"});
+  updateWeightPreview(chart, rising);
+  assert.deepEqual(chart.children, bars);
+  assert.equal(bars[0]!.getAttribute("height"), String(rising[0]! * 42));
+  assert.equal(bars[0]!.getAttribute("y"), String(46 - rising[0]! * 42));
+});
+
+test("weight chart rebuilds only when the bar count changes", () => {
+  const { chart, created } = fakeChart();
+  updateWeightPreview(chart, [1, .5]);
+  assert.equal(created(), 2);
+  updateWeightPreview(chart, [1, .5, .25]);
+  assert.equal(created(), 5);
+  assert.equal(chart.childElementCount, 3);
+  assert.equal(chart.children[2]!.getAttribute("height"), String(.25 * 42));
 });

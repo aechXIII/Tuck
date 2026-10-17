@@ -857,8 +857,7 @@ function setPlayheadUI(sec: number, full?: number) {
   full = full || videoDuration();
   sec = Number.isFinite(sec) ? sec : 0;
   let pct = full > 0 ? Math.max(0, Math.min(100, (sec / full) * 100)) : 0;
-  let layer = byId("seq-playhead-layer");
-  if (layer) layer.style.setProperty("--playhead", pct + "%");
+  TimelineCore.placePlayhead(byId("seq-playhead"), pct);
   if (full > 0) {
     byId("timeline")?.setAttribute("aria-valuemax", String(Math.round(full)));
     byId("timeline")?.setAttribute("aria-valuenow", String(Math.round(sec)));

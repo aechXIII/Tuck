@@ -152,7 +152,7 @@ test("source-audio slipping and undo refresh the actual preview frame", async ({
   await page.mouse.up();
   await page.keyboard.up("Alt");
   await expect.poll(() => page.locator("#vid").evaluate((video: HTMLVideoElement) => video.currentTime)).toBeCloseTo(source - 0.5, 1);
-  await expect(page.locator("#seq-playhead-layer")).toHaveAttribute("style", /--playhead: 0%;/);
+  await expect(page.locator("#seq-playhead")).toHaveAttribute("style", /left: 0%;/);
   await page.locator("#btn-undo").click();
   await expect.poll(() => page.locator("#vid").evaluate((video: HTMLVideoElement) => video.currentTime)).toBeCloseTo(source, 1);
   const ruler = (await page.locator("#sequence-ruler").boundingBox())!;

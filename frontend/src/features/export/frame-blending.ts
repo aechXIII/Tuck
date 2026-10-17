@@ -42,6 +42,39 @@ export function weightPreview(settings: FrameBlendingSettings, source = 0, outpu
   return values.map(value => max ? value / max : 0);
 }
 
+interface WeightBar {
+  getAttribute(name: string): string | null;
+  setAttribute(name: string, value: string): void;
+}
+
+interface WeightChart<Bar extends WeightBar> {
+  readonly children: ArrayLike<Bar>;
+  replaceChildren(...bars: Bar[]): void;
+  readonly ownerDocument: { createElementNS(namespace: "http://www.w3.org/2000/svg", name: "rect"): Bar };
+}
+
+// queue polling refreshes the export panel twice a second, so the chart keeps its bars and only
+// rewrites the values that changed instead of building 32 new elements each time
+export function updateWeightPreview<Bar extends WeightBar>(chart: WeightChart<Bar>, weights: readonly number[]): void {
+  if (chart.children.length !== weights.length) {
+    chart.replaceChildren(...weights.map((_, index) => {
+      const bar = chart.ownerDocument.createElementNS("http://www.w3.org/2000/svg", "rect");
+      bar.setAttribute("x", String(index * 250 / 31));
+      bar.setAttribute("width", "6");
+      bar.setAttribute("rx", "1");
+      return bar;
+    }));
+  }
+  weights.forEach((weight, index) => {
+    const bar = chart.children[index];
+    if (!bar) return;
+    const y = String(46 - weight * 42);
+    const height = String(weight * 42);
+    if (bar.getAttribute("y") !== y) bar.setAttribute("y", y);
+    if (bar.getAttribute("height") !== height) bar.setAttribute("height", height);
+  });
+}
+
 export function installFrameBlending(
   root: HTMLElement,
   changed: () => void,
@@ -103,15 +136,7 @@ export function installFrameBlending(
       ? `${Number.isFinite(value.amount) ? value.amount : "—"}× blur` : "Off";
     const chart = root.querySelector<SVGElement>("#blend-chart")!;
     const rate = rates();
-    chart.replaceChildren(...weightPreview(value, rate.source, rate.output).map((weight, index) => {
-      const bar = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-      bar.setAttribute("x", String(index * 250 / 31));
-      bar.setAttribute("y", String(46 - weight * 42));
-      bar.setAttribute("width", "6");
-      bar.setAttribute("height", String(weight * 42));
-      bar.setAttribute("rx", "1");
-      return bar;
-    }));
+    updateWeightPreview<Element>(chart, weightPreview(value, rate.source, rate.output));
     chart.setAttribute("aria-label", `Weight preview: ${value.custom_weights.length ? "custom" : value.curve}, earlier to later`);
     chart.dataset.disabled = String(!value.enabled);
 

@@ -132,8 +132,8 @@ const documentRef = {
       return { classList: classList(), setAttribute() {} };
     }
     if (id === "vbar") return { value: "80" };
-    if (id === "seq-playhead-layer") {
-      return { style: { setProperty() {} } };
+    if (id === "seq-playhead") {
+      return { style: { left: "" } };
     }
     return null;
   },

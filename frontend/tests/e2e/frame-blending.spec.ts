@@ -2,6 +2,8 @@ import { chooseSelect } from "../fixtures/select";
 import { expect, test } from "@playwright/test";
 import { healthyBackendFixture, installFakeBackend } from "../fixtures/fake-backend";
 
+declare global { interface Window { __firstBar?: Element | null } }
+
 for (const size of [{width:1240,height:800}, {width:960,height:640}]) {
   test(`frame blending controls at ${size.width}x${size.height}`, async ({page}) => {
     await page.setViewportSize(size);
@@ -101,4 +103,22 @@ test("Vegas has a weight preview before a video is added", async ({page}) => {
   const bars = page.locator("#blend-chart rect");
   await expect(bars).toHaveCount(32);
   expect(await bars.evaluateAll(nodes => nodes.every(node => node.getBoundingClientRect().height > 0))).toBe(true);
+});
+
+test("the weight chart keeps its bars while the queue polls", async ({page}) => {
+  await installFakeBackend(page, healthyBackendFixture());
+  await page.goto("/");
+  await page.locator("#frame-blending-panel > summary").click();
+  await page.getByLabel("Enable frame blending").check();
+  await expect(page.locator("#blend-chart rect")).toHaveCount(32);
+  const polls = () => page.evaluate(() => (window.__tuckFakeBackendCalls ?? []).filter(call => call.method === "getQueueState").length);
+  await page.evaluate(() => { window.__firstBar = document.querySelector("#blend-chart rect"); });
+  const before = await polls();
+  // every poll refreshes the export panel; the bars must survive it
+  await expect.poll(polls).toBeGreaterThanOrEqual(before + 2);
+  expect(await page.evaluate(() => document.querySelector("#blend-chart rect") === window.__firstBar)).toBe(true);
+  await chooseSelect(page, page.getByLabel("Weighting", {exact:true}), "ascending");
+  const heights = await page.locator("#blend-chart rect").evaluateAll(nodes => nodes.map(node => Number(node.getAttribute("height"))));
+  expect(heights[0]).toBeLessThan(heights[31]!);
+  expect(await page.evaluate(() => document.querySelector("#blend-chart rect") === window.__firstBar)).toBe(true);
 });

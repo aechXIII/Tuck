@@ -957,8 +957,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
 
   function updatePlayheads(time: number, total: number) {
     let pctValue = total > 0 ? Math.max(0, Math.min(100, (time / total) * 100)) : 0;
-    let layer = byId("seq-playhead-layer");
-    if (layer) layer.style.setProperty("--playhead", pctValue + "%");
+    TimelineCore.placePlayhead(byId("seq-playhead"), pctValue);
   }
 
   function neighborBounds(track: AudioTrackState, index: number, total: number, duration: number) {

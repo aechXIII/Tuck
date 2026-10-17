@@ -1544,7 +1544,7 @@ body.task-cut #timeline-audio-tools {
   position: absolute;
   top: 4px;
   bottom: 4px;
-  left: var(--playhead, 0%);
+  left: 0;
   width: 1.5px;
   margin-left: -1px;
   border-radius: 1px;

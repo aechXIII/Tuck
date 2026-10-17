@@ -78,3 +78,23 @@ test("timeline shares theme fills while preserving custom segment colors", () =>
   assert.equal(timeline.videoSegmentSelected(2, 2, true), true);
   assert.equal(timeline.videoSegmentSelected(2, 2, false), false);
 });
+
+test("the playhead moves itself and skips writes that change nothing", () => {
+  let writes = 0;
+  let left = "";
+  const playhead = { style: {
+    get left() { return left; },
+    set left(value: string) { left = value; writes++; },
+  } };
+  timeline.placePlayhead(playhead, 12.5);
+  assert.equal(left, "12.5%");
+  timeline.placePlayhead(playhead, 12.5);
+  timeline.placePlayhead(playhead, 12.50004);
+  assert.equal(writes, 1);
+  timeline.placePlayhead(playhead, 100 / 3);
+  assert.equal(left, "33.333%");
+  timeline.placePlayhead(playhead, 0);
+  assert.equal(left, "0%");
+  assert.equal(writes, 3);
+  assert.doesNotThrow(() => timeline.placePlayhead(null, 50));
+});

@@ -149,3 +149,12 @@ export function videoSegmentSelected(
 ): boolean {
   return index === activeIndex && !!sourceGroupSelected;
 }
+
+// the playhead moves every display frame while playing; a custom property on its layer made
+// WebKitGTK restyle the whole layer each frame and keep that style data, so memory grew for as
+// long as a video played. Rounding lets an unchanged position skip the write
+export function placePlayhead(playhead: { style: { left: string } } | null, percent: number): void {
+  if (!playhead) return;
+  const left = Math.round(percent * 1000) / 1000 + "%";
+  if (playhead.style.left !== left) playhead.style.left = left;
+}
