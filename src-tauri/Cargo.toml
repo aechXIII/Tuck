@@ -12,6 +12,7 @@ name = "Tuck"
 path = "src/main.rs"
 
 [build-dependencies]
+cc = "1.4.4"
 tauri-build = { version = "2.6.3", features = [] }
 
 [dependencies]

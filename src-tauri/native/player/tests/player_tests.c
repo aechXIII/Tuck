@@ -1,0 +1,256 @@
+/* Tests for the native player core, run from the Rust test suite through
+   tuck_player_test_failures() so they run wherever the app's tests do. */
+#include <math.h>
+#include <stdio.h>
+
+#include "../audio_timing.h"
+#include "../engine.h"
+#include "../playback_state.h"
+#include "../seek_request.h"
+
+static int failures;
+
+#define CHECK(condition)                                                        \
+    do {                                                                        \
+        if (!(condition)) {                                                     \
+            failures++;                                                         \
+            fprintf(stderr, "%s:%d: check failed: %s\n", __FILE__, __LINE__, #condition); \
+        }                                                                       \
+    } while (0)
+
+static int close_to(double a, double b) {
+    return fabs(a - b) < 1e-9;
+}
+
+static void source_delta(void) {
+    const double cases[][3] = {
+        {19.163333333333334, 19.17, -6.666666666667},
+        {2.0, 21.166666666666668, -19166.666666666668},
+        {2.0, 40.333333333333336, -38333.333333333336},
+        {12.0, 42.2, -30200.0},
+        {5.003333333333333, 5.0, 3.333333333333},
+    };
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i)
+        CHECK(fabs(playback_source_delta_ms(cases[i][0], cases[i][1]) - cases[i][2]) < 1e-7);
+    PlaybackClock seek = {0};
+    clock_reset(&seek, 4.6, 1);
+    clock_update(&seek, 0.75);
+    CHECK(fabs(playback_source_delta_ms(5.1, clock_source(&seek)) + 250.0) < 1e-7);
+}
+
+static float source[PCM_CAPACITY * 2], result[PCM_CAPACITY * 2];
+
+static void pcm_queue(void) {
+    PcmQueue q = {0};
+    for (size_t i = 0; i < PCM_CAPACITY * 2; i++) source[i] = (float)i;
+    pcm_reset(&q, 7);
+    CHECK(pcm_write(&q, source, PCM_CAPACITY, 7) == PCM_CAPACITY);
+    CHECK(pcm_write(&q, source, 1, 7) == 0);
+    CHECK(pcm_read(&q, result, 23) == 23);
+    for (int i = 0; i < 46; i++) CHECK(result[i] == source[i]);
+    CHECK(pcm_write(&q, source, 23, 7) == 23);
+    CHECK(pcm_read(&q, result, PCM_CAPACITY) == PCM_CAPACITY);
+    CHECK(result[0] == source[46]);
+    CHECK(result[(PCM_CAPACITY - 23) * 2] == source[0]);
+    pcm_reset(&q, 8);
+    CHECK(q.count == 0);
+    CHECK(pcm_write(&q, source, 20, 7) == 0);
+    CHECK(pcm_write(&q, source, 20, 8) == 20);
+    pcm_reset(&q, 9);
+    pcm_note_underrun(&q, 7);
+    CHECK(q.late_debt == 7);
+    CHECK(pcm_write(&q, source, 5, 9) == 5 && q.count == 0 && q.late_debt == 2);
+    CHECK(pcm_write(&q, source + 10, 6, 9) == 6 && q.count == 4 && q.late_debt == 0);
+    CHECK(pcm_read(&q, result, 4) == 4 && result[0] == source[14]);
+    CHECK(q.late_dropped == 7);
+    pcm_note_underrun(&q, 4);
+    pcm_reset(&q, 10);
+    CHECK(q.late_debt == 0);
+}
+
+static void capacities(void) {
+    CHECK(playback_video_capacity(60) == 14);
+    CHECK(playback_video_capacity(300) == 40);
+    CHECK(playback_video_capacity(360) == 40);
+    CHECK(playback_audio_prebuffer(1920) == 4800);
+    CHECK(playback_audio_prebuffer(4800) == 4800);
+    CHECK(playback_audio_prebuffer(0) == 0);
+    CHECK(playback_audio_prebuffer(4801) == 0);
+}
+
+static void clock_and_preview(void) {
+    PreviewState preview = {0};
+    preview_begin(&preview, 7);
+    CHECK(preview_needs_frame(&preview, 0, 0));
+    CHECK(!preview_needs_frame(&preview, 1, 7));
+    CHECK(!preview_complete(&preview, RENDER_DEFERRED, 7));
+    CHECK(preview.pending && !preview_needs_frame(&preview, 1, 7));
+    CHECK(!preview_complete(&preview, RENDER_SUBMITTED, 6));
+    CHECK(!preview_complete(&preview, RENDER_FAILED, 7));
+    CHECK(preview.pending);
+    CHECK(preview_complete(&preview, RENDER_SUBMITTED, 7));
+    CHECK(!preview.pending);
+
+    PlaybackClock c = {0};
+    clock_reset(&c, 5.25, 8);
+    clock_update(&c, 0.125);
+    CHECK(close_to(clock_source(&c), 5.375));
+    clock_pause(&c, 1);
+    clock_update(&c, 0.9);
+    CHECK(close_to(clock_source(&c), 5.375));
+    clock_pause(&c, 0);
+    clock_update(&c, 0.25);
+    CHECK(close_to(clock_source(&c), 5.5));
+    clock_update(&c, 0.2);
+    CHECK(close_to(clock_source(&c), 5.5));
+    double elapsed = c.elapsed;
+    clock_reset(&c, 1.0, 9);
+    CHECK(c.generation == 9 && clock_source(&c) == 1.0);
+    CHECK(c.elapsed == elapsed);
+    CHECK(!frame_current(8, 9) && frame_current(9, 9));
+
+    /* a seek holds the clock until its own generation's frame is shown */
+    clock_pause(&c, 1);
+    clock_reset(&c, 8.2, 10);
+    preview_begin(&preview, 10);
+    clock_update(&c, .194);
+    CHECK(clock_source(&c) == 8.2);
+    CHECK(!preview_complete(&preview, RENDER_DEFERRED, 10));
+    CHECK(!preview_complete(&preview, RENDER_SUBMITTED, 9));
+    CHECK(preview.pending && c.paused);
+    if (preview_complete(&preview, RENDER_SUBMITTED, 10)) clock_pause(&c, 0);
+    clock_update(&c, .01);
+    CHECK(!preview.pending && !c.paused && close_to(clock_source(&c), 8.21));
+}
+
+static void seek_requests(void) {
+    SeekRequest state = {0};
+    CHECK(seek_request_accept(&state, 1, 2));
+    CHECK(state.requested == 1 && state.confirmed == 0);
+    CHECK(seek_request_accept(&state, 2, 3));
+    /* the older seek's frame must not confirm the newer request */
+    CHECK(!seek_request_confirm(&state, 2));
+    CHECK(state.requested == 2 && state.confirmed == 0);
+    CHECK(seek_request_confirm(&state, 3));
+    CHECK(state.confirmed == 2);
+    CHECK(!seek_request_accept(&state, 1, 4));
+    CHECK(!seek_request_accept(&state, 2, 4));
+    CHECK(!seek_request_accept(&state, 0, 4));
+    CHECK(!seek_request_accept(&state, SEEK_REQUEST_MAX + 1, 4));
+    for (unsigned i = 3; i <= 100; i++) CHECK(seek_request_accept(&state, i, i + 1));
+    CHECK(!seek_request_confirm(&state, 100));
+    CHECK(state.confirmed == 2);
+    CHECK(seek_request_confirm(&state, 101));
+    CHECK(state.confirmed == 100);
+}
+
+static void audio_timing(void) {
+    AudioTimingInput t = {.submitted = 48000, .queued = 480, .buffered = 240, .delay = 480,
+                          .rate_num = 1, .rate_denom = 48000, .report_ns = 1000000000, .now_ns = 1000000000};
+    double seconds = 0;
+    CHECK(audio_timing_position(&t, &seconds) && close_to(seconds, .975));
+    t.now_ns += 5000000;
+    CHECK(audio_timing_position(&t, &seconds) && close_to(seconds, .980));
+    t.rate_denom = 96000;
+    t.delay = 960;
+    CHECK(audio_timing_position(&t, &seconds) && close_to(seconds, .980));
+    t.delay = -960;
+    CHECK(audio_timing_position(&t, &seconds) && close_to(seconds, .990));
+    t.submitted = 240;
+    CHECK(audio_timing_position(&t, &seconds) && seconds == 0);
+    t.queued = 0;
+    t.buffered = 0;
+    t.delay = 0;
+    t.now_ns += 20000000;
+    CHECK(audio_timing_position(&t, &seconds) && seconds == .005);
+    t.rate_denom = 0;
+    CHECK(!audio_timing_position(&t, &seconds));
+    t.rate_denom = 48000;
+    t.report_ns = 0;
+    CHECK(!audio_timing_position(&t, &seconds));
+    t.report_ns = 2000000000;
+    t.now_ns = 1000000000;
+    CHECK(!audio_timing_position(&t, &seconds));
+    t.report_ns = 1000000000;
+    t.now_ns = 1300000000;
+    CHECK(!audio_timing_position(&t, &seconds));
+}
+
+static TuckPlayerStatus status_at(TuckPlayer *player, double now) {
+    TuckPlayerStatus status = {0};
+    tuck_player_status(player, now, &status);
+    return status;
+}
+
+static void engine(void) {
+    CHECK(!tuck_player_create(0, 0));
+    CHECK(!tuck_player_create(NAN, 0));
+    TuckPlayer *player = tuck_player_create(10, 100);
+    CHECK(player != NULL);
+    if (!player) return;
+
+    /* opening waits for the first frame, paused at the start */
+    TuckPlayerStatus s = status_at(player, 100);
+    CHECK(s.paused && s.seek_pending && s.position_seconds == 0 && s.generation == 1);
+    tuck_player_frame_presented(player, 1, 100);
+    CHECK(!status_at(player, 100).seek_pending);
+
+    /* the clock runs only while playing */
+    tuck_player_play(player, 101);
+    CHECK(close_to(status_at(player, 102.5).position_seconds, 1.5));
+    tuck_player_pause(player, 103);
+    CHECK(close_to(status_at(player, 105).position_seconds, 2));
+    tuck_player_play(player, 106);
+    CHECK(close_to(status_at(player, 106.5).position_seconds, 2.5));
+
+    /* a playing seek holds the clock until its frame is shown, then runs from that moment */
+    CHECK(tuck_player_seek(player, 1, 4, 107));
+    s = status_at(player, 107.2);
+    CHECK(s.seek_pending && !s.paused && s.position_seconds == 4 && s.seek_request_id == 1 && s.confirmed_seek_request_id == 0);
+    tuck_player_frame_presented(player, s.generation, 107.25);
+    s = status_at(player, 107.5);
+    CHECK(!s.seek_pending && s.confirmed_seek_request_id == 1 && close_to(s.position_seconds, 4.25));
+
+    /* rapid seeks: only the newest request is confirmed, by its own frame */
+    CHECK(tuck_player_seek(player, 2, 1, 108));
+    uint64_t older = status_at(player, 108).generation;
+    CHECK(tuck_player_seek(player, 3, 6, 108));
+    tuck_player_frame_presented(player, older, 108.1);
+    s = status_at(player, 108.1);
+    CHECK(s.seek_pending && s.confirmed_seek_request_id == 1 && s.position_seconds == 6);
+    tuck_player_frame_presented(player, s.generation, 108.1);
+    CHECK(status_at(player, 108.1).confirmed_seek_request_id == 3);
+
+    /* stale or repeated request IDs and positions outside the video are refused */
+    CHECK(!tuck_player_seek(player, 3, 2, 109));
+    CHECK(!tuck_player_seek(player, 2, 2, 109));
+    CHECK(!tuck_player_seek(player, 4, -1, 109));
+    CHECK(!tuck_player_seek(player, 4, 10.5, 109));
+    CHECK(!tuck_player_seek(player, 4, NAN, 109));
+
+    /* playback stops on the last frame and starts over when played again */
+    s = status_at(player, 120);
+    CHECK(s.ended && s.paused && s.position_seconds == 10);
+    tuck_player_play(player, 121);
+    s = status_at(player, 121);
+    CHECK(!s.ended && !s.paused && s.seek_pending && s.position_seconds == 0);
+    tuck_player_frame_presented(player, s.generation, 121);
+    CHECK(close_to(status_at(player, 122).position_seconds, 1));
+
+    /* a monotonic clock that goes backwards never moves the position back */
+    double before = status_at(player, 123).position_seconds;
+    CHECK(status_at(player, 122.5).position_seconds == before);
+    tuck_player_destroy(player);
+}
+
+int tuck_player_test_failures(void) {
+    failures = 0;
+    source_delta();
+    pcm_queue();
+    capacities();
+    clock_and_preview();
+    seek_requests();
+    audio_timing();
+    engine();
+    return failures;
+}

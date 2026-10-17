@@ -23,7 +23,9 @@ import * as ClipDetails from "../library/clip-details.ts";
 import { createLibrary, type LibraryApi } from "../library/library.ts";
 import { installPanels, type PanelsApi } from "../panels/panels.ts";
 import type { AudioClipRangeInfo } from "../panels/panels.ts";
-import { installPlayer, type PlayerApi } from "../player/player.ts";
+import { installPlayer, type PlayerApi, type PlayerHost } from "../player/player.ts";
+import { installNativePlayer } from "../player/native-player.ts";
+import { createTauriPlayerEngine } from "../../backend/native-player.ts";
 import { installFrameExport } from "../player/frame-export.ts";
 import { isProbeReady } from "../../state/probe.ts";
 import {
@@ -278,7 +280,7 @@ export function installEditorRuntime(
     TuckShortcuts: shortcuts,
   });
 
-  player = installPlayer({
+  const playerHost: PlayerHost = {
     byId,
     clips: () => session.clips,
     selPath: () => session.selPath,
@@ -305,7 +307,8 @@ export function installEditorRuntime(
     },
     loopPlayback: () => session.appSettings.loop_playback !== false,
     document: windowRef.document,
-  });
+  };
+  player = installPlayer(playerHost);
 
   const settingsBackend: Pick<BackendClient, "saveSettings"> = {
     saveSettings: (patch) => getBackendClient().saveSettings(patch),
@@ -721,7 +724,7 @@ export function installEditorRuntime(
     });
     shortcuts.registerAction("playback.toggle", {
       enabled: () => session.selPath !== null,
-      execute: player.togglePlay,
+      execute: () => player.togglePlay(),
     });
     shortcuts.registerAction("playback.save-frame", {
       enabled: () => frameExport?.available() ?? false,
@@ -886,6 +889,11 @@ export function installEditorRuntime(
       library.noticeMissingTools();
     } catch {
       toast("Could not load settings.", "err");
+    }
+    // a developer switch for now: the native engine takes over before any video is shown
+    if (hasTauriInvoke(windowRef) && (await fetchPlatformCapabilities()).nativePreview === "engine") {
+      player.dispose();
+      player = installNativePlayer(playerHost, createTauriPlayerEngine());
     }
     if (
       session.appSettings.check_updates !== false &&

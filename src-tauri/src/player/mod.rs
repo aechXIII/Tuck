@@ -1,11 +1,13 @@
-//! Native preview player. For now only the surface the picture is drawn on: the page leaves a
-//! transparent hole where the picture belongs and the desktop shell draws below it, so the page's
-//! own controls (crop handles, menus, dialogs) stay on top without any z-order tricks.
+//! Native preview player. The page leaves a transparent hole where the picture belongs and the
+//! desktop shell draws below it, so the page's own controls (crop handles, menus, dialogs) stay on
+//! top without any z-order tricks. The engine owns the playback clock and seek rules; it does not
+//! decode yet, so the surface still shows a test picture.
 
 use std::sync::OnceLock;
 
 use serde::Deserialize;
 
+pub mod engine;
 #[cfg(target_os = "linux")]
 pub mod surface_linux;
 #[cfg(windows)]
@@ -17,6 +19,8 @@ pub enum PreviewMode {
     Off,
     /// draws a test picture in place of the video, for checking the surface itself
     Surface,
+    /// the surface plus the native engine driving playback, still without decoding
+    Engine,
 }
 
 impl PreviewMode {
@@ -24,12 +28,14 @@ impl PreviewMode {
         match self {
             PreviewMode::Off => "off",
             PreviewMode::Surface => "surface",
+            PreviewMode::Engine => "engine",
         }
     }
 
     fn from_switch(value: Option<&str>) -> Self {
         match value {
             Some("surface") => PreviewMode::Surface,
+            Some("engine") => PreviewMode::Engine,
             _ => PreviewMode::Off,
         }
     }
@@ -111,6 +117,11 @@ mod tests {
             PreviewMode::from_switch(Some("surface")),
             PreviewMode::Surface
         );
+        assert_eq!(
+            PreviewMode::from_switch(Some("engine")),
+            PreviewMode::Engine
+        );
+        assert_eq!(PreviewMode::Engine.as_str(), "engine");
         assert_eq!(PreviewMode::Surface.as_str(), "surface");
     }
 

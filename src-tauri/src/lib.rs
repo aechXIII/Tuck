@@ -17,7 +17,9 @@ use commands::native::{
     pick_folder, pick_import_file, pick_lut_file, pick_save_file, pick_video_files,
     platform_capabilities,
 };
-use commands::player::{preview_surface_open, preview_surface_viewport};
+use commands::player::{
+    player_command, player_open, player_status, preview_surface_open, preview_surface_viewport,
+};
 use commands::startup::{
     extract_startup_args, get_startup_files, handle_second_instance, StartupState,
 };
@@ -120,6 +122,7 @@ pub fn run() {
         .manage(startup_state)
         .manage(UpdaterState::default())
         .manage(CloseState::default())
+        .manage(player::engine::PlayerState::default())
         .setup(|app| {
             #[cfg(windows)]
             if let Some(window) = app.get_webview_window("main") {
@@ -187,7 +190,10 @@ pub fn run() {
         notify_when_unfocused,
         set_taskbar_progress,
         preview_surface_open,
-        preview_surface_viewport
+        preview_surface_viewport,
+        player_open,
+        player_command,
+        player_status
     ]);
 
     builder

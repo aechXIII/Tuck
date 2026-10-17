@@ -1,21 +1,71 @@
 use crate::backend::protocol::PublicBackendError;
 use crate::platform::window_chrome::css_to_physical;
+use crate::player::engine::{PlayerCommand, PlayerError, PlayerState, PlayerStatus};
 use crate::player::{preview_mode, PreviewMode, Viewport};
 
 fn surface_error(message: &str) -> PublicBackendError {
     PublicBackendError::new("PREVIEW_SURFACE_FAILED", message)
 }
 
+fn not_turned_on() -> PublicBackendError {
+    PublicBackendError::new("NOT_AVAILABLE", "The native preview is not turned on.")
+}
+
 // the page cannot turn the surface on by itself; only this run's switch can
 fn require_surface_mode() -> Result<(), PublicBackendError> {
-    if preview_mode() == PreviewMode::Surface {
+    match preview_mode() {
+        PreviewMode::Surface | PreviewMode::Engine => Ok(()),
+        PreviewMode::Off => Err(not_turned_on()),
+    }
+}
+
+fn require_engine_mode() -> Result<(), PublicBackendError> {
+    if preview_mode() == PreviewMode::Engine {
         Ok(())
     } else {
-        Err(PublicBackendError::new(
-            "NOT_AVAILABLE",
-            "The native preview is not turned on.",
-        ))
+        Err(not_turned_on())
     }
+}
+
+fn player_error(error: PlayerError) -> PublicBackendError {
+    match error {
+        PlayerError::NotOpen => PublicBackendError::new("PLAYER_NOT_OPEN", "No video is open."),
+        PlayerError::InvalidLength => {
+            PublicBackendError::new("INVALID_REQUEST", "The video length is not valid.")
+        }
+        PlayerError::SeekRefused => PublicBackendError::new(
+            "SEEK_REFUSED",
+            "The seek was older than the last one or outside the video.",
+        ),
+    }
+}
+
+/// Starts the player for a video of `duration_seconds`, replacing the previous one.
+#[tauri::command]
+pub fn player_open(
+    state: tauri::State<'_, PlayerState>,
+    duration_seconds: f64,
+) -> Result<PlayerStatus, PublicBackendError> {
+    require_engine_mode()?;
+    state.open(duration_seconds).map_err(player_error)
+}
+
+/// Plays, pauses or seeks, and returns the status right after.
+#[tauri::command]
+pub fn player_command(
+    state: tauri::State<'_, PlayerState>,
+    command: PlayerCommand,
+) -> Result<PlayerStatus, PublicBackendError> {
+    require_engine_mode()?;
+    state.command(command).map_err(player_error)
+}
+
+#[tauri::command]
+pub fn player_status(
+    state: tauri::State<'_, PlayerState>,
+) -> Result<PlayerStatus, PublicBackendError> {
+    require_engine_mode()?;
+    state.status().map_err(player_error)
 }
 
 /// Creates the surface below the page and makes the page's background transparent.

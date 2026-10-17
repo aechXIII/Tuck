@@ -64,7 +64,8 @@ export function holeProperties(rect: PictureRect): ReadonlyArray<readonly [strin
  */
 export async function installNativeSurface(win: Window): Promise<void> {
   const caps = await fetchPlatformCapabilities();
-  if (caps.nativePreview !== "surface" || !hasTauriInvoke(win)) return;
+  const mode = caps.nativePreview;
+  if ((mode !== "surface" && mode !== "engine") || !hasTauriInvoke(win)) return;
   const doc = win.document;
   const root = doc.documentElement;
   const video = doc.getElementById("vid");

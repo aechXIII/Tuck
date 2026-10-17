@@ -12,8 +12,11 @@ export interface PlatformCapabilities {
   hardwareAcceleration: boolean;
   customTitleBar: boolean;
   packaged: boolean;
-  /** "surface" while this run draws the native preview's test picture below the page; missing means off */
-  nativePreview?: "off" | "surface";
+  /**
+   * "surface" while this run draws the native preview's test picture below the page, "engine"
+   * when the native engine also drives playback; missing means off
+   */
+  nativePreview?: "off" | "surface" | "engine";
 }
 
 // Outside a Tauri webview (browser preview, Playwright) the native layer cannot
@@ -57,7 +60,10 @@ function isPlatformCapabilities(value: unknown): value is PlatformCapabilities {
     typeof caps.hardwareAcceleration === "boolean" &&
     typeof caps.customTitleBar === "boolean" &&
     typeof caps.packaged === "boolean" &&
-    (caps.nativePreview === undefined || caps.nativePreview === "off" || caps.nativePreview === "surface")
+    (caps.nativePreview === undefined ||
+      caps.nativePreview === "off" ||
+      caps.nativePreview === "surface" ||
+      caps.nativePreview === "engine")
   );
 }
 

@@ -16,6 +16,7 @@
     "allow-window-chrome",
     "allow-desktop-preferences",
     "allow-preview-surface",
+    "allow-native-player",
     "core:window:allow-start-dragging",
     "core:window:allow-internal-toggle-maximize"
   ]

@@ -14,6 +14,8 @@ export interface PlayerClock {
   clearTimeout: (id: number) => void;
   requestAnimationFrame: (callback: FrameRequestCallback) => number;
   cancelAnimationFrame: (id: number) => void;
+  /** milliseconds on a monotonic clock */
+  now?: () => number;
 }
 
 export interface PlayerHost {
@@ -95,8 +97,9 @@ const ICON_MUTE =
 
 let active: PlayerApi | null = null;
 
-function defaultClock(): PlayerClock {
+export function defaultClock(): PlayerClock {
   return {
+    now: () => window.performance.now(),
     setTimeout: (handler, timeout) =>
       window.setTimeout(handler, timeout) as unknown as number,
     clearTimeout: (id) => {
@@ -114,9 +117,67 @@ function requireActive(): PlayerApi {
   return active;
 }
 
+/** The mute button and the volume slider, the same for every player. */
+export function installVolumeControls(
+  host: PlayerHost,
+): Pick<PlayerApi, "toggleMute" | "setVol" | "updateMuteIcon"> {
+  const byId = <T extends HTMLElement = HTMLElement>(id: string): T | null => host.byId<T>(id);
+
+  function updateMuteIcon(): void {
+    const btn = byId("btn-mute");
+    if (!btn) return;
+    const vbar = byId<HTMLInputElement>("vbar");
+    const isMuted = host.getMuted() || (vbar != null && Number(vbar.value) === 0);
+    btn.innerHTML = isMuted ? ICON_MUTE : ICON_VOL;
+    const label = isMuted ? "Unmute preview" : "Mute preview";
+    // Tuck's own tooltip reads data-tip; a native title would show a second, different one
+    btn.dataset.tip = label;
+    btn.removeAttribute("title");
+    btn.setAttribute("aria-label", label);
+  }
+
+  function toggleMute(): void {
+    const vbar = byId<HTMLInputElement>("vbar");
+    const vidEl = byId<HTMLVideoElement>("vid");
+    if (!vbar) return;
+    if (host.getMuted() || Number(vbar.value) === 0) {
+      vbar.value = String(host.getVolBefore());
+      host.setMuted(false);
+    } else {
+      host.setVolBefore(parseInt(vbar.value, 10) || 80);
+      vbar.value = "0";
+      host.setMuted(true);
+    }
+    if (host.AudioTimeline) host.AudioTimeline.applyPreviewVolume();
+    else if (vidEl) vidEl.volume = host.getMuted() ? 0 : host.getVolBefore() / 100;
+    updateMuteIcon();
+  }
+
+  function setVol(value: string | number): void {
+    const numeric = typeof value === "number" ? value : Number(value);
+    host.setMuted(numeric === 0);
+    if (!host.getMuted())
+      host.setVolBefore(parseInt(String(value), 10) || host.getVolBefore());
+    const vidEl = byId<HTMLVideoElement>("vid");
+    if (host.AudioTimeline) host.AudioTimeline.applyPreviewVolume();
+    else if (vidEl) vidEl.volume = numeric / 100;
+    updateMuteIcon();
+  }
+
+  return { toggleMute, setVol, updateMuteIcon };
+}
+
+export function toggleStageFullscreen(host: PlayerHost): void {
+  const doc = host.document ?? document;
+  const center = host.byId("center");
+  if (!center) return;
+  if (doc.fullscreenElement) void doc.exitFullscreen();
+  else if (center.requestFullscreen) void center.requestFullscreen();
+}
+
 export function installPlayer(host: PlayerHost): PlayerApi {
   const clock = host.clock ?? defaultClock();
-  const doc = host.document ?? document;
+  const volume = installVolumeControls(host);
 
   let looping = false;
   let previewSec: number | null = null;
@@ -376,13 +437,6 @@ export function installPlayer(host: PlayerHost): PlayerApi {
     seekPreview((placed() ? timelineTime() : v.currentTime) + direction * (1 / fps));
   }
 
-  function toggleFullscreen(): void {
-    const center = byId("center");
-    if (!center) return;
-    if (doc.fullscreenElement) void doc.exitFullscreen();
-    else if (center.requestFullscreen) void center.requestFullscreen();
-  }
-
   function continuePlaybackAt(target: number | null | undefined): void {
     if (disposed || looping || target == null) return;
     if (awaitingMetadata && placed()) return;
@@ -551,47 +605,6 @@ export function installPlayer(host: PlayerHost): PlayerApi {
     seekRaf = 0;
   }
 
-  function updateMuteIcon(): void {
-    const btn = byId("btn-mute");
-    if (!btn) return;
-    const vbar = byId<HTMLInputElement>("vbar");
-    const isMuted = host.getMuted() || (vbar != null && Number(vbar.value) === 0);
-    btn.innerHTML = isMuted ? ICON_MUTE : ICON_VOL;
-    const label = isMuted ? "Unmute preview" : "Mute preview";
-    // Tuck's own tooltip reads data-tip; a native title would show a second, different one
-    btn.dataset.tip = label;
-    btn.removeAttribute("title");
-    btn.setAttribute("aria-label", label);
-  }
-
-  function toggleMute(): void {
-    const vbar = byId<HTMLInputElement>("vbar");
-    const vidEl = byId<HTMLVideoElement>("vid");
-    if (!vbar) return;
-    if (host.getMuted() || Number(vbar.value) === 0) {
-      vbar.value = String(host.getVolBefore());
-      host.setMuted(false);
-    } else {
-      host.setVolBefore(parseInt(vbar.value, 10) || 80);
-      vbar.value = "0";
-      host.setMuted(true);
-    }
-    if (host.AudioTimeline) host.AudioTimeline.applyPreviewVolume();
-    else if (vidEl) vidEl.volume = host.getMuted() ? 0 : host.getVolBefore() / 100;
-    updateMuteIcon();
-  }
-
-  function setVol(value: string | number): void {
-    const numeric = typeof value === "number" ? value : Number(value);
-    host.setMuted(numeric === 0);
-    if (!host.getMuted())
-      host.setVolBefore(parseInt(String(value), 10) || host.getVolBefore());
-    const vidEl = byId<HTMLVideoElement>("vid");
-    if (host.AudioTimeline) host.AudioTimeline.applyPreviewVolume();
-    else if (vidEl) vidEl.volume = numeric / 100;
-    updateMuteIcon();
-  }
-
   // while playing, the playhead and the segment-end check follow every display frame;
   // timeupdate alone fires only about four times a second, so the playhead stepped and could
   // run past a segment's end by that much. Video frame callbacks are not used here because
@@ -724,22 +737,20 @@ export function installPlayer(host: PlayerHost): PlayerApi {
     vid.addEventListener("loadedmetadata", onLoadedMetadata);
     vid.addEventListener("ended", loopPlayback);
   }
-  updateMuteIcon();
+  volume.updateMuteIcon();
 
   const api: PlayerApi = {
+    ...volume,
     isPlaying,
     timelineTime,
     sourceTime,
     togglePlay,
     seekBy,
     stepFrame,
-    toggleFullscreen,
+    toggleFullscreen: () => toggleStageFullscreen(host),
     updateTime,
     seekPreview,
     seekToRatio,
-    toggleMute,
-    setVol,
-    updateMuteIcon,
     continuePlaybackAt,
     changeSpeed,
     resetSpeed,
