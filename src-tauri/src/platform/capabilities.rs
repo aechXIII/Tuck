@@ -16,6 +16,9 @@ pub struct PlatformCapabilities {
     #[serde(rename = "customTitleBar")]
     pub custom_title_bar: bool,
     pub packaged: bool,
+    // "off", or "surface" while the native preview draws its test picture
+    #[serde(rename = "nativePreview")]
+    pub native_preview: &'static str,
 }
 
 pub fn is_packaged() -> bool {
@@ -39,6 +42,7 @@ pub fn capabilities_for_target(platform: &str, packaged: bool) -> PlatformCapabi
         hardware_acceleration,
         custom_title_bar: platform == "windows",
         packaged,
+        native_preview: crate::player::PreviewMode::Off.as_str(),
     }
 }
 
@@ -48,7 +52,10 @@ pub fn current_capabilities() -> PlatformCapabilities {
     } else {
         "linux"
     };
-    capabilities_for_target(platform, is_packaged())
+    PlatformCapabilities {
+        native_preview: crate::player::preview_mode().as_str(),
+        ..capabilities_for_target(platform, is_packaged())
+    }
 }
 
 #[cfg(test)]
@@ -66,6 +73,8 @@ mod tests {
         assert!(caps.hardware_acceleration);
         assert!(caps.custom_title_bar);
         assert!(!caps.packaged);
+        // only the run switch turns the native preview on, never the target alone
+        assert_eq!(caps.native_preview, "off");
     }
 
     #[test]

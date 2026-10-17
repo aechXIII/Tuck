@@ -3,6 +3,7 @@
 pub mod backend;
 pub mod commands;
 pub mod platform;
+pub mod player;
 
 use backend::{BackendLaunchConfig, BackendState};
 use commands::backend::backend_request;
@@ -16,6 +17,7 @@ use commands::native::{
     pick_folder, pick_import_file, pick_lut_file, pick_save_file, pick_video_files,
     platform_capabilities,
 };
+use commands::player::{preview_surface_open, preview_surface_viewport};
 use commands::startup::{
     extract_startup_args, get_startup_files, handle_second_instance, StartupState,
 };
@@ -183,7 +185,9 @@ pub fn run() {
         show_window_menu,
         set_interface_size,
         notify_when_unfocused,
-        set_taskbar_progress
+        set_taskbar_progress,
+        preview_surface_open,
+        preview_surface_viewport
     ]);
 
     builder

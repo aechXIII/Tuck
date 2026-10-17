@@ -431,3 +431,24 @@ body:not(.task-cut) #stage-controls [data-cut-only] {
 #btn-play.playing .pause-icon {
   display: block;
 }
+
+/* with the native preview the desktop shell draws the picture below the page. The three
+   backgrounds between the window and the picture each become a frame around a transparent hole
+   exactly where the picture is; the page's own controls still draw over it. The hole is in page
+   coordinates, so the frames use fixed attachment to share it */
+:root.native-preview :is(body, #center, #stage) {
+  background:
+    linear-gradient(var(--hole-fill), var(--hole-fill)) 0 0 / 100% var(--native-hole-y, 0px)
+      no-repeat fixed,
+    linear-gradient(var(--hole-fill), var(--hole-fill)) 0
+      calc(var(--native-hole-y, 0px) + var(--native-hole-h, 0px)) / 100% 100% no-repeat fixed,
+    linear-gradient(var(--hole-fill), var(--hole-fill)) 0 var(--native-hole-y, 0px) /
+      var(--native-hole-x, 0px) var(--native-hole-h, 0px) no-repeat fixed,
+    linear-gradient(var(--hole-fill), var(--hole-fill))
+      calc(var(--native-hole-x, 0px) + var(--native-hole-w, 0px)) var(--native-hole-y, 0px) /
+      100% var(--native-hole-h, 0px) no-repeat fixed;
+}
+:root.native-preview body { --hole-fill: var(--floor); }
+:root.native-preview #center { --hole-fill: var(--panel); }
+:root.native-preview #stage { --hole-fill: var(--sink); }
+:root.native-preview #media-viewport > :is(video, img, canvas) { visibility: hidden; }

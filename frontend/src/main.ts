@@ -33,6 +33,7 @@ import {
   type StartupLaunch,
 } from "./platform/second-instance.ts";
 import { hideStatusScreens, showStatusScreen, type StatusAction } from "./platform/status-screen.ts";
+import { installNativeSurface } from "./platform/native-surface.ts";
 import { installWindowChrome } from "./platform/window-chrome.ts";
 import "./styles/index.ts";
 
@@ -194,6 +195,9 @@ function bootstrapFrontend(): void {
   editorRuntime.start();
   void installWindowChrome(window).catch((error: unknown) => {
     console.error("Could not set up the title bar", error);
+  });
+  void installNativeSurface(window).catch((error: unknown) => {
+    console.error("Could not set up the native preview", error);
   });
 
   if (document.readyState === "complete") waitForDesktopBackend();

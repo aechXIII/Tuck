@@ -28,6 +28,8 @@ fn main() {
             "toggle_maximize_window",
             "set_caption_maximize_area",
             "show_window_menu",
+            "preview_surface_open",
+            "preview_surface_viewport",
         ]),
     ))
     .expect("failed to build Tauri permissions");

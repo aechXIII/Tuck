@@ -22,3 +22,8 @@ commands.allow = ["set_interface_size", "notify_when_unfocused", "set_taskbar_pr
 identifier = "allow-app-lifecycle"
 description = "Allows the page to answer a close request and to restart Tuck after its backend stopped."
 commands.allow = ["acknowledge_close_request", "confirm_close", "restart_app"]
+
+[[permission]]
+identifier = "allow-preview-surface"
+description = "Allows the page to place the native preview picture below it. Each command refuses unless the native preview is turned on for this run."
+commands.allow = ["preview_surface_open", "preview_surface_viewport"]
