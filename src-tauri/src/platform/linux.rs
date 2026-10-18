@@ -73,6 +73,11 @@ const RENDERER_FAILURE_FILE: &str = "gpu-renderer-failed";
 ///   number spinners with the system GTK theme. Tuck's UI is always dark, so on
 ///   a session with no dark GTK theme configured those controls render light and
 ///   unreadable. Default to `Adwaita:dark`. Set `GTK_THEME` yourself to override.
+/// - `GDK_BACKEND`: the AppImage's GTK hook forces X11, working around a WebKitGTK
+///   crash on some Wayland setups (Tauri issue 8541). With the native player on,
+///   Tuck runs GTK natively on a Wayland desktop instead: under X11, GTK 3's GL
+///   area uses GLX, which can't take decoded GPU frames, so every frame shown
+///   would be copied through memory (see [`gdk_backend`]).
 ///
 /// Each value is only set when the user has not already chosen one, so setting
 /// `WEBKIT_DISABLE_COMPOSITING_MODE=1` yourself forces software drawing. Because
@@ -110,6 +115,17 @@ pub fn prepare_runtime_environment() {
         }
     }
     set_default_env("GTK_THEME", "Adwaita:dark");
+    let player = crate::player::preview_mode() == crate::player::PreviewMode::Player;
+    if let Some(backend) = gdk_backend(player, std::env::var_os("WAYLAND_DISPLAY").as_deref()) {
+        // replaced, not defaulted: the AppImage's launcher has already set it to x11
+        std::env::set_var("GDK_BACKEND", backend);
+    }
+}
+
+/// The GTK backend Tuck asks for, or `None` to keep what the launcher chose.
+fn gdk_backend(native_player: bool, wayland_display: Option<&OsStr>) -> Option<&'static str> {
+    let wayland = wayland_display.is_some_and(|display| !display.is_empty());
+    (native_player && wayland).then_some("wayland")
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -418,6 +434,15 @@ fn reap_process(process_id: libc::pid_t) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gtk_runs_on_wayland_only_with_the_native_player_on_a_wayland_desktop() {
+        let display = Some(OsStr::new("wayland-1"));
+        assert_eq!(gdk_backend(true, display), Some("wayland"));
+        assert_eq!(gdk_backend(false, display), None);
+        assert_eq!(gdk_backend(true, None), None);
+        assert_eq!(gdk_backend(true, Some(OsStr::new(""))), None);
+    }
 
     fn gpus(drivers: &[&str], render_node: bool) -> GpuInfo {
         GpuInfo {
