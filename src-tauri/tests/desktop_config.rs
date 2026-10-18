@@ -72,6 +72,40 @@ fn main_window_has_only_the_permissions_needed_for_native_commands_and_events() 
 }
 
 #[test]
+fn every_registered_command_is_allowed_for_the_main_window() {
+    // a command left out of the permission files fails on every call from the page, and the
+    // e2e suite's fake backend never notices
+    let source = include_str!("../src/lib.rs");
+    let list = "generate_handler![";
+    let start = source.find(list).expect("lib.rs registers its commands") + list.len();
+    let end = start
+        + source[start..]
+            .find(']')
+            .expect("the command list is closed");
+    let commands: Vec<&str> = source[start..end]
+        .split(',')
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .collect();
+    assert!(commands.contains(&"backend_request"));
+
+    let mut context: tauri::Context<tauri::Wry> = tauri::generate_context!();
+    let authority = context.runtime_authority_mut();
+    let denied: Vec<&str> = commands
+        .into_iter()
+        .filter(|command| {
+            authority
+                .resolve_access(command, "main", "main", &tauri::ipc::Origin::Local)
+                .is_none()
+        })
+        .collect();
+    assert!(
+        denied.is_empty(),
+        "registered without a permission: {denied:?}"
+    );
+}
+
+#[test]
 fn bundled_documents_are_allowed_only_from_the_local_main_window() {
     let mut context: tauri::Context<tauri::Wry> = tauri::generate_context!();
     let authority = context.runtime_authority_mut();
