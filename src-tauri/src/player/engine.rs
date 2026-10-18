@@ -145,6 +145,10 @@ pub enum PlayerCommand {
         request_id: u64,
         seconds: f64,
     },
+    /// the sound's level, 0 to 1, the same value the page gives its own video element
+    Volume {
+        volume: f64,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -153,6 +157,8 @@ pub enum PlayerError {
     InvalidLength,
     /// an old or repeated request ID, or a position outside the video
     SeekRefused,
+    /// a volume outside 0 to 1
+    InvalidVolume,
     /// the native player library could not open the video; the text says why
     Video(String),
 }
@@ -185,6 +191,13 @@ impl Backend {
         match self {
             Backend::Clock(engine) => engine.seek(request_id, seconds),
             Backend::Video(video) => video.seek(request_id, seconds),
+        }
+    }
+
+    fn volume(&mut self, gain: f64) {
+        // the bare clock has no sound
+        if let Backend::Video(video) = self {
+            video.volume(gain);
         }
     }
 
@@ -279,6 +292,12 @@ impl PlayerState {
                     return Err(PlayerError::SeekRefused);
                 }
             }
+            PlayerCommand::Volume { volume } => {
+                if !(0.0..=1.0).contains(&volume) {
+                    return Err(PlayerError::InvalidVolume);
+                }
+                backend.volume(volume);
+            }
         }
         Ok(backend.status())
     }
@@ -367,6 +386,12 @@ mod tests {
         assert!(parse(r#"{"kind":"seek","requestId":-1,"seconds":1}"#).is_err());
         assert!(parse(r#"{"kind":"seek","requestId":3,"seconds":1,"extra":true}"#).is_err());
         assert!(parse(r#"{"kind":"eject"}"#).is_err());
+        assert_eq!(
+            parse(r#"{"kind":"volume","volume":0.5}"#).unwrap(),
+            PlayerCommand::Volume { volume: 0.5 }
+        );
+        assert!(parse(r#"{"kind":"volume"}"#).is_err());
+        assert!(parse(r#"{"kind":"volume","volume":"loud"}"#).is_err());
     }
 
     #[test]
@@ -396,6 +421,11 @@ mod tests {
         assert_eq!(seek(2, 21.0), Err(PlayerError::SeekRefused));
         let paused = state.command(PlayerCommand::Pause).expect("pause");
         assert!(paused.paused && paused.position_seconds >= 7.5);
+        let volume = |volume| state.command(PlayerCommand::Volume { volume });
+        assert!(volume(0.0).is_ok() && volume(1.0).is_ok());
+        assert_eq!(volume(1.5), Err(PlayerError::InvalidVolume));
+        assert_eq!(volume(-0.1), Err(PlayerError::InvalidVolume));
+        assert_eq!(volume(f64::NAN), Err(PlayerError::InvalidVolume));
         // a new video starts over with fresh request IDs
         state.open(5.0).expect("open again");
         assert_eq!(seek(1, 2.0).expect("seek").confirmed_seek_request_id, 1);

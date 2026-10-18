@@ -40,6 +40,9 @@ fn player_error(error: PlayerError) -> PublicBackendError {
             "SEEK_REFUSED",
             "The seek was older than the last one or outside the video.",
         ),
+        PlayerError::InvalidVolume => {
+            PublicBackendError::new("INVALID_REQUEST", "The volume must be between 0 and 1.")
+        }
         PlayerError::Video(message) => PublicBackendError::new("VIDEO_FAILED", message),
     }
 }

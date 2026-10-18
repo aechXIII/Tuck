@@ -14,14 +14,18 @@ export PKG_CONFIG_LIBDIR="$sdk/lib/pkgconfig"
 export PKG_CONFIG_PATH=
 # The static FFmpeg and libplacebo stay private to the library: WebKit's media stack may load the
 # system's own FFmpeg into the same process, and the two must never resolve to each other.
+# libpipewire is opened at run time, so only its headers are needed here.
 gcc -shared -fPIC -O2 -g -std=c11 -Wall -Wextra -Werror -fvisibility=hidden \
   -D_GNU_SOURCE -DTUCK_VIDEO_BUILD \
-  -I"$sdk/include" $(pkg-config --cflags libavformat libavcodec libavutil libplacebo) \
+  -I"$sdk/include" -isystem "$sdk/include/pipewire-0.3" -isystem "$sdk/include/spa-0.2" \
+  $(pkg-config --cflags libavformat libavcodec libavutil libswresample libplacebo) \
   "$source_dir/engine.c" "$source_dir/playback_state.c" "$source_dir/decoder.c" \
-  "$source_dir/render_gl.c" "$source_dir/video.c" \
+  "$source_dir/render_gl.c" "$source_dir/video.c" "$source_dir/audio.c" \
+  "$source_dir/audio_pipewire.c" \
   -o "$output_dir/libtuck_player.so" \
   -Wl,-soname,libtuck_player.so -Wl,--no-undefined -Wl,--exclude-libs,ALL -Wl,-Bsymbolic \
   -Wl,-z,relro -Wl,-z,now \
-  $(pkg-config --static --libs libavformat libavcodec libavutil libplacebo) -lstdc++ -ldl -lpthread -lm
+  $(pkg-config --static --libs libavformat libavcodec libavutil libswresample libplacebo) \
+  -lstdc++ -ldl -lpthread -lm
 objdump -p "$output_dir/libtuck_player.so" | sed -n 's/^ *NEEDED *//p' | sort > "$output_dir/libtuck_player-needed.txt"
 nm -D --defined-only "$output_dir/libtuck_player.so" | awk '{print $3}' | sort > "$output_dir/libtuck_player-exports.txt"

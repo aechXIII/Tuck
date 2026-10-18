@@ -9,6 +9,8 @@
 
 /* 250 ms of 48 kHz stereo; more only adds latency */
 #define PCM_CAPACITY 12000
+/* sound starts once 100 ms is queued, so a slow first decode can't open with a gap */
+#define PCM_PRIME_FRAMES 4800
 
 typedef struct PcmQueue {
     float samples[PCM_CAPACITY * 2];

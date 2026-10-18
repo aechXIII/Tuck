@@ -23,7 +23,14 @@
 #endif
 
 /* raise whenever a signature or struct below changes */
-#define TUCK_VIDEO_ABI 2
+#define TUCK_VIDEO_ABI 3
+
+/* TuckVideoStatus.sound */
+#define TUCK_SOUND_NONE 0
+/* the sound plays and the clock follows what the listener has heard */
+#define TUCK_SOUND_PLAYING 1
+/* the file has sound that can't play (sound_error says why); the clock runs on monotonic time */
+#define TUCK_SOUND_UNAVAILABLE 2
 
 typedef struct TuckVideo TuckVideo;
 
@@ -51,6 +58,10 @@ typedef struct TuckVideoStatus {
     int32_t failed;
     char decoder[48];
     char error[192];
+    /* times the device wanted sound before it was decoded */
+    uint64_t sound_underruns;
+    int32_t sound;
+    char sound_error[160];
 } TuckVideoStatus;
 
 TUCK_VIDEO_EXPORT int tuck_video_abi(void);
@@ -62,6 +73,8 @@ TUCK_VIDEO_EXPORT void tuck_video_play(TuckVideo *video);
 TUCK_VIDEO_EXPORT void tuck_video_pause(TuckVideo *video);
 /* 0 when the request ID is not newer than the last one or the position is outside the video */
 TUCK_VIDEO_EXPORT int tuck_video_seek(TuckVideo *video, uint64_t request_id, double seconds);
+/* the sound's level, 0 to 1 */
+TUCK_VIDEO_EXPORT void tuck_video_volume(TuckVideo *video, double gain);
 TUCK_VIDEO_EXPORT void tuck_video_status(TuckVideo *video, TuckVideoStatus *status);
 
 #ifndef _WIN32

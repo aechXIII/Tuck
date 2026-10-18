@@ -25,6 +25,7 @@ type Step =
   | { readonly kind: "play" }
   | { readonly kind: "pause" }
   | { readonly kind: "seek"; readonly seconds: number }
+  | { readonly kind: "volume"; readonly volume: number }
   | { readonly kind: "status" };
 
 /**
@@ -64,6 +65,8 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
   let seekFrame = 0;
   let mirrorBusy = false;
   let mirrorWanted: number | null = null;
+  // the level last sent for the open video
+  let sentVolume: number | null = null;
 
   function segments(): readonly SegmentRange[] {
     return host.playbackSegments();
@@ -107,9 +110,9 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
 
   function enqueue(step: Step): void {
     if (disposed) return;
-    // the newest seek replaces one still waiting, so scrubbing never builds a backlog
+    // the newest seek or level replaces one still waiting, so scrubbing never builds a backlog
     const last = steps.at(-1);
-    if (step.kind === "seek" && last?.kind === "seek") steps[steps.length - 1] = step;
+    if ((step.kind === "seek" || step.kind === "volume") && last?.kind === step.kind) steps[steps.length - 1] = step;
     else if (step.kind !== "status" || !steps.some((queued) => queued.kind === "status")) steps.push(step);
     void pump();
   }
@@ -123,6 +126,8 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
       case "seek":
         sentSeekId = ++requestId;
         return engine.command({ kind: "seek", requestId: sentSeekId, seconds: step.seconds });
+      case "volume":
+        return engine.command({ kind: "volume", volume: step.volume });
       case "status":
         return engine.status();
       default:
@@ -216,6 +221,17 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
       video.removeEventListener("seeked", done);
       done();
     }
+  }
+
+  // the editor gives the hidden <video> the source's level (mute, muted segments, gain) as it does
+  // for the HTML player; the native player plays the sound, so it takes the same level
+  function syncVolume(): void {
+    if (!video || !opened || disposed) return;
+    const level = Number.isFinite(video.volume) ? video.volume : 1;
+    const volume = video.muted ? 0 : Math.max(0, Math.min(1, level));
+    if (volume === sentVolume) return;
+    sentVolume = volume;
+    enqueue({ kind: "volume", volume });
   }
 
   function setGap(gap: boolean): void {
@@ -314,6 +330,9 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
     opened = true;
     openedDuration = duration;
     enqueue({ kind: "open", duration, path: host.selPath() });
+    // a newly opened video plays at full level until told otherwise
+    sentVolume = 1;
+    syncVolume();
   }
 
   function resetSource(): void {
@@ -428,6 +447,7 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
     video.addEventListener("error", resetSource);
     video.addEventListener("loadedmetadata", onLoadedMetadata);
     video.addEventListener("durationchange", onDurationChange);
+    video.addEventListener("volumechange", syncVolume);
     // the engine replaces the HTML player, which may already have a video showing
     if (!video.paused) video.pause();
     if (video.readyState >= 1) onLoadedMetadata();
@@ -465,6 +485,7 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
         video.removeEventListener("error", resetSource);
         video.removeEventListener("loadedmetadata", onLoadedMetadata);
         video.removeEventListener("durationchange", onDurationChange);
+        video.removeEventListener("volumechange", syncVolume);
       }
     },
   };

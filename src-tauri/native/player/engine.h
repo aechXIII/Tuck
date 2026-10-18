@@ -1,6 +1,6 @@
 /* The native player as one opaque object. Times are seconds on the caller's monotonic clock, so
-   the rules can be tested without waiting. There is no decoder or audio output yet: the caller
-   reports each presented frame, and until there is audio the clock runs on monotonic time. */
+   the rules can be tested without waiting. The caller reports each presented frame. Without
+   sound the clock runs on monotonic time; with sound it runs on what the listener has heard. */
 #ifndef TUCK_PLAYER_ENGINE_H
 #define TUCK_PLAYER_ENGINE_H
 
@@ -30,6 +30,14 @@ void tuck_player_pause(TuckPlayer *player, double now);
 int tuck_player_seek(TuckPlayer *player, uint64_t request_id, double seconds, double now);
 /* the frame for `generation` is on screen; only the current generation confirms a seek */
 void tuck_player_frame_presented(TuckPlayer *player, uint64_t generation, double now);
+/* From now on the clock follows the sound device instead of monotonic time, or goes back to
+   monotonic time from where the sound left it (when the device fails). */
+void tuck_player_follow_sound(TuckPlayer *player, int on, double now);
+/* the device has played `seconds` of `generation` since that generation started */
+void tuck_player_sound_played(TuckPlayer *player, uint64_t generation, double seconds, double now);
+/* the clock has been running on sound for longer than `limit` seconds without hearing any more of
+   it: nothing is taking the sound, so it should go back to monotonic time */
+int tuck_player_sound_stalled(TuckPlayer *player, double now, double limit);
 void tuck_player_status(TuckPlayer *player, double now, TuckPlayerStatus *status);
 
 #endif

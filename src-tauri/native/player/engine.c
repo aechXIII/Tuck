@@ -18,26 +18,44 @@ struct TuckPlayer {
     /* seconds played since the last clock reset, and when that was last brought up to date */
     double played;
     double updated_at;
+    /* played comes from the sound device instead of monotonic time */
+    int sound;
+    /* when the clock last started running or heard more sound */
+    double heard_at;
+    int was_running;
 };
+
+static int running(const TuckPlayer *player) {
+    return player->playing && !player->preview.pending && !player->ended;
+}
 
 static void hold_clock(TuckPlayer *player, int held) {
     clock_pause(&player->clock, held);
 }
 
-static void advance(TuckPlayer *player, double now) {
-    int running = player->playing && !player->preview.pending && !player->ended;
-    if (running && isfinite(now) && now > player->updated_at) {
-        player->played += now - player->updated_at;
-        clock_update(&player->clock, player->played);
-        if (clock_source(&player->clock) >= player->duration) {
-            /* playback stops on the last frame, as the HTML player does */
-            player->ended = 1;
-            player->playing = 0;
-            hold_clock(player, 1);
-            player->clock.frozen = player->duration;
-        }
+static void played_to(TuckPlayer *player, double played) {
+    player->played = played;
+    clock_update(&player->clock, player->played);
+    if (clock_source(&player->clock) >= player->duration) {
+        /* playback stops on the last frame, as the HTML player does */
+        player->ended = 1;
+        player->playing = 0;
+        hold_clock(player, 1);
+        player->clock.frozen = player->duration;
     }
+}
+
+static void advance(TuckPlayer *player, double now) {
+    if (!player->sound && running(player) && isfinite(now) && now > player->updated_at)
+        played_to(player, player->played + now - player->updated_at);
     if (isfinite(now) && now > player->updated_at) player->updated_at = now;
+}
+
+/* after every change: a clock that just started running starts waiting for sound from now */
+static void note_running(TuckPlayer *player, double now) {
+    int now_running = running(player);
+    if (now_running && !player->was_running && isfinite(now)) player->heard_at = now;
+    player->was_running = now_running;
 }
 
 /* a new position: new generation, clock held on it until its first frame is shown */
@@ -70,12 +88,14 @@ void tuck_player_play(TuckPlayer *player, double now) {
     if (player->ended) restart_at(player, 0);
     player->playing = 1;
     if (!player->preview.pending) hold_clock(player, 0);
+    note_running(player, now);
 }
 
 void tuck_player_pause(TuckPlayer *player, double now) {
     advance(player, now);
     player->playing = 0;
     hold_clock(player, 1);
+    note_running(player, now);
 }
 
 int tuck_player_seek(TuckPlayer *player, uint64_t request_id, double seconds, double now) {
@@ -83,6 +103,7 @@ int tuck_player_seek(TuckPlayer *player, uint64_t request_id, double seconds, do
     advance(player, now);
     if (!seek_request_accept(&player->seeks, request_id, player->generation + 1)) return 0;
     restart_at(player, seconds);
+    note_running(player, now);
     return 1;
 }
 
@@ -95,6 +116,29 @@ void tuck_player_frame_presented(TuckPlayer *player, uint64_t generation, double
         player->updated_at = now;
         hold_clock(player, 0);
     }
+    note_running(player, now);
+}
+
+void tuck_player_follow_sound(TuckPlayer *player, int on, double now) {
+    advance(player, now);
+    player->sound = on != 0;
+}
+
+void tuck_player_sound_played(TuckPlayer *player, uint64_t generation, double seconds, double now) {
+    advance(player, now);
+    /* sound from an older position, or heard after a pause took effect, doesn't move the clock */
+    if (!player->sound || generation != player->generation || !running(player)) return;
+    if (isfinite(seconds) && seconds > player->played) {
+        played_to(player, seconds);
+        if (isfinite(now)) player->heard_at = now;
+    }
+    note_running(player, now);
+}
+
+int tuck_player_sound_stalled(TuckPlayer *player, double now, double limit) {
+    advance(player, now);
+    note_running(player, now);
+    return player->sound && running(player) && isfinite(now) && now - player->heard_at > limit;
 }
 
 void tuck_player_status(TuckPlayer *player, double now, TuckPlayerStatus *status) {

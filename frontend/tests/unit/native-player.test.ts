@@ -29,6 +29,7 @@ interface SentCommand {
   kind: string;
   requestId?: number;
   seconds?: number;
+  volume?: number;
 }
 
 function setup(options: Setup = {}) {
@@ -189,7 +190,8 @@ test("a status is only accepted with exact counters and real times", () => {
     video: null,
   };
   assert.ok(isNativePlayerStatus(status));
-  const video = { decoder: "av1 d3d11va", hardware: true, frameRate: 60, presented: 4, failed: false, error: "" };
+  const sound = { state: "playing", underruns: 0, error: "" };
+  const video = { decoder: "av1 d3d11va", hardware: true, frameRate: 60, presented: 4, failed: false, error: "", sound };
   assert.ok(isNativePlayerStatus({ ...status, video }));
   for (const broken of [
     { ...status, generation: 2 ** 53 },
@@ -201,7 +203,41 @@ test("a status is only accepted with exact counters and real times", () => {
     { ...status, video: undefined },
     { ...status, video: { ...video, presented: -1 } },
     { ...status, video: { ...video, error: null } },
+    { ...status, video: { ...video, sound: undefined } },
+    { ...status, video: { ...video, sound: { ...sound, state: "loud" } } },
+    { ...status, video: { ...video, sound: { ...sound, underruns: 0.5 } } },
   ]) assert.equal(isNativePlayerStatus(broken), false);
+  for (const state of ["none", "playing", "unavailable"]) {
+    assert.ok(isNativePlayerStatus({ ...status, video: { ...video, sound: { ...sound, state } } }));
+  }
+});
+
+test("the native sound takes the level the editor gives its video element", async () => {
+  const run = setup();
+  try {
+    const element = run.video as unknown as { volume: number; muted: boolean };
+    const changed = async (): Promise<void> => {
+      run.video.dispatchEvent(new Event("volumechange"));
+      await settle();
+    };
+    const levels = (): Array<number | undefined> =>
+      run.commands().filter((command) => command.kind === "volume").map((command) => command.volume);
+    element.volume = 0.4;
+    await changed();
+    assert.equal(run.fixture.calls.length, 0, "nothing is sent before the video is open");
+    await run.load();
+    assert.deepEqual(levels(), [0.4], "an opened video gets the level it should play at");
+    await changed();
+    assert.deepEqual(levels(), [0.4], "an unchanged level is not sent again");
+    element.muted = true;
+    await changed();
+    element.muted = false;
+    element.volume = 1;
+    await changed();
+    assert.deepEqual(levels(), [0.4, 0, 1]);
+  } finally {
+    run.player.dispose();
+  }
 });
 
 test("playing waits for the engine and follows its clock without a call per frame", async () => {

@@ -160,6 +160,21 @@
         "spdx": "Apache-2.0",
         "text_path": "COPYING"
       }
+    },
+    {
+      "name": "pipewire",
+      "version": "1.2.7",
+      "revision": "1.2.7",
+      "filename": "pipewire-1.2.7.tar.gz",
+      "url": "https://github.com/PipeWire/pipewire/archive/refs/tags/1.2.7.tar.gz",
+      "size_bytes": 2423872,
+      "sha256": "e75568ed18bcbe75e9779af57cb9cc256fd7ebfaadc12bb347a0717055d1d3a9",
+      "archive_root": "pipewire-1.2.7",
+      "destination": "",
+      "license": {
+        "spdx": "MIT",
+        "text_path": "COPYING"
+      }
     }
   ]
 }

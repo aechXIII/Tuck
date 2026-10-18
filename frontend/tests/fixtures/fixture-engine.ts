@@ -133,6 +133,11 @@ export function createFixtureEngine(options: FixtureEngineOptions = {}): Fixture
       }
       p.requested = id;
       restart(p, seconds, id);
+    } else if (kind === "volume") {
+      const volume = field("volume");
+      if (typeof volume !== "number" || !Number.isFinite(volume) || volume < 0 || volume > 1) {
+        throw failure("INVALID_REQUEST", "The volume must be between 0 and 1.");
+      }
     } else {
       throw failure("INVALID_REQUEST", "Unknown player command.");
     }

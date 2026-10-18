@@ -12,7 +12,7 @@ use serde::Serialize;
 use super::engine::{PlayerStatus, RawStatus};
 
 // must match TUCK_VIDEO_ABI in native/player/tuck_video.h
-const ABI: c_int = 2;
+const ABI: c_int = 3;
 
 #[cfg(windows)]
 const FILE_NAME: &str = "tuck_player.dll";
@@ -51,11 +51,15 @@ struct RawVideoStatus {
     failed: i32,
     decoder: [c_char; 48],
     error: [c_char; 192],
+    sound_underruns: u64,
+    sound: i32,
+    sound_error: [c_char; 160],
 }
 
 type OpenFn = unsafe extern "C" fn(*const OpenParams, *mut c_char, usize) -> *mut c_void;
 type VideoFn = unsafe extern "C" fn(*mut c_void);
 type SeekFn = unsafe extern "C" fn(*mut c_void, u64, f64) -> c_int;
+type VolumeFn = unsafe extern "C" fn(*mut c_void, f64);
 type StatusFn = unsafe extern "C" fn(*mut c_void, *mut RawVideoStatus);
 #[cfg(target_os = "linux")]
 type RendererCreateFn = unsafe extern "C" fn(*mut c_char, usize) -> *mut c_void;
@@ -74,6 +78,7 @@ struct Api {
     play: VideoFn,
     pause: VideoFn,
     seek: SeekFn,
+    volume: VolumeFn,
     status: StatusFn,
     #[cfg(target_os = "linux")]
     gl: GlApi,
@@ -100,6 +105,39 @@ pub struct VideoInfo {
     pub presented: u64,
     pub failed: bool,
     pub error: String,
+    pub sound: SoundInfo,
+}
+
+/// The video's sound: whether it plays, and why not when it can't.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SoundInfo {
+    pub state: SoundState,
+    /// times the device wanted sound before it was decoded
+    pub underruns: u64,
+    pub error: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SoundState {
+    /// the file has no sound
+    None,
+    /// the sound plays and the clock follows what the listener has heard
+    Playing,
+    /// the file has sound that can't play; the clock runs on its own
+    Unavailable,
+}
+
+impl SoundState {
+    // TUCK_SOUND_* in native/player/tuck_video.h
+    fn from_raw(raw: i32) -> Self {
+        match raw {
+            1 => SoundState::Playing,
+            2 => SoundState::Unavailable,
+            _ => SoundState::None,
+        }
+    }
 }
 
 pub struct Video {
@@ -170,6 +208,7 @@ fn resolve(symbol: impl Fn(&CStr) -> Option<*const c_void>) -> Result<Api, Strin
             play: std::mem::transmute::<*const c_void, VideoFn>(find(c"tuck_video_play")?),
             pause: std::mem::transmute::<*const c_void, VideoFn>(find(c"tuck_video_pause")?),
             seek: std::mem::transmute::<*const c_void, SeekFn>(find(c"tuck_video_seek")?),
+            volume: std::mem::transmute::<*const c_void, VolumeFn>(find(c"tuck_video_volume")?),
             status: std::mem::transmute::<*const c_void, StatusFn>(find(c"tuck_video_status")?),
             #[cfg(target_os = "linux")]
             gl: GlApi {
@@ -244,6 +283,11 @@ impl Video {
         unsafe { (self.api.seek)(self.handle.as_ptr(), request_id, seconds) != 0 }
     }
 
+    /// The sound's level, 0 to 1.
+    pub fn volume(&mut self, gain: f64) {
+        unsafe { (self.api.volume)(self.handle.as_ptr(), gain) }
+    }
+
     pub fn status(&mut self) -> (PlayerStatus, VideoInfo) {
         let mut raw = RawVideoStatus {
             clock: RawStatus::default(),
@@ -253,6 +297,9 @@ impl Video {
             failed: 0,
             decoder: [0; 48],
             error: [0; 192],
+            sound_underruns: 0,
+            sound: 0,
+            sound_error: [0; 160],
         };
         unsafe { (self.api.status)(self.handle.as_ptr(), &mut raw) };
         let info = VideoInfo {
@@ -262,6 +309,11 @@ impl Video {
             presented: raw.presented,
             failed: raw.failed != 0,
             error: text(&raw.error),
+            sound: SoundInfo {
+                state: SoundState::from_raw(raw.sound),
+                underruns: raw.sound_underruns,
+                error: text(&raw.sound_error),
+            },
         };
         (raw.clock.into(), info)
     }
@@ -352,6 +404,24 @@ mod tests {
         let error = resolve(only_abi(current_abi)).err().expect("refused");
         assert!(error.contains("incomplete"), "{error}");
         assert!(resolve(|_| None).is_err());
+    }
+
+    #[test]
+    fn the_status_struct_matches_the_c_layout() {
+        // TuckVideoStatus in tuck_video.h, laid out by the C compiler for 64-bit targets
+        assert_eq!(std::mem::offset_of!(RawVideoStatus, frame_rate), 64);
+        assert_eq!(std::mem::offset_of!(RawVideoStatus, sound_underruns), 328);
+        assert_eq!(std::mem::offset_of!(RawVideoStatus, sound), 336);
+        assert_eq!(std::mem::offset_of!(RawVideoStatus, sound_error), 340);
+        assert_eq!(std::mem::size_of::<RawVideoStatus>(), 504);
+    }
+
+    #[test]
+    fn sound_states_come_from_the_library_codes() {
+        assert_eq!(SoundState::from_raw(0), SoundState::None);
+        assert_eq!(SoundState::from_raw(1), SoundState::Playing);
+        assert_eq!(SoundState::from_raw(2), SoundState::Unavailable);
+        assert_eq!(SoundState::from_raw(7), SoundState::None);
     }
 
     #[test]

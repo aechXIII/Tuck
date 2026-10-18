@@ -4,6 +4,18 @@ import { backendFailure, errorMessage, isBackendError } from "./errors.ts";
 import type { TauriInvoke } from "./tauri.ts";
 import type { BackendResult } from "./types.ts";
 
+/** The video's sound in the native player. */
+export interface NativeSoundInfo {
+  /**
+   * "playing": the sound plays and the clock follows it; "unavailable": the file has sound that
+   * can't play (error says why) and the clock runs on its own; "none": the file has no sound
+   */
+  readonly state: "none" | "playing" | "unavailable";
+  /** times the device wanted sound before it was decoded */
+  readonly underruns: number;
+  readonly error: string;
+}
+
 /** The decoder and renderer, when the native player library plays the video. */
 export interface NativeVideoInfo {
   readonly decoder: string;
@@ -13,6 +25,7 @@ export interface NativeVideoInfo {
   /** the video can't play any more; error says why */
   readonly failed: boolean;
   readonly error: string;
+  readonly sound: NativeSoundInfo;
 }
 
 /** What the native player reports after every command. Times are in seconds. */
@@ -37,7 +50,9 @@ export interface NativePlayerStatus {
 export type NativePlayerCommand =
   | { readonly kind: "play" }
   | { readonly kind: "pause" }
-  | { readonly kind: "seek"; readonly requestId: number; readonly seconds: number };
+  | { readonly kind: "seek"; readonly requestId: number; readonly seconds: number }
+  /** the sound's level, 0 to 1 */
+  | { readonly kind: "volume"; readonly volume: number };
 
 export interface NativePlayerOpen {
   readonly durationSeconds: number;
@@ -63,6 +78,16 @@ function isSeconds(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0;
 }
 
+function isSoundInfo(value: unknown): value is NativeSoundInfo {
+  if (typeof value !== "object" || value === null) return false;
+  const sound = value as Record<string, unknown>;
+  return (
+    (sound.state === "none" || sound.state === "playing" || sound.state === "unavailable") &&
+    isCount(sound.underruns) &&
+    typeof sound.error === "string"
+  );
+}
+
 function isVideoInfo(value: unknown): value is NativeVideoInfo {
   if (typeof value !== "object" || value === null) return false;
   const info = value as Record<string, unknown>;
@@ -72,7 +97,8 @@ function isVideoInfo(value: unknown): value is NativeVideoInfo {
     isSeconds(info.frameRate) &&
     isCount(info.presented) &&
     typeof info.failed === "boolean" &&
-    typeof info.error === "string"
+    typeof info.error === "string" &&
+    isSoundInfo(info.sound)
   );
 }
 

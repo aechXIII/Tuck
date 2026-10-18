@@ -244,6 +244,92 @@ static void engine(void) {
     tuck_player_destroy(player);
 }
 
+/* with sound, the clock follows what the listener has heard instead of the monotonic clock */
+static void sound_clock(void) {
+    TuckPlayer *player = tuck_player_create(10, 100);
+    CHECK(player != NULL);
+    if (!player) return;
+    tuck_player_follow_sound(player, 1, 100);
+    tuck_player_frame_presented(player, 1, 100);
+    tuck_player_play(player, 101);
+
+    /* only heard sound moves the clock; time passing without it doesn't */
+    CHECK(status_at(player, 101.5).position_seconds == 0);
+    tuck_player_sound_played(player, 1, 0.5, 101.6);
+    CHECK(close_to(status_at(player, 105).position_seconds, 0.5));
+    /* the device's report never moves the clock back */
+    tuck_player_sound_played(player, 1, 0.4, 105.1);
+    CHECK(close_to(status_at(player, 105.1).position_seconds, 0.5));
+
+    /* a seek's sound counts only once its frame is shown, and old sound never counts */
+    CHECK(tuck_player_seek(player, 1, 4, 106));
+    TuckPlayerStatus s = status_at(player, 106);
+    tuck_player_sound_played(player, s.generation - 1, 2, 106.1);
+    tuck_player_sound_played(player, s.generation, 0.1, 106.1);
+    CHECK(status_at(player, 106.1).position_seconds == 4);
+    tuck_player_frame_presented(player, s.generation, 106.2);
+    CHECK(status_at(player, 106.3).position_seconds == 4);
+    tuck_player_sound_played(player, s.generation, 0.25, 106.5);
+    CHECK(close_to(status_at(player, 106.5).position_seconds, 4.25));
+
+    /* sound heard after a pause took effect doesn't move the paused clock */
+    tuck_player_pause(player, 107);
+    tuck_player_sound_played(player, s.generation, 0.3, 107.1);
+    CHECK(close_to(status_at(player, 108).position_seconds, 4.25));
+    tuck_player_play(player, 108);
+    tuck_player_sound_played(player, s.generation, 0.5, 108.2);
+    CHECK(close_to(status_at(player, 108.2).position_seconds, 4.5));
+
+    /* heard sound reaching the end stops playback there */
+    tuck_player_sound_played(player, s.generation, 6.5, 110);
+    s = status_at(player, 110);
+    CHECK(s.ended && s.paused && s.position_seconds == 10);
+
+    /* when the device fails, the clock carries on in monotonic time from where the sound left it */
+    tuck_player_play(player, 111);
+    s = status_at(player, 111);
+    tuck_player_frame_presented(player, s.generation, 111);
+    tuck_player_sound_played(player, s.generation, 1, 111.5);
+    tuck_player_follow_sound(player, 0, 112);
+    CHECK(close_to(status_at(player, 113).position_seconds, 2));
+    tuck_player_destroy(player);
+}
+
+/* sound that stops being heard while the clock runs is a stall, so the clock can leave it */
+static void sound_stall(void) {
+    TuckPlayer *player = tuck_player_create(10, 100);
+    CHECK(player != NULL);
+    if (!player) return;
+    tuck_player_follow_sound(player, 1, 100);
+    /* a clock waiting for its first frame, or paused, never stalls */
+    tuck_player_play(player, 100);
+    CHECK(!tuck_player_sound_stalled(player, 105, 1.5));
+    tuck_player_frame_presented(player, 1, 105);
+    /* running, it waits for sound from the moment it started */
+    CHECK(!tuck_player_sound_stalled(player, 106.4, 1.5));
+    CHECK(tuck_player_sound_stalled(player, 106.6, 1.5));
+    /* and from the last sound it heard */
+    tuck_player_sound_played(player, 1, 0.2, 106.7);
+    CHECK(!tuck_player_sound_stalled(player, 108, 1.5));
+    CHECK(tuck_player_sound_stalled(player, 108.3, 1.5));
+    tuck_player_pause(player, 108.4);
+    CHECK(!tuck_player_sound_stalled(player, 120, 1.5));
+    /* playing again starts the wait over */
+    tuck_player_play(player, 120);
+    CHECK(!tuck_player_sound_stalled(player, 121, 1.5));
+    CHECK(tuck_player_sound_stalled(player, 121.6, 1.5));
+    /* a seek waits for its frame first, then for its own sound */
+    CHECK(tuck_player_seek(player, 1, 5, 122));
+    CHECK(!tuck_player_sound_stalled(player, 124, 1.5));
+    tuck_player_frame_presented(player, status_at(player, 124).generation, 124);
+    CHECK(!tuck_player_sound_stalled(player, 125, 1.5));
+    CHECK(tuck_player_sound_stalled(player, 125.6, 1.5));
+    /* on monotonic time there is no sound to wait for */
+    tuck_player_follow_sound(player, 0, 126);
+    CHECK(!tuck_player_sound_stalled(player, 140, 1.5));
+    tuck_player_destroy(player);
+}
+
 /* GTK hands the same framebuffer every frame; a new wrapper is made only when it changes */
 static void framebuffer_cache(void) {
     FramebufferCacheState state = {0};
@@ -270,6 +356,8 @@ int tuck_player_test_failures(void) {
     seek_requests();
     audio_timing();
     engine();
+    sound_clock();
+    sound_stall();
     framebuffer_cache();
     return failures;
 }

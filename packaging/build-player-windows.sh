@@ -14,12 +14,13 @@ mkdir -p "$output_dir"
 export PKG_CONFIG_LIBDIR="$sdk/lib/pkgconfig"
 export PKG_CONFIG_PATH=
 "$cross-gcc-posix" -shared -O2 -g -std=c11 -Wall -Wextra -Werror -DTUCK_VIDEO_BUILD \
-  -I"$sdk/include" $(pkg-config --cflags libavformat libavcodec libavutil libplacebo) \
+  -I"$sdk/include" $(pkg-config --cflags libavformat libavcodec libavutil libswresample libplacebo) \
   "$source_dir/engine.c" "$source_dir/playback_state.c" "$source_dir/decoder.c" \
-  "$source_dir/render_d3d11.c" "$source_dir/video.c" \
+  "$source_dir/render_d3d11.c" "$source_dir/video.c" "$source_dir/audio.c" \
+  "$source_dir/audio_wasapi.c" \
   -o "$output_dir/tuck_player.dll" \
   -Wl,--no-undefined -static -static-libgcc -static-libstdc++ \
-  $(pkg-config --static --libs libavformat libavcodec libavutil libplacebo) \
+  $(pkg-config --static --libs libavformat libavcodec libavutil libswresample libplacebo) \
   -L"$sdk/lib" -lglslang -lMachineIndependent -lGenericCodeGen -lOSDependent -lSPIRV \
   -lglslang-default-resource-limits -lstdc++ -ld3d11 -ldxgi -luuid -lole32 -lversion -lshlwapi
 "$cross-strip" --strip-debug -o "$output_dir/tuck_player.stripped.dll" "$output_dir/tuck_player.dll"

@@ -84,5 +84,14 @@ done
   -Dunwind=disabled -Ddemos=false -Dtests=false -Dbench=false -Dfuzz=false
 ninja -C "$build_dir/libplacebo" -j "$jobs" install
 
+# libpipewire is opened at run time by the player, so only its headers go into the SDK
+pipewire="$source_dir/pipewire-1.2.7"
+mkdir -p "$prefix/include/spa-0.2" "$prefix/include/pipewire-0.3"
+cp -a "$pipewire/spa/include/spa" "$prefix/include/spa-0.2/"
+(cd "$pipewire/src" && find pipewire -name '*.h' -exec install -D -m 644 {} "$prefix/include/pipewire-0.3/{}" \;)
+sed -e 's/@PIPEWIRE_VERSION_MAJOR@/1/g' -e 's/@PIPEWIRE_VERSION_MINOR@/2/g' \
+  -e 's/@PIPEWIRE_VERSION_MICRO@/7/g' -e 's/@PIPEWIRE_API_VERSION@/"0.3"/g' \
+  "$pipewire/src/pipewire/version.h.in" > "$prefix/include/pipewire-0.3/pipewire/version.h"
+
 gcc --version > "$prefix/build-environment.txt"
 dpkg-query -W gcc libc6-dev nasm ninja-build >> "$prefix/build-environment.txt"

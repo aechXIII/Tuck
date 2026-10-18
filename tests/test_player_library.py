@@ -40,7 +40,7 @@ def test_player_sources_reuse_the_export_ffmpeg_and_pin_the_rest(
     sources = _player_library().load_lock(target)["sources"]
     names = [record["name"] for record in sources]
     assert names[:4] == reused
-    assert {"libplacebo", "glslang", "SPIRV-Cross", "meson"} <= set(names)
+    assert {"libplacebo", "glslang", "SPIRV-Cross", "meson", "pipewire"} <= set(names)
     assert next(record for record in sources if record["name"] == "ffmpeg")["version"] == "7.1.1"
     for record in sources:
         assert record["url"].startswith("https://")
