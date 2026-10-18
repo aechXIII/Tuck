@@ -12,7 +12,6 @@ import type { SegmentRange } from "../timeline/segments.ts";
 import {
   defaultClock,
   installVolumeControls,
-  toggleStageFullscreen,
   type PlayerApi,
   type PlayerHost,
 } from "./player.ts";
@@ -443,7 +442,7 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
     togglePlay,
     seekBy: (seconds) => seekPreview(position() + seconds),
     stepFrame,
-    toggleFullscreen: () => toggleStageFullscreen(host),
+    toggleFullscreen: () => host.stageFullscreen?.toggle(),
     updateTime,
     seekPreview,
     seekToRatio,

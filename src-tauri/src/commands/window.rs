@@ -25,6 +25,25 @@ pub fn toggle_maximize_window(window: tauri::Window) -> Result<(), PublicBackend
     .map_err(|_| window_error("Could not resize the window."))
 }
 
+/// Puts the window in or out of full screen for the player's stage, where the page can't use
+/// element fullscreen. Answers whether the window was already full screen, so the page leaves a
+/// window the desktop made full screen as it was.
+#[tauri::command]
+pub fn set_window_fullscreen(
+    window: tauri::Window,
+    fullscreen: bool,
+) -> Result<bool, PublicBackendError> {
+    let was_fullscreen = window
+        .is_fullscreen()
+        .map_err(|_| window_error("Could not read the window state."))?;
+    if was_fullscreen != fullscreen {
+        window
+            .set_fullscreen(fullscreen)
+            .map_err(|_| window_error("Could not change full screen."))?;
+    }
+    Ok(was_fullscreen)
+}
+
 /// Tells the native layer where the title bar's maximize button is, or `None` while the title bar
 /// is hidden (full screen), so Windows can offer Snap Layouts over it.
 #[tauri::command]

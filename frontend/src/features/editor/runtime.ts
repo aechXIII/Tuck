@@ -25,6 +25,7 @@ import { installPanels, type PanelsApi } from "../panels/panels.ts";
 import type { AudioClipRangeInfo } from "../panels/panels.ts";
 import { installPlayer, type PlayerApi, type PlayerHost } from "../player/player.ts";
 import { installNativePlayer } from "../player/native-player.ts";
+import { createStageFullscreen, tauriWindowFullscreen } from "../player/stage-fullscreen.ts";
 import { createTauriPlayerEngine } from "../../backend/native-player.ts";
 import { installFrameExport } from "../player/frame-export.ts";
 import { isProbeReady } from "../../state/probe.ts";
@@ -45,7 +46,7 @@ import { installQueue, type QueueApi } from "../queue/queue.ts";
 import { installSettings, type SettingsApi } from "../settings/settings.ts";
 import { checkUpdates, checkUpdatesFromSettings } from "./updates.ts";
 import { routeDroppedPaths } from "./drop-routing.ts";
-import { fetchPlatformCapabilities, shouldShowUpdater } from "../../platform/capabilities.ts";
+import { fetchPlatformCapabilities, shouldShowUpdater, usesElementFullscreen } from "../../platform/capabilities.ts";
 import { errorSummary, formatBytes, formatTime } from "./format.ts";
 import {
   closeActiveModal,
@@ -306,6 +307,12 @@ export function installEditorRuntime(
       frameExport?.sync();
     },
     loopPlayback: () => session.appSettings.loop_playback !== false,
+    stageFullscreen: createStageFullscreen({
+      doc: windowRef.document,
+      center: () => byId("center"),
+      elementFullscreen: async () => usesElementFullscreen(await fetchPlatformCapabilities()),
+      window: hasTauriInvoke(windowRef) ? tauriWindowFullscreen() : null,
+    }),
     document: windowRef.document,
   };
   player = installPlayer(playerHost);

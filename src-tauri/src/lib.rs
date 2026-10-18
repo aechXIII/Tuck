@@ -27,7 +27,8 @@ use commands::updates::{
     check_for_updates, download_update, get_download_progress, install_update, UpdaterState,
 };
 use commands::window::{
-    minimize_window, set_caption_maximize_area, show_window_menu, toggle_maximize_window,
+    minimize_window, set_caption_maximize_area, set_window_fullscreen, show_window_menu,
+    toggle_maximize_window,
 };
 use tauri::Manager;
 
@@ -133,6 +134,7 @@ pub fn run() {
             }
             #[cfg(target_os = "linux")]
             if let Some(window) = app.get_webview_window("main") {
+                platform::watch_fullscreen(&window)?;
                 let handle = app.handle().clone();
                 platform::watch_gpu_renderer(&window, move || {
                     let app = handle.clone();
@@ -184,6 +186,7 @@ pub fn run() {
         get_startup_files,
         minimize_window,
         toggle_maximize_window,
+        set_window_fullscreen,
         set_caption_maximize_area,
         show_window_menu,
         set_interface_size,

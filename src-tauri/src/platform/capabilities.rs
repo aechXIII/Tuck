@@ -15,6 +15,10 @@ pub struct PlatformCapabilities {
     // Windows draws Tuck's own title bar; Linux keeps the desktop's frame
     #[serde(rename = "customTitleBar")]
     pub custom_title_bar: bool,
+    // WebKitGTK aborts the whole app when a page element enters fullscreen, so on Linux the
+    // player fills a full screen window instead
+    #[serde(rename = "elementFullscreen")]
+    pub element_fullscreen: bool,
     pub packaged: bool,
     // "off", or "surface" while the native preview draws its test picture
     #[serde(rename = "nativePreview")]
@@ -41,6 +45,7 @@ pub fn capabilities_for_target(platform: &str, packaged: bool) -> PlatformCapabi
         automatic_updater: updater,
         hardware_acceleration,
         custom_title_bar: platform == "windows",
+        element_fullscreen: platform == "windows",
         packaged,
         native_preview: crate::player::PreviewMode::Off.as_str(),
     }
@@ -72,6 +77,7 @@ mod tests {
         assert!(caps.automatic_updater);
         assert!(caps.hardware_acceleration);
         assert!(caps.custom_title_bar);
+        assert!(caps.element_fullscreen);
         assert!(!caps.packaged);
         // only the run switch turns the native preview on, never the target alone
         assert_eq!(caps.native_preview, "off");
@@ -87,6 +93,7 @@ mod tests {
         assert!(caps.automatic_updater);
         assert!(caps.hardware_acceleration);
         assert!(!caps.custom_title_bar);
+        assert!(!caps.element_fullscreen);
     }
 
     #[test]

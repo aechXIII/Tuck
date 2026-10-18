@@ -1,4 +1,5 @@
 import type { EditorClip } from "../editor/types.ts";
+import type { StageFullscreen } from "./stage-fullscreen.ts";
 import type { SegmentRange } from "../timeline/segments.ts";
 import {
   hasPlacement,
@@ -46,6 +47,7 @@ export interface PlayerHost {
   syncTimelineUI?: () => void;
   /** whether playback starts again from the first segment after the last one ends */
   loopPlayback?: () => boolean;
+  stageFullscreen?: StageFullscreen;
   document?: Document;
   clock?: PlayerClock;
 }
@@ -165,14 +167,6 @@ export function installVolumeControls(
   }
 
   return { toggleMute, setVol, updateMuteIcon };
-}
-
-export function toggleStageFullscreen(host: PlayerHost): void {
-  const doc = host.document ?? document;
-  const center = host.byId("center");
-  if (!center) return;
-  if (doc.fullscreenElement) void doc.exitFullscreen();
-  else if (center.requestFullscreen) void center.requestFullscreen();
 }
 
 export function installPlayer(host: PlayerHost): PlayerApi {
@@ -747,7 +741,7 @@ export function installPlayer(host: PlayerHost): PlayerApi {
     togglePlay,
     seekBy,
     stepFrame,
-    toggleFullscreen: () => toggleStageFullscreen(host),
+    toggleFullscreen: () => host.stageFullscreen?.toggle(),
     updateTime,
     seekPreview,
     seekToRatio,

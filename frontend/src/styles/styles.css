@@ -82,6 +82,7 @@
   --z-workspace-backdrop: 30;
   --z-workspace-panel: 40;
   --z-exports: 50;
+  --z-stage-fullscreen: 60;
   --z-toast: 70;
   --font: "Segoe UI", system-ui, sans-serif;
   --mono: "Cascadia Code", "Consolas", ui-monospace, monospace;

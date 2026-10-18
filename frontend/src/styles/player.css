@@ -117,12 +117,21 @@
   outline-offset: 2px;
   border-radius: 2px;
 }
-#center:fullscreen {
+#center:fullscreen,
+:root.stage-fullscreen #center {
   height: 100%;
   padding: 0;
   border-radius: 0;
 }
-#center:fullscreen #stage {
+/* where the webview has no element fullscreen the window goes full screen and the card covers
+   the editor, under toasts and dialogs as the fullscreen layer would be */
+:root.stage-fullscreen #center {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-stage-fullscreen);
+}
+#center:fullscreen #stage,
+:root.stage-fullscreen #stage {
   background: #000;
   border-radius: 0;
 }
@@ -135,7 +144,8 @@
   container: player-bar / inline-size;
   padding: var(--player-inset) 4px;
 }
-#center:fullscreen #player-bar {
+#center:fullscreen #player-bar,
+:root.stage-fullscreen #player-bar {
   padding-inline: 12px;
 }
 #player-bar.on {
@@ -452,3 +462,9 @@ body:not(.task-cut) #stage-controls [data-cut-only] {
 :root.native-preview #center { --hole-fill: var(--panel); }
 :root.native-preview #stage { --hole-fill: var(--sink); }
 :root.native-preview #media-viewport > :is(video, img, canvas) { visibility: hidden; }
+/* the picture shows through every layer under the hole, so the editor the full screen card
+   covers must not paint there */
+:root.native-preview.stage-fullscreen #stage { --hole-fill: #000; }
+:root.native-preview.stage-fullscreen :is(#tb, #left, #right, #timeline-resizer, #audio-editor, #task-bar, #exports-panel) {
+  visibility: hidden;
+}

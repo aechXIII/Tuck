@@ -11,7 +11,7 @@ commands.allow = ["platform_capabilities", "pick_video_files", "pick_lut_file", 
 [[permission]]
 identifier = "allow-window-chrome"
 description = "Allows the custom title bar to minimize, maximize, open the window menu and place the Snap Layouts target."
-commands.allow = ["minimize_window", "toggle_maximize_window", "set_caption_maximize_area", "show_window_menu"]
+commands.allow = ["minimize_window", "toggle_maximize_window", "set_window_fullscreen", "set_caption_maximize_area", "show_window_menu"]
 
 [[permission]]
 identifier = "allow-desktop-preferences"

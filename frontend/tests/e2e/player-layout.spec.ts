@@ -109,3 +109,67 @@ test("rotating a video and entering fullscreen preserve the workspace layout", a
   await expectPlayerLayout(page, 9 / 16);
   await expect(separator).toHaveAttribute("aria-valuenow", timelineHeight!);
 });
+
+test("on Linux fullscreen fills a full screen window instead of asking WebKit for element fullscreen", async ({ page }) => {
+  await page.setViewportSize({ width: 1240, height: 800 });
+  await page.addInitScript(() => {
+    const calls: unknown[] = [];
+    Reflect.set(window, "__windowFullscreenCalls", calls);
+    // WebKitGTK aborts the whole app on element fullscreen, so the page must never ask for it
+    Element.prototype.requestFullscreen = () => {
+      calls.push("element");
+      return Promise.resolve();
+    };
+    Reflect.set(window, "__TAURI_INTERNALS__", {
+      transformCallback: () => 1,
+      invoke: async (command: string, args: Record<string, unknown>) => {
+        if (command === "platform_capabilities") return {
+          platform: "linux", architecture: "x86_64", customTitleBar: false, elementFullscreen: false,
+          sendToIntegration: false, publicCli: false, automaticUpdater: true,
+          hardwareAcceleration: true, packaged: false,
+        };
+        if (command === "set_window_fullscreen") {
+          calls.push(args.fullscreen);
+          return false;
+        }
+        return 1;
+      },
+    });
+  });
+  await openPlayer(page, 1920, 1080);
+  const separator = page.getByRole("separator", { name: "Resize timeline" });
+  const timelineHeight = await separator.getAttribute("aria-valuenow");
+  const calls = () => page.evaluate(() => Reflect.get(window, "__windowFullscreenCalls") as unknown[]);
+
+  const fullscreen = page.getByRole("button", { name: "Fullscreen", exact: true });
+  await fullscreen.click();
+  await expect(page.locator("html")).toHaveClass(/\bstage-fullscreen\b/);
+  await expect.poll(calls).toEqual([true]);
+  await expect.poll(() => page.evaluate(() => {
+    const center = document.getElementById("center")!.getBoundingClientRect();
+    const stage = document.getElementById("stage")!.getBoundingClientRect();
+    const frame = document.getElementById("media-viewport")!.getBoundingClientRect();
+    const covering = document.elementFromPoint(window.innerWidth - 4, window.innerHeight / 2);
+    return document.fullscreenElement === null
+      && center.left === 0 && center.top === 0
+      && center.width === window.innerWidth && center.height === window.innerHeight
+      && document.getElementById("center")!.contains(covering)
+      && Math.abs(frame.width / frame.height - 16 / 9) < 0.001
+      && Math.abs(frame.left + frame.width / 2 - stage.left - stage.width / 2) < 1;
+  })).toBe(true);
+  await expect(fullscreen).toBeFocused();
+
+  // Escape belongs to leaving full screen, as with the webview's own fullscreen
+  await page.keyboard.press("Escape");
+  await expect(page.locator("html")).not.toHaveClass(/\bstage-fullscreen\b/);
+  await expect.poll(calls).toEqual([true, false]);
+  await expectPlayerLayout(page, 16 / 9);
+  await expect(separator).toHaveAttribute("aria-valuenow", timelineHeight!);
+
+  await fullscreen.click();
+  await expect(page.locator("html")).toHaveClass(/\bstage-fullscreen\b/);
+  await fullscreen.click();
+  await expect(page.locator("html")).not.toHaveClass(/\bstage-fullscreen\b/);
+  await expect.poll(calls).toEqual([true, false, true, false]);
+  await expectPlayerLayout(page, 16 / 9);
+});

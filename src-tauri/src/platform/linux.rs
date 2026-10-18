@@ -342,6 +342,28 @@ pub fn watch_gpu_renderer(
     })
 }
 
+/// Tells the page when the window enters or leaves full screen, whether Tuck or the desktop
+/// changed it, so the player's stage can leave full screen together with the window.
+pub fn watch_fullscreen(window: &tauri::WebviewWindow) -> tauri::Result<()> {
+    use gtk::gdk::WindowState;
+    use gtk::prelude::*;
+    use tauri::Emitter;
+
+    let target = window.clone();
+    window
+        .gtk_window()?
+        .connect_window_state_event(move |_, event| {
+            if event.changed_mask().contains(WindowState::FULLSCREEN) {
+                let fullscreen = event.new_window_state().contains(WindowState::FULLSCREEN);
+                if let Err(error) = target.emit("window-fullscreen", fullscreen) {
+                    eprintln!("could not report the window's full screen state: {error}");
+                }
+            }
+            gtk::glib::Propagation::Proceed
+        });
+    Ok(())
+}
+
 /// Resolve the AppImage's own GIO module directory, or `None` when not running
 /// from an AppImage or when the bundle has no such directory.
 fn bundled_gio_module_dir(appdir: Option<PathBuf>) -> Option<PathBuf> {

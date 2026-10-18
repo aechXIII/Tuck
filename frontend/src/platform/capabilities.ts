@@ -11,6 +11,11 @@ export interface PlatformCapabilities {
   automaticUpdater: boolean;
   hardwareAcceleration: boolean;
   customTitleBar: boolean;
+  /**
+   * whether the player can use the webview's element fullscreen; where it can't (WebKitGTK aborts
+   * the app) the window goes full screen instead. Missing means it can
+   */
+  elementFullscreen?: boolean;
   packaged: boolean;
   /**
    * "surface" while this run draws the native preview's test picture below the page, "engine"
@@ -44,6 +49,7 @@ const DEGRADED_CAPABILITIES: PlatformCapabilities = {
   automaticUpdater: false,
   hardwareAcceleration: false,
   customTitleBar: false,
+  elementFullscreen: false,
   packaged: false,
 };
 
@@ -60,6 +66,7 @@ function isPlatformCapabilities(value: unknown): value is PlatformCapabilities {
     typeof caps.automaticUpdater === "boolean" &&
     typeof caps.hardwareAcceleration === "boolean" &&
     typeof caps.customTitleBar === "boolean" &&
+    (caps.elementFullscreen === undefined || typeof caps.elementFullscreen === "boolean") &&
     typeof caps.packaged === "boolean" &&
     (caps.nativePreview === undefined ||
       caps.nativePreview === "off" ||
@@ -98,6 +105,10 @@ export function shouldShowUpdater(caps: PlatformCapabilities): boolean {
 
 export function usesCustomTitleBar(caps: PlatformCapabilities): boolean {
   return caps.customTitleBar;
+}
+
+export function usesElementFullscreen(caps: PlatformCapabilities): boolean {
+  return caps.elementFullscreen !== false;
 }
 
 export function supportsHardwareEncoders(caps: PlatformCapabilities): boolean {

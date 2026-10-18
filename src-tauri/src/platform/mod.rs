@@ -19,7 +19,7 @@ use tokio::process::Command;
 
 #[cfg(target_os = "linux")]
 pub use linux::{
-    configure_child_process, prepare_runtime_environment, terminate_process_tree,
+    configure_child_process, prepare_runtime_environment, terminate_process_tree, watch_fullscreen,
     watch_gpu_renderer, ProcessTreeGuard,
 };
 #[cfg(target_os = "windows")]
