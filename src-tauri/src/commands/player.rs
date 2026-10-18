@@ -66,13 +66,15 @@ pub async fn player_open(
     let path = video_path(request.path)?;
     // the page may ask for the video before it asked for the surface; either order works
     show_surface(&window).await?;
-    let window = preview_window()?;
+    let target = preview_target()?;
     let state = state.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         state.open_video(
             request.duration_seconds,
             &path,
-            window as *mut std::ffi::c_void,
+            target.window as *mut std::ffi::c_void,
+            target.display_interval,
+            target.download_frames,
         )
     })
     .await
@@ -90,18 +92,37 @@ fn video_path(path: Option<String>) -> Result<PathBuf, PublicBackendError> {
     Ok(path)
 }
 
-#[cfg(windows)]
-fn preview_window() -> Result<isize, PublicBackendError> {
-    crate::player::surface_windows::window()
-        .ok_or_else(|| surface_error("The preview is not ready yet."))
+/// Where and how the library draws the video.
+struct PreviewTarget {
+    window: isize,
+    /// seconds between display refreshes, or 0 to let the library ask the system
+    display_interval: f64,
+    download_frames: bool,
 }
 
+#[cfg(windows)]
+fn preview_target() -> Result<PreviewTarget, PublicBackendError> {
+    let window = crate::player::surface_windows::window()
+        .ok_or_else(|| surface_error("The preview is not ready yet."))?;
+    // the library asks Windows about the display the window is on
+    Ok(PreviewTarget {
+        window,
+        display_interval: 0.0,
+        download_frames: false,
+    })
+}
+
+// on Linux the surface's GL area draws, so the library gets no window
 #[cfg(target_os = "linux")]
-fn preview_window() -> Result<isize, PublicBackendError> {
-    Err(PublicBackendError::new(
-        "NOT_AVAILABLE",
-        "The native player does not draw on Linux yet.",
-    ))
+fn preview_target() -> Result<PreviewTarget, PublicBackendError> {
+    use crate::player::surface_linux;
+    let display_interval = surface_linux::refresh_interval()
+        .ok_or_else(|| surface_error("The preview is not ready yet."))?;
+    Ok(PreviewTarget {
+        window: 0,
+        display_interval,
+        download_frames: !surface_linux::imports_frames(),
+    })
 }
 
 /// Plays, pauses or seeks, and returns the status right after.
@@ -177,10 +198,14 @@ async fn open_surface(window: &tauri::WebviewWindow) -> Result<(), PublicBackend
 
 #[cfg(target_os = "linux")]
 async fn open_surface(window: &tauri::WebviewWindow) -> Result<(), PublicBackendError> {
+    use tauri::Manager;
+    // the GL area draws the player's frames; the test picture needs no player
+    let player = (preview_mode() == PreviewMode::Player)
+        .then(|| window.state::<PlayerState>().inner().clone());
     let (sender, receiver) = tokio::sync::oneshot::channel();
     window
         .with_webview(move |webview| {
-            let result = crate::player::surface_linux::open(&webview.inner());
+            let result = crate::player::surface_linux::open(&webview.inner(), player);
             if let Err(message) = result {
                 eprintln!("could not create the preview surface: {message}");
             }

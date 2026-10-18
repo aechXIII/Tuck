@@ -244,12 +244,21 @@ impl PlayerState {
         duration_seconds: f64,
         path: &Path,
         window: *mut c_void,
+        display_interval: f64,
+        download_frames: bool,
     ) -> Result<PlayerStatus, PlayerError> {
         Self::check_length(duration_seconds)?;
         // closing joins the previous video's threads; status reads must not wait on that
         let previous = self.backend().take();
         drop(previous);
-        let video = Video::open(path, duration_seconds, window).map_err(PlayerError::Video)?;
+        let video = Video::open(
+            path,
+            duration_seconds,
+            window,
+            display_interval,
+            download_frames,
+        )
+        .map_err(PlayerError::Video)?;
         let mut backend = Backend::Video(video);
         let status = backend.status();
         *self.backend() = Some(backend);
@@ -279,6 +288,26 @@ impl PlayerState {
             .as_mut()
             .map(Backend::status)
             .ok_or(PlayerError::NotOpen)
+    }
+
+    /// Whether the GL area should draw again to show a new frame.
+    #[cfg(target_os = "linux")]
+    pub fn due(&self) -> bool {
+        match self.backend().as_mut() {
+            Some(Backend::Video(video)) => video.due(),
+            _ => false,
+        }
+    }
+
+    /// Draws the open video into the bound framebuffer, or clears it while there is none.
+    #[cfg(target_os = "linux")]
+    pub fn draw(&self, renderer: &super::library::GlRenderer, target: &super::library::Target) {
+        match self.backend().as_mut() {
+            Some(Backend::Video(video)) => {
+                video.draw(renderer, target);
+            }
+            _ => renderer.clear(target),
+        }
     }
 }
 

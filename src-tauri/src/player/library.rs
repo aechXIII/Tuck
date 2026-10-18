@@ -12,7 +12,7 @@ use serde::Serialize;
 use super::engine::{PlayerStatus, RawStatus};
 
 // must match TUCK_VIDEO_ABI in native/player/tuck_video.h
-const ABI: c_int = 1;
+const ABI: c_int = 2;
 
 #[cfg(windows)]
 const FILE_NAME: &str = "tuck_player.dll";
@@ -24,6 +24,22 @@ struct OpenParams {
     path: *const c_char,
     duration_seconds: f64,
     window: *mut c_void,
+    display_interval: f64,
+    download_frames: i32,
+}
+
+/// Where the Linux GL area draws: its size and the picture inside it, in device pixels from the
+/// top left.
+#[cfg(target_os = "linux")]
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Target {
+    pub width: i32,
+    pub height: i32,
+    pub picture_x: i32,
+    pub picture_y: i32,
+    pub picture_width: i32,
+    pub picture_height: i32,
 }
 
 #[repr(C)]
@@ -41,6 +57,16 @@ type OpenFn = unsafe extern "C" fn(*const OpenParams, *mut c_char, usize) -> *mu
 type VideoFn = unsafe extern "C" fn(*mut c_void);
 type SeekFn = unsafe extern "C" fn(*mut c_void, u64, f64) -> c_int;
 type StatusFn = unsafe extern "C" fn(*mut c_void, *mut RawVideoStatus);
+#[cfg(target_os = "linux")]
+type RendererCreateFn = unsafe extern "C" fn(*mut c_char, usize) -> *mut c_void;
+#[cfg(target_os = "linux")]
+type RendererTargetFn = unsafe extern "C" fn(*mut c_void, *const Target);
+#[cfg(target_os = "linux")]
+type DueFn = unsafe extern "C" fn(*mut c_void) -> c_int;
+#[cfg(target_os = "linux")]
+type ImportsFn = unsafe extern "C" fn(*mut c_void) -> c_int;
+#[cfg(target_os = "linux")]
+type DrawFn = unsafe extern "C" fn(*mut c_void, *mut c_void, *const Target) -> c_int;
 
 struct Api {
     open: OpenFn,
@@ -49,6 +75,19 @@ struct Api {
     pause: VideoFn,
     seek: SeekFn,
     status: StatusFn,
+    #[cfg(target_os = "linux")]
+    gl: GlApi,
+}
+
+// GTK draws on its main thread, so on Linux the shell drives the drawing
+#[cfg(target_os = "linux")]
+struct GlApi {
+    create: RendererCreateFn,
+    destroy: VideoFn,
+    imports: ImportsFn,
+    clear: RendererTargetFn,
+    due: DueFn,
+    draw: DrawFn,
 }
 
 /// What the page learns about the decoder and renderer beside the clock.
@@ -132,6 +171,23 @@ fn resolve(symbol: impl Fn(&CStr) -> Option<*const c_void>) -> Result<Api, Strin
             pause: std::mem::transmute::<*const c_void, VideoFn>(find(c"tuck_video_pause")?),
             seek: std::mem::transmute::<*const c_void, SeekFn>(find(c"tuck_video_seek")?),
             status: std::mem::transmute::<*const c_void, StatusFn>(find(c"tuck_video_status")?),
+            #[cfg(target_os = "linux")]
+            gl: GlApi {
+                create: std::mem::transmute::<*const c_void, RendererCreateFn>(find(
+                    c"tuck_gl_renderer_create",
+                )?),
+                destroy: std::mem::transmute::<*const c_void, VideoFn>(find(
+                    c"tuck_gl_renderer_destroy",
+                )?),
+                imports: std::mem::transmute::<*const c_void, ImportsFn>(find(
+                    c"tuck_gl_renderer_imports_frames",
+                )?),
+                clear: std::mem::transmute::<*const c_void, RendererTargetFn>(find(
+                    c"tuck_gl_renderer_clear",
+                )?),
+                due: std::mem::transmute::<*const c_void, DueFn>(find(c"tuck_video_due")?),
+                draw: std::mem::transmute::<*const c_void, DrawFn>(find(c"tuck_video_draw")?),
+            },
         })
     }
 }
@@ -147,8 +203,16 @@ fn api() -> Result<&'static Api, String> {
 }
 
 impl Video {
-    /// Opens `path` for playback into `window` (the preview's child window on Windows).
-    pub fn open(path: &Path, duration_seconds: f64, window: *mut c_void) -> Result<Self, String> {
+    /// Opens `path` for playback into `window` (the preview's child window on Windows; unused on
+    /// Linux). `display_interval` is the seconds between display refreshes, or 0 when unknown.
+    /// `download_frames` copies decoded GPU frames to memory for a renderer that can't import them.
+    pub fn open(
+        path: &Path,
+        duration_seconds: f64,
+        window: *mut c_void,
+        display_interval: f64,
+        download_frames: bool,
+    ) -> Result<Self, String> {
         let api = api()?;
         let path = path
             .to_str()
@@ -158,6 +222,8 @@ impl Video {
             path: path.as_ptr(),
             duration_seconds,
             window,
+            display_interval,
+            download_frames: i32::from(download_frames),
         };
         let mut error = [0 as c_char; 256];
         let handle = unsafe { (api.open)(&params, error.as_mut_ptr(), error.len()) };
@@ -204,6 +270,57 @@ impl Video {
 impl Drop for Video {
     fn drop(&mut self) {
         unsafe { (self.api.close)(self.handle.as_ptr()) }
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl Video {
+    /// Whether drawing now would show a different frame than the last draw.
+    pub fn due(&mut self) -> bool {
+        unsafe { (self.api.gl.due)(self.handle.as_ptr()) != 0 }
+    }
+
+    /// Draws the frame for the clock into the bound framebuffer. Only from the GL area's render
+    /// handler, with its context current.
+    pub fn draw(&mut self, renderer: &GlRenderer, target: &Target) -> bool {
+        unsafe { (self.api.gl.draw)(self.handle.as_ptr(), renderer.handle.as_ptr(), target) != 0 }
+    }
+}
+
+/// libplacebo's OpenGL renderer for the Linux GL area. It lives as long as the area's GL context,
+/// across videos, and is created and dropped only with that context current.
+#[cfg(target_os = "linux")]
+pub struct GlRenderer {
+    handle: NonNull<c_void>,
+    api: &'static Api,
+}
+
+#[cfg(target_os = "linux")]
+impl GlRenderer {
+    pub fn create() -> Result<Self, String> {
+        let api = api()?;
+        let mut error = [0 as c_char; 256];
+        let handle = unsafe { (api.gl.create)(error.as_mut_ptr(), error.len()) };
+        NonNull::new(handle)
+            .map(|handle| GlRenderer { handle, api })
+            .ok_or_else(|| text(&error))
+    }
+
+    /// Whether the GL context takes VAAPI frames without a copy; GLX under X11 can't.
+    pub fn imports_frames(&self) -> bool {
+        unsafe { (self.api.gl.imports)(self.handle.as_ptr()) != 0 }
+    }
+
+    /// Clears the bound framebuffer while no video plays.
+    pub fn clear(&self, target: &Target) {
+        unsafe { (self.api.gl.clear)(self.handle.as_ptr(), target) }
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl Drop for GlRenderer {
+    fn drop(&mut self) {
+        unsafe { (self.api.gl.destroy)(self.handle.as_ptr()) }
     }
 }
 

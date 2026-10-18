@@ -1,6 +1,7 @@
 /* One video in the native player: the clock core decides where playback is, the decoder fills a
-   queue for that position, and a render thread shows the frame for the clock's time. A seek's clock
-   holds until its own frame has been presented, so the page never runs ahead of the picture. */
+   queue for that position, and the frame for the clock's time is drawn: by a render thread on
+   Windows, from the shell's GL area on Linux. A seek's clock holds until its own frame has been
+   drawn, so the page never runs ahead of the picture. */
 #include "tuck_video.h"
 
 #include <pthread.h>
@@ -16,6 +17,7 @@
 #endif
 
 #include "decoder.h"
+#include "playback_state.h"
 #include "render.h"
 
 /* playing, a frame due within this much counts as due now */
@@ -26,10 +28,18 @@ struct TuckVideo {
     pthread_cond_t wake;
     TuckPlayer *clock;
     Decoder *decoder;
+    atomic_int stopping;
+    /* the frame on screen; the render thread's on Windows, the GTK main thread's on Linux */
+    DecodedFrame shown;
+#ifdef _WIN32
     Renderer *renderer;
     pthread_t render_thread;
     int render_started;
-    atomic_int stopping;
+#else
+    AVBufferRef *device;
+    /* the renderer can't import GPU frames, so kept frames are copied to memory here */
+    int download;
+#endif
     /* under lock */
     uint64_t decoder_generation;
     uint64_t presented;
@@ -60,14 +70,6 @@ static void wake_render(void *opaque) {
     pthread_mutex_unlock(&v->lock);
 }
 
-static AVBufferRef *hook_device(void *opaque) {
-    return renderer_device(((TuckVideo *)opaque)->renderer);
-}
-
-static AVFrame *hook_keep(void *opaque, const AVFrame *frame) {
-    return renderer_keep(((TuckVideo *)opaque)->renderer, frame);
-}
-
 /* under lock: every new clock generation (open, seek, start over) asks the decoder for it */
 static void follow_clock(TuckVideo *v, const TuckPlayerStatus *status) {
     if (status->generation == v->decoder_generation) return;
@@ -78,6 +80,60 @@ static void follow_clock(TuckVideo *v, const TuckPlayerStatus *status) {
 static void fail_locked(TuckVideo *v, const char *message) {
     if (!v->failed) snprintf(v->error, sizeof(v->error), "%s", message);
     v->failed = 1;
+}
+
+/* the clock now, with the decoder asked for any new generation; 0 once the video failed */
+static int clock_now(TuckVideo *v, TuckPlayerStatus *status) {
+    pthread_mutex_lock(&v->lock);
+    tuck_player_status(v->clock, now_seconds(), status);
+    follow_clock(v, status);
+    int failed = v->failed;
+    pthread_mutex_unlock(&v->lock);
+    return !failed;
+}
+
+/* swaps in the frame for the clock's time when the decoder has it; 1 when the frame changed */
+static int take_frame(TuckVideo *v, const TuckPlayerStatus *status) {
+    DecodedFrame next = {0};
+    if (!decoder_take(v->decoder, status->position_seconds + FRAME_SLACK, status->generation, status->seek_pending,
+                      &next))
+        return 0;
+    decoded_frame_clear(&v->shown);
+    v->shown = next;
+    return 1;
+}
+
+static void drawn(TuckVideo *v, RenderOutcome outcome, const char *error) {
+    pthread_mutex_lock(&v->lock);
+    if (outcome == RENDER_SUBMITTED) {
+        tuck_player_frame_presented(v->clock, v->shown.generation, now_seconds());
+        v->presented++;
+    } else if (outcome == RENDER_FAILED) {
+        fail_locked(v, error);
+    }
+    pthread_mutex_unlock(&v->lock);
+}
+
+static void after_command(TuckVideo *v) {
+    TuckPlayerStatus status;
+    tuck_player_status(v->clock, now_seconds(), &status);
+    follow_clock(v, &status);
+    v->signalled = 1;
+    pthread_cond_signal(&v->wake);
+}
+
+int tuck_video_abi(void) {
+    return TUCK_VIDEO_ABI;
+}
+
+#ifdef _WIN32
+
+static AVBufferRef *hook_device(void *opaque) {
+    return renderer_device(((TuckVideo *)opaque)->renderer);
+}
+
+static AVFrame *hook_keep(void *opaque, const AVFrame *frame) {
+    return renderer_keep(((TuckVideo *)opaque)->renderer, frame);
 }
 
 static void wait_for_work(TuckVideo *v, double seconds) {
@@ -94,49 +150,146 @@ static void wait_for_work(TuckVideo *v, double seconds) {
 
 static void *render_main(void *opaque) {
     TuckVideo *v = opaque;
-    DecodedFrame shown = {0};
     int redraw = 0;
     while (!atomic_load(&v->stopping)) {
         TuckPlayerStatus status;
-        pthread_mutex_lock(&v->lock);
-        tuck_player_status(v->clock, now_seconds(), &status);
-        follow_clock(v, &status);
-        int failed = v->failed;
-        pthread_mutex_unlock(&v->lock);
-        if (failed) {
+        if (!clock_now(v, &status)) {
             wait_for_work(v, 0.1);
             continue;
         }
-        DecodedFrame next = {0};
-        if (decoder_take(v->decoder, status.position_seconds + FRAME_SLACK, status.generation, status.seek_pending,
-                         &next)) {
-            decoded_frame_clear(&shown);
-            shown = next;
-            redraw = 1;
-        }
+        if (take_frame(v, &status)) redraw = 1;
         if (renderer_resized(v->renderer)) redraw = 1;
-        if (redraw && shown.frame) {
-            RenderOutcome outcome = renderer_draw(v->renderer, &shown);
-            pthread_mutex_lock(&v->lock);
-            if (outcome == RENDER_SUBMITTED) {
-                tuck_player_frame_presented(v->clock, shown.generation, now_seconds());
-                v->presented++;
-                redraw = 0;
-            } else if (outcome == RENDER_FAILED) {
-                fail_locked(v, renderer_error(v->renderer));
-            }
-            pthread_mutex_unlock(&v->lock);
+        if (redraw && v->shown.frame) {
+            RenderOutcome outcome = renderer_draw(v->renderer, &v->shown);
+            drawn(v, outcome, renderer_error(v->renderer));
+            if (outcome == RENDER_SUBMITTED) redraw = 0;
         }
         int running = !status.paused || status.seek_pending;
         wait_for_work(v, running ? 0.001 : 0.016);
     }
-    decoded_frame_clear(&shown);
     return NULL;
 }
 
-int tuck_video_abi(void) {
-    return TUCK_VIDEO_ABI;
+static int start_drawing(TuckVideo *v, const TuckVideoOpen *open, DecoderHooks *hooks, char *error,
+                         size_t error_size) {
+    v->renderer = renderer_open(open->window, error, error_size);
+    if (!v->renderer) return 0;
+    hooks->device_type = renderer_device_type();
+    hooks->hardware_format = renderer_hardware_format();
+    hooks->device = hook_device;
+    hooks->keep = hook_keep;
+    /* frames are copied out of decoder surfaces at once */
+    hooks->extra_frames = 2;
+    return 1;
 }
+
+static double display_interval(TuckVideo *v, const TuckVideoOpen *open) {
+    return open->display_interval > 0 ? open->display_interval : renderer_refresh_interval(v->renderer);
+}
+
+static int start_thread(TuckVideo *v, char *error, size_t error_size) {
+    if (pthread_create(&v->render_thread, NULL, render_main, v) != 0) {
+        snprintf(error, error_size, "The preview could not start its drawing thread.");
+        return 0;
+    }
+    v->render_started = 1;
+    return 1;
+}
+
+static void stop_drawing(TuckVideo *v) {
+    if (v->render_started) pthread_join(v->render_thread, NULL);
+}
+
+static void close_drawing(TuckVideo *v) {
+    renderer_close(v->renderer);
+}
+
+#else
+
+static AVBufferRef *hook_device(void *opaque) {
+    TuckVideo *v = opaque;
+    return v->device ? av_buffer_ref(v->device) : NULL;
+}
+
+/* the queue holds the decoder's VAAPI surfaces; with EGL, OpenGL imports them without a copy */
+static AVFrame *hook_keep(void *opaque, const AVFrame *frame) {
+    (void)opaque;
+    return av_frame_clone(frame);
+}
+
+/* GLX can't import VAAPI surfaces, so frames are copied to memory ahead of their time on the
+   decoder's preparing thread. A copy takes 8 to 10 ms at 1440p on the laptop: on GTK's main thread
+   it halved the drawn frame rate, and on the decoder thread it stalled decoding. */
+static AVFrame *hook_download(void *opaque, const AVFrame *frame) {
+    (void)opaque;
+    AVFrame *copy = av_frame_alloc();
+    if (copy && av_hwframe_transfer_data(copy, frame, 0) >= 0 && av_frame_copy_props(copy, frame) >= 0) return copy;
+    av_frame_free(&copy);
+    return NULL;
+}
+
+static int start_drawing(TuckVideo *v, const TuckVideoOpen *open, DecoderHooks *hooks, char *error,
+                         size_t error_size) {
+    (void)error;
+    (void)error_size;
+    double interval = open->display_interval > 0 ? open->display_interval : 1.0 / 60;
+    v->download = open->download_frames != 0;
+    /* no GPU decoding is fine: the decoder falls back to software */
+    if (av_hwdevice_ctx_create(&v->device, AV_HWDEVICE_TYPE_VAAPI, NULL, NULL, 0) < 0) v->device = NULL;
+    hooks->device_type = AV_HWDEVICE_TYPE_VAAPI;
+    hooks->hardware_format = AV_PIX_FMT_VAAPI;
+    hooks->device = hook_device;
+    hooks->keep = hook_keep;
+    hooks->prepare = v->download ? hook_download : NULL;
+    /* every queued frame, the one on screen, the seek candidate and one being drawn */
+    hooks->extra_frames = (int)playback_video_capacity((int)(1.0 / interval + 0.5)) + 4;
+    return 1;
+}
+
+static double display_interval(TuckVideo *v, const TuckVideoOpen *open) {
+    (void)v;
+    return open->display_interval > 0 ? open->display_interval : 1.0 / 60;
+}
+
+static int start_thread(TuckVideo *v, char *error, size_t error_size) {
+    (void)v;
+    (void)error;
+    (void)error_size;
+    return 1;
+}
+
+static void stop_drawing(TuckVideo *v) {
+    (void)v;
+}
+
+static void close_drawing(TuckVideo *v) {
+    av_buffer_unref(&v->device);
+}
+
+int tuck_video_due(TuckVideo *v) {
+    TuckPlayerStatus status;
+    if (!clock_now(v, &status)) return 0;
+    return decoder_ready(v->decoder, status.position_seconds + FRAME_SLACK, status.generation,
+                         status.seek_pending);
+}
+
+int tuck_video_draw(TuckVideo *v, TuckGlRenderer *renderer, const TuckVideoTarget *target) {
+    TuckPlayerStatus status;
+    if (!clock_now(v, &status)) {
+        tuck_gl_renderer_clear(renderer, target);
+        return 0;
+    }
+    take_frame(v, &status);
+    if (!v->shown.frame) {
+        tuck_gl_renderer_clear(renderer, target);
+        return 0;
+    }
+    RenderOutcome outcome = gl_renderer_draw(renderer, &v->shown, target);
+    drawn(v, outcome, gl_renderer_error(renderer));
+    return outcome == RENDER_SUBMITTED;
+}
+
+#endif
 
 TuckVideo *tuck_video_open(const TuckVideoOpen *open, char *error, size_t error_size) {
     if (!open || !open->path) {
@@ -155,24 +308,12 @@ TuckVideo *tuck_video_open(const TuckVideoOpen *open, char *error, size_t error_
         snprintf(error, error_size, "The video length is not valid.");
         goto failed;
     }
-    v->renderer = renderer_open(open->window, error, error_size);
-    if (!v->renderer) goto failed;
-    DecoderHooks hooks = {
-        .opaque = v,
-        .device_type = renderer_device_type(),
-        .hardware_format = renderer_hardware_format(),
-        .device = hook_device,
-        .keep = hook_keep,
-        .wake = wake_render,
-    };
+    DecoderHooks hooks = {.opaque = v, .wake = wake_render};
+    if (!start_drawing(v, open, &hooks, error, error_size)) goto failed;
     v->decoder = decoder_open(open->path, &hooks, error, error_size);
     if (!v->decoder) goto failed;
-    decoder_set_cadence(v->decoder, renderer_refresh_interval(v->renderer));
-    if (pthread_create(&v->render_thread, NULL, render_main, v) != 0) {
-        snprintf(error, error_size, "The preview could not start its drawing thread.");
-        goto failed;
-    }
-    v->render_started = 1;
+    decoder_set_cadence(v->decoder, display_interval(v, open));
+    if (!start_thread(v, error, error_size)) goto failed;
     return v;
 failed:
     tuck_video_close(v);
@@ -183,22 +324,15 @@ void tuck_video_close(TuckVideo *v) {
     if (!v) return;
     atomic_store(&v->stopping, 1);
     wake_render(v);
-    if (v->render_started) pthread_join(v->render_thread, NULL);
-    /* queued frames hold GPU textures, so the decoder goes before the renderer */
+    stop_drawing(v);
+    decoded_frame_clear(&v->shown);
+    /* queued frames hold GPU textures or surfaces, so the decoder goes before the device */
     decoder_close(v->decoder);
-    renderer_close(v->renderer);
+    close_drawing(v);
     tuck_player_destroy(v->clock);
     pthread_cond_destroy(&v->wake);
     pthread_mutex_destroy(&v->lock);
     free(v);
-}
-
-static void after_command(TuckVideo *v) {
-    TuckPlayerStatus status;
-    tuck_player_status(v->clock, now_seconds(), &status);
-    follow_clock(v, &status);
-    v->signalled = 1;
-    pthread_cond_signal(&v->wake);
 }
 
 void tuck_video_play(TuckVideo *v) {

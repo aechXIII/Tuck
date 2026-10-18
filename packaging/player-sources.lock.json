@@ -5,13 +5,26 @@
     "distribution": "Ubuntu",
     "version": "22.04"
   },
-  "ffmpeg_lock": "packaging/ffmpeg-sources.lock.json",
-  "ffmpeg_sources": [
-    "ffmpeg",
-    "dav1d",
-    "zlib",
-    "mingw-dxva"
-  ],
+  "ffmpeg_locks": {
+    "windows": {
+      "lock": "packaging/ffmpeg-sources.lock.json",
+      "sources": [
+        "ffmpeg",
+        "dav1d",
+        "zlib",
+        "mingw-dxva"
+      ]
+    },
+    "linux": {
+      "lock": "packaging/ffmpeg-linux-sources.lock.json",
+      "sources": [
+        "ffmpeg",
+        "dav1d",
+        "libva",
+        "libdrm"
+      ]
+    }
+  },
   "sources": [
     {
       "name": "libplacebo",

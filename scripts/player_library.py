@@ -24,11 +24,12 @@ LOCK_PATH = ROOT / "packaging/player-sources.lock.json"
 PLAYER_SOURCE = ROOT / "src-tauri/native/player"
 RECIPES = {
     "windows": ("packaging/build-player-sdk-windows.sh", "packaging/build-player-windows.sh"),
+    "linux": ("packaging/build-player-sdk-linux.sh", "packaging/build-player-linux.sh"),
 }
-OUTPUTS = {"windows": "tuck_player.dll"}
+OUTPUTS = {"windows": "tuck_player.dll", "linux": "libtuck_player.so"}
 
 
-def load_lock() -> dict:
+def load_lock(target: str) -> dict:
     lock = json.loads(LOCK_PATH.read_text(encoding="utf-8"))
     require(lock.get("lockfile_version") == 1, "Unsupported player source lock")
     require(lock.get("architecture") == "x86_64", "Wrong player architecture")
@@ -49,9 +50,10 @@ def load_lock() -> dict:
         require(
             len(record["sha256"]) == 64 and record["size_bytes"] > 0, "Incomplete source record"
         )
-    ffmpeg_lock = json.loads((ROOT / lock["ffmpeg_lock"]).read_text(encoding="utf-8"))
+    reuse = lock["ffmpeg_locks"][target]
+    ffmpeg_lock = json.loads((ROOT / reuse["lock"]).read_text(encoding="utf-8"))
     shared = {record["name"]: record for record in ffmpeg_lock["sources"]}
-    wanted = lock["ffmpeg_sources"]
+    wanted = reuse["sources"]
     require(all(name in shared for name in wanted), "The FFmpeg lock lacks a player source")
     reused = [dict(shared[name], destination="") for name in wanted]
     return {"sources": reused + lock["sources"]}
@@ -84,7 +86,7 @@ def run(*command: str) -> None:
 
 
 def build(target: str, work: Path, output: Path, jobs: int, library_only: bool) -> None:
-    lock = load_lock()
+    lock = load_lock(target)
     sdk_recipe, library_recipe = RECIPES[target]
     source_dir = work / "source"
     sdk = work / f"sdk-{target}"

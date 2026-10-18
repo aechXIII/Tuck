@@ -27,10 +27,19 @@ def _player_library() -> ModuleType:
         sys.path.remove(str(SCRIPTS))
 
 
-def test_player_sources_reuse_the_export_ffmpeg_and_pin_the_rest() -> None:
-    sources = _player_library().load_lock()["sources"]
+@pytest.mark.parametrize(
+    ("target", "reused"),
+    [
+        ("windows", ["ffmpeg", "dav1d", "zlib", "mingw-dxva"]),
+        ("linux", ["ffmpeg", "dav1d", "libva", "libdrm"]),
+    ],
+)
+def test_player_sources_reuse_the_export_ffmpeg_and_pin_the_rest(
+    target: str, reused: list[str]
+) -> None:
+    sources = _player_library().load_lock(target)["sources"]
     names = [record["name"] for record in sources]
-    assert names[:4] == ["ffmpeg", "dav1d", "zlib", "mingw-dxva"]
+    assert names[:4] == reused
     assert {"libplacebo", "glslang", "SPIRV-Cross", "meson"} <= set(names)
     assert next(record for record in sources if record["name"] == "ffmpeg")["version"] == "7.1.1"
     for record in sources:
@@ -51,4 +60,4 @@ def test_sources_that_would_land_outside_the_tree_are_refused(
     path.write_text(json.dumps(lock), encoding="utf-8")
     monkeypatch.setattr(module, "LOCK_PATH", path)
     with pytest.raises(module.BuildError):
-        module.load_lock()
+        module.load_lock("windows")

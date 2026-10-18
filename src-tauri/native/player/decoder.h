@@ -23,8 +23,14 @@ typedef struct DecoderHooks {
     AVBufferRef *(*device)(void *opaque);
     /* a frame the queue may hold for long; NULL when the copy failed */
     AVFrame *(*keep)(void *opaque, const AVFrame *frame);
+    /* optional: turns a kept frame into the one drawn, on a thread of its own and ahead of its
+       time, so slow work (a copy to memory) never stalls decoding or drawing; NULL on failure */
+    AVFrame *(*prepare)(void *opaque, const AVFrame *frame);
     /* a frame was queued or decoding failed; called without any decoder lock held */
     void (*wake)(void *opaque);
+    /* hardware surfaces beyond the decoder's own needs; enough for every frame `keep` holds on to
+       when it keeps references instead of copies */
+    int extra_frames;
 } DecoderHooks;
 
 typedef struct DecodedFrame {
@@ -34,7 +40,14 @@ typedef struct DecodedFrame {
     uint64_t generation;
     /* the layout of the frame's pixels; for hardware frames, what the textures hold */
     enum AVPixelFormat sw_format;
+    /* the kept frame is still on the GPU */
     int hardware;
+    /* the decoder made it on the GPU, even when it was copied to memory afterwards */
+    int decoded_on_gpu;
+    /* prepared for drawing; only ready frames are handed out */
+    int ready;
+    /* tells queued frames apart while one is being prepared without the lock */
+    uint64_t serial;
 } DecodedFrame;
 
 typedef struct DecoderInfo {
@@ -56,6 +69,8 @@ void decoder_seek(Decoder *decoder, double seconds, uint64_t generation);
 /* With `first`, the oldest frame of `generation`; otherwise the newest one at or before `time`,
    dropping the frames before it. 0 when there is none yet. The caller owns out->frame. */
 int decoder_take(Decoder *decoder, double time, uint64_t generation, int first, DecodedFrame *out);
+/* whether decoder_take would find a frame, without taking it */
+int decoder_ready(Decoder *decoder, double time, uint64_t generation, int first);
 void decoder_info(Decoder *decoder, DecoderInfo *info);
 void decoded_frame_clear(DecodedFrame *frame);
 

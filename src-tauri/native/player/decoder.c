@@ -31,6 +31,9 @@ struct Decoder {
 
     pthread_t thread;
     int thread_started;
+    pthread_t preparer;
+    int preparer_started;
+    uint64_t serial;
     pthread_mutex_t lock;
     /* a new request, room in the queue, or closing */
     pthread_cond_t changed;
@@ -137,7 +140,7 @@ static int open_codec(Decoder *d, int hardware, char *error, size_t error_size) 
         context->get_format = choose_format;
         context->thread_count = 1;
         /* the candidate frame before a seek target holds one decoder surface while it waits */
-        context->extra_hw_frames = 2;
+        context->extra_hw_frames = d->hooks.extra_frames > 2 ? d->hooks.extra_frames : 2;
     } else {
         context->thread_count = 0;
     }
@@ -167,16 +170,24 @@ static void queue_drop_head(Decoder *d) {
 /* 0 when the generation was superseded while waiting for room; the frame is freed then */
 static int queue_put(Decoder *d, DecodedFrame *item) {
     pthread_mutex_lock(&d->lock);
+    /* frames from before a seek must not hold the room: on Linux nothing takes frames until a
+       frame of the new generation is there to draw */
+    while (d->count && d->queue[d->head].generation != item->generation) queue_drop_head(d);
     while (d->count >= d->capacity && !superseded(d, item->generation)) pthread_cond_wait(&d->changed, &d->lock);
     if (superseded(d, item->generation)) {
         pthread_mutex_unlock(&d->lock);
         decoded_frame_clear(item);
         return 0;
     }
+    /* frames decoded in software are already what any renderer can draw */
+    item->ready = !d->hooks.prepare || !item->hardware;
+    item->serial = ++d->serial;
     d->queue[(d->head + d->count) % QUEUE_LIMIT] = *item;
     d->count++;
+    /* the preparer waits on the same condition */
+    if (!item->ready) pthread_cond_broadcast(&d->changed);
     d->frames_seen = 1;
-    d->hardware_frames = item->hardware;
+    d->hardware_frames = item->decoded_on_gpu;
     pthread_mutex_unlock(&d->lock);
     memset(item, 0, sizeof(*item));
     if (d->hooks.wake) d->hooks.wake(d->hooks.opaque);
@@ -185,8 +196,8 @@ static int queue_put(Decoder *d, DecodedFrame *item) {
 
 /* a copy the queue may hold: hardware surfaces belong to the decoder and are copied out */
 static int keep(Decoder *d, const AVFrame *frame, double time, uint64_t generation, DecodedFrame *out) {
-    int hardware = frame->format == d->hooks.hardware_format && frame->hw_frames_ctx;
-    AVFrame *kept = hardware ? d->hooks.keep(d->hooks.opaque, frame) : av_frame_clone(frame);
+    int decoded_on_gpu = frame->format == d->hooks.hardware_format && frame->hw_frames_ctx;
+    AVFrame *kept = decoded_on_gpu ? d->hooks.keep(d->hooks.opaque, frame) : av_frame_clone(frame);
     if (!kept) {
         fail(d, "A decoded frame could not be kept for display.");
         return 0;
@@ -194,8 +205,10 @@ static int keep(Decoder *d, const AVFrame *frame, double time, uint64_t generati
     out->frame = kept;
     out->time = time;
     out->generation = generation;
-    out->hardware = hardware;
-    out->sw_format = hardware ? ((AVHWFramesContext *)frame->hw_frames_ctx->data)->sw_format : frame->format;
+    out->decoded_on_gpu = decoded_on_gpu;
+    out->hardware = kept->format == d->hooks.hardware_format;
+    out->sw_format = decoded_on_gpu ? ((AVHWFramesContext *)frame->hw_frames_ctx->data)->sw_format : frame->format;
+    if (!out->hardware) out->sw_format = kept->format;
     return 1;
 }
 
@@ -299,6 +312,55 @@ static void finish_stream(Decoder *d, AVFrame *frame, uint64_t generation) {
     pthread_mutex_unlock(&d->lock);
 }
 
+static DecodedFrame *queued(Decoder *d, unsigned index) {
+    return &d->queue[(d->head + index) % QUEUE_LIMIT];
+}
+
+/* Prepares queued frames oldest first. The frame is referenced, not owned, while the lock is
+   released, so taking or dropping it meanwhile is safe; the result is used only if the same
+   frame is still queued afterwards. */
+static void *preparer(void *opaque) {
+    Decoder *d = opaque;
+    pthread_mutex_lock(&d->lock);
+    while (!atomic_load(&d->closing)) {
+        DecodedFrame *item = NULL;
+        for (unsigned i = 0; i < d->count && !item; i++)
+            if (!queued(d, i)->ready) item = queued(d, i);
+        if (!item || d->failed) {
+            pthread_cond_wait(&d->changed, &d->lock);
+            continue;
+        }
+        uint64_t serial = item->serial;
+        AVFrame *source = av_frame_clone(item->frame);
+        pthread_mutex_unlock(&d->lock);
+        AVFrame *prepared = source ? d->hooks.prepare(d->hooks.opaque, source) : NULL;
+        av_frame_free(&source);
+        if (!prepared) {
+            fail(d, "A decoded frame could not be prepared for display.");
+            pthread_mutex_lock(&d->lock);
+            continue;
+        }
+        pthread_mutex_lock(&d->lock);
+        item = NULL;
+        for (unsigned i = 0; i < d->count && !item; i++)
+            if (queued(d, i)->serial == serial) item = queued(d, i);
+        if (!item) {
+            av_frame_free(&prepared);
+            continue;
+        }
+        av_frame_free(&item->frame);
+        item->frame = prepared;
+        item->hardware = prepared->format == d->hooks.hardware_format;
+        if (!item->hardware) item->sw_format = prepared->format;
+        item->ready = 1;
+        pthread_mutex_unlock(&d->lock);
+        if (d->hooks.wake) d->hooks.wake(d->hooks.opaque);
+        pthread_mutex_lock(&d->lock);
+    }
+    pthread_mutex_unlock(&d->lock);
+    return NULL;
+}
+
 static void *worker(void *opaque) {
     Decoder *d = opaque;
     AVPacket *packet = av_packet_alloc();
@@ -372,6 +434,10 @@ Decoder *decoder_open(const char *path, const DecoderHooks *hooks, char *error, 
     if (!open_codec(d, 1, error, error_size)) goto failed;
     if (pthread_create(&d->thread, NULL, worker, d) != 0) goto oom;
     d->thread_started = 1;
+    if (d->hooks.prepare) {
+        if (pthread_create(&d->preparer, NULL, preparer, d) != 0) goto oom;
+        d->preparer_started = 1;
+    }
     return d;
 oom:
     snprintf(error, error_size, "Out of memory while opening the video.");
@@ -387,6 +453,7 @@ void decoder_close(Decoder *d) {
     pthread_cond_broadcast(&d->changed);
     pthread_mutex_unlock(&d->lock);
     if (d->thread_started) pthread_join(d->thread, NULL);
+    if (d->preparer_started) pthread_join(d->preparer, NULL);
     while (d->count) queue_drop_head(d);
     decoded_frame_clear(&d->candidate);
     avcodec_free_context(&d->codec);
@@ -418,9 +485,9 @@ void decoder_seek(Decoder *d, double seconds, uint64_t generation) {
 int decoder_take(Decoder *d, double time, uint64_t generation, int first, DecodedFrame *out) {
     pthread_mutex_lock(&d->lock);
     while (d->count && d->queue[d->head].generation != generation) queue_drop_head(d);
-    int found = d->count && (first || d->queue[d->head].time <= time);
+    int found = d->count && d->queue[d->head].ready && (first || d->queue[d->head].time <= time);
     if (found) {
-        while (!first && d->count > 1 && d->queue[(d->head + 1) % QUEUE_LIMIT].time <= time) queue_drop_head(d);
+        while (!first && d->count > 1 && queued(d, 1)->ready && queued(d, 1)->time <= time) queue_drop_head(d);
         *out = d->queue[d->head];
         memset(&d->queue[d->head], 0, sizeof(d->queue[d->head]));
         d->head = (d->head + 1) % QUEUE_LIMIT;
@@ -429,6 +496,18 @@ int decoder_take(Decoder *d, double time, uint64_t generation, int first, Decode
     }
     pthread_mutex_unlock(&d->lock);
     return found;
+}
+
+int decoder_ready(Decoder *d, double time, uint64_t generation, int first) {
+    pthread_mutex_lock(&d->lock);
+    int ready = 0;
+    for (unsigned i = 0; i < d->count && !ready; i++) {
+        const DecodedFrame *item = queued(d, i);
+        if (!item->ready) break;
+        ready = item->generation == generation && (first || item->time <= time);
+    }
+    pthread_mutex_unlock(&d->lock);
+    return ready;
 }
 
 void decoder_info(Decoder *d, DecoderInfo *info) {

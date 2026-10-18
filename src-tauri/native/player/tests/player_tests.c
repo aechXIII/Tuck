@@ -5,6 +5,7 @@
 
 #include "../audio_timing.h"
 #include "../engine.h"
+#include "../framebuffer_cache.h"
 #include "../playback_state.h"
 #include "../seek_request.h"
 
@@ -243,6 +244,23 @@ static void engine(void) {
     tuck_player_destroy(player);
 }
 
+/* GTK hands the same framebuffer every frame; a new wrapper is made only when it changes */
+static void framebuffer_cache(void) {
+    FramebufferCacheState state = {0};
+    CHECK(!framebuffer_cache_matches(&state, 0, 1920, 1080));
+    framebuffer_cache_created(&state, 0, 1920, 1080);
+    for (unsigned frame = 0; frame < 100000; ++frame) CHECK(framebuffer_cache_matches(&state, 0, 1920, 1080));
+    CHECK(state.wraps == 1);
+    CHECK(!framebuffer_cache_matches(&state, 3, 1920, 1080));
+    CHECK(!framebuffer_cache_matches(&state, 0, 960, 1080));
+    CHECK(!framebuffer_cache_matches(&state, 0, 1920, 640));
+    framebuffer_cache_reset(&state);
+    CHECK(!framebuffer_cache_matches(&state, 0, 1920, 1080));
+    CHECK(state.wraps == 1);
+    framebuffer_cache_created(&state, 3, 960, 640);
+    CHECK(framebuffer_cache_matches(&state, 3, 960, 640) && state.wraps == 2);
+}
+
 int tuck_player_test_failures(void) {
     failures = 0;
     source_delta();
@@ -252,5 +270,6 @@ int tuck_player_test_failures(void) {
     seek_requests();
     audio_timing();
     engine();
+    framebuffer_cache();
     return failures;
 }
