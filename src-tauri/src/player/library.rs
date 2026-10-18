@@ -12,7 +12,7 @@ use serde::Serialize;
 use super::engine::{PlayerStatus, RawStatus};
 
 // must match TUCK_VIDEO_ABI in native/player/tuck_video.h
-const ABI: c_int = 3;
+const ABI: c_int = 4;
 
 #[cfg(windows)]
 const FILE_NAME: &str = "tuck_player.dll";
@@ -60,6 +60,7 @@ type OpenFn = unsafe extern "C" fn(*const OpenParams, *mut c_char, usize) -> *mu
 type VideoFn = unsafe extern "C" fn(*mut c_void);
 type SeekFn = unsafe extern "C" fn(*mut c_void, u64, f64) -> c_int;
 type VolumeFn = unsafe extern "C" fn(*mut c_void, f64);
+type LutTableFn = unsafe extern "C" fn(*mut c_void, *const f32, i32) -> c_int;
 type StatusFn = unsafe extern "C" fn(*mut c_void, *mut RawVideoStatus);
 #[cfg(target_os = "linux")]
 type RendererCreateFn = unsafe extern "C" fn(*mut c_char, usize) -> *mut c_void;
@@ -79,6 +80,8 @@ struct Api {
     pause: VideoFn,
     seek: SeekFn,
     volume: VolumeFn,
+    lut_table: LutTableFn,
+    lut_strength: VolumeFn,
     status: StatusFn,
     #[cfg(target_os = "linux")]
     gl: GlApi,
@@ -209,6 +212,12 @@ fn resolve(symbol: impl Fn(&CStr) -> Option<*const c_void>) -> Result<Api, Strin
             pause: std::mem::transmute::<*const c_void, VideoFn>(find(c"tuck_video_pause")?),
             seek: std::mem::transmute::<*const c_void, SeekFn>(find(c"tuck_video_seek")?),
             volume: std::mem::transmute::<*const c_void, VolumeFn>(find(c"tuck_video_volume")?),
+            lut_table: std::mem::transmute::<*const c_void, LutTableFn>(find(
+                c"tuck_video_lut_table",
+            )?),
+            lut_strength: std::mem::transmute::<*const c_void, VolumeFn>(find(
+                c"tuck_video_lut_strength",
+            )?),
             status: std::mem::transmute::<*const c_void, StatusFn>(find(c"tuck_video_status")?),
             #[cfg(target_os = "linux")]
             gl: GlApi {
@@ -286,6 +295,19 @@ impl Video {
     /// The sound's level, 0 to 1.
     pub fn volume(&mut self, gain: f64) {
         unsafe { (self.api.volume)(self.handle.as_ptr(), gain) }
+    }
+
+    /// The preview's colour LUT: `size`³ RGB samples, R changing fastest; `None` removes it.
+    /// False when the library refuses the size.
+    pub fn lut_table(&mut self, table: Option<(&[f32], i32)>) -> bool {
+        let (data, size) =
+            table.map_or((std::ptr::null(), 0), |(data, size)| (data.as_ptr(), size));
+        unsafe { (self.api.lut_table)(self.handle.as_ptr(), data, size) != 0 }
+    }
+
+    /// How much of the LUT shows, 0 to 1.
+    pub fn lut_strength(&mut self, strength: f64) {
+        unsafe { (self.api.lut_strength)(self.handle.as_ptr(), strength) }
     }
 
     pub fn status(&mut self) -> (PlayerStatus, VideoInfo) {

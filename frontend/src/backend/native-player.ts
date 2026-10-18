@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 
+import type { LutChange } from "../features/preview/lut-preview.ts";
 import { backendFailure, errorMessage, isBackendError } from "./errors.ts";
 import type { TauriInvoke } from "./tauri.ts";
 import type { BackendResult } from "./types.ts";
@@ -68,7 +69,16 @@ export interface PlayerEngine {
   open(request: NativePlayerOpen): Promise<BackendResult<NativePlayerStatus>>;
   command(command: NativePlayerCommand): Promise<BackendResult<NativePlayerStatus>>;
   status(): Promise<BackendResult<NativePlayerStatus>>;
+  /** shows `change` (null removes the LUT); `keepTable` sends only its strength */
+  lut(change: LutChange | null, keepTable: boolean): Promise<BackendResult<null>>;
 }
+
+/** Sends a command with a raw body, which Tauri passes on without turning it into JSON. */
+export type TauriInvokeBytes = (
+  command: string,
+  body: Uint8Array,
+  headers: Readonly<Record<string, string>>,
+) => Promise<unknown>;
 
 function isCount(value: unknown): value is number {
   return Number.isSafeInteger(value) && (value as number) >= 0;
@@ -122,6 +132,7 @@ export function isNativePlayerStatus(value: unknown): value is NativePlayerStatu
 /** The engine in the desktop shell. Every call refuses unless this run turned it on. */
 export function createTauriPlayerEngine(
   invokeCommand: TauriInvoke = (command, args) => invoke(command, args),
+  invokeBytes: TauriInvokeBytes = (command, body, headers) => invoke(command, body, { headers }),
 ): PlayerEngine {
   async function call(
     method: string,
@@ -141,5 +152,19 @@ export function createTauriPlayerEngine(
     open: (request) => call("open", "player_open", { request }),
     command: (command) => call(command.kind, "player_command", { command }),
     status: () => call("status", "player_status", {}),
+    lut: async (change, keepTable) => {
+      // the table goes as raw floats: a 65-point LUT is 3.3 MB, too much to send as JSON
+      const body = change && !keepTable
+        ? new Uint8Array(change.table.buffer, change.table.byteOffset, change.table.byteLength)
+        : new Uint8Array(0);
+      const headers = { "x-lut-size": String(change?.size ?? 0), "x-lut-strength": String(change?.strength ?? 1) };
+      try {
+        await invokeBytes("player_lut", body, headers);
+        return { ok: true, value: null };
+      } catch (error) {
+        if (isBackendError(error)) return { ok: false, error };
+        return backendFailure("TAURI_INVOKE_FAILED", errorMessage(error, "Could not reach the player."), { method: "lut" });
+      }
+    },
   };
 }

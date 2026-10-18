@@ -3,6 +3,7 @@ import {execFileSync} from "node:child_process";
 import {existsSync, mkdirSync, readFileSync} from "node:fs";
 import {resolve} from "node:path";
 import {healthyBackendFixture, installFakeBackend} from "../fixtures/fake-backend";
+import {nativePreview} from "../fixtures/lut-check";
 
 const media = resolve(".scratch/lut-frame-media");
 test.beforeAll(() => {
@@ -20,6 +21,8 @@ test.beforeAll(() => {
 
 for (const stalledCallbacks of [false, true]) {
 test(`LUT playback, switching and seeking with ${stalledCallbacks ? "stalled" : "normal"} video callbacks`, async ({page}, testInfo) => {
+  // the HTML player's WebGL overlay follows video frame callbacks; the native player draws the LUT itself
+  test.skip(nativePreview, "the native player draws the LUT itself");
   await page.addInitScript(stalled => {
     if (stalled) {
       const requestFrame = HTMLVideoElement.prototype.requestVideoFrameCallback;

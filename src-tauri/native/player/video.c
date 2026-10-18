@@ -20,6 +20,7 @@
 
 #include "audio.h"
 #include "decoder.h"
+#include "lut.h"
 #include "playback_state.h"
 #include "render.h"
 
@@ -52,7 +53,10 @@ struct TuckVideo {
     int download;
 #endif
     AudioTrack *audio;
+    PreviewLut lut;
     /* under lock */
+    /* the LUT changed, so the frame on screen should be drawn again */
+    int lut_changed;
     uint64_t decoder_generation;
     uint64_t presented;
     int failed;
@@ -219,8 +223,12 @@ static void *render_main(void *opaque) {
         }
         if (take_frame(v, &status)) redraw = 1;
         if (renderer_resized(v->renderer)) redraw = 1;
+        pthread_mutex_lock(&v->lock);
+        if (v->lut_changed) redraw = 1;
+        v->lut_changed = 0;
+        pthread_mutex_unlock(&v->lock);
         if (redraw && v->shown.frame) {
-            RenderOutcome outcome = renderer_draw(v->renderer, &v->shown);
+            RenderOutcome outcome = renderer_draw(v->renderer, &v->shown, preview_lut_current(&v->lut));
             drawn(v, outcome, renderer_error(v->renderer));
             if (outcome == RENDER_SUBMITTED) redraw = 0;
         }
@@ -329,8 +337,11 @@ static void close_drawing(TuckVideo *v) {
 int tuck_video_due(TuckVideo *v) {
     TuckPlayerStatus status;
     if (!clock_now(v, &status)) return 0;
-    return decoder_ready(v->decoder, status.position_seconds + FRAME_SLACK, status.generation,
-                         status.seek_pending);
+    pthread_mutex_lock(&v->lock);
+    int lut_changed = v->lut_changed;
+    pthread_mutex_unlock(&v->lock);
+    return lut_changed || decoder_ready(v->decoder, status.position_seconds + FRAME_SLACK, status.generation,
+                                        status.seek_pending);
 }
 
 int tuck_video_draw(TuckVideo *v, TuckGlRenderer *renderer, const TuckVideoTarget *target) {
@@ -340,11 +351,14 @@ int tuck_video_draw(TuckVideo *v, TuckGlRenderer *renderer, const TuckVideoTarge
         return 0;
     }
     take_frame(v, &status);
+    pthread_mutex_lock(&v->lock);
+    v->lut_changed = 0;
+    pthread_mutex_unlock(&v->lock);
     if (!v->shown.frame) {
         tuck_gl_renderer_clear(renderer, target);
         return 0;
     }
-    RenderOutcome outcome = gl_renderer_draw(renderer, &v->shown, target);
+    RenderOutcome outcome = gl_renderer_draw(renderer, &v->shown, target, preview_lut_current(&v->lut));
     drawn(v, outcome, gl_renderer_error(renderer));
     return outcome == RENDER_SUBMITTED;
 }
@@ -363,6 +377,7 @@ TuckVideo *tuck_video_open(const TuckVideoOpen *open, char *error, size_t error_
     }
     pthread_mutex_init(&v->lock, NULL);
     pthread_cond_init(&v->wake, NULL);
+    preview_lut_init(&v->lut);
     v->clock = tuck_player_create(open->duration_seconds, now_seconds());
     if (!v->clock) {
         snprintf(error, error_size, "The video length is not valid.");
@@ -403,6 +418,7 @@ void tuck_video_close(TuckVideo *v) {
     decoder_close(v->decoder);
     close_drawing(v);
     tuck_player_destroy(v->clock);
+    preview_lut_destroy(&v->lut);
     pthread_cond_destroy(&v->wake);
     pthread_mutex_destroy(&v->lock);
     free(v);
@@ -428,6 +444,26 @@ int tuck_video_seek(TuckVideo *v, uint64_t request_id, double seconds) {
     if (accepted) after_command(v);
     pthread_mutex_unlock(&v->lock);
     return accepted;
+}
+
+/* the frame on screen is drawn again with the new LUT, also while paused */
+static void lut_changed(TuckVideo *v) {
+    pthread_mutex_lock(&v->lock);
+    v->lut_changed = 1;
+    v->signalled = 1;
+    pthread_cond_signal(&v->wake);
+    pthread_mutex_unlock(&v->lock);
+}
+
+int tuck_video_lut_table(TuckVideo *v, const float *table, int32_t size) {
+    if (!preview_lut_set_table(&v->lut, table, size)) return 0;
+    lut_changed(v);
+    return 1;
+}
+
+void tuck_video_lut_strength(TuckVideo *v, double strength) {
+    preview_lut_set_strength(&v->lut, strength);
+    lut_changed(v);
 }
 
 void tuck_video_volume(TuckVideo *v, double gain) {

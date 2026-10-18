@@ -23,7 +23,7 @@
 #endif
 
 /* raise whenever a signature or struct below changes */
-#define TUCK_VIDEO_ABI 3
+#define TUCK_VIDEO_ABI 4
 
 /* TuckVideoStatus.sound */
 #define TUCK_SOUND_NONE 0
@@ -75,6 +75,11 @@ TUCK_VIDEO_EXPORT void tuck_video_pause(TuckVideo *video);
 TUCK_VIDEO_EXPORT int tuck_video_seek(TuckVideo *video, uint64_t request_id, double seconds);
 /* the sound's level, 0 to 1 */
 TUCK_VIDEO_EXPORT void tuck_video_volume(TuckVideo *video, double gain);
+/* The preview's colour LUT: `size`³ RGB samples from 0 to 1 with R changing fastest, as the
+   backend loads a .cube file; NULL removes it. 0 when the size is outside 2 to 65. */
+TUCK_VIDEO_EXPORT int tuck_video_lut_table(TuckVideo *video, const float *table, int32_t size);
+/* how much of the LUT shows, 0 to 1; 0 shows the picture as it is */
+TUCK_VIDEO_EXPORT void tuck_video_lut_strength(TuckVideo *video, double strength);
 TUCK_VIDEO_EXPORT void tuck_video_status(TuckVideo *video, TuckVideoStatus *status);
 
 #ifndef _WIN32

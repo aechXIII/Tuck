@@ -6,6 +6,7 @@
 #include "../audio_timing.h"
 #include "../engine.h"
 #include "../framebuffer_cache.h"
+#include "../lut_blend.h"
 #include "../playback_state.h"
 #include "../seek_request.h"
 
@@ -330,6 +331,21 @@ static void sound_stall(void) {
     tuck_player_destroy(player);
 }
 
+/* the preview's LUT at a strength is the table blended with an identity table, as the export
+   bakes it; R changes fastest */
+static void lut_strength(void) {
+    float table[2 * 2 * 2 * 3], out[2 * 2 * 2 * 3];
+    for (int i = 0; i < 24; i++) table[i] = 0.25f;
+    lut_blend(out, table, 2, 1);
+    CHECK(out[0] == 0.25f && out[23] == 0.25f);
+    lut_blend(out, table, 2, 0);
+    /* sample 1 is r=1, g=0, b=0; sample 6 is r=0, g=1, b=1 */
+    CHECK(out[3] == 1 && out[4] == 0 && out[5] == 0);
+    CHECK(out[18] == 0 && out[19] == 1 && out[20] == 1);
+    lut_blend(out, table, 2, 0.5);
+    CHECK(fabs(out[3] - 0.625) < 1e-6 && fabs(out[4] - 0.125) < 1e-6);
+}
+
 /* GTK hands the same framebuffer every frame; a new wrapper is made only when it changes */
 static void framebuffer_cache(void) {
     FramebufferCacheState state = {0};
@@ -358,6 +374,7 @@ int tuck_player_test_failures(void) {
     engine();
     sound_clock();
     sound_stall();
+    lut_strength();
     framebuffer_cache();
     return failures;
 }

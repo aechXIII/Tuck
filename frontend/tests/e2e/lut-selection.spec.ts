@@ -1,5 +1,6 @@
 import {expect, test} from "@playwright/test";
 import {healthyBackendFixture, installFakeBackend} from "../fixtures/fake-backend";
+import {expectLutHidden, expectLutShown, nativePreview, sentLuts} from "../fixtures/lut-check";
 
 for (const width of [1240, 960]) {
   test(`switching LUTs replaces colors without duplicating or rebuilding options at ${width}`, async ({page}) => {
@@ -13,12 +14,14 @@ for (const width of [1240, 960]) {
     fixture.responses.listLuts = {luts:entries};
     const payload = (index: number) => ({...entries[index],size:2,table_url:`http://127.0.0.1:4321/token/${index}`,token:`t${index}`});
     fixture.responseSequences = {loadLut:[payload(0),payload(1),payload(0),payload(1),{ok:false,error:"The LUT file is unavailable. Import it again."}]};
+    const checksums: number[] = [];
     for (let index=0;index<2;index++) {
       const table = new Float32Array(24);
       for(let i=0;i<8;i++) {
         const [r,g,b] = [i&1,(i>>1)&1,(i>>2)&1];
         table.set(index === 0 ? [1-r!,1-g!,1-b!] : [g!,r!,b!], i*3);
       }
+      checksums.push(Math.round(table.reduce((sum,value,place)=>sum+value*(place+1),0)*1000)/1000);
       await page.route(`http://127.0.0.1:4321/token/${index}`, route => route.fulfill({body:Buffer.from(table.buffer),headers:{"Access-Control-Allow-Origin":"*"}}));
     }
     const errors: string[] = [];
@@ -47,6 +50,11 @@ for (const width of [1240, 960]) {
       await expect(select).toHaveText(entries[index]!.name);
       expect(await page.locator("#lut-options [role=option]").allTextContents()).toEqual(["Invert","Swap"]);
       expect(await firstOption!.evaluate(node=>node.isConnected)).toBe(true);
+      if (nativePreview) {
+        // the native player gets each look's own table instead of drawing an overlay
+        await expect.poll(async () => (await sentLuts(page)).filter(lut=>lut.bytes>0).at(-1)?.checksum).toBe(checksums[index]);
+        continue;
+      }
       await expect(page.locator("[data-lut-preview]")).toHaveCount(1);
       const pixel = await page.evaluate(() => {
         document.querySelector("#vid")!.dispatchEvent(new Event("seeked"));
@@ -62,11 +70,11 @@ for (const width of [1240, 960]) {
     await page.locator("#lut-options").getByRole("option",{name:"Invert",exact:true}).click();
     await expect(page.locator("#lut-error")).toHaveText("The LUT file is unavailable. Import it again.");
     await expect(select).toHaveText("Swap");
-    await expect(page.locator("[data-lut-preview]")).toBeVisible();
+    await expectLutShown(page);
     await expect(select).toBeFocused();
     await select.click();
     await page.getByRole("button",{name:"Remove LUT",exact:true}).click();
-    await expect(page.locator("[data-lut-preview]")).toBeHidden();
+    await expectLutHidden(page);
     expect(errors).toEqual([]);
   });
 }

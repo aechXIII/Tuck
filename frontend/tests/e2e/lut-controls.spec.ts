@@ -1,6 +1,7 @@
 import { chooseSelect } from "../fixtures/select";
 import { expect, test } from "@playwright/test";
 import { healthyBackendFixture, installFakeBackend } from "../fixtures/fake-backend";
+import { expectLutShown, nativePreview } from "../fixtures/lut-check";
 
 for (const width of [1240, 960]) {
   test(`LUT import, strength and workflow persistence at ${width}`, async ({page}) => {
@@ -49,13 +50,16 @@ for (const width of [1240, 960]) {
       video.srcObject = source.captureStream(0);
       await video.play(); video.pause();
     });
-    await expect(page.locator("[data-lut-preview]")).toBeVisible();
-    const bounds = await page.evaluate(() => {
-      const video = document.querySelector("#vid")!.getBoundingClientRect();
-      const canvas = document.querySelector("[data-lut-preview]")!.getBoundingClientRect();
-      return [canvas.left-video.left, canvas.top-video.top, canvas.width-video.width, canvas.height-video.height];
-    });
-    for (const difference of bounds) expect(Math.abs(difference)).toBeLessThan(1);
+    await expectLutShown(page, .35);
+    if (!nativePreview) {
+      // the HTML player's overlay covers the video exactly
+      const bounds = await page.evaluate(() => {
+        const video = document.querySelector("#vid")!.getBoundingClientRect();
+        const canvas = document.querySelector("[data-lut-preview]")!.getBoundingClientRect();
+        return [canvas.left-video.left, canvas.top-video.top, canvas.width-video.width, canvas.height-video.height];
+      });
+      for (const difference of bounds) expect(Math.abs(difference)).toBeLessThan(1);
+    }
     await page.getByRole("button", {name:"Compress this video",exact:true}).click();
     const request = await page.evaluate(() => window.__tuckFakeBackendCalls?.filter(c=>c.method==="enqueueWithOptions").at(-1)?.args[0]);
     expect(request).toMatchObject({lut:{enabled:true,path:"C:/managed/abc.cube",name:"Warm.cube",strength:.35}});
@@ -131,12 +135,12 @@ test("blending errors leave the LUT preview enabled and FPS controls stay synchr
     const video = document.querySelector<HTMLVideoElement>("#vid")!;
     video.srcObject=source.captureStream(0); await video.play(); video.pause();
   });
-  await expect(page.locator("[data-lut-preview]")).toBeVisible();
+  await expectLutShown(page);
   await page.locator("#frame-blending-panel > summary").click();
   await page.getByLabel("Enable frame blending",{exact:true}).check();
   await expect(page.locator("#blend-error")).toContainText("240 FPS");
   await expect(page.locator("#lut-error")).toBeHidden();
-  await expect(page.locator("[data-lut-preview]")).toBeVisible();
+  await expectLutShown(page);
   await expect(page.getByLabel("Apply LUT",{exact:true})).toBeChecked();
   const blendFps = page.getByLabel("Frame blending output frame rate",{exact:true});
   const videoFps = page.getByLabel("Output frame rate",{exact:true});

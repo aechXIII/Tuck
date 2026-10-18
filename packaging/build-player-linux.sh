@@ -21,11 +21,17 @@ gcc -shared -fPIC -O2 -g -std=c11 -Wall -Wextra -Werror -fvisibility=hidden \
   $(pkg-config --cflags libavformat libavcodec libavutil libswresample libplacebo) \
   "$source_dir/engine.c" "$source_dir/playback_state.c" "$source_dir/decoder.c" \
   "$source_dir/render_gl.c" "$source_dir/video.c" "$source_dir/audio.c" \
-  "$source_dir/audio_pipewire.c" \
+  "$source_dir/audio_pipewire.c" "$source_dir/lut.c" \
   -o "$output_dir/libtuck_player.so" \
   -Wl,-soname,libtuck_player.so -Wl,--no-undefined -Wl,--exclude-libs,ALL -Wl,-Bsymbolic \
   -Wl,-z,relro -Wl,-z,now \
   $(pkg-config --static --libs libavformat libavcodec libavutil libswresample libplacebo) \
   -lstdc++ -ldl -lpthread -lm
+# the seek check runs the player's decoder over the clips from scripts/player_fixtures.py
+gcc -O2 -g -std=c11 -Wall -Wextra -Werror -D_GNU_SOURCE \
+  -I"$sdk/include" $(pkg-config --cflags libavformat libavcodec libavutil) \
+  "$source_dir/tests/seek_check.c" "$source_dir/decoder.c" "$source_dir/playback_state.c" \
+  -o "$output_dir/tuck_player_seek_check" \
+  $(pkg-config --static --libs libavformat libavcodec libavutil) -ldl -lpthread -lm
 objdump -p "$output_dir/libtuck_player.so" | sed -n 's/^ *NEEDED *//p' | sort > "$output_dir/libtuck_player-needed.txt"
 nm -D --defined-only "$output_dir/libtuck_player.so" | awk '{print $3}' | sort > "$output_dir/libtuck_player-exports.txt"

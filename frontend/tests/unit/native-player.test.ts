@@ -102,7 +102,16 @@ function setup(options: Setup = {}) {
     },
   };
   const invoke: TauriInvoke = (command, args) => fixture.invoke(command, { ...args });
-  const player = installNativePlayer(host, createTauriPlayerEngine(options.wrap ? options.wrap(invoke) : invoke));
+  const luts: Array<{ bytes: number; headers: Readonly<Record<string, string>> }> = [];
+  const lutRequests: string[] = [];
+  video.addEventListener("tuck-lut-request", () => lutRequests.push("asked"));
+  const player = installNativePlayer(host, createTauriPlayerEngine(
+    options.wrap ? options.wrap(invoke) : invoke,
+    async (command, body, headers) => {
+      luts.push({ bytes: body.byteLength, headers });
+      return fixture.invoke(command, body, { headers: { ...headers } });
+    },
+  ));
 
   function frame(): void {
     const pending = [...frames.values()];
@@ -114,6 +123,8 @@ function setup(options: Setup = {}) {
     player,
     video,
     fixture,
+    luts,
+    lutRequests,
     classes,
     painted,
     gaps,
@@ -235,6 +246,30 @@ test("the native sound takes the level the editor gives its video element", asyn
     element.volume = 1;
     await changed();
     assert.deepEqual(levels(), [0.4, 0, 1]);
+  } finally {
+    run.player.dispose();
+  }
+});
+
+test("the export's LUT reaches the native picture, its table only when it changes", async () => {
+  const run = setup();
+  try {
+    assert.deepEqual(run.lutRequests, ["asked"], "the player asks for a LUT chosen before it took over");
+    const table = new Float32Array(2 * 2 * 2 * 3).fill(0.5);
+    const send = async (detail: unknown): Promise<void> => {
+      run.video.dispatchEvent(new CustomEvent("tuck-lut", { detail }));
+      await settle();
+    };
+    await send({ table, size: 2, strength: 0.5 });
+    await send({ table, size: 2, strength: 0.8 });
+    await send(null);
+    await send({ table: new Float32Array(table), size: 2, strength: 1 });
+    assert.deepEqual(run.luts.map((lut) => [lut.bytes, lut.headers["x-lut-size"], lut.headers["x-lut-strength"]]), [
+      [96, "2", "0.5"],
+      [0, "2", "0.8"],
+      [0, "0", "1"],
+      [96, "2", "1"],
+    ]);
   } finally {
     run.player.dispose();
   }

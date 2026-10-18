@@ -3,6 +3,11 @@ import { existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import { healthyBackendFixture, installFakeBackend } from "../fixtures/fake-backend";
+import { nativePreview, sentLuts } from "../fixtures/lut-check";
+
+// these check the HTML player's WebGL overlay; the native player applies the LUT itself, and its
+// picture was checked against FFmpeg's own render on the desktop
+const WEBGL_OVERLAY = "the native player draws the LUT itself";
 
 type Rgb = [number, number, number];
 
@@ -84,6 +89,7 @@ function near(actual: Rgb, expected: Rgb, tolerance = 4): boolean {
 }
 
 test("the LUT preview keeps the picture upright, mixes by strength and follows rotation", async ({ page }) => {
+  test.skip(nativePreview, WEBGL_OVERLAY);
   await openWithLut(page, swapTable());
   const canvas = page.locator("[data-lut-preview]");
   await expect(canvas).toBeVisible();
@@ -121,6 +127,7 @@ test("the LUT preview keeps the picture upright, mixes by strength and follows r
 });
 
 test("losing graphics resources shows the video again and the LUT recovers when turned off and on", async ({ page }) => {
+  test.skip(nativePreview, WEBGL_OVERLAY);
   await openWithLut(page, swapTable());
   const canvas = page.locator("[data-lut-preview]");
   await expect(canvas).toBeVisible();
@@ -152,11 +159,17 @@ test("invalid LUT data is reported without covering the video", async ({ page })
   await openWithLut(page, [0, 0, 0]);
 
   await expect(page.locator("#lut-error")).toHaveText("The LUT preview data is invalid.");
+  if (nativePreview) {
+    // the native player is never given a table that failed its check
+    expect((await sentLuts(page)).some((lut) => lut.bytes > 0)).toBe(false);
+    return;
+  }
   await expect(page.locator("[data-lut-preview]")).toBeHidden();
   await expect(page.locator("#vid")).toBeVisible();
 });
 
 test("a paused LUT preview paints late frame notifications and keeps listening after a source change", async ({ page }) => {
+  test.skip(nativePreview, WEBGL_OVERLAY);
   await page.addInitScript(() => {
     // deliver compositor notifications by hand, independently of media events
     const pending = new Map<number, VideoFrameRequestCallback>();
@@ -199,6 +212,7 @@ test("a paused LUT preview paints late frame notifications and keeps listening a
 });
 
 test("the LUT preview matches the real FFmpeg export filter at every strength", async ({ page }) => {
+  test.skip(nativePreview, WEBGL_OVERLAY);
   const python = resolve(process.platform === "win32" ? ".venv/Scripts/python.exe" : ".venv/bin/python");
   test.skip(!existsSync(python), "The project Python environment is required for the FFmpeg comparison");
   const table = swapTable();

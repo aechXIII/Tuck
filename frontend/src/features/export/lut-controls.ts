@@ -1,5 +1,5 @@
 import type { BackendClient, LutEntry } from "../../backend/types.ts";
-import { createLutPreview } from "../preview/lut-preview.ts";
+import { createLutPreview, LUT_CHANGE_EVENT, LUT_REQUEST_EVENT, type LutChange } from "../preview/lut-preview.ts";
 import { createLutPicker } from "./lut-picker.ts";
 
 export interface LutSettings {
@@ -38,6 +38,16 @@ export function installLutControls(root: HTMLElement, video: HTMLVideoElement,
   let profileLoadFailed = false;
   const picker = createLutPicker(root, selectLut, () => { void clearHistory(); });
   const preview = createLutPreview(video, message => { previewError = message; showError(); });
+  // the native player draws the LUT itself and learns of each change from the video element; a
+  // failed WebGL preview doesn't change what it shows
+  let announced: LutChange | null = null;
+  function announce(): void {
+    const next = settings.enabled && table && !backendError ? {table, size, strength:settings.strength} : null;
+    if (next?.table === announced?.table && next?.size === announced?.size && next?.strength === announced?.strength) return;
+    announced = next;
+    video.dispatchEvent(new CustomEvent(LUT_CHANGE_EVENT, {detail:announced}));
+  }
+  video.addEventListener(LUT_REQUEST_EVENT, () => video.dispatchEvent(new CustomEvent(LUT_CHANGE_EVENT, {detail:announced})));
   function showError(): void {
     const recovery = settings.enabled
       ? "Import the LUT, or turn off “Apply LUT” to export with the remaining profile settings."
@@ -71,6 +81,7 @@ export function installLutControls(root: HTMLElement, video: HTMLVideoElement,
       preview.set(table, size, settings.strength);
     }
     else preview.clear();
+    announce();
     showError();
   }
   async function load(path: string, requested: LutSettings, imported: boolean, fromProfile = false): Promise<void> {

@@ -4,6 +4,7 @@ The player links the same FFmpeg and dav1d sources as the export tools (from the
 libplacebo and its shader compilers (from the player lock). Every archive is checked against its
 recorded size and SHA-256 before it is used. The slow part, the static SDK, is kept in the work
 directory, so `--library-only` rebuilds just the player from src-tauri/native/player.
+`--check FOLDER` then runs the seek check over the clips scripts/player_fixtures.py made there.
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ RECIPES = {
     "linux": ("packaging/build-player-sdk-linux.sh", "packaging/build-player-linux.sh"),
 }
 OUTPUTS = {"windows": "tuck_player.dll", "linux": "libtuck_player.so"}
+SEEK_CHECKS = {"windows": "tuck_player_seek_check.exe", "linux": "tuck_player_seek_check"}
 
 
 def load_lock(target: str) -> dict:
@@ -122,6 +124,30 @@ def build(target: str, work: Path, output: Path, jobs: int, library_only: bool) 
     print(f"Built {library} ({manifest['size_bytes']} bytes)", flush=True)
 
 
+def run_seek_check(target: str, output: Path, fixtures: Path) -> None:
+    program = output / SEEK_CHECKS[target]
+    fixture_list = fixtures.resolve() / "seek-fixtures.txt"
+    require(program.is_file(), f"The recipe did not produce {program.name}")
+    require(fixture_list.is_file(), f"No {fixture_list}; make it with scripts/player_fixtures.py")
+    if target != "windows" or os.name == "nt":
+        run(str(program), str(fixture_list))
+        return
+    # built under WSL, the Windows program runs only where WSL can start Windows programs
+    windows_path = [
+        subprocess.run(
+            ["wslpath", "-w", str(path)], check=True, capture_output=True, text=True
+        ).stdout.strip()
+        for path in (program, fixture_list)
+    ]
+    try:
+        run(str(program), windows_path[1])
+    except OSError as error:
+        raise BuildError(
+            f"This WSL can't start Windows programs ({error.strerror}); "
+            f"run the seek check on Windows: {windows_path[0]} {windows_path[1]}"
+        ) from error
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("target", choices=sorted(RECIPES))
@@ -129,15 +155,15 @@ def main() -> None:
     parser.add_argument("--output", type=Path, default=ROOT / "build/player-library")
     parser.add_argument("--jobs", type=int, default=min(os.cpu_count() or 1, 12))
     parser.add_argument("--library-only", action="store_true", help="reuse the SDK in --work")
+    parser.add_argument(
+        "--check", type=Path, metavar="FOLDER", help="run the seek check on these clips"
+    )
     args = parser.parse_args()
+    output = (args.output / args.target).resolve()
     try:
-        build(
-            args.target,
-            args.work.resolve(),
-            (args.output / args.target).resolve(),
-            args.jobs,
-            args.library_only,
-        )
+        build(args.target, args.work.resolve(), output, args.jobs, args.library_only)
+        if args.check:
+            run_seek_check(args.target, output, args.check)
     except (BuildError, subprocess.CalledProcessError) as error:
         raise SystemExit(f"Player library build failed: {error}") from error
 

@@ -20,8 +20,21 @@ export interface FixtureEngineCall {
   at: number;
 }
 
+/** What a `player_lut` call carried, as the desktop shell reads it from the body and headers. */
+export interface FixtureLut {
+  /** bytes of the table; 0 keeps the table sent before */
+  bytes: number;
+  /** points per side; 0 removes the LUT */
+  size: number;
+  strength: number;
+  /** the table's values summed by place, to tell one table from another */
+  checksum: number;
+}
+
 export interface FixtureEngine {
-  invoke(command: string, args: Record<string, unknown>): Promise<unknown>;
+  invoke(command: string, args: unknown, options?: { headers?: Record<string, string> }): Promise<unknown>;
+  /** every LUT the page sent, in order */
+  luts: FixtureLut[];
   calls: FixtureEngineCall[];
   /** the most commands that were ever waiting on the engine at the same time */
   mostInFlight: number;
@@ -33,6 +46,7 @@ export function createFixtureEngine(options: FixtureEngineOptions = {}): Fixture
   const frameDelayMs = options.frameDelayMs ?? 0;
   const maxDuration = 7 * 24 * 3600;
   const calls: FixtureEngineCall[] = [];
+  const luts: FixtureLut[] = [];
   let inFlight = 0;
 
   interface Player {
@@ -109,6 +123,15 @@ export function createFixtureEngine(options: FixtureEngineOptions = {}): Fixture
       restart(p, 0, 0);
       return status(p);
     }
+    // the LUT only changes the picture, which the fixture doesn't draw; it is checked like the shell does
+    if (command === "player_lut") {
+      const lut = luts.at(-1);
+      const sizeValid = lut !== undefined && Number.isInteger(lut.size) && (lut.size === 0 || (lut.size >= 2 && lut.size <= 65));
+      const bytesValid = lut !== undefined && (lut.bytes === 0 || lut.bytes === lut.size ** 3 * 3 * 4);
+      const strengthValid = lut !== undefined && Number.isFinite(lut.strength) && lut.strength >= 0 && lut.strength <= 1;
+      if (!sizeValid || !bytesValid || !strengthValid) throw failure("INVALID_REQUEST", "The LUT is not valid.");
+      return null;
+    }
     if (command !== "player_command" && command !== "player_status") return undefined;
     const p = player;
     if (!p) throw failure("PLAYER_NOT_OPEN", "No video is open.");
@@ -144,17 +167,38 @@ export function createFixtureEngine(options: FixtureEngineOptions = {}): Fixture
     return status(p);
   }
 
+  function readLut(body: unknown, headers: Record<string, string>): FixtureLut {
+    const bytes = body instanceof Uint8Array ? body : new Uint8Array(0);
+    const floats = new Float32Array(bytes.buffer, bytes.byteOffset, Math.floor(bytes.byteLength / 4));
+    // weighted by place, so tables holding the same values in another order still differ
+    let checksum = 0;
+    for (let index = 0; index < floats.length; index++) checksum += (floats[index] ?? 0) * (index + 1);
+    return {
+      bytes: bytes.byteLength,
+      size: Number(headers["x-lut-size"]),
+      strength: Number(headers["x-lut-strength"]),
+      checksum: Math.round(checksum * 1000) / 1000,
+    };
+  }
+
   const engine: FixtureEngine = {
     calls,
+    luts,
     mostInFlight: 0,
-    async invoke(command, args) {
-      calls.push({ command, args: JSON.parse(JSON.stringify(args ?? {})), at: now() });
+    async invoke(command, args, options) {
+      if (command === "player_lut") {
+        const lut = readLut(args, options?.headers ?? {});
+        luts.push(lut);
+        calls.push({ command, args: { ...lut }, at: now() });
+      } else {
+        calls.push({ command, args: JSON.parse(JSON.stringify(args ?? {})), at: now() });
+      }
       inFlight += 1;
       engine.mostInFlight = Math.max(engine.mostInFlight, inFlight);
       try {
         // a real bridge answers later, so callers must not rely on an answer in the same task
         await Promise.resolve();
-        return answer(command, args ?? {});
+        return answer(command, (args ?? {}) as Record<string, unknown>);
       } finally {
         inFlight -= 1;
       }
@@ -182,13 +226,13 @@ export function fixtureEngineScript(options: { frameDelayMs?: number; nativePrev
     window.__fixtureSurface = surface;
     window.__TAURI_INTERNALS__ = {
       transformCallback: () => 1,
-      invoke: async (command, args) => {
+      invoke: async (command, args, options) => {
         if (command === "platform_capabilities") return ${JSON.stringify(capabilities)};
         if (command === "preview_surface_open" || command === "preview_surface_viewport") {
           surface.push({ command, args: JSON.parse(JSON.stringify(args ?? {})) });
           return null;
         }
-        if (command.startsWith("player_")) return engine.invoke(command, args);
+        if (command.startsWith("player_")) return engine.invoke(command, args, options);
         return 1;
       },
     };

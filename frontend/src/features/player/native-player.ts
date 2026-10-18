@@ -9,6 +9,7 @@ import {
   sourceTimeAt,
 } from "../timeline/segments.ts";
 import type { SegmentRange } from "../timeline/segments.ts";
+import { LUT_CHANGE_EVENT, LUT_REQUEST_EVENT, type LutChange } from "../preview/lut-preview.ts";
 import {
   defaultClock,
   installVolumeControls,
@@ -67,6 +68,10 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
   let mirrorWanted: number | null = null;
   // the level last sent for the open video
   let sentVolume: number | null = null;
+  // the LUT to send next (undefined when there is nothing new) and the table the engine has
+  let lutWanted: LutChange | null | undefined;
+  let lutSent: Float32Array | null = null;
+  let lutBusy = false;
 
   function segments(): readonly SegmentRange[] {
     return host.playbackSegments();
@@ -232,6 +237,32 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
     if (volume === sentVolume) return;
     sentVolume = volume;
     enqueue({ kind: "volume", volume });
+  }
+
+  // the export's LUT shows in the native picture too; after the first send of a table only its
+  // strength travels, and the engine keeps it for every video opened after
+  async function sendLut(): Promise<void> {
+    if (lutBusy) return;
+    lutBusy = true;
+    try {
+      while (lutWanted !== undefined && !disposed) {
+        const next = lutWanted;
+        lutWanted = undefined;
+        const result = await engine.lut(next, next !== null && next.table === lutSent);
+        if (result.ok) lutSent = next?.table ?? null;
+        else {
+          lutSent = null;
+          console.error("The native player could not show the LUT", result.error);
+        }
+      }
+    } finally {
+      lutBusy = false;
+    }
+  }
+
+  function onLut(event: Event): void {
+    lutWanted = (event as CustomEvent<LutChange | null>).detail;
+    void sendLut();
   }
 
   function setGap(gap: boolean): void {
@@ -448,6 +479,9 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
     video.addEventListener("loadedmetadata", onLoadedMetadata);
     video.addEventListener("durationchange", onDurationChange);
     video.addEventListener("volumechange", syncVolume);
+    video.addEventListener(LUT_CHANGE_EVENT, onLut);
+    // the LUT may have been chosen before the native player took over
+    video.dispatchEvent(new Event(LUT_REQUEST_EVENT));
     // the engine replaces the HTML player, which may already have a video showing
     if (!video.paused) video.pause();
     if (video.readyState >= 1) onLoadedMetadata();
@@ -486,6 +520,7 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
         video.removeEventListener("loadedmetadata", onLoadedMetadata);
         video.removeEventListener("durationchange", onDurationChange);
         video.removeEventListener("volumechange", syncVolume);
+        video.removeEventListener(LUT_CHANGE_EVENT, onLut);
       }
     },
   };

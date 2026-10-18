@@ -159,6 +159,8 @@ pub enum PlayerError {
     SeekRefused,
     /// a volume outside 0 to 1
     InvalidVolume,
+    /// a LUT table or strength the preview can't use
+    InvalidLut,
     /// the native player library could not open the video; the text says why
     Video(String),
 }
@@ -217,16 +219,59 @@ impl Backend {
     }
 }
 
+/// The preview's colour LUT as the page last sent it.
+#[derive(Clone)]
+struct PreviewLut {
+    /// `size`³ RGB samples from 0 to 1, R changing fastest
+    table: Option<(Arc<[f32]>, i32)>,
+    strength: f64,
+}
+
+impl Default for PreviewLut {
+    fn default() -> Self {
+        PreviewLut {
+            table: None,
+            strength: 1.0,
+        }
+    }
+}
+
+/// A change to the preview's LUT: a new table (or none), or only a new strength.
+#[derive(Clone, Debug, PartialEq)]
+pub struct LutUpdate {
+    /// `None` keeps the table; `Some(None)` removes it
+    pub table: Option<Option<(Vec<f32>, i32)>>,
+    pub strength: f64,
+}
+
+// the sizes the backend accepts from a .cube file
+pub const LUT_SIZES: std::ops::RangeInclusive<i32> = 2..=65;
+
 /// The one player for the editor's selected video. Cloning shares it.
 #[derive(Clone, Default)]
-pub struct PlayerState(Arc<Mutex<Option<Backend>>>);
+pub struct PlayerState {
+    backend: Arc<Mutex<Option<Backend>>>,
+    /// kept apart from the video, so every newly opened video shows the LUT too
+    lut: Arc<Mutex<PreviewLut>>,
+}
+
+fn locked<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    // a panic while holding the lock leaves plain data behind, still safe to use
+    mutex
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+fn show_lut(video: &mut Video, lut: &PreviewLut) {
+    let table = lut.table.as_ref().map(|(table, size)| (&table[..], *size));
+    // the page only sends sizes the library takes, so a refusal can't happen here
+    video.lut_table(table);
+    video.lut_strength(lut.strength);
+}
 
 impl PlayerState {
     fn backend(&self) -> std::sync::MutexGuard<'_, Option<Backend>> {
-        // a panic while holding the lock leaves plain data behind, still safe to use
-        self.0
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+        locked(&self.backend)
     }
 
     fn check_length(duration_seconds: f64) -> Result<(), PlayerError> {
@@ -264,7 +309,7 @@ impl PlayerState {
         // closing joins the previous video's threads; status reads must not wait on that
         let previous = self.backend().take();
         drop(previous);
-        let video = Video::open(
+        let mut video = Video::open(
             path,
             duration_seconds,
             window,
@@ -272,10 +317,35 @@ impl PlayerState {
             download_frames,
         )
         .map_err(PlayerError::Video)?;
+        show_lut(&mut video, &locked(&self.lut));
         let mut backend = Backend::Video(video);
         let status = backend.status();
         *self.backend() = Some(backend);
         Ok(status)
+    }
+
+    /// Changes the preview's LUT for the open video and the ones opened after it.
+    pub fn set_lut(&self, update: LutUpdate) -> Result<(), PlayerError> {
+        if !(0.0..=1.0).contains(&update.strength)
+            || update.table.as_ref().is_some_and(|table| {
+                table.as_ref().is_some_and(|(data, size)| {
+                    !LUT_SIZES.contains(size)
+                        || data.len() != (*size as usize).pow(3) * 3
+                        || !data.iter().all(|value| (0.0..=1.0).contains(value))
+                })
+            })
+        {
+            return Err(PlayerError::InvalidLut);
+        }
+        let mut lut = locked(&self.lut);
+        if let Some(table) = update.table {
+            lut.table = table.map(|(data, size)| (Arc::from(data), size));
+        }
+        lut.strength = update.strength;
+        if let Some(Backend::Video(video)) = self.backend().as_mut() {
+            show_lut(video, &lut);
+        }
+        Ok(())
     }
 
     pub fn command(&self, command: PlayerCommand) -> Result<PlayerStatus, PlayerError> {
@@ -429,6 +499,41 @@ mod tests {
         // a new video starts over with fresh request IDs
         state.open(5.0).expect("open again");
         assert_eq!(seek(1, 2.0).expect("seek").confirmed_seek_request_id, 1);
+    }
+
+    #[test]
+    fn the_preview_lut_is_checked_and_kept_for_later_videos() {
+        let state = PlayerState::default();
+        let table =
+            |size: i32, value: f32| Some(Some((vec![value; (size as usize).pow(3) * 3], size)));
+        let update = |table, strength| state.set_lut(LutUpdate { table, strength });
+        assert_eq!(update(table(2, 0.5), 0.7), Ok(()));
+        assert_eq!(
+            update(None, 0.2),
+            Ok(()),
+            "a strength alone keeps the table"
+        );
+        assert!(locked(&state.lut).table.is_some());
+        assert_eq!(locked(&state.lut).strength, 0.2);
+        assert_eq!(update(table(1, 0.5), 1.0), Err(PlayerError::InvalidLut));
+        assert_eq!(update(table(66, 0.5), 1.0), Err(PlayerError::InvalidLut));
+        assert_eq!(update(table(2, 1.5), 1.0), Err(PlayerError::InvalidLut));
+        assert_eq!(
+            update(table(2, f32::NAN), 1.0),
+            Err(PlayerError::InvalidLut)
+        );
+        assert_eq!(update(None, 1.1), Err(PlayerError::InvalidLut));
+        assert_eq!(
+            update(Some(Some((vec![0.5; 5], 2))), 1.0),
+            Err(PlayerError::InvalidLut),
+            "the table must hold size cubed samples"
+        );
+        assert!(
+            locked(&state.lut).table.is_some(),
+            "a refused change leaves the LUT as it was"
+        );
+        assert_eq!(update(Some(None), 1.0), Ok(()));
+        assert!(locked(&state.lut).table.is_none());
     }
 
     #[test]

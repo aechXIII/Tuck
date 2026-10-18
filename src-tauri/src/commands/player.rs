@@ -4,7 +4,9 @@ use serde::Deserialize;
 
 use crate::backend::protocol::PublicBackendError;
 use crate::platform::window_chrome::css_to_physical;
-use crate::player::engine::{PlayerCommand, PlayerError, PlayerState, PlayerStatus};
+use crate::player::engine::{
+    LutUpdate, PlayerCommand, PlayerError, PlayerState, PlayerStatus, LUT_SIZES,
+};
 use crate::player::{preview_mode, PreviewMode, Viewport};
 
 fn surface_error(message: &str) -> PublicBackendError {
@@ -42,6 +44,9 @@ fn player_error(error: PlayerError) -> PublicBackendError {
         ),
         PlayerError::InvalidVolume => {
             PublicBackendError::new("INVALID_REQUEST", "The volume must be between 0 and 1.")
+        }
+        PlayerError::InvalidLut => {
+            PublicBackendError::new("INVALID_REQUEST", "The LUT preview data is invalid.")
         }
         PlayerError::Video(message) => PublicBackendError::new("VIDEO_FAILED", message),
     }
@@ -136,6 +141,56 @@ pub fn player_command(
 ) -> Result<PlayerStatus, PublicBackendError> {
     require_engine_mode()?;
     state.command(command).map_err(player_error)
+}
+
+/// The page's LUT as it sends it: the size and strength in headers, the table as raw
+/// little-endian floats, so a 65³ table doesn't travel as megabytes of JSON. An empty body with a
+/// size keeps the table and changes only the strength; size 0 removes the LUT.
+fn parse_lut(size: Option<&str>, strength: Option<&str>, body: &[u8]) -> Option<LutUpdate> {
+    let size: i32 = size?.trim().parse().ok()?;
+    let strength: f64 = strength?.trim().parse().ok()?;
+    let table = if size == 0 {
+        Some(None)
+    } else if !LUT_SIZES.contains(&size) {
+        return None;
+    } else if body.is_empty() {
+        None
+    } else {
+        let (floats, partial) = body.as_chunks::<4>();
+        if !partial.is_empty() {
+            return None;
+        }
+        Some(Some((
+            floats
+                .iter()
+                .map(|bytes| f32::from_le_bytes(*bytes))
+                .collect(),
+            size,
+        )))
+    };
+    Some(LutUpdate { table, strength })
+}
+
+/// Shows the export's LUT in the native preview, for this video and the ones opened after it.
+#[tauri::command]
+pub fn player_lut(
+    state: tauri::State<'_, PlayerState>,
+    request: tauri::ipc::Request<'_>,
+) -> Result<(), PublicBackendError> {
+    require_engine_mode()?;
+    let header = |name: &str| {
+        request
+            .headers()
+            .get(name)
+            .and_then(|value| value.to_str().ok())
+    };
+    let body = match request.body() {
+        tauri::ipc::InvokeBody::Raw(bytes) => &bytes[..],
+        tauri::ipc::InvokeBody::Json(_) => &[],
+    };
+    let update = parse_lut(header("x-lut-size"), header("x-lut-strength"), body)
+        .ok_or_else(|| player_error(PlayerError::InvalidLut))?;
+    state.set_lut(update).map_err(player_error)
 }
 
 #[tauri::command]
@@ -235,6 +290,38 @@ fn set_viewport(viewport: Viewport, _scale: f64) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_lut_arrives_as_headers_and_raw_floats() {
+        let floats = |values: &[f32]| {
+            values
+                .iter()
+                .flat_map(|value| value.to_le_bytes())
+                .collect::<Vec<_>>()
+        };
+        let table = floats(&[0.25; 24]);
+        let update = parse_lut(Some("2"), Some("0.5"), &table).expect("a table");
+        assert_eq!(update.strength, 0.5);
+        assert_eq!(update.table, Some(Some((vec![0.25; 24], 2))));
+        assert_eq!(
+            parse_lut(Some("2"), Some("0.8"), &[]).map(|update| update.table),
+            Some(None),
+            "an empty body keeps the table"
+        );
+        assert_eq!(
+            parse_lut(Some("0"), Some("1"), &[]).map(|update| update.table),
+            Some(Some(None)),
+            "size 0 removes the LUT"
+        );
+        assert!(parse_lut(None, Some("1"), &table).is_none());
+        assert!(parse_lut(Some("2"), None, &table).is_none());
+        assert!(parse_lut(Some("two"), Some("1"), &table).is_none());
+        assert!(parse_lut(Some("66"), Some("1"), &table).is_none());
+        assert!(
+            parse_lut(Some("2"), Some("1"), &table[..95]).is_none(),
+            "a partial float is refused"
+        );
+    }
 
     #[test]
     fn only_an_existing_file_reaches_the_decoder() {

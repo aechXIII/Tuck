@@ -31,4 +31,4 @@ commands.allow = ["preview_surface_open", "preview_surface_viewport"]
 [[permission]]
 identifier = "allow-native-player"
 description = "Allows the page to open the native player and play, pause, seek and read its status. Each command refuses unless the native engine is turned on for this run."
-commands.allow = ["player_open", "player_command", "player_status"]
+commands.allow = ["player_open", "player_command", "player_lut", "player_status"]

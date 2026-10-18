@@ -18,7 +18,8 @@ use commands::native::{
     platform_capabilities,
 };
 use commands::player::{
-    player_command, player_open, player_status, preview_surface_open, preview_surface_viewport,
+    player_command, player_lut, player_open, player_status, preview_surface_open,
+    preview_surface_viewport,
 };
 use commands::startup::{
     extract_startup_args, get_startup_files, handle_second_instance, StartupState,
@@ -196,6 +197,7 @@ pub fn run() {
         preview_surface_viewport,
         player_open,
         player_command,
+        player_lut,
         player_status
     ]);
 

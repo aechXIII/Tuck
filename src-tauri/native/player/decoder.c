@@ -55,6 +55,9 @@ struct Decoder {
     /* worker only */
     uint64_t generation;
     double target;
+    /* where the demuxer was asked to start for this target, and that it should start earlier */
+    double seek_from;
+    int seek_earlier;
     double next;
     /* the newest frame at or before the target, queued once a later frame shows it is the one */
     DecodedFrame candidate;
@@ -226,6 +229,12 @@ static int deliver(Decoder *d, AVFrame *frame, uint64_t generation) {
     if (pts == AV_NOPTS_VALUE) return 1;
     double time = pts * av_q2d(d->time_base) - d->start;
     if (!d->started) {
+        /* nothing at or before the target came out, so the demuxer started after it: an open GOP's
+           leading frames can't be decoded from their keyframe. Start further back. */
+        if (time > d->target + 1e-6 && !d->candidate.frame && d->seek_from > 0) {
+            d->seek_earlier = 1;
+            return 0;
+        }
         if (time <= d->target + 1e-6) {
             /* a reference is enough until it turns out to be the frame showing at the target */
             decoded_frame_clear(&d->candidate);
@@ -265,18 +274,19 @@ static int decode(Decoder *d, const AVPacket *packet, AVFrame *frame, uint64_t g
     }
 }
 
-static int restart(Decoder *d, double target, uint64_t generation) {
+/* the demuxer goes to the keyframe at or before `from`; decoding then runs on to the target */
+static int seek_from(Decoder *d, double from) {
     decoded_frame_clear(&d->candidate);
-    d->generation = generation;
-    d->target = target;
-    d->next = target;
+    d->seek_from = from;
+    d->seek_earlier = 0;
+    d->next = d->target;
     d->started = 0;
     pthread_mutex_lock(&d->lock);
     d->ended = 0;
     pthread_mutex_unlock(&d->lock);
-    int64_t timestamp = llround((target + d->start) / av_q2d(d->time_base));
+    int64_t timestamp = llround((from + d->start) / av_q2d(d->time_base));
     if (av_seek_frame(d->format, d->stream, timestamp, AVSEEK_FLAG_BACKWARD) < 0) {
-        int64_t position = llround((target + d->start) * AV_TIME_BASE);
+        int64_t position = llround((from + d->start) * AV_TIME_BASE);
         if (avformat_seek_file(d->format, -1, INT64_MIN, position, position, 0) < 0) {
             fail(d, "The video could not seek to that position.");
             return 0;
@@ -284,6 +294,19 @@ static int restart(Decoder *d, double target, uint64_t generation) {
     }
     avcodec_flush_buffers(d->codec);
     return 1;
+}
+
+static int restart(Decoder *d, double target, uint64_t generation) {
+    d->generation = generation;
+    d->target = target;
+    return seek_from(d, target);
+}
+
+/* one second further back than last time, doubling, down to the start of the file */
+static int seek_further_back(Decoder *d) {
+    double back = d->target - d->seek_from;
+    back = back > 0 ? back * 2 : 1;
+    return seek_from(d, d->target - back > 0 ? d->target - back : 0);
 }
 
 static void decode_failed(Decoder *d, int code) {
@@ -392,6 +415,7 @@ static void *worker(void *opaque) {
             else d->bad_packets = 0;
         }
         av_packet_unref(packet);
+        if (d->seek_earlier) seek_further_back(d);
     }
     av_packet_free(&packet);
     av_frame_free(&frame);

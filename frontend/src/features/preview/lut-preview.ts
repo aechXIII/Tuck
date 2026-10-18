@@ -1,3 +1,17 @@
+/** The export's LUT as the preview shows it; `size`³ RGB samples with R changing fastest. */
+export interface LutChange {
+  readonly table: Float32Array;
+  readonly size: number;
+  readonly strength: number;
+}
+
+/**
+ * Sent on the video element with a `LutChange`, or null when no LUT shows, so the native player
+ * can draw the same LUT; `LUT_REQUEST_EVENT` asks for the current one again.
+ */
+export const LUT_CHANGE_EVENT = "tuck-lut";
+export const LUT_REQUEST_EVENT = "tuck-lut-request";
+
 export interface LutPreview {
   set(table: Float32Array, size: number, strength: number): void;
   clear(): void;
