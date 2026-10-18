@@ -5,6 +5,7 @@
 //! child window, while DWM composites a flip-model swap chain on its own.
 
 use std::cell::RefCell;
+use std::sync::atomic::{AtomicIsize, Ordering};
 
 use windows::core::{w, Interface};
 use windows::Win32::Foundation::{E_FAIL, HMODULE, HWND, LPARAM, LRESULT, RECT, WPARAM};
@@ -35,6 +36,11 @@ use super::Viewport;
 
 struct Surface {
     hwnd: HWND,
+    /// the test picture; without it the native player library draws into the window itself
+    picture: Option<TestPicture>,
+}
+
+struct TestPicture {
     device: ID3D11Device,
     context: ID3D11DeviceContext1,
     swap_chain: IDXGISwapChain1,
@@ -47,22 +53,36 @@ thread_local! {
     static SURFACE: RefCell<Option<Surface>> = const { RefCell::new(None) };
 }
 
-/// Creates the surface under `parent` if it does not exist yet. Must run on the main thread.
-pub fn open(parent: HWND) -> windows::core::Result<()> {
+// the player library draws from its own thread, which needs only the handle
+static WINDOW: AtomicIsize = AtomicIsize::new(0);
+
+/// The surface's window for the native player library, once it exists.
+pub fn window() -> Option<isize> {
+    Some(WINDOW.load(Ordering::Acquire)).filter(|&handle| handle != 0)
+}
+
+/// Creates the surface under `parent` if it does not exist yet, with the test picture or empty
+/// for the native player library to draw into. Must run on the main thread.
+pub fn open(parent: HWND, test_picture: bool) -> windows::core::Result<()> {
     if SURFACE.with(|cell| cell.borrow().is_some()) {
         return Ok(());
     }
     let hwnd = create_window(parent)?;
-    let surface = match create_graphics(hwnd) {
-        Ok(surface) => surface,
-        Err(error) => {
-            unsafe {
-                let _ = DestroyWindow(hwnd);
+    let picture = if test_picture {
+        match create_graphics(hwnd) {
+            Ok(picture) => Some(picture),
+            Err(error) => {
+                unsafe {
+                    let _ = DestroyWindow(hwnd);
+                }
+                return Err(error);
             }
-            return Err(error);
         }
+    } else {
+        None
     };
-    SURFACE.with(|cell| *cell.borrow_mut() = Some(surface));
+    SURFACE.with(|cell| *cell.borrow_mut() = Some(Surface { hwnd, picture }));
+    WINDOW.store(hwnd.0 as isize, Ordering::Release);
     Ok(())
 }
 
@@ -94,8 +114,10 @@ pub fn set_viewport(viewport: Viewport, pixels_per_css: f64) {
             );
         }
         let size = (width.max(1) as u32, height.max(1) as u32);
-        if let Err(error) = surface.resize(size).and_then(|()| surface.draw()) {
-            eprintln!("could not draw the preview surface: {error}");
+        if let Some(picture) = surface.picture.as_mut() {
+            if let Err(error) = picture.resize(size).and_then(|()| picture.draw()) {
+                eprintln!("could not draw the preview surface: {error}");
+            }
         }
     });
 }
@@ -129,7 +151,7 @@ fn create_window(parent: HWND) -> windows::core::Result<HWND> {
     }
 }
 
-fn create_graphics(hwnd: HWND) -> windows::core::Result<Surface> {
+fn create_graphics(hwnd: HWND) -> windows::core::Result<TestPicture> {
     unsafe {
         let mut device = None;
         let mut context = None;
@@ -171,8 +193,7 @@ fn create_graphics(hwnd: HWND) -> windows::core::Result<Surface> {
             None,
             None::<&IDXGIOutput>,
         )?;
-        Ok(Surface {
-            hwnd,
+        Ok(TestPicture {
             device,
             context,
             swap_chain,
@@ -182,7 +203,7 @@ fn create_graphics(hwnd: HWND) -> windows::core::Result<Surface> {
     }
 }
 
-impl Surface {
+impl TestPicture {
     fn resize(&mut self, size: (u32, u32)) -> windows::core::Result<()> {
         if size == self.size {
             return Ok(());

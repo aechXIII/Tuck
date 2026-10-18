@@ -4,6 +4,17 @@ import { backendFailure, errorMessage, isBackendError } from "./errors.ts";
 import type { TauriInvoke } from "./tauri.ts";
 import type { BackendResult } from "./types.ts";
 
+/** The decoder and renderer, when the native player library plays the video. */
+export interface NativeVideoInfo {
+  readonly decoder: string;
+  readonly hardware: boolean;
+  readonly frameRate: number;
+  readonly presented: number;
+  /** the video can't play any more; error says why */
+  readonly failed: boolean;
+  readonly error: string;
+}
+
 /** What the native player reports after every command. Times are in seconds. */
 export interface NativePlayerStatus {
   /** the engine's own monotonic clock when the status was read */
@@ -18,6 +29,8 @@ export interface NativePlayerStatus {
   /** the clock waits until the new position's first frame is on screen */
   readonly seekPending: boolean;
   readonly ended: boolean;
+  /** null while only the clock runs, without decoding */
+  readonly video: NativeVideoInfo | null;
 }
 
 /** Seeks carry request IDs that go up for each opened video, so a late reply can't win. */
@@ -26,12 +39,18 @@ export type NativePlayerCommand =
   | { readonly kind: "pause" }
   | { readonly kind: "seek"; readonly requestId: number; readonly seconds: number };
 
+export interface NativePlayerOpen {
+  readonly durationSeconds: number;
+  /** the video file, which the native player library decodes */
+  readonly path: string | null;
+}
+
 /** the engine refuses larger IDs, so they stay exact in JavaScript too */
 export const MAX_SEEK_REQUEST_ID = Number.MAX_SAFE_INTEGER;
 
 export interface PlayerEngine {
-  /** starts over for a video of this length, replacing the previous one */
-  open(durationSeconds: number): Promise<BackendResult<NativePlayerStatus>>;
+  /** starts over for the selected video, replacing the previous one */
+  open(request: NativePlayerOpen): Promise<BackendResult<NativePlayerStatus>>;
   command(command: NativePlayerCommand): Promise<BackendResult<NativePlayerStatus>>;
   status(): Promise<BackendResult<NativePlayerStatus>>;
 }
@@ -42,6 +61,19 @@ function isCount(value: unknown): value is number {
 
 function isSeconds(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
+function isVideoInfo(value: unknown): value is NativeVideoInfo {
+  if (typeof value !== "object" || value === null) return false;
+  const info = value as Record<string, unknown>;
+  return (
+    typeof info.decoder === "string" &&
+    typeof info.hardware === "boolean" &&
+    isSeconds(info.frameRate) &&
+    isCount(info.presented) &&
+    typeof info.failed === "boolean" &&
+    typeof info.error === "string"
+  );
 }
 
 export function isNativePlayerStatus(value: unknown): value is NativePlayerStatus {
@@ -56,7 +88,8 @@ export function isNativePlayerStatus(value: unknown): value is NativePlayerStatu
     isCount(status.confirmedSeekRequestId) &&
     typeof status.paused === "boolean" &&
     typeof status.seekPending === "boolean" &&
-    typeof status.ended === "boolean"
+    typeof status.ended === "boolean" &&
+    (status.video === null || isVideoInfo(status.video))
   );
 }
 
@@ -79,7 +112,7 @@ export function createTauriPlayerEngine(
     }
   }
   return {
-    open: (durationSeconds) => call("open", "player_open", { durationSeconds }),
+    open: (request) => call("open", "player_open", { request }),
     command: (command) => call(command.kind, "player_command", { command }),
     status: () => call("status", "player_status", {}),
   };

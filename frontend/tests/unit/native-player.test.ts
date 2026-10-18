@@ -156,7 +156,7 @@ function setup(options: Setup = {}) {
 test("the client sends typed commands and reads the status", async () => {
   const fixture = createFixtureEngine();
   const engine = createTauriPlayerEngine((command, args) => fixture.invoke(command, { ...args }));
-  const opened = await engine.open(12);
+  const opened = await engine.open({ durationSeconds: 12, path: "C:\\media\\clip.mp4" });
   assert.ok(opened.ok);
   assert.equal(opened.value.durationSeconds, 12);
   assert.equal(opened.value.paused, true);
@@ -167,10 +167,10 @@ test("the client sends typed commands and reads the status", async () => {
   const repeated = await engine.command({ kind: "seek", requestId: 1, seconds: 6 });
   assert.equal(repeated.ok, false);
   assert.equal(repeated.ok ? "" : repeated.error.code, "SEEK_REFUSED");
-  const tooShort = await engine.open(0);
+  const tooShort = await engine.open({ durationSeconds: 0, path: null });
   assert.equal(tooShort.ok ? "" : tooShort.error.code, "INVALID_REQUEST");
   assert.deepEqual(fixture.calls.slice(0, 2).map((call) => [call.command, call.args]), [
-    ["player_open", { durationSeconds: 12 }],
+    ["player_open", { request: { durationSeconds: 12, path: "C:\\media\\clip.mp4" } }],
     ["player_command", { command: { kind: "seek", requestId: 1, seconds: 5 } }],
   ]);
 
@@ -186,8 +186,11 @@ test("a status is only accepted with exact counters and real times", () => {
   const status: NativePlayerStatus = {
     monotonicSeconds: 3, positionSeconds: 1, durationSeconds: 10, generation: 2,
     seekRequestId: 1, confirmedSeekRequestId: 1, paused: true, seekPending: false, ended: false,
+    video: null,
   };
   assert.ok(isNativePlayerStatus(status));
+  const video = { decoder: "av1 d3d11va", hardware: true, frameRate: 60, presented: 4, failed: false, error: "" };
+  assert.ok(isNativePlayerStatus({ ...status, video }));
   for (const broken of [
     { ...status, generation: 2 ** 53 },
     { ...status, seekRequestId: -1 },
@@ -195,6 +198,9 @@ test("a status is only accepted with exact counters and real times", () => {
     { ...status, durationSeconds: Number.POSITIVE_INFINITY },
     { ...status, paused: 1 },
     { ...status, ended: undefined },
+    { ...status, video: undefined },
+    { ...status, video: { ...video, presented: -1 } },
+    { ...status, video: { ...video, error: null } },
   ]) assert.equal(isNativePlayerStatus(broken), false);
 });
 
@@ -361,7 +367,8 @@ test("moved clips play through gaps in timeline time and stop at the project end
   });
   try {
     await run.load();
-    assert.equal(run.fixture.calls[0]?.args.durationSeconds, 7, "the engine covers the whole project");
+    assert.deepEqual(run.fixture.calls[0]?.args, { request: { durationSeconds: 7, path: "a" } },
+      "the engine covers the whole project and gets the selected file");
     run.player.togglePlay();
     await run.advance(2500);
     assert.equal(run.gaps.at(-1), true);

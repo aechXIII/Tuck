@@ -90,12 +90,14 @@ export function createFixtureEngine(options: FixtureEngineOptions = {}): Fixture
       paused: !p.playing,
       seekPending: p.pending,
       ended: p.ended,
+      video: null,
     };
   }
 
   function answer(command: string, args: Record<string, unknown>): unknown {
     if (command === "player_open") {
-      const duration = args.durationSeconds;
+      const request: unknown = args.request;
+      const duration = typeof request === "object" && request !== null ? Reflect.get(request, "durationSeconds") : undefined;
       if (typeof duration !== "number" || !Number.isFinite(duration) || duration <= 0 || duration > maxDuration) {
         throw failure("INVALID_REQUEST", "The video length is not valid.");
       }

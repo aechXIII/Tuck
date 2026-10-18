@@ -1,20 +1,25 @@
 //! Safe owner of the C player core. The C object is not thread-safe, so every call goes through
 //! one `Engine` behind the player state's mutex.
 
+use std::ffi::c_void;
+use std::path::Path;
 use std::ptr::NonNull;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
+
+use super::library::{Video, VideoInfo};
 
 #[repr(C)]
 struct TuckPlayer {
     _private: [u8; 0],
 }
 
+/// The clock's status as the C core lays it out; the native player library embeds it too.
 #[repr(C)]
 #[derive(Default)]
-struct TuckPlayerStatus {
+pub(crate) struct RawStatus {
     monotonic_seconds: f64,
     position_seconds: f64,
     duration_seconds: f64,
@@ -33,11 +38,11 @@ extern "C" {
     fn tuck_player_pause(player: *mut TuckPlayer, now: f64);
     fn tuck_player_seek(player: *mut TuckPlayer, request_id: u64, seconds: f64, now: f64) -> i32;
     fn tuck_player_frame_presented(player: *mut TuckPlayer, generation: u64, now: f64);
-    fn tuck_player_status(player: *mut TuckPlayer, now: f64, status: *mut TuckPlayerStatus);
+    fn tuck_player_status(player: *mut TuckPlayer, now: f64, status: *mut RawStatus);
 }
 
 /// What the page sees of the player. Request IDs stay below 2^53, so they are exact in JavaScript.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlayerStatus {
     pub monotonic_seconds: f64,
@@ -49,6 +54,25 @@ pub struct PlayerStatus {
     pub paused: bool,
     pub seek_pending: bool,
     pub ended: bool,
+    /// the decoder and renderer, when the native player library plays the video
+    pub video: Option<VideoInfo>,
+}
+
+impl From<RawStatus> for PlayerStatus {
+    fn from(raw: RawStatus) -> Self {
+        PlayerStatus {
+            monotonic_seconds: raw.monotonic_seconds,
+            position_seconds: raw.position_seconds,
+            duration_seconds: raw.duration_seconds,
+            generation: raw.generation,
+            seek_request_id: raw.seek_request_id,
+            confirmed_seek_request_id: raw.confirmed_seek_request_id,
+            paused: raw.paused != 0,
+            seek_pending: raw.seek_pending != 0,
+            ended: raw.ended != 0,
+            video: None,
+        }
+    }
 }
 
 pub struct Engine {
@@ -98,19 +122,9 @@ impl Engine {
 
     pub fn status(&mut self) -> PlayerStatus {
         let now = self.now();
-        let mut raw = TuckPlayerStatus::default();
+        let mut raw = RawStatus::default();
         unsafe { tuck_player_status(self.player.as_ptr(), now, &mut raw) };
-        PlayerStatus {
-            monotonic_seconds: raw.monotonic_seconds,
-            position_seconds: raw.position_seconds,
-            duration_seconds: raw.duration_seconds,
-            generation: raw.generation,
-            seek_request_id: raw.seek_request_id,
-            confirmed_seek_request_id: raw.confirmed_seek_request_id,
-            paused: raw.paused != 0,
-            seek_pending: raw.seek_pending != 0,
-            ended: raw.ended != 0,
-        }
+        raw.into()
     }
 }
 
@@ -133,65 +147,137 @@ pub enum PlayerCommand {
     },
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PlayerError {
     NotOpen,
     InvalidLength,
     /// an old or repeated request ID, or a position outside the video
     SeekRefused,
+    /// the native player library could not open the video; the text says why
+    Video(String),
 }
 
 // a week is far beyond any video Tuck edits; anything longer is a bad request, not a video
 const MAX_DURATION_SECONDS: f64 = 7.0 * 24.0 * 3600.0;
 
-/// The one engine for the editor's selected video.
-#[derive(Default)]
-pub struct PlayerState(Mutex<Option<Engine>>);
+/// Where playback runs: the bare clock, or the native player library decoding and drawing.
+enum Backend {
+    Clock(Engine),
+    Video(Video),
+}
+
+impl Backend {
+    fn play(&mut self) {
+        match self {
+            Backend::Clock(engine) => engine.play(),
+            Backend::Video(video) => video.play(),
+        }
+    }
+
+    fn pause(&mut self) {
+        match self {
+            Backend::Clock(engine) => engine.pause(),
+            Backend::Video(video) => video.pause(),
+        }
+    }
+
+    fn seek(&mut self, request_id: u64, seconds: f64) -> bool {
+        match self {
+            Backend::Clock(engine) => engine.seek(request_id, seconds),
+            Backend::Video(video) => video.seek(request_id, seconds),
+        }
+    }
+
+    fn status(&mut self) -> PlayerStatus {
+        match self {
+            Backend::Clock(engine) => {
+                // without a renderer, a new position counts as shown as soon as it is asked for
+                engine.present_current_frame();
+                engine.status()
+            }
+            Backend::Video(video) => {
+                let (mut status, info) = video.status();
+                status.video = Some(info);
+                status
+            }
+        }
+    }
+}
+
+/// The one player for the editor's selected video. Cloning shares it.
+#[derive(Clone, Default)]
+pub struct PlayerState(Arc<Mutex<Option<Backend>>>);
 
 impl PlayerState {
-    fn engine(&self) -> std::sync::MutexGuard<'_, Option<Engine>> {
+    fn backend(&self) -> std::sync::MutexGuard<'_, Option<Backend>> {
         // a panic while holding the lock leaves plain data behind, still safe to use
         self.0
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    /// Starts over for a video of `duration_seconds`, replacing any previous one.
-    pub fn open(&self, duration_seconds: f64) -> Result<PlayerStatus, PlayerError> {
-        // the C core refuses NaN, infinite and non-positive lengths itself
-        if duration_seconds > MAX_DURATION_SECONDS {
-            return Err(PlayerError::InvalidLength);
+    fn check_length(duration_seconds: f64) -> Result<(), PlayerError> {
+        if duration_seconds.is_finite()
+            && duration_seconds > 0.0
+            && duration_seconds <= MAX_DURATION_SECONDS
+        {
+            Ok(())
+        } else {
+            Err(PlayerError::InvalidLength)
         }
-        let mut engine = Engine::open(duration_seconds).ok_or(PlayerError::InvalidLength)?;
-        engine.present_current_frame();
-        let status = engine.status();
-        *self.engine() = Some(engine);
+    }
+
+    /// Starts over for a video of `duration_seconds` on the bare clock, replacing any previous one.
+    pub fn open(&self, duration_seconds: f64) -> Result<PlayerStatus, PlayerError> {
+        Self::check_length(duration_seconds)?;
+        let engine = Engine::open(duration_seconds).ok_or(PlayerError::InvalidLength)?;
+        let mut backend = Backend::Clock(engine);
+        let status = backend.status();
+        *self.backend() = Some(backend);
+        Ok(status)
+    }
+
+    /// Opens `path` in the native player library, drawing into `window`. Slow, so it runs off the
+    /// main thread. The previous video closes first: a window holds one swap chain at a time.
+    pub fn open_video(
+        &self,
+        duration_seconds: f64,
+        path: &Path,
+        window: *mut c_void,
+    ) -> Result<PlayerStatus, PlayerError> {
+        Self::check_length(duration_seconds)?;
+        // closing joins the previous video's threads; status reads must not wait on that
+        let previous = self.backend().take();
+        drop(previous);
+        let video = Video::open(path, duration_seconds, window).map_err(PlayerError::Video)?;
+        let mut backend = Backend::Video(video);
+        let status = backend.status();
+        *self.backend() = Some(backend);
         Ok(status)
     }
 
     pub fn command(&self, command: PlayerCommand) -> Result<PlayerStatus, PlayerError> {
-        let mut guard = self.engine();
-        let engine = guard.as_mut().ok_or(PlayerError::NotOpen)?;
+        let mut guard = self.backend();
+        let backend = guard.as_mut().ok_or(PlayerError::NotOpen)?;
         match command {
-            PlayerCommand::Play => engine.play(),
-            PlayerCommand::Pause => engine.pause(),
+            PlayerCommand::Play => backend.play(),
+            PlayerCommand::Pause => backend.pause(),
             PlayerCommand::Seek {
                 request_id,
                 seconds,
             } => {
-                if !engine.seek(request_id, seconds) {
+                if !backend.seek(request_id, seconds) {
                     return Err(PlayerError::SeekRefused);
                 }
             }
         }
-        engine.present_current_frame();
-        Ok(engine.status())
+        Ok(backend.status())
     }
 
     pub fn status(&self) -> Result<PlayerStatus, PlayerError> {
-        self.engine()
+        self.backend()
             .as_mut()
-            .map(Engine::status)
+            .map(Backend::status)
             .ok_or(PlayerError::NotOpen)
     }
 }

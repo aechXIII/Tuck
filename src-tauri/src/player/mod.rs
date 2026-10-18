@@ -8,6 +8,7 @@ use std::sync::OnceLock;
 use serde::Deserialize;
 
 pub mod engine;
+pub mod library;
 #[cfg(target_os = "linux")]
 pub mod surface_linux;
 #[cfg(windows)]
@@ -21,6 +22,8 @@ pub enum PreviewMode {
     Surface,
     /// the surface plus the native engine driving playback, still without decoding
     Engine,
+    /// the native player library decoding and drawing the video
+    Player,
 }
 
 impl PreviewMode {
@@ -29,6 +32,7 @@ impl PreviewMode {
             PreviewMode::Off => "off",
             PreviewMode::Surface => "surface",
             PreviewMode::Engine => "engine",
+            PreviewMode::Player => "player",
         }
     }
 
@@ -36,6 +40,7 @@ impl PreviewMode {
         match value {
             Some("surface") => PreviewMode::Surface,
             Some("engine") => PreviewMode::Engine,
+            Some("player") => PreviewMode::Player,
             _ => PreviewMode::Off,
         }
     }
@@ -121,7 +126,12 @@ mod tests {
             PreviewMode::from_switch(Some("engine")),
             PreviewMode::Engine
         );
+        assert_eq!(
+            PreviewMode::from_switch(Some("player")),
+            PreviewMode::Player
+        );
         assert_eq!(PreviewMode::Engine.as_str(), "engine");
+        assert_eq!(PreviewMode::Player.as_str(), "player");
         assert_eq!(PreviewMode::Surface.as_str(), "surface");
     }
 

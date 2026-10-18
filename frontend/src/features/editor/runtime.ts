@@ -890,8 +890,9 @@ export function installEditorRuntime(
     } catch {
       toast("Could not load settings.", "err");
     }
-    // a developer switch for now: the native engine takes over before any video is shown
-    if (hasTauriInvoke(windowRef) && (await fetchPlatformCapabilities()).nativePreview === "engine") {
+    // a developer switch for now: the native player takes over before any video is shown
+    const nativePreview = hasTauriInvoke(windowRef) ? (await fetchPlatformCapabilities()).nativePreview : "off";
+    if (nativePreview === "engine" || nativePreview === "player") {
       player.dispose();
       player = installNativePlayer(playerHost, createTauriPlayerEngine());
     }

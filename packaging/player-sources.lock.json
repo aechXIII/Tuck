@@ -1,0 +1,152 @@
+{
+  "lockfile_version": 1,
+  "architecture": "x86_64",
+  "build_platform": {
+    "distribution": "Ubuntu",
+    "version": "22.04"
+  },
+  "ffmpeg_lock": "packaging/ffmpeg-sources.lock.json",
+  "ffmpeg_sources": [
+    "ffmpeg",
+    "dav1d",
+    "zlib",
+    "mingw-dxva"
+  ],
+  "sources": [
+    {
+      "name": "libplacebo",
+      "version": "7.360.1",
+      "revision": "v7.360.1",
+      "filename": "libplacebo-7.360.1.tar.gz",
+      "url": "https://github.com/haasn/libplacebo/archive/refs/tags/v7.360.1.tar.gz",
+      "size_bytes": 862269,
+      "sha256": "d05fdf90bea2f629eaa2d115e909fd356388ac639e54f77b87a018a6d76224bd",
+      "archive_root": "libplacebo-7.360.1",
+      "destination": "",
+      "license": {
+        "spdx": "LGPL-2.1-or-later",
+        "text_path": "LICENSE"
+      }
+    },
+    {
+      "name": "glad",
+      "version": "2.0.8",
+      "revision": "73db193f853e2ee079bf3ca8a64aa2eaf6459043",
+      "filename": "glad-73db193f853e2ee079bf3ca8a64aa2eaf6459043.tar.gz",
+      "url": "https://github.com/Dav1dde/glad/archive/73db193f853e2ee079bf3ca8a64aa2eaf6459043.tar.gz",
+      "size_bytes": 645779,
+      "sha256": "33dbeae44d8315ece57e14eba4b1b4a02ac5406d1c4f49cd20048c91522a6b9a",
+      "archive_root": "glad-73db193f853e2ee079bf3ca8a64aa2eaf6459043",
+      "destination": "3rdparty/glad",
+      "license": {
+        "spdx": "MIT",
+        "text_path": "LICENSE"
+      }
+    },
+    {
+      "name": "jinja",
+      "version": "3.1.6",
+      "revision": "15206881c006c79667fe5154fe80c01c65410679",
+      "filename": "jinja-15206881c006c79667fe5154fe80c01c65410679.tar.gz",
+      "url": "https://github.com/pallets/jinja/archive/15206881c006c79667fe5154fe80c01c65410679.tar.gz",
+      "size_bytes": 276954,
+      "sha256": "b88a20dcc2e34072fcf4159325bc6c34cd4b29a81a8b83d15d2f28ba561da296",
+      "archive_root": "jinja-15206881c006c79667fe5154fe80c01c65410679",
+      "destination": "3rdparty/jinja",
+      "license": {
+        "spdx": "BSD-3-Clause",
+        "text_path": "LICENSE.txt"
+      }
+    },
+    {
+      "name": "markupsafe",
+      "version": "3.0.3",
+      "revision": "297fc8e356e6836a62087949245d09a28e9f1b13",
+      "filename": "markupsafe-297fc8e356e6836a62087949245d09a28e9f1b13.tar.gz",
+      "url": "https://github.com/pallets/markupsafe/archive/297fc8e356e6836a62087949245d09a28e9f1b13.tar.gz",
+      "size_bytes": 83817,
+      "sha256": "da7c010c9c81a66ac73036558c1fcb6212b50482f43211cd1254035b94f82414",
+      "archive_root": "markupsafe-297fc8e356e6836a62087949245d09a28e9f1b13",
+      "destination": "3rdparty/markupsafe",
+      "license": {
+        "spdx": "BSD-3-Clause",
+        "text_path": "LICENSE.txt"
+      }
+    },
+    {
+      "name": "fast_float",
+      "version": "8.2.2",
+      "revision": "97b54ca9e75f5303507699d27c6b4f4efe4641a1",
+      "filename": "fast_float-97b54ca9e75f5303507699d27c6b4f4efe4641a1.tar.gz",
+      "url": "https://github.com/fastfloat/fast_float/archive/97b54ca9e75f5303507699d27c6b4f4efe4641a1.tar.gz",
+      "size_bytes": 120200,
+      "sha256": "2b132274539286e41f37857cac22aa8441d21bd86d55de825a3342b149f66801",
+      "archive_root": "fast_float-97b54ca9e75f5303507699d27c6b4f4efe4641a1",
+      "destination": "3rdparty/fast_float",
+      "license": {
+        "spdx": "MIT",
+        "text_path": "LICENSE-MIT"
+      }
+    },
+    {
+      "name": "Vulkan-Headers",
+      "version": "1.4.337",
+      "revision": "450bd2232225d6c7728a4108055ac2e37cef6475",
+      "filename": "Vulkan-Headers-450bd2232225d6c7728a4108055ac2e37cef6475.tar.gz",
+      "url": "https://github.com/KhronosGroup/Vulkan-Headers/archive/450bd2232225d6c7728a4108055ac2e37cef6475.tar.gz",
+      "size_bytes": 2940820,
+      "sha256": "26df9841c30806a994e2fdf42f7c87bcb1ced9db9a06033469123939fb3fa075",
+      "archive_root": "Vulkan-Headers-450bd2232225d6c7728a4108055ac2e37cef6475",
+      "destination": "3rdparty/Vulkan-Headers",
+      "license": {
+        "spdx": "Apache-2.0",
+        "text_path": "LICENSE.md"
+      }
+    },
+    {
+      "name": "glslang",
+      "version": "1.4.363.0",
+      "revision": "vulkan-sdk-1.4.363.0",
+      "filename": "glslang-vulkan-sdk-1.4.363.0.tar.gz",
+      "url": "https://github.com/KhronosGroup/glslang/archive/refs/tags/vulkan-sdk-1.4.363.0.tar.gz",
+      "size_bytes": 4636143,
+      "sha256": "cda24ec765e6d2845d106b7caa593f34127195a88524cf87821ff0088fb6edec",
+      "archive_root": "glslang-vulkan-sdk-1.4.363.0",
+      "destination": "",
+      "license": {
+        "spdx": "BSD-3-Clause",
+        "text_path": "LICENSE.txt"
+      }
+    },
+    {
+      "name": "SPIRV-Cross",
+      "version": "1.4.363.0",
+      "revision": "vulkan-sdk-1.4.363.0",
+      "filename": "SPIRV-Cross-vulkan-sdk-1.4.363.0.tar.gz",
+      "url": "https://github.com/KhronosGroup/SPIRV-Cross/archive/refs/tags/vulkan-sdk-1.4.363.0.tar.gz",
+      "size_bytes": 2032974,
+      "sha256": "f708982e88b763ef5b0394ed468fc2c3628f68cdab89f2e7a946cd628c04e721",
+      "archive_root": "SPIRV-Cross-vulkan-sdk-1.4.363.0",
+      "destination": "",
+      "license": {
+        "spdx": "Apache-2.0",
+        "text_path": "LICENSE"
+      }
+    },
+    {
+      "name": "meson",
+      "version": "1.11.2",
+      "revision": "1.11.2",
+      "filename": "meson-1.11.2.tar.gz",
+      "url": "https://github.com/mesonbuild/meson/releases/download/1.11.2/meson-1.11.2.tar.gz",
+      "size_bytes": 2463316,
+      "sha256": "698feae069cef3ecd4d7aaf281d7df359bdfcf555a9a1564383d3b913fa8a736",
+      "archive_root": "meson-1.11.2",
+      "destination": "",
+      "license": {
+        "spdx": "Apache-2.0",
+        "text_path": "COPYING"
+      }
+    }
+  ]
+}

@@ -14,9 +14,10 @@ export interface PlatformCapabilities {
   packaged: boolean;
   /**
    * "surface" while this run draws the native preview's test picture below the page, "engine"
-   * when the native engine also drives playback; missing means off
+   * when the native clock also drives playback, "player" when the native player decodes and
+   * draws the video; missing means off
    */
-  nativePreview?: "off" | "surface" | "engine";
+  nativePreview?: "off" | "surface" | "engine" | "player";
 }
 
 // Outside a Tauri webview (browser preview, Playwright) the native layer cannot
@@ -63,7 +64,8 @@ function isPlatformCapabilities(value: unknown): value is PlatformCapabilities {
     (caps.nativePreview === undefined ||
       caps.nativePreview === "off" ||
       caps.nativePreview === "surface" ||
-      caps.nativePreview === "engine")
+      caps.nativePreview === "engine" ||
+      caps.nativePreview === "player")
   );
 }
 

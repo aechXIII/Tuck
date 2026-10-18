@@ -20,6 +20,7 @@ interface Call {
   requestId?: number;
   seconds?: number;
   durationSeconds?: number;
+  path?: string | null;
 }
 
 async function open(page: Page, nativePreview: "engine" | "off"): Promise<void> {
@@ -50,7 +51,9 @@ function engineCalls(page: Page): Promise<Call[]> {
   return page.evaluate(() => (window.__fixtureEngine?.calls ?? []).map((call) => {
     const command = call.args.command;
     const fields = typeof command === "object" && command !== null ? command : {};
-    return { command: call.command, ...fields, ...(call.command === "player_open" ? call.args : {}) };
+    const request = call.args.request;
+    const opened = call.command === "player_open" && typeof request === "object" && request !== null ? request : {};
+    return { command: call.command, ...fields, ...opened };
   }));
 }
 
@@ -69,6 +72,7 @@ test("the native engine drives playback, seeks and frame steps", async ({ page }
   page.on("pageerror", (error) => errors.push(error.message));
   await open(page, "engine");
   await expect.poll(async () => (await engineCalls(page)).find((call) => call.command === "player_open")?.durationSeconds).toBe(DURATION);
+  expect((await engineCalls(page)).find((call) => call.command === "player_open")?.path).toBe("C:\\videos\\Video.mp4");
   await expect.poll(() => page.evaluate(() => (window.__fixtureSurface ?? []).some((call) => call.command === "preview_surface_viewport"
     && Number((call.args.viewport as { width?: number } | undefined)?.width) > 0))).toBe(true);
 

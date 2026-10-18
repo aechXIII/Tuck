@@ -22,7 +22,7 @@ import {
 const STATUS_INTERVAL_MS = 100;
 
 type Step =
-  | { readonly kind: "open"; readonly duration: number }
+  | { readonly kind: "open"; readonly duration: number; readonly path: string | null }
   | { readonly kind: "play" }
   | { readonly kind: "pause" }
   | { readonly kind: "seek"; readonly seconds: number }
@@ -56,6 +56,8 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
   let sentSeekId = 0;
   let previewSec: number | null = null;
   let previewGap = false;
+  // the epoch whose decoder failure was already reported
+  let reportedFailure = -1;
   const steps: Step[] = [];
   let busy = false;
   let pollTimer = 0;
@@ -118,7 +120,7 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
       case "open":
         requestId = 0;
         sentSeekId = 0;
-        return engine.open(step.duration);
+        return engine.open({ durationSeconds: step.duration, path: step.path });
       case "seek":
         sentSeekId = ++requestId;
         return engine.command({ kind: "seek", requestId: sentSeekId, seconds: step.seconds });
@@ -152,6 +154,10 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
     const seekQueued = seekWanted != null || steps.some((step) => step.kind === "seek");
     if (target != null && !seekQueued && next.confirmedSeekRequestId === sentSeekId) target = null;
     host.byId("btn-play")?.classList.toggle("playing", !next.paused);
+    if (next.video?.failed && reportedFailure !== epoch) {
+      reportedFailure = epoch;
+      console.error("The native player stopped", next.video.error);
+    }
     if (next.ended && wantPlaying) {
       finish();
       return;
@@ -308,7 +314,7 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
     if (!(duration > 0)) return;
     opened = true;
     openedDuration = duration;
-    enqueue({ kind: "open", duration });
+    enqueue({ kind: "open", duration, path: host.selPath() });
   }
 
   function resetSource(): void {

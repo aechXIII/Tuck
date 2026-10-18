@@ -1,3 +1,7 @@
+use std::path::PathBuf;
+
+use serde::Deserialize;
+
 use crate::backend::protocol::PublicBackendError;
 use crate::platform::window_chrome::css_to_physical;
 use crate::player::engine::{PlayerCommand, PlayerError, PlayerState, PlayerStatus};
@@ -14,16 +18,15 @@ fn not_turned_on() -> PublicBackendError {
 // the page cannot turn the surface on by itself; only this run's switch can
 fn require_surface_mode() -> Result<(), PublicBackendError> {
     match preview_mode() {
-        PreviewMode::Surface | PreviewMode::Engine => Ok(()),
+        PreviewMode::Surface | PreviewMode::Engine | PreviewMode::Player => Ok(()),
         PreviewMode::Off => Err(not_turned_on()),
     }
 }
 
 fn require_engine_mode() -> Result<(), PublicBackendError> {
-    if preview_mode() == PreviewMode::Engine {
-        Ok(())
-    } else {
-        Err(not_turned_on())
+    match preview_mode() {
+        PreviewMode::Engine | PreviewMode::Player => Ok(()),
+        PreviewMode::Off | PreviewMode::Surface => Err(not_turned_on()),
     }
 }
 
@@ -37,17 +40,68 @@ fn player_error(error: PlayerError) -> PublicBackendError {
             "SEEK_REFUSED",
             "The seek was older than the last one or outside the video.",
         ),
+        PlayerError::Video(message) => PublicBackendError::new("VIDEO_FAILED", message),
     }
 }
 
-/// Starts the player for a video of `duration_seconds`, replacing the previous one.
-#[tauri::command]
-pub fn player_open(
-    state: tauri::State<'_, PlayerState>,
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct OpenRequest {
     duration_seconds: f64,
+    /// the video file; the bare clock ignores it, the native player library needs it
+    path: Option<String>,
+}
+
+/// Starts the player for the selected video, replacing the previous one.
+#[tauri::command]
+pub async fn player_open(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, PlayerState>,
+    request: OpenRequest,
 ) -> Result<PlayerStatus, PublicBackendError> {
     require_engine_mode()?;
-    state.open(duration_seconds).map_err(player_error)
+    if preview_mode() == PreviewMode::Engine {
+        return state.open(request.duration_seconds).map_err(player_error);
+    }
+    let path = video_path(request.path)?;
+    // the page may ask for the video before it asked for the surface; either order works
+    show_surface(&window).await?;
+    let window = preview_window()?;
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        state.open_video(
+            request.duration_seconds,
+            &path,
+            window as *mut std::ffi::c_void,
+        )
+    })
+    .await
+    .map_err(|_| PublicBackendError::new("VIDEO_FAILED", "The video could not be opened."))?
+    .map_err(player_error)
+}
+
+// the page names the file; only an existing regular file is ever handed to the decoder
+fn video_path(path: Option<String>) -> Result<PathBuf, PublicBackendError> {
+    let invalid = || PublicBackendError::new("INVALID_REQUEST", "The video file is not available.");
+    let path = PathBuf::from(path.ok_or_else(invalid)?);
+    if !path.is_absolute() || !path.is_file() {
+        return Err(invalid());
+    }
+    Ok(path)
+}
+
+#[cfg(windows)]
+fn preview_window() -> Result<isize, PublicBackendError> {
+    crate::player::surface_windows::window()
+        .ok_or_else(|| surface_error("The preview is not ready yet."))
+}
+
+#[cfg(target_os = "linux")]
+fn preview_window() -> Result<isize, PublicBackendError> {
+    Err(PublicBackendError::new(
+        "NOT_AVAILABLE",
+        "The native player does not draw on Linux yet.",
+    ))
 }
 
 /// Plays, pauses or seeks, and returns the status right after.
@@ -72,10 +126,14 @@ pub fn player_status(
 #[tauri::command]
 pub async fn preview_surface_open(window: tauri::WebviewWindow) -> Result<(), PublicBackendError> {
     require_surface_mode()?;
+    show_surface(&window).await
+}
+
+async fn show_surface(window: &tauri::WebviewWindow) -> Result<(), PublicBackendError> {
     window
         .set_background_color(Some(tauri::utils::config::Color(0, 0, 0, 0)))
         .map_err(|_| surface_error("Could not make the page background transparent."))?;
-    open_surface(&window).await
+    open_surface(window).await
 }
 
 /// Moves the picture to where the page's hole is, in CSS pixels.
@@ -105,7 +163,10 @@ async fn open_surface(window: &tauri::WebviewWindow) -> Result<(), PublicBackend
     window
         .run_on_main_thread(move || {
             let parent = windows::Win32::Foundation::HWND(raw as *mut _);
-            let _ = sender.send(crate::player::surface_windows::open(parent).is_ok());
+            // the native player library draws into the window itself
+            let test_picture = preview_mode() != PreviewMode::Player;
+            let opened = crate::player::surface_windows::open(parent, test_picture);
+            let _ = sender.send(opened.is_ok());
         })
         .map_err(|_| surface_error("Could not create the preview."))?;
     match receiver.await {
@@ -141,4 +202,29 @@ fn set_viewport(viewport: Viewport, scale: f64) {
 #[cfg(target_os = "linux")]
 fn set_viewport(viewport: Viewport, _scale: f64) {
     crate::player::surface_linux::set_viewport(viewport, css_to_physical(1.0));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_an_existing_file_reaches_the_decoder() {
+        let manifest = concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml");
+        assert!(video_path(Some(manifest.to_string())).is_ok());
+        assert!(video_path(None).is_err());
+        assert!(video_path(Some("Cargo.toml".to_string())).is_err());
+        assert!(video_path(Some(env!("CARGO_MANIFEST_DIR").to_string())).is_err());
+        let missing = concat!(env!("CARGO_MANIFEST_DIR"), "/no-such-video.mp4");
+        assert!(video_path(Some(missing.to_string())).is_err());
+    }
+
+    #[test]
+    fn open_requests_parse_strictly() {
+        let parse = |json: &str| serde_json::from_str::<OpenRequest>(json);
+        assert!(parse(r#"{"durationSeconds":12,"path":null}"#).is_ok());
+        assert!(parse(r#"{"durationSeconds":12,"path":"C:/v.mp4"}"#).is_ok());
+        assert!(parse(r#"{"path":"C:/v.mp4"}"#).is_err());
+        assert!(parse(r#"{"durationSeconds":12,"path":null,"window":1}"#).is_err());
+    }
 }
