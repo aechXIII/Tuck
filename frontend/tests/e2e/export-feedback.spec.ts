@@ -221,18 +221,28 @@ test("after one tooltip has shown, the next one along the toolbar appears at onc
 });
 
 test("removing a video slides the cards below into its place, and Undo brings it back the same way", async ({ page }) => {
+  // the slides are short, so they are counted as they start rather than caught while running
+  await page.addInitScript(() => {
+    const animate = Element.prototype.animate;
+    Reflect.set(window, "__clipSlides", 0);
+    Element.prototype.animate = function (...args: Parameters<Element["animate"]>) {
+      if (this.classList.contains("clip")) Reflect.set(window, "__clipSlides", Number(Reflect.get(window, "__clipSlides")) + 1);
+      return animate.apply(this, args);
+    };
+  });
   await open(page, fixtureWith([VIDEO, "C:\videos\Bravo.mp4", "C:\videos\Charlie.mp4"]));
   await expect(page.locator(".clip")).toHaveCount(3);
-  const slides = () => page.locator("#clips").evaluate((list) =>
-    list.getAnimations({ subtree: true }).filter((animation) => (animation.effect as KeyframeEffect | null)?.target?.classList.contains("clip")).length);
+  const slides = () => page.evaluate(() => Number(Reflect.get(window, "__clipSlides")));
 
+  const before = await slides();
   await page.getByRole("button", { name: "Remove Alpha.mp4" }).click();
   await expect(page.locator(".clip")).toHaveCount(2);
-  expect(await slides()).toBeGreaterThan(0);
+  await expect.poll(slides).toBeGreaterThan(before);
 
+  const removed = await slides();
   await page.locator(".toast").getByRole("button", { name: "Undo" }).click();
   await expect(page.locator(".clip")).toHaveCount(3);
-  expect(await slides()).toBeGreaterThan(0);
+  await expect.poll(slides).toBeGreaterThan(removed);
 });
 
 test("the taskbar follows the whole batch and turns red when it ends with a failure", async ({ page }) => {
