@@ -10,7 +10,7 @@ import {
 } from "../timeline/segments.ts";
 import type { SegmentRange } from "../timeline/segments.ts";
 import { LUT_CHANGE_EVENT, LUT_REQUEST_EVENT, type LutChange } from "../preview/lut-preview.ts";
-import { SOURCE_EVENT } from "../preview/preview-controller.ts";
+import { SOURCE_EVENT, SOURCE_FAILED_EVENT, SOURCE_READY_EVENT } from "../preview/preview-controller.ts";
 import {
   defaultClock,
   installVolumeControls,
@@ -63,6 +63,7 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
   // the epoch whose decoder failure was already reported
   let reportedFailure = -1;
   let reportedSoftware = -1;
+  let reportedReady = -1;
   const steps: Step[] = [];
   let busy = false;
   let pollTimer = 0;
@@ -170,6 +171,11 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
     if (next.video?.failed && reportedFailure !== epoch) {
       reportedFailure = epoch;
       console.error("The native player stopped", next.video.error);
+      video?.dispatchEvent(new Event(SOURCE_FAILED_EVENT));
+    } else if (!next.video?.failed && !next.seekPending && reportedReady !== epoch) {
+      // the first frame of this video is showing
+      reportedReady = epoch;
+      video?.dispatchEvent(new Event(SOURCE_READY_EVENT));
     }
     if (next.video?.softwareReason && reportedSoftware !== epoch) {
       reportedSoftware = epoch;
@@ -190,7 +196,15 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
 
   function refuse(step: Step, error: BackendError): void {
     console.error(`The native player could not ${step.kind}`, error);
-    if (step.kind === "open") opened = false;
+    if (step.kind === "open") {
+      opened = false;
+      // a file the engine refused isn't tried again until the stage shows a video anew
+      shownPath = null;
+      if (reportedFailure !== epoch) {
+        reportedFailure = epoch;
+        video?.dispatchEvent(new Event(SOURCE_FAILED_EVENT));
+      }
+    }
     if (step.kind === "seek") target = null;
     if (step.kind === "play") {
       wantPlaying = false;

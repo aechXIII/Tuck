@@ -42,6 +42,13 @@ function editorFixture(): FakeBackendFixture {
   return fixture;
 }
 
+// the test video has no media, so the HTML player's state comes from its element's events; the
+// native player's comes from its engine, which plays when the button is pressed
+async function playbackEvent(page: Page, kind: "play" | "pause"): Promise<void> {
+  if (process.env.TUCK_E2E_NATIVE_PREVIEW === "engine") await page.locator("#btn-play").click();
+  else await page.locator("#vid").dispatchEvent(kind);
+}
+
 function collectPageErrors(page: Page): string[] {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -577,10 +584,10 @@ test("preview icons retain their geometry through playback events", async ({ pag
   await page.locator("#btn-add").click();
   await expect(page.locator("#btn-play .play-icon")).toBeVisible();
   await expect(page.locator("#btn-play .pause-icon")).toBeHidden();
-  await page.locator("#vid").dispatchEvent("play");
+  await playbackEvent(page, "play");
   await expect(page.locator("#btn-play .pause-icon")).toBeVisible();
   await expect(page.locator("#btn-play .play-icon")).toBeHidden();
-  await page.locator("#vid").dispatchEvent("pause");
+  await playbackEvent(page, "pause");
   await expect(page.locator("#btn-play .play-icon")).toBeVisible();
 });
 

@@ -6,6 +6,11 @@ import {
   type FakeBackendFixture,
 } from "../fixtures/fake-backend";
 
+// these are the webview player's fallbacks; with the native player the stage follows its own
+// answer instead, which native-player.spec.ts covers
+const nativePreview = process.env.TUCK_E2E_NATIVE_PREVIEW === "engine";
+const WEBVIEW_FALLBACK = "the native player decides what the stage shows";
+
 const VIDEO = "C:\\media\\Harbour.mp4";
 const PICTURE = "data:image/gif;base64,R0lGODlhAQABAAAAACw=";
 
@@ -26,6 +31,7 @@ async function addVideo(page: Page): Promise<void> {
 }
 
 test("a video without a playable preview shows its picture instead", async ({ page }) => {
+  test.skip(nativePreview, WEBVIEW_FALLBACK);
   const fixture = previewFixture();
   fixture.responses.getMediaUrl = { ok: false, error: "The preview could not be served" };
   fixture.responses.getThumbnail = { ok: true, thumbnail: PICTURE };
@@ -57,6 +63,7 @@ test("no picture element appears when the video has neither preview nor picture"
 });
 
 test("a preview that fails to play falls back to the picture, and removal clears both", async ({ page }) => {
+  test.skip(nativePreview, WEBVIEW_FALLBACK);
   const fixture = previewFixture();
   fixture.responses.getMediaUrl = { ok: true, url: "https://media.test/harbour", token: "token-harbour" };
   fixture.responses.getThumbnail = { ok: true, thumbnail: PICTURE };
@@ -101,6 +108,7 @@ function silentWav(seconds: number): Buffer {
 }
 
 test("a preview that plays sound but no picture keeps the picture and says why", async ({ page }) => {
+  test.skip(nativePreview, WEBVIEW_FALLBACK);
   const fixture = previewFixture();
   fixture.responses.probeFile = {
     ok: true,
@@ -147,6 +155,7 @@ test("switching videos shows the new video's own picture while its preview loads
 });
 
 test("a video with neither a preview nor a picture says so and offers Retry", async ({ page }) => {
+  test.skip(nativePreview, WEBVIEW_FALLBACK);
   const fixture = previewFixture();
   fixture.responses.getMediaUrl = { ok: false, error: "The preview could not be served" };
   fixture.responses.getThumbnail = { ok: true, thumbnail: "" };

@@ -6,6 +6,9 @@ import type { EditorClip } from "../editor/types.ts";
 // so a player that doesn't decode through the element can follow the selection without waiting
 // for the webview to read the file
 export const SOURCE_EVENT = "tuck-source";
+// that player's answer for the announced video: its first frame is showing, or it can't show it
+export const SOURCE_READY_EVENT = "tuck-source-ready";
+export const SOURCE_FAILED_EVENT = "tuck-source-failed";
 
 export interface PreviewMedia {
   // the new video's own picture, or nothing, while its preview is fetched; never the last video

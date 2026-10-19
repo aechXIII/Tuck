@@ -15,6 +15,9 @@ import type { DetachedHistory } from "../history/history.ts";
 import {
   createPreviewController,
   missingPictureMessage,
+  SOURCE_EVENT,
+  SOURCE_FAILED_EVENT,
+  SOURCE_READY_EVENT,
   type PreviewController,
 } from "../preview/preview-controller.ts";
 import { fetchPlatformCapabilities } from "../../platform/capabilities.ts";
@@ -35,7 +38,6 @@ import {
 } from "./clip-card.ts";
 import { createClipLoader } from "./clip-loader.ts";
 import { createProbeCoordinator, type ProbeCoordinator } from "./probe-coordinator.ts";
-import { SOURCE_EVENT } from "../preview/preview-controller.ts";
 
 export interface LibraryEncodingHooks {
   applyProfile?: (force?: boolean) => void;
@@ -159,13 +161,40 @@ export function createLibrary(host: LibraryHost): LibraryApi {
     }
     thumb.src = source;
     thumb.style.display = "block";
+    // the native picture is placed by the video element's box, so it stays laid out there
     const vid = byId("vid");
-    if (vid) vid.style.display = "none";
+    if (vid && !nativePicture()) vid.style.display = "none";
     return thumb;
   }
 
   function removeThumbnail(): void {
     byId("thumb")?.remove();
+  }
+
+  // with the native preview the desktop shell draws the picture and says whether it can, so the
+  // webview's own success or failure reading the file doesn't decide what the stage shows
+  function nativePicture(): boolean {
+    return documentRef.documentElement.classList.contains("native-preview");
+  }
+
+  // the probed picture size places the native picture when the webview can't read the file
+  function syncPictureSize(video: HTMLVideoElement, path: string | null): void {
+    const data = path ? session.clips[path]?.probeData : null;
+    const width = data?.width ?? 0;
+    const height = data?.height ?? 0;
+    if (width > 0 && height > 0) {
+      video.dataset.pictureWidth = String(width);
+      video.dataset.pictureHeight = String(height);
+    } else {
+      delete video.dataset.pictureWidth;
+      delete video.dataset.pictureHeight;
+    }
+  }
+
+  function announceSource(video: HTMLVideoElement, path: string | null): void {
+    byId("media-viewport")?.classList.remove("native-unplayable");
+    syncPictureSize(video, path);
+    video.dispatchEvent(new CustomEvent(SOURCE_EVENT, { detail: path }));
   }
 
   // the stylesheet's animation switch can't reach script-driven animations, so it is checked here
@@ -285,7 +314,7 @@ export function createLibrary(host: LibraryHost): LibraryApi {
           video.pause();
           video.removeAttribute("src");
           video.load();
-          video.dispatchEvent(new CustomEvent(SOURCE_EVENT, { detail: null }));
+          announceSource(video, null);
         }
         if (picture) showThumbnail(picture);
         else removeThumbnail();
@@ -298,8 +327,13 @@ export function createLibrary(host: LibraryHost): LibraryApi {
         const shown = (stageMedia += 1);
         video.src = url;
         video.load();
-        video.dispatchEvent(new CustomEvent(SOURCE_EVENT, { detail: session.selPath }));
+        announceSource(video, session.selPath);
         video.style.display = "block";
+        if (nativePicture()) {
+          video.onloadeddata = null;
+          video.onerror = null;
+          return;
+        }
         // the loading picture stays on top until this video has a frame to show
         video.onloadeddata = () => {
           if (shown !== stageMedia) return;
@@ -322,6 +356,14 @@ export function createLibrary(host: LibraryHost): LibraryApi {
         showThumbnail(source);
       },
       showUnavailable(hasPicture) {
+        // the native player reads the file itself, so a preview link the backend couldn't make
+        // doesn't stop it; its own answer decides the stage
+        const video = asHTMLVideoElement(byId("vid"));
+        if (nativePicture() && video && session.selPath) {
+          announceSource(video, session.selPath);
+          setPreviewStatus("loading");
+          return;
+        }
         setPreviewStatus("unavailable", hasPicture);
       },
       clear() {
@@ -333,7 +375,7 @@ export function createLibrary(host: LibraryHost): LibraryApi {
           video.pause();
           video.removeAttribute("src");
           video.load();
-          video.dispatchEvent(new CustomEvent(SOURCE_EVENT, { detail: null }));
+          announceSource(video, null);
         }
         removeThumbnail();
         setPreviewStatus("ready");
@@ -343,6 +385,17 @@ export function createLibrary(host: LibraryHost): LibraryApi {
         if (video) video.currentTime = seconds;
       },
     },
+  });
+
+  const stageVideo = asHTMLVideoElement(byId("vid"));
+  stageVideo?.addEventListener(SOURCE_READY_EVENT, () => {
+    if (nativePicture()) revealVideo();
+  });
+  stageVideo?.addEventListener(SOURCE_FAILED_EVENT, () => {
+    const path = session.selPath;
+    if (!nativePicture() || !path) return;
+    byId("media-viewport")?.classList.add("native-unplayable");
+    void loadThumb(path, missingPictureMessage(session.clips[path]?.probeData?.video_codec, null));
   });
 
   const probe = createProbeCoordinator({
@@ -368,6 +421,8 @@ export function createLibrary(host: LibraryHost): LibraryApi {
       }
       renderClips();
       if (session.selPath === path) {
+        const video = asHTMLVideoElement(byId("vid"));
+        if (video) syncPictureSize(video, path);
         host.syncFpsToClip?.();
         host.syncResolutionToClip?.();
         host.syncTimelineUI?.();

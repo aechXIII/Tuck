@@ -462,6 +462,8 @@ body:not(.task-cut) #stage-controls [data-cut-only] {
 :root.native-preview #center { --hole-fill: var(--panel); }
 :root.native-preview #stage { --hole-fill: var(--sink); }
 :root.native-preview #media-viewport > :is(video, img, canvas) { visibility: hidden; }
+/* when the native player can't show the video, its still picture takes the stage */
+:root.native-preview #media-viewport.native-unplayable > img { visibility: visible; }
 /* the picture shows through every layer under the hole, so the editor the full screen card
    covers must not paint there */
 :root.native-preview.stage-fullscreen #stage { --hole-fill: #000; }

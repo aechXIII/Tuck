@@ -80,12 +80,10 @@ export async function installNativeSurface(win: Window): Promise<void> {
   let frame = 0;
   const measure = (): PictureRect => {
     if (stage.classList.contains("timeline-gap")) return NO_PICTURE;
-    return pictureRect(
-      video.getBoundingClientRect(),
-      video.videoWidth,
-      video.videoHeight,
-      viewport.getBoundingClientRect(),
-    );
+    // the probed size stands in while the webview hasn't read the file, or can't
+    const width = video.videoWidth || Number(video.dataset.pictureWidth) || 0;
+    const height = video.videoHeight || Number(video.dataset.pictureHeight) || 0;
+    return pictureRect(video.getBoundingClientRect(), width, height, viewport.getBoundingClientRect());
   };
   const update = (): void => {
     frame = 0;
@@ -106,7 +104,10 @@ export async function installNativeSurface(win: Window): Promise<void> {
   // showing a video, the timeline gap and the crop/zoom transform all change attributes here
   const changed = new MutationObserver(schedule);
   changed.observe(stage, { attributes: true, attributeFilter: ["class", "style", "hidden"] });
-  changed.observe(video, { attributes: true, attributeFilter: ["class", "style", "src"] });
+  changed.observe(video, {
+    attributes: true,
+    attributeFilter: ["class", "style", "src", "data-picture-width", "data-picture-height"],
+  });
   video.addEventListener("loadedmetadata", schedule);
   video.addEventListener("resize", schedule);
   win.addEventListener("resize", schedule);

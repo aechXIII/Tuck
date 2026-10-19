@@ -144,3 +144,45 @@ test("with the switch off the HTML player plays as before", async ({ page }) => 
   expect(await page.evaluate(() => window.__fixtureSurface ?? [])).toEqual([]);
   await expect(page.locator("html")).not.toHaveClass(/native-preview/);
 });
+
+// the native player reads the file itself, so the stage follows its answer, not the webview's
+async function openWithoutPreviewLink(page: Page, refuseOpen: boolean): Promise<void> {
+  const fixture = healthyBackendFixture();
+  fixture.startup.files = ["C:\\videos\\Video.mp4"];
+  fixture.responses.probeFile = { ok: true, data: { duration: DURATION, width: 64, height: 36, fps: 10, has_audio: false } };
+  fixture.responses.getMediaUrl = { ok: false, error: "The preview could not be served" };
+  fixture.responses.getThumbnail = { ok: true, thumbnail: "data:image/gif;base64,R0lGODlhAQABAAAAACw=" };
+  await page.setViewportSize({ width: 1240, height: 800 });
+  await installFakeBackend(page, fixture);
+  await page.addInitScript({ content: fixtureEngineScript({ nativePreview: "engine" }) });
+  if (refuseOpen) {
+    await page.addInitScript(() => {
+      const shell = Reflect.get(window, "__TAURI_INTERNALS__") as { invoke: (command: string, args: unknown) => Promise<unknown> };
+      const invoke = shell.invoke;
+      shell.invoke = (command, args) => command === "player_open"
+        ? Promise.reject({ code: "PLAYER_OPEN_FAILED", message: "The video could not be opened.", details: {} })
+        : invoke(command, args);
+    });
+  }
+  await page.goto("/");
+  await expect(page.locator(".tl-segment")).toBeVisible();
+}
+
+test("a video without a preview link still plays in the native player, placed by its probed size", async ({ page }) => {
+  await openWithoutPreviewLink(page, false);
+  await expect.poll(async () => (await engineCalls(page)).find((call) => call.command === "player_open")?.path).toBe("C:\\videos\\Video.mp4");
+  await expect.poll(() => page.evaluate(() => {
+    const viewports = (window.__fixtureSurface ?? []).filter((call) => call.command === "preview_surface_viewport");
+    const last = viewports.at(-1)?.args.viewport as { width?: number; height?: number } | undefined;
+    return last && last.width && last.height ? Math.round((last.width / last.height) * 100) / 100 : 0;
+  })).toBe(1.78);
+  await expect(page.locator("#preview-status")).toBeHidden();
+  await page.locator("#btn-play").click();
+  await expect.poll(async () => (await engineCalls(page)).some((call) => call.kind === "play")).toBe(true);
+});
+
+test("a video the native player can't open shows its picture and why", async ({ page }) => {
+  await openWithoutPreviewLink(page, true);
+  await expect(page.locator("#media-viewport #thumb")).toBeVisible();
+  await expect(page.locator("#preview-status")).toContainText("can’t be shown here");
+});

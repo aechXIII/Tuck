@@ -24,6 +24,21 @@ async function open(page: Page, data = fixture()) {
   }
 }
 
+// this video has no playable preview: the HTML player keeps the time its element is given, and
+// the native player moves with the default 3 second skip
+async function playheadAtThreeSeconds(page: Page) {
+  if (process.env.TUCK_E2E_NATIVE_PREVIEW === "engine") {
+    await page.locator("body").click({ position: { x: 5, y: 5 } });
+    await page.keyboard.press("Shift+ArrowRight");
+    return;
+  }
+  await page.evaluate(() => {
+    const video = document.querySelector<HTMLVideoElement>("#vid")!;
+    video.currentTime = 3;
+    video.dispatchEvent(new Event("timeupdate"));
+  });
+}
+
 async function calls(page: Page, method: string) {
   return page.evaluate(name => (window.__tuckFakeBackendCalls ?? [])
     .filter(call => call.method === name)
@@ -151,20 +166,16 @@ test("a native picker keeps the original clip and source playhead while selectio
   data.startup.files.push("C:\\media\\Second.mp4");
   data.holdMethods = ["pickSaveFile"];
   await open(page, data);
-  await page.evaluate(() => {
-    const video = document.querySelector<HTMLVideoElement>("#vid")!;
-    video.currentTime = 3.25;
-    video.dispatchEvent(new Event("timeupdate"));
-  });
+  await playheadAtThreeSeconds(page);
   await page.getByRole("button", { name: "Save frame", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Save frame", exact: true })).toHaveAccessibleDescription(/Recording.mp4 at 3.250 s/);
+  await expect(page.getByRole("button", { name: "Save frame", exact: true })).toHaveAccessibleDescription(/Recording.mp4 at 3.000 s/);
   await page.locator(".clip").filter({ hasText: "Second.mp4" }).click();
   await page.evaluate(() => window.__tuckReleaseHeld?.("pickSaveFile"));
   await expect(page.locator("#toast-ct")).toContainText(OUTPUT);
   await expect(page.getByRole("button", { name: "Save frame", exact: true })).toHaveAccessibleDescription(/Saved frame from Recording.mp4/);
   const exported = await calls(page, "exportFrame");
   expect(exported).toHaveLength(1);
-  expect(exported[0]?.[0]).toMatchObject({ source: SOURCE, time: 3.25, output: OUTPUT });
+  expect(exported[0]?.[0]).toMatchObject({ source: SOURCE, time: 3, output: OUTPUT });
 });
 test("a frame keeps crop, rotation and LUT settings when the profile changes during the picker", async ({ page }) => {
   const data = fixture();

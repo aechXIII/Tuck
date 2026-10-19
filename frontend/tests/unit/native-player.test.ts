@@ -8,7 +8,7 @@ import {
 } from "../../src/backend/native-player.ts";
 import type { TauriInvoke } from "../../src/backend/tauri.ts";
 import { installNativePlayer } from "../../src/features/player/native-player.ts";
-import { SOURCE_EVENT } from "../../src/features/preview/preview-controller.ts";
+import { SOURCE_EVENT, SOURCE_FAILED_EVENT, SOURCE_READY_EVENT } from "../../src/features/preview/preview-controller.ts";
 import type { PlayerHost } from "../../src/features/player/player.ts";
 import type { SegmentRange } from "../../src/features/timeline/segments.ts";
 import { createFixtureEngine } from "../fixtures/fixture-engine.ts";
@@ -542,6 +542,50 @@ test("a file the webview can't read keeps playing in the engine", async () => {
     assert.equal(run.player.isPlaying(), true);
     assert.ok(run.player.timelineTime() > 0.3);
   } finally {
+    run.player.dispose();
+  }
+});
+
+test("the stage hears once when the first frame of a shown video is ready", async () => {
+  const run = setup();
+  const answers: string[] = [];
+  run.video.addEventListener(SOURCE_READY_EVENT, () => answers.push("ready"));
+  run.video.addEventListener(SOURCE_FAILED_EVENT, () => answers.push("failed"));
+  try {
+    run.video.dispatchEvent(new CustomEvent(SOURCE_EVENT, { detail: "a" }));
+    await settle();
+    run.player.togglePlay();
+    await run.advance(500);
+    assert.deepEqual(answers, ["ready"]);
+  } finally {
+    run.player.dispose();
+  }
+});
+
+test("a video the engine can't open is reported once and not tried again", async () => {
+  const errors: unknown[] = [];
+  const original = console.error;
+  console.error = (...values: unknown[]) => errors.push(values);
+  const run = setup({
+    wrap: (invoke) => async (command, args) => {
+      if (command === "player_open") throw { code: "PLAYER_OPEN_FAILED", message: "The video could not be opened.", details: {} };
+      return invoke(command, args);
+    },
+  });
+  const answers: string[] = [];
+  run.video.addEventListener(SOURCE_READY_EVENT, () => answers.push("ready"));
+  run.video.addEventListener(SOURCE_FAILED_EVENT, () => answers.push("failed"));
+  try {
+    run.video.dispatchEvent(new CustomEvent(SOURCE_EVENT, { detail: "a" }));
+    await settle();
+    run.player.togglePlay();
+    run.player.updateTime();
+    await run.advance(200);
+    assert.deepEqual(answers, ["failed"]);
+    assert.equal(run.fixture.calls.filter((call) => call.command === "player_open").length, 0);
+    assert.equal(errors.length, 1, "one refusal, not one per timeline refresh");
+  } finally {
+    console.error = original;
     run.player.dispose();
   }
 });
