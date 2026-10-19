@@ -81,6 +81,15 @@ export interface PlayerApi {
 
 export const PLAYBACK_SPEEDS: readonly number[] = [0.25, 0.5, 1, 1.5, 2, 4];
 
+/** Shows the playback speed on the player bar's badge, which only appears away from normal speed. */
+export function showPlaybackSpeed(badge: HTMLButtonElement | null, rate: number): void {
+  if (!badge) return;
+  badge.hidden = rate === 1;
+  badge.textContent = `${rate}×`;
+  badge.setAttribute("aria-label", `Playing at ${rate}×. Back to normal speed`);
+  badge.dataset.tip = "Back to normal speed";
+}
+
 /** The speed one step away from `current` in `direction`, staying within the list. */
 export function nextPlaybackSpeed(current: number, direction: number): number {
   const distance = (speed: number): number => Math.abs(speed - current);
@@ -688,13 +697,7 @@ export function installPlayer(host: PlayerHost): PlayerApi {
       // a newly loaded video keeps the chosen speed
       v.defaultPlaybackRate = rate;
     }
-    const badge = byId<HTMLButtonElement>("btn-speed");
-    if (badge) {
-      badge.hidden = rate === 1;
-      badge.textContent = `${rate}×`;
-      badge.setAttribute("aria-label", `Playing at ${rate}×. Back to normal speed`);
-      badge.dataset.tip = "Back to normal speed";
-    }
+    showPlaybackSpeed(byId<HTMLButtonElement>("btn-speed"), rate);
   }
 
   function changeSpeed(direction: number): void {

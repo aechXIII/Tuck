@@ -45,6 +45,10 @@ fn player_error(error: PlayerError) -> PublicBackendError {
         PlayerError::InvalidVolume => {
             PublicBackendError::new("INVALID_REQUEST", "The volume must be between 0 and 1.")
         }
+        PlayerError::InvalidRate => PublicBackendError::new(
+            "INVALID_REQUEST",
+            "The playback speed must be between 0.25 and 4.",
+        ),
         PlayerError::InvalidLut => {
             PublicBackendError::new("INVALID_REQUEST", "The LUT preview data is invalid.")
         }

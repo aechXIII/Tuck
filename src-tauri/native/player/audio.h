@@ -12,7 +12,7 @@ typedef struct AudioTrack AudioTrack;
 
 typedef struct AudioTrackStatus {
     uint64_t generation;
-    /* seconds of `generation` heard so far */
+    /* timeline seconds of `generation` heard so far */
     double played;
     uint64_t underruns;
     /* the sound can't play any more; error says why */
@@ -24,9 +24,9 @@ typedef struct AudioTrackStatus {
    the reason its sound can't play */
 AudioTrack *audio_track_open(const char *path, double duration_seconds, char *error, size_t error_size);
 void audio_track_close(AudioTrack *track);
-/* play `generation` from `seconds` on the timeline, heard while `running`; `seconds` only
-   matters when the generation is new */
-void audio_track_want(AudioTrack *track, uint64_t generation, double seconds, int running);
+/* play `generation` from `seconds` on the timeline at `rate` timeline seconds per second, heard
+   while `running`; `seconds` and `rate` only matter when the generation is new */
+void audio_track_want(AudioTrack *track, uint64_t generation, double seconds, double rate, int running);
 void audio_track_volume(AudioTrack *track, float gain);
 void audio_track_status(AudioTrack *track, AudioTrackStatus *status);
 

@@ -15,6 +15,7 @@
 #include <libswresample/swresample.h>
 
 #include "audio_output.h"
+#include "tempo.h"
 
 #define RATE 48000
 /* silence goes out in pieces this long, so a seek during a long gap is picked up quickly */
@@ -42,12 +43,18 @@ struct AudioTrack {
     /* under lock: what the clock asked for */
     uint64_t wanted_generation;
     double wanted_seconds;
+    double wanted_rate;
     int wanted_running;
+    /* the speed of the generation being played, for turning heard sound into media time */
+    uint64_t rate_generation;
+    double generation_rate;
     int failed;
     char error[160];
 
     /* the worker's own */
     uint64_t generation;
+    /* NULL at normal speed */
+    Tempo *tempo;
     int running;
     /* where on the timeline the next queued sample plays */
     double cursor;
@@ -106,20 +113,41 @@ static void wait_for_change(AudioTrack *t, double seconds) {
     pthread_mutex_unlock(&t->lock);
 }
 
-/* queues all of `frames`, waiting for room; 0 when a newer generation or closing cut it short */
-static int put(AudioTrack *t, const float *samples, size_t frames) {
+/* hands all of `frames` to the device, waiting for room; 0 when a newer generation or closing
+   cut it short */
+static int write_out(AudioTrack *t, const float *samples, size_t frames) {
     while (frames) {
         if (superseded(t)) return 0;
         follow_running(t);
         size_t written = audio_output_write(t->output, samples, frames, t->generation);
         samples += written * 2;
         frames -= written;
-        t->cursor += (double)written / RATE;
         if (!written && audio_output_failed(t->output)) return 0;
         /* a paused track only wakes for the clock; a playing one for the device to make room */
         if (frames) wait_for_change(t, t->running ? FULL_WAIT_SECONDS : 0);
     }
     return 1;
+}
+
+/* everything the tempo filter has ready goes out */
+static int drain_tempo(AudioTrack *t) {
+    size_t frames;
+    const float *samples;
+    while ((samples = tempo_take(t->tempo, &frames)))
+        if (!write_out(t, samples, frames)) return 0;
+    return 1;
+}
+
+/* queues `frames` of the timeline, at the generation's speed; 0 when cut short */
+static int put(AudioTrack *t, const float *samples, size_t frames) {
+    /* the cursor is in timeline time, whatever the speed the sound goes out at */
+    t->cursor += (double)frames / RATE;
+    if (!t->tempo) return write_out(t, samples, frames);
+    if (!tempo_feed(t->tempo, samples, frames)) {
+        fail(t, "The sound could not change speed.");
+        return 0;
+    }
+    return drain_tempo(t);
 }
 
 /* silence up to `until` on the timeline, where the file has no sound */
@@ -136,6 +164,8 @@ static int pad_to(AudioTrack *t, double until) {
 
 static void finish(AudioTrack *t) {
     t->finished = 1;
+    /* what the tempo filter still holds is the end of the sound */
+    if (t->tempo && (!tempo_feed(t->tempo, NULL, 0) || !drain_tempo(t))) return;
     audio_output_finish(t->output, t->generation);
 }
 
@@ -164,12 +194,27 @@ static int follow_generation(AudioTrack *t) {
     pthread_mutex_lock(&t->lock);
     uint64_t generation = t->wanted_generation;
     double seconds = t->wanted_seconds;
+    double rate = t->wanted_rate;
     pthread_mutex_unlock(&t->lock);
     if (!generation) return 0;
     if (generation != t->generation) {
         audio_output_reset(t->output, generation);
         t->running = 0;
         t->generation = generation;
+        /* a new generation starts with an empty filter at its own speed */
+        tempo_close(t->tempo);
+        t->tempo = NULL;
+        if (rate != 1) {
+            t->tempo = tempo_open(rate);
+            if (!t->tempo) {
+                fail(t, "The sound could not change speed.");
+                return 0;
+            }
+        }
+        pthread_mutex_lock(&t->lock);
+        t->rate_generation = generation;
+        t->generation_rate = rate;
+        pthread_mutex_unlock(&t->lock);
         if (!restart(t, seconds)) return 0;
     }
     follow_running(t);
@@ -366,6 +411,7 @@ void audio_track_close(AudioTrack *t) {
     pthread_mutex_unlock(&t->lock);
     if (t->thread_started) pthread_join(t->thread, NULL);
     audio_output_close(t->output);
+    tempo_close(t->tempo);
     swr_free(&t->resampler);
     av_channel_layout_uninit(&t->resampler_layout);
     free(t->samples);
@@ -376,11 +422,12 @@ void audio_track_close(AudioTrack *t) {
     free(t);
 }
 
-void audio_track_want(AudioTrack *t, uint64_t generation, double seconds, int running) {
+void audio_track_want(AudioTrack *t, uint64_t generation, double seconds, double rate, int running) {
     pthread_mutex_lock(&t->lock);
     if (generation != t->wanted_generation) {
         t->wanted_generation = generation;
         t->wanted_seconds = seconds;
+        t->wanted_rate = rate;
     }
     t->wanted_running = running != 0;
     pthread_cond_broadcast(&t->changed);
@@ -395,9 +442,11 @@ void audio_track_status(AudioTrack *t, AudioTrackStatus *status) {
     AudioOutputStatus output;
     audio_output_status(t->output, &output);
     status->generation = output.generation;
-    status->played = output.played;
     status->underruns = output.underruns;
     pthread_mutex_lock(&t->lock);
+    /* the device plays sound seconds; at another speed each one holds that many timeline seconds */
+    double rate = output.generation == t->rate_generation ? t->generation_rate : 1;
+    status->played = output.played * rate;
     status->failed = t->failed || output.failed;
     snprintf(status->error, sizeof(status->error), "%s", t->failed ? t->error : output.error);
     pthread_mutex_unlock(&t->lock);

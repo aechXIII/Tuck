@@ -74,7 +74,8 @@ ninja -C "$build_dir/dav1d" -j "$jobs" install
 # Ubuntu 22.04's DXVA header predates AV1; keep its toolchain and replace only this header
 install -m644 "$source_dir/mingw-w64-12.0.0/mingw-w64-headers/include/dxva.h" "$prefix/include/dxva.h"
 
-# decode only: the player never encodes or filters, and leaving them out keeps it LGPL and small
+# decode only, plus the few filters that change the sound's speed without its pitch: the player
+# never encodes, and leaving encoders and other filters out keeps it LGPL and small
 mkdir -p "$build_dir/ffmpeg"
 pushd "$build_dir/ffmpeg" >/dev/null
 "$source_dir/ffmpeg-7.1.1/configure" \
@@ -82,7 +83,8 @@ pushd "$build_dir/ffmpeg" >/dev/null
   --cc="$cross-gcc-posix" --cxx="$cross-g++-posix" \
   --prefix="$prefix" --enable-cross-compile --disable-autodetect \
   --enable-static --disable-shared --disable-debug --disable-doc --disable-programs \
-  --disable-encoders --disable-muxers --disable-filters --disable-avfilter --disable-avdevice \
+  --disable-encoders --disable-muxers --disable-filters \
+  --enable-filter=abuffer,abuffersink,aformat,aresample,atempo --disable-avdevice \
   --disable-devices --disable-network --disable-swscale --disable-postproc \
   --enable-libdav1d --enable-zlib --enable-d3d11va --enable-w32threads \
   --pkg-config=pkg-config --pkg-config-flags=--static \

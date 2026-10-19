@@ -18,14 +18,14 @@ export PKG_CONFIG_PATH=
 gcc -shared -fPIC -O2 -g -std=c11 -Wall -Wextra -Werror -fvisibility=hidden \
   -D_GNU_SOURCE -DTUCK_VIDEO_BUILD \
   -I"$sdk/include" -isystem "$sdk/include/pipewire-0.3" -isystem "$sdk/include/spa-0.2" \
-  $(pkg-config --cflags libavformat libavcodec libavutil libswresample libplacebo) \
+  $(pkg-config --cflags libavformat libavcodec libavfilter libavutil libswresample libplacebo) \
   "$source_dir/engine.c" "$source_dir/playback_state.c" "$source_dir/decoder.c" \
   "$source_dir/render_gl.c" "$source_dir/video.c" "$source_dir/audio.c" \
-  "$source_dir/audio_pipewire.c" "$source_dir/lut.c" \
+  "$source_dir/audio_pipewire.c" "$source_dir/lut.c" "$source_dir/tempo.c" \
   -o "$output_dir/libtuck_player.so" \
   -Wl,-soname,libtuck_player.so -Wl,--no-undefined -Wl,--exclude-libs,ALL -Wl,-Bsymbolic \
   -Wl,-z,relro -Wl,-z,now \
-  $(pkg-config --static --libs libavformat libavcodec libavutil libswresample libplacebo) \
+  $(pkg-config --static --libs libavformat libavcodec libavfilter libavutil libswresample libplacebo) \
   -lstdc++ -ldl -lpthread -lm
 # the seek check runs the player's decoder over the clips from scripts/player_fixtures.py
 gcc -O2 -g -std=c11 -Wall -Wextra -Werror -D_GNU_SOURCE \

@@ -29,6 +29,7 @@ pub(crate) struct RawStatus {
     paused: i32,
     seek_pending: i32,
     ended: i32,
+    rate: f64,
 }
 
 extern "C" {
@@ -37,6 +38,7 @@ extern "C" {
     fn tuck_player_play(player: *mut TuckPlayer, now: f64);
     fn tuck_player_pause(player: *mut TuckPlayer, now: f64);
     fn tuck_player_seek(player: *mut TuckPlayer, request_id: u64, seconds: f64, now: f64) -> i32;
+    fn tuck_player_set_rate(player: *mut TuckPlayer, rate: f64, now: f64) -> i32;
     fn tuck_player_frame_presented(player: *mut TuckPlayer, generation: u64, now: f64);
     fn tuck_player_status(player: *mut TuckPlayer, now: f64, status: *mut RawStatus);
 }
@@ -54,6 +56,8 @@ pub struct PlayerStatus {
     pub paused: bool,
     pub seek_pending: bool,
     pub ended: bool,
+    /// media seconds per second of playing
+    pub rate: f64,
     /// the decoder and renderer, when the native player library plays the video
     pub video: Option<VideoInfo>,
 }
@@ -70,6 +74,7 @@ impl From<RawStatus> for PlayerStatus {
             paused: raw.paused != 0,
             seek_pending: raw.seek_pending != 0,
             ended: raw.ended != 0,
+            rate: raw.rate,
             video: None,
         }
     }
@@ -112,6 +117,12 @@ impl Engine {
         unsafe { tuck_player_seek(self.player.as_ptr(), request_id, seconds, now) != 0 }
     }
 
+    /// False when the rate is outside the editor's playback speeds.
+    pub fn set_rate(&mut self, rate: f64) -> bool {
+        let now = self.now();
+        unsafe { tuck_player_set_rate(self.player.as_ptr(), rate, now) != 0 }
+    }
+
     /// Until there is a renderer, the picture for a new position counts as shown as soon as it
     /// is asked for; a renderer reports this when its frame is actually on screen.
     pub fn present_current_frame(&mut self) {
@@ -149,6 +160,10 @@ pub enum PlayerCommand {
     Volume {
         volume: f64,
     },
+    /// media seconds per second of playing; a new speed restarts at the same spot
+    Rate {
+        rate: f64,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -159,11 +174,16 @@ pub enum PlayerError {
     SeekRefused,
     /// a volume outside 0 to 1
     InvalidVolume,
+    /// a speed outside the editor's playback speeds
+    InvalidRate,
     /// a LUT table or strength the preview can't use
     InvalidLut,
     /// the native player library could not open the video; the text says why
     Video(String),
 }
+
+// the editor's slowest and fastest playback speeds, TUCK_PLAYER_RATE_MIN and _MAX in engine.h
+pub const PLAYBACK_RATES: std::ops::RangeInclusive<f64> = 0.25..=4.0;
 
 // a week is far beyond any video Tuck edits; anything longer is a bad request, not a video
 const MAX_DURATION_SECONDS: f64 = 7.0 * 24.0 * 3600.0;
@@ -193,6 +213,13 @@ impl Backend {
         match self {
             Backend::Clock(engine) => engine.seek(request_id, seconds),
             Backend::Video(video) => video.seek(request_id, seconds),
+        }
+    }
+
+    fn rate(&mut self, rate: f64) -> bool {
+        match self {
+            Backend::Clock(engine) => engine.set_rate(rate),
+            Backend::Video(video) => video.rate(rate),
         }
     }
 
@@ -368,6 +395,11 @@ impl PlayerState {
                 }
                 backend.volume(volume);
             }
+            PlayerCommand::Rate { rate } => {
+                if !PLAYBACK_RATES.contains(&rate) || !backend.rate(rate) {
+                    return Err(PlayerError::InvalidRate);
+                }
+            }
         }
         Ok(backend.status())
     }
@@ -462,6 +494,12 @@ mod tests {
         );
         assert!(parse(r#"{"kind":"volume"}"#).is_err());
         assert!(parse(r#"{"kind":"volume","volume":"loud"}"#).is_err());
+        assert_eq!(
+            parse(r#"{"kind":"rate","rate":2}"#).unwrap(),
+            PlayerCommand::Rate { rate: 2.0 }
+        );
+        assert!(parse(r#"{"kind":"rate"}"#).is_err());
+        assert!(parse(r#"{"kind":"rate","rate":2,"pitch":1}"#).is_err());
     }
 
     #[test]
@@ -496,6 +534,15 @@ mod tests {
         assert_eq!(volume(1.5), Err(PlayerError::InvalidVolume));
         assert_eq!(volume(-0.1), Err(PlayerError::InvalidVolume));
         assert_eq!(volume(f64::NAN), Err(PlayerError::InvalidVolume));
+        let rate = |rate| state.command(PlayerCommand::Rate { rate });
+        assert_eq!(opened.rate, 1.0);
+        let fast = rate(2.0).expect("rate");
+        assert_eq!(fast.rate, 2.0);
+        assert!(fast.position_seconds >= 7.5, "a new speed keeps the spot");
+        for refused in [0.0, 0.2, 4.5, -1.0, f64::NAN, f64::INFINITY] {
+            assert_eq!(rate(refused), Err(PlayerError::InvalidRate));
+        }
+        assert_eq!(state.status().expect("status").rate, 2.0);
         // a new video starts over with fresh request IDs
         state.open(5.0).expect("open again");
         assert_eq!(seek(1, 2.0).expect("seek").confirmed_seek_request_id, 1);

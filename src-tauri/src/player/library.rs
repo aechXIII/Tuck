@@ -12,7 +12,7 @@ use serde::Serialize;
 use super::engine::{PlayerStatus, RawStatus};
 
 // must match TUCK_VIDEO_ABI in native/player/tuck_video.h
-const ABI: c_int = 5;
+const ABI: c_int = 6;
 
 #[cfg(windows)]
 const FILE_NAME: &str = "tuck_player.dll";
@@ -61,6 +61,7 @@ type OpenFn = unsafe extern "C" fn(*const OpenParams, *mut c_char, usize) -> *mu
 type VideoFn = unsafe extern "C" fn(*mut c_void);
 type SeekFn = unsafe extern "C" fn(*mut c_void, u64, f64) -> c_int;
 type VolumeFn = unsafe extern "C" fn(*mut c_void, f64);
+type RateFn = unsafe extern "C" fn(*mut c_void, f64) -> c_int;
 type LutTableFn = unsafe extern "C" fn(*mut c_void, *const f32, i32) -> c_int;
 type StatusFn = unsafe extern "C" fn(*mut c_void, *mut RawVideoStatus);
 #[cfg(target_os = "linux")]
@@ -81,6 +82,7 @@ struct Api {
     pause: VideoFn,
     seek: SeekFn,
     volume: VolumeFn,
+    rate: RateFn,
     lut_table: LutTableFn,
     lut_strength: VolumeFn,
     status: StatusFn,
@@ -242,6 +244,7 @@ fn resolve(symbol: impl Fn(&CStr) -> Option<*const c_void>) -> Result<Api, Strin
             pause: std::mem::transmute::<*const c_void, VideoFn>(find(c"tuck_video_pause")?),
             seek: std::mem::transmute::<*const c_void, SeekFn>(find(c"tuck_video_seek")?),
             volume: std::mem::transmute::<*const c_void, VolumeFn>(find(c"tuck_video_volume")?),
+            rate: std::mem::transmute::<*const c_void, RateFn>(find(c"tuck_video_rate")?),
             lut_table: std::mem::transmute::<*const c_void, LutTableFn>(find(
                 c"tuck_video_lut_table",
             )?),
@@ -325,6 +328,11 @@ impl Video {
     /// The sound's level, 0 to 1.
     pub fn volume(&mut self, gain: f64) {
         unsafe { (self.api.volume)(self.handle.as_ptr(), gain) }
+    }
+
+    /// Media seconds per second of playing. False when the library refuses the speed.
+    pub fn rate(&mut self, rate: f64) -> bool {
+        unsafe { (self.api.rate)(self.handle.as_ptr(), rate) != 0 }
     }
 
     /// The preview's colour LUT: `size`³ RGB samples, R changing fastest; `None` removes it.
@@ -463,12 +471,12 @@ mod tests {
     #[test]
     fn the_status_struct_matches_the_c_layout() {
         // TuckVideoStatus in tuck_video.h, laid out by the C compiler for 64-bit targets
-        assert_eq!(std::mem::offset_of!(RawVideoStatus, frame_rate), 64);
-        assert_eq!(std::mem::offset_of!(RawVideoStatus, sound_underruns), 328);
-        assert_eq!(std::mem::offset_of!(RawVideoStatus, sound), 336);
-        assert_eq!(std::mem::offset_of!(RawVideoStatus, sound_error), 340);
-        assert_eq!(std::mem::offset_of!(RawVideoStatus, software_reason), 500);
-        assert_eq!(std::mem::size_of::<RawVideoStatus>(), 504);
+        assert_eq!(std::mem::offset_of!(RawVideoStatus, frame_rate), 72);
+        assert_eq!(std::mem::offset_of!(RawVideoStatus, sound_underruns), 336);
+        assert_eq!(std::mem::offset_of!(RawVideoStatus, sound), 344);
+        assert_eq!(std::mem::offset_of!(RawVideoStatus, sound_error), 348);
+        assert_eq!(std::mem::offset_of!(RawVideoStatus, software_reason), 508);
+        assert_eq!(std::mem::size_of::<RawVideoStatus>(), 512);
     }
 
     #[test]

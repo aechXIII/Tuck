@@ -31,6 +31,7 @@ interface SentCommand {
   requestId?: number;
   seconds?: number;
   volume?: number;
+  rate?: number;
 }
 
 function setup(options: Setup = {}) {
@@ -199,7 +200,7 @@ test("a status is only accepted with exact counters and real times", () => {
   const status: NativePlayerStatus = {
     monotonicSeconds: 3, positionSeconds: 1, durationSeconds: 10, generation: 2,
     seekRequestId: 1, confirmedSeekRequestId: 1, paused: true, seekPending: false, ended: false,
-    video: null,
+    rate: 1, video: null,
   };
   assert.ok(isNativePlayerStatus(status));
   const sound = { state: "playing", underruns: 0, error: "" };
@@ -221,6 +222,9 @@ test("a status is only accepted with exact counters and real times", () => {
     { ...status, video: { ...video, sound: undefined } },
     { ...status, video: { ...video, sound: { ...sound, state: "loud" } } },
     { ...status, video: { ...video, sound: { ...sound, underruns: 0.5 } } },
+    { ...status, rate: 0 },
+    { ...status, rate: Number.NaN },
+    { ...status, rate: undefined },
     { ...status, video: { ...video, softwareReason: undefined } },
     { ...status, video: { ...video, softwareReason: "slow" } },
   ]) assert.equal(isNativePlayerStatus(broken), false);
@@ -586,6 +590,48 @@ test("a video the engine can't open is reported once and not tried again", async
     assert.equal(errors.length, 1, "one refusal, not one per timeline refresh");
   } finally {
     console.error = original;
+    run.player.dispose();
+  }
+});
+
+test("a new speed goes to the engine and the playhead moves at it", async () => {
+  const run = setup();
+  try {
+    await run.load();
+    run.player.togglePlay();
+    await run.advance(400);
+    run.player.changeSpeed(1);
+    run.player.changeSpeed(1);
+    await settle();
+    const rates = () => run.commands().filter((command) => command.kind === "rate").map((command) => command.rate);
+    assert.deepEqual(rates(), [1.5, 2], "two steps up from normal speed");
+    const before = run.player.timelineTime();
+    await run.advance(1000);
+    const moved = run.player.timelineTime() - before;
+    assert.ok(moved > 1.8 && moved < 2.2, `moved ${moved} s in one second at double speed`);
+    assert.equal((run.video as unknown as { playbackRate: number }).playbackRate, 2);
+    run.player.resetSpeed();
+    await settle();
+    assert.deepEqual(rates(), [1.5, 2, 1]);
+  } finally {
+    run.player.dispose();
+  }
+});
+
+test("the chosen speed carries over to the next video", async () => {
+  const run = setup();
+  try {
+    await run.load();
+    run.player.changeSpeed(-1);
+    await settle();
+    run.video.dispatchEvent(new CustomEvent(SOURCE_EVENT, { detail: "a" }));
+    await settle();
+    const sent = run.fixture.calls.map((call) => call.command === "player_command"
+      ? (call.args.command as SentCommand).kind + ":" + String((call.args.command as SentCommand).rate ?? "")
+      : call.command);
+    assert.deepEqual(sent.filter((entry) => entry === "player_open" || entry.startsWith("rate")),
+      ["player_open", "rate:0.5", "player_open", "rate:0.5"]);
+  } finally {
     run.player.dispose();
   }
 });

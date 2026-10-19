@@ -40,6 +40,9 @@ struct TuckVideo {
     pthread_cond_t wake;
     TuckPlayer *clock;
     Decoder *decoder;
+    /* seconds between display refreshes, and the speed the decoder's frame spacing is set for */
+    double interval;
+    double decoder_rate;
     atomic_int stopping;
     /* the frame on screen; the render thread's on Windows, the GTK main thread's on Linux */
     DecodedFrame shown;
@@ -98,6 +101,15 @@ static void wake_render(void *opaque) {
 static void follow_clock(TuckVideo *v, const TuckPlayerStatus *status) {
     if (status->generation != v->decoder_generation) {
         v->decoder_generation = status->generation;
+        /* faster playback shows frames further apart on the timeline. Slower playback keeps the
+           normal spacing: a closer one would let the queue hold more decoder surfaces than the
+           GPU pool was made with, and a video up to the display's frame rate still shows every
+           frame */
+        double rate = fmax(status->rate, 1);
+        if (rate != v->decoder_rate) {
+            v->decoder_rate = rate;
+            decoder_set_cadence(v->decoder, v->interval * rate);
+        }
         decoder_seek(v->decoder, status->position_seconds, status->generation);
     }
     if (v->sound != TUCK_SOUND_PLAYING) return;
@@ -105,7 +117,7 @@ static void follow_clock(TuckVideo *v, const TuckPlayerStatus *status) {
     if (status->generation == v->sound_generation && running == v->sound_running) return;
     v->sound_generation = status->generation;
     v->sound_running = running;
-    audio_track_want(v->audio, status->generation, status->position_seconds, running);
+    audio_track_want(v->audio, status->generation, status->position_seconds, status->rate, running);
 }
 
 /* under lock: the clock leaves the sound and carries on in monotonic time */
@@ -113,7 +125,7 @@ static void lose_sound(TuckVideo *v, const char *reason, double now) {
     v->sound = TUCK_SOUND_UNAVAILABLE;
     snprintf(v->sound_error, sizeof(v->sound_error), "%s", reason);
     tuck_player_follow_sound(v->clock, 0, now);
-    audio_track_want(v->audio, v->sound_generation, 0, 0);
+    audio_track_want(v->audio, v->sound_generation, 0, 1, 0);
 }
 
 /* under lock: tells the clock what the listener has heard; a failed device leaves the clock on
@@ -387,7 +399,9 @@ TuckVideo *tuck_video_open(const TuckVideoOpen *open, char *error, size_t error_
     if (!start_drawing(v, open, &hooks, error, error_size)) goto failed;
     v->decoder = decoder_open(open->path, &hooks, error, error_size);
     if (!v->decoder) goto failed;
-    decoder_set_cadence(v->decoder, display_interval(v, open));
+    v->interval = display_interval(v, open);
+    v->decoder_rate = 1;
+    decoder_set_cadence(v->decoder, v->interval);
     /* a file without sound, or sound that can't play, still shows its picture */
     if (atomic_load(&speakers_missing))
         snprintf(v->sound_error, sizeof(v->sound_error), "%s", NO_SPEAKER);
@@ -441,6 +455,14 @@ void tuck_video_pause(TuckVideo *v) {
 int tuck_video_seek(TuckVideo *v, uint64_t request_id, double seconds) {
     pthread_mutex_lock(&v->lock);
     int accepted = tuck_player_seek(v->clock, request_id, seconds, now_seconds());
+    if (accepted) after_command(v);
+    pthread_mutex_unlock(&v->lock);
+    return accepted;
+}
+
+int tuck_video_rate(TuckVideo *v, double rate) {
+    pthread_mutex_lock(&v->lock);
+    int accepted = tuck_player_set_rate(v->clock, rate, now_seconds());
     if (accepted) after_command(v);
     pthread_mutex_unlock(&v->lock);
     return accepted;

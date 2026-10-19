@@ -59,6 +59,7 @@ export function createFixtureEngine(options: FixtureEngineOptions = {}): Fixture
     requested: number;
     confirmed: number;
     updatedAt: number;
+    rate: number;
   }
   let player: Player | null = null;
 
@@ -66,7 +67,7 @@ export function createFixtureEngine(options: FixtureEngineOptions = {}): Fixture
 
   function advance(p: Player, at: number): void {
     if (p.playing && !p.pending && !p.ended && at > p.updatedAt) {
-      p.position = Math.min(p.duration, p.position + (at - p.updatedAt) / 1000);
+      p.position = Math.min(p.duration, p.position + ((at - p.updatedAt) / 1000) * p.rate);
       if (p.position >= p.duration) {
         p.ended = true;
         p.playing = false;
@@ -104,6 +105,7 @@ export function createFixtureEngine(options: FixtureEngineOptions = {}): Fixture
       paused: !p.playing,
       seekPending: p.pending,
       ended: p.ended,
+      rate: p.rate,
       video: null,
     };
   }
@@ -117,7 +119,7 @@ export function createFixtureEngine(options: FixtureEngineOptions = {}): Fixture
       }
       const p: Player = {
         duration, position: 0, playing: false, ended: false, pending: false,
-        generation: 0, requested: 0, confirmed: 0, updatedAt: now(),
+        generation: 0, requested: 0, confirmed: 0, updatedAt: now(), rate: 1,
       };
       player = p;
       restart(p, 0, 0);
@@ -156,6 +158,16 @@ export function createFixtureEngine(options: FixtureEngineOptions = {}): Fixture
       }
       p.requested = id;
       restart(p, seconds, id);
+    } else if (kind === "rate") {
+      const rate = field("rate");
+      if (typeof rate !== "number" || !Number.isFinite(rate) || rate < 0.25 || rate > 4) {
+        throw failure("INVALID_REQUEST", "The playback speed must be between 0.25 and 4.");
+      }
+      // like the engine, a new speed starts again from the same spot unless it is at the end
+      if (rate !== p.rate) {
+        p.rate = rate;
+        if (!p.ended) restart(p, p.position, 0);
+      }
     } else if (kind === "volume") {
       const volume = field("volume");
       if (typeof volume !== "number" || !Number.isFinite(volume) || volume < 0 || volume > 1) {

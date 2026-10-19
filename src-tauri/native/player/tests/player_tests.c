@@ -245,6 +245,51 @@ static void engine(void) {
     tuck_player_destroy(player);
 }
 
+/* a new speed restarts at the same spot and the clock then runs at that speed */
+static void playback_rate(void) {
+    TuckPlayer *player = tuck_player_create(10, 100);
+    CHECK(player != NULL);
+    if (!player) return;
+    tuck_player_frame_presented(player, 1, 100);
+    CHECK(status_at(player, 100).rate == 1);
+    CHECK(!tuck_player_set_rate(player, 0, 100));
+    CHECK(!tuck_player_set_rate(player, 0.2, 100));
+    CHECK(!tuck_player_set_rate(player, 4.5, 100));
+    CHECK(!tuck_player_set_rate(player, NAN, 100));
+    CHECK(status_at(player, 100).rate == 1);
+
+    tuck_player_play(player, 101);
+    CHECK(tuck_player_set_rate(player, 2, 102));
+    TuckPlayerStatus s = status_at(player, 102.5);
+    /* held on the spot it was playing until the new generation's frame is shown */
+    CHECK(s.generation == 2 && s.seek_pending && !s.paused && close_to(s.position_seconds, 1) && s.rate == 2);
+    tuck_player_frame_presented(player, 2, 103);
+    CHECK(close_to(status_at(player, 104).position_seconds, 3));
+    /* the same speed again changes nothing */
+    CHECK(tuck_player_set_rate(player, 2, 104));
+    CHECK(status_at(player, 104).generation == 2);
+
+    /* slower than normal, paused: the spot stays and playing later runs at a quarter */
+    tuck_player_pause(player, 104);
+    CHECK(tuck_player_set_rate(player, 0.25, 105));
+    s = status_at(player, 105);
+    CHECK(s.generation == 3 && s.paused && close_to(s.position_seconds, 3));
+    tuck_player_frame_presented(player, 3, 105);
+    tuck_player_play(player, 106);
+    CHECK(close_to(status_at(player, 108).position_seconds, 3.5));
+
+    /* at the end it stays at the end */
+    tuck_player_set_rate(player, 4, 108);
+    tuck_player_frame_presented(player, 4, 108);
+    tuck_player_play(player, 108);
+    CHECK(status_at(player, 110).ended);
+    uint64_t ended_generation = status_at(player, 110).generation;
+    CHECK(tuck_player_set_rate(player, 1, 110));
+    s = status_at(player, 110);
+    CHECK(s.ended && s.generation == ended_generation && s.position_seconds == 10);
+    tuck_player_destroy(player);
+}
+
 /* with sound, the clock follows what the listener has heard instead of the monotonic clock */
 static void sound_clock(void) {
     TuckPlayer *player = tuck_player_create(10, 100);
@@ -372,6 +417,7 @@ int tuck_player_test_failures(void) {
     seek_requests();
     audio_timing();
     engine();
+    playback_rate();
     sound_clock();
     sound_stall();
     lut_strength();

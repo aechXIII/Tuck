@@ -18,7 +18,13 @@ typedef struct TuckPlayerStatus {
     int32_t paused;
     int32_t seek_pending;
     int32_t ended;
+    /* media seconds per second of playing */
+    double rate;
 } TuckPlayerStatus;
+
+/* the editor's slowest and fastest playback speeds */
+#define TUCK_PLAYER_RATE_MIN 0.25
+#define TUCK_PLAYER_RATE_MAX 4.0
 
 /* NULL unless the duration is a positive finite number */
 TuckPlayer *tuck_player_create(double duration_seconds, double now);
@@ -28,6 +34,10 @@ void tuck_player_play(TuckPlayer *player, double now);
 void tuck_player_pause(TuckPlayer *player, double now);
 /* 0 when the request ID is not newer than the last one or the position is outside the video */
 int tuck_player_seek(TuckPlayer *player, uint64_t request_id, double seconds, double now);
+/* Plays `rate` media seconds per second from here on. A new rate starts a new generation at the
+   current position, held until its first frame is shown, so sound and picture restart together
+   at that rate. 0 when the rate is outside TUCK_PLAYER_RATE_MIN to TUCK_PLAYER_RATE_MAX. */
+int tuck_player_set_rate(TuckPlayer *player, double rate, double now);
 /* the frame for `generation` is on screen; only the current generation confirms a seek */
 void tuck_player_frame_presented(TuckPlayer *player, uint64_t generation, double now);
 /* From now on the clock follows the sound device instead of monotonic time, or goes back to

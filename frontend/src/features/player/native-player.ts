@@ -14,6 +14,8 @@ import { SOURCE_EVENT, SOURCE_FAILED_EVENT, SOURCE_READY_EVENT } from "../previe
 import {
   defaultClock,
   installVolumeControls,
+  nextPlaybackSpeed,
+  showPlaybackSpeed,
   type PlayerApi,
   type PlayerHost,
 } from "./player.ts";
@@ -28,6 +30,7 @@ type Step =
   | { readonly kind: "pause" }
   | { readonly kind: "seek"; readonly seconds: number }
   | { readonly kind: "volume"; readonly volume: number }
+  | { readonly kind: "rate"; readonly rate: number }
   | { readonly kind: "status" };
 
 /**
@@ -48,6 +51,8 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
   let opened = false;
   // the video the stage shows, which the engine plays whether or not the webview can read it
   let shownPath: string | null = null;
+  // the chosen playback speed, which every video opened after keeps
+  let speed = 1;
   let openedDuration = 0;
   let status: NativePlayerStatus | null = null;
   let statusAt = 0;
@@ -109,7 +114,7 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
     if (target != null) return target;
     if (!status) return previewSec ?? 0;
     let time = status.positionSeconds;
-    if (!status.paused && !status.seekPending) time += Math.max(0, now() - statusAt) / 1000;
+    if (!status.paused && !status.seekPending) time += (Math.max(0, now() - statusAt) / 1000) * status.rate;
     return Math.min(status.durationSeconds, time);
   }
 
@@ -122,7 +127,7 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
     if (disposed) return;
     // the newest seek or level replaces one still waiting, so scrubbing never builds a backlog
     const last = steps.at(-1);
-    if ((step.kind === "seek" || step.kind === "volume") && last?.kind === step.kind) steps[steps.length - 1] = step;
+    if ((step.kind === "seek" || step.kind === "volume" || step.kind === "rate") && last?.kind === step.kind) steps[steps.length - 1] = step;
     else if (step.kind !== "status" || !steps.some((queued) => queued.kind === "status")) steps.push(step);
     void pump();
   }
@@ -138,6 +143,8 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
         return engine.command({ kind: "seek", requestId: sentSeekId, seconds: step.seconds });
       case "volume":
         return engine.command({ kind: "volume", volume: step.volume });
+      case "rate":
+        return engine.command({ kind: "rate", rate: step.rate });
       case "status":
         return engine.status();
       default:
@@ -390,9 +397,10 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
     opened = true;
     openedDuration = duration;
     enqueue({ kind: "open", duration, path: host.selPath() });
-    // a newly opened video plays at full level until told otherwise
+    // a newly opened video plays at full level and normal speed until told otherwise
     sentVolume = 1;
     syncVolume();
+    if (speed !== 1) enqueue({ kind: "rate", rate: speed });
   }
 
   function resetSource(): void {
@@ -445,6 +453,18 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
   function onDurationChange(): void {
     updateTime();
     host.syncTimelineUI?.();
+  }
+
+  function setSpeed(rate: number): void {
+    if (disposed) return;
+    speed = rate;
+    // the hidden video keeps the speed too, for the code that reads it there
+    if (video) {
+      video.playbackRate = rate;
+      video.defaultPlaybackRate = rate;
+    }
+    showPlaybackSpeed(host.byId<HTMLButtonElement>("btn-speed"), rate);
+    if (opened) enqueue({ kind: "rate", rate });
   }
 
   function togglePlay(): void {
@@ -557,9 +577,8 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
     getPreviewSec: () => previewSec,
     flushVideoSeek,
     captureFrameTime,
-    // the native clock has no speed control yet, so playback stays at normal speed
-    changeSpeed: () => {},
-    resetSpeed: () => {},
+    changeSpeed: (direction) => setSpeed(nextPlaybackSpeed(speed, direction)),
+    resetSpeed: () => setSpeed(1),
     dispose: () => {
       if (disposed) return;
       resetSource();

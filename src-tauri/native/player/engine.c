@@ -15,6 +15,8 @@ struct TuckPlayer {
     /* what the page asked for; the clock itself also stops while a seek frame is pending */
     int playing;
     int ended;
+    /* media seconds per second of playing */
+    double rate;
     /* seconds played since the last clock reset, and when that was last brought up to date */
     double played;
     double updated_at;
@@ -47,7 +49,7 @@ static void played_to(TuckPlayer *player, double played) {
 
 static void advance(TuckPlayer *player, double now) {
     if (!player->sound && running(player) && isfinite(now) && now > player->updated_at)
-        played_to(player, player->played + now - player->updated_at);
+        played_to(player, player->played + (now - player->updated_at) * player->rate);
     if (isfinite(now) && now > player->updated_at) player->updated_at = now;
 }
 
@@ -73,6 +75,7 @@ TuckPlayer *tuck_player_create(double duration_seconds, double now) {
     TuckPlayer *player = calloc(1, sizeof(*player));
     if (!player) return NULL;
     player->duration = duration_seconds;
+    player->rate = 1;
     player->updated_at = now;
     restart_at(player, 0);
     return player;
@@ -103,6 +106,18 @@ int tuck_player_seek(TuckPlayer *player, uint64_t request_id, double seconds, do
     advance(player, now);
     if (!seek_request_accept(&player->seeks, request_id, player->generation + 1)) return 0;
     restart_at(player, seconds);
+    note_running(player, now);
+    return 1;
+}
+
+int tuck_player_set_rate(TuckPlayer *player, double rate, double now) {
+    if (!isfinite(rate) || rate < TUCK_PLAYER_RATE_MIN || rate > TUCK_PLAYER_RATE_MAX) return 0;
+    advance(player, now);
+    if (rate == player->rate) return 1;
+    double position = clock_source(&player->clock);
+    player->rate = rate;
+    /* the end stays the end; anywhere else starts again from the same spot at the new rate */
+    if (!player->ended) restart_at(player, position);
     note_running(player, now);
     return 1;
 }
@@ -152,4 +167,5 @@ void tuck_player_status(TuckPlayer *player, double now, TuckPlayerStatus *status
     status->paused = !player->playing;
     status->seek_pending = player->preview.pending;
     status->ended = player->ended;
+    status->rate = player->rate;
 }

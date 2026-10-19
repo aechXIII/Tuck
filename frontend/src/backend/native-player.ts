@@ -53,6 +53,8 @@ export interface NativePlayerStatus {
   /** the clock waits until the new position's first frame is on screen */
   readonly seekPending: boolean;
   readonly ended: boolean;
+  /** media seconds per second of playing */
+  readonly rate: number;
   /** null while only the clock runs, without decoding */
   readonly video: NativeVideoInfo | null;
 }
@@ -63,7 +65,9 @@ export type NativePlayerCommand =
   | { readonly kind: "pause" }
   | { readonly kind: "seek"; readonly requestId: number; readonly seconds: number }
   /** the sound's level, 0 to 1 */
-  | { readonly kind: "volume"; readonly volume: number };
+  | { readonly kind: "volume"; readonly volume: number }
+  /** media seconds per second, 0.25 to 4; a new speed restarts at the same spot */
+  | { readonly kind: "rate"; readonly rate: number };
 
 export interface NativePlayerOpen {
   readonly durationSeconds: number;
@@ -138,6 +142,7 @@ export function isNativePlayerStatus(value: unknown): value is NativePlayerStatu
     typeof status.paused === "boolean" &&
     typeof status.seekPending === "boolean" &&
     typeof status.ended === "boolean" &&
+    typeof status.rate === "number" && Number.isFinite(status.rate) && status.rate > 0 &&
     (status.video === null || isVideoInfo(status.video))
   );
 }

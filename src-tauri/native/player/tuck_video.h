@@ -23,7 +23,7 @@
 #endif
 
 /* raise whenever a signature or struct below changes */
-#define TUCK_VIDEO_ABI 5
+#define TUCK_VIDEO_ABI 6
 
 /* TuckVideoStatus.sound */
 #define TUCK_SOUND_NONE 0
@@ -86,6 +86,9 @@ TUCK_VIDEO_EXPORT void tuck_video_play(TuckVideo *video);
 TUCK_VIDEO_EXPORT void tuck_video_pause(TuckVideo *video);
 /* 0 when the request ID is not newer than the last one or the position is outside the video */
 TUCK_VIDEO_EXPORT int tuck_video_seek(TuckVideo *video, uint64_t request_id, double seconds);
+/* Plays `rate` timeline seconds per second, with the sound's pitch kept; a new speed restarts
+   sound and picture at the same spot. 0 when the speed is outside 0.25 to 4. */
+TUCK_VIDEO_EXPORT int tuck_video_rate(TuckVideo *video, double rate);
 /* the sound's level, 0 to 1 */
 TUCK_VIDEO_EXPORT void tuck_video_volume(TuckVideo *video, double gain);
 /* The preview's colour LUT: `size`³ RGB samples from 0 to 1 with R changing fastest, as the

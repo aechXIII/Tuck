@@ -53,14 +53,16 @@ meson setup "$build_dir/libva" "$libva" \
   -Ddriverdir=/usr/lib/x86_64-linux-gnu/dri:/usr/lib/dri:/usr/lib64/dri
 ninja -C "$build_dir/libva" -j "$jobs" install
 
-# decode only: the player never encodes or filters, and leaving them out keeps it LGPL and small.
+# decode only, plus the few filters that change the sound's speed without its pitch: the player
+# never encodes, and leaving encoders and other filters out keeps it LGPL and small.
 # libdrm lets VAAPI frames go to OpenGL as DMA-BUFs without a copy through system memory.
 mkdir -p "$build_dir/ffmpeg"
 pushd "$build_dir/ffmpeg" >/dev/null
 "$source_dir/ffmpeg-7.1.1/configure" \
   --prefix="$prefix" --enable-pic --disable-autodetect \
   --enable-static --disable-shared --disable-debug --disable-doc --disable-programs \
-  --disable-encoders --disable-muxers --disable-filters --disable-avfilter --disable-avdevice \
+  --disable-encoders --disable-muxers --disable-filters \
+  --enable-filter=abuffer,abuffersink,aformat,aresample,atempo --disable-avdevice \
   --disable-devices --disable-network --disable-swscale --disable-postproc \
   --enable-libdav1d --enable-vaapi --enable-libdrm --enable-zlib \
   --pkg-config-flags=--static \
