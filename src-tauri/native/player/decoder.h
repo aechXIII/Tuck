@@ -55,6 +55,8 @@ typedef struct DecoderInfo {
     char error[160];
     double frame_rate;
     int hardware;
+    /* TUCK_SOFTWARE_* in tuck_video.h */
+    int software_reason;
     int failed;
     int ended;
 } DecoderInfo;

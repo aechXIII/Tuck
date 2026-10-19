@@ -12,6 +12,7 @@
 #include <libavutil/pixdesc.h>
 
 #include "playback_state.h"
+#include "tuck_video.h"
 
 #define QUEUE_LIMIT 40
 /* damaged packets in a row before the video counts as undecodable */
@@ -28,6 +29,8 @@ struct Decoder {
     double frame_rate;
     int hardware_codec;
     int bad_packets;
+    /* TUCK_SOFTWARE_*, for the codec that is open; under lock */
+    int software_reason;
 
     pthread_t thread;
     int thread_started;
@@ -116,13 +119,16 @@ static const AVCodec *find_decoder(enum AVCodecID id, int hardware) {
     return avcodec_find_decoder(id);
 }
 
-static int open_codec(Decoder *d, int hardware, char *error, size_t error_size) {
+/* `reason` says why software is used when `hardware` is 0 */
+static int open_codec(Decoder *d, int hardware, int reason, char *error, size_t error_size) {
     const AVCodecParameters *par = d->format->streams[d->stream]->codecpar;
     const AVCodec *codec = NULL;
     AVBufferRef *device = NULL;
-    if (hardware && d->hooks.device) {
-        codec = find_decoder(par->codec_id, 1);
-        if (codec && hardware_capable(codec, d->hooks.device_type)) device = d->hooks.device(d->hooks.opaque);
+    if (hardware) {
+        codec = d->hooks.device ? find_decoder(par->codec_id, 1) : NULL;
+        if (!d->hooks.device) reason = TUCK_SOFTWARE_NO_DEVICE;
+        else if (!codec || !hardware_capable(codec, d->hooks.device_type)) reason = TUCK_SOFTWARE_CODEC;
+        else if (!(device = d->hooks.device(d->hooks.opaque))) reason = TUCK_SOFTWARE_NO_DEVICE;
     }
     if (!device) codec = find_decoder(par->codec_id, 0);
     if (!codec) {
@@ -148,8 +154,9 @@ static int open_codec(Decoder *d, int hardware, char *error, size_t error_size) 
         context->thread_count = 0;
     }
     if (avcodec_open2(context, codec, NULL) < 0) {
+        int on_gpu = device != NULL;
         avcodec_free_context(&context);
-        if (hardware) return open_codec(d, 0, error, error_size);
+        if (on_gpu) return open_codec(d, 0, TUCK_SOFTWARE_START_FAILED, error, error_size);
         snprintf(error, error_size, "The %s decoder could not start.", codec->name);
         return 0;
     }
@@ -157,6 +164,7 @@ static int open_codec(Decoder *d, int hardware, char *error, size_t error_size) 
     d->codec = context;
     pthread_mutex_lock(&d->lock);
     d->hardware_codec = device != NULL;
+    d->software_reason = device ? TUCK_SOFTWARE_NONE : reason;
     d->frames_seen = 0;
     d->hardware_frames = 0;
     snprintf(d->codec_name, sizeof(d->codec_name), "%s", codec->name);
@@ -313,7 +321,7 @@ static void decode_failed(Decoder *d, int code) {
     if (d->hardware_codec) {
         /* the GPU can't decode this stream after all; start over in software from the same spot */
         char error[160];
-        if (open_codec(d, 0, error, sizeof(error))) {
+        if (open_codec(d, 0, TUCK_SOFTWARE_STREAM, error, sizeof(error))) {
             d->generation = 0;
             return;
         }
@@ -455,7 +463,7 @@ Decoder *decoder_open(const char *path, const DecoderHooks *hooks, char *error, 
     d->start = d->format->start_time == AV_NOPTS_VALUE ? 0 : (double)d->format->start_time / AV_TIME_BASE;
     AVRational rate = av_guess_frame_rate(d->format, stream, NULL);
     d->frame_rate = rate.num > 0 && rate.den > 0 ? av_q2d(rate) : 0;
-    if (!open_codec(d, 1, error, error_size)) goto failed;
+    if (!open_codec(d, 1, TUCK_SOFTWARE_NONE, error, error_size)) goto failed;
     if (pthread_create(&d->thread, NULL, worker, d) != 0) goto oom;
     d->thread_started = 1;
     if (d->hooks.prepare) {
@@ -543,6 +551,10 @@ void decoder_info(Decoder *d, DecoderInfo *info) {
     snprintf(info->error, sizeof(info->error), "%s", d->error);
     info->frame_rate = d->frame_rate;
     info->hardware = d->hardware_frames;
+    /* an open hardware decoder that hands out software frames can't do this stream */
+    info->software_reason = hardware ? TUCK_SOFTWARE_NONE
+                            : d->software_reason ? d->software_reason
+                                                 : TUCK_SOFTWARE_STREAM;
     info->failed = d->failed;
     info->ended = d->ended;
     pthread_mutex_unlock(&d->lock);

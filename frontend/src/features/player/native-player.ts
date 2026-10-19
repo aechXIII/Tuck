@@ -59,6 +59,7 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
   let previewGap = false;
   // the epoch whose decoder failure was already reported
   let reportedFailure = -1;
+  let reportedSoftware = -1;
   const steps: Step[] = [];
   let busy = false;
   let pollTimer = 0;
@@ -166,6 +167,10 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
     if (next.video?.failed && reportedFailure !== epoch) {
       reportedFailure = epoch;
       console.error("The native player stopped", next.video.error);
+    }
+    if (next.video?.softwareReason && reportedSoftware !== epoch) {
+      reportedSoftware = epoch;
+      console.info("The native player decodes in software", next.video.decoder, next.video.softwareReason);
     }
     if (next.ended && wantPlaying) {
       finish();

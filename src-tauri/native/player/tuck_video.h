@@ -23,7 +23,7 @@
 #endif
 
 /* raise whenever a signature or struct below changes */
-#define TUCK_VIDEO_ABI 4
+#define TUCK_VIDEO_ABI 5
 
 /* TuckVideoStatus.sound */
 #define TUCK_SOUND_NONE 0
@@ -31,6 +31,17 @@
 #define TUCK_SOUND_PLAYING 1
 /* the file has sound that can't play (sound_error says why); the clock runs on monotonic time */
 #define TUCK_SOUND_UNAVAILABLE 2
+
+/* TuckVideoStatus.software_reason: why the frames come from software decoding */
+#define TUCK_SOFTWARE_NONE 0
+/* no GPU decoding device could be opened, such as a missing or refusing driver */
+#define TUCK_SOFTWARE_NO_DEVICE 1
+/* the GPU decoders don't handle this codec */
+#define TUCK_SOFTWARE_CODEC 2
+/* the GPU decoder for this codec could not start */
+#define TUCK_SOFTWARE_START_FAILED 3
+/* the GPU can't decode this particular stream, such as its profile or pixel format */
+#define TUCK_SOFTWARE_STREAM 4
 
 typedef struct TuckVideo TuckVideo;
 
@@ -62,6 +73,8 @@ typedef struct TuckVideoStatus {
     uint64_t sound_underruns;
     int32_t sound;
     char sound_error[160];
+    /* TUCK_SOFTWARE_*; NONE while frames come, or are expected to come, from the GPU */
+    int32_t software_reason;
 } TuckVideoStatus;
 
 TUCK_VIDEO_EXPORT int tuck_video_abi(void);

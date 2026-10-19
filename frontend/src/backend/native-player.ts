@@ -17,10 +17,20 @@ export interface NativeSoundInfo {
   readonly error: string;
 }
 
+/**
+ * Why the native player decodes in software: "no-device" when no GPU decoding device could be
+ * opened (a missing or refusing driver), "codec" when the GPU decoders don't handle the codec,
+ * "start-failed" when the GPU decoder could not start, "stream" when the GPU can't decode this
+ * particular stream, such as its profile or pixel format.
+ */
+export type NativeSoftwareReason = "no-device" | "codec" | "start-failed" | "stream";
+
 /** The decoder and renderer, when the native player library plays the video. */
 export interface NativeVideoInfo {
   readonly decoder: string;
   readonly hardware: boolean;
+  /** null while the GPU decodes the frames */
+  readonly softwareReason: NativeSoftwareReason | null;
   readonly frameRate: number;
   readonly presented: number;
   /** the video can't play any more; error says why */
@@ -98,12 +108,15 @@ function isSoundInfo(value: unknown): value is NativeSoundInfo {
   );
 }
 
+const SOFTWARE_REASONS: readonly unknown[] = ["no-device", "codec", "start-failed", "stream"];
+
 function isVideoInfo(value: unknown): value is NativeVideoInfo {
   if (typeof value !== "object" || value === null) return false;
   const info = value as Record<string, unknown>;
   return (
     typeof info.decoder === "string" &&
     typeof info.hardware === "boolean" &&
+    (info.softwareReason === null || SOFTWARE_REASONS.includes(info.softwareReason)) &&
     isSeconds(info.frameRate) &&
     isCount(info.presented) &&
     typeof info.failed === "boolean" &&

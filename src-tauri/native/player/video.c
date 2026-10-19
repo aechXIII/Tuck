@@ -487,5 +487,6 @@ void tuck_video_status(TuckVideo *v, TuckVideoStatus *status) {
     pthread_mutex_unlock(&v->lock);
     status->frame_rate = info.frame_rate;
     status->hardware = info.hardware;
+    status->software_reason = info.software_reason;
     snprintf(status->decoder, sizeof(status->decoder), "%s", info.name);
 }

@@ -12,7 +12,7 @@ use serde::Serialize;
 use super::engine::{PlayerStatus, RawStatus};
 
 // must match TUCK_VIDEO_ABI in native/player/tuck_video.h
-const ABI: c_int = 4;
+const ABI: c_int = 5;
 
 #[cfg(windows)]
 const FILE_NAME: &str = "tuck_player.dll";
@@ -54,6 +54,7 @@ struct RawVideoStatus {
     sound_underruns: u64,
     sound: i32,
     sound_error: [c_char; 160],
+    software_reason: i32,
 }
 
 type OpenFn = unsafe extern "C" fn(*const OpenParams, *mut c_char, usize) -> *mut c_void;
@@ -104,6 +105,8 @@ struct GlApi {
 pub struct VideoInfo {
     pub decoder: String,
     pub hardware: bool,
+    /// why the frames come from software decoding; `None` while the GPU decodes them
+    pub software_reason: Option<SoftwareReason>,
     pub frame_rate: f64,
     pub presented: u64,
     pub failed: bool,
@@ -139,6 +142,33 @@ impl SoundState {
             1 => SoundState::Playing,
             2 => SoundState::Unavailable,
             _ => SoundState::None,
+        }
+    }
+}
+
+/// Why the native player decodes in software instead of on the GPU.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SoftwareReason {
+    /// no GPU decoding device could be opened, such as a missing or refusing driver
+    NoDevice,
+    /// the GPU decoders don't handle this codec
+    Codec,
+    /// the GPU decoder for this codec could not start
+    StartFailed,
+    /// the GPU can't decode this particular stream, such as its profile or pixel format
+    Stream,
+}
+
+impl SoftwareReason {
+    // TUCK_SOFTWARE_* in native/player/tuck_video.h; anything else means hardware decoding
+    fn from_raw(raw: i32) -> Option<Self> {
+        match raw {
+            1 => Some(SoftwareReason::NoDevice),
+            2 => Some(SoftwareReason::Codec),
+            3 => Some(SoftwareReason::StartFailed),
+            4 => Some(SoftwareReason::Stream),
+            _ => None,
         }
     }
 }
@@ -322,11 +352,13 @@ impl Video {
             sound_underruns: 0,
             sound: 0,
             sound_error: [0; 160],
+            software_reason: 0,
         };
         unsafe { (self.api.status)(self.handle.as_ptr(), &mut raw) };
         let info = VideoInfo {
             decoder: text(&raw.decoder),
             hardware: raw.hardware != 0,
+            software_reason: SoftwareReason::from_raw(raw.software_reason),
             frame_rate: raw.frame_rate,
             presented: raw.presented,
             failed: raw.failed != 0,
@@ -435,6 +467,7 @@ mod tests {
         assert_eq!(std::mem::offset_of!(RawVideoStatus, sound_underruns), 328);
         assert_eq!(std::mem::offset_of!(RawVideoStatus, sound), 336);
         assert_eq!(std::mem::offset_of!(RawVideoStatus, sound_error), 340);
+        assert_eq!(std::mem::offset_of!(RawVideoStatus, software_reason), 500);
         assert_eq!(std::mem::size_of::<RawVideoStatus>(), 504);
     }
 
@@ -444,6 +477,41 @@ mod tests {
         assert_eq!(SoundState::from_raw(1), SoundState::Playing);
         assert_eq!(SoundState::from_raw(2), SoundState::Unavailable);
         assert_eq!(SoundState::from_raw(7), SoundState::None);
+    }
+
+    #[test]
+    fn software_reasons_come_from_the_library_codes() {
+        assert_eq!(SoftwareReason::from_raw(0), None);
+        assert_eq!(SoftwareReason::from_raw(1), Some(SoftwareReason::NoDevice));
+        assert_eq!(SoftwareReason::from_raw(2), Some(SoftwareReason::Codec));
+        assert_eq!(
+            SoftwareReason::from_raw(3),
+            Some(SoftwareReason::StartFailed)
+        );
+        assert_eq!(SoftwareReason::from_raw(4), Some(SoftwareReason::Stream));
+        assert_eq!(SoftwareReason::from_raw(9), None);
+    }
+
+    #[test]
+    fn software_reasons_reach_the_page_as_short_codes() {
+        let codes: Vec<String> = [
+            SoftwareReason::NoDevice,
+            SoftwareReason::Codec,
+            SoftwareReason::StartFailed,
+            SoftwareReason::Stream,
+        ]
+        .iter()
+        .map(|reason| serde_json::to_string(reason).expect("serializes"))
+        .collect();
+        assert_eq!(
+            codes,
+            [
+                r#""no-device""#,
+                r#""codec""#,
+                r#""start-failed""#,
+                r#""stream""#
+            ]
+        );
     }
 
     #[test]

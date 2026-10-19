@@ -202,7 +202,10 @@ test("a status is only accepted with exact counters and real times", () => {
   };
   assert.ok(isNativePlayerStatus(status));
   const sound = { state: "playing", underruns: 0, error: "" };
-  const video = { decoder: "av1 d3d11va", hardware: true, frameRate: 60, presented: 4, failed: false, error: "", sound };
+  const video = {
+    decoder: "av1 d3d11va", hardware: true, softwareReason: null, frameRate: 60, presented: 4, failed: false, error: "",
+    sound,
+  };
   assert.ok(isNativePlayerStatus({ ...status, video }));
   for (const broken of [
     { ...status, generation: 2 ** 53 },
@@ -217,9 +220,15 @@ test("a status is only accepted with exact counters and real times", () => {
     { ...status, video: { ...video, sound: undefined } },
     { ...status, video: { ...video, sound: { ...sound, state: "loud" } } },
     { ...status, video: { ...video, sound: { ...sound, underruns: 0.5 } } },
+    { ...status, video: { ...video, softwareReason: undefined } },
+    { ...status, video: { ...video, softwareReason: "slow" } },
   ]) assert.equal(isNativePlayerStatus(broken), false);
   for (const state of ["none", "playing", "unavailable"]) {
     assert.ok(isNativePlayerStatus({ ...status, video: { ...video, sound: { ...sound, state } } }));
+  }
+  for (const softwareReason of ["no-device", "codec", "start-failed", "stream"]) {
+    const software = { ...video, decoder: "h264 software", hardware: false, softwareReason };
+    assert.ok(isNativePlayerStatus({ ...status, video: software }));
   }
 });
 
