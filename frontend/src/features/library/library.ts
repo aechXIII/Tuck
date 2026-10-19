@@ -35,6 +35,7 @@ import {
 } from "./clip-card.ts";
 import { createClipLoader } from "./clip-loader.ts";
 import { createProbeCoordinator, type ProbeCoordinator } from "./probe-coordinator.ts";
+import { SOURCE_EVENT } from "../preview/preview-controller.ts";
 
 export interface LibraryEncodingHooks {
   applyProfile?: (force?: boolean) => void;
@@ -284,6 +285,7 @@ export function createLibrary(host: LibraryHost): LibraryApi {
           video.pause();
           video.removeAttribute("src");
           video.load();
+          video.dispatchEvent(new CustomEvent(SOURCE_EVENT, { detail: null }));
         }
         if (picture) showThumbnail(picture);
         else removeThumbnail();
@@ -296,6 +298,7 @@ export function createLibrary(host: LibraryHost): LibraryApi {
         const shown = (stageMedia += 1);
         video.src = url;
         video.load();
+        video.dispatchEvent(new CustomEvent(SOURCE_EVENT, { detail: session.selPath }));
         video.style.display = "block";
         // the loading picture stays on top until this video has a frame to show
         video.onloadeddata = () => {
@@ -330,6 +333,7 @@ export function createLibrary(host: LibraryHost): LibraryApi {
           video.pause();
           video.removeAttribute("src");
           video.load();
+          video.dispatchEvent(new CustomEvent(SOURCE_EVENT, { detail: null }));
         }
         removeThumbnail();
         setPreviewStatus("ready");

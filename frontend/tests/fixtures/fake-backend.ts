@@ -1,6 +1,7 @@
 import type { Page } from "@playwright/test";
 
 import type { BackendCall, BackendClient } from "../../src/backend/types.ts";
+import { fixtureEngineScript } from "./fixture-engine.ts";
 
 export interface FakeBackendCall extends BackendCall {}
 
@@ -235,4 +236,11 @@ export async function installFakeBackend(
       timelineSprites: fixture.timelineSprites,
     },
   );
+  // TUCK_E2E_NATIVE_PREVIEW=engine plays every spec through the native player's fixture engine
+  // instead of the HTML player. A spec with its own desktop shell stand-in keeps it, whether it
+  // was added before this (left alone here) or after (it replaces this one)
+  if (process.env.TUCK_E2E_NATIVE_PREVIEW === "engine") {
+    const engine = fixtureEngineScript({ nativePreview: "engine" });
+    await page.addInitScript({ content: `if (!("__TAURI_INTERNALS__" in window)) ${engine}` });
+  }
 }

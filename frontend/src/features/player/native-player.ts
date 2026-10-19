@@ -10,6 +10,7 @@ import {
 } from "../timeline/segments.ts";
 import type { SegmentRange } from "../timeline/segments.ts";
 import { LUT_CHANGE_EVENT, LUT_REQUEST_EVENT, type LutChange } from "../preview/lut-preview.ts";
+import { SOURCE_EVENT } from "../preview/preview-controller.ts";
 import {
   defaultClock,
   installVolumeControls,
@@ -45,6 +46,8 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
   // each shown video gets a new epoch; replies that arrive for an older one are dropped
   let epoch = 0;
   let opened = false;
+  // the video the stage shows, which the engine plays whether or not the webview can read it
+  let shownPath: string | null = null;
   let openedDuration = 0;
   let status: NativePlayerStatus | null = null;
   let statusAt = 0;
@@ -360,6 +363,13 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
     }
   }
 
+  // opens the shown video once its length is known: the probe usually knows it before the
+  // webview has read the file, and a file the webview can't read still plays here
+  function ensureOpen(): boolean {
+    if (!opened && !disposed && shownPath && shownPath === host.selPath()) open();
+    return opened;
+  }
+
   function open(): void {
     const duration = neededDuration() || (video && Number.isFinite(video.duration) ? video.duration : 0);
     if (!(duration > 0)) return;
@@ -391,11 +401,27 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
     setGap(false);
   }
 
+  function onSource(event: Event): void {
+    if (disposed) return;
+    const path = (event as CustomEvent<string | null>).detail;
+    resetSource();
+    shownPath = path;
+    if (!ensureOpen()) return;
+    updateTime();
+    host.syncTimelineUI?.();
+  }
+
   function onLoadedMetadata(): void {
     if (disposed) return;
+    if (opened) {
+      updateTime();
+      host.syncTimelineUI?.();
+      return;
+    }
     // moved clips keep the painted playhead; a plain video starts where its element is
     const restore = placed() ? previewSec : video?.currentTime ?? 0;
     resetSource();
+    shownPath = host.selPath();
     open();
     if (opened && restore != null && restore > 0) seekTo(restore);
     updateTime();
@@ -408,7 +434,7 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
   }
 
   function togglePlay(): void {
-    if (disposed || !opened) return;
+    if (disposed || !ensureOpen()) return;
     if (wantPlaying) {
       pause();
       return;
@@ -432,7 +458,7 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
   function flushVideoSeek(): void {
     if (seekFrame) clock.cancelAnimationFrame(seekFrame);
     seekFrame = 0;
-    if (disposed || !opened || seekWanted == null) return;
+    if (disposed || !ensureOpen() || seekWanted == null) return;
     const seconds = seekWanted;
     seekWanted = null;
     seekTo(seconds);
@@ -456,7 +482,7 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
   }
 
   function stepFrame(direction: number): void {
-    if (disposed || !opened) return;
+    if (disposed || !ensureOpen()) return;
     const path = host.selPath();
     const clip = path ? host.clips()[path] : undefined;
     const fps = clip?.probeData?.fps || 30;
@@ -479,8 +505,9 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
   }
 
   if (video) {
-    video.addEventListener("emptied", resetSource);
-    video.addEventListener("error", resetSource);
+    // the library's source event, not the webview's own media events, says when the video
+    // changes: an error reading the file in the webview doesn't stop the engine
+    video.addEventListener(SOURCE_EVENT, onSource);
     video.addEventListener("loadedmetadata", onLoadedMetadata);
     video.addEventListener("durationchange", onDurationChange);
     video.addEventListener("volumechange", syncVolume);
@@ -502,7 +529,11 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
     seekBy: (seconds) => seekPreview(position() + seconds),
     stepFrame,
     toggleFullscreen: () => host.stageFullscreen?.toggle(),
-    updateTime,
+    // the editor asks for this when the timeline changes, such as when a probe brings the length
+    updateTime: () => {
+      ensureOpen();
+      updateTime();
+    },
     seekPreview,
     seekToRatio,
     continuePlaybackAt,
@@ -520,8 +551,7 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
       resetSource();
       disposed = true;
       if (video) {
-        video.removeEventListener("emptied", resetSource);
-        video.removeEventListener("error", resetSource);
+        video.removeEventListener(SOURCE_EVENT, onSource);
         video.removeEventListener("loadedmetadata", onLoadedMetadata);
         video.removeEventListener("durationchange", onDurationChange);
         video.removeEventListener("volumechange", syncVolume);

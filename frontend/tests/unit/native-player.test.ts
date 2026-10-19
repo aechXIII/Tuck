@@ -8,6 +8,7 @@ import {
 } from "../../src/backend/native-player.ts";
 import type { TauriInvoke } from "../../src/backend/tauri.ts";
 import { installNativePlayer } from "../../src/features/player/native-player.ts";
+import { SOURCE_EVENT } from "../../src/features/preview/preview-controller.ts";
 import type { PlayerHost } from "../../src/features/player/player.ts";
 import type { SegmentRange } from "../../src/features/timeline/segments.ts";
 import { createFixtureEngine } from "../fixtures/fixture-engine.ts";
@@ -495,7 +496,7 @@ test("replies for the previous video are ignored", async () => {
   try {
     await run.load();
     run.player.togglePlay();
-    run.video.dispatchEvent(new Event("emptied"));
+    run.video.dispatchEvent(new CustomEvent(SOURCE_EVENT, { detail: null }));
     await settle();
     assert.equal(run.player.isPlaying(), false);
     assert.equal(run.classes.has("playing"), false);
@@ -504,6 +505,42 @@ test("replies for the previous video are ignored", async () => {
     assert.equal(run.commands().length, 1, "nothing is sent until the next video opens");
     await run.load();
     assert.equal(run.fixture.calls.filter((call) => call.command === "player_open").length, 2);
+  } finally {
+    run.player.dispose();
+  }
+});
+
+test("a shown video opens from its probed length before the webview reads it", async () => {
+  const run = setup();
+  try {
+    run.video.dispatchEvent(new CustomEvent(SOURCE_EVENT, { detail: "a" }));
+    await settle();
+    const opens = run.fixture.calls.filter((call) => call.command === "player_open");
+    assert.equal(opens.length, 1);
+    assert.equal((opens[0]?.args.request as { durationSeconds: number } | undefined)?.durationSeconds, 10);
+    run.player.togglePlay();
+    await settle();
+    assert.deepEqual(run.commands().map((command) => command.kind), ["play"]);
+    await run.load();
+    assert.equal(run.fixture.calls.filter((call) => call.command === "player_open").length, 1,
+      "the webview reading the file later doesn't open it again");
+  } finally {
+    run.player.dispose();
+  }
+});
+
+test("a file the webview can't read keeps playing in the engine", async () => {
+  const run = setup();
+  try {
+    run.video.dispatchEvent(new CustomEvent(SOURCE_EVENT, { detail: "a" }));
+    await settle();
+    run.player.togglePlay();
+    await settle();
+    run.video.dispatchEvent(new Event("error"));
+    run.video.dispatchEvent(new Event("emptied"));
+    await run.advance(500);
+    assert.equal(run.player.isPlaying(), true);
+    assert.ok(run.player.timelineTime() > 0.3);
   } finally {
     run.player.dispose();
   }

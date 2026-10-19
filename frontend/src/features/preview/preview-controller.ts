@@ -2,6 +2,11 @@ import { getBackendClient } from "../../backend/client.ts";
 import { legacyBackendResult } from "../editor/backend-compat.ts";
 import type { EditorClip } from "../editor/types.ts";
 
+// the stage's video element announces which video it shows (its path, or null when it shows none),
+// so a player that doesn't decode through the element can follow the selection without waiting
+// for the webview to read the file
+export const SOURCE_EVENT = "tuck-source";
+
 export interface PreviewMedia {
   // the new video's own picture, or nothing, while its preview is fetched; never the last video
   showLoading(picture: string | null): void;

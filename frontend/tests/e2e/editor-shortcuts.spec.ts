@@ -10,6 +10,19 @@ declare global {
   }
 }
 
+// Space asks the HTML player's video to play, or the native player's engine when it is on
+function playRequests(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const engine = Reflect.get(window, "__fixtureEngine") as
+      | { calls: Array<{ command: string; args: { command?: { kind?: string } } }> }
+      | undefined;
+    const engineRequests = (engine?.calls ?? []).filter(
+      (call) => call.command === "player_command" && call.args.command?.kind === "play",
+    ).length;
+    return (window.__playRequests ?? 0) + engineRequests;
+  });
+}
+
 async function openEditor(page: Page): Promise<void> {
   const fixture = healthyBackendFixture();
   fixture.responses.pickFiles = { ok: true, files: [VIDEO] };
@@ -68,7 +81,7 @@ test("default editor keys run the same commands as the buttons", async ({ page }
 
   await focusEditor(page);
   await page.keyboard.press("Space");
-  await expect.poll(() => page.evaluate(() => window.__playRequests ?? 0)).toBe(1);
+  await expect.poll(() => playRequests(page)).toBe(1);
 
   const ruler = (await page.locator("#sequence-ruler").boundingBox())!;
   await page.mouse.click(ruler.x + ruler.width / 2, ruler.y + ruler.height / 2);
