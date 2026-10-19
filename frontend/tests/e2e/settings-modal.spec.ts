@@ -93,7 +93,8 @@ test("a rejected save keeps the change visible and explains why", async ({ page 
   await start(page, {}, { saveSettings: { ok: false, error: "Settings could not be written." } });
   await openSettings(page, "appearance");
   await page.getByRole("radio", { name: "Teal" }).check();
-  await expect(page.getByText("Settings could not be written.")).toBeVisible();
+  // a screen reader region repeats the message a moment later, so this looks at the toast itself
+  await expect(page.locator("#toast-ct .toast").getByText("Settings could not be written.")).toBeVisible();
   await expect(page.locator("html")).not.toHaveAttribute("data-accent", "teal");
   // never "Saved" for a change that wasn't; the header says it isn't saved instead
   await expect(page.locator("#settings-status")).toHaveText("Not saved");
