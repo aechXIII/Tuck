@@ -173,7 +173,8 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
     status = next;
     statusAt = now();
     const seekQueued = seekWanted != null || steps.some((step) => step.kind === "seek");
-    if (target != null && !seekQueued && next.confirmedSeekRequestId === sentSeekId) target = null;
+    const confirmed = target != null && !seekQueued && next.confirmedSeekRequestId === sentSeekId;
+    if (confirmed) target = null;
     host.byId("btn-play")?.classList.toggle("playing", !next.paused);
     if (next.video?.failed && reportedFailure !== epoch) {
       reportedFailure = epoch;
@@ -197,7 +198,8 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
       updateTime();
       mirror(sourcePosition());
     }
-    if (wasPaused !== next.paused) host.AudioTimeline?.syncPreview?.();
+    // the source and imported audio follow this clock as they follow the HTML video's timeupdate
+    if (wasPaused !== next.paused || !next.paused || confirmed) host.AudioTimeline?.syncPreview?.();
     schedulePoll();
   }
 

@@ -229,6 +229,7 @@ export function installEditorRuntime(
     reqPreview: requestPreview,
     getPreviewSec: () => player?.getPreviewSec() ?? null,
     getTimelineTime: () => player?.timelineTime() ?? 0,
+    getSourceTime: () => player?.sourceTime() ?? null,
     isPlaying: () => player?.isPlaying() ?? false,
     seekPreview: (seconds) => player?.seekPreview(seconds),
     setClipSegments: (clip, segments, active) =>

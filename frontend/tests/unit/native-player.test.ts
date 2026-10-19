@@ -64,6 +64,7 @@ function setup(options: Setup = {}) {
   };
   const painted: number[] = [];
   const gaps: boolean[] = [];
+  const audioSyncs: number[] = [];
   const segments = options.segments ?? [{ start: 0, end: duration }];
   const host: PlayerHost = {
     byId: <T extends HTMLElement>(id: string) =>
@@ -84,6 +85,7 @@ function setup(options: Setup = {}) {
       gaps.push(gap);
     },
     loopPlayback: () => options.loop ?? false,
+    AudioTimeline: { applyPreviewVolume: () => {}, syncPreview: () => audioSyncs.push(time) },
     document: {} as Document,
     clock: {
       now: () => time,
@@ -130,6 +132,7 @@ function setup(options: Setup = {}) {
     classes,
     painted,
     gaps,
+    audioSyncs,
     timers,
     frame,
     async load(): Promise<void> {
@@ -631,6 +634,26 @@ test("the chosen speed carries over to the next video", async () => {
       : call.command);
     assert.deepEqual(sent.filter((entry) => entry === "player_open" || entry.startsWith("rate")),
       ["player_open", "rate:0.5", "player_open", "rate:0.5"]);
+  } finally {
+    run.player.dispose();
+  }
+});
+
+test("source and imported audio keep following the clock while the engine plays", async () => {
+  const run = setup();
+  try {
+    await run.load();
+    run.player.togglePlay();
+    await run.advance(100);
+    const started = run.audioSyncs.length;
+    await run.advance(1000);
+    // the hidden video stays paused and sends no timeupdate, so the status reads stand in for it
+    assert.ok(run.audioSyncs.length - started >= 8, `${run.audioSyncs.length - started} syncs in a second of playing`);
+    run.player.togglePlay();
+    await run.advance(1000);
+    const paused = run.audioSyncs.length;
+    await run.advance(1000);
+    assert.equal(run.audioSyncs.length, paused, "nothing more to follow while paused");
   } finally {
     run.player.dispose();
   }

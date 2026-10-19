@@ -40,6 +40,8 @@ export interface AudioTimelineHost {
   reqPreview?: () => void;
   getPreviewSec?: () => number | null;
   getTimelineTime?: () => number;
+  /** where the player is in the video's own source time; null in a timeline gap */
+  getSourceTime?: () => number | null;
   isPlaying?: () => boolean;
   seekPreview?: (seconds: number) => void;
   setClipSegments?: (clip: EditorClip, segments: unknown[], active?: number) => void;
@@ -1387,7 +1389,9 @@ export function installAudioTimeline(host: AudioTimelineHost) {
       const audible = cut
         ? SegmentEditing.segmentIndexAtTime(SegmentEditing.segmentsForClip(videoClip, total), time, 0.02) >= 0
         : state.enabled && sourceAudioAudibleAt(videoClip, time);
-      sourcePreview.sync(Number(video.currentTime) || 0, video.playbackRate || 1, audible ? base : 0, playing && audible, [
+      // the native player keeps its hidden video paused, so the source position comes from the player
+      const sourcePosition = host.getSourceTime?.() ?? (Number(video.currentTime) || 0);
+      sourcePreview.sync(sourcePosition, video.playbackRate || 1, audible ? base : 0, playing && audible, [
         { muted: !cut && state.sourceMuted, gainDb: cut ? 0 : state.sourceGainDb },
         ...extraTracks(state).map((track) => ({ muted: !cut && track.muted, gainDb: cut ? 0 : track.gainDb })),
       ]);
