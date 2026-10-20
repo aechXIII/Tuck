@@ -39,6 +39,18 @@ type Step =
   | { readonly kind: "mix"; readonly mix: PreviewMix }
   | { readonly kind: "status" };
 
+// the backend's refusals carry codes taken from their message, so only these mean the link failed
+const LINK_FAILURES = new Set([
+  "TAURI_INVOKE_FAILED",
+  "BACKEND_START_FAILED",
+  "BACKEND_EXITED",
+  "BACKEND_TIMEOUT",
+  "BACKEND_PROTOCOL_MISMATCH",
+  "BACKEND_METHOD_UNAVAILABLE",
+  "MALFORMED_BACKEND_OUTPUT",
+  "MALFORMED_BRIDGE_RESULT",
+]);
+
 /**
  * The editor's player driven by the native engine instead of the `<video>` element. The engine
  * owns the clock in timeline time; the page only asks it to play, pause and seek, and the hidden
@@ -181,6 +193,11 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
     if (disposed || sentEpoch !== epoch || revision !== mixRevision) return;
     if (!result.ok || !isPreviewMix(result.value.data)) {
       console.error("The preview mix could not be made", result.ok ? "unreadable reply" : result.error);
+      // an edit the export refuses would export no sound, so the old mix stops; the export panel
+      // says why. A failure of the link to the backend may pass and keeps the sound that was playing
+      if (!result.ok && !LINK_FAILURES.has(result.error.code)) {
+        enqueue({ kind: "mix", mix: { duration: timelineLength(), voices: [] } });
+      }
       return;
     }
     enqueue({ kind: "mix", mix: result.value.data });

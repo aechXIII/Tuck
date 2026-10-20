@@ -737,6 +737,39 @@ test("the engine plays the mix Python compiles, and only the newest one", async 
   }
 });
 
+test("an edit the export refuses plays no sound, and a timeout keeps the last mix", async () => {
+  const errors: unknown[] = [];
+  const original = console.error;
+  console.error = (...values: unknown[]) => errors.push(values);
+  const playing = {
+    duration: 10,
+    voices: [{ path: "/videos/a.mp4", stream: 0, pieces: [{
+      start: 0, end: 10, sourceIn: 0, gain: 1, fadeIn: 0, fadeOut: 0, loopStart: 0, loopSpan: 0,
+    }] }],
+  };
+  const answers = [
+    { ok: true as const, value: { data: playing } },
+    { ok: false as const, error: { code: "BACKEND_TIMEOUT", message: "The backend did not answer in time.", details: {} } },
+    { ok: false as const, error: { code: "INTERNAL_ERROR", message: "Use Compress or Upscale to keep timeline gaps, or close the gaps.", details: {} } },
+  ];
+  const run = setup({ compilePreviewMix: async () => answers.shift() ?? answers[answers.length - 1]! });
+  try {
+    await run.load();
+    await run.advance(100);
+    assert.deepEqual(run.fixture.mixes, [playing]);
+    run.player.refreshMix?.();
+    await run.advance(100);
+    assert.deepEqual(run.fixture.mixes, [playing], "a timeout keeps the sound that was playing");
+    run.player.refreshMix?.();
+    await run.advance(100);
+    assert.deepEqual(run.fixture.mixes, [playing, { duration: 10, voices: [] }]);
+    assert.equal(errors.length, 2);
+  } finally {
+    console.error = original;
+    run.player.dispose();
+  }
+});
+
 test("a refused play leaves the player paused", async () => {
   const errors: unknown[] = [];
   const original = console.error;
