@@ -233,6 +233,10 @@ def _create_plan(api: BridgeAPI, params: dict[str, object]) -> object:
     return api.create_plan(_object(params, "request"))
 
 
+def _compile_preview_mix(api: BridgeAPI, params: dict[str, object]) -> object:
+    return api.compile_preview_mix(_object(params, "request"))
+
+
 def _enqueue_with_options(api: BridgeAPI, params: dict[str, object], work: RequestWork) -> object:
     return api.enqueue_with_options(_object(params, "request"), work=work)
 
@@ -506,6 +510,7 @@ _HANDLERS: dict[str, Handler] = {
     "get_media_url": _get_media_url,
     "release_media_token": _release_media_token,
     "create_plan": _create_plan,
+    "compile_preview_mix": _compile_preview_mix,
     "cancel_item": _cancel_item,
     "remove_item": _remove_item,
     "cancel_all_items": _cancel_all_items,

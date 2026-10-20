@@ -50,6 +50,8 @@ fn main() {
             "preview_surface_viewport",
             "player_open",
             "player_command",
+            "player_edits",
+            "player_mix",
             "player_status",
         ]),
     ))

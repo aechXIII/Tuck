@@ -35,6 +35,9 @@ export interface FixtureEngine {
   invoke(command: string, args: unknown, options?: { headers?: Record<string, string> }): Promise<unknown>;
   /** every LUT the page sent, in order */
   luts: FixtureLut[];
+  /** every timeline (its length and segments) and every mix the page sent, in order */
+  edits: Array<{ duration: number; segments: Array<{ start: number; end: number; sourceStart: number }> }>;
+  mixes: unknown[];
   calls: FixtureEngineCall[];
   /** the most commands that were ever waiting on the engine at the same time */
   mostInFlight: number;
@@ -47,6 +50,8 @@ export function createFixtureEngine(options: FixtureEngineOptions = {}): Fixture
   const maxDuration = 7 * 24 * 3600;
   const calls: FixtureEngineCall[] = [];
   const luts: FixtureLut[] = [];
+  const edits: FixtureEngine["edits"] = [];
+  const mixes: unknown[] = [];
   let inFlight = 0;
 
   interface Player {
@@ -134,10 +139,49 @@ export function createFixtureEngine(options: FixtureEngineOptions = {}): Fixture
       if (!sizeValid || !bytesValid || !strengthValid) throw failure("INVALID_REQUEST", "The LUT is not valid.");
       return null;
     }
-    if (command !== "player_command" && command !== "player_status") return undefined;
+    if (command !== "player_command" && command !== "player_status" && command !== "player_edits" && command !== "player_mix") {
+      return undefined;
+    }
     const p = player;
     if (!p) throw failure("PLAYER_NOT_OPEN", "No video is open.");
     if (command === "player_status") return status(p);
+    if (command === "player_mix") {
+      const mix: unknown = args.mix;
+      const duration = typeof mix === "object" && mix !== null ? Reflect.get(mix, "duration") : undefined;
+      const voices = typeof mix === "object" && mix !== null ? Reflect.get(mix, "voices") : undefined;
+      if (typeof duration !== "number" || !(duration > 0) || !Array.isArray(voices)) {
+        throw failure("INVALID_REQUEST", "The preview mix is not valid.");
+      }
+      mixes.push(mix);
+      return null;
+    }
+    if (command === "player_edits") {
+      // like the bare clock in the shell: the timeline's length matters, there is no picture
+      const request: unknown = args.edits;
+      const duration = typeof request === "object" && request !== null ? Reflect.get(request, "duration") : undefined;
+      const segments = typeof request === "object" && request !== null ? Reflect.get(request, "segments") : undefined;
+      let previousEnd = 0;
+      const valid = typeof duration === "number" && Number.isFinite(duration) && duration > 0 && Array.isArray(segments)
+        && segments.every((segment: unknown) => {
+          const field = (name: string): unknown => typeof segment === "object" && segment !== null ? Reflect.get(segment, name) : undefined;
+          const start = field("start"), end = field("end"), source = field("sourceStart");
+          const ok = typeof start === "number" && typeof end === "number" && typeof source === "number"
+            && Number.isFinite(start) && Number.isFinite(end) && Number.isFinite(source)
+            && start >= previousEnd && end > start && source >= 0 && end <= duration + 1e-6;
+          if (typeof end === "number") previousEnd = end;
+          return ok;
+        });
+      if (!valid) throw failure("INVALID_REQUEST", "The timeline is not valid.");
+      advance(p, now());
+      edits.push(JSON.parse(JSON.stringify(request)));
+      p.duration = duration;
+      if (p.position >= duration) {
+        p.position = duration;
+        p.ended = true;
+        p.playing = false;
+      }
+      return status(p);
+    }
     const request: unknown = args.command;
     const field = (name: string): unknown =>
       typeof request === "object" && request !== null ? Reflect.get(request, name) : undefined;
@@ -196,6 +240,8 @@ export function createFixtureEngine(options: FixtureEngineOptions = {}): Fixture
   const engine: FixtureEngine = {
     calls,
     luts,
+    edits,
+    mixes,
     mostInFlight: 0,
     async invoke(command, args, options) {
       if (command === "player_lut") {

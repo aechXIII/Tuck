@@ -23,7 +23,7 @@
 #endif
 
 /* raise whenever a signature or struct below changes */
-#define TUCK_VIDEO_ABI 6
+#define TUCK_VIDEO_ABI 7
 
 /* TuckVideoStatus.sound */
 #define TUCK_SOUND_NONE 0

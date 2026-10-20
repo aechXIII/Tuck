@@ -2,7 +2,8 @@
    in a seek-fixtures.txt from scripts/player_fixtures.py it seeks to frame times, to times between
    frames and back and forth across the clip, then steps forward frame by frame, and checks each
    time that the frame the player would show is the one the file shows at that time. Decoding is
-   in software, so it runs anywhere; the hardware paths are checked in the app.
+   in software, so it runs anywhere; the hardware paths are checked in the app. For every sound in
+   the list it checks that the mix's reader gives the same sound wherever it was before a read.
 
    Usage: tuck_player_seek_check <seek-fixtures.txt> [clip ...] */
 #include <math.h>
@@ -12,13 +13,21 @@
 #include <string.h>
 #include <time.h>
 
+#include "../audio_reader.h"
 #include "../decoder.h"
+#include "../mix.h"
 
 /* a frame time from the list and the decoder's own agree to well within this */
 #define SAME_TIME 1e-6
 /* one seek or step that takes longer than this has hung */
 #define TAKE_TIMEOUT_SECONDS 60.0
 #define STEPS 30
+/* the sound check reads this stretch, twice; the first frame decoded after a seek depends on where
+   the decoder was, so the two are compared after it */
+#define SOUND_AT 2.0
+#define SOUND_FRAMES 8192
+#define SOUND_SETTLED 2048
+#define SOUND_BLOCK 1024
 
 typedef struct Waiter {
     pthread_mutex_t lock;
@@ -181,6 +190,43 @@ static int check_clip(const char *folder, const Clip *clip, double *slowest) {
     return failures;
 }
 
+/* A stretch read after the reader has gone past it must be the same sound a fresh reader gives
+   there. Blocks that don't line up with the decoder's frames leave part of one buffered, which
+   once came back as silence until the read caught up with it. */
+static int check_sound(const char *folder, const char *name) {
+    char path[1024 + 256 + 2];
+    snprintf(path, sizeof(path), "%s/%s", folder, name);
+    static float expected[SOUND_FRAMES * 2], got[SOUND_FRAMES * 2], block[SOUND_BLOCK * 2];
+    char error[256] = {0};
+    AudioReader *fresh = audio_reader_open(path, 0, NULL, NULL, error, sizeof(error));
+    AudioReader *ahead = fresh ? audio_reader_open(path, 0, NULL, NULL, error, sizeof(error)) : NULL;
+    int ok = ahead && audio_reader_read(fresh, SOUND_AT, expected, SOUND_FRAMES, error, sizeof(error));
+    for (double t = 0.0137; ok && t < SOUND_AT + 0.5; t += (double)SOUND_BLOCK / MIX_RATE)
+        ok = audio_reader_read(ahead, t, block, SOUND_BLOCK, error, sizeof(error));
+    ok = ok && audio_reader_read(ahead, SOUND_AT, got, SOUND_FRAMES, error, sizeof(error));
+    audio_reader_close(fresh);
+    audio_reader_close(ahead);
+    if (!ok) {
+        printf("FAIL %s: %s\n", name, error);
+        return 1;
+    }
+    double loudest = 0, worst = 0;
+    for (size_t i = SOUND_SETTLED * 2; i < SOUND_FRAMES * 2; i++) {
+        loudest = fmax(loudest, fabs(expected[i]));
+        worst = fmax(worst, fabs(got[i] - expected[i]));
+    }
+    if (loudest < 0.01) {
+        printf("FAIL %s: a fresh read at %.1f s is silent\n", name, SOUND_AT);
+        return 1;
+    }
+    if (worst > 1e-6) {
+        printf("FAIL %s: reading %.1f s again after reading past it is off by up to %g\n", name, SOUND_AT, worst);
+        return 1;
+    }
+    printf("ok   %s: the sound reads the same after reading past it\n", name);
+    return 0;
+}
+
 static int wanted(const char *name, int argc, char **argv) {
     if (argc <= 2) return 1;
     for (int i = 2; i < argc; i++)
@@ -208,11 +254,18 @@ int main(int argc, char **argv) {
         *slash = 0;
     else
         snprintf(folder, sizeof(folder), ".");
-    int failures = 0, clips = 0;
+    int failures = 0, clips = 0, sounds = 0;
     Clip clip;
     char word[16];
     unsigned long count;
     while (fscanf(list, "%15s %255s %lu", word, clip.name, &count) == 3) {
+        if (!strcmp(word, "sound") && !count) {
+            if (wanted(clip.name, argc, argv)) {
+                failures += check_sound(folder, clip.name);
+                sounds++;
+            }
+            continue;
+        }
         clip.count = count;
         if (strcmp(word, "clip") || !clip.count) {
             fprintf(stderr, "%s is not a seek-fixtures list\n", argv[1]);
@@ -233,6 +286,6 @@ int main(int argc, char **argv) {
         free(clip.times);
     }
     fclose(list);
-    printf("%s: %d clips, %d failures\n", failures ? "FAILED" : "all exact", clips, failures);
+    printf("%s: %d clips, %d sounds, %d failures\n", failures ? "FAILED" : "all exact", clips, sounds, failures);
     return failures ? 1 : 0;
 }

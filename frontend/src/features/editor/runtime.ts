@@ -125,7 +125,11 @@ export function installEditorRuntime(
 
   const requestPreview = (): void => {
     void encoding?.reqPreview();
+    // whatever changes the export's plan can change what the native player should play
+    player?.refreshMix?.();
   };
+  // the native player plays the whole mix itself, so the page's own audio elements stay quiet
+  let nativeAudio = false;
 
   const resizeInterface = createInterfaceSizer((size) => getBackendClient().setInterfaceSize(size));
   const sessionFiles = createSessionFiles({
@@ -219,6 +223,7 @@ export function installEditorRuntime(
 
   const audio = installAudioTimeline({
     session,
+    nativeAudio: () => nativeAudio,
     cutTask: () => encoding?.workflow() === 2,
     byId,
     documentRef: windowRef.document,
@@ -284,6 +289,8 @@ export function installEditorRuntime(
 
   const playerHost: PlayerHost = {
     byId,
+    previewMixRequest: () => (session.selPath ? encoding?.previewMixRequest(session.selPath) ?? null : null),
+    compilePreviewMix: (request) => getBackendClient().compilePreviewMix(request),
     clips: () => session.clips,
     selPath: () => session.selPath,
     getMuted: () => session.muted,
@@ -903,6 +910,8 @@ export function installEditorRuntime(
     if (nativePreview === "engine" || nativePreview === "player") {
       player.dispose();
       player = installNativePlayer(playerHost, createTauriPlayerEngine());
+      nativeAudio = true;
+      audio.syncPreview();
     }
     if (
       session.appSettings.check_updates !== false &&

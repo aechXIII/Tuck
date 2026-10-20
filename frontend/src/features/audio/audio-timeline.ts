@@ -40,6 +40,8 @@ export interface AudioTimelineHost {
   reqPreview?: () => void;
   getPreviewSec?: () => number | null;
   getTimelineTime?: () => number;
+  /** the native player plays the whole mix itself, from Python's compiled pieces */
+  nativeAudio?: () => boolean;
   /** where the player is in the video's own source time; null in a timeline gap */
   getSourceTime?: () => number | null;
   isPlaying?: () => boolean;
@@ -1380,6 +1382,12 @@ export function installAudioTimeline(host: AudioTimelineHost) {
     const playing = host.isPlaying?.() ?? !video.paused;
     let time = playing ? host.getTimelineTime?.() ?? (Number(video.currentTime) || 0) : sourceTime();
     updatePlayheads(time, total);
+    if (host.nativeAudio?.()) {
+      // the native player plays the whole mix, so the page's own audio stays quiet
+      void sourcePreview.clear();
+      stopPreviewElements();
+      return;
+    }
     let base = previewBaseVolume();
     video.volume = sourcePreviewVolume(videoClip, state, time);
     let cut = cutTask();

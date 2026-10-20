@@ -1,3 +1,5 @@
+import type { PreviewMixPayload } from "../../backend/preview-mix-types.ts";
+import type { BackendResult, PlanRequest } from "../../backend/types.ts";
 import type { EditorClip } from "../editor/types.ts";
 import type { StageFullscreen } from "./stage-fullscreen.ts";
 import type { SegmentRange } from "../timeline/segments.ts";
@@ -20,6 +22,9 @@ export interface PlayerClock {
 }
 
 export interface PlayerHost {
+  /** the request an export of the selected video would send, which its native mix is made from */
+  previewMixRequest?: () => PlanRequest | null;
+  compilePreviewMix?: (request: PlanRequest) => Promise<BackendResult<PreviewMixPayload>>;
   byId: <T extends HTMLElement = HTMLElement>(id: string) => T | null;
   clips: () => Readonly<Record<string, EditorClip>>;
   selPath: () => string | null;
@@ -75,6 +80,8 @@ export interface PlayerApi {
   captureFrameTime: () => number;
   /** one step slower (-1) or faster (1) through the playback speeds */
   changeSpeed: (direction: number) => void;
+  /** the edit changed what should be heard; the native player compiles its mix again */
+  refreshMix?: () => void;
   resetSpeed: () => void;
   dispose: () => void;
 }

@@ -12,10 +12,12 @@ from typing import Any
 from av.error import FFmpegError
 
 from . import __version__
+from .audio_mix import compile_cut_preview_mix, compile_preview_mix
 from .bridge_contract import BridgeResult, JsonValue
 from .bridge_serialization import (
     audio_info_dict,
     plan_preview_dict,
+    preview_mix_dict,
     profile_ui_dict,
     video_info_dict,
 )
@@ -52,6 +54,7 @@ from .models import (
     PlanRequest,
     PlanValidationError,
     Profile,
+    Segment,
     VideoInfo,
     find_profile_by_id,
 )
@@ -392,6 +395,42 @@ class BridgeAPI:
 
     def cancel_cut_work(self, work_id: str) -> BridgeResult:
         return {"ok": True, "cancelled": self._cut_analysis.cancel(work_id)}
+
+    def compile_preview_mix(self, request: object) -> BridgeResult:
+        """The native player's preview mix for an export request, compiled from the export's own
+        rules so the preview sounds the way the export will"""
+        if not isinstance(request, dict):
+            return {"ok": False, "error": "Expected request object"}
+        raw = request
+        try:
+            if raw.get("operation") == "cut":
+                cut_request = parse_cut_request(raw, **self._cut_options())
+                info = self._probe_once(cut_request.source)
+                streams = max(1, info.audio_stream_count) if info.has_audio else 0
+                # the parsed request keeps only source ranges, so whether clips were moved is
+                # read from the request itself
+                ranges = raw.get("segments")
+                moved = isinstance(ranges, list) and any(
+                    isinstance(part, dict) and "timeline_start" in part for part in ranges
+                )
+                segments = [
+                    Segment(float(part.start.seconds), float(part.end.seconds))
+                    for part in cut_request.segments
+                ]
+                mix = compile_cut_preview_mix(
+                    cut_request.source, segments, streams, cut_request.include_audio, moved
+                )
+            else:
+                plan_request = self._parse_plan_request(raw)
+                profile = self._resolve_profile(plan_request.profile_id)
+                if profile is None:
+                    return {"ok": False, "error": f"Profile not found: {plan_request.profile_id}"}
+                mix = compile_preview_mix(self._build_plan(plan_request, profile))
+        except PlanValidationError as error:
+            return {"ok": False, "error": str(error), "field": error.field}
+        except (ValueError, TypeError, OSError) as error:
+            return {"ok": False, "error": str(error)}
+        return {"ok": True, "data": preview_mix_dict(mix)}
 
     def create_plan(self, request: object) -> BridgeResult:
         if not isinstance(request, dict):

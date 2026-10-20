@@ -1,7 +1,9 @@
 import type {
+  NativeEdits,
   NativePlayerStatus,
   PlayerEngine,
 } from "../../backend/native-player.ts";
+import { isPreviewMix, type PreviewMix } from "../../backend/preview-mix-types.ts";
 import type { BackendError, BackendResult } from "../../backend/types.ts";
 import {
   hasPlacement,
@@ -23,6 +25,8 @@ import {
 // the engine is asked for its status this often while its clock runs; between replies the
 // playhead follows the page's own monotonic clock, so nothing crosses the bridge per frame
 const STATUS_INTERVAL_MS = 100;
+// edits come in bursts while dragging; the mix is compiled once they settle this long
+const MIX_DELAY_MS = 60;
 
 type Step =
   | { readonly kind: "open"; readonly duration: number; readonly path: string | null }
@@ -31,6 +35,8 @@ type Step =
   | { readonly kind: "seek"; readonly seconds: number }
   | { readonly kind: "volume"; readonly volume: number }
   | { readonly kind: "rate"; readonly rate: number }
+  | { readonly kind: "edits"; readonly edits: NativeEdits }
+  | { readonly kind: "mix"; readonly mix: PreviewMix }
   | { readonly kind: "status" };
 
 /**
@@ -81,12 +87,11 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
   let lutWanted: LutChange | null | undefined;
   let lutSent: Float32Array | null = null;
   let lutBusy = false;
-  // moved clips: the engine plays the file's own time inside one segment at a time, and between
-  // segments the page keeps the timeline position itself, as the HTML player does
-  let engineSegment = -1;
-  let gapPosition: number | null = null;
-  let gapAt = 0;
-  let lastRanges: SegmentRange[] = [];
+  // the segments the engine's timeline was last given, so an edit, slip or undo is sent again
+  let lastRanges: SegmentRange[] | null = null;
+  // the newest mix request, so an older compile that finishes late is dropped
+  let mixRevision = 0;
+  let mixTimer = 0;
 
   function segments(): readonly SegmentRange[] {
     return host.playbackSegments();
@@ -110,38 +115,12 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
     return defaultPlaybackTarget(mutable, time, tolerance);
   }
 
-  function segmentAt(ranges: readonly SegmentRange[], time: number): number {
-    return ranges.findIndex((segment) => time >= segment.start && time < segment.end);
-  }
-
-  // where the engine is in the file, read between status replies
-  function enginePosition(): number | null {
-    if (!status) return null;
+  function position(): number {
+    if (target != null) return target;
+    if (!status) return previewSec ?? 0;
     let time = status.positionSeconds;
     if (!status.paused && !status.seekPending) time += (Math.max(0, now() - statusAt) / 1000) * status.rate;
     return Math.min(status.durationSeconds, time);
-  }
-
-  // the engine's file time on the timeline, through the segment it is playing
-  function engineOnTimeline(ranges: readonly SegmentRange[], source: number): number {
-    const segment = ranges[engineSegment];
-    if (!segment) return source;
-    const time = segment.start + source - (segment.sourceStart ?? segment.start);
-    return Math.min(segment.end, Math.max(segment.start, time));
-  }
-
-  // the timeline position while no segment is under the playhead, moving while playing
-  function gapTime(): number {
-    if (gapPosition == null) return previewSec ?? 0;
-    return wantPlaying ? gapPosition + ((now() - gapAt) / 1000) * speed : gapPosition;
-  }
-
-  function position(): number {
-    if (target != null) return target;
-    if (placed() && engineSegment < 0) return gapTime();
-    const source = enginePosition();
-    if (source == null) return previewSec ?? 0;
-    return placed() ? engineOnTimeline(segments(), source) : source;
   }
 
   function copyRanges(ranges: readonly SegmentRange[]): SegmentRange[] {
@@ -156,25 +135,55 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
     });
   }
 
-  // an edit, a slip or an undo can change which footage is under the playhead; the engine follows
-  // so the picture is the one the timeline shows
-  function syncRanges(): void {
+  // the engine plays the timeline: moved clips show their own footage there and the engine
+  // draws black between them; without moved clips the timeline is the file itself, and the page
+  // skips cut parts by seeking as before
+  function editsFor(ranges: readonly SegmentRange[]): NativeEdits {
+    if (!hasPlacement(ranges)) return { duration: host.videoDuration(), segments: [] };
+    return {
+      duration: Math.max(host.videoDuration(), ranges.at(-1)?.end ?? 0),
+      segments: ranges.map((segment) => ({
+        start: segment.start,
+        end: segment.end,
+        sourceStart: segment.sourceStart ?? segment.start,
+      })),
+    };
+  }
+
+  // an edit, a slip or an undo changes the timeline; the engine shows the new footage at once
+  function syncEdits(): void {
+    if (disposed || !opened) return;
     const ranges = segments();
-    if (sameRanges(ranges, lastRanges)) return;
-    const wasPlaced = hasPlacement(lastRanges);
-    let time: number;
-    if (target != null) time = target;
-    else if (wasPlaced && engineSegment < 0) time = gapTime();
-    else {
-      const source = enginePosition();
-      time = source == null ? previewSec ?? 0 : wasPlaced ? engineOnTimeline(lastRanges, source) : source;
-    }
+    if (lastRanges && sameRanges(ranges, lastRanges)) return;
     lastRanges = copyRanges(ranges);
-    if (!wasPlaced && !hasPlacement(ranges)) return;
-    if (!opened) return;
-    const playing = wantPlaying;
-    seekTo(time);
-    if (playing) play();
+    const edits = editsFor(ranges);
+    if (!(edits.duration > 0)) return;
+    enqueue({ kind: "edits", edits });
+    requestMix();
+  }
+
+  // the sound the engine plays is compiled by Python from the same request an export sends
+  function requestMix(): void {
+    if (disposed || !opened || !host.compilePreviewMix) return;
+    if (mixTimer) clock.clearTimeout(mixTimer);
+    mixTimer = clock.setTimeout(() => {
+      mixTimer = 0;
+      void sendMix();
+    }, MIX_DELAY_MS);
+  }
+
+  async function sendMix(): Promise<void> {
+    const request = host.previewMixRequest?.();
+    if (!request || !host.compilePreviewMix) return;
+    const revision = ++mixRevision;
+    const sentEpoch = epoch;
+    const result = await host.compilePreviewMix(request);
+    if (disposed || sentEpoch !== epoch || revision !== mixRevision) return;
+    if (!result.ok || !isPreviewMix(result.value.data)) {
+      console.error("The preview mix could not be made", result.ok ? "unreadable reply" : result.error);
+      return;
+    }
+    enqueue({ kind: "mix", mix: result.value.data });
   }
 
   function sourcePosition(): number | null {
@@ -186,12 +195,14 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
     if (disposed) return;
     // the newest seek or level replaces one still waiting, so scrubbing never builds a backlog
     const last = steps.at(-1);
-    if ((step.kind === "seek" || step.kind === "volume" || step.kind === "rate") && last?.kind === step.kind) steps[steps.length - 1] = step;
+    const replaces = step.kind === "seek" || step.kind === "volume" || step.kind === "rate" || step.kind === "edits"
+      || step.kind === "mix";
+    if (replaces && last?.kind === step.kind) steps[steps.length - 1] = step;
     else if (step.kind !== "status" || !steps.some((queued) => queued.kind === "status")) steps.push(step);
     void pump();
   }
 
-  function send(step: Step): Promise<BackendResult<NativePlayerStatus>> {
+  function send(step: Step): Promise<BackendResult<NativePlayerStatus | null>> {
     switch (step.kind) {
       case "open":
         requestId = 0;
@@ -204,6 +215,10 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
         return engine.command({ kind: "volume", volume: step.volume });
       case "rate":
         return engine.command({ kind: "rate", rate: step.rate });
+      case "edits":
+        return engine.edits(step.edits);
+      case "mix":
+        return engine.mix(step.mix);
       case "status":
         return engine.status();
       default:
@@ -219,8 +234,9 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
         const sentEpoch = epoch;
         const result = await send(step);
         if (disposed || sentEpoch !== epoch) continue;
-        if (result.ok) accept(result.value);
-        else refuse(step, result.error);
+        if (result.ok) {
+          if (result.value) accept(result.value);
+        } else refuse(step, result.error);
       }
     } finally {
       busy = false;
@@ -235,7 +251,7 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
     const confirmed = target != null && !seekQueued && next.confirmedSeekRequestId === sentSeekId;
     if (confirmed) target = null;
     // in a gap the engine waits while the page plays on
-    host.byId("btn-play")?.classList.toggle("playing", !next.paused || (wantPlaying && placed() && engineSegment < 0));
+    host.byId("btn-play")?.classList.toggle("playing", !next.paused);
     if (next.video?.failed && reportedFailure !== epoch) {
       reportedFailure = epoch;
       console.error("The native player stopped", next.video.error);
@@ -250,10 +266,7 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
       console.info("The native player decodes in software", next.video.decoder, next.video.softwareReason);
     }
     if (next.ended && wantPlaying) {
-      // a segment can run to the end of the file while the timeline goes on
-      const segment = placed() ? segments()[engineSegment] : undefined;
-      if (segment && segment.end < projectEnd()) continuePlaybackAt(segment.end);
-      else finish();
+      finish();
       return;
     }
     if (!next.paused) startFrameLoop();
@@ -270,6 +283,8 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
     console.error(`The native player could not ${step.kind}`, error);
     if (step.kind === "open") {
       opened = false;
+      // what was queued behind the open has no engine to go to
+      steps.length = 0;
       // a file the engine refused isn't tried again until the stage shows a video anew
       shownPath = null;
       if (reportedFailure !== epoch) {
@@ -322,12 +337,19 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
     }
   }
 
-  // the editor gives the hidden <video> the source's level (mute, muted segments, gain) as it does
-  // for the HTML player; the native player plays the sound, so it takes the same level
+  // gains and muted parts are in the mix, so the engine takes only the preview's level. It comes
+  // from the slider and mute, not the hidden <video>: WebKitGTK reports a video's volume back late
+  // and can leave an older one in place
+  function previewLevel(): number {
+    const bar = host.byId<HTMLInputElement>("vbar");
+    if (host.getMuted() || !bar) return 0;
+    const level = Number(bar.value) / 100;
+    return Number.isFinite(level) ? Math.max(0, Math.min(1, level)) : 0;
+  }
+
   function syncVolume(): void {
-    if (!video || !opened || disposed) return;
-    const level = Number.isFinite(video.volume) ? video.volume : 1;
-    const volume = video.muted ? 0 : Math.max(0, Math.min(1, level));
+    if (!opened || disposed) return;
+    const volume = previewLevel();
     if (volume === sentVolume) return;
     sentVolume = volume;
     enqueue({ kind: "volume", volume });
@@ -365,65 +387,28 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
     host.setPreviewGap?.(gap);
   }
 
-  // between or after segments there is no frame to show: the engine waits and the page keeps
-  // the time; finishing at the project's end keeps its last frame instead
-  function enterGap(time: number, black = true): void {
-    target = null;
-    engineSegment = -1;
-    gapPosition = time;
-    gapAt = now();
-    setGap(black);
-    if (status && !status.paused) enqueue({ kind: "pause" });
+  // the timeline the engine plays runs to the source's length or the last moved clip's end
+  function timelineLength(): number {
+    return Math.max(host.videoDuration(), placed() ? projectEnd() : 0);
   }
 
-  // `seconds` is timeline time; the engine is asked for the file time under it
+  // `seconds` is timeline time; the engine maps it to footage itself
   function seekTo(seconds: number): void {
-    const duration = host.videoDuration();
-    if (!placed()) {
-      engineSegment = -1;
-      gapPosition = null;
-      const clamped = Math.max(0, Math.min(duration, seconds));
-      target = clamped;
-      enqueue({ kind: "seek", seconds: clamped });
-      return;
-    }
-    const ranges = segments();
-    // the engine's position is read through the layout it was sent with
-    lastRanges = copyRanges(ranges);
-    // the timeline runs to the source's length or the last segment, whichever is later
-    const time = Math.max(0, Math.min(Math.max(duration, projectEnd()), seconds));
-    const index = segmentAt(ranges, time);
-    const segment = ranges[index];
-    if (!segment) {
-      enterGap(time);
-      return;
-    }
-    engineSegment = index;
-    gapPosition = null;
-    setGap(false);
-    target = time;
-    const source = (segment.sourceStart ?? segment.start) + time - segment.start;
-    enqueue({ kind: "seek", seconds: Math.max(0, Math.min(duration, source)) });
+    const clamped = Math.max(0, Math.min(timelineLength(), seconds));
+    target = clamped;
+    enqueue({ kind: "seek", seconds: clamped });
   }
 
   function play(): void {
     wantPlaying = true;
-    startFrameLoop();
-    if (placed() && engineSegment < 0) {
-      // the page's own clock carries the playhead through the gap
-      gapAt = now();
-      host.byId("btn-play")?.classList.toggle("playing", true);
-      return;
-    }
     enqueue({ kind: "play" });
+    startFrameLoop();
   }
 
   function pause(): void {
-    if (placed() && engineSegment < 0) gapPosition = gapTime();
     wantPlaying = false;
     stopFrameLoop();
     enqueue({ kind: "pause" });
-    host.byId("btn-play")?.classList.remove("playing");
   }
 
   function finish(): void {
@@ -436,7 +421,8 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
         return;
       }
       enqueue({ kind: "pause" });
-      enterGap(end, false);
+      // just inside the last clip, so its last frame stays up as in the HTML player
+      seekTo(Math.max(0, end - 0.001));
     } else if (loopEnabled()) {
       const first = segments()[0];
       if (first) {
@@ -466,7 +452,7 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
 
   function updateTime(): void {
     if (disposed) return;
-    syncRanges();
+    syncEdits();
     const full = host.videoDuration();
     if (host.Timeline?.isDragging() && previewSec != null) {
       host.setPlayheadUI(previewSec, full);
@@ -474,16 +460,12 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
     }
     const time = position();
     if (placed()) {
+      // the engine plays through gaps and shows black there; the stage says so, except as playing
+      // reaches the last clip's end and finishing steps back onto its last frame
+      const ending = wantPlaying && target == null && time >= projectEnd();
+      setGap(!ending && sourceTimeAt(segments(), time) == null);
       host.setPlayheadUI(time, full);
-      if (!wantPlaying || target != null) return;
-      if (time >= projectEnd()) {
-        finish();
-        return;
-      }
-      const segment = segments()[engineSegment];
-      // at the end of a segment the next one, or the gap after it, takes over; in a gap the
-      // engine starts again where the next segment begins
-      if (segment ? time >= segment.end : segmentAt(segments(), time) >= 0) continuePlaybackAt(segment ? segment.end : time);
+      if (ending) finish();
       return;
     }
     setGap(false);
@@ -506,7 +488,6 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
   }
 
   function open(): void {
-    // the engine plays the file; moved clips are mapped onto it here
     const duration = host.videoDuration() || (video && Number.isFinite(video.duration) ? video.duration : 0);
     if (!(duration > 0)) return;
     opened = true;
@@ -515,9 +496,9 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
     sentVolume = 1;
     syncVolume();
     if (speed !== 1) enqueue({ kind: "rate", rate: speed });
-    lastRanges = copyRanges(segments());
-    // the start of a moved clip is somewhere else in the file
-    if (placed()) seekTo(previewSec ?? 0);
+    // then the timeline and the mix the edit makes
+    lastRanges = null;
+    syncEdits();
   }
 
   function resetSource(): void {
@@ -531,8 +512,11 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
     wantPlaying = false;
     mirrorBusy = false;
     mirrorWanted = null;
-    engineSegment = -1;
-    gapPosition = null;
+    lastRanges = null;
+    // a mix still being compiled is for the video that left
+    mixRevision++;
+    if (mixTimer) clock.clearTimeout(mixTimer);
+    mixTimer = 0;
     if (seekFrame) clock.cancelAnimationFrame(seekFrame);
     seekFrame = 0;
     stopFrameLoop();
@@ -587,7 +571,7 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
 
   function togglePlay(): void {
     if (disposed || !ensureOpen()) return;
-    syncRanges();
+    syncEdits();
     if (wantPlaying) {
       pause();
       return;
@@ -595,7 +579,6 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
     const time = position();
     if (placed()) {
       if (time >= projectEnd()) seekTo(0);
-      else if (engineSegment < 0 && gapPosition == null) seekTo(time);
     } else {
       const next = playbackTarget(segments(), time, 0.04);
       if (next != null) seekTo(next);
@@ -621,7 +604,7 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
   function seekPreview(sec: number): void {
     const full = host.videoDuration();
     if (disposed || !full || !Number.isFinite(full) || !Number.isFinite(sec)) return;
-    syncRanges();
+    syncEdits();
     const clamped = Math.max(0, Math.min(full, sec));
     host.setPlayheadUI(clamped, full);
     if (placed()) setGap(sourceTimeAt(segments(), clamped) == null);
@@ -665,7 +648,6 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
     video.addEventListener(SOURCE_EVENT, onSource);
     video.addEventListener("loadedmetadata", onLoadedMetadata);
     video.addEventListener("durationchange", onDurationChange);
-    video.addEventListener("volumechange", syncVolume);
     video.addEventListener(LUT_CHANGE_EVENT, onLut);
     // the LUT may have been chosen before the native player took over
     video.dispatchEvent(new Event(LUT_REQUEST_EVENT));
@@ -677,6 +659,14 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
 
   return {
     ...volume,
+    toggleMute: () => {
+      volume.toggleMute();
+      syncVolume();
+    },
+    setVol: (value) => {
+      volume.setVol(value);
+      syncVolume();
+    },
     isPlaying: () => !disposed && wantPlaying,
     timelineTime: position,
     sourceTime: sourcePosition,
@@ -700,6 +690,7 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
     captureFrameTime,
     changeSpeed: (direction) => setSpeed(nextPlaybackSpeed(speed, direction)),
     resetSpeed: () => setSpeed(1),
+    refreshMix: requestMix,
     dispose: () => {
       if (disposed) return;
       resetSource();
@@ -708,7 +699,6 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
         video.removeEventListener(SOURCE_EVENT, onSource);
         video.removeEventListener("loadedmetadata", onLoadedMetadata);
         video.removeEventListener("durationchange", onDurationChange);
-        video.removeEventListener("volumechange", syncVolume);
         video.removeEventListener(LUT_CHANGE_EVENT, onLut);
       }
     },

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from fractions import Fraction
 from pathlib import Path
 
 import pytest
@@ -10,8 +11,8 @@ from tuck.audio_mix import (
     clip_placements,
     compile_cut_preview_mix,
     compile_preview_mix,
-    preview_mix_dict,
 )
+from tuck.bridge_serialization import preview_mix_dict
 from tuck.encoding.command import build_base_cmd
 from tuck.models import AudioClip, AudioTrack, EncodePlan, Segment, SourceAudioTrack, VideoInfo
 
@@ -140,9 +141,49 @@ def test_without_moved_clips_the_preview_runs_in_source_time_and_skips_muted_par
         (0, 4, 0),
         (13, 20, 13),
     ]
-    # the player skips the cut in the picture itself, so the clip stays whole on its timeline
-    assert [(piece.start, piece.end) for piece in music.pieces] == [(8, 16)]
+    # the player skips the cut in the picture itself, so the clip keeps its source time
+    assert [(piece.start, piece.end, piece.source_in) for piece in music.pieces] == [
+        (8, 10, 1),
+        (12, 16, 5),
+    ]
     assert mix.duration == 30
+
+
+def test_a_clip_edge_in_a_removed_part_loses_its_fade_as_in_the_export() -> None:
+    segments = [Segment(0, 10), Segment(12, 20)]
+    clip = _clip(timeline_start=11, timeline_duration=6, fade_in=2.0, fade_out=1.0)
+    track = _track([clip])
+    plan = _plan(segments=segments, audio_tracks=[track])
+
+    (previewed,) = compile_preview_mix(plan).voices[-1].pieces
+    (shared,) = clip_pieces(track, clip, clip_placements(clip, segments, positioned=False))
+
+    assert (previewed.start, previewed.end, previewed.source_in) == (12, 17, 2)
+    assert (previewed.fade_in, previewed.fade_out) == (shared.fade_in, shared.fade_out) == (0, 1)
+
+
+def test_a_fade_cut_short_by_a_cut_ends_where_the_export_ends_it() -> None:
+    mix = compile_preview_mix(
+        _plan(
+            segments=[Segment(0, 10), Segment(12, 20)],
+            audio_tracks=[_track([_clip(timeline_start=9, timeline_duration=6, fade_in=2.0)])],
+        )
+    )
+
+    first, second = mix.voices[-1].pieces
+    assert (first.start, first.end, first.fade_in, first.fade_out) == (9, 10, 1, 0)
+    assert (second.start, second.end, second.fade_in, second.fade_out) == (12, 15, 0, 1)
+
+
+def test_a_looped_clip_picks_up_its_loop_where_the_export_does_after_a_cut() -> None:
+    clip = _clip(timeline_start=9, timeline_duration=6, source_in=1.0, source_out=3.0, loop=True)
+    mix = compile_preview_mix(
+        _plan(segments=[Segment(0, 10), Segment(12, 20)], audio_tracks=[_track([clip])])
+    )
+
+    first, second = mix.voices[-1].pieces
+    assert (first.source_in, second.source_in) == (1, 2), "3 s into a 2 s loop is 1 s in"
+    assert (second.loop_start, second.loop_span) == (1, 2)
 
 
 def test_moved_clips_put_the_source_at_its_timeline_place() -> None:
@@ -183,7 +224,9 @@ def test_preview_and_export_take_an_added_clip_from_the_same_pieces() -> None:
 
 @pytest.mark.parametrize("include_audio", [True, False])
 def test_a_lossless_cut_previews_every_stream_at_full_level(include_audio: bool) -> None:
-    mix = compile_cut_preview_mix("source.mkv", [Segment(1, 4), Segment(6, 9)], 2, include_audio)
+    mix = compile_cut_preview_mix(
+        "source.mkv", [Segment(1, 4), Segment(6, 9)], 2, include_audio, moved=False
+    )
 
     if not include_audio:
         assert mix.voices == ()
@@ -196,6 +239,16 @@ def test_a_lossless_cut_previews_every_stream_at_full_level(include_audio: bool)
             (1, 4, 1, 1.0),
             (6, 9, 6, 1.0),
         ]
+
+
+def test_moved_clips_in_a_lossless_cut_play_back_to_back_as_the_cut_writes_them() -> None:
+    mix = compile_cut_preview_mix("source.mkv", [Segment(1, 4), Segment(6, 9)], 1, True, moved=True)
+
+    assert mix.duration == 6
+    assert [(piece.start, piece.end, piece.source_in) for piece in mix.voices[0].pieces] == [
+        (0, 3, 1),
+        (3, 6, 6),
+    ]
 
 
 def test_the_mix_goes_to_the_page_with_its_own_field_names() -> None:
@@ -216,3 +269,86 @@ def test_the_mix_goes_to_the_page_with_its_own_field_names() -> None:
         "loopStart": 1.0,
         "loopSpan": 8.0,
     }
+
+
+def test_the_bridge_compiles_the_mix_from_the_export_request(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import tuck.settings as settings_mod
+    from tuck.bridge import BridgeAPI
+    from tuck.models import AudioInfo
+    from tuck.probe_cache import ProbeCache
+
+    for folder in ("_config_dir", "_data_dir", "_cache_dir"):
+        monkeypatch.setattr(settings_mod, folder, lambda: tmp_path)
+    video = tmp_path / "video.mp4"
+    music = tmp_path / "music.mp3"
+    video.write_bytes(b"video")
+    music.write_bytes(b"audio")
+    api = BridgeAPI()
+    api._settings.load()
+    api._probe_cache = ProbeCache(lambda path: _info())
+    api._audio_probe_cache = ProbeCache(
+        lambda path: AudioInfo(path=path, duration=20.0, codec="mp3")
+    )
+    track = _track([_clip(source=str(music))]).to_dict()
+
+    result = api.compile_preview_mix(
+        {"source": str(video), "source_audio_gain_db": -6, "audio_tracks": [track]}
+    )
+
+    assert result["ok"] is True, result
+    data = result["data"]
+    assert isinstance(data, dict)
+    voices = data["voices"]
+    assert isinstance(voices, list)
+    assert [(voice["path"], voice["stream"]) for voice in voices] == [
+        (str(video), 0),
+        (str(music.resolve()), 0),
+    ]
+    assert api.compile_preview_mix("not a request")["ok"] is False
+    assert api.compile_preview_mix({"source": str(tmp_path / "missing.mp4")})["ok"] is False
+
+
+def test_the_bridge_compiles_a_lossless_cut_with_moved_clips_from_its_request(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import tuck.settings as settings_mod
+    from tuck.bridge import BridgeAPI
+    from tuck.models.cutting import MediaTime
+    from tuck.probe_cache import ProbeCache
+
+    for folder in ("_config_dir", "_data_dir", "_cache_dir"):
+        monkeypatch.setattr(settings_mod, folder, lambda: tmp_path)
+    video = tmp_path / "video.mp4"
+    video.write_bytes(b"video")
+    api = BridgeAPI()
+    api._settings.load()
+    api._probe_cache = ProbeCache(lambda path: _info(streams=2))
+
+    def moment(seconds: int) -> dict[str, str | int]:
+        return MediaTime.from_seconds(Fraction(seconds)).to_dict()
+
+    def request(moved: bool) -> dict[str, object]:
+        parts = [(2, 5, 0), (8, 10, 3)]
+        return {
+            "operation": "cut",
+            "source": str(video),
+            "segments": [
+                {"start": moment(start), "end": moment(end)}
+                | ({"timeline_start": moment(at)} if moved else {})
+                for start, end, at in parts
+            ],
+        }
+
+    placed, plain = (api.compile_preview_mix(request(moved)) for moved in (True, False))
+
+    assert placed["ok"] is True, placed
+    assert plain["ok"] is True, plain
+    for result, starts in ((placed, [0.0, 3.0]), (plain, [2.0, 8.0])):
+        data = result["data"]
+        assert isinstance(data, dict)
+        voices = data["voices"]
+        assert isinstance(voices, list)
+        assert [voice["stream"] for voice in voices] == [0, 1]
+        assert [piece["start"] for piece in voices[0]["pieces"]] == starts

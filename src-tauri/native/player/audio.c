@@ -242,7 +242,9 @@ static void take_mix(AudioTrack *t) {
     Voice *voices = t->next_voices;
     size_t voice_count = t->next_voice_count;
     t->next_pieces = NULL;
+    t->next_piece_count = 0;
     t->next_voices = NULL;
+    t->next_voice_count = 0;
     t->mix_waiting = 0;
     pthread_mutex_unlock(&t->lock);
     for (size_t i = 0; i < voice_count; i++)

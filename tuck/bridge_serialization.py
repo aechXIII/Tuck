@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from .audio_mix import PreviewMix
+from .bridge_contract import JsonValue
 from .models import (
     BUILTIN_PROFILE_IDS,
     AudioInfo,
@@ -255,4 +257,31 @@ def queue_item_dict(item: QueueItem) -> dict[str, Any]:
         "encoder_fallback": item.encoder_fallback,
         # the size this export aimed for, in bytes; 0 when it had no target
         "target_size": int(plan.target_size) if plan is not None and plan.target_size else 0,
+    }
+
+
+def preview_mix_dict(mix: PreviewMix) -> dict[str, JsonValue]:
+    """The mix as the page hands it to the desktop shell"""
+    return {
+        "duration": mix.duration,
+        "voices": [
+            {
+                "path": voice.path,
+                "stream": voice.stream,
+                "pieces": [
+                    {
+                        "start": piece.start,
+                        "end": piece.end,
+                        "sourceIn": piece.source_in,
+                        "gain": piece.gain,
+                        "fadeIn": piece.fade_in,
+                        "fadeOut": piece.fade_out,
+                        "loopStart": piece.loop_start,
+                        "loopSpan": piece.loop_span,
+                    }
+                    for piece in voice.pieces
+                ],
+            }
+            for voice in mix.voices
+        ],
     }

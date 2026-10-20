@@ -24,6 +24,9 @@ interface Setup {
   frameDelayMs?: number;
   fps?: number;
   wrap?: (invoke: TauriInvoke) => TauriInvoke;
+  compilePreviewMix?: PlayerHost["compilePreviewMix"];
+  /** the volume slider, 0 to 100 */
+  level?: number;
 }
 
 interface SentCommand {
@@ -55,6 +58,8 @@ function setup(options: Setup = {}) {
       this.paused = true;
     },
   });
+  const bar = { value: String(options.level ?? 100) };
+  let muted = false;
   const classes = new Set<string>();
   const button = {
     classList: {
@@ -67,12 +72,17 @@ function setup(options: Setup = {}) {
   const audioSyncs: number[] = [];
   const segments = options.segments ?? [{ start: 0, end: duration }];
   const host: PlayerHost = {
+    ...(options.compilePreviewMix
+      ? { previewMixRequest: () => ({ source: "a" }), compilePreviewMix: options.compilePreviewMix }
+      : {}),
     byId: <T extends HTMLElement>(id: string) =>
-      (id === "vid" ? video : id === "btn-play" ? button : null) as unknown as T | null,
+      (id === "vid" ? video : id === "btn-play" ? button : id === "vbar" ? bar : null) as unknown as T | null,
     clips: () => ({ a: { probeData: { fps: options.fps ?? 25 } } as never }),
     selPath: () => "a",
-    getMuted: () => false,
-    setMuted: () => {},
+    getMuted: () => muted,
+    setMuted: (value) => {
+      muted = value;
+    },
     getVolBefore: () => 80,
     setVolBefore: () => {},
     playbackSegments: () => segments,
@@ -126,6 +136,7 @@ function setup(options: Setup = {}) {
   return {
     player,
     video,
+    bar,
     fixture,
     luts,
     lutRequests,
@@ -240,28 +251,29 @@ test("a status is only accepted with exact counters and real times", () => {
   }
 });
 
-test("the native sound takes the level the editor gives its video element", async () => {
-  const run = setup();
+test("the native sound takes the preview's level from the slider and mute", async () => {
+  const run = setup({ level: 40 });
   try {
-    const element = run.video as unknown as { volume: number; muted: boolean };
-    const changed = async (): Promise<void> => {
-      run.video.dispatchEvent(new Event("volumechange"));
-      await settle();
-    };
     const levels = (): Array<number | undefined> =>
       run.commands().filter((command) => command.kind === "volume").map((command) => command.volume);
-    element.volume = 0.4;
-    await changed();
+    run.player.setVol("40");
+    await settle();
     assert.equal(run.fixture.calls.length, 0, "nothing is sent before the video is open");
     await run.load();
     assert.deepEqual(levels(), [0.4], "an opened video gets the level it should play at");
-    await changed();
+    run.player.setVol("40");
+    await settle();
     assert.deepEqual(levels(), [0.4], "an unchanged level is not sent again");
-    element.muted = true;
-    await changed();
-    element.muted = false;
-    element.volume = 1;
-    await changed();
+    run.player.toggleMute();
+    await settle();
+    run.bar.value = "100";
+    run.player.setVol("100");
+    await settle();
+    assert.deepEqual(levels(), [0.4, 0, 1]);
+    // WebKitGTK can leave an older volume on the hidden video; the engine doesn't follow it
+    Object.assign(run.video, { volume: 0 });
+    run.video.dispatchEvent(new Event("volumechange"));
+    await settle();
     assert.deepEqual(levels(), [0.4, 0, 1]);
   } finally {
     run.player.dispose();
@@ -298,7 +310,8 @@ test("playing waits for the engine and follows its clock without a call per fram
     run.player.togglePlay();
     assert.equal(run.fixture.calls.length, 0, "nothing is sent before the video is open");
     await run.load();
-    assert.deepEqual(run.fixture.calls.map((call) => call.command), ["player_open"]);
+    assert.deepEqual(run.fixture.calls.map((call) => call.command), ["player_open", "player_edits"],
+      "the timeline goes with the video");
     run.player.togglePlay();
     assert.equal(run.player.isPlaying(), true);
     assert.equal(run.classes.has("playing"), false, "the button waits for the engine");
@@ -445,7 +458,7 @@ test("the end of the video stops or starts over as chosen", async () => {
   }
 });
 
-test("moved clips play their own footage, wait through gaps and stop at the project end", async () => {
+test("moved clips go to the engine as its timeline, which plays through gaps to the project end", async () => {
   const run = setup({
     duration: 5,
     segments: [
@@ -456,42 +469,47 @@ test("moved clips play their own footage, wait through gaps and stop at the proj
   try {
     await run.load();
     assert.deepEqual(run.fixture.calls[0]?.args, { request: { durationSeconds: 5, path: "a" } },
-      "the engine plays the selected file, whatever the timeline does with it");
+      "the engine opens the selected file");
+    assert.deepEqual(run.fixture.edits.at(-1), {
+      duration: 7,
+      segments: [
+        { start: 0, end: 2, sourceStart: 0 },
+        { start: 4, end: 7, sourceStart: 2 },
+      ],
+    }, "and plays the project's timeline, mapping each clip to its own footage");
     run.player.togglePlay();
     await run.advance(2500);
     assert.equal(run.gaps.at(-1), true);
-    assert.equal(run.player.isPlaying(), true, "the gap plays on in timeline time");
-    assert.equal(run.commands().at(-1)?.kind, "pause", "the engine waits through the gap");
+    assert.equal(run.player.isPlaying(), true, "the gap plays on");
     assert.equal(run.player.sourceTime(), null);
     assert.throws(() => run.player.captureFrameTime(), /timeline gap/);
     await run.advance(1800);
     assert.equal(run.gaps.at(-1), false);
-    assert.ok(Math.abs((run.seeks().at(-1)?.seconds ?? -1) - 2) < 0.05, "the second clip starts at its own footage");
     const source = run.player.sourceTime();
     assert.ok(source != null && Math.abs(source - (run.player.timelineTime() - 2)) < 1e-9);
     await run.advance(3000);
     assert.equal(run.player.isPlaying(), false);
-    assert.equal(run.player.timelineTime(), 7);
+    assert.ok(Math.abs(run.player.timelineTime() - 7) < 0.01, "stopped at the project end");
   } finally {
     run.player.dispose();
   }
 });
 
-test("a moved clip shows its own footage while paused, and an edit to it moves the picture", async () => {
+test("an edit to a moved clip goes to the engine as a new timeline", async () => {
   const ranges = [{ start: 0, end: 3, sourceStart: 2 }];
   const run = setup({ duration: 6, segments: ranges });
   try {
     await run.load();
-    run.player.seekPreview(1);
-    run.frame();
-    await settle();
-    assert.ok(Math.abs((run.seeks().at(-1)?.seconds ?? -1) - 3) < 1e-9, "one second into a clip that starts 2 s into the file");
-    // a slip moves the footage under the clip, so the same playhead shows another frame
+    assert.deepEqual(run.fixture.edits.at(-1)?.segments, [{ start: 0, end: 3, sourceStart: 2 }]);
+    // a slip moves the footage under the clip; the engine shows the new frame itself
     ranges[0] = { start: 0, end: 3, sourceStart: 1.5 };
     run.player.updateTime();
     await settle();
-    assert.ok(Math.abs((run.seeks().at(-1)?.seconds ?? -1) - 2.5) < 1e-9);
-    assert.equal(run.player.timelineTime(), 1);
+    assert.deepEqual(run.fixture.edits.at(-1)?.segments, [{ start: 0, end: 3, sourceStart: 1.5 }]);
+    const sent = run.fixture.edits.length;
+    run.player.updateTime();
+    await settle();
+    assert.equal(run.fixture.edits.length, sent, "an unchanged timeline isn't sent again");
   } finally {
     run.player.dispose();
   }
@@ -677,6 +695,43 @@ test("source and imported audio keep following the clock while the engine plays"
     const paused = run.audioSyncs.length;
     await run.advance(1000);
     assert.equal(run.audioSyncs.length, paused, "nothing more to follow while paused");
+  } finally {
+    run.player.dispose();
+  }
+});
+
+test("the engine plays the mix Python compiles, and only the newest one", async () => {
+  const mix = (gain: number) => ({
+    duration: 10,
+    voices: [{ path: "/videos/a.mp4", stream: 0, pieces: [{
+      start: 0, end: 10, sourceIn: 0, gain, fadeIn: 0, fadeOut: 0, loopStart: 0, loopSpan: 0,
+    }] }],
+  });
+  const answers: Array<(gain: number) => void> = [];
+  const requests: unknown[] = [];
+  const run = setup({
+    compilePreviewMix: (request) => {
+      requests.push(request);
+      return new Promise((resolve) => answers.push((gain) => resolve({ ok: true, value: { data: mix(gain) } })));
+    },
+  });
+  try {
+    await run.load();
+    await run.advance(100);
+    assert.deepEqual(requests, [{ source: "a" }], "compiled from the export's request once the video opens");
+    answers[0]?.(1);
+    await run.advance(20);
+    assert.deepEqual(run.fixture.mixes, [mix(1)]);
+    // two edits in a row: the first compile finishes last and is dropped
+    run.player.refreshMix?.();
+    await run.advance(100);
+    run.player.refreshMix?.();
+    await run.advance(100);
+    answers[2]?.(0.5);
+    await run.advance(20);
+    answers[1]?.(0.25);
+    await run.advance(20);
+    assert.deepEqual(run.fixture.mixes, [mix(1), mix(0.5)]);
   } finally {
     run.player.dispose();
   }

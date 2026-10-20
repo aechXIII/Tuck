@@ -82,6 +82,10 @@ pub enum BackendCommand {
     CreatePlan {
         request: Value,
     },
+    /// the native player's preview mix for an export request
+    CompilePreviewMix {
+        request: Value,
+    },
     EnqueueWithOptions {
         request: Value,
     },
@@ -249,6 +253,9 @@ impl BackendCommand {
             }
             Self::CancelCutWork { work_id } => ("cancel_cut_work", json!({ "work_id": work_id })),
             Self::CreatePlan { request } => ("create_plan", json!({ "request": request })),
+            Self::CompilePreviewMix { request } => {
+                ("compile_preview_mix", json!({ "request": request }))
+            }
             Self::EnqueueWithOptions { request } => {
                 ("enqueue_with_options", json!({ "request": request }))
             }
@@ -709,6 +716,9 @@ mod tests {
                 request: request.clone(),
             },
             BackendCommand::EnqueueWithOptions {
+                request: request.clone(),
+            },
+            BackendCommand::CompilePreviewMix {
                 request: request.clone(),
             },
         ] {

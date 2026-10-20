@@ -48,6 +48,8 @@ export function healthyBackendFixture(): FakeBackendFixture {
       getIpcFiles: [],
       getIpcMetadata: {},
       getQueueState: { items: [] },
+      // the native player's mix; the fixture engine records it and plays nothing
+      compilePreviewMix: { data: { duration: 1, voices: [] } },
     },
     startup: { files: [], sendto: null },
   };
@@ -151,6 +153,7 @@ export async function installFakeBackend(
         getMediaUrl: (path: string, track?: number) => respond("getMediaUrl", track === undefined ? [path] : [path, track]),
         releaseMediaToken: (token: string) => respond("releaseMediaToken", [token]),
         createPlan: (request: unknown) => respond("createPlan", [request]),
+        compilePreviewMix: (request: unknown) => respond("compilePreviewMix", [request]),
         exportFrame: (request: unknown) => respond("exportFrame", [request]),
         analyzeCut: (path: string, workId: string) => respond("analyzeCut", [path, workId]),
         getCutAnalysis: (path: string) => respond("getCutAnalysis", [path]),

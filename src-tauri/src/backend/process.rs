@@ -855,6 +855,7 @@ impl BackendCommand {
             | Self::GetMediaUrl { .. }
             | Self::ReleaseMediaToken { .. }
             | Self::CreatePlan { .. }
+            | Self::CompilePreviewMix { .. }
             | Self::EnqueueWithOptions { .. }
             | Self::RetryItem { .. }
             | Self::EnqueueBatch { .. } => MEDIA_REQUEST_TIMEOUT,

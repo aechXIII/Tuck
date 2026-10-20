@@ -1,5 +1,6 @@
 import type { CutAnalysisPayload, CutCancellation, CutPlanPayload, CutPlanRequest, KeyframeCursor } from "./cutting-types.ts";
 import type { FrameExportRequest, FrameExportResult } from "./frame-types.ts";
+import type { PreviewMixPayload } from "./preview-mix-types.ts";
 import type { TimelineFramesPayload } from "./timeline-frame-types.ts";
 export type { FrameExportRequest, FrameExportResult, VideoTransformJSON, LutSettingsJSON } from "./frame-types.ts";
 
@@ -190,6 +191,8 @@ export interface DomainBackendClient {
   releaseMediaToken(token: string): Promise<BackendResult<EmptyPayload>>;
   createPlan(request: CutPlanRequest): Promise<BackendResult<CutPlanPayload>>;
   createPlan(request: PlanRequest): Promise<BackendResult<DataPayload>>;
+  /** the native player's mix for the edit an export of `request` would make */
+  compilePreviewMix(request: PlanRequest): Promise<BackendResult<PreviewMixPayload>>;
   enqueueWithOptions(request: PlanRequest): Promise<BackendResult<JsonObject>>;
   enqueueBatch(requests: readonly PlanRequest[]): Promise<BackendResult<JsonObject>>;
   cancelItem(itemId: string): Promise<BackendResult<EmptyPayload>>;

@@ -4,6 +4,9 @@ import { resolve } from "node:path";
 import { healthyBackendFixture, installFakeBackend } from "../fixtures/fake-backend";
 import type { JsonObject } from "../../src/backend/types.ts";
 
+const nativeMix = process.env.TUCK_E2E_NATIVE_PREVIEW === "engine";
+const NATIVE_MIX = "the native player plays the sound in its own mix, so the page plays none";
+
 declare global { interface Window { __clipPlacementAudio: HTMLAudioElement[] } }
 
 async function open(page: Page, width = 1240, media = false) {
@@ -85,6 +88,7 @@ test("Alt-drag slips footage and Escape cancels without moving the clip", async 
 });
 
 test("positioned preview seeks retained footage and music uses project time", async ({ page }) => {
+  test.skip(nativeMix, NATIVE_MIX);
   await open(page, 1240, true);
   await expect.poll(() => page.locator("#vid").evaluate((video: HTMLVideoElement) => video.readyState)).toBeGreaterThanOrEqual(2);
   await page.getByRole("button", { name: "Add audio", exact: true }).click();
@@ -105,6 +109,7 @@ test("positioned preview seeks retained footage and music uses project time", as
 });
 
 test("music continues through a black gap and the video resumes at its retained source", async ({ page }) => {
+  test.skip(nativeMix, NATIVE_MIX);
   await open(page, 1240, true);
   await expect.poll(() => page.locator("#vid").evaluate((video: HTMLVideoElement) => video.readyState)).toBeGreaterThanOrEqual(2);
   await page.getByRole("button", { name: "Add audio", exact: true }).click();

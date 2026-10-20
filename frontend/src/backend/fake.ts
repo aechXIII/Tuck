@@ -182,6 +182,14 @@ class DeterministicFakeBackend implements BackendClient {
     );
   }
 
+  compilePreviewMix(request: PlanRequest) {
+    return this.#record(
+      "compilePreviewMix",
+      [request],
+      this.#responses.compilePreviewMix ?? notConfigured("No preview mix is configured."),
+    );
+  }
+
   enqueueWithOptions(request: PlanRequest) {
     return this.#record(
       "enqueueWithOptions",

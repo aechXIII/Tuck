@@ -39,6 +39,7 @@ extern "C" {
     fn tuck_player_pause(player: *mut TuckPlayer, now: f64);
     fn tuck_player_seek(player: *mut TuckPlayer, request_id: u64, seconds: f64, now: f64) -> i32;
     fn tuck_player_set_rate(player: *mut TuckPlayer, rate: f64, now: f64) -> i32;
+    fn tuck_player_set_duration(player: *mut TuckPlayer, duration: f64, now: f64) -> i32;
     fn tuck_player_frame_presented(player: *mut TuckPlayer, generation: u64, now: f64);
     fn tuck_player_status(player: *mut TuckPlayer, now: f64, status: *mut RawStatus);
 }
@@ -123,6 +124,12 @@ impl Engine {
         unsafe { tuck_player_set_rate(self.player.as_ptr(), rate, now) != 0 }
     }
 
+    /// False unless the length is positive and finite.
+    pub fn set_duration(&mut self, duration: f64) -> bool {
+        let now = self.now();
+        unsafe { tuck_player_set_duration(self.player.as_ptr(), duration, now) != 0 }
+    }
+
     /// Until there is a renderer, the picture for a new position counts as shown as soon as it
     /// is asked for; a renderer reports this when its frame is actually on screen.
     pub fn present_current_frame(&mut self) {
@@ -178,12 +185,136 @@ pub enum PlayerError {
     InvalidRate,
     /// a LUT table or strength the preview can't use
     InvalidLut,
+    /// a mix with a piece, voice or file the player can't use
+    InvalidMix,
+    /// timeline segments out of order, overlapping or outside the timeline
+    InvalidEdits,
     /// the native player library could not open the video; the text says why
     Video(String),
 }
 
 // the editor's slowest and fastest playback speeds, TUCK_PLAYER_RATE_MIN and _MAX in engine.h
 pub const PLAYBACK_RATES: std::ops::RangeInclusive<f64> = 0.25..=4.0;
+
+// what the native player library takes in one mix or one timeline, as video.c checks too
+pub const MIX_VOICE_LIMIT: usize = 256;
+pub const MIX_PIECE_LIMIT: usize = 65_536;
+pub const EDIT_SEGMENT_LIMIT: usize = 65_536;
+// the export takes up to +12 dB on a track and +12 dB on a clip, which add up to this
+const MIX_GAIN_LIMIT: f64 = 15.9;
+// a source has at most this many sound streams (MAX_SOURCE_AUDIO_TRACKS in Python)
+const MIX_STREAM_LIMIT: u32 = 64;
+
+/// A stretch of one sound on the timeline, as Python compiles it (tuck/audio_mix.py).
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MixPiece {
+    pub start: f64,
+    pub end: f64,
+    pub source_in: f64,
+    pub gain: f64,
+    pub fade_in: f64,
+    pub fade_out: f64,
+    pub loop_start: f64,
+    pub loop_span: f64,
+}
+
+impl MixPiece {
+    fn is_valid(&self) -> bool {
+        let numbers = [
+            self.start,
+            self.end,
+            self.source_in,
+            self.gain,
+            self.fade_in,
+            self.fade_out,
+            self.loop_start,
+            self.loop_span,
+        ];
+        numbers.iter().all(|value| value.is_finite())
+            && self.start >= 0.0
+            && self.end > self.start
+            && self.source_in >= 0.0
+            && (0.0..=MIX_GAIN_LIMIT).contains(&self.gain)
+            && self.fade_in >= 0.0
+            && self.fade_out >= 0.0
+            && self.loop_start >= 0.0
+            && self.loop_span >= 0.0
+    }
+}
+
+/// One sound of the mix: a file and which of its sound streams, with where it plays.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MixVoice {
+    pub path: String,
+    pub stream: u32,
+    pub pieces: Vec<MixPiece>,
+}
+
+/// The preview mix the page asked Python for, checked here before the library plays it.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Mix {
+    pub duration: f64,
+    pub voices: Vec<MixVoice>,
+}
+
+impl Mix {
+    /// The numbers and sizes the library takes; the files are checked where the command arrives.
+    pub fn is_valid(&self) -> bool {
+        let pieces: usize = self.voices.iter().map(|voice| voice.pieces.len()).sum();
+        self.duration.is_finite()
+            && self.duration > 0.0
+            && self.voices.len() <= MIX_VOICE_LIMIT
+            && pieces <= MIX_PIECE_LIMIT
+            && self.voices.iter().all(|voice| {
+                voice.stream < MIX_STREAM_LIMIT && voice.pieces.iter().all(MixPiece::is_valid)
+            })
+    }
+}
+
+/// A stretch of the timeline showing the file's footage from `source_start`.
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct EditSegment {
+    pub start: f64,
+    pub end: f64,
+    pub source_start: f64,
+}
+
+/// The timeline's length and footage; no segments shows the file as it is.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Edits {
+    pub duration: f64,
+    pub segments: Vec<EditSegment>,
+}
+
+impl Edits {
+    /// Segments in order, apart from each other and inside the timeline, as edits.h takes them.
+    pub fn is_valid(&self) -> bool {
+        if !(self.duration.is_finite()
+            && self.duration > 0.0
+            && self.duration <= MAX_DURATION_SECONDS)
+            || self.segments.len() > EDIT_SEGMENT_LIMIT
+        {
+            return false;
+        }
+        let mut previous_end = 0.0;
+        self.segments.iter().all(|segment| {
+            let valid = segment.start.is_finite()
+                && segment.end.is_finite()
+                && segment.source_start.is_finite()
+                && segment.source_start >= 0.0
+                && segment.start >= previous_end
+                && segment.end > segment.start
+                && segment.end <= self.duration + 1e-6;
+            previous_end = segment.end;
+            valid
+        })
+    }
+}
 
 // a week is far beyond any video Tuck edits; anything longer is a bad request, not a video
 const MAX_DURATION_SECONDS: f64 = 7.0 * 24.0 * 3600.0;
@@ -220,6 +351,22 @@ impl Backend {
         match self {
             Backend::Clock(engine) => engine.set_rate(rate),
             Backend::Video(video) => video.rate(rate),
+        }
+    }
+
+    fn edits(&mut self, edits: &Edits) -> bool {
+        match self {
+            // the bare clock has no picture, so only the timeline's length matters to it
+            Backend::Clock(engine) => engine.set_duration(edits.duration),
+            Backend::Video(video) => video.edits(edits),
+        }
+    }
+
+    fn mix(&mut self, mix: &Mix) -> bool {
+        match self {
+            // the bare clock has no sound
+            Backend::Clock(_) => true,
+            Backend::Video(video) => video.mix(mix),
         }
     }
 
@@ -404,6 +551,32 @@ impl PlayerState {
         Ok(backend.status())
     }
 
+    /// The timeline's length and footage for the open video.
+    pub fn set_edits(&self, edits: &Edits) -> Result<PlayerStatus, PlayerError> {
+        if !edits.is_valid() {
+            return Err(PlayerError::InvalidEdits);
+        }
+        let mut guard = self.backend();
+        let backend = guard.as_mut().ok_or(PlayerError::NotOpen)?;
+        if !backend.edits(edits) {
+            return Err(PlayerError::InvalidEdits);
+        }
+        Ok(backend.status())
+    }
+
+    /// The preview mix for the open video, played from the next moment on.
+    pub fn set_mix(&self, mix: &Mix) -> Result<(), PlayerError> {
+        if !mix.is_valid() {
+            return Err(PlayerError::InvalidMix);
+        }
+        let mut guard = self.backend();
+        let backend = guard.as_mut().ok_or(PlayerError::NotOpen)?;
+        if !backend.mix(mix) {
+            return Err(PlayerError::InvalidMix);
+        }
+        Ok(())
+    }
+
     pub fn status(&self) -> Result<PlayerStatus, PlayerError> {
         self.backend()
             .as_mut()
@@ -546,6 +719,137 @@ mod tests {
         // a new video starts over with fresh request IDs
         state.open(5.0).expect("open again");
         assert_eq!(seek(1, 2.0).expect("seek").confirmed_seek_request_id, 1);
+    }
+
+    fn piece() -> MixPiece {
+        MixPiece {
+            start: 2.0,
+            end: 6.0,
+            source_in: 1.0,
+            gain: 0.5,
+            fade_in: 0.5,
+            fade_out: 1.0,
+            loop_start: 0.0,
+            loop_span: 0.0,
+        }
+    }
+
+    fn mix(pieces: Vec<MixPiece>) -> Mix {
+        Mix {
+            duration: 30.0,
+            voices: vec![MixVoice {
+                path: "/videos/a.mp4".into(),
+                stream: 0,
+                pieces,
+            }],
+        }
+    }
+
+    #[test]
+    fn a_mix_is_checked_before_the_library_sees_it() {
+        assert!(mix(vec![piece()]).is_valid());
+        assert!(mix(vec![]).is_valid());
+        let gain_boost = MixPiece {
+            gain: 15.8,
+            ..piece()
+        };
+        assert!(
+            mix(vec![gain_boost]).is_valid(),
+            "+24 dB, the editor's highest"
+        );
+        for broken in [
+            MixPiece {
+                end: 2.0,
+                ..piece()
+            },
+            MixPiece {
+                start: -1.0,
+                ..piece()
+            },
+            MixPiece {
+                gain: 16.0,
+                ..piece()
+            },
+            MixPiece {
+                gain: f64::NAN,
+                ..piece()
+            },
+            MixPiece {
+                fade_out: -0.1,
+                ..piece()
+            },
+            MixPiece {
+                loop_span: f64::INFINITY,
+                ..piece()
+            },
+        ] {
+            assert!(!mix(vec![broken]).is_valid(), "{broken:?}");
+        }
+        let mut too_many_streams = mix(vec![piece()]);
+        too_many_streams.voices[0].stream = 64;
+        assert!(!too_many_streams.is_valid());
+        let mut no_length = mix(vec![piece()]);
+        no_length.duration = 0.0;
+        assert!(!no_length.is_valid());
+        let parse = |json: &str| serde_json::from_str::<Mix>(json);
+        assert!(parse(r#"{"duration":1,"voices":[]}"#).is_ok());
+        assert!(parse(r#"{"duration":1,"voices":[],"limiter":true}"#).is_err());
+    }
+
+    #[test]
+    fn timeline_segments_go_in_order_inside_the_timeline() {
+        let segment = |start, end, source_start| EditSegment {
+            start,
+            end,
+            source_start,
+        };
+        let edits = |segments| Edits {
+            duration: 15.0,
+            segments,
+        };
+        assert!(edits(vec![]).is_valid());
+        assert!(edits(vec![segment(0.0, 5.0, 5.0), segment(7.0, 15.0, 12.0)]).is_valid());
+        assert!(!edits(vec![segment(0.0, 5.0, 0.0), segment(4.0, 8.0, 0.0)]).is_valid());
+        assert!(!edits(vec![segment(3.0, 2.0, 0.0)]).is_valid());
+        assert!(!edits(vec![segment(0.0, 16.0, 0.0)]).is_valid());
+        assert!(!edits(vec![segment(0.0, 2.0, -1.0)]).is_valid());
+        assert!(!Edits {
+            duration: f64::NAN,
+            segments: vec![]
+        }
+        .is_valid());
+    }
+
+    #[test]
+    fn the_bare_clock_takes_the_timelines_length_and_ignores_the_mix() {
+        let state = PlayerState::default();
+        assert_eq!(
+            state.set_mix(&mix(vec![piece()])),
+            Err(PlayerError::NotOpen)
+        );
+        state.open(10.0).expect("open");
+        let longer = state
+            .set_edits(&Edits {
+                duration: 25.0,
+                segments: vec![],
+            })
+            .expect("edits");
+        assert_eq!(longer.duration_seconds, 25.0);
+        assert_eq!(state.set_mix(&mix(vec![piece()])), Ok(()));
+        assert_eq!(
+            state.set_mix(&mix(vec![MixPiece {
+                end: 0.0,
+                ..piece()
+            }])),
+            Err(PlayerError::InvalidMix)
+        );
+        assert_eq!(
+            state.set_edits(&Edits {
+                duration: -1.0,
+                segments: vec![]
+            }),
+            Err(PlayerError::InvalidEdits)
+        );
     }
 
     #[test]

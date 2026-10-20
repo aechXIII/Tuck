@@ -162,18 +162,22 @@ def compile_preview_mix(plan: EncodePlan) -> PreviewMix:
             )
     added: dict[str, list[MixPiece]] = {}
     for track, clip in audible_clips(plan):
-        # the player plays an added clip whole on its timeline and skips cuts in the picture
-        # itself, so the clip is one piece there
-        whole = [TimelineAudioPiece(clip.timeline_start, clip.timeline_end, clip.timeline_start)]
-        for piece in clip_pieces(track, clip, whole):
+        for piece in clip_pieces(track, clip, clip_placements(clip, segments, positioned)):
+            # without moved clips the player skips cuts itself, so each piece stays at its
+            # source time, but fades and loop phase still follow the export's pieces
+            start = piece.output_start if positioned else clip.timeline_start + piece.local_offset
+            into = piece.local_offset
+            if clip.loop and clip.source_duration > 0:
+                into %= clip.source_duration
             added.setdefault(clip.source, []).append(
                 MixPiece(
-                    start=piece.output_start,
-                    end=piece.output_start + piece.duration,
-                    source_in=clip.source_in,
+                    start=start,
+                    end=start + piece.duration,
+                    source_in=clip.source_in + into,
                     gain=db_to_gain(piece.gain_db),
-                    fade_in=piece.fade_in,
-                    fade_out=piece.fade_out,
+                    # the export's afade finishes inside a piece shorter than the fade
+                    fade_in=min(piece.fade_in, piece.duration),
+                    fade_out=min(piece.fade_out, piece.duration),
                     loop_start=clip.source_in if clip.loop else 0.0,
                     loop_span=clip.source_duration if clip.loop else 0.0,
                 )
@@ -184,45 +188,25 @@ def compile_preview_mix(plan: EncodePlan) -> PreviewMix:
 
 
 def compile_cut_preview_mix(
-    source: str, segments: list[Segment], stream_count: int, include_audio: bool
+    source: str, segments: list[Segment], stream_count: int, include_audio: bool, moved: bool
 ) -> PreviewMix:
     """A lossless cut keeps the source's own tracks untouched, so its preview is every stream at
-    full level over the kept segments, as the cut will be"""
-    duration = float(max((segment.end for segment in segments), default=0.0))
+    full level over the kept segments, as the cut will be.
+
+    Moved clips in a cut are always in source order with no gaps, so they play back to back as
+    the cut writes them; without moves the player's timeline is the source's own time."""
+    placed: list[MixPiece] = []
+    at = 0.0
+    for segment in segments:
+        if segment.end <= segment.start:
+            continue
+        start = at if moved else segment.start
+        placed.append(MixPiece(start, start + segment.duration, segment.start, 1.0))
+        at += segment.duration
+    duration = at if moved else float(max((s.end for s in segments), default=0.0))
     if not include_audio or stream_count <= 0:
         return PreviewMix(duration, ())
-    pieces = tuple(
-        MixPiece(segment.start, segment.end, segment.start, 1.0)
-        for segment in segments
-        if segment.end > segment.start
-    )
+    pieces = tuple(placed)
     return PreviewMix(
         duration, tuple(MixVoice(source, index, pieces) for index in range(stream_count))
     )
-
-
-def preview_mix_dict(mix: PreviewMix) -> dict[str, object]:
-    """The mix as the page hands it to the desktop shell"""
-    return {
-        "duration": mix.duration,
-        "voices": [
-            {
-                "path": voice.path,
-                "stream": voice.stream,
-                "pieces": [
-                    {
-                        "start": piece.start,
-                        "end": piece.end,
-                        "sourceIn": piece.source_in,
-                        "gain": piece.gain,
-                        "fadeIn": piece.fade_in,
-                        "fadeOut": piece.fade_out,
-                        "loopStart": piece.loop_start,
-                        "loopSpan": piece.loop_span,
-                    }
-                    for piece in voice.pieces
-                ],
-            }
-            for voice in mix.voices
-        ],
-    }

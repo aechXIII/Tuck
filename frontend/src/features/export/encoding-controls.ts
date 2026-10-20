@@ -4,7 +4,8 @@ import { installFrameBlending } from "./frame-blending.ts";
 import { installCutControls } from "./cut-controls.ts";
 import { createCutState } from "./cut-state.ts";
 import type { CutPlanPreview } from "../../backend/cutting-types.ts";
-import type { BackendClient } from "../../backend/types.ts";
+import { isJsonObject } from "../../backend/tauri.ts";
+import type { BackendClient, PlanRequest } from "../../backend/types.ts";
 import type { LutSettingsJSON } from "../../backend/types.ts";
 import { isProbeReady, probeSummary } from "../../state/probe.ts";
 import * as InspectorUi from "../panels/inspector-ui.ts";
@@ -89,6 +90,8 @@ export interface EncodingControlsApi {
   task: () => "compression" | "upscale" | "cut";
   reqPreviewAndDirty: () => void;
   buildRequest: (source: string) => Record<string, unknown>;
+  /** what the native player's mix is compiled from: the request this video's export would send */
+  previewMixRequest: (source: string) => PlanRequest | null;
   updateActionButtons: () => void;
   syncExportSummary: () => void;
   focusCutRow: (index: number) => void;
@@ -1123,6 +1126,13 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     }
   }
 
+  function previewMixRequest(source: string): PlanRequest | null {
+    const clip = session.clips[source];
+    if (!clip?.probed) return null;
+    const request = wf === 2 ? cutRequest(clip) : buildRequest(source);
+    return isJsonObject(request) ? request : null;
+  }
+
   function reqPreviewAndDirty(): void {
     void reqPreview();
     updateDirty();
@@ -1842,6 +1852,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     task: () => (wf === 2 ? "cut" : wf === 1 ? "upscale" : "compression"),
     reqPreviewAndDirty,
     buildRequest: (source: string) => buildRequest(source),
+    previewMixRequest,
     updateActionButtons,
     syncExportSummary,
     focusCutRow: (index: number) => cutting.focusRow(index),

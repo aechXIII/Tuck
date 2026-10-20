@@ -18,20 +18,8 @@ async function levels(page: Page): Promise<number[]> {
   }));
 }
 
-// the HTML player is moved through its video element; the native player through the ruler and
-// the faster key, as a person would
-async function seekAndSpeedUp(page: Page, seconds: number, duration: number): Promise<void> {
-  if (process.env.TUCK_E2E_NATIVE_PREVIEW !== "engine") {
-    await page.locator("#vid").evaluate((video: HTMLVideoElement, time) => { video.currentTime = time; video.playbackRate = 1.5; }, seconds);
-    return;
-  }
-  const ruler = (await page.locator("#sequence-ruler").boundingBox())!;
-  await page.mouse.click(ruler.x + ruler.width * seconds / duration, ruler.y + ruler.height / 2);
-  await page.locator("#btn-play").click();
-  await page.keyboard.press(">");
-}
-
 for (const origin of [0, 5]) test(`preview plays each source stream with mute and gain, seek and rate at source origin ${origin}`, async ({ page }) => {
+  test.skip(process.env.TUCK_E2E_NATIVE_PREVIEW === "engine", "the native player plays the sound in its own mix, so the page plays none");
   // the first stream is 440 Hz, the second is 880 Hz and marked as the default
   const prefix = origin ? "offset-" : "";
   const videoName = origin ? "two-source-tracks.mkv" : "two-source-tracks.mp4";
@@ -110,14 +98,10 @@ for (const origin of [0, 5]) test(`preview plays each source stream with mute an
   await page.locator("#btn-undo").click();
   await expect.poll(() => levels(page).then((values) => values[1])).toBeGreaterThan(0.01);
 
-  await seekAndSpeedUp(page, origin + 7, 16 + origin);
-  await expect.poll(() => page.evaluate(async () => {
-    // the streams follow the player: the HTML video, or the native engine with its hidden video paused
-    const engine = Reflect.get(window, "__fixtureEngine") as { invoke(command: string, args: object): Promise<{ positionSeconds: number }> } | undefined;
-    const position = engine
-      ? (await engine.invoke("player_status", {})).positionSeconds
-      : document.querySelector<HTMLVideoElement>("#vid")!.currentTime;
-    return window.__sourceAudioNodes.every(({ audio }) => audio.playbackRate === 1.5 && Math.abs(audio.currentTime - position) < 0.2);
+  await page.locator("#vid").evaluate((video: HTMLVideoElement, time) => { video.currentTime = time; video.playbackRate = 1.5; }, origin + 7);
+  await expect.poll(() => page.evaluate(() => {
+    const video = document.querySelector<HTMLVideoElement>("#vid")!;
+    return window.__sourceAudioNodes.every(({ audio }) => audio.playbackRate === 1.5 && Math.abs(audio.currentTime - video.currentTime) < 0.2);
   })).toBe(true);
   await page.locator("#btn-play").click();
   await expect.poll(() => page.evaluate(() => window.__sourceAudioNodes.every(({ audio }) => audio.paused))).toBe(true);

@@ -3,6 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { backendFailure, errorMessage, isBackendError } from "./errors.ts";
 import { isCutAnalysisPayload, isCutCancellation, isCutPlanPayload } from "./cutting-types.ts";
 import { isFrameExportResult } from "./frame-types.ts";
+import { isPreviewMixPayload } from "./preview-mix-types.ts";
+import type { PreviewMixPayload } from "./preview-mix-types.ts";
 import type { FrameExportRequest, FrameExportResult } from "./frame-types.ts";
 import { isTimelineFramesPayload } from "./timeline-frame-types.ts";
 import type { TimelineFrameMode, TimelineFramesPayload } from "./timeline-frame-types.ts";
@@ -72,6 +74,7 @@ type TauriBackendCommand =
   }
   | { command: "cancel_cut_work"; payload: { work_id: string } }
   | { command: "create_plan"; payload: { request: PlanRequest } }
+  | { command: "compile_preview_mix"; payload: { request: PlanRequest } }
   | { command: "enqueue_with_options"; payload: { request: PlanRequest } }
   | { command: "enqueue_batch"; payload: { requests: readonly PlanRequest[] } }
   | { command: "get_queue_state" }
@@ -141,7 +144,7 @@ function isJsonValue(value: unknown, seen = new WeakSet<object>()): value is Jso
   return Object.values(value).every((item) => isJsonValue(item, seen));
 }
 
-function isJsonObject(value: unknown): value is JsonObject {
+export function isJsonObject(value: unknown): value is JsonObject {
   return (
     typeof value === "object" &&
     value !== null &&
@@ -478,6 +481,14 @@ class TauriTransport implements TauriBackendClient {
       "createPlan",
       { command: "create_plan", payload: { request } },
       request.operation === "cut" ? isCutPlanPayload : isPlanPreviewPayload,
+    );
+  }
+
+  compilePreviewMix(request: PlanRequest): Promise<BackendResult<PreviewMixPayload>> {
+    return this.#request(
+      "compilePreviewMix",
+      { command: "compile_preview_mix", payload: { request } },
+      isPreviewMixPayload,
     );
   }
 

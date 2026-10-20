@@ -5,7 +5,7 @@ use serde::Deserialize;
 use crate::backend::protocol::PublicBackendError;
 use crate::platform::window_chrome::css_to_physical;
 use crate::player::engine::{
-    LutUpdate, PlayerCommand, PlayerError, PlayerState, PlayerStatus, LUT_SIZES,
+    Edits, LutUpdate, Mix, PlayerCommand, PlayerError, PlayerState, PlayerStatus, LUT_SIZES,
 };
 use crate::player::{preview_mode, PreviewMode, Viewport};
 
@@ -49,6 +49,12 @@ fn player_error(error: PlayerError) -> PublicBackendError {
             "INVALID_REQUEST",
             "The playback speed must be between 0.25 and 4.",
         ),
+        PlayerError::InvalidMix => {
+            PublicBackendError::new("INVALID_REQUEST", "The preview mix is not valid.")
+        }
+        PlayerError::InvalidEdits => {
+            PublicBackendError::new("INVALID_REQUEST", "The timeline is not valid.")
+        }
         PlayerError::InvalidLut => {
             PublicBackendError::new("INVALID_REQUEST", "The LUT preview data is invalid.")
         }
@@ -135,6 +141,30 @@ fn preview_target() -> Result<PreviewTarget, PublicBackendError> {
         display_interval,
         download_frames: !surface_linux::imports_frames(),
     })
+}
+
+/// The timeline's length and which footage each segment shows, for the open video.
+#[tauri::command]
+pub fn player_edits(
+    state: tauri::State<'_, PlayerState>,
+    edits: Edits,
+) -> Result<PlayerStatus, PublicBackendError> {
+    require_engine_mode()?;
+    state.set_edits(&edits).map_err(player_error)
+}
+
+/// The preview mix Python compiled for the open video. Every sound in it must be an existing
+/// file, as the video is, before the library reads it.
+#[tauri::command]
+pub fn player_mix(
+    state: tauri::State<'_, PlayerState>,
+    mix: Mix,
+) -> Result<(), PublicBackendError> {
+    require_engine_mode()?;
+    for voice in &mix.voices {
+        video_path(Some(voice.path.clone()))?;
+    }
+    state.set_mix(&mix).map_err(player_error)
 }
 
 /// Plays, pauses or seeks, and returns the status right after.

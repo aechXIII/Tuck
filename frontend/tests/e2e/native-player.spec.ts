@@ -23,7 +23,7 @@ interface Call {
   path?: string | null;
 }
 
-async function open(page: Page, nativePreview: "engine" | "off"): Promise<void> {
+async function open(page: Page, nativePreview: "engine" | "off", mix?: unknown): Promise<void> {
   const body = await readFile(resolve("frontend/tests/fixtures/media/two-source-tracks.mp4"));
   await page.route("https://engine.test/media", (route) => {
     const range = /^bytes=(\d+)-(\d*)$/.exec(route.request().headers().range ?? "");
@@ -39,6 +39,7 @@ async function open(page: Page, nativePreview: "engine" | "off"): Promise<void> 
   fixture.responses.probeFile = { ok: true, data: { duration: DURATION, width: 64, height: 64, fps: 10, has_audio: true } };
   fixture.responses.getMediaUrl = { ok: true, url: "https://engine.test/media", token: "" };
   fixture.responses.getThumbnail = { ok: true, thumbnail: "" };
+  if (mix) fixture.responses.compilePreviewMix = { data: mix };
   await page.setViewportSize({ width: 1240, height: 800 });
   await installFakeBackend(page, fixture);
   await page.addInitScript({ content: fixtureEngineScript({ nativePreview }) });
@@ -129,6 +130,25 @@ test("the native engine drives playback, seeks and frame steps", async ({ page }
   await page.keyboard.press("Space");
   await expect(play).not.toHaveClass(/playing/);
   expect(errors).toEqual([]);
+});
+
+test("the engine plays the timeline and the sound compiled from the export request", async ({ page }) => {
+  const mix = { duration: DURATION, voices: [{ path: "C:\\videos\\Video.mp4", stream: 0, pieces: [
+    { start: 0, end: DURATION, sourceIn: 0, gain: 1, fadeIn: 0, fadeOut: 0, loopStart: 0, loopSpan: 0 }] }] };
+  await open(page, "engine", mix);
+  const compiles = () => page.evaluate(() => (window.__tuckFakeBackendCalls ?? [])
+    .filter((call) => call.method === "compilePreviewMix")
+    .map((call) => (call.args[0] as { source?: unknown }).source));
+  await expect.poll(() => page.evaluate(() => window.__fixtureEngine?.mixes.length)).toBe(1);
+  expect(await page.evaluate(() => window.__fixtureEngine?.mixes[0])).toEqual(mix);
+  expect(await page.evaluate(() => window.__fixtureEngine?.edits)).toEqual([{ duration: DURATION, segments: [] }]);
+  expect(await compiles()).toEqual(["C:\\videos\\Video.mp4"]);
+
+  // muting the source audio changes what the export would play, so the sound is compiled again
+  await page.locator("#source-audio-label").click();
+  await expect.poll(() => page.evaluate(() => window.__fixtureEngine?.mixes.length)).toBe(2);
+  expect(await compiles()).toHaveLength(2);
+  expect(await page.evaluate(() => window.__fixtureEngine?.edits)).toHaveLength(1);
 });
 
 test("with the switch off the HTML player plays as before", async ({ page }) => {

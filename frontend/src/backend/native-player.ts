@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
 import type { LutChange } from "../features/preview/lut-preview.ts";
+import type { PreviewMix } from "./preview-mix-types.ts";
 import { backendFailure, errorMessage, isBackendError } from "./errors.ts";
 import type { TauriInvoke } from "./tauri.ts";
 import type { BackendResult } from "./types.ts";
@@ -75,6 +76,19 @@ export interface NativePlayerOpen {
   readonly path: string | null;
 }
 
+/** A stretch of the timeline showing the file's footage from `sourceStart`. */
+export interface NativeEditSegment {
+  readonly start: number;
+  readonly end: number;
+  readonly sourceStart: number;
+}
+
+/** The timeline's length and footage; no segments shows the file as it is. */
+export interface NativeEdits {
+  readonly duration: number;
+  readonly segments: readonly NativeEditSegment[];
+}
+
 /** the engine refuses larger IDs, so they stay exact in JavaScript too */
 export const MAX_SEEK_REQUEST_ID = Number.MAX_SAFE_INTEGER;
 
@@ -85,6 +99,10 @@ export interface PlayerEngine {
   status(): Promise<BackendResult<NativePlayerStatus>>;
   /** shows `change` (null removes the LUT); `keepTable` sends only its strength */
   lut(change: LutChange | null, keepTable: boolean): Promise<BackendResult<null>>;
+  /** the timeline the engine plays: its length and which footage each part shows */
+  edits(edits: NativeEdits): Promise<BackendResult<NativePlayerStatus>>;
+  /** plays this mix instead of the video's own sound from the next moment on */
+  mix(mix: PreviewMix): Promise<BackendResult<null>>;
 }
 
 /** Sends a command with a raw body, which Tauri passes on without turning it into JSON. */
@@ -170,6 +188,16 @@ export function createTauriPlayerEngine(
     open: (request) => call("open", "player_open", { request }),
     command: (command) => call(command.kind, "player_command", { command }),
     status: () => call("status", "player_status", {}),
+    edits: (edits) => call("edits", "player_edits", { edits }),
+    mix: async (mix) => {
+      try {
+        await invokeCommand("player_mix", { mix });
+        return { ok: true, value: null };
+      } catch (error) {
+        if (isBackendError(error)) return { ok: false, error };
+        return backendFailure("TAURI_INVOKE_FAILED", errorMessage(error, "Could not reach the player."), { method: "mix" });
+      }
+    },
     lut: async (change, keepTable) => {
       // the table goes as raw floats: a 65-point LUT is 3.3 MB, too much to send as JSON
       const body = change && !keepTable

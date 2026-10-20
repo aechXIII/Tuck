@@ -59,6 +59,7 @@ test("each of a video's audio tracks has a timeline row with its own waveform", 
 });
 
 test("multitrack preview asks for each exact audio stream and reports unavailable audio", async ({ page }) => {
+  test.skip(process.env.TUCK_E2E_NATIVE_PREVIEW === "engine", "the native player plays the sound in its own mix, so the page plays none");
   await open(page, 2);
   await expect.poll(() => page.evaluate(() => (window.__tuckFakeBackendCalls ?? [])
     .filter((call) => call.method === "getMediaUrl" && call.args.length === 2)

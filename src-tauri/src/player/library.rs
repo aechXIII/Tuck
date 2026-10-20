@@ -9,10 +9,10 @@ use std::sync::OnceLock;
 
 use serde::Serialize;
 
-use super::engine::{PlayerStatus, RawStatus};
+use super::engine::{Edits, Mix, PlayerStatus, RawStatus};
 
 // must match TUCK_VIDEO_ABI in native/player/tuck_video.h
-const ABI: c_int = 6;
+const ABI: c_int = 7;
 
 #[cfg(windows)]
 const FILE_NAME: &str = "tuck_player.dll";
@@ -62,6 +62,36 @@ type VideoFn = unsafe extern "C" fn(*mut c_void);
 type SeekFn = unsafe extern "C" fn(*mut c_void, u64, f64) -> c_int;
 type VolumeFn = unsafe extern "C" fn(*mut c_void, f64);
 type RateFn = unsafe extern "C" fn(*mut c_void, f64) -> c_int;
+type MixFn =
+    unsafe extern "C" fn(*mut c_void, *const RawMixVoice, i32, *const RawMixPiece, i32) -> c_int;
+type EditsFn = unsafe extern "C" fn(*mut c_void, *const RawEditSegment, i32, f64) -> c_int;
+
+// TuckMixVoice, TuckMixPiece and TuckEditSegment in tuck_video.h
+#[repr(C)]
+struct RawMixVoice {
+    path: *const c_char,
+    stream: i32,
+}
+
+#[repr(C)]
+struct RawMixPiece {
+    voice: i32,
+    start: f64,
+    end: f64,
+    source_in: f64,
+    gain: f64,
+    fade_in: f64,
+    fade_out: f64,
+    loop_start: f64,
+    loop_span: f64,
+}
+
+#[repr(C)]
+struct RawEditSegment {
+    start: f64,
+    end: f64,
+    source_start: f64,
+}
 type LutTableFn = unsafe extern "C" fn(*mut c_void, *const f32, i32) -> c_int;
 type StatusFn = unsafe extern "C" fn(*mut c_void, *mut RawVideoStatus);
 #[cfg(target_os = "linux")]
@@ -83,6 +113,8 @@ struct Api {
     seek: SeekFn,
     volume: VolumeFn,
     rate: RateFn,
+    mix: MixFn,
+    edits: EditsFn,
     lut_table: LutTableFn,
     lut_strength: VolumeFn,
     status: StatusFn,
@@ -245,6 +277,8 @@ fn resolve(symbol: impl Fn(&CStr) -> Option<*const c_void>) -> Result<Api, Strin
             seek: std::mem::transmute::<*const c_void, SeekFn>(find(c"tuck_video_seek")?),
             volume: std::mem::transmute::<*const c_void, VolumeFn>(find(c"tuck_video_volume")?),
             rate: std::mem::transmute::<*const c_void, RateFn>(find(c"tuck_video_rate")?),
+            mix: std::mem::transmute::<*const c_void, MixFn>(find(c"tuck_video_mix")?),
+            edits: std::mem::transmute::<*const c_void, EditsFn>(find(c"tuck_video_edits")?),
             lut_table: std::mem::transmute::<*const c_void, LutTableFn>(find(
                 c"tuck_video_lut_table",
             )?),
@@ -333,6 +367,77 @@ impl Video {
     /// Media seconds per second of playing. False when the library refuses the speed.
     pub fn rate(&mut self, rate: f64) -> bool {
         unsafe { (self.api.rate)(self.handle.as_ptr(), rate) != 0 }
+    }
+
+    /// Plays `mix` from the next moment on. False when the library refuses it; a path with a NUL
+    /// in it is refused here.
+    pub fn mix(&mut self, mix: &Mix) -> bool {
+        let Ok(paths) = mix
+            .voices
+            .iter()
+            .map(|voice| CString::new(voice.path.as_str()))
+            .collect::<Result<Vec<_>, _>>()
+        else {
+            return false;
+        };
+        let voices: Vec<RawMixVoice> = mix
+            .voices
+            .iter()
+            .zip(&paths)
+            .map(|(voice, path)| RawMixVoice {
+                path: path.as_ptr(),
+                stream: voice.stream as i32,
+            })
+            .collect();
+        let pieces: Vec<RawMixPiece> = mix
+            .voices
+            .iter()
+            .enumerate()
+            .flat_map(|(index, voice)| {
+                voice.pieces.iter().map(move |piece| RawMixPiece {
+                    voice: index as i32,
+                    start: piece.start,
+                    end: piece.end,
+                    source_in: piece.source_in,
+                    gain: piece.gain,
+                    fade_in: piece.fade_in,
+                    fade_out: piece.fade_out,
+                    loop_start: piece.loop_start,
+                    loop_span: piece.loop_span,
+                })
+            })
+            .collect();
+        // the library copies everything before returning, so the strings may go afterwards
+        unsafe {
+            (self.api.mix)(
+                self.handle.as_ptr(),
+                voices.as_ptr(),
+                voices.len() as i32,
+                pieces.as_ptr(),
+                pieces.len() as i32,
+            ) != 0
+        }
+    }
+
+    /// The timeline's length and footage. False when the library refuses them.
+    pub fn edits(&mut self, edits: &Edits) -> bool {
+        let segments: Vec<RawEditSegment> = edits
+            .segments
+            .iter()
+            .map(|segment| RawEditSegment {
+                start: segment.start,
+                end: segment.end,
+                source_start: segment.source_start,
+            })
+            .collect();
+        unsafe {
+            (self.api.edits)(
+                self.handle.as_ptr(),
+                segments.as_ptr(),
+                segments.len() as i32,
+                edits.duration,
+            ) != 0
+        }
     }
 
     /// The preview's colour LUT: `size`³ RGB samples, R changing fastest; `None` removes it.
@@ -477,6 +582,16 @@ mod tests {
         assert_eq!(std::mem::offset_of!(RawVideoStatus, sound_error), 348);
         assert_eq!(std::mem::offset_of!(RawVideoStatus, software_reason), 508);
         assert_eq!(std::mem::size_of::<RawVideoStatus>(), 512);
+    }
+
+    #[test]
+    fn the_mix_and_timeline_structs_match_the_c_layout() {
+        // TuckMixVoice, TuckMixPiece and TuckEditSegment in tuck_video.h, for 64-bit targets
+        assert_eq!(std::mem::size_of::<RawMixVoice>(), 16);
+        assert_eq!(std::mem::offset_of!(RawMixPiece, start), 8);
+        assert_eq!(std::mem::offset_of!(RawMixPiece, loop_span), 64);
+        assert_eq!(std::mem::size_of::<RawMixPiece>(), 72);
+        assert_eq!(std::mem::size_of::<RawEditSegment>(), 24);
     }
 
     #[test]

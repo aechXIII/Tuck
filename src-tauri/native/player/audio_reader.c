@@ -38,6 +38,9 @@ struct AudioReader {
     float *buffer;
     size_t count, capacity;
     double time, next;
+    /* the earliest file second the reader can answer without going back: the file's start, where it
+       last sought to, or the end of the sound already used. No sound lies between it and `time`. */
+    double earliest;
     int ended, bad_packets;
 };
 
@@ -92,6 +95,7 @@ AudioReader *audio_reader_open(const char *path, int stream, int (*interrupted)(
         if ((int)i != r->stream) r->format->streams[i]->discard = AVDISCARD_ALL;
     AVStream *chosen = r->format->streams[r->stream];
     r->time_base = chosen->time_base;
+    r->earliest = -INFINITY;
     r->start = r->format->start_time == AV_NOPTS_VALUE ? 0 : (double)r->format->start_time / AV_TIME_BASE;
     const AVCodec *codec = avcodec_find_decoder(chosen->codecpar->codec_id);
     if (!codec) {
@@ -114,11 +118,12 @@ static void drop(AudioReader *r, size_t frames) {
     if (frames >= r->count) {
         r->time += (double)r->count / MIX_RATE;
         r->count = 0;
-        return;
+    } else {
+        memmove(r->buffer, r->buffer + frames * 2, (r->count - frames) * 2 * sizeof(float));
+        r->count -= frames;
+        r->time += (double)frames / MIX_RATE;
     }
-    memmove(r->buffer, r->buffer + frames * 2, (r->count - frames) * 2 * sizeof(float));
-    r->count -= frames;
-    r->time += (double)frames / MIX_RATE;
+    r->earliest = r->time;
 }
 
 static int seek(AudioReader *r, double seconds, char *error, size_t error_size) {
@@ -134,7 +139,7 @@ static int seek(AudioReader *r, double seconds, char *error, size_t error_size) 
     /* the resampler holds samples from the old position */
     swr_free(&r->resampler);
     r->count = 0;
-    r->time = r->next = seconds;
+    r->time = r->next = r->earliest = seconds;
     r->ended = 0;
     r->bad_packets = 0;
     return 1;
@@ -258,6 +263,11 @@ int audio_reader_read(AudioReader *r, double seconds, float *samples, size_t fra
         double want = seconds + (double)filled / MIX_RATE;
         if (r->count) {
             double offset = (want - r->time) * MIX_RATE;
+            if (offset < -0.5 && want < r->earliest - HALF_SAMPLE) {
+                /* what is buffered was read ahead of an earlier position: go back for this one */
+                if (!seek(r, want, error, error_size)) return 0;
+                continue;
+            }
             if (offset < -0.5) {
                 /* the sound starts later than asked: silence until it does */
                 size_t gap = (size_t)ceil(-offset - 0.5);

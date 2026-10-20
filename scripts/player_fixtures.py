@@ -2,7 +2,8 @@
 
 Every frame shows its index, so a captured picture can be checked by eye. `seek-fixtures.txt`
 lists each clip's frame times the way the player's decoder computes them (best-effort timestamps
-in the stream's time base, minus the file's start), for `tuck_player_seek_check` to compare against.
+in the stream's time base, minus the file's start), for `tuck_player_seek_check` to compare against,
+and the sounds it reads with the mix's reader.
 
     python scripts/player_fixtures.py --out build/player-fixtures
 """
@@ -103,6 +104,19 @@ CLIPS: dict[str, tuple[list[str], list[str]]] = {
         ],
     ),
 }
+# a steady tone at a rate the mix resamples, so any stretch of it is loud
+SOUNDS: dict[str, list[str]] = {
+    "sound-aac.m4a": [
+        "-f",
+        "lavfi",
+        "-i",
+        "sine=frequency=440:sample_rate=44100:duration=6",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "128k",
+    ],
+}
 # shown turned a quarter, as phones record: the stream's display matrix says so
 ROTATED = ("numbers-rotated.mp4", "numbers-h264.mp4", "90")
 
@@ -163,6 +177,16 @@ def main() -> None:
             *encode,
             str(args.out / name),
         )
+    for name, arguments in SOUNDS.items():
+        run(
+            args.ffmpeg,
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            *arguments,
+            str(args.out / name),
+        )
     rotated, original, angle = ROTATED
     run(
         args.ffmpeg,
@@ -183,6 +207,7 @@ def main() -> None:
         times = frame_times(args.ffprobe, args.out / name)
         lines.append(" ".join(["clip", name, str(len(times)), *(f"{float(t):.9f}" for t in times)]))
         print(f"{name}: {len(times)} frames")
+    lines.extend(f"sound {name} 0" for name in SOUNDS)
     (args.out / "seek-fixtures.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
