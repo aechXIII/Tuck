@@ -53,7 +53,6 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
   let shownPath: string | null = null;
   // the chosen playback speed, which every video opened after keeps
   let speed = 1;
-  let openedDuration = 0;
   let status: NativePlayerStatus | null = null;
   let statusAt = 0;
   // what the user asked for; the play button shows what the engine confirmed
@@ -82,6 +81,12 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
   let lutWanted: LutChange | null | undefined;
   let lutSent: Float32Array | null = null;
   let lutBusy = false;
+  // moved clips: the engine plays the file's own time inside one segment at a time, and between
+  // segments the page keeps the timeline position itself, as the HTML player does
+  let engineSegment = -1;
+  let gapPosition: number | null = null;
+  let gapAt = 0;
+  let lastRanges: SegmentRange[] = [];
 
   function segments(): readonly SegmentRange[] {
     return host.playbackSegments();
@@ -105,17 +110,71 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
     return defaultPlaybackTarget(mutable, time, tolerance);
   }
 
-  // moved clips can end past the source, and the engine clock runs in timeline time
-  function neededDuration(): number {
-    return Math.max(host.videoDuration(), placed() ? projectEnd() : 0);
+  function segmentAt(ranges: readonly SegmentRange[], time: number): number {
+    return ranges.findIndex((segment) => time >= segment.start && time < segment.end);
+  }
+
+  // where the engine is in the file, read between status replies
+  function enginePosition(): number | null {
+    if (!status) return null;
+    let time = status.positionSeconds;
+    if (!status.paused && !status.seekPending) time += (Math.max(0, now() - statusAt) / 1000) * status.rate;
+    return Math.min(status.durationSeconds, time);
+  }
+
+  // the engine's file time on the timeline, through the segment it is playing
+  function engineOnTimeline(ranges: readonly SegmentRange[], source: number): number {
+    const segment = ranges[engineSegment];
+    if (!segment) return source;
+    const time = segment.start + source - (segment.sourceStart ?? segment.start);
+    return Math.min(segment.end, Math.max(segment.start, time));
+  }
+
+  // the timeline position while no segment is under the playhead, moving while playing
+  function gapTime(): number {
+    if (gapPosition == null) return previewSec ?? 0;
+    return wantPlaying ? gapPosition + ((now() - gapAt) / 1000) * speed : gapPosition;
   }
 
   function position(): number {
     if (target != null) return target;
-    if (!status) return previewSec ?? 0;
-    let time = status.positionSeconds;
-    if (!status.paused && !status.seekPending) time += (Math.max(0, now() - statusAt) / 1000) * status.rate;
-    return Math.min(status.durationSeconds, time);
+    if (placed() && engineSegment < 0) return gapTime();
+    const source = enginePosition();
+    if (source == null) return previewSec ?? 0;
+    return placed() ? engineOnTimeline(segments(), source) : source;
+  }
+
+  function copyRanges(ranges: readonly SegmentRange[]): SegmentRange[] {
+    return ranges.map((segment) => ({ ...segment }));
+  }
+
+  function sameRanges(a: readonly SegmentRange[], b: readonly SegmentRange[]): boolean {
+    return a.length === b.length && a.every((segment, index) => {
+      const other = b[index];
+      return other !== undefined && segment.start === other.start && segment.end === other.end
+        && segment.sourceStart === other.sourceStart;
+    });
+  }
+
+  // an edit, a slip or an undo can change which footage is under the playhead; the engine follows
+  // so the picture is the one the timeline shows
+  function syncRanges(): void {
+    const ranges = segments();
+    if (sameRanges(ranges, lastRanges)) return;
+    const wasPlaced = hasPlacement(lastRanges);
+    let time: number;
+    if (target != null) time = target;
+    else if (wasPlaced && engineSegment < 0) time = gapTime();
+    else {
+      const source = enginePosition();
+      time = source == null ? previewSec ?? 0 : wasPlaced ? engineOnTimeline(lastRanges, source) : source;
+    }
+    lastRanges = copyRanges(ranges);
+    if (!wasPlaced && !hasPlacement(ranges)) return;
+    if (!opened) return;
+    const playing = wantPlaying;
+    seekTo(time);
+    if (playing) play();
   }
 
   function sourcePosition(): number | null {
@@ -175,7 +234,8 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
     const seekQueued = seekWanted != null || steps.some((step) => step.kind === "seek");
     const confirmed = target != null && !seekQueued && next.confirmedSeekRequestId === sentSeekId;
     if (confirmed) target = null;
-    host.byId("btn-play")?.classList.toggle("playing", !next.paused);
+    // in a gap the engine waits while the page plays on
+    host.byId("btn-play")?.classList.toggle("playing", !next.paused || (wantPlaying && placed() && engineSegment < 0));
     if (next.video?.failed && reportedFailure !== epoch) {
       reportedFailure = epoch;
       console.error("The native player stopped", next.video.error);
@@ -190,7 +250,10 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
       console.info("The native player decodes in software", next.video.decoder, next.video.softwareReason);
     }
     if (next.ended && wantPlaying) {
-      finish();
+      // a segment can run to the end of the file while the timeline goes on
+      const segment = placed() ? segments()[engineSegment] : undefined;
+      if (segment && segment.end < projectEnd()) continuePlaybackAt(segment.end);
+      else finish();
       return;
     }
     if (!next.paused) startFrameLoop();
@@ -302,24 +365,65 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
     host.setPreviewGap?.(gap);
   }
 
+  // between or after segments there is no frame to show: the engine waits and the page keeps
+  // the time; finishing at the project's end keeps its last frame instead
+  function enterGap(time: number, black = true): void {
+    target = null;
+    engineSegment = -1;
+    gapPosition = time;
+    gapAt = now();
+    setGap(black);
+    if (status && !status.paused) enqueue({ kind: "pause" });
+  }
+
+  // `seconds` is timeline time; the engine is asked for the file time under it
   function seekTo(seconds: number): void {
-    const clamped = Math.max(0, Math.min(neededDuration(), seconds));
-    target = clamped;
-    // a project that grew past the engine's length needs an engine long enough for it
-    if (clamped > openedDuration) open();
-    enqueue({ kind: "seek", seconds: clamped });
+    const duration = host.videoDuration();
+    if (!placed()) {
+      engineSegment = -1;
+      gapPosition = null;
+      const clamped = Math.max(0, Math.min(duration, seconds));
+      target = clamped;
+      enqueue({ kind: "seek", seconds: clamped });
+      return;
+    }
+    const ranges = segments();
+    // the engine's position is read through the layout it was sent with
+    lastRanges = copyRanges(ranges);
+    // the timeline runs to the source's length or the last segment, whichever is later
+    const time = Math.max(0, Math.min(Math.max(duration, projectEnd()), seconds));
+    const index = segmentAt(ranges, time);
+    const segment = ranges[index];
+    if (!segment) {
+      enterGap(time);
+      return;
+    }
+    engineSegment = index;
+    gapPosition = null;
+    setGap(false);
+    target = time;
+    const source = (segment.sourceStart ?? segment.start) + time - segment.start;
+    enqueue({ kind: "seek", seconds: Math.max(0, Math.min(duration, source)) });
   }
 
   function play(): void {
     wantPlaying = true;
-    enqueue({ kind: "play" });
     startFrameLoop();
+    if (placed() && engineSegment < 0) {
+      // the page's own clock carries the playhead through the gap
+      gapAt = now();
+      host.byId("btn-play")?.classList.toggle("playing", true);
+      return;
+    }
+    enqueue({ kind: "play" });
   }
 
   function pause(): void {
+    if (placed() && engineSegment < 0) gapPosition = gapTime();
     wantPlaying = false;
     stopFrameLoop();
     enqueue({ kind: "pause" });
+    host.byId("btn-play")?.classList.remove("playing");
   }
 
   function finish(): void {
@@ -332,7 +436,7 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
         return;
       }
       enqueue({ kind: "pause" });
-      seekTo(end);
+      enterGap(end, false);
     } else if (loopEnabled()) {
       const first = segments()[0];
       if (first) {
@@ -362,6 +466,7 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
 
   function updateTime(): void {
     if (disposed) return;
+    syncRanges();
     const full = host.videoDuration();
     if (host.Timeline?.isDragging() && previewSec != null) {
       host.setPlayheadUI(previewSec, full);
@@ -369,9 +474,16 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
     }
     const time = position();
     if (placed()) {
-      setGap(sourceTimeAt(segments(), time) == null);
       host.setPlayheadUI(time, full);
-      if (wantPlaying && target == null && time >= projectEnd()) finish();
+      if (!wantPlaying || target != null) return;
+      if (time >= projectEnd()) {
+        finish();
+        return;
+      }
+      const segment = segments()[engineSegment];
+      // at the end of a segment the next one, or the gap after it, takes over; in a gap the
+      // engine starts again where the next segment begins
+      if (segment ? time >= segment.end : segmentAt(segments(), time) >= 0) continuePlaybackAt(segment ? segment.end : time);
       return;
     }
     setGap(false);
@@ -394,22 +506,24 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
   }
 
   function open(): void {
-    const duration = neededDuration() || (video && Number.isFinite(video.duration) ? video.duration : 0);
+    // the engine plays the file; moved clips are mapped onto it here
+    const duration = host.videoDuration() || (video && Number.isFinite(video.duration) ? video.duration : 0);
     if (!(duration > 0)) return;
     opened = true;
-    openedDuration = duration;
     enqueue({ kind: "open", duration, path: host.selPath() });
     // a newly opened video plays at full level and normal speed until told otherwise
     sentVolume = 1;
     syncVolume();
     if (speed !== 1) enqueue({ kind: "rate", rate: speed });
+    lastRanges = copyRanges(segments());
+    // the start of a moved clip is somewhere else in the file
+    if (placed()) seekTo(previewSec ?? 0);
   }
 
   function resetSource(): void {
     epoch++;
     steps.length = 0;
     opened = false;
-    openedDuration = 0;
     status = null;
     target = null;
     seekWanted = null;
@@ -417,6 +531,8 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
     wantPlaying = false;
     mirrorBusy = false;
     mirrorWanted = null;
+    engineSegment = -1;
+    gapPosition = null;
     if (seekFrame) clock.cancelAnimationFrame(seekFrame);
     seekFrame = 0;
     stopFrameLoop();
@@ -471,6 +587,7 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
 
   function togglePlay(): void {
     if (disposed || !ensureOpen()) return;
+    syncRanges();
     if (wantPlaying) {
       pause();
       return;
@@ -478,6 +595,7 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
     const time = position();
     if (placed()) {
       if (time >= projectEnd()) seekTo(0);
+      else if (engineSegment < 0 && gapPosition == null) seekTo(time);
     } else {
       const next = playbackTarget(segments(), time, 0.04);
       if (next != null) seekTo(next);
@@ -503,6 +621,7 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
   function seekPreview(sec: number): void {
     const full = host.videoDuration();
     if (disposed || !full || !Number.isFinite(full) || !Number.isFinite(sec)) return;
+    syncRanges();
     const clamped = Math.max(0, Math.min(full, sec));
     host.setPlayheadUI(clamped, full);
     if (placed()) setGap(sourceTimeAt(segments(), clamped) == null);

@@ -445,7 +445,7 @@ test("the end of the video stops or starts over as chosen", async () => {
   }
 });
 
-test("moved clips play through gaps in timeline time and stop at the project end", async () => {
+test("moved clips play their own footage, wait through gaps and stop at the project end", async () => {
   const run = setup({
     duration: 5,
     segments: [
@@ -455,20 +455,43 @@ test("moved clips play through gaps in timeline time and stop at the project end
   });
   try {
     await run.load();
-    assert.deepEqual(run.fixture.calls[0]?.args, { request: { durationSeconds: 7, path: "a" } },
-      "the engine covers the whole project and gets the selected file");
+    assert.deepEqual(run.fixture.calls[0]?.args, { request: { durationSeconds: 5, path: "a" } },
+      "the engine plays the selected file, whatever the timeline does with it");
     run.player.togglePlay();
     await run.advance(2500);
     assert.equal(run.gaps.at(-1), true);
+    assert.equal(run.player.isPlaying(), true, "the gap plays on in timeline time");
+    assert.equal(run.commands().at(-1)?.kind, "pause", "the engine waits through the gap");
     assert.equal(run.player.sourceTime(), null);
     assert.throws(() => run.player.captureFrameTime(), /timeline gap/);
     await run.advance(1800);
     assert.equal(run.gaps.at(-1), false);
+    assert.ok(Math.abs((run.seeks().at(-1)?.seconds ?? -1) - 2) < 0.05, "the second clip starts at its own footage");
     const source = run.player.sourceTime();
     assert.ok(source != null && Math.abs(source - (run.player.timelineTime() - 2)) < 1e-9);
     await run.advance(3000);
     assert.equal(run.player.isPlaying(), false);
     assert.equal(run.player.timelineTime(), 7);
+  } finally {
+    run.player.dispose();
+  }
+});
+
+test("a moved clip shows its own footage while paused, and an edit to it moves the picture", async () => {
+  const ranges = [{ start: 0, end: 3, sourceStart: 2 }];
+  const run = setup({ duration: 6, segments: ranges });
+  try {
+    await run.load();
+    run.player.seekPreview(1);
+    run.frame();
+    await settle();
+    assert.ok(Math.abs((run.seeks().at(-1)?.seconds ?? -1) - 3) < 1e-9, "one second into a clip that starts 2 s into the file");
+    // a slip moves the footage under the clip, so the same playhead shows another frame
+    ranges[0] = { start: 0, end: 3, sourceStart: 1.5 };
+    run.player.updateTime();
+    await settle();
+    assert.ok(Math.abs((run.seeks().at(-1)?.seconds ?? -1) - 2.5) < 1e-9);
+    assert.equal(run.player.timelineTime(), 1);
   } finally {
     run.player.dispose();
   }

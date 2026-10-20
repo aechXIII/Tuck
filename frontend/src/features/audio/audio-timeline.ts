@@ -2017,7 +2017,10 @@ export function installAudioTimeline(host: AudioTimelineHost) {
         videoClip,
         Number(videoClip.probeData.duration),
       );
-      if (SegmentEditing.hasPlacement(segments) && host.seekPreview) { host.seekPreview(seconds); return; }
+      const placed = SegmentEditing.hasPlacement(segments);
+      // through the player, so the native one moves its engine too; without moved clips the
+      // timeline is the source's own time
+      if (host.seekPreview) { host.seekPreview(placed ? seconds : core.outputToSourceTime(segments, seconds)); return; }
       video.currentTime = core.outputToSourceTime(segments, seconds);
       syncPreview();
     },
