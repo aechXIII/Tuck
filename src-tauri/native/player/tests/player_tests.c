@@ -437,6 +437,87 @@ static void restart_in_place(void) {
     tuck_player_destroy(player);
 }
 
+/* whatever the phase between source frames, the keep grid and the refreshes, every refresh window
+   holds a kept frame, at every speed, as long as the source has a frame for each refresh */
+static void keep_grid(void) {
+    const double fps[] = {24, 30, 50, 60, 120, 300};
+    const double rates[] = {1, 1.25, 1.5, 2, 3, 4};
+    uint32_t state = 99;
+    for (size_t a = 0; a < sizeof(fps) / sizeof(fps[0]); a++)
+        for (size_t b = 0; b < sizeof(rates) / sizeof(rates[0]); b++)
+            for (int trial = 0; trial < 20; trial++) {
+                double frame = 1 / fps[a], window = rates[b] / 60;
+                if (frame > window) continue;
+                state = state * 1103515245u + 12345u;
+                double target = (state >> 8) % 1000 / 1000.0 * frame * 3;
+                state = state * 1103515245u + 12345u;
+                double refresh_phase = (state >> 8) % 1000 / 1000.0 * window;
+                double step = playback_keep_step(window, frame);
+                double kept[4000];
+                size_t count = 0;
+                double next = target;
+                for (int k = 0; k < 2000 && count < 4000; k++) {
+                    double time = k * frame;
+                    if (time + 1e-6 < target) continue;
+                    if (count && time + 1e-6 < next) continue;
+                    kept[count++] = time;
+                    next = playback_next_keep(next, time, step);
+                }
+                double end = 1999 * frame - window;
+                size_t i = 0;
+                for (double start = target + refresh_phase; start + window < end; start += window) {
+                    while (i < count && kept[i] <= start) i++;
+                    if (!(i < count && kept[i] <= start + window)) {
+                        printf("no kept frame at %.0f fps, %.2fx, window from %.4f\n", fps[a], rates[b], start);
+                        CHECK(0);
+                        return;
+                    }
+                }
+            }
+    CHECK(playback_keep_step(0, 1 / 60.0) == 0);
+    CHECK(playback_keep_step(1 / 60.0, 1 / 60.0) == 0);
+    CHECK(close_to(playback_keep_step(4 / 60.0, 1 / 60.0), 3 / 60.0));
+}
+
+/* a draw picks its frame for when it reaches the screen, without moving the clock there */
+static void position_ahead(void) {
+    TuckPlayer *player = tuck_player_create(10, 100);
+    CHECK(player != NULL);
+    if (!player) return;
+    tuck_player_frame_presented(player, 1, 100);
+    CHECK(tuck_player_position_at(player, 100.016) == 0);
+    tuck_player_play(player, 101);
+    CHECK(close_to(status_at(player, 102).position_seconds, 1));
+    CHECK(close_to(tuck_player_position_at(player, 102.016), 1.016));
+    CHECK(close_to(status_at(player, 102).position_seconds, 1));
+    tuck_player_set_rate(player, 2, 102);
+    tuck_player_frame_presented(player, 2, 102);
+    CHECK(close_to(status_at(player, 103).position_seconds, 3));
+    CHECK(close_to(tuck_player_position_at(player, 103.01), 3.02));
+    CHECK(tuck_player_position_at(player, 200) == 10);
+    tuck_player_pause(player, 103);
+    CHECK(close_to(tuck_player_position_at(player, 104), 3));
+
+    /* on sound, not before the sound of this start has been heard, after a pause too */
+    tuck_player_follow_sound(player, 1, 104);
+    tuck_player_play(player, 104);
+    tuck_player_restart(player, 104);
+    TuckPlayerStatus s = status_at(player, 104);
+    tuck_player_frame_presented(player, s.generation, 104);
+    CHECK(close_to(tuck_player_position_at(player, 104.05), s.position_seconds));
+    tuck_player_sound_played(player, s.generation, 0.1, 104.1);
+    s = status_at(player, 104.1);
+    CHECK(close_to(tuck_player_position_at(player, 104.11), s.position_seconds + 0.02));
+    tuck_player_pause(player, 104.2);
+    tuck_player_play(player, 104.3);
+    s = status_at(player, 104.3);
+    CHECK(close_to(tuck_player_position_at(player, 104.32), s.position_seconds));
+    tuck_player_sound_played(player, s.generation, 0.15, 104.35);
+    s = status_at(player, 104.35);
+    CHECK(close_to(tuck_player_position_at(player, 104.36), s.position_seconds + 0.02));
+    tuck_player_destroy(player);
+}
+
 /* with sound, the clock follows what the listener has heard instead of the monotonic clock */
 static void sound_clock(void) {
     TuckPlayer *player = tuck_player_create(10, 100);
@@ -571,6 +652,8 @@ int tuck_player_test_failures(void) {
     mix_rules();
     mix_blocks();
     sound_clock();
+    position_ahead();
+    keep_grid();
     sound_stall();
     lut_strength();
     framebuffer_cache();

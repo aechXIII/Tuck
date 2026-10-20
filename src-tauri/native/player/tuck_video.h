@@ -23,7 +23,7 @@
 #endif
 
 /* raise whenever a signature or struct below changes */
-#define TUCK_VIDEO_ABI 7
+#define TUCK_VIDEO_ABI 8
 
 /* TuckVideoStatus.sound */
 #define TUCK_SOUND_NONE 0
@@ -154,11 +154,13 @@ TUCK_VIDEO_EXPORT TuckGlRenderer *tuck_gl_renderer_create(char *error, size_t er
 TUCK_VIDEO_EXPORT void tuck_gl_renderer_destroy(TuckGlRenderer *renderer);
 /* whether the context can take VAAPI frames without a copy: EGL can, GLX (X11) can't */
 TUCK_VIDEO_EXPORT int tuck_gl_renderer_imports_frames(TuckGlRenderer *renderer);
-/* whether drawing now would show a different frame than the last draw */
-TUCK_VIDEO_EXPORT int tuck_video_due(TuckVideo *video);
+/* `shown_at` is when the drawn frame reaches the screen, in CLOCK_MONOTONIC seconds as GTK's frame
+   clock gives it, so every refresh picks its frame for the same moment; 0 picks it for now */
+/* whether drawing would show a different frame than the last draw */
+TUCK_VIDEO_EXPORT int tuck_video_due(TuckVideo *video, double shown_at);
 /* draws the frame for the clock into the bound framebuffer; 0 when nothing could be drawn */
 TUCK_VIDEO_EXPORT int tuck_video_draw(TuckVideo *video, TuckGlRenderer *renderer,
-                                      const TuckVideoTarget *target);
+                                      const TuckVideoTarget *target, double shown_at);
 /* clears the bound framebuffer while no video is open */
 TUCK_VIDEO_EXPORT void tuck_gl_renderer_clear(TuckGlRenderer *renderer, const TuckVideoTarget *target);
 #endif

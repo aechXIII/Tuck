@@ -40,6 +40,12 @@ double clock_source(const PlaybackClock *clock);
 double playback_source_delta_ms(double video_source, double master_source);
 int frame_current(uint64_t frame_generation, uint64_t generation);
 unsigned playback_video_capacity(int fps);
+/* How far apart in video time the decoder keeps frames when one refresh shows `window` seconds of
+   video: a source frame less than the window, so whatever the phase between the frames, the keep
+   grid and the refreshes, every refresh has a new frame. 0 keeps every frame. */
+double playback_keep_step(double window, double frame_interval);
+/* the keep grid's next point after a frame kept at `time` */
+double playback_next_keep(double next, double time, double step);
 unsigned playback_audio_prebuffer(unsigned endpoint_frames);
 
 typedef enum RenderOutcome { RENDER_FAILED = 0, RENDER_SUBMITTED = 1, RENDER_DEFERRED = 2 } RenderOutcome;

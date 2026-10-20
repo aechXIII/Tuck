@@ -586,19 +586,24 @@ impl PlayerState {
 
     /// Whether the GL area should draw again to show a new frame.
     #[cfg(target_os = "linux")]
-    pub fn due(&self) -> bool {
+    pub fn due(&self, shown_at: f64) -> bool {
         match self.backend().as_mut() {
-            Some(Backend::Video(video)) => video.due(),
+            Some(Backend::Video(video)) => video.due(shown_at),
             _ => false,
         }
     }
 
     /// Draws the open video into the bound framebuffer, or clears it while there is none.
     #[cfg(target_os = "linux")]
-    pub fn draw(&self, renderer: &super::library::GlRenderer, target: &super::library::Target) {
+    pub fn draw(
+        &self,
+        renderer: &super::library::GlRenderer,
+        target: &super::library::Target,
+        shown_at: f64,
+    ) {
         match self.backend().as_mut() {
             Some(Backend::Video(video)) => {
-                video.draw(renderer, target);
+                video.draw(renderer, target, shown_at);
             }
             _ => renderer.clear(target),
         }

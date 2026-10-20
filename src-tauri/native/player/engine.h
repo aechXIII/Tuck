@@ -56,5 +56,9 @@ void tuck_player_sound_played(TuckPlayer *player, uint64_t generation, double se
    it: nothing is taking the sound, so it should go back to monotonic time */
 int tuck_player_sound_stalled(TuckPlayer *player, double now, double limit);
 void tuck_player_status(TuckPlayer *player, double now, TuckPlayerStatus *status);
+/* The position the clock will read at `at`, later than its last status, without moving it there:
+   the frame a draw shows is picked for when it reaches the screen. It stays put while the clock
+   doesn't run, and on sound until the sound of this start has been heard. */
+double tuck_player_position_at(const TuckPlayer *player, double at);
 
 #endif

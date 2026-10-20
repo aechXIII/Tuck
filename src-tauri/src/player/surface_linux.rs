@@ -176,7 +176,7 @@ fn player_area(player: PlayerState, picture: Rc<RefCell<Option<Picture>>>) -> gt
         let target = target(area, *picture.borrow());
         if let Some(renderer) = renderer.borrow().as_ref() {
             if target.picture_width > 0 && target.picture_height > 0 {
-                drawing.draw(renderer, &target);
+                drawing.draw(renderer, &target, shown_at(area));
             } else {
                 renderer.clear(&target);
             }
@@ -184,12 +184,28 @@ fn player_area(player: PlayerState, picture: Rc<RefCell<Option<Picture>>>) -> gt
         Propagation::Stop
     });
     area.add_tick_callback(move |area, _| {
-        if player.due() {
+        if player.due(shown_at(area)) {
             area.queue_render();
         }
         ControlFlow::Continue
     });
     area
+}
+
+// When this frame cycle's picture reaches the screen: the frame clock's time, which GTK keeps on the
+// refresh grid, plus one refresh. The tick and the render handler of one cycle see the same time,
+// so both pick the same frame. 0 (now) while the area has no frame clock.
+fn shown_at(area: &gtk::GLArea) -> f64 {
+    let Some(clock) = area.frame_clock() else {
+        return 0.0;
+    };
+    let frame_time = clock.frame_time();
+    if frame_time <= 0 {
+        return 0.0;
+    }
+    let (interval, _) = clock.refresh_info(frame_time);
+    let interval = if interval > 0 { interval } else { 16_667 };
+    (frame_time + interval) as f64 / 1_000_000.0
 }
 
 // the area and the picture in device pixels; GTK positions are logical pixels

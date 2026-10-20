@@ -171,12 +171,16 @@ static void fail_locked(TuckVideo *v, const char *message) {
     v->failed = 1;
 }
 
-/* the clock now, with the decoder asked for any new generation; 0 once the video failed */
-static int clock_now(TuckVideo *v, TuckPlayerStatus *status) {
+/* the clock now, with the decoder asked for any new generation; 0 once the video failed. With a
+   later `shown_at`, the position is where the clock will be when the drawn frame reaches the
+   screen: a draw's own start time wanders a little after each refresh, and frames due right at
+   that moment would then go out on alternate refreshes for a whole run */
+static int clock_now(TuckVideo *v, TuckPlayerStatus *status, double shown_at) {
     pthread_mutex_lock(&v->lock);
     double now = now_seconds();
     hear(v, now);
     tuck_player_status(v->clock, now, status);
+    if (shown_at > now) status->position_seconds = tuck_player_position_at(v->clock, shown_at);
     follow_clock(v, status);
     int failed = v->failed;
     pthread_mutex_unlock(&v->lock);
@@ -284,7 +288,7 @@ static void *render_main(void *opaque) {
     int redraw = 0;
     while (!atomic_load(&v->stopping)) {
         TuckPlayerStatus status;
-        if (!clock_now(v, &status)) {
+        if (!clock_now(v, &status, 0)) {
             wait_for_work(v, 0.1);
             continue;
         }
@@ -404,9 +408,9 @@ static void close_drawing(TuckVideo *v) {
     av_buffer_unref(&v->device);
 }
 
-int tuck_video_due(TuckVideo *v) {
+int tuck_video_due(TuckVideo *v, double shown_at) {
     TuckPlayerStatus status;
-    if (!clock_now(v, &status)) return 0;
+    if (!clock_now(v, &status, shown_at)) return 0;
     pthread_mutex_lock(&v->lock);
     int lut_changed = v->lut_changed;
     pthread_mutex_unlock(&v->lock);
@@ -416,9 +420,9 @@ int tuck_video_due(TuckVideo *v) {
            decoder_ready(v->decoder, p.source + FRAME_SLACK, p.request, status.seek_pending && p.clock == status.generation);
 }
 
-int tuck_video_draw(TuckVideo *v, TuckGlRenderer *renderer, const TuckVideoTarget *target) {
+int tuck_video_draw(TuckVideo *v, TuckGlRenderer *renderer, const TuckVideoTarget *target, double shown_at) {
     TuckPlayerStatus status;
-    if (!clock_now(v, &status)) {
+    if (!clock_now(v, &status, shown_at)) {
         tuck_gl_renderer_clear(renderer, target);
         return 0;
     }

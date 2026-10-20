@@ -227,7 +227,7 @@ static int queue_frame(Decoder *d, DecodedFrame *item) {
     double time = item->time;
     if (!queue_put(d, item)) return 0;
     d->started = 1;
-    if (d->cadence > 0) d->next += (floor((time - d->next) / d->cadence + 1e-5) + 1) * d->cadence;
+    d->next = playback_next_keep(d->next, time, d->cadence);
     return 1;
 }
 
@@ -497,8 +497,10 @@ void decoder_close(Decoder *d) {
 
 void decoder_set_cadence(Decoder *d, double interval) {
     pthread_mutex_lock(&d->lock);
-    d->cadence = interval > 0 ? interval : 0;
-    double rate = d->cadence > 0 ? 1 / d->cadence : d->frame_rate;
+    d->cadence = playback_keep_step(interval, d->frame_rate > 0 ? 1 / d->frame_rate : 0);
+    /* the queue holds a display rate's worth, which the GPU pool was made for, however close the
+       kept frames are */
+    double rate = interval > 0 ? 1 / interval : d->frame_rate;
     d->capacity = playback_video_capacity((int)lround(rate > 0 ? rate : 60));
     if (d->capacity < 2) d->capacity = 2;
     pthread_cond_broadcast(&d->changed);

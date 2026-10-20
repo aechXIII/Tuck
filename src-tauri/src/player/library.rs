@@ -12,7 +12,7 @@ use serde::Serialize;
 use super::engine::{Edits, Mix, PlayerStatus, RawStatus};
 
 // must match TUCK_VIDEO_ABI in native/player/tuck_video.h
-const ABI: c_int = 7;
+const ABI: c_int = 8;
 
 #[cfg(windows)]
 const FILE_NAME: &str = "tuck_player.dll";
@@ -99,11 +99,11 @@ type RendererCreateFn = unsafe extern "C" fn(*mut c_char, usize) -> *mut c_void;
 #[cfg(target_os = "linux")]
 type RendererTargetFn = unsafe extern "C" fn(*mut c_void, *const Target);
 #[cfg(target_os = "linux")]
-type DueFn = unsafe extern "C" fn(*mut c_void) -> c_int;
+type DueFn = unsafe extern "C" fn(*mut c_void, f64) -> c_int;
 #[cfg(target_os = "linux")]
 type ImportsFn = unsafe extern "C" fn(*mut c_void) -> c_int;
 #[cfg(target_os = "linux")]
-type DrawFn = unsafe extern "C" fn(*mut c_void, *mut c_void, *const Target) -> c_int;
+type DrawFn = unsafe extern "C" fn(*mut c_void, *mut c_void, *const Target, f64) -> c_int;
 
 struct Api {
     open: OpenFn,
@@ -494,15 +494,23 @@ impl Drop for Video {
 
 #[cfg(target_os = "linux")]
 impl Video {
-    /// Whether drawing now would show a different frame than the last draw.
-    pub fn due(&mut self) -> bool {
-        unsafe { (self.api.gl.due)(self.handle.as_ptr()) != 0 }
+    /// Whether drawing would show a different frame than the last draw. `shown_at` is when the
+    /// frame reaches the screen, in monotonic seconds; 0 means now.
+    pub fn due(&mut self, shown_at: f64) -> bool {
+        unsafe { (self.api.gl.due)(self.handle.as_ptr(), shown_at) != 0 }
     }
 
-    /// Draws the frame for the clock into the bound framebuffer. Only from the GL area's render
-    /// handler, with its context current.
-    pub fn draw(&mut self, renderer: &GlRenderer, target: &Target) -> bool {
-        unsafe { (self.api.gl.draw)(self.handle.as_ptr(), renderer.handle.as_ptr(), target) != 0 }
+    /// Draws the frame for the clock at `shown_at` into the bound framebuffer. Only from the GL
+    /// area's render handler, with its context current.
+    pub fn draw(&mut self, renderer: &GlRenderer, target: &Target, shown_at: f64) -> bool {
+        unsafe {
+            (self.api.gl.draw)(
+                self.handle.as_ptr(),
+                renderer.handle.as_ptr(),
+                target,
+                shown_at,
+            ) != 0
+        }
     }
 }
 

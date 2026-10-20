@@ -75,6 +75,17 @@ unsigned playback_video_capacity(int fps) {
     return capacity > 40 ? 40 : capacity;
 }
 
+double playback_keep_step(double window, double frame_interval) {
+    if (!(window > 0)) return 0;
+    double step = frame_interval > 0 ? window - frame_interval : window;
+    return step > 0 ? step : 0;
+}
+
+double playback_next_keep(double next, double time, double step) {
+    if (!(step > 0)) return next;
+    return next + (floor((time - next) / step + 1e-5) + 1) * step;
+}
+
 /* 100 ms of audio before the endpoint starts; endpoints wanting more than that are refused */
 unsigned playback_audio_prebuffer(unsigned endpoint_frames) {
     return endpoint_frames && endpoint_frames <= 4800 ? 4800 : 0;

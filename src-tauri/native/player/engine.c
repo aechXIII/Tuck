@@ -24,6 +24,8 @@ struct TuckPlayer {
     int sound;
     /* when the clock last started running or heard more sound */
     double heard_at;
+    /* on sound, whether any has been heard since the clock last started running */
+    int heard_since_start;
     int was_running;
 };
 
@@ -56,7 +58,10 @@ static void advance(TuckPlayer *player, double now) {
 /* after every change: a clock that just started running starts waiting for sound from now */
 static void note_running(TuckPlayer *player, double now) {
     int now_running = running(player);
-    if (now_running && !player->was_running && isfinite(now)) player->heard_at = now;
+    if (now_running && !player->was_running) {
+        if (isfinite(now)) player->heard_at = now;
+        player->heard_since_start = 0;
+    }
     player->was_running = now_running;
 }
 
@@ -166,6 +171,7 @@ void tuck_player_sound_played(TuckPlayer *player, uint64_t generation, double se
     if (isfinite(seconds) && seconds > player->played) {
         played_to(player, seconds);
         if (isfinite(now)) player->heard_at = now;
+        player->heard_since_start = 1;
     }
     note_running(player, now);
 }
@@ -174,6 +180,13 @@ int tuck_player_sound_stalled(TuckPlayer *player, double now, double limit) {
     advance(player, now);
     note_running(player, now);
     return player->sound && running(player) && isfinite(now) && now - player->heard_at > limit;
+}
+
+double tuck_player_position_at(const TuckPlayer *player, double at) {
+    double position = clock_source(&player->clock);
+    if (!running(player) || (player->sound && !player->heard_since_start) || !isfinite(at) || at <= player->updated_at)
+        return position;
+    return fmin(player->duration, position + (at - player->updated_at) * player->rate);
 }
 
 void tuck_player_status(TuckPlayer *player, double now, TuckPlayerStatus *status) {
