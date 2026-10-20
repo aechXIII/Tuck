@@ -397,6 +397,23 @@ def _validate_linux_ffmpeg_runtime(app_root: Path, lock: dict) -> None:
         )
 
 
+def _validate_native_player(app_root: Path, manifest: dict) -> None:
+    player = manifest.get("native_player")
+    _require_provenance(isinstance(player, dict), "Packages must include the native player")
+    for entry in (player, player["source_archive"]):
+        path = app_root / entry["file"]
+        _require_provenance(path.is_file(), f"bundled {entry['file']} is missing")
+        _require_provenance(
+            _sha256(path) == entry["sha256"],
+            f"bundled {entry['file']} does not match the staging manifest",
+        )
+    _require_provenance(
+        player["licenses"]
+        and all((app_root / entry["file"]).is_file() for entry in player["licenses"]),
+        "the native player's license texts are missing",
+    )
+
+
 def inspect_tree(app_root: Path, manifest: dict, lock_path: Path) -> None:
     print(f"  inspecting {app_root}")
     for rel in manifest["expected_present"]:
@@ -454,6 +471,9 @@ def inspect_tree(app_root: Path, manifest: dict, lock_path: Path) -> None:
             "  ok: source archive, GPL build configuration, codecs, filters, libc linkage, "
             "and GStreamer plugins"
         )
+
+    _validate_native_player(app_root, manifest)
+    print("  ok: native player library, its license texts and source archive")
 
     if manifest.get("platform") != "linux":
         webview2 = json.loads(WEBVIEW2_LOCK.read_text(encoding="utf-8"))

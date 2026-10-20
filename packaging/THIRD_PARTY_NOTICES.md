@@ -24,6 +24,22 @@ hash and the hashes of the built files.
 FFmpeg and its codecs (H.264, H.265, AAC and others) may be covered by
 patents. FFmpeg grants no patent license. This is not legal advice.
 
+## Video player
+
+`tuck_player.dll` plays the editor's preview. It is built from pinned sources
+with MinGW-w64 and statically links FFmpeg 7.1.1 (decoding only, without its
+GPL parts, so LGPL-2.1-or-later), dav1d 1.5.1 (BSD-2-Clause), zlib 1.3.1,
+libplacebo 7.360.1 (LGPL-2.1-or-later), glslang (BSD-3-Clause), SPIRV-Cross
+(Apache-2.0), glad (MIT) and fast_float (MIT). The Vulkan headers (Apache-2.0),
+the DXVA header from MinGW-w64 12.0.0, Jinja and MarkupSafe (BSD-3-Clause) and
+Meson (Apache-2.0) are only used to build it. The lock file is
+`packaging/player-sources.lock.json`, and the license texts of everything in
+that lock are in `licenses/native-player/`.
+
+`native-player/player-source.tar.xz` holds the exact source archives, the lock
+files, the build recipes and the player's own code, so the library can be
+built again and relinked.
+
 ## WebView2
 
 If the WebView2 Runtime is missing, the installer runs Microsoft's bootstrapper

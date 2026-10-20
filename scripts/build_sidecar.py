@@ -9,10 +9,12 @@ Steps, in order, each failing the build on any mismatch:
 1. Verify the Windows source build against ``packaging/ffmpeg-sources.lock.json``.
    Run ``scripts/windows_ffmpeg.py`` on Ubuntu 22.04 before building the sidecar.
 2. Stage ``ffmpeg.exe`` / ``ffprobe.exe`` and their notices.
+   The native player library comes from ``scripts/player_library.py windows``, also run on
+   Ubuntu 22.04 first, and is staged with its license texts and source archive in step 5.
 3. Create an isolated build environment from the hash-pinned
    ``packaging/sidecar-constraints.txt`` plus ``packaging/build-requirements.txt``.
 4. Run PyInstaller with ``scripts/tuck-sidecar.spec`` -> ``dist/sidecar/``.
-5. Assemble ``packaging/staging/app/`` (sidecar + CLI + ffmpeg + notices +
+5. Assemble ``packaging/staging/app/`` (sidecar + CLI + ffmpeg + native player + notices +
    ``bin/tuck.cmd`` + ``LICENSE``) - the exact tree Tauri bundles as resources.
 6. Write ``packaging/staging/manifest.json`` for ``scripts/verify_package.py``.
 """
@@ -28,6 +30,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import player_package
 import windows_ffmpeg
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -44,6 +47,7 @@ BUILD_VENV = ROOT / "build" / "sidecar-venv"
 STAGING = ROOT / "packaging" / "staging"
 STAGING_APP = STAGING / "app"
 STAGING_FFMPEG = STAGING / "ffmpeg"
+PLAYER_LIBRARY_ROOT = player_package.LIBRARY_ROOT
 
 
 class BuildError(RuntimeError):
@@ -185,11 +189,13 @@ def assemble_app(dist: Path, staged_ffmpeg: list[dict]) -> dict:
     shutil.copy2(
         ROOT / "packaging" / "THIRD_PARTY_NOTICES.md", STAGING_APP / "THIRD_PARTY_NOTICES.md"
     )
+    player = player_package.stage_player("windows", STAGING_APP, PLAYER_LIBRARY_ROOT)
 
     manifest = {
         "sidecar_executable": "tuck-sidecar.exe",
         "cli_executable": "TuckCli.exe",
         "ffmpeg": staged_ffmpeg,
+        "native_player": player.record(),
         "expected_present": [
             "tuck-sidecar.exe",
             "TuckCli.exe",
@@ -206,6 +212,7 @@ def assemble_app(dist: Path, staged_ffmpeg: list[dict]) -> dict:
             "LICENSE",
             "THIRD_PARTY_NOTICES.md",
             webview2["filename"],
+            *player.expected_present(),
         ],
         "denied_substrings": [
             "webview/",

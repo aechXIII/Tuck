@@ -5,8 +5,9 @@ network access to the locked FFmpeg, codec, and VAAPI source archives and the
 locked dav1d GStreamer plugin crate, Cargo, the GStreamer development files, and the native
 compiler toolchain required by PyInstaller. This script builds the media tools and the plugin
 from those verified sources, preserves the exact FFmpeg inputs and recipe in the staging tree,
-and builds the Python sidecar. ``scripts/build-linux.sh`` builds
-the AppImage from that tree.
+and builds the Python sidecar. The native player library comes from
+``scripts/player_library.py linux``, run first, and is staged with its license texts and source
+archive. ``scripts/build-linux.sh`` builds the AppImage from that tree.
 """
 
 from __future__ import annotations
@@ -26,6 +27,9 @@ import tarfile
 import uuid
 from pathlib import Path
 from urllib.request import urlopen
+
+import player_package
+import windows_ffmpeg
 
 ROOT = Path(__file__).resolve().parent.parent
 LOCK_PATH = ROOT / "packaging" / "ffmpeg-linux-sources.lock.json"
@@ -51,6 +55,8 @@ STAGING_APP = STAGING / "app"
 STAGING_FFMPEG = STAGING / "ffmpeg"
 STAGING_GSTREAMER = STAGING / "gstreamer"
 STAGING_PLUGIN_LICENSES = STAGING / "licenses"
+STAGING_PLAYER = STAGING / "player"
+PLAYER_LIBRARY_ROOT = player_package.LIBRARY_ROOT
 SOURCE_BUNDLE_NAME = "ffmpeg-source.tar.xz"
 # zimg keeps its own permissive license inside the GPL build
 SOURCE_LICENSES = {
@@ -712,6 +718,12 @@ def assemble_app(
     _copytree(STAGING_PLUGIN_LICENSES, STAGING_APP / "licenses")
     shutil.copy2(LICENSE, STAGING_APP / "LICENSE")
     shutil.copy2(THIRD_PARTY_NOTICES, STAGING_APP / "THIRD_PARTY_NOTICES.md")
+    # like the GStreamer plugin, the player library stays out of the bundled resources so the
+    # AppImage bundler can't rewrite it; build-linux.sh adds it to the finished payload
+    shutil.rmtree(STAGING_PLAYER, ignore_errors=True)
+    player = player_package.stage_player(
+        "linux", STAGING_APP, PLAYER_LIBRARY_ROOT, library_folder=STAGING_PLAYER
+    )
     sidecar = STAGING_APP / "tuck-sidecar"
     _require(sidecar.is_file() and os.access(sidecar, os.X_OK), "Staged sidecar is not executable")
     for name in ("ffmpeg", "ffprobe"):
@@ -727,6 +739,7 @@ def assemble_app(
         "ffmpeg": staged_ffmpeg,
         "ffmpeg_provenance": provenance,
         "gstreamer_plugins": [staged_plugin],
+        "native_player": player.record(),
         "expected_present": [
             "tuck-sidecar",
             "_internal",
@@ -741,6 +754,7 @@ def assemble_app(
             "THIRD_PARTY_NOTICES.md",
             "_internal/licenses/av/LICENSE.txt",
             "_internal/licenses/numpy/LICENSE.txt",
+            *player.expected_present(),
         ],
         "denied_substrings": [
             "pythoncom",
@@ -830,7 +844,13 @@ def main() -> int:
         assemble_app(dist, staged, provenance, staged_plugin)
         print(f"\nOK  staging tree at {STAGING_APP}")
         return 0
-    except (BuildError, OSError, subprocess.CalledProcessError, tarfile.TarError) as exc:
+    except (
+        BuildError,
+        windows_ffmpeg.BuildError,
+        OSError,
+        subprocess.CalledProcessError,
+        tarfile.TarError,
+    ) as exc:
         print(f"\nBUILD FAILED: {exc}", file=sys.stderr)
         return 1
 

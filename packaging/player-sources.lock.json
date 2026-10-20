@@ -13,7 +13,13 @@
         "dav1d",
         "zlib",
         "mingw-dxva"
-      ]
+      ],
+      "licenses": {
+        "ffmpeg": {
+          "spdx": "LGPL-2.1-or-later",
+          "text_path": "COPYING.LGPLv2.1"
+        }
+      }
     },
     "linux": {
       "lock": "packaging/ffmpeg-linux-sources.lock.json",
@@ -22,7 +28,13 @@
         "dav1d",
         "libva",
         "libdrm"
-      ]
+      ],
+      "licenses": {
+        "ffmpeg": {
+          "spdx": "LGPL-2.1-or-later",
+          "text_path": "COPYING.LGPLv2.1"
+        }
+      }
     }
   },
   "sources": [

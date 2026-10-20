@@ -30,6 +30,23 @@ its `Cargo.lock`, and includes the same dav1d 1.5.1 (BSD-2-Clause) as FFmpeg,
 linked statically. The lock file is `packaging/gst-dav1d-linux.lock.json`, and
 the plugin's license files are in `licenses/gst-plugin-dav1d/`.
 
+## Video player
+
+`libtuck_player.so` plays the editor's preview. It is built on Ubuntu 22.04
+from pinned sources and statically links FFmpeg 7.1.1 (decoding only, without
+its GPL parts, so LGPL-2.1-or-later), dav1d 1.5.1 (BSD-2-Clause), libva 2.24.1
+and libdrm 2.4.124 (both MIT), libplacebo 7.360.1 (LGPL-2.1-or-later), glad
+(MIT) and fast_float (MIT). It plays sound through the host's PipeWire, built
+against the PipeWire 1.2.7 headers (MIT); PipeWire itself is not bundled. The
+Vulkan headers (Apache-2.0), Jinja and MarkupSafe (BSD-3-Clause) and Meson
+(Apache-2.0) are only used to build it. The lock file is
+`packaging/player-sources.lock.json`, and the license texts of everything in
+that lock are in `licenses/native-player/`.
+
+`native-player/player-source.tar.xz` holds the exact source archives, the lock
+files, the build recipes and the player's own code, so the library can be
+built again and relinked.
+
 ## Desktop shell
 
 `Tuck` is built with Tauri 2 and the Rust crates in `src-tauri/Cargo.lock`

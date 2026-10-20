@@ -144,6 +144,11 @@ pub fn run() {
                     );
                 })?;
             }
+            if !tauri::is_dev() {
+                if let Ok(dir) = app.path().resource_dir() {
+                    player::library::use_resource_dir(dir);
+                }
+            }
             // the backend starts in the background so the page can draw its own
             // starting screen; requests made meanwhile wait for it to be ready
             let (state, starter) = BackendState::starting();

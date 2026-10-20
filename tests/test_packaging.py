@@ -30,6 +30,84 @@ _VERIFY_PACKAGE = _REPO / "scripts" / "verify_package.py"
 _BUILD_LINUX = _REPO / "scripts" / "build_linux.py"
 
 
+def _player_build(root: Path, target: str) -> Path:
+    """A finished player library build as scripts/player_library.py leaves it"""
+    import player_library
+
+    folder = root / target
+    (folder / "licenses/libplacebo").mkdir(parents=True)
+    files = {
+        player_library.OUTPUTS[target]: b"player library",
+        "player-source.tar.xz": b"player sources",
+        "licenses/libplacebo/LICENSE": b"lgpl terms",
+    }
+    for name, contents in files.items():
+        (folder / name).write_bytes(contents)
+    digest = {name: hashlib.sha256(contents).hexdigest() for name, contents in files.items()}
+    manifest = {
+        "target": target,
+        "library": player_library.OUTPUTS[target],
+        "size_bytes": len(b"player library"),
+        "sha256": digest[player_library.OUTPUTS[target]],
+        "player_source_sha256": player_library.player_source_sha256(),
+        "sources": [{"name": "libplacebo", "version": "7.360.1"}],
+        "licenses": [
+            {
+                "name": "libplacebo",
+                "version": "7.360.1",
+                "spdx": "LGPL-2.1-or-later",
+                "file": "licenses/libplacebo/LICENSE",
+                "sha256": digest["licenses/libplacebo/LICENSE"],
+            }
+        ],
+        "source_archive": {
+            "file": "player-source.tar.xz",
+            "size_bytes": len(b"player sources"),
+            "sha256": digest["player-source.tar.xz"],
+        },
+    }
+    (folder / "player-manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    return folder
+
+
+def test_the_player_library_is_staged_with_its_licenses_and_sources(tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(_REPO / "scripts"))
+    import player_package
+
+    _player_build(tmp_path / "builds", "linux")
+    app, held = tmp_path / "app", tmp_path / "held"
+    staged = player_package.stage_player("linux", app, tmp_path / "builds", library_folder=held)
+
+    assert (held / "libtuck_player.so").read_bytes() == b"player library"
+    assert not (app / "libtuck_player.so").exists(), "the AppImage adds the library itself"
+    assert (app / "licenses/native-player/libplacebo/LICENSE").read_bytes() == b"lgpl terms"
+    assert (app / "native-player/player-source.tar.xz").read_bytes() == b"player sources"
+    assert staged.expected_present() == [
+        "libtuck_player.so",
+        "native-player/player-source.tar.xz",
+        "licenses/native-player/libplacebo/LICENSE",
+    ]
+
+
+def test_a_player_build_that_does_not_match_is_refused(tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(_REPO / "scripts"))
+    import player_library
+    import player_package
+
+    builds = tmp_path / "builds"
+    with pytest.raises(player_library.BuildError, match=r"run scripts/player_library\.py"):
+        player_package.stage_player("windows", tmp_path / "app", builds)
+    folder = _player_build(builds, "windows")
+    (folder / "tuck_player.dll").write_bytes(b"changed after the build")
+    with pytest.raises(player_library.BuildError, match="does not match"):
+        player_package.stage_player("windows", tmp_path / "app", builds)
+    manifest = json.loads((folder / "player-manifest.json").read_text(encoding="utf-8"))
+    manifest["player_source_sha256"] = "0" * 64
+    (folder / "player-manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    with pytest.raises(player_library.BuildError, match="other player sources"):
+        player_package.stage_player("windows", tmp_path / "app", builds)
+
+
 def test_windows_staging_puts_only_the_cli_wrapper_in_bin(tmp_path, monkeypatch):
     monkeypatch.syspath_prepend(str(_REPO / "scripts"))
     import build_sidecar
@@ -60,8 +138,13 @@ def test_windows_staging_puts_only_the_cli_wrapper_in_bin(tmp_path, monkeypatch)
     monkeypatch.setattr(build_sidecar, "STAGING_FFMPEG", ffmpeg)
     monkeypatch.setattr(build_sidecar, "WEBVIEW2_BOOTSTRAPPER", bootstrapper)
     monkeypatch.setattr(build_sidecar, "WEBVIEW2_LOCK", lock)
+    _player_build(tmp_path / "player", "windows")
+    monkeypatch.setattr(build_sidecar, "PLAYER_LIBRARY_ROOT", tmp_path / "player")
     manifest = build_sidecar.assemble_app(dist, [{"file": "ffmpeg/ffmpeg.exe"}])
     assert (staging / "app/bin/tuck.cmd").read_bytes() == build_sidecar.TUCK_CMD.read_bytes()
+    assert (staging / "app/tuck_player.dll").read_bytes() == b"player library"
+    assert "tuck_player.dll" in manifest["expected_present"]
+    assert manifest["native_player"]["file"] == "tuck_player.dll"
     assert (staging / "app/TuckCli.exe").read_bytes() == b"cli"
     assert not (staging / "app/tuck.cmd").exists()
     assert "bin/tuck.cmd" in manifest["expected_present"]
@@ -98,11 +181,16 @@ def test_package_verifier_expects_the_current_version():
 
 
 def _build_linux_module():
-    spec = importlib.util.spec_from_file_location("build_linux_for_test", _BUILD_LINUX)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    # the script imports its sibling builders by name, as it does when run directly
+    sys.path.insert(0, str(_BUILD_LINUX.parent))
+    try:
+        spec = importlib.util.spec_from_file_location("build_linux_for_test", _BUILD_LINUX)
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+    finally:
+        sys.path.remove(str(_BUILD_LINUX.parent))
 
 
 def test_explicit_env_path_is_used_when_it_exists(tmp_path: Path, monkeypatch) -> None:
@@ -767,3 +855,21 @@ def test_linux_sidecar_starts_without_the_modules_its_package_leaves_out() -> No
         check=True,
     )
     assert result.stdout.strip() == "[]"
+
+
+def test_the_package_check_refuses_a_missing_or_changed_player(tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(_REPO / "scripts"))
+    import player_package
+
+    verify_package = _verify_package_module()
+    _player_build(tmp_path / "builds", "windows")
+    app = tmp_path / "app"
+    staged = player_package.stage_player("windows", app, tmp_path / "builds")
+    manifest = {"native_player": staged.record()}
+
+    verify_package._validate_native_player(app, manifest)
+    with pytest.raises(verify_package.VerifyError, match="must include the native player"):
+        verify_package._validate_native_player(app, {})
+    (app / "tuck_player.dll").write_bytes(b"another library")
+    with pytest.raises(verify_package.VerifyError, match="does not match"):
+        verify_package._validate_native_player(app, manifest)

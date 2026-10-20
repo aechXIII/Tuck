@@ -5,16 +5,21 @@ libplacebo and its shader compilers (from the player lock). Every archive is che
 recorded size and SHA-256 before it is used. The slow part, the static SDK, is kept in the work
 directory, so `--library-only` rebuilds just the player from src-tauri/native/player.
 `--check FOLDER` then runs the seek check over the clips scripts/player_fixtures.py made there.
+
+Next to the library go the license text of every source and `player-source.tar.xz` (the locked
+archives, the recipes and the player's own code), which the packages ship with it.
 """
 
 from __future__ import annotations
 
 import argparse
 import hashlib
+import io
 import json
 import os
 import shutil
 import subprocess
+import tarfile
 import tempfile
 from pathlib import Path, PurePosixPath
 
@@ -29,6 +34,7 @@ RECIPES = {
 }
 OUTPUTS = {"windows": "tuck_player.dll", "linux": "libtuck_player.so"}
 SEEK_CHECKS = {"windows": "tuck_player_seek_check.exe", "linux": "tuck_player_seek_check"}
+SOURCE_ARCHIVE = "player-source.tar.xz"
 
 
 def load_lock(target: str) -> dict:
@@ -57,8 +63,14 @@ def load_lock(target: str) -> dict:
     shared = {record["name"]: record for record in ffmpeg_lock["sources"]}
     wanted = reuse["sources"]
     require(all(name in shared for name in wanted), "The FFmpeg lock lacks a player source")
-    reused = [dict(shared[name], destination="") for name in wanted]
-    return {"sources": reused + lock["sources"]}
+    # the player builds FFmpeg without its GPL parts, so its own license differs from the export's
+    licenses = reuse.get("licenses", {})
+    require(set(licenses) <= set(wanted), "A player license names a source it doesn't use")
+    reused = [
+        dict(shared[name], destination="", license=licenses.get(name, shared[name]["license"]))
+        for name in wanted
+    ]
+    return {"sources": reused + lock["sources"], "ffmpeg_lock": reuse["lock"]}
 
 
 def stage_sources(lock: dict, cache: Path, source_dir: Path) -> list[dict]:
@@ -80,6 +92,91 @@ def stage_sources(lock: dict, cache: Path, source_dir: Path) -> list[dict]:
                 shutil.move(str(Path(temporary) / record["archive_root"]), target)
         staged.append({key: record[key] for key in ("name", "version", "filename", "sha256")})
     return staged
+
+
+def player_source_files() -> list[tuple[str, Path]]:
+    """The player's own source files by their path in the tree, in a fixed order on every system"""
+    files = [path for path in PLAYER_SOURCE.rglob("*") if path.is_file()]
+    return sorted((path.relative_to(PLAYER_SOURCE).as_posix(), path) for path in files)
+
+
+def player_source_sha256() -> str:
+    digest = hashlib.sha256()
+    for name, path in player_source_files():
+        digest.update(name.encode("utf-8") + b"\0")
+        digest.update(path.read_bytes())
+    return digest.hexdigest()
+
+
+def write_licenses(lock: dict, cache: Path, output: Path) -> list[dict]:
+    """Copies every source's license text out of its verified archive into `output/licenses`"""
+    folder = output / "licenses"
+    if folder.exists():
+        shutil.rmtree(folder)
+    written = []
+    for record in lock["sources"]:
+        archive = download(record, cache)
+        member = f"{record['archive_root']}/{record['license']['text_path']}"
+        with tarfile.open(archive) as bundle:
+            try:
+                handle = bundle.extractfile(member)
+            except KeyError:
+                handle = None
+            if handle is None:
+                raise BuildError(f"{record['filename']} has no license text {member}")
+            text = handle.read()
+        destination = folder / record["name"] / PurePosixPath(member).name
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(text)
+        written.append(
+            {
+                "name": record["name"],
+                "version": record["version"],
+                "spdx": record["license"]["spdx"],
+                "file": destination.relative_to(output).as_posix(),
+                "sha256": sha256(destination),
+            }
+        )
+    return written
+
+
+def write_source_archive(target: str, lock: dict, cache: Path, output: Path) -> Path:
+    """Everything needed to build the library again: the locked archives as downloaded, the
+    recipes and locks, and the player's own code. Fixed order and times, so a rebuild matches."""
+    sdk_recipe, library_recipe = RECIPES[target]
+    recipes = [
+        sdk_recipe,
+        library_recipe,
+        "scripts/player_library.py",
+        "scripts/windows_ffmpeg.py",
+        LOCK_PATH.relative_to(ROOT).as_posix(),
+        lock["ffmpeg_lock"],
+    ]
+    entries: list[tuple[str, bytes]] = [
+        (f"player-source/{name}", (ROOT / name).read_bytes()) for name in recipes
+    ]
+    entries.extend(
+        (f"player-source/sources/{record['filename']}", download(record, cache).read_bytes())
+        for record in lock["sources"]
+    )
+    entries.extend(
+        (f"player-source/src-tauri/native/player/{name}", path.read_bytes())
+        for name, path in player_source_files()
+    )
+    target_path = output / SOURCE_ARCHIVE
+    temporary = target_path.with_name(f".{target_path.name}.tmp")
+    try:
+        with tarfile.open(temporary, "w:xz") as bundle:
+            for name, contents in sorted(entries):
+                info = tarfile.TarInfo(name)
+                info.size = len(contents)
+                info.mode = 0o644
+                info.mtime = 0
+                bundle.addfile(info, fileobj=io.BytesIO(contents))
+        temporary.replace(target_path)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return target_path
 
 
 def run(*command: str) -> None:
@@ -107,16 +204,21 @@ def build(target: str, work: Path, output: Path, jobs: int, library_only: bool) 
     run("bash", library_recipe, str(sdk), str(PLAYER_SOURCE), str(output))
     library = output / OUTPUTS[target]
     require(library.is_file(), f"The recipe did not produce {library.name}")
+    licenses = write_licenses(lock, work / "cache", output)
+    source_archive = write_source_archive(target, lock, work / "cache", output)
     manifest = {
+        "target": target,
         "library": library.name,
         "size_bytes": library.stat().st_size,
         "sha256": sha256(library),
-        "player_source_sha256": hashlib.sha256(
-            b"".join(
-                path.read_bytes() for path in sorted(PLAYER_SOURCE.rglob("*")) if path.is_file()
-            )
-        ).hexdigest(),
+        "player_source_sha256": player_source_sha256(),
         "sources": staged,
+        "licenses": licenses,
+        "source_archive": {
+            "file": source_archive.name,
+            "size_bytes": source_archive.stat().st_size,
+            "sha256": sha256(source_archive),
+        },
     }
     (output / "player-manifest.json").write_text(
         json.dumps(manifest, indent=2) + "\n", encoding="utf-8"

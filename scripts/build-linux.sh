@@ -90,7 +90,7 @@ fi
 
 # The GTK deployment can bundle an older libwayland-client than the host Mesa stack.
 # Drop it so anything that reaches Wayland/EGL uses one ABI.
-echo "==> Removing the bundled Wayland client library and adding the dav1d plugin"
+echo "==> Removing the bundled Wayland client library and adding the dav1d plugin and player"
 appimage_work="$(mktemp -d -t tuck-appimage-wayland-XXXXXX)"
 trap 'rm -rf "$appimage_work"' EXIT
 (
@@ -111,6 +111,13 @@ if [[ ! -f "$dav1d_plugin" ]]; then
   exit 1
 fi
 install -Dm755 "$dav1d_plugin" "$appimage_work/squashfs-root/usr/lib/Tuck/gstreamer/libgstdav1d.so"
+# the native player library goes in the same way, next to the sidecar where Tuck loads it from
+player_library="packaging/staging/linux/player/libtuck_player.so"
+if [[ ! -f "$player_library" ]]; then
+  echo "$player_library is missing." >&2
+  exit 1
+fi
+install -Dm755 "$player_library" "$appimage_work/squashfs-root/usr/lib/Tuck/libtuck_player.so"
 appimage_offset="$("$root/$appimage" --appimage-offset)"
 rebuilt_appimage="$appimage_work/Tuck.AppImage"
 head -c "$appimage_offset" "$appimage" > "$rebuilt_appimage"

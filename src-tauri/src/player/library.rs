@@ -1,6 +1,7 @@
-//! The native player library, loaded at run time from next to the executable (or from
-//! `TUCK_PLAYER_LIBRARY` in development). A missing library, or one built for another interface
-//! version, makes opening fail with a reason instead of stopping the app from starting.
+//! The native player library, loaded at run time from the app's resource folder in a package (or
+//! from `TUCK_PLAYER_LIBRARY` or next to the executable in development). A missing library, or one
+//! built for another interface version, makes opening fail with a reason instead of stopping the
+//! app from starting.
 
 use std::ffi::{c_char, c_int, c_void, CStr, CString};
 use std::path::{Path, PathBuf};
@@ -224,9 +225,22 @@ fn text(raw: &[c_char]) -> String {
     String::from_utf8_lossy(&bytes).into_owned()
 }
 
+static RESOURCE_DIR: OnceLock<PathBuf> = OnceLock::new();
+
+/// Where a packaged app keeps its bundled files; the library is loaded from there and nowhere
+/// else, so no other copy on the machine can stand in for it.
+pub fn use_resource_dir(dir: PathBuf) {
+    let _ = RESOURCE_DIR.set(dir);
+}
+
 fn library_path() -> Option<PathBuf> {
-    if let Some(path) = std::env::var_os("TUCK_PLAYER_LIBRARY") {
-        return Some(PathBuf::from(path));
+    if let Some(dir) = RESOURCE_DIR.get() {
+        return Some(dir.join(FILE_NAME));
+    }
+    if tauri::is_dev() {
+        if let Some(path) = std::env::var_os("TUCK_PLAYER_LIBRARY") {
+            return Some(PathBuf::from(path));
+        }
     }
     Some(std::env::current_exe().ok()?.parent()?.join(FILE_NAME))
 }
@@ -650,5 +664,13 @@ mod tests {
         let raw = [b'o' as c_char, b'k' as c_char, 0, b'x' as c_char];
         assert_eq!(text(&raw), "ok");
         assert_eq!(text(&[0; 4]), "");
+    }
+
+    #[test]
+    fn a_packaged_app_loads_the_library_only_from_its_resources() {
+        let resources = std::env::temp_dir().join("tuck-player-resources");
+        std::env::set_var("TUCK_PLAYER_LIBRARY", "/elsewhere/library");
+        use_resource_dir(resources.clone());
+        assert_eq!(library_path(), Some(resources.join(FILE_NAME)));
     }
 }
