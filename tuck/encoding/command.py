@@ -8,6 +8,7 @@ from pathlib import Path
 from struct import pack
 from typing import TYPE_CHECKING
 
+from ..audio_mix import ClipPiece, audible_clips, clip_pieces, clip_placements
 from ..models import (
     RCM_CBR,
     RCM_CQ,
@@ -21,7 +22,6 @@ from ..models import (
     SourceAudioTrack,
     TimelineAudioPiece,
     audio_independent_from_pieces,
-    map_source_range_to_output,
     positioned_frame_ranges,
     segment_timeline_duration,
     source_audio_output_pieces,
@@ -250,13 +250,12 @@ def _placed_source_video_graph(plan: EncodePlan, filters: list[str], fps: float)
 
 def _imported_clip_filters(
     plan: EncodePlan,
-    track: AudioTrack,
     clip: AudioClip,
-    output_start: float,
-    piece_duration: float,
-    local_offset: float,
+    piece: ClipPiece,
     output_duration: str,
 ) -> list[str]:
+    local_offset = piece.local_offset
+    piece_duration = piece.duration
     if clip.loop:
         loop_samples = max(
             1,
@@ -276,12 +275,10 @@ def _imported_clip_filters(
             f"duration={fmt_ffmpeg_time(piece_duration)}",
             "asetpts=PTS-STARTPTS",
         ]
-    total_gain = float(track.gain_db + clip.gain_db)
-    if abs(total_gain) > 1e-9:
-        filters.append(f"volume={total_gain:.2f}dB")
-    fade_in = clip.fade_in if local_offset <= 1e-6 else 0.0
-    remaining_after = clip.timeline_duration - local_offset - piece_duration
-    fade_out = clip.fade_out if remaining_after <= 1e-6 else 0.0
+    if abs(piece.gain_db) > 1e-9:
+        filters.append(f"volume={piece.gain_db:.2f}dB")
+    fade_in = piece.fade_in
+    fade_out = piece.fade_out
     if fade_in > 0:
         filters.append(f"afade=t=in:st=0:d={fmt_ffmpeg_time(min(fade_in, piece_duration))}")
     if fade_out > 0:
@@ -292,7 +289,7 @@ def _imported_clip_filters(
         )
     filters.extend(
         [
-            f"adelay={max(0, round(output_start * 1000))}:all=1",
+            f"adelay={max(0, round(piece.output_start * 1000))}:all=1",
             f"apad=whole_dur={output_duration}",
             f"atrim=duration={output_duration}",
         ]
@@ -619,13 +616,7 @@ def build_base_cmd(
     trim_end = float(segments[0].end) if single_segment else 0.0
     trim_duration = float(segments[0].duration) if single_segment else 0.0
 
-    project_imported_clips = [
-        (track, clip)
-        for track in plan.audio_tracks
-        if not track.muted
-        for clip in track.clips
-        if not clip.muted
-    ]
+    project_imported_clips = audible_clips(plan)
     imported_clips = project_imported_clips if include_audio and plan.audio_enabled else []
     source_has_audio = plan.source_info is None or plan.source_info.has_audio
     source_pieces = source_audio_output_pieces(segments, plan.source_audio_segments)
@@ -871,25 +862,9 @@ def build_base_cmd(
 
         # added audio is mixed into the first track only
         for input_index, track, clip in imported_inputs:
-            mapped = (
-                [TimelineAudioPiece(clip.timeline_start, clip.timeline_end, clip.timeline_start)]
-                if positioned
-                else map_source_range_to_output(segments, clip.timeline_start, clip.timeline_end)
-            )
-            if not mapped:
-                continue
-            for piece in mapped:
-                local_offset = piece.source_start - clip.timeline_start
+            for piece in clip_pieces(track, clip, clip_placements(clip, segments, positioned)):
                 mix_label = f"mix{len(mix_inputs)}"
-                clip_filters = _imported_clip_filters(
-                    plan,
-                    track,
-                    clip,
-                    piece.output_start,
-                    piece.duration,
-                    local_offset,
-                    output_duration,
-                )
+                clip_filters = _imported_clip_filters(plan, clip, piece, output_duration)
                 graph_parts.append(f"[{input_index}:a:0]{','.join(clip_filters)}[{mix_label}]")
                 mix_inputs.append(f"[{mix_label}]")
 
