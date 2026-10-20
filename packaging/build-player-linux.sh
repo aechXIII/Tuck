@@ -21,7 +21,7 @@ gcc -shared -fPIC -O2 -g -std=c11 -Wall -Wextra -Werror -fvisibility=hidden \
   $(pkg-config --cflags libavformat libavcodec libavfilter libavutil libswresample libplacebo) \
   "$source_dir/engine.c" "$source_dir/playback_state.c" "$source_dir/decoder.c" \
   "$source_dir/render_gl.c" "$source_dir/video.c" "$source_dir/audio.c" \
-  "$source_dir/audio_pipewire.c" "$source_dir/lut.c" "$source_dir/tempo.c" \
+  "$source_dir/audio_pipewire.c" "$source_dir/lut.c" "$source_dir/tempo.c" "$source_dir/mix.c" "$source_dir/audio_reader.c" \
   -o "$output_dir/libtuck_player.so" \
   -Wl,-soname,libtuck_player.so -Wl,--no-undefined -Wl,--exclude-libs,ALL -Wl,-Bsymbolic \
   -Wl,-z,relro -Wl,-z,now \

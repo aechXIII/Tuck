@@ -7,6 +7,7 @@
 #include "../engine.h"
 #include "../framebuffer_cache.h"
 #include "../lut_blend.h"
+#include "../mix.h"
 #include "../playback_state.h"
 #include "../seek_request.h"
 
@@ -290,6 +291,84 @@ static void playback_rate(void) {
     tuck_player_destroy(player);
 }
 
+/* a made-up sound: each frame's left sample is its own file second, the right one is 1 */
+static int position_read(void *opaque, int voice, double source_seconds, float *samples, size_t frames) {
+    (void)voice;
+    if (opaque) return 0;
+    for (size_t i = 0; i < frames; i++) {
+        samples[i * 2] = (float)(source_seconds + (double)i / MIX_RATE);
+        samples[i * 2 + 1] = 1;
+    }
+    return 1;
+}
+
+static void mix_rules(void) {
+    MixPiece faded = {.voice = 0, .start = 2, .end = 6, .source_in = 10, .gain = 0.5, .fade_in = 1, .fade_out = 2};
+    CHECK(mix_piece_valid(&faded));
+    CHECK(fabs(mix_piece_level(&faded, 2) - 0) < 1e-9);
+    CHECK(fabs(mix_piece_level(&faded, 2.5) - 0.25) < 1e-9);
+    CHECK(fabs(mix_piece_level(&faded, 3.5) - 0.5) < 1e-9);
+    CHECK(fabs(mix_piece_level(&faded, 5) - 0.25) < 1e-9);
+    CHECK(fabs(mix_piece_source(&faded, 3.25) - 11.25) < 1e-9);
+
+    /* fades on a short piece: the lower of the two ramps, as the export's afade chain gives */
+    MixPiece both = {.voice = 0, .start = 0, .end = 1, .gain = 1, .fade_in = 0.6, .fade_out = 0.4};
+    CHECK(fabs(mix_piece_level(&both, 0.3) - 0.5) < 1e-9);
+    CHECK(fabs(mix_piece_level(&both, 0.8) - 0.5) < 1e-9);
+
+    /* a loop of the file's 2 to 2.5 s, starting 0.25 s into it */
+    MixPiece loop = {.voice = 0, .start = 0, .end = 3, .source_in = 2.25, .gain = 1, .loop_start = 2, .loop_span = 0.5};
+    CHECK(fabs(mix_piece_source(&loop, 0) - 2.25) < 1e-9);
+    CHECK(fabs(mix_piece_source(&loop, 0.3) - 2.05) < 1e-9);
+    CHECK(fabs(mix_piece_source(&loop, 1.0) - 2.25) < 1e-9);
+
+    MixPiece broken[] = {
+        {.voice = -1, .start = 0, .end = 1, .gain = 1},
+        {.voice = 0, .start = 1, .end = 1, .gain = 1},
+        {.voice = 0, .start = 0, .end = 1, .gain = NAN},
+        {.voice = 0, .start = 0, .end = 1, .gain = 1, .fade_in = -1},
+        {.voice = 0, .start = 0, .end = 1, .gain = 1, .loop_span = INFINITY},
+    };
+    for (size_t i = 0; i < sizeof(broken) / sizeof(broken[0]); i++) CHECK(!mix_piece_valid(&broken[i]));
+}
+
+static void mix_blocks(void) {
+    enum { FRAMES = MIX_RATE };
+    static float out[FRAMES * 2], scratch[FRAMES * 2];
+    /* a piece from 1.25 s to 1.75 s at half level and a full one under all of it */
+    MixPiece pieces[] = {
+        {.voice = 0, .start = 1.25, .end = 1.75, .source_in = 4, .gain = 0.5},
+        {.voice = 1, .start = 0, .end = 30, .source_in = 0, .gain = 1},
+    };
+    Mix mix = {pieces, 2};
+    CHECK(mix_render(&mix, 1.0, FRAMES, position_read, NULL, out, scratch));
+    /* before the first piece only the full one plays */
+    CHECK(fabs(out[0] - 1.0f) < 1e-4 && fabs(out[1] - 1.0f) < 1e-6);
+    /* inside both: the full one at its own second plus half of the other at file second 4 */
+    size_t at = (size_t)(0.5 * MIX_RATE);
+    CHECK(fabs(out[at * 2] - (1.5f + 0.5f * 4.25f)) < 1e-3);
+    CHECK(fabs(out[at * 2 + 1] - 1.5f) < 1e-6);
+    /* the piece ends exactly at its end */
+    size_t end = (size_t)(0.75 * MIX_RATE);
+    CHECK(fabs(out[(end - 1) * 2 + 1] - 1.5f) < 1e-6 && fabs(out[end * 2 + 1] - 1.0f) < 1e-6);
+
+    /* a loop reads the file again from the loop start at the wrap */
+    MixPiece loop = {.voice = 0, .start = 0, .end = 2, .source_in = 2, .gain = 1, .loop_start = 2, .loop_span = 0.5};
+    Mix looped = {&loop, 1};
+    CHECK(mix_render(&looped, 0, FRAMES, position_read, NULL, out, scratch));
+    size_t wrap = (size_t)(0.5 * MIX_RATE);
+    CHECK(fabs(out[(wrap - 1) * 2] - 2.5f) < 1e-3 && fabs(out[wrap * 2] - 2.0f) < 1e-4);
+
+    /* nothing in a gap, and a sound that can't be read stops the block */
+    MixPiece late = {.voice = 0, .start = 5, .end = 6, .gain = 1};
+    Mix gap = {&late, 1};
+    CHECK(mix_render(&gap, 0, FRAMES, position_read, NULL, out, scratch));
+    CHECK(out[FRAMES] == 0 && out[FRAMES * 2 - 1] == 0);
+    Mix unreadable = {pieces, 2};
+    int marker = 1;
+    CHECK(!mix_render(&unreadable, 0, FRAMES, position_read, &marker, out, scratch));
+}
+
 /* with sound, the clock follows what the listener has heard instead of the monotonic clock */
 static void sound_clock(void) {
     TuckPlayer *player = tuck_player_create(10, 100);
@@ -418,6 +497,8 @@ int tuck_player_test_failures(void) {
     audio_timing();
     engine();
     playback_rate();
+    mix_rules();
+    mix_blocks();
     sound_clock();
     sound_stall();
     lut_strength();

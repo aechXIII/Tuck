@@ -8,30 +8,29 @@
 #include <string.h>
 #include <time.h>
 
-#include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
-#include <libavutil/channel_layout.h>
-#include <libavutil/samplefmt.h>
-#include <libswresample/swresample.h>
 
 #include "audio_output.h"
+#include "audio_reader.h"
+#include "mix.h"
 #include "tempo.h"
 
-#define RATE 48000
-/* silence goes out in pieces this long, so a seek during a long gap is picked up quickly */
-#define SILENCE_FRAMES 1024
+#define RATE MIX_RATE
+/* the mix goes out in blocks this long, so a seek or a new mix is picked up quickly */
+#define BLOCK_FRAMES 1024
 /* a playing track with a full queue looks again this often; the device drains it in real time */
 #define FULL_WAIT_SECONDS 0.005
-/* broken packets in a row before the sound counts as undecodable */
-#define BAD_PACKET_LIMIT 64
+
+/* one sound of the mix: its file and stream, and the reader once the worker has opened it */
+typedef struct Voice {
+    char *path;
+    int stream;
+    AudioReader *reader;
+    /* opening it failed; it stays silent rather than stopping the whole mix */
+    int unreadable;
+} Voice;
 
 struct AudioTrack {
-    AVFormatContext *format;
-    AVCodecContext *codec;
-    int stream;
-    AVRational time_base;
-    /* the file's start time, which the picture's decoder takes off its frame times too */
-    double start;
     double duration;
     AudioOutput *output;
     pthread_t thread;
@@ -58,13 +57,14 @@ struct AudioTrack {
     int running;
     /* where on the timeline the next queued sample plays */
     double cursor;
-    int ended, finished;
-    int bad_packets;
-    SwrContext *resampler;
-    AVChannelLayout resampler_layout;
-    int resampler_rate, resampler_format;
-    float *samples;
-    int sample_capacity;
+    int finished;
+    MixPiece *pieces;
+    size_t piece_count;
+    Voice *voices;
+    size_t voice_count, unreadable_count;
+    float block[BLOCK_FRAMES * 2];
+    float scratch[BLOCK_FRAMES * 2];
+    char read_error[160];
 };
 
 static void fail(AudioTrack *t, const char *message) {
@@ -150,43 +150,11 @@ static int put(AudioTrack *t, const float *samples, size_t frames) {
     return drain_tempo(t);
 }
 
-/* silence up to `until` on the timeline, where the file has no sound */
-static int pad_to(AudioTrack *t, double until) {
-    static const float silence[SILENCE_FRAMES * 2];
-    long gap = lround((until - t->cursor) * RATE);
-    while (gap > 0) {
-        size_t frames = gap > SILENCE_FRAMES ? SILENCE_FRAMES : (size_t)gap;
-        if (!put(t, silence, frames)) return 0;
-        gap -= (long)frames;
-    }
-    return 1;
-}
-
 static void finish(AudioTrack *t) {
     t->finished = 1;
     /* what the tempo filter still holds is the end of the sound */
     if (t->tempo && (!tempo_feed(t->tempo, NULL, 0) || !drain_tempo(t))) return;
     audio_output_finish(t->output, t->generation);
-}
-
-static int restart(AudioTrack *t, double seconds) {
-    t->cursor = seconds;
-    t->ended = 0;
-    t->finished = 0;
-    t->bad_packets = 0;
-    /* the resampler holds samples from the old position */
-    swr_free(&t->resampler);
-    int64_t timestamp = llround((seconds + t->start) / av_q2d(t->time_base));
-    if (av_seek_frame(t->format, t->stream, timestamp, AVSEEK_FLAG_BACKWARD) < 0) {
-        int64_t position = llround((seconds + t->start) * AV_TIME_BASE);
-        if (avformat_seek_file(t->format, -1, INT64_MIN, position, position, 0) < 0) {
-            fail(t, "The sound could not seek to that position.");
-            return 0;
-        }
-    }
-    avcodec_flush_buffers(t->codec);
-    if (seconds >= t->duration) finish(t);
-    return 1;
 }
 
 /* takes up a new generation; 0 while there is none to play */
@@ -215,127 +183,54 @@ static int follow_generation(AudioTrack *t) {
         t->rate_generation = generation;
         t->generation_rate = rate;
         pthread_mutex_unlock(&t->lock);
-        if (!restart(t, seconds)) return 0;
+        t->cursor = seconds;
+        t->finished = 0;
+        if (seconds >= t->duration) finish(t);
     }
     follow_running(t);
     return 1;
 }
 
-static int resampler_matches(AudioTrack *t, const AVFrame *frame) {
-    return t->resampler && t->resampler_rate == frame->sample_rate && t->resampler_format == frame->format &&
-           !av_channel_layout_compare(&t->resampler_layout, &frame->ch_layout);
-}
-
-static int prepare_resampler(AudioTrack *t, const AVFrame *frame) {
-    if (resampler_matches(t, frame)) return 1;
-    swr_free(&t->resampler);
-    AVChannelLayout stereo = AV_CHANNEL_LAYOUT_STEREO;
-    if (swr_alloc_set_opts2(&t->resampler, &stereo, AV_SAMPLE_FMT_FLT, RATE, &frame->ch_layout, frame->format,
-                            frame->sample_rate, 0, NULL) < 0 ||
-        swr_init(t->resampler) < 0) {
-        swr_free(&t->resampler);
-        return 0;
-    }
-    av_channel_layout_uninit(&t->resampler_layout);
-    if (av_channel_layout_copy(&t->resampler_layout, &frame->ch_layout) < 0) {
-        swr_free(&t->resampler);
-        return 0;
-    }
-    t->resampler_rate = frame->sample_rate;
-    t->resampler_format = frame->format;
-    return 1;
-}
-
-/* queues the part of a decoded frame that lies between the cursor and the end */
-static int play_frame(AudioTrack *t, const AVFrame *frame) {
-    if (!prepare_resampler(t, frame)) {
-        fail(t, "The sound could not be converted for the speakers.");
-        return 0;
-    }
-    double pts = frame->best_effort_timestamp == AV_NOPTS_VALUE
-                     ? t->cursor
-                     : frame->best_effort_timestamp * av_q2d(t->time_base) - t->start;
-    /* the first sample out of the resampler is older than this frame by its delay */
-    double first = pts - (double)swr_get_delay(t->resampler, RATE) / RATE;
-    int capacity = swr_get_out_samples(t->resampler, frame->nb_samples);
-    if (capacity < 0) return 0;
-    if (capacity > t->sample_capacity) {
-        float *grown = realloc(t->samples, (size_t)capacity * 2 * sizeof(float));
-        if (!grown) {
-            fail(t, "Out of memory while playing sound.");
-            return 0;
+static int read_voice(void *opaque, int index, double seconds, float *samples, size_t frames) {
+    AudioTrack *t = opaque;
+    if (index < 0 || (size_t)index >= t->voice_count) return 1;
+    Voice *voice = &t->voices[index];
+    if (!voice->reader && !voice->unreadable) {
+        char error[160];
+        voice->reader = audio_reader_open(voice->path, voice->stream, interrupted, t, error, sizeof(error));
+        if (!voice->reader) {
+            voice->unreadable = 1;
+            /* one sound that can't be read stays silent; the mix only fails when none can */
+            if (++t->unreadable_count == t->voice_count) {
+                snprintf(t->read_error, sizeof(t->read_error), "%s", error);
+                return 0;
+            }
         }
-        t->samples = grown;
-        t->sample_capacity = capacity;
     }
-    uint8_t *out = (uint8_t *)t->samples;
-    int got = swr_convert(t->resampler, &out, capacity, (const uint8_t **)frame->extended_data, frame->nb_samples);
-    if (got < 0) {
-        fail(t, "The sound could not be converted for the speakers.");
+    if (!voice->reader) return 1;
+    return audio_reader_read(voice->reader, seconds, samples, frames, t->read_error, sizeof(t->read_error));
+}
+
+/* one block of the mix from the cursor; 0 when there is nothing to do until the clock asks */
+static int mix_step(AudioTrack *t) {
+    double left = (t->duration - t->cursor) * RATE;
+    size_t frames = left >= BLOCK_FRAMES ? BLOCK_FRAMES : (size_t)fmax(0, ceil(left - 1e-6));
+    if (!frames) {
+        finish(t);
+        return 1;
+    }
+    Mix mix = {t->pieces, t->piece_count};
+    if (!mix_render(&mix, t->cursor, frames, read_voice, t, t->block, t->scratch)) {
+        if (!atomic_load(&t->closing)) fail(t, t->read_error);
         return 0;
     }
-    /* samples before the cursor are before the seek target or already queued; after the end,
-       nothing plays */
-    long skip = (long)fmax(0, ceil((t->cursor - first) * RATE - 0.001));
-    long keep = (long)fmin(got, fmax(0, floor((t->duration - first) * RATE + 0.001)));
-    if (skip >= keep) return 1;
-    if (first > t->cursor + 1.0 / RATE && !pad_to(t, first)) return 0;
-    if (!put(t, t->samples + skip * 2, (size_t)(keep - skip))) return 0;
+    if (!put(t, t->block, frames)) return superseded(t);
     if (t->cursor >= t->duration - 1.0 / RATE) finish(t);
     return 1;
 }
 
-/* one step of decoding; 0 when there is nothing to do until the clock asks for something new */
-static int decode_step(AudioTrack *t, AVPacket *packet, AVFrame *frame) {
-    int result = avcodec_receive_frame(t->codec, frame);
-    if (result == AVERROR(EAGAIN)) {
-        for (;;) {
-            result = av_read_frame(t->format, packet);
-            if (result == AVERROR_EOF) {
-                avcodec_send_packet(t->codec, NULL);
-                t->ended = 1;
-                return 1;
-            }
-            if (result < 0) {
-                if (!atomic_load(&t->closing)) fail(t, "The sound could not be read.");
-                return 0;
-            }
-            if (packet->stream_index != t->stream) {
-                av_packet_unref(packet);
-                continue;
-            }
-            result = avcodec_send_packet(t->codec, packet);
-            av_packet_unref(packet);
-            if (result < 0 && result != AVERROR(EAGAIN)) {
-                if (result != AVERROR_INVALIDDATA || ++t->bad_packets >= BAD_PACKET_LIMIT) {
-                    fail(t, "The sound could not be decoded.");
-                    return 0;
-                }
-            } else {
-                t->bad_packets = 0;
-            }
-            return 1;
-        }
-    }
-    if (result == AVERROR_EOF) {
-        /* the sound ended before the video: silence keeps the clock going to the end */
-        if (pad_to(t, t->duration)) finish(t);
-        return 1;
-    }
-    if (result < 0) {
-        fail(t, "The sound could not be decoded.");
-        return 0;
-    }
-    int played = play_frame(t, frame);
-    av_frame_unref(frame);
-    return played || superseded(t);
-}
-
 static void *worker(void *opaque) {
     AudioTrack *t = opaque;
-    AVPacket *packet = av_packet_alloc();
-    AVFrame *frame = av_frame_alloc();
-    if (!packet || !frame) fail(t, "Out of memory while playing sound.");
     while (!atomic_load(&t->closing)) {
         pthread_mutex_lock(&t->lock);
         int failed = t->failed;
@@ -344,15 +239,27 @@ static void *worker(void *opaque) {
             wait_for_change(t, 0);
             continue;
         }
-        if (!decode_step(t, packet, frame) && !superseded(t)) wait_for_change(t, 0);
+        if (!mix_step(t) && !superseded(t)) wait_for_change(t, 0);
     }
-    av_frame_free(&frame);
-    av_packet_free(&packet);
     return NULL;
+}
+
+/* how many sound streams the file has; 0 when it has none or can't be read */
+static int sound_streams(const char *path) {
+    AVFormatContext *format = NULL;
+    if (avformat_open_input(&format, path, NULL, NULL) < 0) return 0;
+    int count = 0;
+    if (avformat_find_stream_info(format, NULL) >= 0)
+        for (unsigned i = 0; i < format->nb_streams; i++)
+            count += format->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO;
+    avformat_close_input(&format);
+    return count;
 }
 
 AudioTrack *audio_track_open(const char *path, double duration_seconds, char *error, size_t error_size) {
     error[0] = 0;
+    /* no sound at all is not an error: the video plays on the system clock */
+    if (!sound_streams(path)) return NULL;
     AudioTrack *t = calloc(1, sizeof(*t));
     if (!t) {
         snprintf(error, error_size, "Out of memory while opening the sound.");
@@ -361,35 +268,16 @@ AudioTrack *audio_track_open(const char *path, double duration_seconds, char *er
     pthread_mutex_init(&t->lock, NULL);
     pthread_cond_init(&t->changed, NULL);
     t->duration = duration_seconds;
-    t->format = avformat_alloc_context();
-    if (!t->format) {
+    /* until the page sends a mix, the video's first sound stream plays whole, at full level */
+    t->voices = calloc(1, sizeof(*t->voices));
+    t->pieces = calloc(1, sizeof(*t->pieces));
+    if (!t->voices || !t->pieces || !(t->voices[0].path = strdup(path))) {
         snprintf(error, error_size, "Out of memory while opening the sound.");
         goto failed;
     }
-    t->format->interrupt_callback = (AVIOInterruptCB){interrupted, t};
-    if (avformat_open_input(&t->format, path, NULL, NULL) < 0 || avformat_find_stream_info(t->format, NULL) < 0) {
-        snprintf(error, error_size, "The sound could not be read.");
-        goto failed;
-    }
-    t->stream = av_find_best_stream(t->format, AVMEDIA_TYPE_AUDIO, -1, -1, NULL, 0);
-    /* no sound at all is not an error: the video plays on the system clock */
-    if (t->stream < 0) goto failed;
-    for (unsigned i = 0; i < t->format->nb_streams; i++)
-        if ((int)i != t->stream) t->format->streams[i]->discard = AVDISCARD_ALL;
-    AVStream *stream = t->format->streams[t->stream];
-    t->time_base = stream->time_base;
-    t->start = t->format->start_time == AV_NOPTS_VALUE ? 0 : (double)t->format->start_time / AV_TIME_BASE;
-    const AVCodec *codec = avcodec_find_decoder(stream->codecpar->codec_id);
-    if (!codec) {
-        snprintf(error, error_size, "This kind of sound can't be played.");
-        goto failed;
-    }
-    t->codec = avcodec_alloc_context3(codec);
-    if (!t->codec || avcodec_parameters_to_context(t->codec, stream->codecpar) < 0 ||
-        avcodec_open2(t->codec, codec, NULL) < 0) {
-        snprintf(error, error_size, "The sound decoder could not start.");
-        goto failed;
-    }
+    t->voice_count = 1;
+    t->pieces[0] = (MixPiece){.voice = 0, .start = 0, .end = duration_seconds, .source_in = 0, .gain = 1};
+    t->piece_count = 1;
     t->output = audio_output_open(error, error_size);
     if (!t->output) goto failed;
     if (pthread_create(&t->thread, NULL, worker, t) != 0) {
@@ -412,11 +300,12 @@ void audio_track_close(AudioTrack *t) {
     if (t->thread_started) pthread_join(t->thread, NULL);
     audio_output_close(t->output);
     tempo_close(t->tempo);
-    swr_free(&t->resampler);
-    av_channel_layout_uninit(&t->resampler_layout);
-    free(t->samples);
-    avcodec_free_context(&t->codec);
-    avformat_close_input(&t->format);
+    for (size_t i = 0; i < t->voice_count; i++) {
+        audio_reader_close(t->voices[i].reader);
+        free(t->voices[i].path);
+    }
+    free(t->voices);
+    free(t->pieces);
     pthread_cond_destroy(&t->changed);
     pthread_mutex_destroy(&t->lock);
     free(t);

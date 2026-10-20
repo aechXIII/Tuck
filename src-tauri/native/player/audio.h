@@ -1,7 +1,7 @@
-/* The video's sound: its own demuxer and decoder on a worker thread (never waiting on anything
-   the picture uses), resampled to 48 kHz stereo and fed to the sound device. The playback clock
-   says which generation to play from where and whether it should be heard; the track follows
-   without ever blocking the caller. */
+/* The video's sound: the preview mix (mix.h) of its own streams and any added files, each read on
+   the mix's worker thread (never waiting on anything the picture uses), summed at 48 kHz stereo
+   and fed to the sound device. The playback clock says which generation to play from where and
+   whether it should be heard; the track follows without ever blocking the caller. */
 #ifndef TUCK_AUDIO_H
 #define TUCK_AUDIO_H
 

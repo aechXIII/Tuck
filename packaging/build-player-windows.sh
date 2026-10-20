@@ -17,7 +17,7 @@ export PKG_CONFIG_PATH=
   -I"$sdk/include" $(pkg-config --cflags libavformat libavcodec libavfilter libavutil libswresample libplacebo) \
   "$source_dir/engine.c" "$source_dir/playback_state.c" "$source_dir/decoder.c" \
   "$source_dir/render_d3d11.c" "$source_dir/video.c" "$source_dir/audio.c" \
-  "$source_dir/audio_wasapi.c" "$source_dir/lut.c" "$source_dir/tempo.c" \
+  "$source_dir/audio_wasapi.c" "$source_dir/lut.c" "$source_dir/tempo.c" "$source_dir/mix.c" "$source_dir/audio_reader.c" \
   -o "$output_dir/tuck_player.dll" \
   -Wl,--no-undefined -static -static-libgcc -static-libstdc++ \
   $(pkg-config --static --libs libavformat libavcodec libavfilter libavutil libswresample libplacebo) \

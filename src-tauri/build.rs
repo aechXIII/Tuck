@@ -5,7 +5,11 @@ fn main() {
     cc::Build::new()
         .std("c11")
         .warnings(true)
-        .files(["native/player/playback_state.c", "native/player/engine.c"])
+        .files([
+            "native/player/playback_state.c",
+            "native/player/engine.c",
+            "native/player/mix.c",
+        ])
         .compile("tuck_player");
     cc::Build::new()
         .std("c11")
