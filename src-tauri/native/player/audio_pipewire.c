@@ -253,8 +253,11 @@ AudioOutput *audio_output_open(char *error, size_t error_size) {
     pw.loop_lock(o->loop);
     o->stream = pw.stream_new_simple(
         pw.loop_get_loop(o->loop), "Tuck",
+        /* WirePlumber remembers a stream's volume by application; its own id keeps the webview's
+           stream, which the page mutes by setting its volume to 0, from silencing this one */
         pw.properties_new(PW_KEY_MEDIA_TYPE, "Audio", PW_KEY_MEDIA_CATEGORY, "Playback", PW_KEY_MEDIA_ROLE, "Movie",
-                          PW_KEY_APP_NAME, "Tuck", PW_KEY_NODE_LATENCY, "512/48000", NULL),
+                          PW_KEY_APP_NAME, "Tuck", PW_KEY_APP_ID, "com.tuck.app.player", PW_KEY_NODE_LATENCY,
+                          "512/48000", NULL),
         &stream_events, o);
     if (o->stream) {
         uint8_t pod[1024];
