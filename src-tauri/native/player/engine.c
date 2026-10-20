@@ -122,6 +122,26 @@ int tuck_player_set_rate(TuckPlayer *player, double rate, double now) {
     return 1;
 }
 
+int tuck_player_set_duration(TuckPlayer *player, double duration, double now) {
+    if (!isfinite(duration) || duration <= 0) return 0;
+    advance(player, now);
+    player->duration = duration;
+    if (clock_source(&player->clock) >= duration) {
+        restart_at(player, duration);
+        player->ended = 1;
+        player->playing = 0;
+        player->clock.frozen = duration;
+    }
+    note_running(player, now);
+    return 1;
+}
+
+void tuck_player_restart(TuckPlayer *player, double now) {
+    advance(player, now);
+    if (!player->ended) restart_at(player, clock_source(&player->clock));
+    note_running(player, now);
+}
+
 void tuck_player_frame_presented(TuckPlayer *player, uint64_t generation, double now) {
     advance(player, now);
     if (!preview_complete(&player->preview, RENDER_SUBMITTED, generation)) return;

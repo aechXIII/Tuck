@@ -8,6 +8,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "mix.h"
+
 typedef struct AudioTrack AudioTrack;
 
 typedef struct AudioTrackStatus {
@@ -23,7 +25,15 @@ typedef struct AudioTrackStatus {
 /* NULL when there is nothing to hear: with an empty `error` the file has no sound, otherwise
    the reason its sound can't play */
 AudioTrack *audio_track_open(const char *path, double duration_seconds, char *error, size_t error_size);
+/* a track with nothing to mix yet, for a video without sound that is given some */
+AudioTrack *audio_track_new(double duration_seconds, char *error, size_t error_size);
 void audio_track_close(AudioTrack *track);
+/* the timeline is this long from now on, as edits change it */
+void audio_track_set_duration(AudioTrack *track, double duration_seconds);
+/* Plays this mix from the next block on. `paths` and `streams` name each voice the pieces refer
+   to; the track keeps its own copies. 0 when out of memory. */
+int audio_track_set_mix(AudioTrack *track, const char *const *paths, const int *streams, size_t voice_count,
+                        const MixPiece *pieces, size_t piece_count);
 /* play `generation` from `seconds` on the timeline at `rate` timeline seconds per second, heard
    while `running`; `seconds` and `rate` only matter when the generation is new */
 void audio_track_want(AudioTrack *track, uint64_t generation, double seconds, double rate, int running);

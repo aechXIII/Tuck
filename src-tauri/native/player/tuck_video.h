@@ -89,6 +89,47 @@ TUCK_VIDEO_EXPORT int tuck_video_seek(TuckVideo *video, uint64_t request_id, dou
 /* Plays `rate` timeline seconds per second, with the sound's pitch kept; a new speed restarts
    sound and picture at the same spot. 0 when the speed is outside 0.25 to 4. */
 TUCK_VIDEO_EXPORT int tuck_video_rate(TuckVideo *video, double rate);
+
+/* a stretch of the timeline that shows the file's footage from `source_start` */
+typedef struct TuckEditSegment {
+    double start;
+    double end;
+    double source_start;
+} TuckEditSegment;
+
+/* The timeline: `duration` seconds long, showing each segment's footage and black between them;
+   no segments shows the file as it is. Segments go in order without overlapping. 0 when they
+   don't, or there are more than 65536. */
+TUCK_VIDEO_EXPORT int tuck_video_edits(TuckVideo *video, const TuckEditSegment *segments, int32_t count,
+                                       double duration);
+
+/* one sound of the preview mix: a file and which of its sound streams, counted from 0 */
+typedef struct TuckMixVoice {
+    /* UTF-8 */
+    const char *path;
+    int32_t stream;
+} TuckMixVoice;
+
+/* a stretch of one voice on the timeline: file second `source_in` plays at `start`, at linear
+   `gain` under linear fades; with `loop_span` the file's [loop_start, loop_start + loop_span)
+   repeats */
+typedef struct TuckMixPiece {
+    int32_t voice;
+    double start;
+    double end;
+    double source_in;
+    double gain;
+    double fade_in;
+    double fade_out;
+    double loop_start;
+    double loop_span;
+} TuckMixPiece;
+
+/* Plays this mix instead of the video's own sound from the next moment on; a video without sound
+   starts its clock on the mix. The library keeps its own copies. 0 when a voice or piece is
+   unusable or there are more than 256 voices or 65536 pieces. */
+TUCK_VIDEO_EXPORT int tuck_video_mix(TuckVideo *video, const TuckMixVoice *voices, int32_t voice_count,
+                                     const TuckMixPiece *pieces, int32_t piece_count);
 /* the sound's level, 0 to 1 */
 TUCK_VIDEO_EXPORT void tuck_video_volume(TuckVideo *video, double gain);
 /* The preview's colour LUT: `size`³ RGB samples from 0 to 1 with R changing fastest, as the

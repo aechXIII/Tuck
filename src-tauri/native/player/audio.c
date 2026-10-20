@@ -49,6 +49,13 @@ struct AudioTrack {
     double generation_rate;
     int failed;
     char error[160];
+    /* under lock: a mix the worker hasn't taken up yet */
+    double next_duration;
+    MixPiece *next_pieces;
+    size_t next_piece_count;
+    Voice *next_voices;
+    size_t next_voice_count;
+    int mix_waiting;
 
     /* the worker's own */
     uint64_t generation;
@@ -211,8 +218,54 @@ static int read_voice(void *opaque, int index, double seconds, float *samples, s
     return audio_reader_read(voice->reader, seconds, samples, frames, t->read_error, sizeof(t->read_error));
 }
 
+static void free_voices(Voice *voices, size_t count) {
+    for (size_t i = 0; i < count; i++) {
+        audio_reader_close(voices[i].reader);
+        free(voices[i].path);
+    }
+    free(voices);
+}
+
+/* a new mix replaces the old one between blocks; a sound in both keeps its open reader */
+static void take_mix(AudioTrack *t) {
+    pthread_mutex_lock(&t->lock);
+    if (t->next_duration > 0) {
+        t->duration = t->next_duration;
+        t->next_duration = 0;
+    }
+    if (!t->mix_waiting) {
+        pthread_mutex_unlock(&t->lock);
+        return;
+    }
+    MixPiece *pieces = t->next_pieces;
+    size_t piece_count = t->next_piece_count;
+    Voice *voices = t->next_voices;
+    size_t voice_count = t->next_voice_count;
+    t->next_pieces = NULL;
+    t->next_voices = NULL;
+    t->mix_waiting = 0;
+    pthread_mutex_unlock(&t->lock);
+    for (size_t i = 0; i < voice_count; i++)
+        for (size_t j = 0; j < t->voice_count; j++) {
+            Voice *old = &t->voices[j];
+            if (old->reader && old->stream == voices[i].stream && !strcmp(old->path, voices[i].path)) {
+                voices[i].reader = old->reader;
+                old->reader = NULL;
+                break;
+            }
+        }
+    free_voices(t->voices, t->voice_count);
+    free(t->pieces);
+    t->voices = voices;
+    t->voice_count = voice_count;
+    t->unreadable_count = 0;
+    t->pieces = pieces;
+    t->piece_count = piece_count;
+}
+
 /* one block of the mix from the cursor; 0 when there is nothing to do until the clock asks */
 static int mix_step(AudioTrack *t) {
+    take_mix(t);
     double left = (t->duration - t->cursor) * RATE;
     size_t frames = left >= BLOCK_FRAMES ? BLOCK_FRAMES : (size_t)fmax(0, ceil(left - 1e-6));
     if (!frames) {
@@ -244,6 +297,44 @@ static void *worker(void *opaque) {
     return NULL;
 }
 
+void audio_track_set_duration(AudioTrack *t, double duration_seconds) {
+    pthread_mutex_lock(&t->lock);
+    t->next_duration = duration_seconds;
+    pthread_cond_broadcast(&t->changed);
+    pthread_mutex_unlock(&t->lock);
+}
+
+int audio_track_set_mix(AudioTrack *t, const char *const *paths, const int *streams, size_t voice_count,
+                        const MixPiece *pieces, size_t piece_count) {
+    Voice *voices = voice_count ? calloc(voice_count, sizeof(*voices)) : NULL;
+    MixPiece *copied = piece_count ? malloc(piece_count * sizeof(*copied)) : NULL;
+    if ((voice_count && !voices) || (piece_count && !copied)) {
+        free(voices);
+        free(copied);
+        return 0;
+    }
+    for (size_t i = 0; i < voice_count; i++) {
+        voices[i].stream = streams[i];
+        if (!(voices[i].path = strdup(paths[i]))) {
+            free_voices(voices, i);
+            free(copied);
+            return 0;
+        }
+    }
+    if (piece_count) memcpy(copied, pieces, piece_count * sizeof(*copied));
+    pthread_mutex_lock(&t->lock);
+    free_voices(t->next_voices, t->next_voice_count);
+    free(t->next_pieces);
+    t->next_voices = voices;
+    t->next_voice_count = voice_count;
+    t->next_pieces = copied;
+    t->next_piece_count = piece_count;
+    t->mix_waiting = 1;
+    pthread_cond_broadcast(&t->changed);
+    pthread_mutex_unlock(&t->lock);
+    return 1;
+}
+
 /* how many sound streams the file has; 0 when it has none or can't be read */
 static int sound_streams(const char *path) {
     AVFormatContext *format = NULL;
@@ -260,6 +351,21 @@ AudioTrack *audio_track_open(const char *path, double duration_seconds, char *er
     error[0] = 0;
     /* no sound at all is not an error: the video plays on the system clock */
     if (!sound_streams(path)) return NULL;
+    AudioTrack *t = audio_track_new(duration_seconds, error, error_size);
+    if (!t) return NULL;
+    /* until the page sends a mix, the video's first sound stream plays whole, at full level */
+    const int stream = 0;
+    MixPiece whole = {.voice = 0, .start = 0, .end = duration_seconds, .source_in = 0, .gain = 1};
+    if (!audio_track_set_mix(t, &path, &stream, 1, &whole, 1)) {
+        snprintf(error, error_size, "Out of memory while opening the sound.");
+        audio_track_close(t);
+        return NULL;
+    }
+    return t;
+}
+
+AudioTrack *audio_track_new(double duration_seconds, char *error, size_t error_size) {
+    error[0] = 0;
     AudioTrack *t = calloc(1, sizeof(*t));
     if (!t) {
         snprintf(error, error_size, "Out of memory while opening the sound.");
@@ -268,16 +374,6 @@ AudioTrack *audio_track_open(const char *path, double duration_seconds, char *er
     pthread_mutex_init(&t->lock, NULL);
     pthread_cond_init(&t->changed, NULL);
     t->duration = duration_seconds;
-    /* until the page sends a mix, the video's first sound stream plays whole, at full level */
-    t->voices = calloc(1, sizeof(*t->voices));
-    t->pieces = calloc(1, sizeof(*t->pieces));
-    if (!t->voices || !t->pieces || !(t->voices[0].path = strdup(path))) {
-        snprintf(error, error_size, "Out of memory while opening the sound.");
-        goto failed;
-    }
-    t->voice_count = 1;
-    t->pieces[0] = (MixPiece){.voice = 0, .start = 0, .end = duration_seconds, .source_in = 0, .gain = 1};
-    t->piece_count = 1;
     t->output = audio_output_open(error, error_size);
     if (!t->output) goto failed;
     if (pthread_create(&t->thread, NULL, worker, t) != 0) {
@@ -300,12 +396,10 @@ void audio_track_close(AudioTrack *t) {
     if (t->thread_started) pthread_join(t->thread, NULL);
     audio_output_close(t->output);
     tempo_close(t->tempo);
-    for (size_t i = 0; i < t->voice_count; i++) {
-        audio_reader_close(t->voices[i].reader);
-        free(t->voices[i].path);
-    }
-    free(t->voices);
+    free_voices(t->voices, t->voice_count);
     free(t->pieces);
+    free_voices(t->next_voices, t->next_voice_count);
+    free(t->next_pieces);
     pthread_cond_destroy(&t->changed);
     pthread_mutex_destroy(&t->lock);
     free(t);

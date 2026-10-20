@@ -334,6 +334,40 @@ done:
     return presented == S_OK ? RENDER_SUBMITTED : RENDER_DEFERRED;
 }
 
+RenderOutcome renderer_clear(Renderer *r) {
+    int width, height;
+    client_size(r->window, &width, &height);
+    if (width < 1 || height < 1) return RENDER_DEFERRED;
+    RenderOutcome outcome = RENDER_FAILED;
+    EnterCriticalSection(&r->gpu);
+    if (width != r->width || height != r->height) {
+        if (!pl_swapchain_resize(r->swapchain, &width, &height)) {
+            snprintf(r->error, sizeof(r->error), "The preview could not change size.");
+            goto done;
+        }
+        r->width = width;
+        r->height = height;
+    }
+    struct pl_swapchain_frame swap;
+    if (!pl_swapchain_start_frame(r->swapchain, &swap)) {
+        outcome = RENDER_DEFERRED;
+        goto done;
+    }
+    pl_tex_clear(r->d3d11->gpu, swap.fbo, (float[4]){0, 0, 0, 1});
+    if (pl_swapchain_submit_frame(r->swapchain)) outcome = RENDER_SUBMITTED;
+    else snprintf(r->error, sizeof(r->error), "The preview could not draw the picture.");
+done:
+    LeaveCriticalSection(&r->gpu);
+    if (outcome != RENDER_SUBMITTED) return outcome;
+    HRESULT presented = IDXGISwapChain_Present(r->dxgi, 0, 0);
+    if (FAILED(presented)) {
+        snprintf(r->error, sizeof(r->error), "The graphics card stopped drawing the preview (0x%08lx).",
+                 (unsigned long)presented);
+        return RENDER_FAILED;
+    }
+    return presented == S_OK ? RENDER_SUBMITTED : RENDER_DEFERRED;
+}
+
 int renderer_resized(Renderer *r) {
     int width, height;
     client_size(r->window, &width, &height);

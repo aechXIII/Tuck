@@ -4,6 +4,7 @@
 #include <stdio.h>
 
 #include "../audio_timing.h"
+#include "../edits.h"
 #include "../engine.h"
 #include "../framebuffer_cache.h"
 #include "../lut_blend.h"
@@ -369,6 +370,73 @@ static void mix_blocks(void) {
     CHECK(!mix_render(&unreadable, 0, FRAMES, position_read, &marker, out, scratch));
 }
 
+/* moved footage: segments show the file from their own place, black between them */
+static void timeline_edits(void) {
+    EditSegment segments[] = {{0, 5, 5}, {7, 15, 12}};
+    CHECK(edits_valid(segments, 2, 15));
+    CHECK(edits_valid(NULL, 0, 15));
+    CHECK(!edits_valid(segments, 2, 14));
+    CHECK(!edits_valid(segments, 2, 0));
+    EditSegment overlapping[] = {{0, 5, 0}, {4, 8, 0}};
+    CHECK(!edits_valid(overlapping, 2, 10));
+    EditSegment backwards[] = {{3, 2, 0}};
+    CHECK(!edits_valid(backwards, 1, 10));
+    EditSegment before_file[] = {{0, 2, -1}};
+    CHECK(!edits_valid(before_file, 1, 10));
+
+    CHECK(edits_segment_at(segments, 2, 0) == 0);
+    CHECK(edits_segment_at(segments, 2, 4.999) == 0);
+    CHECK(edits_segment_at(segments, 2, 5) == EDITS_GAP);
+    CHECK(edits_segment_at(segments, 2, 7) == 1);
+    CHECK(edits_segment_at(segments, 2, 15) == EDITS_GAP);
+    CHECK(edits_segment_at(NULL, 0, 3) == EDITS_WHOLE_FILE);
+    CHECK(close_to(edits_source(segments, 0, 2), 7));
+    CHECK(close_to(edits_source(segments, 1, 9.5), 14.5));
+    CHECK(close_to(edits_source(NULL, EDITS_WHOLE_FILE, 3.25), 3.25));
+}
+
+/* edits make the timeline longer or shorter while it plays */
+static void timeline_length(void) {
+    TuckPlayer *player = tuck_player_create(10, 100);
+    CHECK(player != NULL);
+    if (!player) return;
+    tuck_player_frame_presented(player, 1, 100);
+    tuck_player_play(player, 100);
+    CHECK(!tuck_player_set_duration(player, 0, 101));
+    CHECK(!tuck_player_set_duration(player, NAN, 101));
+    CHECK(tuck_player_set_duration(player, 20, 104));
+    TuckPlayerStatus s = status_at(player, 112);
+    CHECK(!s.ended && s.duration_seconds == 20 && close_to(s.position_seconds, 12));
+    /* shorter than where it is: it stops at the new end */
+    CHECK(tuck_player_set_duration(player, 8, 112));
+    s = status_at(player, 113);
+    CHECK(s.ended && s.paused && s.position_seconds == 8 && s.duration_seconds == 8);
+    tuck_player_destroy(player);
+}
+
+/* sound added while playing: the same spot starts again so sound and clock begin together */
+static void restart_in_place(void) {
+    TuckPlayer *player = tuck_player_create(10, 100);
+    CHECK(player != NULL);
+    if (!player) return;
+    tuck_player_frame_presented(player, 1, 100);
+    tuck_player_play(player, 100);
+    tuck_player_restart(player, 102);
+    TuckPlayerStatus s = status_at(player, 102.5);
+    CHECK(s.generation == 2 && s.seek_pending && !s.paused && close_to(s.position_seconds, 2));
+    tuck_player_follow_sound(player, 1, 102.5);
+    tuck_player_frame_presented(player, 2, 102.5);
+    tuck_player_sound_played(player, 2, 0.5, 103);
+    CHECK(close_to(status_at(player, 103).position_seconds, 2.5));
+    /* the end stays the end */
+    tuck_player_sound_played(player, 2, 9, 104);
+    CHECK(status_at(player, 104).ended);
+    tuck_player_restart(player, 105);
+    s = status_at(player, 105);
+    CHECK(s.ended && s.generation == 2);
+    tuck_player_destroy(player);
+}
+
 /* with sound, the clock follows what the listener has heard instead of the monotonic clock */
 static void sound_clock(void) {
     TuckPlayer *player = tuck_player_create(10, 100);
@@ -497,6 +565,9 @@ int tuck_player_test_failures(void) {
     audio_timing();
     engine();
     playback_rate();
+    restart_in_place();
+    timeline_length();
+    timeline_edits();
     mix_rules();
     mix_blocks();
     sound_clock();

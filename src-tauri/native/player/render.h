@@ -30,6 +30,8 @@ AVFrame *renderer_keep(Renderer *renderer, const AVFrame *frame);
 /* RENDER_SUBMITTED only when the frame was presented; a seek is confirmed by nothing less */
 /* `lut` is the preview's colour LUT, or NULL */
 RenderOutcome renderer_draw(Renderer *renderer, const DecodedFrame *frame, const struct pl_custom_lut *lut);
+/* black across the preview, for a timeline gap; RENDER_SUBMITTED only when presented */
+RenderOutcome renderer_clear(Renderer *renderer);
 /* the preview changed size since the last draw */
 int renderer_resized(Renderer *renderer);
 /* seconds between display refreshes, so the decoder queues no more frames than can be shown */

@@ -38,6 +38,13 @@ int tuck_player_seek(TuckPlayer *player, uint64_t request_id, double seconds, do
    current position, held until its first frame is shown, so sound and picture restart together
    at that rate. 0 when the rate is outside TUCK_PLAYER_RATE_MIN to TUCK_PLAYER_RATE_MAX. */
 int tuck_player_set_rate(TuckPlayer *player, double rate, double now);
+/* The timeline is `duration` seconds long from now on, as edits change it; a position past the new
+   end moves to the end, which counts as played to the end. 0 unless positive and finite. */
+int tuck_player_set_duration(TuckPlayer *player, double duration, double now);
+/* Starts a new generation at the current position, as a new rate does, so sound and picture
+   start together again; used when sound is added to a video that played without it. Nothing
+   changes at the end. */
+void tuck_player_restart(TuckPlayer *player, double now);
 /* the frame for `generation` is on screen; only the current generation confirms a seek */
 void tuck_player_frame_presented(TuckPlayer *player, uint64_t generation, double now);
 /* From now on the clock follows the sound device instead of monotonic time, or goes back to

@@ -20,6 +20,7 @@
 
 #include "audio.h"
 #include "decoder.h"
+#include "edits.h"
 #include "lut.h"
 #include "playback_state.h"
 #include "render.h"
@@ -40,6 +41,7 @@ struct TuckVideo {
     pthread_cond_t wake;
     TuckPlayer *clock;
     Decoder *decoder;
+    double duration;
     /* seconds between display refreshes, and the speed the decoder's frame spacing is set for */
     double interval;
     double decoder_rate;
@@ -60,7 +62,16 @@ struct TuckVideo {
     /* under lock */
     /* the LUT changed, so the frame on screen should be drawn again */
     int lut_changed;
-    uint64_t decoder_generation;
+    /* the timeline's footage; no segments is the file as it is */
+    EditSegment *edits;
+    size_t edit_count;
+    /* what the decoder was last asked for: its own request number, the clock generation it serves
+       and the segment it shows (EDITS_GAP is black); crossing into another segment while playing
+       asks the decoder again without holding the clock, a seek holds it until its frame shows */
+    uint64_t picture_request;
+    uint64_t picture_clock;
+    int picture_segment;
+    int picture_stale;
     uint64_t presented;
     int failed;
     char error[192];
@@ -96,21 +107,30 @@ static void wake_render(void *opaque) {
     pthread_mutex_unlock(&v->lock);
 }
 
-/* under lock: every new clock generation (open, seek, start over) asks the decoder for it, and
-   the sound is heard only while the clock runs */
+/* under lock: every new clock generation (open, seek, start over) and every move into another
+   segment asks the decoder for the footage under the clock, and the sound is heard only while the
+   clock runs */
 static void follow_clock(TuckVideo *v, const TuckPlayerStatus *status) {
-    if (status->generation != v->decoder_generation) {
-        v->decoder_generation = status->generation;
-        /* faster playback shows frames further apart on the timeline. Slower playback keeps the
-           normal spacing: a closer one would let the queue hold more decoder surfaces than the
-           GPU pool was made with, and a video up to the display's frame rate still shows every
-           frame */
-        double rate = fmax(status->rate, 1);
-        if (rate != v->decoder_rate) {
-            v->decoder_rate = rate;
-            decoder_set_cadence(v->decoder, v->interval * rate);
+    int segment = edits_segment_at(v->edits, v->edit_count, status->position_seconds);
+    /* playing to the end keeps the last picture, as the HTML player does */
+    if (segment == EDITS_GAP && status->ended && v->picture_clock == status->generation) segment = v->picture_segment;
+    if (status->generation != v->picture_clock || segment != v->picture_segment || v->picture_stale) {
+        v->picture_clock = status->generation;
+        v->picture_segment = segment;
+        v->picture_stale = 0;
+        if (segment != EDITS_GAP) {
+            /* faster playback shows frames further apart on the timeline. Slower playback keeps the
+               normal spacing: a closer one would let the queue hold more decoder surfaces than the
+               GPU pool was made with, and a video up to the display's frame rate still shows every
+               frame */
+            double rate = fmax(status->rate, 1);
+            if (rate != v->decoder_rate) {
+                v->decoder_rate = rate;
+                decoder_set_cadence(v->decoder, v->interval * rate);
+            }
+            v->picture_request++;
+            decoder_seek(v->decoder, edits_source(v->edits, segment, status->position_seconds), v->picture_request);
         }
-        decoder_seek(v->decoder, status->position_seconds, status->generation);
     }
     if (v->sound != TUCK_SOUND_PLAYING) return;
     int running = !status->paused && !status->seek_pending && !status->ended;
@@ -163,23 +183,58 @@ static int clock_now(TuckVideo *v, TuckPlayerStatus *status) {
     return !failed;
 }
 
-/* swaps in the frame for the clock's time when the decoder has it; 1 when the frame changed */
+/* what the picture should show for the clock's time */
+typedef struct Picture {
+    int segment;
+    uint64_t request;
+    uint64_t clock;
+    double source;
+} Picture;
+
+static Picture picture_now(TuckVideo *v, const TuckPlayerStatus *status) {
+    pthread_mutex_lock(&v->lock);
+    Picture p = {v->picture_segment, v->picture_request, v->picture_clock,
+                 edits_source(v->edits, v->picture_segment, status->position_seconds)};
+    pthread_mutex_unlock(&v->lock);
+    return p;
+}
+
+/* swaps in the frame for the clock's time when the decoder has it, or nothing in a gap; 1 when
+   the picture should be drawn again */
 static int take_frame(TuckVideo *v, const TuckPlayerStatus *status) {
+    Picture p = picture_now(v, status);
+    if (p.segment == EDITS_GAP) {
+        /* a seek into a gap is shown as soon as the black is */
+        if (!v->shown.frame) return status->seek_pending;
+        decoded_frame_clear(&v->shown);
+        return 1;
+    }
     DecodedFrame next = {0};
-    if (!decoder_take(v->decoder, status->position_seconds + FRAME_SLACK, status->generation, status->seek_pending,
-                      &next))
-        return 0;
+    /* a seek waits for its own first frame; crossing into a segment shows the last frame until the
+       new footage arrives */
+    int first = status->seek_pending && p.clock == status->generation;
+    if (!decoder_take(v->decoder, p.source + FRAME_SLACK, p.request, first, &next)) return 0;
     decoded_frame_clear(&v->shown);
     v->shown = next;
     return 1;
 }
 
-static void drawn(TuckVideo *v, RenderOutcome outcome, const char *error) {
+/* the clock generation the picture on screen belongs to, so drawing it can confirm a seek */
+static uint64_t shown_clock(TuckVideo *v) {
+    pthread_mutex_lock(&v->lock);
+    uint64_t clock = 0;
+    if (v->picture_segment == EDITS_GAP) clock = v->picture_clock;
+    else if (v->shown.frame && v->shown.generation == v->picture_request) clock = v->picture_clock;
+    pthread_mutex_unlock(&v->lock);
+    return clock;
+}
+
+static void drawn(TuckVideo *v, RenderOutcome outcome, const char *error, uint64_t clock) {
     pthread_mutex_lock(&v->lock);
     if (outcome == RENDER_SUBMITTED) {
         double now = now_seconds();
-        tuck_player_frame_presented(v->clock, v->shown.generation, now);
-        v->presented++;
+        if (clock) tuck_player_frame_presented(v->clock, clock, now);
+        if (v->shown.frame) v->presented++;
         /* a seek's frame is on screen: its sound may start */
         TuckPlayerStatus status;
         tuck_player_status(v->clock, now, &status);
@@ -239,9 +294,12 @@ static void *render_main(void *opaque) {
         if (v->lut_changed) redraw = 1;
         v->lut_changed = 0;
         pthread_mutex_unlock(&v->lock);
-        if (redraw && v->shown.frame) {
-            RenderOutcome outcome = renderer_draw(v->renderer, &v->shown, preview_lut_current(&v->lut));
-            drawn(v, outcome, renderer_error(v->renderer));
+        if (redraw) {
+            uint64_t clock = shown_clock(v);
+            RenderOutcome outcome = v->shown.frame
+                                        ? renderer_draw(v->renderer, &v->shown, preview_lut_current(&v->lut))
+                                        : renderer_clear(v->renderer);
+            drawn(v, outcome, renderer_error(v->renderer), clock);
             if (outcome == RENDER_SUBMITTED) redraw = 0;
         }
         int running = !status.paused || status.seek_pending;
@@ -352,8 +410,10 @@ int tuck_video_due(TuckVideo *v) {
     pthread_mutex_lock(&v->lock);
     int lut_changed = v->lut_changed;
     pthread_mutex_unlock(&v->lock);
-    return lut_changed || decoder_ready(v->decoder, status.position_seconds + FRAME_SLACK, status.generation,
-                                        status.seek_pending);
+    Picture p = picture_now(v, &status);
+    if (p.segment == EDITS_GAP) return lut_changed || v->shown.frame != NULL || status.seek_pending;
+    return lut_changed ||
+           decoder_ready(v->decoder, p.source + FRAME_SLACK, p.request, status.seek_pending && p.clock == status.generation);
 }
 
 int tuck_video_draw(TuckVideo *v, TuckGlRenderer *renderer, const TuckVideoTarget *target) {
@@ -366,12 +426,15 @@ int tuck_video_draw(TuckVideo *v, TuckGlRenderer *renderer, const TuckVideoTarge
     pthread_mutex_lock(&v->lock);
     v->lut_changed = 0;
     pthread_mutex_unlock(&v->lock);
+    uint64_t clock = shown_clock(v);
     if (!v->shown.frame) {
         tuck_gl_renderer_clear(renderer, target);
+        /* black is what a gap shows, so a seek into one is on screen now */
+        if (clock) drawn(v, RENDER_SUBMITTED, NULL, clock);
         return 0;
     }
     RenderOutcome outcome = gl_renderer_draw(renderer, &v->shown, target, preview_lut_current(&v->lut));
-    drawn(v, outcome, gl_renderer_error(renderer));
+    drawn(v, outcome, gl_renderer_error(renderer), clock);
     return outcome == RENDER_SUBMITTED;
 }
 
@@ -391,6 +454,7 @@ TuckVideo *tuck_video_open(const TuckVideoOpen *open, char *error, size_t error_
     pthread_cond_init(&v->wake, NULL);
     preview_lut_init(&v->lut);
     v->clock = tuck_player_create(open->duration_seconds, now_seconds());
+    v->duration = open->duration_seconds;
     if (!v->clock) {
         snprintf(error, error_size, "The video length is not valid.");
         goto failed;
@@ -432,6 +496,7 @@ void tuck_video_close(TuckVideo *v) {
     decoder_close(v->decoder);
     close_drawing(v);
     tuck_player_destroy(v->clock);
+    free(v->edits);
     preview_lut_destroy(&v->lut);
     pthread_cond_destroy(&v->wake);
     pthread_mutex_destroy(&v->lock);
@@ -466,6 +531,80 @@ int tuck_video_rate(TuckVideo *v, double rate) {
     if (accepted) after_command(v);
     pthread_mutex_unlock(&v->lock);
     return accepted;
+}
+
+#define MIX_VOICE_LIMIT 256
+#define MIX_PIECE_LIMIT 65536
+
+int tuck_video_mix(TuckVideo *v, const TuckMixVoice *voices, int32_t voice_count, const TuckMixPiece *pieces,
+                   int32_t piece_count) {
+    if (voice_count < 0 || piece_count < 0 || voice_count > MIX_VOICE_LIMIT || piece_count > MIX_PIECE_LIMIT ||
+        (voice_count && !voices) || (piece_count && !pieces))
+        return 0;
+    const char **paths = voice_count ? malloc((size_t)voice_count * sizeof(*paths)) : NULL;
+    int *streams = voice_count ? malloc((size_t)voice_count * sizeof(*streams)) : NULL;
+    MixPiece *mix = piece_count ? malloc((size_t)piece_count * sizeof(*mix)) : NULL;
+    int usable = (!voice_count || (paths && streams)) && (!piece_count || mix);
+    for (int32_t i = 0; usable && i < voice_count; i++) {
+        usable = voices[i].path != NULL && voices[i].stream >= 0;
+        if (usable) {
+            paths[i] = voices[i].path;
+            streams[i] = voices[i].stream;
+        }
+    }
+    for (int32_t i = 0; usable && i < piece_count; i++) {
+        const TuckMixPiece *p = &pieces[i];
+        mix[i] = (MixPiece){p->voice, p->start, p->end, p->source_in, p->gain, p->fade_in, p->fade_out, p->loop_start,
+                            p->loop_span};
+        usable = mix_piece_valid(&mix[i]) && p->voice < voice_count;
+    }
+    if (usable) {
+        pthread_mutex_lock(&v->lock);
+        /* a video without sound of its own starts its clock on the mix, from the spot it is at */
+        if (!v->audio && voice_count && v->sound == TUCK_SOUND_NONE) {
+            v->audio = audio_track_new(v->duration, v->sound_error, sizeof(v->sound_error));
+            v->sound = v->audio ? TUCK_SOUND_PLAYING : TUCK_SOUND_UNAVAILABLE;
+            if (v->audio) {
+                double now = now_seconds();
+                tuck_player_follow_sound(v->clock, 1, now);
+                tuck_player_restart(v->clock, now);
+            }
+        }
+        /* without a sound device the mix is taken and plays nowhere, as the video's own sound does */
+        if (v->audio) usable = audio_track_set_mix(v->audio, paths, streams, (size_t)voice_count, mix, (size_t)piece_count);
+        after_command(v);
+        pthread_mutex_unlock(&v->lock);
+    }
+    free(paths);
+    free(streams);
+    free(mix);
+    return usable;
+}
+
+#define EDIT_SEGMENT_LIMIT 65536
+
+int tuck_video_edits(TuckVideo *v, const TuckEditSegment *segments, int32_t count, double duration) {
+    if (count < 0 || count > EDIT_SEGMENT_LIMIT || (count && !segments)) return 0;
+    EditSegment *edits = count ? malloc((size_t)count * sizeof(*edits)) : NULL;
+    if (count && !edits) return 0;
+    for (int32_t i = 0; i < count; i++)
+        edits[i] = (EditSegment){segments[i].start, segments[i].end, segments[i].source_start};
+    if (!edits_valid(edits, (size_t)count, duration)) {
+        free(edits);
+        return 0;
+    }
+    pthread_mutex_lock(&v->lock);
+    free(v->edits);
+    v->edits = edits;
+    v->edit_count = (size_t)count;
+    v->duration = duration;
+    /* the same timeline spot may now show other footage */
+    v->picture_stale = 1;
+    tuck_player_set_duration(v->clock, duration, now_seconds());
+    if (v->audio) audio_track_set_duration(v->audio, duration);
+    after_command(v);
+    pthread_mutex_unlock(&v->lock);
+    return 1;
 }
 
 /* the frame on screen is drawn again with the new LUT, also while paused */
