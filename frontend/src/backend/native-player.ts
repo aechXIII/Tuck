@@ -4,7 +4,7 @@ import type { LutChange } from "../features/preview/lut-preview.ts";
 import type { PreviewMix } from "./preview-mix-types.ts";
 import { backendFailure, errorMessage, isBackendError } from "./errors.ts";
 import type { TauriInvoke } from "./tauri.ts";
-import type { BackendResult } from "./types.ts";
+import type { BackendResult, JsonObject } from "./types.ts";
 
 /** The video's sound in the native player. */
 export interface NativeSoundInfo {
@@ -163,6 +163,22 @@ export function isNativePlayerStatus(value: unknown): value is NativePlayerStatu
     typeof status.rate === "number" && Number.isFinite(status.rate) && status.rate > 0 &&
     (status.video === null || isVideoInfo(status.video))
   );
+}
+
+/**
+ * The shell's report on the preview for the diagnostic report: how it plays, whether the native
+ * player library loaded, and the open video's status. Python checks and words it, so the page
+ * passes it on as it came; null when the shell can't be asked.
+ */
+export async function readPlayerReport(
+  invokeCommand: TauriInvoke = (command, args) => invoke(command, args),
+): Promise<JsonObject | null> {
+  try {
+    const value = await invokeCommand("player_report", {});
+    return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as JsonObject) : null;
+  } catch {
+    return null;
+  }
 }
 
 /** The engine in the desktop shell. Every call refuses unless this run turned it on. */

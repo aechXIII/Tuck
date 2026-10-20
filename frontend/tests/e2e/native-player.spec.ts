@@ -151,6 +151,21 @@ test("the engine plays the timeline and the sound compiled from the export reque
   expect(await page.evaluate(() => window.__fixtureEngine?.edits)).toHaveLength(1);
 });
 
+test("the diagnostic report carries the shell's report on the native player", async ({ page }) => {
+  await open(page, "engine");
+  await page.getByRole("button", { name: "Settings" }).click();
+  await page.locator("#settings-nav-about").click();
+  await page.getByRole("button", { name: "Copy diagnostic report" }).click();
+
+  await expect.poll(() => page.evaluate(() =>
+    window.__tuckFakeBackendCalls?.filter((call) => call.method === "getDiagnostics").length)).toBe(1);
+  const preview = await page.evaluate(() => {
+    const context = window.__tuckFakeBackendCalls?.find((call) => call.method === "getDiagnostics")?.args[0];
+    return typeof context === "object" && context !== null ? Reflect.get(context, "preview") : undefined;
+  });
+  expect(preview).toMatchObject({ mode: "engine", library: null, status: { durationSeconds: DURATION } });
+});
+
 test("with the switch off the HTML player plays as before", async ({ page }) => {
   await open(page, "off");
   const play = page.locator("#btn-play");

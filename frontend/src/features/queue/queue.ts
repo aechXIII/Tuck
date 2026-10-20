@@ -1,4 +1,4 @@
-import type { BackendClient } from "../../backend/types.ts";
+import type { BackendClient, JsonObject } from "../../backend/types.ts";
 import { SegmentEditing } from "../timeline/segments.ts";
 import { legacyBackendResult } from "../editor/backend-compat.ts";
 import { formatBytes, formatTime, withReason } from "../editor/format.ts";
@@ -41,6 +41,8 @@ export interface QueueDeps {
   removeClip: (path: string) => void;
   editCount: (path: string) => number;
   onSendto: (data: Record<string, unknown>) => void;
+  /** the desktop shell's report on the preview, for the diagnostic report */
+  previewReport?: () => Promise<JsonObject | null>;
 }
 
 export interface QueueApi {
@@ -734,6 +736,8 @@ export function installQueue(deps: QueueDeps): QueueApi {
 
   async function copyDiagnostics(itemId?: string): Promise<void> {
     const ctx = buildDiagnosticsContext(itemId);
+    const preview = await deps.previewReport?.();
+    if (preview) ctx.preview = preview;
     try {
       const r = await legacyBackendResult(client().getDiagnostics(ctx as never));
       const diagnosticText = typeof r.text === "string" ? r.text : "";

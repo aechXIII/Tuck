@@ -13,7 +13,7 @@ use serde::Serialize;
 use super::engine::{Edits, Mix, PlayerStatus, RawStatus};
 
 // must match TUCK_VIDEO_ABI in native/player/tuck_video.h
-const ABI: c_int = 8;
+pub const ABI: c_int = 8;
 
 #[cfg(windows)]
 const FILE_NAME: &str = "tuck_player.dll";
@@ -329,6 +329,11 @@ fn api() -> Result<&'static Api, String> {
     })
     .as_ref()
     .map_err(Clone::clone)
+}
+
+/// Loads the library if it isn't yet; the error says why it can't be used.
+pub fn check() -> Result<(), String> {
+    api().map(|_| ())
 }
 
 impl Video {

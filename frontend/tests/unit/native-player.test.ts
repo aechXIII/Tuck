@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   createTauriPlayerEngine,
   isNativePlayerStatus,
+  readPlayerReport,
   type NativePlayerStatus,
 } from "../../src/backend/native-player.ts";
 import type { TauriInvoke } from "../../src/backend/tauri.ts";
@@ -805,4 +806,13 @@ test("dispose stops polling and ignores the video", async () => {
   await settle();
   assert.equal(run.fixture.calls.length, calls);
   assert.equal(run.timers.size, 0);
+});
+
+test("the player report passes the shell's answer on, and nothing when the shell can't answer", async () => {
+  const report = { mode: "player", library: { loaded: false, interface: 8, error: "missing" }, status: null };
+  const asked: string[] = [];
+  assert.deepEqual(await readPlayerReport(async (command) => { asked.push(command); return report; }), report);
+  assert.deepEqual(asked, ["player_report"]);
+  assert.equal(await readPlayerReport(async () => { throw new Error("no shell"); }), null);
+  assert.equal(await readPlayerReport(async () => ["player"]), null);
 });

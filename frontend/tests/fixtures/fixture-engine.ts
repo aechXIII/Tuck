@@ -290,6 +290,11 @@ export function fixtureEngineScript(options: { frameDelayMs?: number; nativePrev
           surface.push({ command, args: JSON.parse(JSON.stringify(args ?? {})) });
           return null;
         }
+        // like the shell: the bare clock has no library, and a status only while a video is open
+        if (command === "player_report") {
+          const status = await engine.invoke("player_status", {}, options).catch(() => null);
+          return { mode: ${JSON.stringify(options.nativePreview ?? "engine")}, library: null, status };
+        }
         if (command.startsWith("player_")) return engine.invoke(command, args, options);
         return 1;
       },

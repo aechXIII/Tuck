@@ -53,6 +53,7 @@ fn main() {
             "player_edits",
             "player_mix",
             "player_status",
+            "player_report",
         ]),
     ))
     .expect("failed to build Tauri permissions");

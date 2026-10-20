@@ -37,7 +37,7 @@ from .cutting.serialization import (
 )
 from .cutting.service import CutAnalysisService
 from .desktop_platform import is_linux_desktop
-from .diagnostics import build_diagnostics
+from .diagnostics import build_diagnostics, preview_report
 from .encoding.capabilities import (
     clear_encoder_cache,
     get_available_encoders,
@@ -730,6 +730,7 @@ class BridgeAPI:
             ),
             profile_name=str(raw.get("profile_name") or ""),
             extra=extra or None,
+            preview=preview_report(raw.get("preview")),
         )
         return {"ok": True, "text": text}
 

@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from tuck.diagnostics import _run_version, build_diagnostics, sanitize_path
+from tuck.diagnostics import _run_version, build_diagnostics, preview_report, sanitize_path
 from tuck.models import EncodePlan, Segment, VideoInfo
 
 
@@ -168,3 +168,73 @@ class TestBuildDiagnostics:
         assert "encoder fallback: Used software encoding" in text
         assert "hdr: tone-mapped to SDR" in text
         assert "plan warning: Subtitles aren't kept when the video is cut" in text
+
+
+class TestPreviewReport:
+    def _report(self, **video: object) -> dict:
+        return {
+            "mode": "player",
+            "library": {"loaded": True, "interface": 8, "error": ""},
+            "status": {
+                "video": {
+                    "decoder": "h264 vaapi",
+                    "hardware": True,
+                    "softwareReason": None,
+                    "frameRate": 60,
+                    "failed": False,
+                    "error": "",
+                    "sound": {"state": "playing", "underruns": 2, "error": ""},
+                    **video,
+                }
+            },
+        }
+
+    def test_the_native_player_section_names_decoder_sound_and_library(self):
+        text = build_diagnostics(preview=preview_report(self._report()))
+        assert "preview: native player" in text
+        assert "player library: loaded (interface 8)" in text
+        assert "decoder: h264 vaapi (GPU)" in text
+        assert "frame rate: 60 fps" in text
+        assert "sound: playing, 2 underruns" in text
+
+    def test_software_decoding_says_why(self):
+        report = self._report(decoder="h264 software", hardware=False, softwareReason="no-device")
+        text = build_diagnostics(preview=preview_report(report))
+        assert "decoder: h264 software (no GPU decoding device)" in text
+
+    def test_a_library_that_did_not_load_says_why(self):
+        report = {
+            "mode": "player",
+            "library": {
+                "loaded": False,
+                "interface": 8,
+                "error": "The native player library is from another Tuck version.",
+            },
+            "status": None,
+        }
+        text = build_diagnostics(preview=preview_report(report))
+        assert (
+            "player library: not loaded, The native player library is from another Tuck "
+            "version. (needs interface 8)"
+        ) in text
+        assert "video: none open" in text
+
+    def test_the_built_in_player_gets_one_line(self):
+        text = build_diagnostics(preview=preview_report({"mode": "off"}))
+        assert "Video preview\n-------------\npreview: built-in player\n" in text
+
+    def test_page_values_are_checked_and_paths_hidden(self):
+        report = self._report(
+            softwareReason="<script>",
+            failed=True,
+            error="Could not read /home/alice/Videos/clip.mp4",
+            sound={"state": "loud", "underruns": -4, "error": ""},
+        )
+        parsed = preview_report(report)
+        assert parsed is not None
+        assert parsed.software_reason == ""
+        assert parsed.sound_state == "" and parsed.sound_underruns == 0
+        text = build_diagnostics(preview=parsed)
+        assert "alice" not in text and "player error: Could not read <path>" in text
+        assert preview_report({"mode": "native"}) is None
+        assert preview_report("player") is None

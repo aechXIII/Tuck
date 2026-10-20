@@ -2324,3 +2324,19 @@ def test_diagnostics_report_the_encoder_the_queue_item_really_used():
     assert diag["ok"]
     assert "effective encoder: libx264" in diag["text"]
     assert "encoder fallback: Used software encoding" in diag["text"]
+
+
+def test_diagnostics_describe_the_preview_the_page_reports():
+    api = BridgeAPI()
+    preview = {
+        "mode": "player",
+        "library": {"loaded": False, "interface": 8, "error": "The library is missing."},
+        "status": None,
+    }
+
+    diag = api.get_diagnostics({"preview": preview})
+
+    assert diag["ok"]
+    assert "preview: native player" in diag["text"]
+    assert "player library: not loaded, The library is missing." in diag["text"]
+    assert "Video preview" not in api.get_diagnostics({"preview": "native"})["text"]

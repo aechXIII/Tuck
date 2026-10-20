@@ -1,13 +1,13 @@
 use std::path::PathBuf;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::backend::protocol::PublicBackendError;
 use crate::platform::window_chrome::css_to_physical;
 use crate::player::engine::{
     Edits, LutUpdate, Mix, PlayerCommand, PlayerError, PlayerState, PlayerStatus, LUT_SIZES,
 };
-use crate::player::{preview_mode, PreviewMode, Viewport};
+use crate::player::{library, preview_mode, PreviewMode, Viewport};
 
 fn surface_error(message: &str) -> PublicBackendError {
     PublicBackendError::new("PREVIEW_SURFACE_FAILED", message)
@@ -227,6 +227,57 @@ pub fn player_lut(
     state.set_lut(update).map_err(player_error)
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibraryReport {
+    loaded: bool,
+    /// the interface version this Tuck expects
+    interface: i32,
+    error: String,
+}
+
+/// The preview as the diagnostic report describes it.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayerReport {
+    mode: &'static str,
+    /// only when this run decodes with the native player library
+    library: Option<LibraryReport>,
+    /// the open video's status, when the native engine has one
+    status: Option<PlayerStatus>,
+}
+
+/// What the diagnostic report says about the preview. It never fails, so the report can always be
+/// made, and it works with the native preview off.
+#[tauri::command]
+pub fn player_report(state: tauri::State<'_, PlayerState>) -> PlayerReport {
+    build_report(preview_mode(), state.inner(), library::check)
+}
+
+fn build_report(
+    mode: PreviewMode,
+    state: &PlayerState,
+    check_library: impl FnOnce() -> Result<(), String>,
+) -> PlayerReport {
+    let library = (mode == PreviewMode::Player).then(|| {
+        let result = check_library();
+        LibraryReport {
+            loaded: result.is_ok(),
+            interface: library::ABI,
+            error: result.err().unwrap_or_default(),
+        }
+    });
+    let status = match mode {
+        PreviewMode::Engine | PreviewMode::Player => state.status().ok(),
+        PreviewMode::Off | PreviewMode::Surface => None,
+    };
+    PlayerReport {
+        mode: mode.as_str(),
+        library,
+        status,
+    }
+}
+
 #[tauri::command]
 pub fn player_status(
     state: tauri::State<'_, PlayerState>,
@@ -324,6 +375,30 @@ fn set_viewport(viewport: Viewport, _scale: f64) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_report_says_how_the_preview_plays_and_why_the_library_failed() {
+        let state = PlayerState::default();
+        let off = build_report(PreviewMode::Off, &state, || unreachable!());
+        assert_eq!(
+            (off.mode, off.library.is_none(), off.status.is_none()),
+            ("off", true, true)
+        );
+
+        let missing = build_report(PreviewMode::Player, &state, || {
+            Err("The native player library is missing.".to_string())
+        });
+        let library = missing.library.expect("the player reports its library");
+        assert!(!library.loaded);
+        assert_eq!(library.interface, library::ABI);
+        assert_eq!(library.error, "The native player library is missing.");
+        assert!(missing.status.is_none(), "no video is open yet");
+
+        state.open(12.0).expect("the bare clock opens");
+        let open = build_report(PreviewMode::Engine, &state, || unreachable!());
+        assert!(open.library.is_none(), "the bare clock uses no library");
+        assert_eq!(open.status.expect("an open video").duration_seconds, 12.0);
+    }
 
     #[test]
     fn the_lut_arrives_as_headers_and_raw_floats() {

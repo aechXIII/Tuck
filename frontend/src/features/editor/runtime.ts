@@ -26,7 +26,7 @@ import type { AudioClipRangeInfo } from "../panels/panels.ts";
 import { installPlayer, type PlayerApi, type PlayerHost } from "../player/player.ts";
 import { installNativePlayer } from "../player/native-player.ts";
 import { createStageFullscreen, tauriWindowFullscreen } from "../player/stage-fullscreen.ts";
-import { createTauriPlayerEngine } from "../../backend/native-player.ts";
+import { createTauriPlayerEngine, readPlayerReport } from "../../backend/native-player.ts";
 import { installFrameExport } from "../player/frame-export.ts";
 import { isProbeReady } from "../../state/probe.ts";
 import {
@@ -444,6 +444,7 @@ export function installEditorRuntime(
     removeClip: (path) => library.removeClip(path),
     editCount: (path) => history.editCount(path),
     onSendto: (data) => handleSendto(data),
+    previewReport: () => (hasTauriInvoke(windowRef) ? readPlayerReport() : Promise.resolve(null)),
   });
 
   let workspaceCutTask = false;

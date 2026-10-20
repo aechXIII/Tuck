@@ -5,6 +5,8 @@ import platform
 import re
 import subprocess
 import sys
+from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -51,6 +53,122 @@ def _run_version(cmd: list[str]) -> str:
         return f"unavailable ({sanitize_path(str(exc))})"
 
 
+_PREVIEW_MODES = {
+    "off": "built-in player",
+    "surface": "native preview test picture",
+    "engine": "native player clock only",
+    "player": "native player",
+}
+_SOFTWARE_REASONS = {
+    "no-device": "no GPU decoding device",
+    "codec": "the GPU doesn't decode this codec",
+    "start-failed": "the GPU decoder could not start",
+    "stream": "the GPU can't decode this stream",
+}
+_SOUND_STATES = {"none", "playing", "unavailable"}
+_MAX_TEXT = 300
+
+
+@dataclass(frozen=True)
+class PreviewReport:
+    """The preview as the desktop shell reports it, checked field by field"""
+
+    mode: str
+    library_loaded: bool | None = None
+    library_interface: int | None = None
+    library_error: str = ""
+    video_open: bool = False
+    decoder: str = ""
+    hardware: bool = False
+    software_reason: str = ""
+    frame_rate: float = 0.0
+    failed: bool = False
+    error: str = ""
+    sound_state: str = ""
+    sound_underruns: int = 0
+    sound_error: str = ""
+
+
+def _text(value: object) -> str:
+    return sanitize_path(value.strip()[:_MAX_TEXT]) if isinstance(value, str) else ""
+
+
+def _count(value: object) -> int:
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else 0
+
+
+def preview_report(value: object) -> PreviewReport | None:
+    """Reads the page's copy of the shell's player report; anything malformed is left out"""
+    if not isinstance(value, Mapping) or value.get("mode") not in _PREVIEW_MODES:
+        return None
+    fields: dict[str, Any] = {"mode": value["mode"]}
+    library = value.get("library")
+    if isinstance(library, Mapping) and isinstance(library.get("loaded"), bool):
+        fields["library_loaded"] = library["loaded"]
+        fields["library_interface"] = _count(library.get("interface")) or None
+        fields["library_error"] = _text(library.get("error"))
+    status = value.get("status")
+    video = status.get("video") if isinstance(status, Mapping) else None
+    if isinstance(video, Mapping) and isinstance(video.get("decoder"), str):
+        sound_value = video.get("sound")
+        sound: Mapping[str, object] = sound_value if isinstance(sound_value, Mapping) else {}
+        state = sound.get("state")
+        reason = video.get("softwareReason")
+        frame_rate = video.get("frameRate")
+        fields.update(
+            video_open=True,
+            decoder=_text(video["decoder"]),
+            hardware=video.get("hardware") is True,
+            software_reason=reason
+            if isinstance(reason, str) and reason in _SOFTWARE_REASONS
+            else "",
+            frame_rate=float(frame_rate)
+            if isinstance(frame_rate, (int, float)) and not isinstance(frame_rate, bool)
+            else 0.0,
+            failed=video.get("failed") is True,
+            error=_text(video.get("error")),
+            sound_state=state if isinstance(state, str) and state in _SOUND_STATES else "",
+            sound_underruns=_count(sound.get("underruns")),
+            sound_error=_text(sound.get("error")),
+        )
+    elif isinstance(status, Mapping):
+        fields["video_open"] = True
+    return PreviewReport(**fields)
+
+
+def _preview_lines(preview: PreviewReport) -> list[str]:
+    lines = ["Video preview", "-------------", f"preview: {_PREVIEW_MODES[preview.mode]}"]
+    if preview.library_loaded is not None:
+        expected = f"interface {preview.library_interface}" if preview.library_interface else ""
+        if preview.library_loaded:
+            lines.append(f"player library: loaded{f' ({expected})' if expected else ''}")
+        else:
+            reason = preview.library_error or "unknown reason"
+            lines.append(
+                f"player library: not loaded, {reason}{f' (needs {expected})' if expected else ''}"
+            )
+    if preview.mode in ("engine", "player") and not preview.video_open:
+        lines.append("video: none open")
+    if preview.decoder:
+        if preview.hardware:
+            lines.append(f"decoder: {preview.decoder} (GPU)")
+        else:
+            why = _SOFTWARE_REASONS.get(preview.software_reason, "software")
+            lines.append(f"decoder: {preview.decoder} ({why})")
+        if preview.frame_rate > 0:
+            lines.append(f"frame rate: {preview.frame_rate:g} fps")
+        if preview.sound_state == "playing":
+            lines.append(f"sound: playing, {preview.sound_underruns} underruns")
+        elif preview.sound_state == "unavailable":
+            lines.append(f"sound: can't play, {preview.sound_error or 'unknown reason'}")
+        elif preview.sound_state == "none":
+            lines.append("sound: none in this video")
+        if preview.failed:
+            lines.append(f"player error: {preview.error or 'unknown error'}")
+    lines.append("")
+    return lines
+
+
 def _fmt_mb(num_bytes: int | float) -> str:
     return f"{float(num_bytes) / (1024 * 1024):.2f} MB"
 
@@ -66,6 +184,7 @@ def build_diagnostics(
     workflow: str = "",
     profile_name: str = "",
     extra: dict[str, Any] | None = None,
+    preview: PreviewReport | None = None,
 ) -> str:
     ffmpeg_path = find_ffmpeg() or ""
     caps = get_encoder_capabilities()
@@ -89,6 +208,8 @@ def build_diagnostics(
         f"nvidia: {caps.has_nvidia} | amd: {caps.has_amd} | cpu: {caps.has_cpu}",
         "",
     ]
+    if preview is not None:
+        lines.extend(_preview_lines(preview))
 
     has_context = bool(
         selected_encoder
