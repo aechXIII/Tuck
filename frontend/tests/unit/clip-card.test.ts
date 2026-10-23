@@ -50,6 +50,9 @@ const documentRef = {
   createElement(tagName: string): FakeElement {
     return new FakeElement(tagName);
   },
+  createElementNS(_namespace: string, tagName: string): FakeElement {
+    return new FakeElement(tagName);
+  },
 };
 
 function descendants(root: FakeElement): FakeElement[] {
@@ -80,6 +83,7 @@ test("clip cards keep backend data inert and delegate exact action values", () =
     togglePlay: (path: string) => calls.push(["play", path]),
     remove: (path: string) => calls.push(["remove", path]),
     openResult: (path: string | undefined) => calls.push(["open", path]),
+    copyResult: (id: string) => calls.push(["copy", id]),
     retry: (id: string | undefined) => calls.push(["retry", id]),
     beginReorder: (_event: ClipCardEvent, path: string) =>
       calls.push(["reorder", path]),
@@ -108,12 +112,19 @@ test("clip cards keep backend data inert and delegate exact action values", () =
   assert.equal(card.attributes["aria-description"], model.detail);
   const open = action(card, "open-result");
   assert.ok(open);
-  assert.equal(open.textContent, "Show");
+  assert.equal(open.attributes["aria-label"], "Show in folder");
   assert.equal(open.attributes.onclick, undefined);
   const click = card.listeners.click?.[0];
   assert.ok(click);
-  click({ target: open, stopPropagation() {} });
+  // a press on the icon inside the button still names the button's action
+  const icon = open.children[0];
+  assert.equal(icon?.tagName, "svg");
+  click({ target: icon, stopPropagation() {} });
   assert.deepEqual(calls.pop(), ["open", model.resultPath]);
+  const copy = action(card, "copy-result");
+  assert.ok(copy);
+  click({ target: copy, stopPropagation() {} });
+  assert.deepEqual(calls.pop(), ["copy", model.queueItemId]);
   const remove = action(card, "remove");
   assert.ok(remove);
   click({ target: remove, stopPropagation() {} });
@@ -275,6 +286,85 @@ test("a ready row says what the task makes of the video, and warns when it runs 
   assert.equal(overLine?.attributes.title, "The estimate is over the target size");
 });
 
+test("a copy in progress or done shows on the row's Copy file button", () => {
+  const copies: string[] = [];
+  const finished = {
+    path: "harbour.mp4",
+    name: "harbour.mp4",
+    queueItemId: "d1",
+    queueState: "completed" as const,
+    resultPath: "/exports/harbour_tuck.mp4",
+  };
+  const pending = clipCards.createClipCard(documentRef, { ...finished, copyLabel: "Copying...", copyPending: true }, {
+    ...quiet,
+    copyResult: (id: string) => copies.push(id),
+  });
+  if (!(pending instanceof FakeElement)) throw new Error("expected FakeElement");
+  const waiting = action(pending, "copy-result");
+  assert.equal(waiting?.attributes["aria-disabled"], "true");
+  assert.equal(waiting?.dataset.tip, "Copying...");
+  assert.equal(waiting?.attributes["aria-label"], "Copy file");
+  pending.listeners.click?.[0]?.({ target: waiting, stopPropagation() {} });
+  assert.deepEqual(copies, []);
+  // Enter on the button is left to the button, so it isn't swallowed by the row's own Enter
+  let prevented = false;
+  pending.listeners.keydown?.[0]?.({ key: "Enter", target: waiting ?? null, preventDefault: () => (prevented = true) });
+  assert.equal(prevented, false);
+
+  const copied = clipCards.createClipCard(documentRef, { ...finished, copyLabel: "Copied" }, quiet);
+  if (!(copied instanceof FakeElement)) throw new Error("expected FakeElement");
+  const done = action(copied, "copy-result");
+  assert.equal(done?.className, "c-icon done");
+  assert.equal(done?.dataset.tip, "Copied");
+  assert.equal(done?.attributes["aria-disabled"], undefined);
+});
+
+test("only a finished export's picture starts a drag out, and the handle still reorders", () => {
+  const started: Array<[string, string]> = [];
+  const callbacks = {
+    ...quiet,
+    beginReorder: (_event: ClipCardEvent, path: string) => started.push(["reorder", path]),
+    beginDragOut: (_event: ClipCardEvent, id: string) => started.push(["drag out", id]),
+  };
+  const finished: ClipCardModel = {
+    path: "harbour.mp4",
+    name: "harbour.mp4",
+    queueItemId: "d1",
+    queueState: "completed",
+    resultPath: "/exports/harbour_tuck.mp4",
+    thumbnail: "frame.jpg",
+    canDragOut: true,
+  };
+  const press = (card: FakeElement, target: FakeElement | undefined, button = 0) =>
+    card.listeners.pointerdown?.[0]?.({ target: target ?? null, button });
+  const thumb = (card: FakeElement) => descendants(card).find((element) => element.className.startsWith("c-thumb"));
+
+  const card = clipCards.createClipCard(documentRef, finished, callbacks);
+  if (!(card instanceof FakeElement)) throw new Error("expected FakeElement");
+  const frame = thumb(card);
+  assert.equal(frame?.className, "c-thumb drag-out");
+  assert.equal(frame?.dataset.tip, "Drag the exported file into another app");
+  press(card, frame?.children[0]);
+  press(card, frame?.children[0], 2);
+  press(card, descendants(card).find((element) => element.className === "c2"));
+  press(card, descendants(card).find((element) => element.dataset.dragHandle === "1"));
+  assert.deepEqual(started, [["drag out", "d1"], ["reorder", "harbour.mp4"]]);
+
+  started.length = 0;
+  for (const model of [
+    { ...finished, canDragOut: false },
+    { ...finished, queueState: "running" as const },
+    { ...finished, resultPath: "" },
+    { ...finished, queueItemId: "" },
+  ]) {
+    const other = clipCards.createClipCard(documentRef, model, callbacks);
+    if (!(other instanceof FakeElement)) throw new Error("expected FakeElement");
+    assert.equal(thumb(other)?.dataset.dragOut, undefined);
+    press(other, thumb(other)?.children[0]);
+  }
+  assert.deepEqual(started, []);
+});
+
 test("library omits empty status sections and reports a hand-checked summary", () => {
   const clips: ClipCardModel[] = [
     { path: "one.mp4", name: "one.mp4", queueState: "", fileSize: 1_500_000_000 },
@@ -312,8 +402,17 @@ test("a finished row shows the size against its target and keeps the export's no
     ["c-status", "9.0 MB"],
     ["c-sep", "·"],
     ["c-fit", "fits 10 MB"],
-    ["c-act", "Show"],
+    ["c-icons", ""],
   ]);
+  // two icon buttons, each with a spoken name, Tuck's tooltip and no second native title
+  const buttons = line?.children.at(-1)?.children ?? [];
+  assert.deepEqual(
+    buttons.map((button) => [button.className, button.attributes["aria-label"], button.dataset.tip, button.attributes.title, button.type]),
+    [
+      ["c-icon", "Copy file", "Copy file", "", "button"],
+      ["c-icon", "Show in folder", "Show in folder", "", "button"],
+    ],
+  );
   const note = descendants(done).find((element) => element.className === "c-note");
   assert.equal(note?.textContent, "Used software encoding because the NVIDIA encoder couldn't start");
   assert.equal(note?.attributes["aria-description"], note?.textContent);
@@ -328,5 +427,9 @@ test("a finished row shows the size against its target and keeps the export's no
   }, quiet);
   if (!(over instanceof FakeElement)) throw new Error("expected FakeElement");
   assert.equal(descendants(over).find((element) => element.className === "c-fit over")?.textContent, "over 10 MB");
+  // the size itself carries the fit when the file actions leave no room for the words
+  assert.equal(descendants(over).find((element) => element.className === "c-status over")?.dataset.tip, "Over the 10 MB target");
+  assert.equal(line?.children[0]?.dataset.tip, "Fits the 10 MB target");
+  assert.equal(line?.children[1]?.attributes["aria-hidden"], "true");
   assert.equal(descendants(over).find((element) => element.className === "c-note"), undefined);
 });

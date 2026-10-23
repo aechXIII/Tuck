@@ -16,6 +16,8 @@ export interface PlatformCapabilities {
    * the app) the window goes full screen instead. Missing means it can
    */
   elementFullscreen?: boolean;
+  /** whether a finished export can be dragged out of the window as a file; missing means it can't */
+  fileDragOut?: boolean;
   packaged: boolean;
   /**
    * "surface" while this run draws the native preview's test picture below the page, "engine"
@@ -36,6 +38,7 @@ const NON_TAURI_CAPABILITIES: PlatformCapabilities = {
   automaticUpdater: true,
   hardwareAcceleration: true,
   customTitleBar: true,
+  fileDragOut: true,
   packaged: false,
 };
 
@@ -50,6 +53,7 @@ const DEGRADED_CAPABILITIES: PlatformCapabilities = {
   hardwareAcceleration: false,
   customTitleBar: false,
   elementFullscreen: false,
+  fileDragOut: false,
   packaged: false,
 };
 
@@ -67,6 +71,7 @@ function isPlatformCapabilities(value: unknown): value is PlatformCapabilities {
     typeof caps.hardwareAcceleration === "boolean" &&
     typeof caps.customTitleBar === "boolean" &&
     (caps.elementFullscreen === undefined || typeof caps.elementFullscreen === "boolean") &&
+    (caps.fileDragOut === undefined || typeof caps.fileDragOut === "boolean") &&
     typeof caps.packaged === "boolean" &&
     (caps.nativePreview === undefined ||
       caps.nativePreview === "off" ||
@@ -109,6 +114,10 @@ export function usesCustomTitleBar(caps: PlatformCapabilities): boolean {
 
 export function usesElementFullscreen(caps: PlatformCapabilities): boolean {
   return caps.elementFullscreen !== false;
+}
+
+export function supportsFileDragOut(caps: PlatformCapabilities): boolean {
+  return caps.fileDragOut === true;
 }
 
 export function supportsHardwareEncoders(caps: PlatformCapabilities): boolean {

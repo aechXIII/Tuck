@@ -52,6 +52,10 @@ export interface QueueApi {
   retryQueueItem: (itemId: string) => Promise<void>;
   openResult: (path: string) => Promise<void>;
   copyResult: (itemId: string) => Promise<void>;
+  // where copying this export's file stands, for the Library's Copy file button
+  copyResultState: (itemId: string, path: string) => { disabled: boolean; label: string };
+  openExportFile: (itemId: string) => Promise<void>;
+  dragExportOut: (itemId: string) => Promise<void>;
   stopAfterCurrent: () => void;
   cancelAll: () => void;
   clearDone: (announce?: boolean) => Promise<void>;
@@ -103,7 +107,11 @@ export function installQueue(deps: QueueDeps): QueueApi {
 
   let exportsOpen = false;
   let lastItems: readonly QueueItem[] = [];
-  const fileCopy = createExportFileCopy(path => client().copyFile(path), () => renderExports(lastItems));
+  // the Exports panel and the Library both show where a copy stands
+  const fileCopy = createExportFileCopy(path => client().copyFile(path), () => {
+    renderExports(lastItems);
+    deps.renderClips();
+  });
 
   let closeTicket = 0;
 
@@ -198,6 +206,13 @@ export function installQueue(deps: QueueDeps): QueueApi {
       if (row.action === "show") {
         const actions = doc.createElement("span");
         actions.className = "exports-actions";
+        const open = doc.createElement("button");
+        open.type = "button";
+        open.className = "exports-btn";
+        open.textContent = "Open";
+        open.setAttribute("aria-label", `Open ${row.name}`);
+        open.dataset.actionClick = "export-item-open";
+        open.dataset.itemId = row.id;
         const copy = doc.createElement("button");
         const state = fileCopy.state(row.id, row.resultPath);
         copy.type = "button";
@@ -207,7 +222,7 @@ export function installQueue(deps: QueueDeps): QueueApi {
         if (state.disabled) copy.setAttribute("aria-disabled", "true");
         copy.dataset.actionClick = "export-item-copy-file";
         copy.dataset.itemId = row.id;
-        actions.append(copy, button);
+        actions.append(open, copy, button);
         element.append(actions);
       } else {
         element.append(button);
@@ -606,6 +621,31 @@ export function installQueue(deps: QueueDeps): QueueApi {
     else if (result === "error") toast(fileCopy.state(itemId, path).error, "err");
   }
 
+  function finishedExport(itemId: string): QueueItem | null {
+    const item = queueItemsById[itemId];
+    return item?.state === "completed" && item.result_path ? item : null;
+  }
+
+  async function openExportFile(itemId: string): Promise<void> {
+    if (!finishedExport(itemId)) return;
+    try {
+      const result = await client().openExportFile(itemId);
+      if (!result.ok) toast(withReason("Couldn’t open the export.", result.error.message), "err");
+    } catch {
+      toast("Couldn’t open the export. Try again.", "err");
+    }
+  }
+
+  async function dragExportOut(itemId: string): Promise<void> {
+    if (!finishedExport(itemId)) return;
+    try {
+      const result = await client().startExportDrag(itemId);
+      if (!result.ok) toast(withReason("Couldn’t drag the export.", result.error.message, "Use Copy file instead."), "err");
+    } catch {
+      toast("Couldn’t drag the export. Use Copy file instead.", "err");
+    }
+  }
+
   async function openResult(path: string): Promise<void> {
     if (!path) return;
     try {
@@ -806,6 +846,12 @@ export function installQueue(deps: QueueDeps): QueueApi {
     retryQueueItem,
     openResult,
     copyResult,
+    copyResultState: (itemId, path) => {
+      const state = fileCopy.state(itemId, path);
+      return { disabled: state.disabled, label: state.label };
+    },
+    openExportFile,
+    dragExportOut,
     stopAfterCurrent,
     cancelAll,
     clearDone,

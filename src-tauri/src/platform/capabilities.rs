@@ -19,6 +19,9 @@ pub struct PlatformCapabilities {
     // player fills a full screen window instead
     #[serde(rename = "elementFullscreen")]
     pub element_fullscreen: bool,
+    // a finished export can be dragged out of the window as a file
+    #[serde(rename = "fileDragOut")]
+    pub file_drag_out: bool,
     pub packaged: bool,
     // "off", or "surface" while the native preview draws its test picture
     #[serde(rename = "nativePreview")]
@@ -46,6 +49,7 @@ pub fn capabilities_for_target(platform: &str, packaged: bool) -> PlatformCapabi
         hardware_acceleration,
         custom_title_bar: platform == "windows",
         element_fullscreen: platform == "windows",
+        file_drag_out: platform == "linux" && crate::platform::file_drag::SUPPORTED,
         packaged,
         native_preview: crate::player::PreviewMode::Off.as_str(),
     }
@@ -78,6 +82,8 @@ mod tests {
         assert!(caps.hardware_acceleration);
         assert!(caps.custom_title_bar);
         assert!(caps.element_fullscreen);
+        // Windows has no file drag source yet, so the page doesn't offer dragging there
+        assert!(!caps.file_drag_out);
         assert!(!caps.packaged);
         // only the run switch turns the native preview on, never the target alone
         assert_eq!(caps.native_preview, "off");
@@ -94,6 +100,7 @@ mod tests {
         assert!(caps.hardware_acceleration);
         assert!(!caps.custom_title_bar);
         assert!(!caps.element_fullscreen);
+        assert_eq!(caps.file_drag_out, cfg!(target_os = "linux"));
     }
 
     #[test]

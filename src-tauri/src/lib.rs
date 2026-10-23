@@ -12,10 +12,10 @@ use commands::lifecycle::{
     acknowledge_close_request, confirm_close, handle_close_request, restart_app, CloseState,
 };
 use commands::native::{
-    close_window, copy_file_to_clipboard, copy_text, open_config_folder, open_local_document,
-    open_logs_folder, open_output_folder, pick_audio_files, pick_ffmpeg_file, pick_ffprobe_file,
-    pick_folder, pick_import_file, pick_lut_file, pick_save_file, pick_video_files,
-    platform_capabilities,
+    close_window, copy_file_to_clipboard, copy_text, open_config_folder, open_export_file,
+    open_local_document, open_logs_folder, open_output_folder, pick_audio_files, pick_ffmpeg_file,
+    pick_ffprobe_file, pick_folder, pick_import_file, pick_lut_file, pick_save_file,
+    pick_video_files, platform_capabilities, start_export_drag,
 };
 use commands::player::{
     player_command, player_edits, player_lut, player_mix, player_open, player_report,
@@ -178,6 +178,8 @@ pub fn run() {
         copy_text,
         copy_file_to_clipboard,
         open_output_folder,
+        open_export_file,
+        start_export_drag,
         open_local_document,
         open_logs_folder,
         open_config_folder,

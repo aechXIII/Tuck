@@ -29,7 +29,7 @@ fn clipboard_error() -> PublicBackendError {
 }
 
 #[cfg(any(test, target_os = "linux"))]
-fn file_uri(path: &str) -> String {
+pub(crate) fn file_uri(path: &str) -> String {
     use std::fmt::Write;
     let mut uri = String::from("file://");
     for byte in path.bytes() {

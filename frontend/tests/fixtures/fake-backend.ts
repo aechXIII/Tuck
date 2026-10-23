@@ -209,6 +209,8 @@ export async function installFakeBackend(
         getDownloadProgress: () => respond("getDownloadProgress", []),
         installUpdate: () => respond("installUpdate", []),
         openOutputFolder: (path: string) => respond("openOutputFolder", [path]),
+        openExportFile: (itemId: string) => respond("openExportFile", [itemId]),
+        startExportDrag: (itemId: string) => respond("startExportDrag", [itemId]),
         installGenericSendto: (kind: string) => respond("installGenericSendto", [kind]),
         removeGenericSendto: (kind: string) => respond("removeGenericSendto", [kind]),
         repairGenericSendto: (kind: string) => respond("repairGenericSendto", [kind]),

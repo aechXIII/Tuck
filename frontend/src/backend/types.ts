@@ -227,6 +227,10 @@ export interface DomainBackendClient {
   installUpdate(): Promise<BackendResult<EmptyPayload>>;
   openOutputFolder(path: string): Promise<BackendResult<EmptyPayload>>;
   copyFile(path: string): Promise<BackendResult<EmptyPayload>>;
+  /** opens a finished export in the system's default app; named by queue id, never by path */
+  openExportFile(itemId: string): Promise<BackendResult<EmptyPayload>>;
+  /** drags a finished export out of the window as a file; false when the press already ended */
+  startExportDrag(itemId: string): Promise<BackendResult<{ started: boolean }>>;
   installGenericSendto(kind: SendToKind): Promise<BackendResult<EmptyPayload>>;
   removeGenericSendto(kind: SendToKind): Promise<BackendResult<EmptyPayload>>;
   repairGenericSendto(kind: SendToKind): Promise<BackendResult<EmptyPayload>>;

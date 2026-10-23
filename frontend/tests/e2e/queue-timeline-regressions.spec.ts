@@ -106,7 +106,7 @@ test("Library matches queue items to the resolved probe path", async ({ page }) 
     }, state);
     await expect(page.locator("#clips")).toContainText(state === "running" ? "Exporting · 35%" : "Completed");
   }
-  await expect(page.locator("#clips").getByRole("button", { name: "Show", exact: true })).toBeVisible();
+  await expect(page.locator("#clips").getByRole("button", { name: "Show in folder", exact: true })).toBeVisible();
 });
 
 test("hovered completed cards survive unchanged queue polls", async ({ page }) => {
@@ -117,7 +117,7 @@ test("hovered completed cards survive unchanged queue polls", async ({ page }) =
         ok: true, items: [{ id: "finished", source_path: "/mnt/exchange/clip.mp4", state: "completed", progress: 100, result_path: "/mnt/exchange/export.mp4" }],
       });
     });
-    const show = page.locator("#clips").getByRole("button", { name: "Show", exact: true });
+    const show = page.locator("#clips").getByRole("button", { name: "Show in folder", exact: true });
     await expect(show).toBeVisible();
     if (index === 0) {
       await show.hover();
@@ -159,6 +159,6 @@ for (const width of [1240, 960]) {
     }
     await expect(page.locator("#btn-cancel")).toBeDisabled();
     if (width === 960) await page.locator("#panel-toggle-library").click();
-    await expect(page.locator("#clips").getByRole("button", {name: "Show", exact: true})).toBeVisible();
+    await expect(page.locator("#clips").getByRole("button", {name: "Show in folder", exact: true})).toBeVisible();
   });
 }

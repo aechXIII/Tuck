@@ -7,6 +7,7 @@ import {
   encodersForPlatform,
   shouldShowSendTo,
   shouldShowUpdater,
+  supportsFileDragOut,
   supportsHardwareEncoders,
   usesCustomTitleBar,
 } from "../../src/platform/capabilities.ts";
@@ -45,6 +46,23 @@ test("Linux capabilities hide Windows integrations but keep the updater", async 
   assert.equal(usesCustomTitleBar(caps), false);
   assert.deepEqual(encodersForPlatform(["libx264", "h264_nvenc", "hevc_amf"], caps), ["libx264", "h264_nvenc"]);
   assert.equal(encoderForPlatform("hevc_amf", caps), "libx264");
+});
+
+test("dragging exports out is offered only where the shell says it can start a file drag", () => {
+  const base = {
+    platform: "linux" as const,
+    architecture: "x86_64" as const,
+    sendToIntegration: false,
+    publicCli: false,
+    automaticUpdater: true,
+    hardwareAcceleration: true,
+    customTitleBar: false,
+    packaged: true,
+  };
+  assert.equal(supportsFileDragOut({ ...base, fileDragOut: true }), true);
+  assert.equal(supportsFileDragOut({ ...base, fileDragOut: false }), false);
+  // an older shell that doesn't report it can't drag
+  assert.equal(supportsFileDragOut(base), false);
 });
 
 test("fallback on invoke failure still hides integrations", async () => {

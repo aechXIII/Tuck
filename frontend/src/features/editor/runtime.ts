@@ -46,7 +46,7 @@ import { installQueue, type QueueApi } from "../queue/queue.ts";
 import { installSettings, type SettingsApi } from "../settings/settings.ts";
 import { checkUpdates, checkUpdatesFromSettings } from "./updates.ts";
 import { routeDroppedPaths } from "./drop-routing.ts";
-import { fetchPlatformCapabilities, shouldShowUpdater, usesElementFullscreen } from "../../platform/capabilities.ts";
+import { fetchPlatformCapabilities, shouldShowUpdater, supportsFileDragOut, usesElementFullscreen } from "../../platform/capabilities.ts";
 import { errorSummary, formatBytes, formatTime } from "./format.ts";
 import {
   closeActiveModal,
@@ -121,6 +121,7 @@ export function installEditorRuntime(
   let shortcutDialog: ShortcutDialogApi;
   let encoding: EncodingControlsApi;
   let queue: QueueApi;
+  let exportDragOut = false;
   let settings: SettingsApi;
   let frameExport: ReturnType<typeof installFrameExport> | undefined;
 
@@ -432,6 +433,10 @@ export function installEditorRuntime(
     openResult: (path) => {
       void queue?.openResult(path);
     },
+    copyResult: (itemId) => void queue?.copyResult(itemId),
+    copyResultState: (itemId, path) => queue?.copyResultState(itemId, path) ?? { disabled: false, label: "Copy file" },
+    dragExportOut: (itemId) => void queue?.dragExportOut(itemId),
+    canDragExportOut: () => exportDragOut,
     retryQueueItem: async (itemId) => {
       await queue?.retryQueueItem(itemId);
     },
@@ -457,6 +462,12 @@ export function installEditorRuntime(
   });
 
   let workspaceCutTask = false;
+
+  // finished exports offer dragging out only where the desktop shell can start a file drag
+  void fetchPlatformCapabilities().then((caps) => {
+    exportDragOut = supportsFileDragOut(caps);
+    if (exportDragOut) library.renderClips();
+  });
 
   encoding = installEncodingControls({
     session,
@@ -677,6 +688,7 @@ export function installEditorRuntime(
         "export-item-retry": (target) => void queue.retryQueueItem(target.dataset.itemId ?? ""),
         "export-item-show": (target) => void queue.openResult(target.dataset.resultPath ?? ""),
         "export-item-copy-file": (target) => void queue.copyResult(target.dataset.itemId ?? ""),
+        "export-item-open": (target) => void queue.openExportFile(target.dataset.itemId ?? ""),
         "export-item-copy-details": (target) => void queue.copyDiagnostics(target.dataset.itemId ?? ""),
         "export-item-remove": (target) => void queue.removeQueueItem(target.dataset.itemId ?? ""),
         "modal-close-overlay": (target, event) => {

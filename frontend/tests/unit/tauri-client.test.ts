@@ -35,6 +35,29 @@ test("file copy invokes the native file command and preserves native errors", as
   assert.equal((await createTauriBackendClient(async () => { throw new Error("Offline"); }).copyFile(path)).ok, false);
 });
 
+test("finished exports are opened and dragged by queue id, and native errors are kept", async () => {
+  const calls: unknown[] = [];
+  const client = createTauriBackendClient(async (command, args) => {
+    calls.push({ command, args });
+    return command === "start_export_drag" ? false : undefined;
+  });
+  assert.deepEqual(await client.openExportFile("job-1"), { ok: true, value: {} });
+  assert.deepEqual(await client.startExportDrag("job-1"), { ok: true, value: { started: false } });
+  assert.deepEqual(calls, [
+    { command: "open_export_file", args: { itemId: "job-1" } },
+    { command: "start_export_drag", args: { itemId: "job-1" } },
+  ]);
+  const error = { code: "INVALID_PATH", message: "The export could not be found.", details: {} };
+  const failed = createTauriBackendClient(async () => { throw error; });
+  assert.deepEqual(await failed.openExportFile("job-1"), { ok: false, error });
+  assert.deepEqual(await failed.startExportDrag("job-1"), { ok: false, error });
+  const offline = createTauriBackendClient(async () => { throw new Error("Offline"); });
+  assert.equal((await offline.openExportFile("job-1")).ok, false);
+  // anything but a yes or no from the shell is not a drag
+  const malformed = await createTauriBackendClient(async () => "yes").startExportDrag("job-1");
+  assert.equal(malformed.ok, false);
+});
+
 test("frame export sends its snapshot and validates the complete result", async () => {
   const calls: unknown[] = [];
   const value = { path: "out.png", width: 1920, height: 1080, time: 3.25, warnings: [] };

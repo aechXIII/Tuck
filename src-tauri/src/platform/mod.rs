@@ -1,5 +1,6 @@
 pub mod capabilities;
 pub mod file_clipboard;
+pub mod file_drag;
 pub mod local_documents;
 pub mod opener;
 pub mod startup;

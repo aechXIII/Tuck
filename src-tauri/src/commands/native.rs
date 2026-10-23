@@ -9,9 +9,10 @@ use tauri_plugin_dialog::DialogExt;
 use crate::backend::{protocol::PublicBackendError, BackendState};
 use crate::commands::backend::BackendCommand;
 use crate::platform::capabilities::{current_capabilities, PlatformCapabilities};
+use crate::platform::file_drag;
 use crate::platform::local_documents::{open_document_file, open_document_with, LocalDocument};
 use crate::platform::opener::{
-    open_app_folder_with_validation, open_with_validation, SystemOpener,
+    launch_export, open_app_folder_with_validation, open_with_validation, SystemOpener,
 };
 
 #[tauri::command]
@@ -229,6 +230,106 @@ pub async fn open_output_folder(path: String) -> Result<(), PublicBackendError> 
         })?
 }
 
+/// The file of an export the backend's queue has finished. The page names the export by its
+/// queue id, never by path, so these commands can't be pointed at any other file.
+fn completed_export_path(queue: &Value, item_id: &str) -> Result<PathBuf, PublicBackendError> {
+    if item_id.is_empty() || item_id.len() > 128 {
+        return Err(PublicBackendError::new(
+            "INVALID_REQUEST",
+            "Choose a finished export.",
+        ));
+    }
+    let item = queue
+        .get("items")
+        .and_then(Value::as_array)
+        .and_then(|items| {
+            items
+                .iter()
+                .find(|item| item.get("id").and_then(Value::as_str) == Some(item_id))
+        })
+        .ok_or_else(|| {
+            PublicBackendError::new(
+                "INVALID_REQUEST",
+                "This export is no longer in the list. Export the video again to open it.",
+            )
+        })?;
+    if item.get("state").and_then(Value::as_str) != Some("completed") {
+        return Err(PublicBackendError::new(
+            "INVALID_REQUEST",
+            "This export isn't finished yet.",
+        ));
+    }
+    let raw_path = item
+        .get("result_path")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let path = PathBuf::from(raw_path);
+    let media = path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map(str::to_ascii_lowercase)
+        .is_some_and(|extension| {
+            VIDEO_EXTENSIONS.contains(&extension.as_str())
+                || AUDIO_EXTENSIONS.contains(&extension.as_str())
+        });
+    // the file opens in whatever app handles its type, so only media files qualify
+    if raw_path.trim().is_empty() || raw_path.contains('\0') || !path.is_absolute() || !media {
+        return Err(PublicBackendError::new(
+            "MALFORMED_BACKEND_OUTPUT",
+            "The backend returned an invalid export location.",
+        ));
+    }
+    if !std::fs::metadata(&path).is_ok_and(|metadata| metadata.is_file()) {
+        return Err(PublicBackendError::new(
+            "INVALID_PATH",
+            "The export could not be found. It may have been moved or deleted.",
+        ));
+    }
+    Ok(path)
+}
+
+async fn finished_export(
+    state: &BackendState,
+    item_id: String,
+) -> Result<PathBuf, PublicBackendError> {
+    let queue = state.request(BackendCommand::GetQueueState).await?;
+    tauri::async_runtime::spawn_blocking(move || completed_export_path(&queue, &item_id))
+        .await
+        .map_err(|_| PublicBackendError::new("INTERNAL_ERROR", "Could not find the export."))?
+}
+
+#[tauri::command]
+pub async fn open_export_file(
+    state: tauri::State<'_, BackendState>,
+    item_id: String,
+) -> Result<(), PublicBackendError> {
+    let path = finished_export(&state, item_id).await?;
+    tauri::async_runtime::spawn_blocking(move || launch_export(&path, &SystemOpener))
+        .await
+        .map_err(|_| PublicBackendError::new("INTERNAL_ERROR", "Could not open the export."))?
+}
+
+/// Starts dragging a finished export out of the window as a file. Returns false when the button
+/// was let go before the drag could start, so nothing was dragged.
+#[tauri::command]
+pub async fn start_export_drag(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, BackendState>,
+    item_id: String,
+) -> Result<bool, PublicBackendError> {
+    let path = finished_export(&state, item_id).await?;
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    let target = window.clone();
+    window
+        .with_webview(move |webview| {
+            let _ = sender.send(file_drag::start(&target, &webview, &path));
+        })
+        .map_err(|_| PublicBackendError::new("INTERNAL_ERROR", "Could not drag the export."))?;
+    receiver
+        .await
+        .map_err(|_| PublicBackendError::new("INTERNAL_ERROR", "Could not drag the export."))?
+}
+
 #[tauri::command]
 pub async fn open_local_document(
     app: tauri::AppHandle,
@@ -379,6 +480,130 @@ mod tests {
             ("PNG image", &["png"][..])
         );
         assert!(serde_json::from_value::<SaveFileFormat>(serde_json::json!("exe")).is_err());
+    }
+
+    struct ExportFile(PathBuf);
+
+    impl ExportFile {
+        fn new(name: &str) -> Self {
+            let directory = std::env::temp_dir().join(format!(
+                "tuck-export-result-{}-{}",
+                std::process::id(),
+                name.replace(['#', ',', ' '], "-")
+            ));
+            std::fs::create_dir_all(&directory).unwrap();
+            let file = directory.join(name);
+            std::fs::write(&file, b"export bytes").unwrap();
+            Self(file)
+        }
+
+        fn path(&self) -> &str {
+            self.0.to_str().unwrap()
+        }
+    }
+
+    impl Drop for ExportFile {
+        fn drop(&mut self) {
+            if let Some(directory) = self.0.parent() {
+                let _ = std::fs::remove_dir_all(directory);
+            }
+        }
+    }
+
+    fn queue(items: Value) -> Value {
+        serde_json::json!({ "items": items, "current_id": null, "pending_ids": [] })
+    }
+
+    #[test]
+    fn a_finished_export_resolves_to_its_own_file() {
+        let file = ExportFile::new("Clip #1, final_small.MP4");
+        let snapshot = queue(serde_json::json!([
+            { "id": "other", "state": "completed", "result_path": "/elsewhere/other.mp4" },
+            { "id": "done", "state": "completed", "result_path": file.path() },
+        ]));
+        assert_eq!(completed_export_path(&snapshot, "done").unwrap(), file.0);
+    }
+
+    #[test]
+    fn only_a_finished_export_the_queue_knows_can_be_opened() {
+        let file = ExportFile::new("states.mp4");
+        for (state, id) in [
+            ("running", "item"),
+            ("pending", "item"),
+            ("failed", "item"),
+            ("cancelled", "item"),
+            ("completed", "unknown"),
+            ("completed", ""),
+        ] {
+            let snapshot = queue(serde_json::json!([
+                { "id": "item", "state": state, "result_path": file.path() },
+            ]));
+            assert_eq!(
+                completed_export_path(&snapshot, id).unwrap_err().code,
+                "INVALID_REQUEST",
+                "{state} {id:?}"
+            );
+        }
+        let long_id = "x".repeat(129);
+        let snapshot = queue(serde_json::json!([
+            { "id": long_id, "state": "completed", "result_path": file.path() },
+        ]));
+        assert_eq!(
+            completed_export_path(&snapshot, &long_id).unwrap_err().code,
+            "INVALID_REQUEST"
+        );
+        assert_eq!(
+            completed_export_path(&serde_json::json!({}), "item")
+                .unwrap_err()
+                .code,
+            "INVALID_REQUEST"
+        );
+    }
+
+    #[test]
+    fn an_export_path_that_is_not_a_media_file_is_never_opened() {
+        let program = ExportFile::new("setup.exe");
+        let script = ExportFile::new("run.sh");
+        let no_extension = ExportFile::new("video");
+        for raw in [
+            program.path().to_owned(),
+            script.path().to_owned(),
+            no_extension.path().to_owned(),
+            "relative/clip.mp4".to_owned(),
+            String::new(),
+            "/tmp/clip\0.mp4".to_owned(),
+        ] {
+            let snapshot = queue(serde_json::json!([
+                { "id": "item", "state": "completed", "result_path": raw },
+            ]));
+            assert_eq!(
+                completed_export_path(&snapshot, "item").unwrap_err().code,
+                "MALFORMED_BACKEND_OUTPUT",
+                "{raw:?}"
+            );
+        }
+        let snapshot = queue(serde_json::json!([{ "id": "item", "state": "completed" }]));
+        assert_eq!(
+            completed_export_path(&snapshot, "item").unwrap_err().code,
+            "MALFORMED_BACKEND_OUTPUT"
+        );
+    }
+
+    #[test]
+    fn a_moved_or_deleted_export_says_so() {
+        let file = ExportFile::new("moved.mkv");
+        let missing = file.0.with_file_name("gone.mkv");
+        let folder = file.0.with_file_name("folder.mp4");
+        std::fs::create_dir_all(&folder).unwrap();
+        for path in [missing, folder] {
+            let snapshot = queue(serde_json::json!([
+                { "id": "item", "state": "completed", "result_path": path },
+            ]));
+            assert_eq!(
+                completed_export_path(&snapshot, "item").unwrap_err().code,
+                "INVALID_PATH"
+            );
+        }
     }
 
     #[test]

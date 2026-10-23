@@ -57,6 +57,11 @@ export interface LibraryEncodingHooks {
   syncTimelineUI?: () => void;
   togglePlay?: () => void;
   openResult?: (path: string) => void;
+  // a finished export's file: copied to the clipboard, or dragged out of the window
+  copyResult?: (itemId: string) => void;
+  copyResultState?: (itemId: string, path: string) => { disabled: boolean; label: string };
+  dragExportOut?: (itemId: string) => void;
+  canDragExportOut?: () => boolean;
   retryQueueItem?: (itemId: string) => void | Promise<void>;
   pollQueue?: () => void | Promise<void>;
   setInspectorTab?: (tab: string, persist?: boolean) => void;
@@ -628,6 +633,34 @@ export function createLibrary(host: LibraryHost): LibraryApi {
     windowRef.addEventListener("pointercancel", onClipReorderEnd, true);
   }
 
+  // a press on a finished export's picture becomes a file drag once it moves as far as a reorder would
+  function beginExportDrag(event: ClipCardEvent | PointerEvent, itemId: string): void {
+    const pointer = event as PointerEvent;
+    if (clipReorder.active || (typeof pointer.button === "number" && pointer.button !== 0)) return;
+    const startX = pointer.clientX || 0;
+    const startY = pointer.clientY || 0;
+    const stop = (): void => {
+      windowRef.removeEventListener("pointermove", move, true);
+      windowRef.removeEventListener("pointerup", stop, true);
+      windowRef.removeEventListener("pointercancel", stop, true);
+    };
+    const move = (moved: Event): void => {
+      if (!(moved instanceof PointerEvent)) return;
+      if ((moved.buttons & 1) === 0) {
+        stop();
+        return;
+      }
+      const dx = moved.clientX - startX;
+      const dy = moved.clientY - startY;
+      if (dx * dx + dy * dy < 16) return;
+      stop();
+      host.dragExportOut?.(itemId);
+    };
+    windowRef.addEventListener("pointermove", move, true);
+    windowRef.addEventListener("pointerup", stop, true);
+    windowRef.addEventListener("pointercancel", stop, true);
+  }
+
   function onClipReorderMove(event: Event): void {
     if (!(event instanceof PointerEvent) || !clipReorder.active) return;
     const dx = event.clientX - clipReorder.startX;
@@ -846,6 +879,8 @@ export function createLibrary(host: LibraryHost): LibraryApi {
       openResult: (resultPath) => {
         if (resultPath) void host.openResult?.(resultPath);
       },
+      copyResult: (itemId) => host.copyResult?.(itemId),
+      beginDragOut: beginExportDrag,
       retry: (itemId) => {
         if (itemId) void host.retryQueueItem?.(itemId);
       },
@@ -879,6 +914,7 @@ export function createLibrary(host: LibraryHost): LibraryApi {
     }
     el.classList.remove("show");
     const toolMissing = readToolMissing();
+    const dragOut = host.canDragExportOut?.() === true;
     const models: ClipCardModel[] = keys.map((path) => {
       const clip = session.clips[path]!;
       const needsTool = !!clip.error && toolMissing && !clip._queueState;
@@ -896,6 +932,10 @@ export function createLibrary(host: LibraryHost): LibraryApi {
           ? "Tuck can’t read videos without FFprobe. Choose it in Settings › Media, then retry."
           : clip.error ? fullReason(clip.error) : "";
       const full = clip.probed ? clip.probeData?.duration || 0 : 0;
+      const itemId = clip._queueItemId || "";
+      const resultPath = clip._resultPath || "";
+      const finished = clip._queueState === "completed" && !!resultPath && !!itemId;
+      const copy = finished ? host.copyResultState?.(itemId, resultPath) : undefined;
       return {
         path,
         name: clip.name,
@@ -919,6 +959,10 @@ export function createLibrary(host: LibraryHost): LibraryApi {
         resultFits: clip._resultFits === true,
         resultNote: clip._queueState === "completed" ? clip._resultNote || "" : "",
         resultNoteDetail: clip._queueState === "completed" ? clip._resultNoteDetail || "" : "",
+        copyLabel: copy?.label ?? "",
+        // one copy runs at a time, so every row's Copy file waits while it does
+        copyPending: copy?.disabled === true,
+        canDragOut: finished && dragOut,
       };
     });
     const nextModels = JSON.stringify(models);
@@ -928,6 +972,11 @@ export function createLibrary(host: LibraryHost): LibraryApi {
       return;
     }
     renderedClipModels = nextModels;
+    // a changed row is drawn again; whatever had focus in the list keeps it
+    const active = documentRef.activeElement;
+    const focused = active instanceof HTMLElement && cdiv.contains(active)
+      ? { path: active.closest<HTMLElement>("[data-clip-path]")?.dataset.clipPath ?? "", action: active.dataset.clipAction ?? "" }
+      : null;
     cdiv.replaceChildren(el);
     const groups = groupClipModels(models);
     for (const group of groups) {
@@ -951,6 +1000,7 @@ export function createLibrary(host: LibraryHost): LibraryApi {
       for (const item of group.items) appendLibraryClip(section, item);
       cdiv.appendChild(section);
     }
+    if (focused?.path) restoreListFocus(cdiv, focused.path, focused.action);
     animateCardChanges(models);
     updateLibrarySummary(models);
     host.updateActionButtons?.();
@@ -1101,6 +1151,19 @@ export function createLibrary(host: LibraryHost): LibraryApi {
     // the Undo button has gone, so focus moves to the video that came back
     const active = documentRef.activeElement;
     if (!active || active === documentRef.body) focusCard(target ?? restoring[0]?.clip.path ?? "");
+  }
+
+  function restoreListFocus(list: HTMLElement, path: string, action: string): void {
+    const card = Array.from(list.querySelectorAll<HTMLElement>("[data-clip-path]")).find(
+      (element) => element.dataset.clipPath === path,
+    );
+    if (!card) return;
+    const button = action
+      ? Array.from(card.querySelectorAll<HTMLElement>("[data-clip-action]")).find(
+        (element) => element.dataset.clipAction === action,
+      )
+      : null;
+    (button ?? card).focus();
   }
 
   function focusCard(path: string): void {

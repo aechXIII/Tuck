@@ -30,6 +30,8 @@ fn main() {
             "pick_save_file",
             "copy_text",
             "open_output_folder",
+            "open_export_file",
+            "start_export_drag",
             "open_local_document",
             "open_logs_folder",
             "open_config_folder",

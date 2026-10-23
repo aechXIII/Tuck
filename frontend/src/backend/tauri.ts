@@ -747,6 +747,27 @@ class TauriTransport implements TauriBackendClient {
     }
   }
 
+  async openExportFile(itemId: string): Promise<BackendResult<EmptyPayload>> {
+    try {
+      await this.#invoke("open_export_file", { itemId });
+      return { ok: true, value: {} };
+    } catch (error) {
+      return this.#finish(isBackendError(error) ? { ok: false, error } : backendFailure("TAURI_INVOKE_FAILED", errorMessage(error, "Could not open the export"), { method: "openExportFile" }));
+    }
+  }
+
+  async startExportDrag(itemId: string): Promise<BackendResult<{ started: boolean }>> {
+    try {
+      const started = await this.#invoke("start_export_drag", { itemId });
+      if (typeof started !== "boolean") {
+        return this.#finish(backendFailure("MALFORMED_BACKEND_OUTPUT", "Could not drag the export", { method: "startExportDrag" }));
+      }
+      return { ok: true, value: { started } };
+    } catch (error) {
+      return this.#finish(isBackendError(error) ? { ok: false, error } : backendFailure("TAURI_INVOKE_FAILED", errorMessage(error, "Could not drag the export"), { method: "startExportDrag" }));
+    }
+  }
+
   async openLocalDocument(document: "license" | "third_party_notices"): Promise<BackendResult<EmptyPayload>> {
     try {
       await this.#invoke("open_local_document", { document });

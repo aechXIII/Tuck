@@ -108,6 +108,7 @@
 .clip[data-clip-path] .c1 {
   min-width: 0;
   flex: 1;
+  container-type: inline-size;
 }
 /* long names get a second line before they are cut; the full name is in the row's tooltip */
 .clip[data-clip-path] .c2 {
@@ -248,8 +249,26 @@
   color: var(--dim);
 }
 /* a finished export that came in over its target says so in the warning colour */
-.c-line .c-fit.over {
+.c-line .c-fit.over,
+.c-line .c-status.over {
   color: var(--warn);
+}
+/* the exported size is never cut short; "fits 10 MB" gives way when the file actions need the room
+   and stays for screen readers, while the size's colour and tooltip still tell it */
+.c-line.done .c-status {
+  flex: 0 0 auto;
+}
+@container (max-width: 179px) {
+  .c-line.done .c-sep {
+    display: none;
+  }
+  .c-line.done .c-fit {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
 }
 .c-note {
   margin-top: 1px;
@@ -297,6 +316,71 @@
 }
 .clip.sel .c-line .c-act:hover {
   background: rgb(0 0 0 / 0.28);
+}
+/* a finished export's file actions: plain icons at rest, a fill under the pointer */
+.c-line .c-icons {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 2px;
+  margin-left: auto;
+  overflow: visible;
+}
+.c-line .c-icon {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 22px;
+  /* the full target without making a finished row taller than the others */
+  margin: -4px 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-chip);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background-color 120ms var(--ease-out), color 120ms var(--ease-out);
+}
+.c-line .c-icon svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.c-line .c-icon:hover {
+  background: var(--raised-2);
+  color: var(--text);
+}
+.clip.sel .c-line .c-icon {
+  color: var(--text);
+}
+.clip.sel .c-line .c-icon:hover {
+  background: rgb(0 0 0 / 0.28);
+}
+.c-line .c-icon:active:not([aria-disabled="true"]) {
+  background: rgb(0 0 0 / 0.36);
+  transition-duration: 0s;
+}
+.c-line .c-icon:focus-visible {
+  outline: 2px solid var(--accent-light);
+  outline-offset: -1px;
+}
+.c-line .c-icon[aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: default;
+}
+.c-line .c-icon.done,
+.clip.sel .c-line .c-icon.done {
+  color: var(--good);
+}
+/* a finished export's picture can be dragged out of Tuck as its file */
+.c-thumb.drag-out {
+  cursor: grab;
+}
+.c-thumb.drag-out:active {
+  cursor: grabbing;
 }
 /* the drag handle sits in the row's left gutter, beside the picture */
 .clip[data-clip-path] .c-drag {

@@ -5,6 +5,8 @@ use crate::backend::protocol::PublicBackendError;
 pub trait Opener: Send + Sync {
     fn open(&self, path: &Path) -> std::io::Result<()>;
     fn reveal(&self, path: &Path) -> std::io::Result<()>;
+    /// opens a file in the app the system uses for its type
+    fn launch(&self, path: &Path) -> std::io::Result<()>;
 }
 
 pub struct SystemOpener;
@@ -118,6 +120,57 @@ fn spawn_first_available(path: &Path, programs: &[&str]) -> std::io::Result<()> 
     }))
 }
 
+/// Only programs that hand a file to the user's default app; the folder openers above would show
+/// the file in a file manager instead.
+#[cfg(target_os = "linux")]
+const LINUX_FILE_LAUNCHERS: &[&str] = &["xdg-open", "gio"];
+
+/// How long a launcher gets to report that nothing can open the file.
+#[cfg(target_os = "linux")]
+const LAUNCH_CHECK: std::time::Duration = std::time::Duration::from_secs(3);
+
+#[cfg(target_os = "linux")]
+fn launch_first_available(
+    path: &Path,
+    programs: &[&str],
+    check: std::time::Duration,
+) -> std::io::Result<()> {
+    let mut last_error: Option<std::io::Error> = None;
+    for program in programs {
+        let mut command = host_command(program);
+        if *program == "gio" {
+            command.arg("open");
+        }
+        command.arg(path);
+        let child = match command.spawn() {
+            Ok(child) => child,
+            Err(error) => {
+                last_error = Some(error);
+                continue;
+            }
+        };
+        // without a desktop environment xdg-open runs the player itself and only returns when it
+        // closes, so a launcher still running after the check counts as opened
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let mut child = child;
+        std::thread::spawn(move || {
+            let _ = sender.send(child.wait());
+        });
+        match receiver.recv_timeout(check) {
+            Ok(Ok(status)) if !status.success() => {
+                last_error = Some(std::io::Error::other("file opener failed"));
+            }
+            _ => return Ok(()),
+        }
+    }
+    Err(last_error.unwrap_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "no program is available to open the file",
+        )
+    }))
+}
+
 impl Opener for SystemOpener {
     fn reveal(&self, path: &Path) -> std::io::Result<()> {
         #[cfg(target_os = "windows")]
@@ -186,6 +239,34 @@ impl Opener for SystemOpener {
             ))
         }
     }
+
+    fn launch(&self, path: &Path) -> std::io::Result<()> {
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+
+            // Explorer opens a file in its default app; it also splits arguments at commas, so
+            // the path goes in quotes, which a Windows path can never contain
+            let mut quoted = std::ffi::OsString::from("\"");
+            quoted.push(path.as_os_str());
+            quoted.push("\"");
+            std::process::Command::new("explorer.exe")
+                .raw_arg(quoted)
+                .spawn()
+                .map(|_| ())
+        }
+        #[cfg(target_os = "linux")]
+        {
+            launch_first_available(path, LINUX_FILE_LAUNCHERS, LAUNCH_CHECK)
+        }
+        #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+        {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "unsupported platform",
+            ))
+        }
+    }
 }
 
 pub fn validate_path_for_open(path_str: &str) -> Result<PathBuf, PublicBackendError> {
@@ -243,6 +324,17 @@ pub fn open_with_validation(path_str: &str, opener: &dyn Opener) -> Result<(), P
     })
 }
 
+/// Opens a finished export in the system's default app. The caller has already checked that the
+/// path is an export the backend finished.
+pub fn launch_export(path: &Path, opener: &dyn Opener) -> Result<(), PublicBackendError> {
+    opener.launch(path).map_err(|_| {
+        PublicBackendError::new(
+            "UNSUPPORTED_OPERATION",
+            "No app opened the file. Use Show in folder instead.",
+        )
+    })
+}
+
 pub fn open_app_folder_with_validation(
     folder: &Path,
     opener: &dyn Opener,
@@ -269,6 +361,7 @@ mod tests {
     struct MockOpener {
         pub called: std::sync::Mutex<Vec<PathBuf>>,
         pub revealed: std::sync::Mutex<Vec<PathBuf>>,
+        pub launched: std::sync::Mutex<Vec<PathBuf>>,
         pub should_fail: bool,
     }
 
@@ -277,6 +370,7 @@ mod tests {
             Self {
                 called: std::sync::Mutex::new(Vec::new()),
                 revealed: std::sync::Mutex::new(Vec::new()),
+                launched: std::sync::Mutex::new(Vec::new()),
                 should_fail,
             }
         }
@@ -300,6 +394,33 @@ mod tests {
                 Ok(())
             }
         }
+
+        fn launch(&self, path: &Path) -> std::io::Result<()> {
+            self.launched.lock().unwrap().push(path.to_path_buf());
+            if self.should_fail {
+                Err(std::io::Error::other("mock failure"))
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    #[test]
+    fn launching_an_export_uses_the_default_app_and_never_the_folder() {
+        let file = std::env::temp_dir().join("tuck-launch-export.mp4");
+        let mock = MockOpener::new(false);
+        assert!(launch_export(&file, &mock).is_ok());
+        assert_eq!(*mock.launched.lock().unwrap(), vec![file]);
+        assert!(mock.called.lock().unwrap().is_empty());
+        assert!(mock.revealed.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_failed_launch_points_at_show_in_folder() {
+        let mock = MockOpener::new(true);
+        let error = launch_export(Path::new("/tmp/a.mp4"), &mock).unwrap_err();
+        assert_eq!(error.code, "UNSUPPORTED_OPERATION");
+        assert!(error.message.contains("Show in folder"));
     }
 
     #[test]
@@ -428,6 +549,40 @@ mod tests {
         // `true` exists on every POSIX system, so the bogus name before it must be skipped
         spawn_first_available(&std::env::temp_dir(), &["tuck-no-such-opener-xyz", "true"])
             .expect("should fall through to `true`");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_file_launchers_open_the_default_app_rather_than_a_file_manager() {
+        assert_eq!(LINUX_FILE_LAUNCHERS, &["xdg-open", "gio"]);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn launch_moves_on_from_a_launcher_that_fails_or_is_missing() {
+        let short = std::time::Duration::from_secs(5);
+        launch_first_available(
+            &std::env::temp_dir(),
+            &["tuck-no-such-launcher-xyz", "false", "true"],
+            short,
+        )
+        .expect("should fall through to `true`");
+        let error = launch_first_available(&std::env::temp_dir(), &["false"], short).unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::Other);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_launcher_still_running_after_the_check_counts_as_opened() {
+        // `sleep` keeps running past the check, the way xdg-open does when it runs the player itself
+        let started = std::time::Instant::now();
+        launch_first_available(
+            Path::new("5"),
+            &["sleep"],
+            std::time::Duration::from_millis(200),
+        )
+        .expect("a launcher that is still running has opened the file");
+        assert!(started.elapsed() < std::time::Duration::from_secs(4));
     }
 
     #[cfg(target_os = "linux")]
