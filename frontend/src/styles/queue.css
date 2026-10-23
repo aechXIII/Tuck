@@ -42,6 +42,7 @@
 #task-wf {
   --slots: 3;
   --slot: 0;
+  --chosen-weight: 650;
   position: relative;
   display: grid;
   grid-auto-columns: 1fr;
@@ -72,7 +73,8 @@
   left: 2px;
   width: calc((100% - 4px - (var(--slots) - 1) * 2px) / var(--slots));
   border-radius: 999px;
-  background: var(--raised-2);
+  /* lighter than other raised chips: the chosen task has to show without relying on color */
+  background: #4b4c53;
   transform: translateX(calc(var(--slot) * (100% + 2px)));
 }
 #task-wf.thumb-slides::before {
@@ -89,7 +91,8 @@
   border: 0;
   border-radius: 999px;
   background: transparent;
-  color: var(--dim);
+  /* dimmer than --dim so the chosen label stands out by lightness; still passes AA on the bar */
+  color: #8b8993;
   font: 600 calc(12px * var(--text-scale)) var(--font);
   cursor: pointer;
   transition: color 0.12s ease;
@@ -108,7 +111,20 @@
   color: var(--text);
 }
 .task-tab.on {
-  color: var(--text);
+  color: #fff;
+  font-weight: var(--chosen-weight);
+}
+/* each label keeps room for the chosen weight, so choosing Lossless cut, the longest, doesn't
+   widen every slot and move the whole switch */
+.task-tab > span {
+  display: inline-grid;
+}
+.task-tab > span::after {
+  content: attr(data-label);
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  font-weight: var(--chosen-weight);
 }
 .task-tab.on svg {
   color: var(--accent-light);

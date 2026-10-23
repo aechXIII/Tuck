@@ -88,6 +88,22 @@ test("the thumb sits under the chosen task, also when a task is hidden", async (
   }
 });
 
+test("choosing a task never changes the task switch's size or place", async ({ page }) => {
+  await open(page, { holdPlans: true });
+  // plain labels at a regular weight make the chosen one's heavier label much wider in any font
+  await page.addStyleTag({ content: ':root { --font: Arial, "Liberation Sans"; } .task-tab { font-weight: 400; }' });
+  const box = () => page.locator("#task-wf").evaluate((tabs) => {
+    const { left, width } = tabs.getBoundingClientRect();
+    return [Math.round(left * 2) / 2, Math.round(width * 2) / 2];
+  });
+  const first = await box();
+  for (const id of ["wf-l", "wf-u", "wf-c", "wf-l"]) {
+    await page.locator(`#${id}`).click();
+    await expect(page.locator(`#${id}`)).toHaveAttribute("aria-pressed", "true");
+    expect(await box()).toEqual(first);
+  }
+});
+
 test("the thumb starts on the saved task and only slides when the task changes", async ({ page }) => {
   const slides = () => page.evaluate(() => document.getAnimations().filter((animation) =>
     animation instanceof CSSTransition && animation.transitionProperty === "transform" && (animation.effect as KeyframeEffect).pseudoElement === "::before").length);
