@@ -86,7 +86,7 @@ test("rotating a video and entering fullscreen preserve the workspace layout", a
   const separator = page.getByRole("separator", { name: "Resize timeline" });
   const timelineHeight = await separator.getAttribute("aria-valuenow");
   await page.locator("#insp-tab-edit").click();
-  await page.getByRole("button", { name: "Rotate 90° clockwise", exact: true }).click();
+  await page.getByRole("button", { name: "90° right", exact: true }).click();
   await expectPlayerLayout(page, 9 / 16);
   await expect(separator).toHaveAttribute("aria-valuenow", timelineHeight!);
 

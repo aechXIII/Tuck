@@ -40,6 +40,24 @@ def test_video_info_serialization_includes_display_geometry() -> None:
     assert data["display_rotation"] == 90
 
 
+def test_variable_frame_rate_video_reports_its_average_rate() -> None:
+    info = VideoInfo(
+        path="phone.mp4",
+        duration=3.0,
+        width=1920,
+        height=1080,
+        fps=1000.0,
+        average_fps=59.826,
+        variable_frame_rate=True,
+        video_codec="h264",
+    )
+
+    data = video_info_dict(info)
+
+    assert data["variable_frame_rate"] is True
+    assert data["average_fps"] == 59.826
+
+
 def test_profile_ui_serialization_has_one_explicit_bitrate_compatibility_switch() -> None:
     profile = Profile(
         name="Vertical",

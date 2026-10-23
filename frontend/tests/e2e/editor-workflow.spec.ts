@@ -368,8 +368,8 @@ test("crop, rotation, and segment edits update the selected clip and undo restor
   await page.locator("#insp-tab-edit").click();
   await page.getByRole("button", { name: "16:9" }).click();
   await expect(page.getByRole("button", { name: "16:9" })).toHaveAttribute("aria-pressed", "true");
-  await page.getByRole("button", { name: "Rotate 90° clockwise" }).click();
-  await expect(page.getByRole("button", { name: "Rotate 90° clockwise" })).toHaveAttribute(
+  await page.getByRole("button", { name: "90° right", exact: true }).click();
+  await expect(page.getByRole("button", { name: "90° right", exact: true })).toHaveAttribute(
     "aria-pressed",
     "true",
   );

@@ -365,6 +365,7 @@ export function installEditorRuntime(
     clipDetails: {
       render: ClipDetails.render,
       sourceSummary: ClipDetails.sourceSummary,
+      frameRateLabel: ClipDetails.frameRateLabel,
     },
     AudioTimeline: {
       selectTrack: audio.selectTrack,

@@ -31,6 +31,8 @@ def video_info_dict(info: VideoInfo) -> dict[str, Any]:
         "resolution": info.resolution_str,
         "fps": round(info.fps, 3),
         "variable_frame_rate": info.variable_frame_rate,
+        # a variable-rate video's nominal rate can be far above its real pictures per second
+        "average_fps": round(info.average_fps, 3),
         "video_codec": info.video_codec,
         "audio_codec": info.audio_codec,
         "audio_channels": info.audio_channels,

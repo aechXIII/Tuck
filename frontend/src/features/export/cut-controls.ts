@@ -211,7 +211,7 @@ export function installCutControls(deps: CutControlsDeps) {
     exactOption.disabled = !exactAvailable && precision !== "exact" || busy;
     // an unavailable Exact explains why in place of what it does
     element("cut-exact-note").textContent = !exactAvailable && exactReason && precision !== "exact"
-      ? exactReason : "Re-encodes a little video at each cut.";
+      ? exactReason : "Cuts on any frame. Re-encodes only from each cut to its nearest keyframe.";
     const ranges = request?.segments ?? [];
     element("cuts-title").textContent = ranges.length ? `Segments · ${ranges.length} kept` : "Segments";
     const list = element<HTMLOListElement>("cut-list");

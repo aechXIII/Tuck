@@ -531,61 +531,40 @@
                 >
                   <button
                     type="button"
-                    class="icon on"
+                    class="on"
                     data-rotation="0"
                     aria-pressed="true"
                     data-action-click="transform-rotation"
                     data-tip="No rotation"
-                    aria-label="No rotation"
                   >
-                    <svg viewBox="0 0 24 24">
-                      <rect x="4" y="4" width="16" height="16" rx="2"></rect>
-                    </svg>
+                    0°
                   </button>
                   <button
                     type="button"
-                    class="icon"
                     data-rotation="270"
                     aria-pressed="false"
                     data-action-click="transform-rotation"
                     data-tip="Rotate 90° counterclockwise"
-                    aria-label="Rotate 90° counterclockwise"
                   >
-                    <svg viewBox="0 0 24 24">
-                      <polyline points="1 4 1 10 7 10"></polyline>
-                      <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
-                    </svg>
+                    90° left
                   </button>
                   <button
                     type="button"
-                    class="icon"
                     data-rotation="90"
                     aria-pressed="false"
                     data-action-click="transform-rotation"
                     data-tip="Rotate 90° clockwise"
-                    aria-label="Rotate 90° clockwise"
                   >
-                    <svg viewBox="0 0 24 24">
-                      <polyline points="23 4 23 10 17 10"></polyline>
-                      <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
-                    </svg>
+                    90° right
                   </button>
                   <button
                     type="button"
-                    class="icon"
                     data-rotation="180"
                     aria-pressed="false"
                     data-action-click="transform-rotation"
                     data-tip="Rotate 180°"
-                    aria-label="Rotate 180°"
                   >
-                    <svg viewBox="0 0 24 24">
-                      <polyline points="23 4 23 10 17 10"></polyline>
-                      <polyline points="1 20 1 14 7 14"></polyline>
-                      <path
-                        d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"
-                      ></path>
-                    </svg>
+                    180°
                   </button>
                 </div>
               </div>
@@ -716,7 +695,7 @@
                   <label class="cut-option">
                     <input type="radio" name="cut-precision" value="exact" id="cut-exact" aria-labelledby="cut-exact-title" aria-describedby="cut-exact-note" disabled>
                     <span class="cut-option-title" id="cut-exact-title">Exact <span class="beta">Beta</span></span>
-                    <span class="cut-option-note" id="cut-exact-note">Re-encodes a little video at each cut.</span>
+                    <span class="cut-option-note" id="cut-exact-note">Cuts on any frame. Re-encodes only from each cut to its nearest keyframe.</span>
                   </label>
                 </div>
               </div>

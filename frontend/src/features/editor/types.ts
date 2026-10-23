@@ -10,6 +10,8 @@ export interface ProbeData {
   readonly width?: number;
   readonly height?: number;
   readonly fps?: number;
+  readonly variable_frame_rate?: boolean | null;
+  readonly average_fps?: number;
   readonly has_audio?: boolean;
   readonly audio_stream_count?: number;
   readonly format?: string;

@@ -21,6 +21,7 @@ export type ClipDetailsView = LibraryClipDetailsView;
 export interface ClipDetailsApi {
   render: typeof ClipDetails.render;
   sourceSummary: (values: SourceSummaryValues) => string;
+  frameRateLabel: typeof ClipDetails.frameRateLabel;
 }
 
 export interface AudioClipRangeInfo {
@@ -451,13 +452,15 @@ export function installPanels(host: PanelsHost): PanelsApi {
       .filter(Boolean)
       .join(" / ");
     if (selectionMeta) {
+      const rate = host.clipDetails.frameRateLabel(d.fps || 0, d.variable_frame_rate === true, d.average_fps || 0);
       selectionMeta.textContent = host.clipDetails.sourceSummary({
         resolution: d.width && d.height ? d.width + "×" + d.height : "",
-        frameRate: d.fps ? Math.round(d.fps * 100) / 100 + " fps" : "",
+        frameRate: rate.text,
         duration: host.formatTime(d.duration || 0),
         size: clip._fileSize ? host.formatBytes(clip._fileSize) : "",
       });
-      if (format) selectionMeta.dataset.tip = format;
+      const tip = [format, rate.note].filter(Boolean).join(" · ");
+      if (tip) selectionMeta.dataset.tip = tip;
     }
   }
 

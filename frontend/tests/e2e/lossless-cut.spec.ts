@@ -264,7 +264,7 @@ test("entering Upscale from Lossless cut restores the last Upscale profile", asy
 test("re-encoding edits and audio mutes stay on the clip and out of the cut", async ({page}) => {
   await setup(page);
   await page.locator("#insp-tab-edit").click();
-  await page.getByRole("button",{name:"Rotate 90° clockwise",exact:true}).click();
+  await page.getByRole("button",{name:"90° right",exact:true}).click();
   await page.locator("#source-audio-label").click();
   await page.locator("#insp-tab-export").click();
   await page.locator("#wf-l").click();
@@ -619,7 +619,7 @@ test("Exact is chosen by pointer or keyboard and shows what is re-encoded", asyn
   const keyframes = page.getByRole("radio",{name:"On keyframes"});
   await expect(exact).toBeEnabled();
   await expect(keyframes).toBeChecked();
-  await expect(page.locator("#cut-exact-note")).toHaveText("Re-encodes a little video at each cut.");
+  await expect(page.locator("#cut-exact-note")).toHaveText("Cuts on any frame. Re-encodes only from each cut to its nearest keyframe.");
   await keyframes.focus();
   await page.keyboard.press("ArrowDown");
   await expect(exact).toBeChecked();

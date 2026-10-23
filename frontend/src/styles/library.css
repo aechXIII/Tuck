@@ -109,10 +109,16 @@
   min-width: 0;
   flex: 1;
 }
+/* long names get a second line before they are cut; the full name is in the row's tooltip */
 .clip[data-clip-path] .c2 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   padding-right: 0;
   font-size: calc(12px * var(--text-scale));
   line-height: calc(16px * var(--text-scale));
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .c-thumb {
   position: relative;

@@ -90,3 +90,12 @@ test("the Inspector header sums up the file on one line and skips what is unknow
     "0:19",
   );
 });
+
+test("a variable frame rate reads as variable, with the average in the note", () => {
+  assert.deepEqual(clipDetails.frameRateLabel(1000, true, 59.826), {
+    text: "variable fps",
+    note: "Variable frame rate, about 59.83 fps on average",
+  });
+  assert.deepEqual(clipDetails.frameRateLabel(29.97, false, 29.97), { text: "29.97 fps", note: "" });
+  assert.deepEqual(clipDetails.frameRateLabel(0, false, 0), { text: "", note: "" });
+});

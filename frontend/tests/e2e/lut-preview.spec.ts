@@ -118,7 +118,7 @@ test("the LUT preview keeps the picture upright, mixes by strength and follows r
   await expect(canvas).toBeVisible();
 
   await page.locator("#insp-tab-edit").click();
-  await page.getByRole("button", { name: "Rotate 90° clockwise" }).click();
+  await page.getByRole("button", { name: "90° right", exact: true }).click();
   await expect.poll(() => page.locator("#vid").evaluate((video: HTMLVideoElement) => {
     const canvas = document.querySelector<HTMLCanvasElement>("[data-lut-preview]")!;
     const shown = getComputedStyle(video);

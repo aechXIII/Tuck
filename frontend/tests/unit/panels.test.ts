@@ -63,6 +63,7 @@ test("workspace resize is safe before the later timeline script loads", () => {
     clipDetails: {
       render() {},
       sourceSummary: () => "",
+      frameRateLabel: () => ({ text: "", note: "" }),
     },
   });
 
@@ -113,6 +114,7 @@ test("selecting an Inspector tab remembers the user-facing panel name", async ()
     clipDetails: {
       render() {},
       sourceSummary: () => "",
+      frameRateLabel: () => ({ text: "", note: "" }),
     },
   });
 

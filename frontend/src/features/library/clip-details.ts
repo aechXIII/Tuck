@@ -80,3 +80,22 @@ export function render<T extends ClipDetailsElement>(
 export function sourceSummary(values: SourceSummaryValues): string {
   return [values.resolution, values.frameRate, values.duration, values.size].filter(Boolean).join(" · ");
 }
+
+export interface FrameRateLabel {
+  readonly text: string;
+  readonly note: string;
+}
+
+// phones and screen recorders change frame rate as they go; their nominal rate can read
+// 1000 fps, so say "variable" and give the average instead
+export function frameRateLabel(fps: number, variable: boolean, averageFps: number): FrameRateLabel {
+  const round = (value: number): number => Math.round(value * 100) / 100;
+  if (variable) {
+    const average = averageFps > 0 ? averageFps : fps;
+    return {
+      text: "variable fps",
+      note: average > 0 ? "Variable frame rate, about " + round(average) + " fps on average" : "Variable frame rate",
+    };
+  }
+  return { text: fps > 0 ? round(fps) + " fps" : "", note: "" };
+}
