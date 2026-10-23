@@ -78,7 +78,7 @@ test("Quiet dropdowns show compact labels and a neutral selection", async ({ pag
 });
 
 for (const count of [7, 8]) {
-  test(`Quiet profile menus show search only for long lists (${count} choices)`, async ({ page }) => {
+  test(`Quiet profile menus always open on their search field (${count} choices)`, async ({ page }) => {
     await page.setViewportSize({ width: count === 7 ? 960 : 1240, height: count === 7 ? 640 : 800 });
     await page.emulateMedia({ reducedMotion: "reduce" });
     const fixture = healthyBackendFixture();
@@ -96,15 +96,16 @@ for (const count of [7, 8]) {
     const profiles = page.locator("#prof-menu");
     await page.locator("#prof-pick").click();
     await expect(profiles).toBeVisible();
-    await expect(page.locator("#prof-options")).toHaveAccessibleName("Compress profiles");
+    await expect(page.locator("#prof-options")).toHaveAccessibleName("Profiles");
+    const search = page.getByRole("combobox", { name: "Search profiles", exact: true });
+    await expect(search).toBeFocused();
     if (count === 8) {
-      await expect(page.locator("#prof-search")).toBeFocused();
-      await page.locator("#prof-search").fill("Profile 1");
+      await search.fill("Profile 1");
     } else {
-      await expect(page.locator("#prof-search")).toBeHidden();
       // a click opens with nothing lit; the first arrow press lands on the chosen profile
       await page.keyboard.press("ArrowDown");
-      await expect(profiles.getByRole("option", { name: "Profile 0", exact: true })).toBeFocused();
+      const first = profiles.getByRole("option", { name: "Profile 0", exact: true });
+      await expect(search).toHaveAttribute("aria-activedescendant", (await first.getAttribute("id"))!);
       await page.keyboard.press("ArrowDown");
     }
     await page.keyboard.press("Enter");
@@ -131,7 +132,7 @@ test("Quiet profile search still finds the settings shown in tooltips", async ({
   await expect(page.locator("#prof-sel")).toHaveValue("profile-1");
 });
 
-test("short Quiet profile lists support repeated initials and longer prefixes", async ({ page }) => {
+test("short Quiet profile lists filter as you type", async ({ page }) => {
   const fixture = healthyBackendFixture();
   fixture.responses.getSettings = {
     ...fixture.responses.getSettings as object,
@@ -144,15 +145,24 @@ test("short Quiet profile lists support repeated initials and longer prefixes", 
   await page.goto("/");
   await page.locator("#prof-pick").click();
   const options = page.locator("#prof-options");
+  const search = page.locator("#prof-search");
+  const lit = async (name: string) => expect(search).toHaveAttribute("aria-activedescendant",
+    (await options.getByRole("option", { name, exact: true }).getAttribute("id"))!);
+  const names = options.locator(".profile-option-name");
   await page.keyboard.press("d");
-  await expect(options.getByRole("option", { name: "Daily", exact: true })).toBeFocused();
-  await page.keyboard.press("d");
-  await expect(options.getByRole("option", { name: "Discord", exact: true })).toBeFocused();
+  await page.keyboard.press("a");
+  await expect(names).toHaveText(["Daily"]);
+  await lit("Daily");
+  // clearing the search brings every profile back, lit on the chosen one
+  await page.keyboard.press("Backspace");
+  await page.keyboard.press("Backspace");
+  await expect(names).toHaveText(["Discord", "Daily", "Email"]);
+  await lit("Discord");
   await page.keyboard.press("Escape");
   await page.locator("#prof-pick").click();
   await page.keyboard.press("e");
   await page.keyboard.press("m");
-  await expect(options.getByRole("option", { name: "Email", exact: true })).toBeFocused();
+  await lit("Email");
   await page.keyboard.press("Enter");
   await expect(page.locator("#prof-sel")).toHaveValue("email");
   await expect(page.locator("#prof-pick")).toBeFocused();

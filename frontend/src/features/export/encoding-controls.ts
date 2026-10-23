@@ -1,5 +1,4 @@
 import { installLutControls } from "./lut-controls.ts";
-import { nextSelectMatch, selectPopupPlacement, selectSearchThreshold, selectTypeaheadPrefix } from "../../ui/select-state.ts";
 import { installFrameBlending } from "./frame-blending.ts";
 import { installCutControls } from "./cut-controls.ts";
 import { createCutState } from "./cut-state.ts";
@@ -17,6 +16,16 @@ import { closeMod, showMod, toast } from "../editor/toast.ts";
 import { reasonSentence, withReason } from "../editor/format.ts";
 import { profileChangeSummary, profileSummary } from "../profiles/profile-summary.ts";
 import { pickerProfiles } from "../profiles/profile-list.ts";
+import {
+  matchParts,
+  PROFILE_TASK_LABELS,
+  profileMatches,
+  profileMenuGroups,
+  profileMenuPlacement,
+  profileTask,
+  type ProfileMenuGroup,
+  type ProfileTask,
+} from "../profiles/profile-menu.ts";
 import type { EditorClip } from "../editor/types.ts";
 import { isQueueActive, queuedVideoLabel } from "../queue/queue-view.ts";
 import { swapLabel } from "../../ui/motion.ts";
@@ -81,6 +90,8 @@ export interface EncodingControlsApi {
   toggleProfileMenu: () => void;
   // switches profile; unsaved changes to the old one can be brought back from the note
   chooseProfile: (profileId: string) => void;
+  // switches to the profile's task and selects it; returns the card's button when it is showing
+  useProfile: (profileId: string) => HTMLElement | null;
   loadSettings: (preserveExportSettings?: boolean) => Promise<void>;
   // picks the task on launch, or when a Send To shortcut asks for one while Tuck is open
   openTask: (launch: unknown, atStart: boolean) => void;
@@ -556,13 +567,10 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     const targetWf = up ? "upscale" : "compression";
     const lastId = up ? lastUpscale : lastComp;
     const s = appSettings();
-    const ids = (value: unknown): string[] =>
-      Array.isArray(value) ? value.filter((id): id is string => typeof id === "string") : [];
-    const pinned = ids(s.pinned_profile_ids);
     const matching = pickerProfiles(
       profiles().filter((p) => (p.workflow || "compression") === targetWf),
-      pinned,
-      ids(s.hidden_profile_ids),
+      idList(s.pinned_profile_ids),
+      idList(s.hidden_profile_ids),
       lastId ?? "",
     );
     const sel = select("prof-sel");
@@ -1474,146 +1482,208 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
   const profilePick = el("prof-pick");
   const profileSearch = el<HTMLInputElement>("prof-search");
   const profileSearchRow = profileSearch.parentElement!;
-  let profileTyped = "";
-  let profileLastTyped = 0;
+  const profileList = profileMenu.querySelector<HTMLElement>(".profile-menu-list")!;
+  // worked out when the menu opens; typing only filters these
+  let profileGroups: ProfileMenuGroup<ProfileRecord>[] = [];
 
-  function profileOptionRows(): HTMLElement[] {
-    return [...el("prof-options").querySelectorAll<HTMLElement>('[role="option"]')].filter(row => !row.hidden);
+  function shownProfileTasks(): ProfileTask[] {
+    return visibleTasks(hiddenParts(appSettings().hidden_ui)).filter((task): task is ProfileTask => task !== "cut");
   }
 
-  // one row is lit at a time; a row lit by the pointer goes dark when it leaves, one lit by the
-  // keyboard stays, and the checkmark alone marks the chosen profile
+  function menuGroups(): ProfileMenuGroup<ProfileRecord>[] {
+    const s = appSettings();
+    const current = workflowName();
+    const inUse = { compression: lastComp, upscale: lastUpscale };
+    inUse[current] = select("prof-sel").value;
+    return profileMenuGroups(profiles(), {
+      current,
+      tasks: shownProfileTasks(),
+      pinned: idList(s.pinned_profile_ids),
+      hidden: idList(s.hidden_profile_ids),
+      inUse,
+    });
+  }
+
+  function profileOptionRows(): HTMLElement[] {
+    return [...el("prof-options").querySelectorAll<HTMLElement>('[role="option"]')];
+  }
+
+  // focus stays in the search field and one row is lit at a time; a row lit by the pointer goes
+  // dark when it leaves, one lit by the keyboard stays, and the checkmark alone marks the chosen profile
+  let profileActiveId = "";
   let profilePointerActive = false;
   let profilePointerX = NaN;
   let profilePointerY = NaN;
-  function profileMenuItems(): HTMLElement[] {
-    return [...profileMenu.querySelectorAll<HTMLElement>('[role="option"], .profile-menu-cmd')];
-  }
   function setProfileActive(row: HTMLElement | null, byPointer: boolean): void {
     profilePointerActive = byPointer && row !== null;
-    for (const item of profileMenuItems()) item.toggleAttribute("data-active", item === row);
-  }
-  function clearProfilePointer(): void {
-    setProfileActive(null, false);
-    // focus waits on the menu itself, so the keyboard keeps working and nothing looks chosen
-    if (document.activeElement !== profileSearch) profileMenu.focus({ preventScroll: true });
+    profileActiveId = row?.dataset.profileId ?? "";
+    for (const item of profileOptionRows()) item.toggleAttribute("data-active", item === row);
+    if (row) profileSearch.setAttribute("aria-activedescendant", row.id);
+    else profileSearch.removeAttribute("aria-activedescendant");
+    if (row && !byPointer) revealProfileRow(row);
   }
 
-  function focusProfileItem(item: HTMLElement | undefined): void {
-    if (!item) return;
-    setProfileActive(profileMenuItems().includes(item) ? item : null, false);
-    item.focus({ preventScroll: true });
-    // reveal the focused item without moving the Inspector behind the menu
-    const bounds = item.getBoundingClientRect();
-    const viewport = profileMenu.getBoundingClientRect();
-    if (bounds.top < viewport.top + 6) profileMenu.scrollTop -= viewport.top + 6 - bounds.top;
-    else if (bounds.bottom > viewport.bottom - 6) profileMenu.scrollTop += bounds.bottom - viewport.bottom + 6;
+  // reveal the lit row, with its group's heading for a group's first row, without moving the
+  // Inspector behind the menu
+  function revealProfileRow(row: HTMLElement): void {
+    const head = row.previousElementSibling;
+    const top = head?.classList.contains("profile-group-head") ? head : row;
+    const viewport = profileList.getBoundingClientRect();
+    const upper = top.getBoundingClientRect().top;
+    const lower = row.getBoundingClientRect().bottom;
+    if (upper < viewport.top + 4) profileList.scrollTop -= viewport.top + 4 - upper;
+    else if (lower > viewport.bottom - 4) profileList.scrollTop += lower - viewport.bottom + 4;
+  }
+
+  // matches are bold and underlined, so they don't depend on color alone
+  function markedText(className: string, id: string, text: string, query: string): HTMLElement {
+    const span = document.createElement("span");
+    span.className = className;
+    span.id = id;
+    for (const part of matchParts(text, query)) {
+      if (!part.match) {
+        span.append(part.text);
+        continue;
+      }
+      const mark = document.createElement("mark");
+      mark.textContent = part.text;
+      span.append(mark);
+    }
+    return span;
   }
 
   function renderProfileMenu(): void {
-    el("prof-options").setAttribute("aria-label", wf === 1 ? "Upscale profiles" : "Compress profiles");
-    profileSearchRow.hidden = select("prof-sel").options.length < selectSearchThreshold;
+    const query = profileSearch.value.trim();
     const current = select("prof-sel").value;
     const changed = isProfileChanged();
-    const pinnedValue = appSettings().pinned_profile_ids;
-    const pinnedIds = new Set(Array.isArray(pinnedValue) ? pinnedValue : []);
-    const rows = [...select("prof-sel").options].map((option, index) => {
-      const row = document.createElement("div");
-      row.className = "profile-option";
-      row.id = `prof-option-${index}`;
-      row.setAttribute("role", "option");
-      row.tabIndex = -1;
-      row.dataset.actionClick = "profile-choose";
-      row.dataset.profileId = option.value;
-      const selected = option.value === current;
-      row.setAttribute("aria-selected", String(selected));
-      // pinned profiles lead the list; a rule sets them apart from the rest
-      row.classList.toggle("pinned", pinnedIds.has(option.value));
-      const name = document.createElement("span");
-      name.className = "profile-option-name";
-      name.id = `${row.id}-name`;
-      name.textContent = option.textContent ?? "";
-      const note = document.createElement("span");
-      note.className = "profile-option-note";
-      note.id = `${row.id}-note`;
-      const profile = profiles().find((entry) => entry.profile_id === option.value);
-      row.title = profile ? `${option.textContent}: ${profileSummary(profile)}` : option.textContent ?? "";
-      note.textContent = profile ? profileSummary(profile) : "";
-      if (selected && changed) {
-        row.classList.add("changed");
-        note.textContent = `Changed, not saved · ${note.textContent}`;
+    const s = appSettings();
+    const pinned = new Set(idList(s.pinned_profile_ids));
+    const defaultId = typeof s.default_profile_id === "string" ? s.default_profile_id : "";
+    const groups: HTMLElement[] = [];
+    let index = 0;
+    let currentEmpty = "";
+    for (const group of profileGroups) {
+      const label = PROFILE_TASK_LABELS[group.task];
+      const rows: HTMLElement[] = [];
+      for (const profile of group.profiles) {
+        const pid = profile.profile_id ?? "";
+        const name = profile.name ?? "";
+        const summary = profileSummary(profile);
+        if (!profileMatches(name, summary, query)) continue;
+        const selected = !group.switches && pid === current;
+        const row = document.createElement("div");
+        row.className = "profile-option";
+        row.id = `prof-option-${index++}`;
+        row.setAttribute("role", "option");
+        row.setAttribute("aria-selected", String(selected));
+        row.dataset.actionClick = "profile-choose";
+        row.dataset.profileId = pid;
+        row.title = `${name}: ${summary}`;
+        row.classList.toggle("pinned", pinned.has(pid));
+        row.classList.toggle("changed", selected && changed);
+        row.toggleAttribute("data-active", pid === profileActiveId);
+        const nameText = markedText("profile-option-name", `${row.id}-name`, name, query);
+        const note = markedText("profile-option-note", `${row.id}-note`, summary, query);
+        if (selected && changed) note.prepend("Changed, not saved · ");
+        row.setAttribute("aria-labelledby", nameText.id);
+        row.setAttribute("aria-describedby", note.id);
+        // the default's tag shares the name's line, so the details keep the full width
+        const line = document.createElement("span");
+        line.className = "profile-option-line";
+        line.append(nameText);
+        if (pid === defaultId) {
+          const side = document.createElement("span");
+          side.className = "profile-option-side";
+          side.textContent = "Default";
+          line.append(side);
+        }
+        const copy = document.createElement("span");
+        copy.className = "profile-option-copy";
+        copy.append(line, note);
+        row.append(copy);
+        rows.push(row);
       }
-      row.setAttribute("aria-labelledby", name.id);
-      row.setAttribute("aria-describedby", note.id);
-      const copy = document.createElement("span");
-      copy.className = "profile-option-copy";
-      copy.append(name, note);
-      row.append(copy);
-      return row;
-    });
-    el("prof-options").replaceChildren(...rows);
-    // the rule only shows when there are profiles on both sides of it
-    const lastPinned = rows.filter((row) => row.classList.contains("pinned")).at(-1);
-    if (lastPinned && lastPinned !== rows.at(-1)) lastPinned.classList.add("pinned-last");
-    filterProfiles();
-  }
-
-  function filterProfiles(): void {
-    const query = profileSearchRow.hidden ? "" : profileSearch.value.trim().toLocaleLowerCase();
-    for (const row of el("prof-options").querySelectorAll<HTMLElement>('[role="option"]')) {
-      row.hidden = !`${row.textContent ?? ""} ${row.title}`.toLocaleLowerCase().includes(query);
+      // pinned profiles lead their group; a rule sets them apart from the rest
+      const lastPinned = rows.filter((row) => row.classList.contains("pinned")).at(-1);
+      if (lastPinned && lastPinned !== rows.at(-1)) lastPinned.classList.add("pinned-last");
+      if (!rows.length) {
+        if (!group.switches && !query) currentEmpty = `No ${label} profiles yet.`;
+        continue;
+      }
+      const box = document.createElement("div");
+      box.className = "profile-group";
+      box.setAttribute("role", "group");
+      const switchNote = group.switches ? `switches to ${label}` : "";
+      box.setAttribute("aria-label", switchNote ? `${label}, ${switchNote}` : label);
+      const head = document.createElement("div");
+      head.className = "profile-group-head";
+      head.setAttribute("aria-hidden", "true");
+      const title = document.createElement("span");
+      title.textContent = label;
+      head.append(title);
+      if (switchNote) {
+        const quiet = document.createElement("span");
+        quiet.className = "profile-group-note";
+        quiet.textContent = switchNote;
+        head.append(quiet);
+      }
+      box.append(head, ...rows);
+      groups.push(box);
     }
-    el("prof-empty").hidden = profileOptionRows().length > 0;
+    el("prof-options").replaceChildren(...groups);
+    const empty = el("prof-empty");
+    empty.textContent = index ? currentEmpty : query ? `No profile matches “${query}”.` : currentEmpty || "No profiles yet.";
+    empty.hidden = !empty.textContent;
+    // a task without profiles says so above the other task's profiles
+    empty.classList.toggle("lead", index > 0);
+    if (!profileOptionRows().some((row) => row.hasAttribute("data-active"))) setProfileActive(null, false);
   }
 
   function positionProfileMenu(): void {
     if (!profilePick.getClientRects().length) { closeProfileMenu(false); return; }
-    // cover the target with the menu while keeping the shared header visible
-    const anchor = profileHeader.getBoundingClientRect();
-    if (anchor.bottom < 8 || anchor.top > window.innerHeight - 8) { closeProfileMenu(false); return; }
-    profileMenu.style.width = `${anchor.width}px`;
-    const placement = selectPopupPlacement(anchor,
-      Math.min(profileMenu.scrollHeight, 380), window.innerWidth, window.innerHeight, 0);
-    const side = placement.top < anchor.top ? "above" : "below";
-    profileMenu.dataset.side = side;
-    profileHeader.dataset.menuSide = side;
+    const card = profileHeader.getBoundingClientRect();
+    if (card.bottom < 8 || card.top > window.innerHeight - 8) { closeProfileMenu(false); return; }
+    profileMenu.style.width = `${card.width}px`;
+    profileMenu.style.maxHeight = "none";
+    const placement = profileMenuPlacement(card, profileSearchRow.offsetHeight,
+      Math.min(profileMenu.scrollHeight, PROFILE_MENU_MAX_HEIGHT), window.innerWidth, window.innerHeight);
+    profileMenu.dataset.side = placement.side;
     profileMenu.style.left = `${placement.left}px`;
     profileMenu.style.top = `${placement.top}px`;
     profileMenu.style.width = `${placement.width}px`;
     profileMenu.style.maxHeight = `${placement.maxHeight}px`;
   }
 
-  function openProfileMenu(searchFocus = false, byPointer = false): void {
+  function openProfileMenu(byPointer = false): void {
     if (!profileMenu.hidden) return;
-    profileTyped = "";
-    profileLastTyped = 0;
     profileSearch.value = "";
+    profileActiveId = "";
+    profileGroups = menuGroups();
     renderProfileMenu();
+    const count = profileGroups.reduce((total, group) => total + group.profiles.length, 0);
+    profileSearch.placeholder = count > 1 ? `Search ${count} profiles` : "Search profiles";
     profileMenu.hidden = false;
     profileMenu.showPopover();
     profilePick.setAttribute("aria-expanded", "true");
     positionProfileMenu();
-    const rows = profileOptionRows();
-    if (searchFocus && !profileSearchRow.hidden) focusProfileItem(profileSearch);
+    profileList.scrollTop = 0;
+    profileSearch.focus({ preventScroll: true });
     // a click opens with nothing lit, the keyboard opens on the chosen profile
-    else if (byPointer) {
-      setProfileActive(null, false);
-      profileMenu.focus({ preventScroll: true });
-    } else focusProfileItem(rows.find((row) => row.getAttribute("aria-selected") === "true") ?? rows[0] ??
-      profileMenu.querySelector<HTMLButtonElement>(".profile-menu-cmd") ?? profilePick);
+    const rows = profileOptionRows();
+    if (!byPointer) setProfileActive(rows.find((row) => row.getAttribute("aria-selected") === "true") ?? rows[0] ?? null, false);
   }
 
   function closeProfileMenu(returnFocus: boolean): void {
     if (profileMenu.hidden) return;
     if (profileMenu.matches(":popover-open")) profileMenu.hidePopover();
     profileMenu.hidden = true;
-    delete profileHeader.dataset.menuSide;
     profilePick.setAttribute("aria-expanded", "false");
+    profileSearch.removeAttribute("aria-activedescendant");
     if (returnFocus) profilePick.focus();
   }
 
   function toggleProfileMenu(): void {
-    if (profileMenu.hidden) openProfileMenu(true, true);
+    if (profileMenu.hidden) openProfileMenu(true);
     else closeProfileMenu(true);
   }
 
@@ -1625,74 +1695,59 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
   });
   profileMenu.addEventListener("keydown", (event) => {
     const rows = profileOptionRows();
-    const index = rows.indexOf(document.activeElement as HTMLElement);
-    const searching = event.target === profileSearch;
+    const index = rows.findIndex((row) => row.hasAttribute("data-active"));
+    const inField = event.target === profileSearch;
+    const handled = (): void => { event.preventDefault(); event.stopPropagation(); };
     if (event.key === "Escape") {
-      event.preventDefault();
-      event.stopPropagation();
+      handled();
       closeProfileMenu(true);
     } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-      event.preventDefault();
-      event.stopPropagation();
+      handled();
+      if (!inField) profileSearch.focus({ preventScroll: true });
       const step = event.key === "ArrowDown" ? 1 : -1;
-      const chosen = rows.findIndex(row => row.getAttribute("aria-selected") === "true");
+      const chosen = rows.findIndex((row) => row.getAttribute("aria-selected") === "true");
       const next = index < 0
         ? (chosen >= 0 ? chosen : step === 1 ? 0 : rows.length - 1)
         : Math.max(0, Math.min(rows.length - 1, index + step));
-      focusProfileItem(rows[next]);
-    } else if (!searching && (event.key === "Home" || event.key === "End")) {
-      event.preventDefault();
-      event.stopPropagation();
-      focusProfileItem(rows[event.key === "Home" ? 0 : rows.length - 1]);
-    } else if ((event.key === "Enter" || event.key === " ") && index >= 0) {
-      event.preventDefault();
-      event.stopPropagation();
-      chooseProfile(rows[index]?.dataset.profileId ?? "");
-    } else if (searching && event.key === "Enter") {
-      event.preventDefault();
-      event.stopPropagation();
-      const lit = rows.find(row => row.hasAttribute("data-active")) ?? rows[0];
+      setProfileActive(rows[next] ?? null, false);
+    } else if (inField && !profileSearch.value && (event.key === "Home" || event.key === "End")) {
+      // with nothing typed there is no text to move through, so these jump through the list
+      handled();
+      setProfileActive(rows[event.key === "Home" ? 0 : rows.length - 1] ?? null, false);
+    } else if (inField && event.key === "Enter") {
+      handled();
+      const lit = rows[index];
       if (lit) chooseProfile(lit.dataset.profileId ?? "");
-    } else if (!searching && event.key.length === 1 && !event.ctrlKey && !event.altKey && !event.metaKey) {
-      event.preventDefault();
-      event.stopPropagation();
-      profileTyped = selectTypeaheadPrefix(profileTyped, profileLastTyped, event.key, event.timeStamp);
-      profileLastTyped = event.timeStamp;
-      const choices = rows.map(row => ({
-        value: row.dataset.profileId ?? "", label: row.querySelector(".profile-option-name")?.textContent ?? "",
-        detail: row.title, disabled: false,
-      }));
-      // with nothing lit, typing starts from the chosen profile, the same as the arrow keys
-      const from = index >= 0 ? index : rows.findIndex(row => row.getAttribute("aria-selected") === "true");
-      focusProfileItem(rows[nextSelectMatch(choices, from, profileTyped, profileTyped.length === 1)]);
     }
+  });
+  profileSearch.addEventListener("input", () => {
+    renderProfileMenu();
+    profileList.scrollTop = 0;
+    const rows = profileOptionRows();
+    // typing lights the first match so Enter picks it; clearing goes back to the chosen profile
+    const lit = profileSearch.value.trim() ? rows[0] : rows.find((row) => row.getAttribute("aria-selected") === "true");
+    setProfileActive(lit ?? null, false);
+    positionProfileMenu();
   });
   profileMenu.addEventListener("pointermove", (event) => {
     // only a real move counts, so a list scrolling under a resting pointer keeps the keyboard's row
     if (event.clientX === profilePointerX && event.clientY === profilePointerY) return;
     profilePointerX = event.clientX;
     profilePointerY = event.clientY;
-    const row = event.target instanceof Element
-      ? event.target.closest<HTMLElement>('[role="option"], .profile-menu-cmd')
-      : null;
-    if (!row || row.hidden) {
-      if (profilePointerActive) clearProfilePointer();
+    const row = event.target instanceof Element ? event.target.closest<HTMLElement>('[role="option"]') : null;
+    if (!row) {
+      if (profilePointerActive) setProfileActive(null, false);
       return;
     }
-    if (row.hasAttribute("data-active")) return;
-    setProfileActive(row, true);
-    // typing in the search box keeps its focus; the lit row still answers Enter through the list
-    if (document.activeElement !== profileSearch) row.focus({ preventScroll: true });
+    if (!row.hasAttribute("data-active")) setProfileActive(row, true);
   });
   profileMenu.addEventListener("pointerleave", () => {
-    if (profilePointerActive) clearProfilePointer();
+    if (profilePointerActive) setProfileActive(null, false);
   });
-  // Tab and other focus moves light the row they land on
-  profileMenu.addEventListener("focusin", (event) => {
-    const row = event.target instanceof HTMLElement ? event.target : null;
-    if (row && profileMenuItems().includes(row) && !row.hasAttribute("data-active")) setProfileActive(row, false);
+  // picking a row with the pointer leaves focus in the search field
+  profileMenu.addEventListener("mousedown", (event) => {
+    if (event.target instanceof Element && event.target.closest('[role="option"], .profile-group-head')) event.preventDefault();
   });
-  profileSearch.addEventListener("input", () => { filterProfiles(); positionProfileMenu(); });
   profileMenu.addEventListener("toggle", () => {
     if (!profileMenu.matches(":popover-open") && !profileMenu.hidden) closeProfileMenu(false);
   });
@@ -1747,13 +1802,44 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
   function chooseProfile(pid: string): void {
     closeProfileMenu(true);
     const sel = select("prof-sel");
-    if (!pid || pid === sel.value || ![...sel.options].some((option) => option.value === pid)) return;
+    if (!pid || pid === sel.value) return;
+    // a profile of the other task switches task first
+    if (![...sel.options].some((option) => option.value === pid)) {
+      useProfile(pid);
+      return;
+    }
     const unsaved = unsavedProfile();
     sel.value = pid;
     onProfileChange();
     if (unsaved) {
       toast(`Changes to ${unsaved.name} discarded.`, "", { label: "Undo", run: () => restoreUnsaved(unsaved) });
     }
+  }
+
+  // the task switches the same way its task button does, so everything that follows a switch
+  // still happens; a profile hidden from the picker can still be used this way
+  function useProfile(pid: string): HTMLElement | null {
+    const profile = profiles().find((entry) => entry.profile_id === pid);
+    if (!profile || !shownProfileTasks().includes(profileTask(profile))) return null;
+    const task = taskIndex(profileTask(profile));
+    const remember = (): void => {
+      if (task === 1) lastUpscale = pid;
+      else lastComp = pid;
+    };
+    if (wf !== task) {
+      remember();
+      setWf(task);
+    }
+    const sel = select("prof-sel");
+    if (sel.value !== pid) {
+      if ([...sel.options].some((option) => option.value === pid)) chooseProfile(pid);
+      else {
+        remember();
+        refilter();
+        void persistSession();
+      }
+    }
+    return profilePick.getClientRects().length ? profilePick : null;
   }
 
   function restoreUnsaved(unsaved: UnsavedProfile): void {
@@ -1845,6 +1931,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     onProfileChange,
     toggleProfileMenu,
     chooseProfile,
+    useProfile,
     loadSettings,
     openTask,
     reqPreview,
@@ -1890,6 +1977,13 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     onRcChange,
     toggleAdvanced,
   };
+}
+
+// tall enough for a handful of profiles in each task; longer lists scroll under the search field
+const PROFILE_MENU_MAX_HEIGHT = 520;
+
+function idList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((id): id is string => typeof id === "string") : [];
 }
 
 function num(value: unknown): number {

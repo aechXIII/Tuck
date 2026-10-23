@@ -40,15 +40,6 @@
 .profile-card {
   padding: 4px 0 6px;
 }
-.profile-card[data-menu-side] {
-  background: var(--sink);
-}
-.profile-card[data-menu-side="below"] {
-  border-radius: var(--r-surf) var(--r-surf) 0 0;
-}
-.profile-card[data-menu-side="above"] {
-  border-radius: 0 0 var(--r-surf) var(--r-surf);
-}
 .profile-pick {
   display: flex;
   align-items: center;
@@ -136,49 +127,132 @@
 .profile-changed .profile-save { color: var(--text); }
 .profile-changed .btn2:focus-visible { outline: 2px solid var(--accent-light); outline-offset: -2px; }
 
+/* the menu opens over the card: the card's header turns into the search field and the list hangs
+   from it at the card's width */
 .profile-menu {
   position: fixed;
   inset: auto;
   box-sizing: border-box;
   max-width: calc(100vw - 16px);
   margin: 0;
-  padding: 6px;
+  padding: 0;
   border: 0;
   border-radius: var(--r-surf);
   background: var(--sink);
   color: var(--text);
-  box-shadow: 0 6px 18px rgb(0 0 0 / .25);
-  overflow: auto;
-  overscroll-behavior: contain;
-  scrollbar-width: thin;
+  box-shadow: 0 12px 32px rgb(0 0 0 / .45);
+  overflow: hidden;
 }
-.profile-menu[data-side="below"] {
-  border-radius: 0 0 var(--r-surf) var(--r-surf);
+.profile-menu:popover-open {
+  display: flex;
+  flex-direction: column;
 }
-.profile-menu[data-side="above"] {
-  border-radius: var(--r-surf) var(--r-surf) 0 0;
+/* growing up from the card keeps the field where the header was */
+.profile-menu[data-side="above"]:popover-open {
+  flex-direction: column-reverse;
 }
 .profile-menu [hidden],
 .profile-menu[hidden] {
   display: none;
 }
 .profile-menu::backdrop { background: transparent; }
-/* the menu is joined to its trigger (square corners on that side, no gap), so it must not move:
-   sliding it would open a seam. it is revealed from the joined edge instead, as if the card grows
-   into the list, and it closes at once so the card and menu round off together */
+/* the menu opens on top of its trigger, so it must not move: it is revealed from the field's
+   edge, as if the card grows into the list, and it closes at once */
 .profile-menu:popover-open { animation: joined-reveal-down var(--dur-surface) var(--ease-out); }
 .profile-menu[data-side="above"]:popover-open { animation-name: joined-reveal-up; }
-.profile-search-row { padding: 4px 10px 9px; }
-.profile-search-row input { box-sizing: border-box; width: 100%; height: 27px; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--text); font: 400 calc(12px * var(--text-scale)) var(--font); outline: none; }
+.profile-menu:focus {
+  outline: none;
+}
+.profile-search-row {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  box-sizing: border-box;
+  min-height: 46px;
+  padding: 4px 12px;
+  border-bottom: 1px solid var(--hair-2);
+  color: var(--muted);
+}
+.profile-menu[data-side="above"] .profile-search-row {
+  border-top: 1px solid var(--hair-2);
+  border-bottom: 0;
+}
 .profile-search-row:focus-within { box-shadow: inset 0 -2px var(--accent-light); }
+.profile-search-row svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+.profile-search-row input {
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+  height: 30px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  font: 400 calc(14px * var(--text-scale)) var(--font);
+  outline: none;
+  box-shadow: none;
+}
 .profile-search-row input::placeholder { color: var(--muted); opacity: 1; }
+.profile-search-row input::-webkit-search-cancel-button { display: none; }
+.profile-search-row kbd {
+  flex: none;
+  color: var(--dim);
+  font: 500 calc(11px * var(--text-scale)) var(--font);
+}
+.profile-menu-list {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  padding: 2px 6px 4px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.profile-menu-empty {
+  margin: 0;
+  padding: 12px 10px;
+  color: var(--muted);
+  font: 400 calc(12px * var(--text-scale))/1.5 var(--font);
+}
+.profile-menu-empty.lead {
+  order: -1;
+  padding-bottom: 2px;
+}
+.profile-group-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 10px 4px;
+  color: var(--muted);
+  font: 600 calc(11px * var(--text-scale))/calc(16px * var(--text-scale)) var(--font);
+}
+.profile-group-note {
+  overflow: hidden;
+  color: var(--dim);
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .profile-option {
   display: flex;
   gap: 10px;
   align-items: center;
   box-sizing: border-box;
-  min-height: 48px;
-  padding: 7px 10px;
+  min-height: 46px;
+  padding: 6px 10px;
   border-radius: 6px;
   cursor: pointer;
 }
@@ -196,17 +270,9 @@
   pointer-events: none;
 }
 /* the checkmark marks the chosen profile; the fill marks the one lit row, as in the other dropdowns */
-/* the menu itself only holds focus while no row is lit */
-.profile-menu:focus {
-  outline: none;
-}
 .profile-option[data-active] {
   background: var(--raised-2);
 }
-.profile-option:focus {
-  outline: none;
-}
-.profile-option:focus-visible { outline: 2px solid var(--accent-light); outline-offset: -2px; }
 .profile-option::before {
   content: "";
   flex: none;
@@ -227,12 +293,23 @@
   flex: 1;
   min-width: 0;
 }
+.profile-option-line {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
 .profile-option-name {
+  flex: 1;
+  min-width: 0;
   color: var(--text);
-  font: 600 calc(13px * var(--text-scale))/calc(18px * var(--text-scale)) var(--font);
+  font: 400 calc(13px * var(--text-scale))/calc(18px * var(--text-scale)) var(--font);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.profile-option[aria-selected="true"] .profile-option-name {
+  font-weight: 600;
 }
 .profile-option-note {
   color: var(--muted);
@@ -244,10 +321,28 @@
 .profile-option.changed .profile-option-note {
   color: var(--accent-light);
 }
-.profile-menu-sep {
-  height: 1px;
-  margin: 5px 4px;
-  background: var(--hair-2);
+/* a match is bold and underlined, not only lighter */
+.profile-option mark {
+  background: none;
+  color: var(--text);
+  font-weight: 700;
+  text-decoration: underline;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 3px;
+}
+.profile-option-side {
+  flex: none;
+  color: var(--dim);
+  font: 400 calc(11px * var(--text-scale))/calc(18px * var(--text-scale)) var(--font);
+}
+.profile-menu-foot {
+  flex: none;
+  padding: 4px 6px 6px;
+  border-top: 1px solid var(--hair-2);
+}
+.profile-menu[data-side="above"] .profile-menu-foot {
+  border-top: 0;
+  border-bottom: 1px solid var(--hair-2);
 }
 .profile-menu-cmd {
   display: block;
@@ -261,7 +356,7 @@
   text-align: left;
   cursor: pointer;
 }
-.profile-menu-cmd[data-active] {
+.profile-menu-cmd:hover {
   background: var(--raised-2);
   color: var(--text);
 }

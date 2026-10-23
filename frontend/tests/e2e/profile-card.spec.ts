@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { healthyBackendFixture, installFakeBackend } from "../fixtures/fake-backend";
 
 const MB = 1024 * 1024;
@@ -41,6 +41,14 @@ async function open(page: Page, video = { width: 1920, height: 1080, fps: 30 }, 
   await installFakeBackend(page, fixture);
   await page.goto("/");
   await expect(page.locator("#prof-name")).toHaveText(profileName);
+}
+
+// focus stays in the menu's search field; the lit row is the field's active descendant
+async function expectLit(page: Page, option: Locator) {
+  const search = page.locator("#prof-search");
+  await expect(search).toBeFocused();
+  await expect(option).toHaveAttribute("data-active", "");
+  await expect(search).toHaveAttribute("aria-activedescendant", (await option.getAttribute("id"))!);
 }
 
 async function setSize(page: Page, mb: string) {
@@ -159,8 +167,8 @@ for (const width of [1240, 960]) {
     const videoTop = (await page.locator("#export-video-panel").boundingBox())!.y;
     expect(upscaleBounds.height).toBeLessThan(compressHeight - 80);
     await page.locator("#prof-pick").click();
-    await expect(page.locator("#prof-options")).toHaveAccessibleName("Upscale profiles");
-    await expect(page.locator("#prof-options").getByRole("option")).toHaveCount(1);
+    await expect(page.locator("#prof-options").getByRole("group", { name: "Upscale", exact: true }).getByRole("option")).toHaveCount(1);
+    await expect(page.locator("#prof-options").getByRole("group", { name: "Compress, switches to Compress", exact: true }).getByRole("option")).toHaveCount(2);
     await expect(page.locator("#prof-options").getByRole("option", { name: "4K", exact: true })).toHaveAccessibleDescription("4K · source frame rate");
     await page.keyboard.press("Escape");
     await page.locator("#export-res-select-trigger").click();
@@ -207,7 +215,7 @@ test("an empty Upscale profile list keeps the picker commands without save or ta
 });
 
 for (const width of [1240, 960]) {
-  test(`short profile names open from the header and keep a card-width menu at ${width}px`, async ({ page }) => {
+  test(`the profile menu opens over the card, its header turned into search, at the card's width at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: width === 960 ? 640 : 800 });
     await page.emulateMedia({ reducedMotion: "reduce" });
     await open(page);
@@ -224,22 +232,25 @@ for (const width of [1240, 960]) {
     const menuBounds = (await menu.boundingBox())!;
     expect(menuBounds.width).toBeCloseTo(cardBounds.width, 0);
     expect(menuBounds.x).toBeCloseTo(cardBounds.x, 0);
-    expect(menuBounds.y).toBeCloseTo(cardBounds.y + cardBounds.height, 2);
+    // the search field takes the header's place and the list hangs from it
+    expect(menuBounds.y).toBeCloseTo(cardBounds.y, 0);
+    const fieldBounds = (await page.locator("#prof-menu .profile-search-row").boundingBox())!;
+    expect(fieldBounds.y).toBeCloseTo(cardBounds.y, 0);
+    expect(fieldBounds.width).toBeCloseTo(cardBounds.width, 0);
     expect((await page.locator("#profile-card").boundingBox())!.height).toBeCloseTo(widgetBounds.height, 2);
     const surfaces = await page.evaluate(() => {
-      const header = getComputedStyle(document.querySelector("#prof-card")!);
+      const header = getComputedStyle(document.querySelector("#profile-card")!);
       const popup = getComputedStyle(document.querySelector("#prof-menu")!);
-      return { header: header.backgroundColor, popup: popup.backgroundColor,
-        headerCorner: header.borderBottomLeftRadius, popupCorner: popup.borderTopLeftRadius };
+      return { header: header.backgroundColor, popup: popup.backgroundColor };
     });
     expect(surfaces.header).toBe(surfaces.popup);
-    expect(surfaces.headerCorner).toBe("0px");
-    expect(surfaces.popupCorner).toBe("0px");
     expect(await menu.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
-    await expect(page.locator("#prof-search")).toBeHidden();
+    await expect(page.getByRole("combobox", { name: "Search profiles", exact: true })).toBeFocused();
+    await expect(page.locator("#prof-search")).toHaveAttribute("placeholder", "Search 3 profiles");
+    await expect(page.locator("#prof-search")).not.toHaveAttribute("aria-activedescendant");
     // a click opens with nothing lit; the first arrow press lands on the chosen profile
     await page.keyboard.press("ArrowDown");
-    await expect(menu.getByRole("option", { name: "Discord", exact: true })).toBeFocused();
+    await expectLit(page, menu.getByRole("option", { name: "Discord", exact: true }));
     await page.keyboard.press("ArrowDown");
     await page.keyboard.press("Enter");
     await expect(page.locator("#prof-name")).toHaveText("Email");
@@ -262,7 +273,7 @@ test("the card says what the profile does and its menu switches profile", async 
   await page.locator("#prof-pick").click();
   await expect(page.locator("#prof-menu")).toBeVisible();
   await expect(page.locator("#prof-pick")).toHaveAttribute("aria-expanded", "true");
-  const options = page.locator("#prof-options [role=option]");
+  const options = page.getByRole("group", { name: "Compress", exact: true }).getByRole("option");
   await expect(options).toHaveCount(2);
   await expect(options.nth(0)).toHaveAttribute("aria-selected", "true");
   await expect(options.nth(1)).toHaveAccessibleName("Email");
@@ -386,26 +397,125 @@ test("switching away from unsaved changes can be undone", async ({ page }) => {
 
 test("the profile menu works from the keyboard", async ({ page }) => {
   await open(page);
+  const option = (id: string) => page.locator(`#prof-options [data-profile-id="${id}"]`);
   await page.locator("#prof-pick").focus();
   await page.keyboard.press("ArrowDown");
   await expect(page.locator("#prof-menu")).toBeVisible();
-  await expect(page.locator('#prof-options [data-profile-id="discord"]')).toBeFocused();
+  await expectLit(page, option("discord"));
   await page.keyboard.press("ArrowDown");
-  await expect(page.locator('#prof-options [data-profile-id="email"]')).toBeFocused();
+  await expectLit(page, option("email"));
   await page.keyboard.press("Escape");
   await expect(page.locator("#prof-menu")).toBeHidden();
   await expect(page.locator("#prof-pick")).toBeFocused();
   await expect(page.locator("#prof-sel")).toHaveValue("discord");
   await page.keyboard.press("Enter");
   await expect(page.locator("#prof-menu")).toBeVisible();
+  // with nothing typed, End and Home move through the whole list, the other task's profiles included
   await page.keyboard.press("End");
+  await expectLit(page, option("upscale-4k"));
+  await page.keyboard.press("Home");
+  await expectLit(page, option("discord"));
+  await page.keyboard.press("ArrowDown");
   await page.keyboard.press("Enter");
   await expect(page.locator("#prof-name")).toHaveText("Email");
   await expect(page.locator("#prof-pick")).toBeFocused();
 });
 
+test("an Upscale profile picked from the keyboard in Compress switches the task", async ({ page }) => {
+  await open(page);
+  await page.locator("#prof-pick").focus();
+  await page.keyboard.press("ArrowDown");
+  const upscale = page.getByRole("group", { name: "Upscale, switches to Upscale", exact: true });
+  await expect(upscale.locator(".profile-group-head")).toHaveText("Upscaleswitches to Upscale");
+  await expect(upscale.getByRole("option")).toHaveCount(1);
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowDown");
+  await expectLit(page, upscale.getByRole("option", { name: "4K", exact: true }));
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#prof-menu")).toBeHidden();
+  await expect(page.locator("#wf-u")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("#btn-one")).toHaveText("Upscale this video");
+  await expect(page.locator("#prof-name")).toHaveText("4K");
+  await expect(page.locator("#prof-sel")).toHaveValue("upscale-4k");
+  await expect(page.locator("#sz-grp")).toBeHidden();
+  await expect(page.locator("#res-w")).toHaveValue("3840");
+  await expect(page.locator("#prof-pick")).toBeFocused();
+  await expect.poll(() => page.evaluate(() => window.__tuckFakeBackendCalls?.filter(call => call.method === "saveSettings").at(-1)?.args[0]))
+    .toEqual(expect.objectContaining({ last_task: "upscale", last_upscale_profile_id: "upscale-4k", last_compress_profile_id: "discord" }));
+  // the Compress profiles now switch back, and Compress keeps the profile it had
+  await page.locator("#prof-pick").click();
+  const compress = page.getByRole("group", { name: "Compress, switches to Compress", exact: true });
+  await expect(page.locator("#prof-options > [role=group]").first()).toHaveAccessibleName("Upscale");
+  await expect(compress.getByRole("option", { name: "Discord", exact: true })).toHaveAttribute("aria-selected", "false");
+  await page.keyboard.press("Escape");
+  await page.locator("#wf-c").click();
+  await expect(page.locator("#prof-name")).toHaveText("Discord");
+});
+
+test("searching finds a profile of the other task by its details and marks the match", async ({ page }) => {
+  await open(page);
+  await page.locator("#prof-pick").click();
+  const search = page.getByRole("combobox", { name: "Search profiles", exact: true });
+  await expect(search).toHaveAttribute("aria-controls", "prof-options");
+  const option = page.locator('#prof-options [data-profile-id="upscale-4k"]');
+  // the name is only "4K"; the details carry the rest
+  await search.pressSequentially("4k ·");
+  await expect(page.locator("#prof-options").getByRole("option")).toHaveCount(1);
+  await expect(page.getByRole("group", { name: "Compress", exact: true })).toHaveCount(0);
+  await expectLit(page, option);
+  const marks = option.locator("mark");
+  await expect(marks).toHaveText(["4K ·"]);
+  const style = await marks.first().evaluate((mark) => {
+    const computed = getComputedStyle(mark);
+    return { weight: computed.fontWeight, line: computed.textDecorationLine, background: computed.backgroundColor };
+  });
+  expect(style).toEqual({ weight: "700", line: "underline", background: "rgba(0, 0, 0, 0)" });
+  await search.press("Enter");
+  await expect(page.locator("#wf-u")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("#prof-name")).toHaveText("4K");
+});
+
+test("an empty search says what found nothing and Escape puts the card back", async ({ page }) => {
+  await open(page);
+  await page.locator("#prof-pick").click();
+  const search = page.locator("#prof-search");
+  await search.fill("tiktok");
+  await expect(page.locator("#prof-empty")).toHaveText("No profile matches “tiktok”.");
+  await expect(page.locator("#prof-options").getByRole("option")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Save current settings as new…", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Manage profiles…", exact: true })).toBeVisible();
+  await search.press("Escape");
+  await expect(page.locator("#prof-menu")).toBeHidden();
+  await expect(page.locator("#prof-pick")).toBeFocused();
+  await expect(page.locator("#prof-pick")).toHaveAttribute("aria-expanded", "false");
+  await expect(page.locator("#prof-name")).toHaveText("Discord");
+  // it opens fresh next time
+  await page.locator("#prof-pick").click();
+  await expect(search).toHaveValue("");
+  await expect(page.locator("#prof-options").getByRole("option")).toHaveCount(3);
+});
+
+test("a hidden task's profiles stay out of the profile menu", async ({ page }) => {
+  const fixture = healthyBackendFixture();
+  fixture.responses.getSettings = {
+    ...fixture.responses.getSettings as object,
+    hidden_ui: ["upscale"],
+    default_profile_id: "discord",
+    profiles: [
+      { profile_id: "discord", name: "Discord", workflow: "compression", resolution_mode: "source", fps_mode: "source" },
+      { profile_id: "upscale-4k", name: "4K", workflow: "upscale", resolution_mode: "custom", custom_width: 3840, custom_height: 2160 },
+    ],
+  };
+  await installFakeBackend(page, fixture);
+  await page.goto("/");
+  await page.locator("#prof-pick").click();
+  await expect(page.locator("#prof-options .profile-option-name")).toHaveText(["Discord"]);
+  await expect(page.locator("#prof-options").getByRole("group")).toHaveCount(1);
+  await expect(page.locator("#prof-options").getByRole("group")).toHaveAccessibleName("Compress");
+});
+
 for (const width of [1240, 960]) {
-  test(`long profile menus keep the focused option visible at ${width}px`, async ({ page }) => {
+  test(`long profile menus keep the lit option visible at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: width === 960 ? 640 : 800 });
     const fixture = healthyBackendFixture();
     fixture.responses.getSettings = {
@@ -421,31 +531,34 @@ for (const width of [1240, 960]) {
     if (width === 960) await page.getByRole("button", { name: "Inspector", exact: true }).click();
     const trigger = page.locator("#prof-pick");
     const menu = page.locator("#prof-menu");
+    const list = menu.locator(".profile-menu-list");
+    const first = menu.getByRole("option", { name: "Profile 0", exact: true });
     const last = menu.getByRole("option", { name: "Zebra", exact: true });
     const inspectorScroll = await page.locator("#right-scroll").evaluate(element => element.scrollTop);
-    const expectLastVisible = async () => {
-      await expect(last).toBeFocused();
-      const bounds = (await menu.boundingBox())!;
-      const row = (await last.boundingBox())!;
-      expect(row.y).toBeGreaterThanOrEqual(bounds.y + 6);
-      expect(row.y + row.height).toBeLessThanOrEqual(bounds.y + bounds.height - 6);
+    const expectVisible = async (option: Locator) => {
+      await expectLit(page, option);
+      const bounds = (await list.boundingBox())!;
+      const row = (await option.boundingBox())!;
+      expect(row.y).toBeGreaterThanOrEqual(bounds.y);
+      expect(row.y + row.height).toBeLessThanOrEqual(bounds.y + bounds.height);
       expect(await page.locator("#right-scroll").evaluate(element => element.scrollTop)).toBe(inspectorScroll);
     };
     await trigger.focus();
     await trigger.press("ArrowDown");
-    await expectLastVisible();
+    await expectVisible(last);
     await page.keyboard.press("Home");
-    await page.keyboard.press("z");
-    await expectLastVisible();
-    await page.keyboard.press("Escape");
-    await trigger.click();
+    await expectVisible(first);
+    await page.keyboard.press("End");
+    await expectVisible(last);
+    // the search field stays in place while the list scrolls under it
     const search = page.locator("#prof-search");
-    await expect(search).toBeFocused();
     const popupBounds = (await menu.boundingBox())!;
     const searchBounds = (await search.boundingBox())!;
-    expect(searchBounds.y).toBeGreaterThanOrEqual(popupBounds.y + 6);
-    expect(searchBounds.y + searchBounds.height).toBeLessThanOrEqual(popupBounds.y + popupBounds.height - 6);
-    expect(await page.locator("#right-scroll").evaluate(element => element.scrollTop)).toBe(inspectorScroll);
+    expect(searchBounds.y).toBeGreaterThanOrEqual(popupBounds.y);
+    expect(searchBounds.y + searchBounds.height).toBeLessThanOrEqual(popupBounds.y + popupBounds.height);
+    await page.keyboard.press("Escape");
+    await trigger.click();
+    await expect(search).toBeFocused();
     await search.fill("Zebra");
     await page.keyboard.press("Enter");
     await expect(menu).toBeHidden();
@@ -481,12 +594,12 @@ test("clicking outside closes the profile menu without changing profile", async 
 test("profiles can be searched without losing the menu commands", async ({ page }) => {
   await open(page, undefined, 8);
   await page.locator("#prof-pick").click();
-  await page.getByRole("searchbox", { name: "Search profiles", exact: true }).fill("EMAIL");
+  await page.getByRole("combobox", { name: "Search profiles", exact: true }).fill("EMAIL");
   await expect(page.locator('#prof-options [data-profile-id="discord"]')).toBeHidden();
   await expect(page.locator('#prof-options [data-profile-id="email"]')).toBeVisible();
   await expect(page.getByRole("button", { name: "Manage profiles…", exact: true })).toBeVisible();
   await page.locator("#prof-search").fill("no matching profile");
-  await expect(page.locator("#prof-empty")).toBeVisible();
+  await expect(page.locator("#prof-empty")).toHaveText("No profile matches “no matching profile”.");
   await page.locator("#prof-search").fill("Email");
   await page.locator("#prof-search").press("Enter");
   await expect(page.locator("#prof-name")).toHaveText("Email");
@@ -496,7 +609,7 @@ test("profiles can be searched without losing the menu commands", async ({ page 
 test("Enter on an empty profile search keeps the menu and current profile", async ({ page }) => {
   await open(page, undefined, 8);
   await page.locator("#prof-pick").click();
-  const search = page.getByRole("searchbox", { name: "Search profiles", exact: true });
+  const search = page.getByRole("combobox", { name: "Search profiles", exact: true });
   await search.fill("no matching profile");
   await expect(page.locator("#prof-empty")).toBeVisible();
   await search.press("Enter");
@@ -592,19 +705,25 @@ test("the profile menu lights one row: the pointer's row goes dark when it leave
   await open(page, undefined, 3);
   await page.locator("#prof-pick").click();
   const options = page.locator("#prof-options [role=option]");
-  await expect(options).toHaveCount(3);
+  await expect(options).toHaveCount(4);
   const lit = () => options.evaluateAll(rows => rows.map(row => getComputedStyle(row).backgroundColor !== "rgba(0, 0, 0, 0)"));
   // a click opens with nothing lit; the checkmark alone shows the chosen profile
-  expect(await lit()).toEqual([false, false, false]);
+  expect(await lit()).toEqual([false, false, false, false]);
   await options.nth(1).hover();
-  expect(await lit()).toEqual([false, true, false]);
+  expect(await lit()).toEqual([false, true, false, false]);
+  await expect(page.locator("#prof-search")).toHaveAttribute("aria-activedescendant", (await options.nth(1).getAttribute("id"))!);
   await page.mouse.move(5, 5);
-  expect(await lit()).toEqual([false, false, false]);
+  expect(await lit()).toEqual([false, false, false, false]);
+  await expect(page.locator("#prof-search")).not.toHaveAttribute("aria-activedescendant");
   // with nothing lit, the arrow keys start from the chosen profile, and that row stays lit
   await page.keyboard.press("ArrowDown");
-  await expect(options.nth(0)).toBeFocused();
-  expect(await lit()).toEqual([true, false, false]);
+  await expectLit(page, options.nth(0));
+  expect(await lit()).toEqual([true, false, false, false]);
   await page.keyboard.press("ArrowDown");
-  await expect(options.nth(1)).toBeFocused();
-  expect(await lit()).toEqual([false, true, false]);
+  await expectLit(page, options.nth(1));
+  expect(await lit()).toEqual([false, true, false, false]);
+  // a click on a row keeps focus out of the list and picks it
+  await options.nth(2).click();
+  await expect(page.locator("#prof-menu")).toBeHidden();
+  await expect(page.locator("#prof-sel")).toHaveValue("extra-0");
 });

@@ -760,15 +760,32 @@
                     </div>
                   </div>
                 </div>
+                <!-- opens over the card: its header becomes the search field and the list hangs from it -->
                 <div id="prof-menu" class="profile-menu" popover="auto" role="dialog" aria-label="Choose profile" tabindex="-1" hidden>
-                  <div class="profile-search-row" hidden>
-                    <input id="prof-search" type="search" placeholder="Search profiles" aria-label="Search profiles" autocomplete="off" />
+                  <div class="profile-search-row">
+                    <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5"></circle><path d="m10.5 10.5 3 3"></path></svg>
+                    <input
+                      id="prof-search"
+                      type="search"
+                      placeholder="Search profiles"
+                      aria-label="Search profiles"
+                      autocomplete="off"
+                      spellcheck="false"
+                      role="combobox"
+                      aria-autocomplete="list"
+                      aria-expanded="true"
+                      aria-controls="prof-options"
+                    />
+                    <kbd aria-hidden="true">Esc</kbd>
                   </div>
-                  <div id="prof-options" role="listbox" aria-label="Profiles"></div>
-                  <p id="prof-empty" class="select-empty" role="status" hidden>No matching profiles.</p>
-                  <div class="profile-menu-sep" role="separator"></div>
-                  <button type="button" class="profile-menu-cmd" data-action-click="encoding-save-profile-as">Save current settings as new…</button>
-                  <button type="button" class="profile-menu-cmd" data-action-click="settings-open-profiles">Manage profiles…</button>
+                  <div class="profile-menu-list">
+                    <div id="prof-options" role="listbox" aria-label="Profiles"></div>
+                    <p id="prof-empty" class="profile-menu-empty" role="status" hidden></p>
+                  </div>
+                  <div class="profile-menu-foot">
+                    <button type="button" class="profile-menu-cmd" data-action-click="encoding-save-profile-as">Save current settings as new…</button>
+                    <button type="button" class="profile-menu-cmd" data-action-click="settings-open-profiles">Manage profiles…</button>
+                  </div>
                 </div>
                 <div class="gr" id="sz-grp">
                   <div class="sz-head">
