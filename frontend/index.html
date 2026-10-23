@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <title>Tuck</title>
   </head>
-  <body>
+  <body class="library-empty">
     <div id="tb">
       <button
         type="button"
@@ -193,8 +193,11 @@
       </div>
       <div id="center">
         <div id="empty">
-          <h2>Drop videos anywhere</h2>
-          <button type="button" id="empty-add" data-action-click="browse-videos">Add videos</button>
+          <div class="empty-start">
+            <h2 id="empty-title">Drop a video to compress it</h2>
+            <p id="empty-note">It will fit the size you pick, like 20 MB for Discord.</p>
+            <button type="button" id="empty-add" data-action-click="browse-videos">Add videos</button>
+          </div>
         </div>
         <div id="stage">
           <div id="timeline-gap-caption" role="status" hidden>No video at the playhead</div>
@@ -438,6 +441,9 @@
             </svg>
           </button>
         </div>
+        <p id="inspector-start-note" class="inspector-start-note">
+          Export settings show up here once a video is added.
+        </p>
         <div id="insp-tabs" class="insp-tabs" role="group" aria-label="Inspector section">
           <button type="button" id="insp-tab-edit" class="insp-tab" aria-pressed="false" data-action-click="inspector-tab" data-action-value="edit">
             <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 1v9.5a1 1 0 0 0 1 1H15"></path><path d="M11.5 15V5.5a1 1 0 0 0-1-1H1"></path></svg>
@@ -1358,6 +1364,7 @@
         <div id="timeline-empty" class="timeline-empty" aria-live="polite">
           <span class="timeline-empty-title">No video selected</span>
           <span class="timeline-empty-copy">Choose a video from the Library to view its timeline.</span>
+          <span class="timeline-start-note">Your timeline shows up here.</span>
         </div>
         <div id="seq-selection-layer">
           <div id="seq-selection" hidden></div>

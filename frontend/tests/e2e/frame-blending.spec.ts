@@ -1,6 +1,6 @@
 import { chooseSelect } from "../fixtures/select";
 import { expect, test } from "@playwright/test";
-import { healthyBackendFixture, installFakeBackend } from "../fixtures/fake-backend";
+import { healthyBackendFixture, installFakeBackend, withVideo } from "../fixtures/fake-backend";
 
 declare global { interface Window { __firstBar?: Element | null } }
 
@@ -94,8 +94,8 @@ for (const size of [{width:1240,height:800}, {width:960,height:640}]) {
 }
 
 
-test("Vegas has a weight preview before a video is added", async ({page}) => {
-  await installFakeBackend(page, healthyBackendFixture());
+test("Vegas has a weight preview", async ({page}) => {
+  await installFakeBackend(page, withVideo(healthyBackendFixture()));
   await page.goto("/");
   await page.locator("#frame-blending-panel > summary").click();
   await page.getByLabel("Enable frame blending").check();
@@ -106,7 +106,7 @@ test("Vegas has a weight preview before a video is added", async ({page}) => {
 });
 
 test("the weight chart keeps its bars while the queue polls", async ({page}) => {
-  await installFakeBackend(page, healthyBackendFixture());
+  await installFakeBackend(page, withVideo(healthyBackendFixture()));
   await page.goto("/");
   await page.locator("#frame-blending-panel > summary").click();
   await page.getByLabel("Enable frame blending").check();

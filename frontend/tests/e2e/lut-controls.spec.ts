@@ -1,6 +1,6 @@
 import { chooseSelect } from "../fixtures/select";
 import { expect, test } from "@playwright/test";
-import { healthyBackendFixture, installFakeBackend } from "../fixtures/fake-backend";
+import { healthyBackendFixture, installFakeBackend, withVideo } from "../fixtures/fake-backend";
 import { expectLutShown, nativePreview } from "../fixtures/lut-check";
 
 for (const width of [1240, 960]) {
@@ -81,7 +81,7 @@ for (const width of [1240, 960]) {
 
 
 test("saved LUT profiles reload and old profiles disable the effect", async ({page}) => {
-  const fixture = healthyBackendFixture();
+  const fixture = withVideo(healthyBackendFixture());
   const lut = {enabled:true,path:"C:/managed/look.cube",name:"Saved look",strength:.4};
   const base = {workflow:"compression",target_size_bytes:10485760,resolution_mode:"source",fps_mode:"source",video_encoder:"libx264",preset:"medium",audio_bitrate:128000};
   fixture.responses.getSettings = {...fixture.responses.getSettings as object,profiles:[{...base,profile_id:"old",name:"Original"},{...base,profile_id:"look",name:"With LUT",lut}]};
@@ -110,7 +110,7 @@ test("saved LUT profiles reload and old profiles disable the effect", async ({pa
 
 test("blending errors leave the LUT preview enabled and FPS controls stay synchronized", async ({page}) => {
   await page.setViewportSize({width:960,height:640});
-  const fixture = healthyBackendFixture();
+  const fixture = withVideo(healthyBackendFixture());
   fixture.responses.pickFiles = {files:["C:/media/highfps.mp4"]};
   fixture.responses.probeFile = {data:{width:1920,height:1080,fps:900,duration:12,has_audio:true}};
   fixture.responses.getMediaUrl = {url:"https://media.test/v",token:"v"};

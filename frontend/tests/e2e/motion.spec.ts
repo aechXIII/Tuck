@@ -1,12 +1,12 @@
 import { expect, test } from "@playwright/test";
-import { healthyBackendFixture, installFakeBackend } from "../fixtures/fake-backend";
+import { healthyBackendFixture, installFakeBackend, withVideo } from "../fixtures/fake-backend";
 
 for (const reducedMotion of ["reduce", "no-preference"] as const) {
   for (const width of [1240, 960]) {
     test(`app motion stays enabled with ${reducedMotion} at ${width}px`, async ({ page }) => {
       await page.setViewportSize({ width, height: width === 960 ? 640 : 800 });
       await page.emulateMedia({ reducedMotion });
-      await installFakeBackend(page, healthyBackendFixture());
+      await installFakeBackend(page, withVideo(healthyBackendFixture()));
       await page.goto("/");
       if (width === 960) await page.getByRole("button", { name: "Inspector", exact: true }).click();
       await page.locator("#insp-tabs").hover();

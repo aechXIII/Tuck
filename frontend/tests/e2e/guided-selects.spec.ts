@@ -1,12 +1,12 @@
 import { expect, test } from "@playwright/test";
-import { healthyBackendFixture, installFakeBackend } from "../fixtures/fake-backend";
+import { healthyBackendFixture, installFakeBackend, withVideo } from "../fixtures/fake-backend";
 import { chooseSelect } from "../fixtures/select";
 
 for (const width of [1240, 960]) {
   test(`menus align with their fields at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: width === 960 ? 640 : 800 });
     await page.emulateMedia({ reducedMotion: "reduce" });
-    const fixture = healthyBackendFixture();
+    const fixture = withVideo(healthyBackendFixture());
     fixture.responses.getSettings = {
       ...fixture.responses.getSettings as object,
       profiles: [{ profile_id: "review", name: "Review with a long descriptive name", workflow: "compression" }],
@@ -111,7 +111,7 @@ test("profile speed and preset controls stay synchronized after programmatic upd
 
 test("Escape closes a dropdown before the compact Inspector", async ({ page }) => {
   await page.setViewportSize({ width: 960, height: 640 });
-  await installFakeBackend(page, healthyBackendFixture());
+  await installFakeBackend(page, withVideo(healthyBackendFixture()));
   await page.goto("/");
   await page.getByRole("button", { name: "Inspector", exact: true }).click();
   const trigger = page.locator("#export-fps-select-trigger");
@@ -151,7 +151,7 @@ test("Settings dropdowns don't linger after moving between pages", async ({ page
 });
 
 test("frame blending dropdowns reflect disabled fieldsets and keep selections", async ({ page }) => {
-  await installFakeBackend(page, healthyBackendFixture());
+  await installFakeBackend(page, withVideo(healthyBackendFixture()));
   await page.goto("/");
   await page.locator("#frame-blending-panel > summary").click();
   const curve = page.locator("#blend-curve-trigger");
@@ -169,7 +169,7 @@ test("frame blending dropdowns reflect disabled fieldsets and keep selections", 
 });
 
 test("encoder rescans retain unavailable choices without allowing selection", async ({ page }) => {
-  const fixture = healthyBackendFixture();
+  const fixture = withVideo(healthyBackendFixture());
   fixture.responses.refreshEncoders = { ok: true, available_encoders: ["libx264", "libx265"] };
   await installFakeBackend(page, fixture);
   await page.goto("/");
@@ -243,7 +243,7 @@ test("dropdown focus suppresses editor deletion shortcuts", async ({ page }) => 
 
 test("a long profile menu closes when its Inspector anchor scrolls out of view", async ({ page }) => {
   await page.setViewportSize({ width: 960, height: 640 });
-  const fixture = healthyBackendFixture();
+  const fixture = withVideo(healthyBackendFixture());
   fixture.responses.getSettings = {
     ...fixture.responses.getSettings as object,
     profiles: Array.from({ length: 20 }, (_, index) => ({
@@ -272,7 +272,7 @@ test("a long profile menu closes when its Inspector anchor scrolls out of view",
 });
 
 test("a dropdown lights one row: the pointer's row goes dark when it leaves, the keyboard's stays", async ({ page }) => {
-  await installFakeBackend(page, healthyBackendFixture());
+  await installFakeBackend(page, withVideo(healthyBackendFixture()));
   await page.goto("/");
   await page.locator("#export-fps-select-trigger").click();
   const popup = page.locator("#export-fps-select-popup");

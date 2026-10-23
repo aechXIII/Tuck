@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { healthyBackendFixture, installFakeBackend } from "../fixtures/fake-backend";
+import { healthyBackendFixture, installFakeBackend, withVideo } from "../fixtures/fake-backend";
 
 async function expectTriggerToggle(page: Page, id: string) {
   const trigger = page.locator(`#${id}-trigger`);
@@ -28,7 +28,7 @@ async function expectTriggerToggle(page: Page, id: string) {
 for (const width of [1240, 960]) {
   test(`clicking the same dropdown trigger toggles its menu at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: width === 960 ? 640 : 800 });
-    const fixture = healthyBackendFixture();
+    const fixture = withVideo(healthyBackendFixture());
     fixture.responses.getSettings = {
       ...fixture.responses.getSettings as object,
       default_profile_id: "profile-0",
@@ -81,7 +81,7 @@ for (const count of [7, 8]) {
   test(`Quiet profile menus always open on their search field (${count} choices)`, async ({ page }) => {
     await page.setViewportSize({ width: count === 7 ? 960 : 1240, height: count === 7 ? 640 : 800 });
     await page.emulateMedia({ reducedMotion: "reduce" });
-    const fixture = healthyBackendFixture();
+    const fixture = withVideo(healthyBackendFixture());
     fixture.responses.getSettings = {
       ...fixture.responses.getSettings as object,
       default_profile_id: "profile-0",
@@ -115,7 +115,7 @@ for (const count of [7, 8]) {
 }
 
 test("Quiet profile search still finds the settings shown in tooltips", async ({ page }) => {
-  const fixture = healthyBackendFixture();
+  const fixture = withVideo(healthyBackendFixture());
   fixture.responses.getSettings = {
     ...fixture.responses.getSettings as object,
     profiles: Array.from({ length: 8 }, (_, index) => ({
@@ -133,7 +133,7 @@ test("Quiet profile search still finds the settings shown in tooltips", async ({
 });
 
 test("short Quiet profile lists filter as you type", async ({ page }) => {
-  const fixture = healthyBackendFixture();
+  const fixture = withVideo(healthyBackendFixture());
   fixture.responses.getSettings = {
     ...fixture.responses.getSettings as object,
     default_profile_id: "discord",

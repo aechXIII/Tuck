@@ -1,12 +1,12 @@
 import { chooseSelect } from "../fixtures/select";
 import {expect, test} from "@playwright/test";
-import {healthyBackendFixture, installFakeBackend} from "../fixtures/fake-backend";
+import {healthyBackendFixture, installFakeBackend, withVideo} from "../fixtures/fake-backend";
 
 for (const width of [1240, 960]) {
   test(`export effects match Video controls at ${width}`, async ({page}) => {
     await page.setViewportSize({width,height:width === 960 ? 640 : 800});
     await page.emulateMedia({reducedMotion:"reduce"});
-    const fixture = healthyBackendFixture();
+    const fixture = withVideo(healthyBackendFixture());
     fixture.responses.pickLutFile = {path:"C:/looks/Warm.cube"};
     fixture.responses.loadLut = {path:"C:/looks/Warm.cube",name:"Warm",size:2,table_url:"https://lut.test/table",token:"lut"};
     await page.route("https://lut.test/table", route => route.fulfill({body:Buffer.from(new Float32Array(24).buffer),headers:{"Access-Control-Allow-Origin":"*"}}));

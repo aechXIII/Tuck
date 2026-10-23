@@ -1,11 +1,11 @@
 import { expect, test } from "@playwright/test";
-import { healthyBackendFixture, installFakeBackend } from "../fixtures/fake-backend";
+import { healthyBackendFixture, installFakeBackend, withVideo } from "../fixtures/fake-backend";
 
 for (const width of [1240, 960]) {
   test(`saved LUT search, keyboard selection and clear history at ${width}`, async ({page}) => {
     await page.setViewportSize({width,height:width === 960 ? 640 : 800});
     await page.emulateMedia({reducedMotion:"reduce"});
-    const fixture = healthyBackendFixture();
+    const fixture = withVideo(healthyBackendFixture());
     const entries = [{path:"C:/managed/warm.cube",name:"Warm"},{path:"C:/managed/cool.cube",name:"Cool"},
       {path:"C:/managed/long.cube",name:"Evening light — a very long descriptive filename with extra detail.cube"},
       ...Array.from({length:8},(_, index) => ({path:`C:/managed/film-${index}.cube`,name:`Film ${index + 1}`}))];
@@ -99,7 +99,7 @@ for (const width of [1240, 960]) {
 }
 
 test("the open LUT menu continues its row and lights one option, which the pointer moves", async ({page}) => {
-  const fixture = healthyBackendFixture();
+  const fixture = withVideo(healthyBackendFixture());
   fixture.responses.listLuts = {luts:[{path:"C:/managed/warm.cube",name:"Warm"},{path:"C:/managed/cool.cube",name:"Cool"},{path:"C:/managed/film.cube",name:"Film"}]};
   fixture.responses.loadLut = {path:"C:/managed/film.cube",name:"Film",size:2,table_url:"http://127.0.0.1:4321/token/table",token:"t"};
   await page.route("http://127.0.0.1:4321/token/table", route => route.fulfill({body:Buffer.from(new Float32Array(24).buffer),headers:{"Access-Control-Allow-Origin":"*"}}));

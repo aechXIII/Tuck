@@ -211,3 +211,21 @@
   padding-top: calc(14px * var(--density-scale));
   border-top: 1px solid var(--border);
 }
+/* with no videos there is nothing to set yet, so one quiet line stands in for the controls */
+.inspector-start-note {
+  display: none;
+  margin: auto;
+  padding: 24px var(--inspector-content-inset);
+  color: var(--muted);
+  font: 500 calc(13px * var(--text-scale))/1.5 var(--font);
+  text-align: center;
+  text-wrap: balance;
+}
+body.library-empty .inspector-start-note {
+  display: block;
+}
+body.library-empty #insp-tabs,
+body.library-empty #right-scroll,
+body.library-empty #export-go {
+  display: none;
+}

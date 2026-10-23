@@ -20,10 +20,30 @@
   justify-content: center;
   gap: calc(10px * var(--density-scale));
 }
-#empty h2 {
-  color: var(--dim);
-  font-size: calc(18px * var(--text-scale));
-  font-weight: 600;
+/* the content centers itself with auto margins, so when the timeline is tall and the screen
+   short it scrolls from the top instead of overflowing past it */
+#empty {
+  min-height: 0;
+  overflow-y: auto;
+  justify-content: flex-start;
+  padding: calc(16px * var(--density-scale)) var(--gutter);
+}
+.empty-start {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: min(340px, 100%);
+  margin: auto;
+  text-align: center;
+}
+#empty-title {
+  color: var(--text);
+  font: 650 calc(20px * var(--text-scale))/1.25 var(--font);
+}
+#empty-note {
+  margin: calc(6px * var(--density-scale)) 0 calc(16px * var(--density-scale));
+  color: var(--muted);
+  font: 500 calc(13px * var(--text-scale))/1.45 var(--font);
 }
 /* the Library's Add videos sits in a drawer at small window sizes, so the empty screen offers it too */
 #empty-add {

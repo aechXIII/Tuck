@@ -55,6 +55,22 @@ export function healthyBackendFixture(): FakeBackendFixture {
   };
 }
 
+/**
+ * Puts one readable video in the Library at launch. The Inspector's export controls only show
+ * once the Library has a video, so specs about those controls start with one.
+ */
+export function withVideo(
+  fixture: FakeBackendFixture,
+  path = "C:\\videos\\Clip.mp4",
+): FakeBackendFixture {
+  fixture.startup.files = [path];
+  fixture.responses.probeFile ??= {
+    ok: true,
+    data: { duration: 12, width: 1920, height: 1080, fps: 30, has_audio: true, video_codec: "h264", audio_codec: "aac", file_size: 15_000_000 },
+  };
+  return fixture;
+}
+
 export async function installFakeBackend(
   page: Page,
   fixture: FakeBackendFixture,

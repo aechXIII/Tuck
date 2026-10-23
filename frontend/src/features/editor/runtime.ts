@@ -62,6 +62,7 @@ import type { Segment } from "../../types/foundation.ts";
 import { hiddenParts } from "../settings/visibility.ts";
 import { applyAppearance, createInterfaceSizer } from "../appearance/appearance.ts";
 import { createSessionFiles } from "../library/session-files.ts";
+import { createStartScreen } from "../library/start-screen.ts";
 import { timeFormat } from "./time-format.ts";
 import { onShortcutsChanged, setShortcutOverrides, syncShortcutHints } from "../shortcuts/shortcuts.ts";
 
@@ -141,6 +142,12 @@ export function installEditorRuntime(
     schedule: (run, delay) => windowRef.setTimeout(run, delay),
     cancel: (handle) => windowRef.clearTimeout(handle as number),
   });
+
+  const startScreen = createStartScreen({
+    document: windowRef.document,
+    task: () => encoding?.task() ?? "compression",
+  });
+  const syncStartScreen = (): void => startScreen.sync(session.clipOrder.length > 0);
 
   // the look, size, and time format come from Settings and apply as soon as they are saved
   function applyPreferences(): void {
@@ -404,6 +411,7 @@ export function installEditorRuntime(
     audio,
     history,
     libraryChanged: (paths) => {
+      startScreen.sync(paths.length > 0);
       if (started) sessionFiles.track(paths);
     },
     applyProfile: (force) => encoding?.applyProfile(force),
@@ -905,6 +913,7 @@ export function installEditorRuntime(
         false,
       );
       library.noticeMissingTools();
+      syncStartScreen();
     } catch {
       toast("Could not load settings.", "err");
     }

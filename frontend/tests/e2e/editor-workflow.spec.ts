@@ -386,7 +386,7 @@ test("crop, rotation, and segment edits update the selected clip and undo restor
   await expect(page.locator(".tl-segment")).toHaveCount(2);
 
   await page.getByRole("button", { name: "Remove Morning clip.mp4" }).click();
-  await expect(page.getByText("Drop videos anywhere", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Drop a video to compress it" })).toBeVisible();
   await expect(page.locator(".tl-segment")).toHaveCount(0);
 });
 

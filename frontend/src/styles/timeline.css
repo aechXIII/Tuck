@@ -81,6 +81,24 @@ body.timeline-resizing * {
   color: var(--muted);
   font: 500 calc(11px * var(--text-scale))/calc(15px * var(--text-scale)) var(--font);
 }
+.timeline-start-note {
+  display: none;
+  color: var(--muted);
+  font: 500 calc(12px * var(--text-scale))/calc(16px * var(--text-scale)) var(--font);
+}
+/* before any video is added the timeline only says where it will appear; once videos exist,
+   the usual "No video selected" text takes over */
+body.library-empty .timeline-start-note {
+  display: block;
+}
+body.library-empty .timeline-empty-title,
+body.library-empty .timeline-empty-copy {
+  display: none;
+}
+/* hidden rather than removed, so the bar keeps its height when the first video arrives */
+body.library-empty #timeline-row > * {
+  visibility: hidden;
+}
 #audio-editor.is-loading .timeline-empty-title {
   color: var(--accent-light);
 }

@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import { healthyBackendFixture, installFakeBackend } from "../fixtures/fake-backend";
+import { healthyBackendFixture, installFakeBackend, withVideo } from "../fixtures/fake-backend";
 
 const MB = 1024 * 1024;
 
@@ -200,7 +200,7 @@ for (const width of [1240, 960]) {
 }
 
 test("an empty Upscale profile list keeps the picker commands without save or target-size controls", async ({ page }) => {
-  await installFakeBackend(page, healthyBackendFixture());
+  await installFakeBackend(page, withVideo(healthyBackendFixture()));
   await page.goto("/");
   await page.locator("#wf-u").click();
   await expect(page.locator("#prof-name")).toHaveText("No profile");
@@ -496,7 +496,7 @@ test("an empty search says what found nothing and Escape puts the card back", as
 });
 
 test("a hidden task's profiles stay out of the profile menu", async ({ page }) => {
-  const fixture = healthyBackendFixture();
+  const fixture = withVideo(healthyBackendFixture());
   fixture.responses.getSettings = {
     ...fixture.responses.getSettings as object,
     hidden_ui: ["upscale"],
@@ -517,7 +517,7 @@ test("a hidden task's profiles stay out of the profile menu", async ({ page }) =
 for (const width of [1240, 960]) {
   test(`long profile menus keep the lit option visible at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: width === 960 ? 640 : 800 });
-    const fixture = healthyBackendFixture();
+    const fixture = withVideo(healthyBackendFixture());
     fixture.responses.getSettings = {
       ...fixture.responses.getSettings as object,
       default_profile_id: "profile-19",

@@ -1,14 +1,14 @@
 import { chooseSelect } from "../fixtures/select";
 import { expect, test, type Page } from "@playwright/test";
-import { healthyBackendFixture, installFakeBackend } from "../fixtures/fake-backend";
+import { healthyBackendFixture, installFakeBackend, withVideo } from "../fixtures/fake-backend";
 
 const profiles = [
   { profile_id: "everyday", name: "Everyday", workflow: "compression", builtin: true },
   { profile_id: "sharing", name: "Sharing", workflow: "compression", builtin: false },
 ];
 
-async function start(page: Page, settings: Record<string, unknown> = {}, responses: Record<string, unknown> = {}) {
-  const fixture = healthyBackendFixture();
+async function start(page: Page, settings: Record<string, unknown> = {}, responses: Record<string, unknown> = {}, video = false) {
+  const fixture = video ? withVideo(healthyBackendFixture()) : healthyBackendFixture();
   fixture.responses.getSettings = {
     ...fixture.responses.getSettings as Record<string, unknown>,
     default_profile_id: "everyday",
@@ -280,7 +280,8 @@ for (const width of [1240, 960]) {
       { profile_id: "small", name: "Small screen", workflow: "upscale", builtin: false, resolution_mode: "custom", custom_width: 1920, custom_height: 1080 },
     ];
     // the profile is hidden from the picker, and Use still works
-    await start(page, { profiles: all, hidden_profile_ids: ["small"] }, { getProfilesJson: all });
+    // the profile card only shows once a video is in the Library
+    await start(page, { profiles: all, hidden_profile_ids: ["small"] }, { getProfilesJson: all }, true);
     if (width === 960) await page.getByRole("button", { name: "Inspector", exact: true }).click();
     await expect(page.locator("#prof-name")).toHaveText("Everyday");
     await openSettings(page, "profiles");
@@ -600,7 +601,10 @@ test("pinned profiles lead the picker and hidden ones leave it", async ({ page }
     { profile_id: "sharing", name: "Sharing", workflow: "compression", builtin: false },
     { profile_id: "archive", name: "Archive", workflow: "compression", builtin: false },
   ];
-  await start(page, { profiles: many }, { getProfilesJson: many });
+  await start(page, { profiles: many }, { getProfilesJson: many, pickFiles: { ok: true, files: ["C:/videos/One.mp4"] } });
+  // the profile picker shows once there is a video to export
+  await page.locator("#empty-add").click();
+  await expect(page.locator(".clip")).toHaveCount(1);
   await openSettings(page, "profiles");
   await page.getByLabel("More actions for Archive", { exact: true }).click();
   await page.getByRole("menuitem", { name: "Pin to top of picker" }).click();

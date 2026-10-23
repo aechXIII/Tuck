@@ -1,11 +1,11 @@
 import {expect, test} from "@playwright/test";
-import {healthyBackendFixture, installFakeBackend} from "../fixtures/fake-backend";
+import {healthyBackendFixture, installFakeBackend, withVideo} from "../fixtures/fake-backend";
 
 for (const width of [1240, 960]) {
   test(`LUT flow explains empty, loading, applied, off and removed states at ${width}`, async ({page}, testInfo) => {
     await page.setViewportSize({width, height:width === 960 ? 640 : 800});
     await page.emulateMedia({reducedMotion:"reduce"});
-    const fixture = healthyBackendFixture();
+    const fixture = withVideo(healthyBackendFixture());
     fixture.responses.listLuts = {luts:[]};
     fixture.responseSequences = {
       pickLutFile:[{path:""},{path:"broken.cube"},{path:"warm.cube"}],

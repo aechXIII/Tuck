@@ -32,7 +32,7 @@ test("generated entry loads relative assets and exposes the empty editor", async
   await expect(page.locator("#btn-add")).toBeVisible();
   await expect(page.getByRole("button", { name: "Settings" })).toBeVisible();
   await expect(page.locator("#vid")).toHaveAttribute("aria-label", /preview/i);
-  await expect(page.getByText("Drop videos anywhere", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Drop a video to compress it" })).toBeVisible();
 
   expect(
     await page.evaluate(

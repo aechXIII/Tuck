@@ -76,7 +76,7 @@ test("a preview that fails to play falls back to the picture, and removal clears
 
   await page.getByRole("button", { name: "Remove Harbour.mp4" }).click();
 
-  await expect(page.getByText("Drop videos anywhere", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Drop a video to compress it" })).toBeVisible();
   await expect
     .poll(() => page.evaluate(() => (window.__tuckFakeBackendCalls ?? [])
       .filter((call) => call.method === "releaseMediaToken")

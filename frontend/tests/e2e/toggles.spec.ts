@@ -1,11 +1,11 @@
 import { expect, test } from "@playwright/test";
-import { healthyBackendFixture, installFakeBackend } from "../fixtures/fake-backend";
+import { healthyBackendFixture, installFakeBackend, withVideo } from "../fixtures/fake-backend";
 
 for (const width of [1240, 960]) {
   test(`switches retain keyboard behavior and alignment at ${width}`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: width === 960 ? 640 : 800 });
     await page.emulateMedia({ reducedMotion: "reduce" });
-    await installFakeBackend(page, healthyBackendFixture());
+    await installFakeBackend(page, withVideo(healthyBackendFixture()));
     await page.goto("/");
     if (width === 960) await page.getByRole("button", { name: "Inspector", exact: true }).click();
     await page.locator("#frame-blending-panel > summary").click();
