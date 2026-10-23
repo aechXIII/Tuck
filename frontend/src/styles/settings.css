@@ -913,6 +913,10 @@ body.settings-open .settings-dialog {
   background: color-mix(in oklab, var(--accent) 22%, var(--sink));
   color: var(--accent-light);
 }
+.set-profile-row .profile-use {
+  flex: none;
+  margin-right: 4px;
+}
 .profile-actions-menu {
   position: relative;
   margin-right: 12px;

@@ -271,6 +271,52 @@ test("a profile becomes the default from its menu", async ({ page }) => {
   await expect(page.getByLabel("More actions for Sharing", { exact: true })).toBeFocused();
 });
 
+for (const width of [1240, 960]) {
+  test(`Use switches to the profile's task, selects it, and closes Settings at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: width === 960 ? 640 : 800 });
+    const all = [
+      ...profiles,
+      { profile_id: "big", name: "Big screen", workflow: "upscale", builtin: false, resolution_mode: "custom", custom_width: 3840, custom_height: 2160 },
+      { profile_id: "small", name: "Small screen", workflow: "upscale", builtin: false, resolution_mode: "custom", custom_width: 1920, custom_height: 1080 },
+    ];
+    // the profile is hidden from the picker, and Use still works
+    await start(page, { profiles: all, hidden_profile_ids: ["small"] }, { getProfilesJson: all });
+    if (width === 960) await page.getByRole("button", { name: "Inspector", exact: true }).click();
+    await expect(page.locator("#prof-name")).toHaveText("Everyday");
+    await openSettings(page, "profiles");
+    const rows = page.locator(".set-profile-row");
+    await expect(rows.getByRole("button", { name: /^Use / })).toHaveCount(4);
+    // Use sits before each row's menu
+    const row = rows.filter({ hasText: "Small screen" });
+    const use = row.getByRole("button", { name: "Use Small screen", exact: true });
+    await expect(use).toHaveText("Use");
+    const useBox = (await use.boundingBox())!;
+    const menuBox = (await row.getByLabel("More actions for Small screen", { exact: true }).boundingBox())!;
+    expect(useBox.x + useBox.width).toBeLessThanOrEqual(menuBox.x);
+    await use.click();
+    await expect(page.getByRole("dialog", { name: "Settings", exact: true })).toBeHidden();
+    await expect(page.locator("#wf-u")).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("#prof-name")).toHaveText("Small screen");
+    await expect(page.locator("#prof-sel")).toHaveValue("small");
+    await expect(page.locator("#res-w")).toHaveValue("1920");
+    await expect(page.locator("#prof-pick")).toBeFocused();
+    await savedWith(page, "last_upscale_profile_id", "small");
+    // back in Compress, a Compress profile is used without a task switch
+    await openSettings(page, "profiles");
+    await rows.getByRole("button", { name: "Use Sharing", exact: true }).click();
+    await expect(page.locator("#wf-c")).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("#prof-name")).toHaveText("Sharing");
+  });
+}
+
+test("a hidden task's profiles offer no Use in Settings", async ({ page }) => {
+  const all = [...profiles, { profile_id: "big", name: "Big screen", workflow: "upscale", builtin: false }];
+  await start(page, { profiles: all, hidden_ui: ["upscale"] }, { getProfilesJson: all });
+  await openSettings(page, "profiles");
+  await expect(page.getByRole("button", { name: "Use Sharing", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Use Big screen", exact: true })).toHaveCount(0);
+});
+
 test("Esc closes an open profile menu before it closes Settings", async ({ page }) => {
   await start(page);
   await openSettings(page, "profiles");

@@ -125,8 +125,8 @@ test("profile rows open the editor and offer Set as default only for other profi
   const rows = list.children;
   assert.equal(rows.length, 2);
   const actions = (row: FakeElement) => descendants(row).map((element) => element.dataset.profileAction).filter(Boolean);
-  assert.deepEqual(actions(rows[0]!), ["edit", "edit", "duplicate", "pin", "show", "export", "delete"]);
-  assert.deepEqual(actions(rows[1]!), ["edit", "edit", "duplicate", "default", "unpin", "hide", "export", "delete"]);
+  assert.deepEqual(actions(rows[0]!), ["edit", "use", "edit", "duplicate", "pin", "show", "export", "delete"]);
+  assert.deepEqual(actions(rows[1]!), ["edit", "use", "edit", "duplicate", "default", "unpin", "hide", "export", "delete"]);
   const tags = (row: FakeElement) => descendants(row).map((element) => element.textContent);
   assert.ok(tags(rows[0]!).includes("Default") && tags(rows[0]!).includes("Hidden"));
   assert.ok(!tags(rows[1]!).includes("Default") && tags(rows[1]!).includes("Pinned"));
@@ -153,4 +153,25 @@ test("an empty profile list says so in its own words", () => {
   });
   assert.equal(list.children.length, 1);
   assert.equal(list.children[0]!.textContent, "None yet.");
+});
+
+test("profile rows offer Use with the profile's name, except where the profile can't be used", () => {
+  const list = new FakeElement("div");
+  const calls: unknown[][] = [];
+  const profiles = [
+    { profile_id: "clips", name: "Clips", workflow: "compression" },
+    { profile_id: "4k", name: "4K", workflow: "upscale" },
+  ];
+  renderProfileList(fakeDocument, list as unknown as HTMLElement, profiles, {
+    summarize: () => "",
+    canUse: (profile) => profile.workflow !== "upscale",
+  });
+  bindProfileActions(list as unknown as HTMLElement, (...args) => calls.push(args));
+  const use = (row: FakeElement) => descendants(row).find((element) => element.dataset.profileAction === "use");
+  const clips = use(list.children[0]!);
+  assert.equal(clips?.textContent, "Use");
+  assert.equal(clips?.attributes["aria-label"], "Use Clips");
+  assert.equal(use(list.children[1]!), undefined);
+  list.listeners.click![0]!({ target: clips });
+  assert.deepEqual(calls, [["use", "clips", "Clips"]]);
 });

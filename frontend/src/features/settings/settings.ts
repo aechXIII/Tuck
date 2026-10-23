@@ -82,6 +82,8 @@ export interface SettingsDeps {
   getBackendClient: () => BackendClient;
   reloadEditorSettings: (preserveExportSettings?: boolean) => Promise<void>;
   setAvailableEncoders: (encoders: string[]) => void;
+  // switches the editor to this profile; returns the control that now shows it, if it is showing
+  useProfile: (profileId: string) => HTMLElement | null;
   copyDiagnostics: () => void | Promise<void>;
   checkForUpdates: () => void | Promise<void>;
   showShortcutGuide: () => void;
@@ -1418,6 +1420,8 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       summarize: profileSummary,
       pinned: new Set(profileIdList("pinned_profile_ids")),
       hidden: new Set(profileIdList("hidden_profile_ids")),
+      canUse: (profile: ProfileListEntry) => visibleTasks(hiddenParts(appSettings().hidden_ui))
+        .includes(profile.workflow === "upscale" ? "upscale" : "compression"),
     };
     renderProfileList(document, own, visible.filter((p) => !p.builtin), {
       ...options,
@@ -1426,7 +1430,8 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     renderProfileList(document, builtin, visible.filter((p) => !!p.builtin), { ...options, empty: "No built-in profiles for this task." });
     for (const list of [own, builtin]) {
       bindProfileActions(list, (action, profileId, name) => {
-        if (action === "edit") void editProfile(profileId);
+        if (action === "use") useProfile(profileId);
+        else if (action === "edit") void editProfile(profileId);
         else if (action === "default") void setDefaultProfile(profileId, name);
         else if (action === "pin" || action === "unpin")
           void setPickerChoice("pinned_profile_ids", profileId, action === "pin", name);
@@ -1447,6 +1452,13 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         else if (action === "delete") deleteProfile(profileId, name);
       });
     }
+  }
+
+  // the Inspector shows the profile once Settings closes, so focus lands on its card there
+  function useProfile(profileId: string): void {
+    const shown = deps.useProfile(profileId);
+    if (shown) settingsReturnFocus = shown;
+    close();
   }
 
   // where a profile's row sits, so focus can stay in place when the lists are rebuilt

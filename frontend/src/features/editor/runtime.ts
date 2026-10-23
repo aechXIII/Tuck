@@ -510,6 +510,7 @@ export function installEditorRuntime(
       library.renderClips();
     },
     setAvailableEncoders: (encoders) => encoding.setAvailableEncoders(encoders),
+    useProfile: (profileId) => encoding.useProfile(profileId),
     copyDiagnostics: () => queue.copyDiagnostics(),
     checkForUpdates: () => checkUpdatesFromSettings(),
     showShortcutGuide: () => shortcutDialog.openDialog(),

@@ -13,6 +13,8 @@ export interface ProfileListOptions {
   pinned?: ReadonlySet<string>;
   /** profiles left out of the profile picker */
   hidden?: ReadonlySet<string>;
+  /** whether a row offers Use; a profile whose task is hidden can't be switched to */
+  canUse?: (profile: ProfileListEntry) => boolean;
 }
 
 export interface ShortcutChoiceOptions {
@@ -81,6 +83,12 @@ export function renderProfileList(
     main.appendChild(title);
     main.appendChild(create(documentRef, "span", "set-desc", options.summarize(profile)));
     row.appendChild(main);
+
+    if (options.canUse?.(profile) ?? true) {
+      const use = actionButton(documentRef, "Use", "use", profile, "set-btn profile-use");
+      use.setAttribute("aria-label", `Use ${name}`);
+      row.appendChild(use);
+    }
 
     const details = create(documentRef, "details", "profile-actions-menu");
     const summary = create(documentRef, "summary", "set-icon-btn", "⋯");
