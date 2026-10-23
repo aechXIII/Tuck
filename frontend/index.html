@@ -1052,33 +1052,6 @@
             </div>
           </div>
         </div>
-        <div id="right-foot">
-          <button class="btn1" id="btn-one" data-action-click="encoding-run-selected" disabled>
-            Compress selected
-          </button>
-          <details class="export-actions">
-            <summary aria-label="More export actions" data-tip="More export actions">
-              <svg viewBox="0 0 12 12" aria-hidden="true">
-                <path d="M2.5 4.5 6 8l3.5-3.5"></path>
-              </svg>
-            </summary>
-            <div class="export-actions-menu">
-              <button class="btn2" id="btn-all" data-action-click="encoding-run-all" aria-describedby="btn-all-note" disabled>
-                Compress all
-              </button>
-              <p class="export-actions-note" id="btn-all-note" hidden></p>
-              <button class="btn2" id="btn-copy" data-action-click="encoding-run-copy" hidden>
-                Export another copy
-              </button>
-              <button class="btn2 encoding-profile-action" data-action-click="encoding-save-profile-as">
-                Save as new profile…
-              </button>
-              <button class="btn2 encoding-profile-action" data-action-click="settings-open-profiles">
-                Manage profiles
-              </button>
-            </div>
-          </details>
-        </div>
       </div>
     </div>
     <button
@@ -1482,6 +1455,34 @@
             <svg class="qstatus-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 7.5 6 4l3.5 3.5"></path></svg>
             <progress id="qprog" value="0" max="100" aria-label="Export progress"></progress>
           </button>
+        </div>
+        <!-- the export button lives with the task switch so it is on screen on every tab and width -->
+        <div id="export-go">
+          <button class="btn1" id="btn-one" data-action-click="encoding-run-selected" disabled>
+            Compress selected
+          </button>
+          <details class="export-actions">
+            <summary aria-label="More export actions" data-tip="More export actions">
+              <svg viewBox="0 0 12 12" aria-hidden="true">
+                <path d="M2.5 4.5 6 8l3.5-3.5"></path>
+              </svg>
+            </summary>
+            <div class="export-actions-menu">
+              <button class="btn2" id="btn-all" data-action-click="encoding-run-all" aria-describedby="btn-all-note" disabled>
+                Compress all
+              </button>
+              <p class="export-actions-note" id="btn-all-note" hidden></p>
+              <button class="btn2" id="btn-copy" data-action-click="encoding-run-copy" hidden>
+                Export another copy
+              </button>
+              <button class="btn2 encoding-profile-action" data-action-click="encoding-save-profile-as">
+                Save as new profile…
+              </button>
+              <button class="btn2 encoding-profile-action" data-action-click="settings-open-profiles">
+                Manage profiles
+              </button>
+            </div>
+          </details>
         </div>
       </div>
     </div>

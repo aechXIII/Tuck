@@ -526,10 +526,9 @@ test("Inspector content aligns with tabs and footer without empty scrolling", as
       const edges = await page.evaluate(() => {
         const rect = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
         // the pill's ring is the visible edge of the tabs
-        return { tab: rect("#insp-tabs").right, field: rect("#prof-card").right, footer: rect(".export-actions").right, start: rect("#insp-tabs").left, contentStart: rect("#profile-card").left };
+        return { tab: rect("#insp-tabs").right, field: rect("#prof-card").right, start: rect("#insp-tabs").left, contentStart: rect("#profile-card").left };
       });
       expect(edges.tab).toBeCloseTo(edges.field, 0);
-      expect(edges.footer).toBeCloseTo(edges.field, 0);
       expect(edges.start).toBeCloseTo(edges.contentStart, 0);
     }).toPass({ timeout: 3000 });
     await page.screenshot({ path: testInfo.outputPath(`export-${width}.png`) });
@@ -545,13 +544,14 @@ test("export controls have balanced insets and timeline text shares a baseline",
     const rect = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
     const tabs = rect("#insp-tabs"), tab = rect("#insp-tab-export");
     const tasks = rect("#task-wf"), bar = rect("#task-bar");
-    const footer = rect("#right-foot"), button = rect("#btn-one"), actions = rect(".export-actions");
+    const go = rect("#export-go");
     return {
       tabInsets: { top: tab.top-tabs.top, bottom: tabs.bottom-tab.bottom },
       taskCentre: tasks.left + tasks.width / 2 - window.innerWidth / 2,
       // the bar's top border sits outside the control's centring
       taskInsets: [tasks.top-bar.top-1, bar.bottom-tasks.bottom],
-      footerInsets: [button.top-footer.top,footer.bottom-button.bottom,button.left-footer.left,footer.right-actions.right],
+      // the export button matches the task switch: same height, same middle, at the bar's end
+      exportMatch: [go.height - tasks.height, (go.top + go.bottom) / 2 - (tasks.top + tasks.bottom) / 2, bar.right - go.right - (tasks.top - bar.top - 1)],
     };
   });
   // the pill rings the chosen view evenly
@@ -560,7 +560,7 @@ test("export controls have balanced insets and timeline text shares a baseline",
   // the task switch sits in the middle of the window, centred in the bottom bar's height
   expect(Math.abs(geometry.taskCentre)).toBeLessThanOrEqual(1);
   expect(Math.abs(geometry.taskInsets[0]! - geometry.taskInsets[1]!)).toBeLessThanOrEqual(1);
-  for (const inset of geometry.footerInsets) expect(inset).toBeCloseTo(12, 0);
+  for (const offset of geometry.exportMatch.slice(0, 2)) expect(Math.abs(offset)).toBeLessThanOrEqual(1);
   const baselines = await page.evaluate(() => {
     const selectors = ['.timeline-tool-group[aria-label="Segment actions"] .timeline-tool-label', '#btn-seq-split .timeline-command-label', '.timeline-tool-group[aria-label="Audio actions"] .timeline-tool-label', '#audio-add .timeline-command-label'];
     return selectors.map(selector => {
@@ -696,12 +696,11 @@ test("export label centers across the split button and toolbar dividers are cent
       range.selectNodeContents(button);
       const text = range.getBoundingClientRect();
       const start = button.getBoundingClientRect();
-      const end = document.querySelector(".export-actions")!.getBoundingClientRect();
       const group = document.querySelector('.timeline-tool-group[aria-label="Audio actions"]')!;
       const divider = getComputedStyle(group, "::before");
       return {
         textCenter: (text.left + text.right) / 2,
-        buttonCenter: (start.left + end.right) / 2,
+        buttonCenter: (start.left + start.right) / 2,
         dividerTop: parseFloat(divider.top),
         groupHeight: group.getBoundingClientRect().height,
         dividerHeight: divider.height,
@@ -735,7 +734,6 @@ test("panel edges stay aligned when scrollbars reserve no space", async ({ page 
   await expect.poll(() => page.evaluate(() => {
     const rect = (s: string) => document.querySelector(s)!.getBoundingClientRect();
     return Math.abs(rect("#profile-card").left - rect("#insp-tabs").left)
-      + Math.abs(rect("#profile-card").right - rect(".export-actions").right)
       + Math.abs(rect(".clip").left - rect("#btn-add").left);
   })).toBeLessThan(1);
 });

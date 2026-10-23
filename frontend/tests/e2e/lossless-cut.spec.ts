@@ -222,7 +222,7 @@ test("export all uses the reviewed cut settings for each video", async ({page}) 
     await page.locator(`[data-clip-path="${path}"]`).click();
     await expect(page.locator("#btn-one")).toBeEnabled();
   }
-  await page.locator("#right-foot summary").click();
+  await page.locator("#export-go summary").click();
   await page.getByRole("button",{name:"Export all cuts (3)",exact:true}).click();
   await expect.poll(() => page.evaluate(() => window.__tuckFakeBackendCalls?.filter(call=>call.method === "enqueueWithOptions").length)).toBe(3);
   const requests = await page.evaluate(() => window.__tuckFakeBackendCalls?.filter(call=>call.method === "enqueueWithOptions").map(call=>call.args[0]));
@@ -351,14 +351,15 @@ for (const width of [1440,960]) {
     await expect(page.locator("#btn-one")).toBeEnabled();
     const layout = await page.evaluate(() => {
       const rect = (id: string) => document.getElementById(id)!.getBoundingClientRect();
-      return {inspector:rect("right").bottom,timeline:rect("audio-editor").top,footer:rect("right-foot").bottom,main:rect("main").bottom,
+      return {inspector:rect("right").bottom,timeline:rect("audio-editor").top,footer:rect("export-go").bottom,main:rect("main").bottom,view:window.innerHeight,
         lane:rect("kf-lane").top,frame:rect("sequence-frame").top,toolbar:document.getElementById("timeline-row")!.scrollWidth-rect("timeline-row").width,chip:document.querySelector(".edge-chip")!.getBoundingClientRect().left,track:rect("tl-track").left};
     });
     expect(layout.inspector).toBeLessThanOrEqual(layout.timeline);
     expect(layout.lane).toBeGreaterThanOrEqual(layout.frame);
     expect(layout.chip).toBeGreaterThanOrEqual(layout.track);
     expect(layout.toolbar).toBeLessThanOrEqual(1);
-    expect(layout.footer).toBeLessThanOrEqual(layout.main);
+    // the export button sits in the bottom bar and stays inside the window
+    expect(layout.footer).toBeLessThanOrEqual(layout.view);
     await page.locator("#cut-list button").press("Enter");
     await expect(page.locator("#cut-list button")).toBeFocused();
     await page.locator("#snap-all").click();

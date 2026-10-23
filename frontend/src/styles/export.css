@@ -578,26 +578,28 @@
 .export-video-body input[type="number"] { height: var(--control-height); min-width: 0; }
 .export-video-body :is(input, select, summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .export-video-body [hidden] { display: none; }
-#right-foot {
+/* the export button sits in the bottom bar beside the task switch and takes its height, round ends
+   and lettering, so the two read as one set; it stays solid because it is the bar's one action */
+#export-go {
+  position: relative;
   flex: 0 0 auto;
   display: flex;
-  flex-direction: row;
-  gap: 0;
-  padding: var(--panel-inset) var(--inspector-content-inset);
-  border-top: 0;
-  background: var(--panel);
+  height: 32px;
+  margin-left: calc(8px * var(--density-scale));
 }
+/* the menu anchors to the whole button, not its arrow, so it opens at the button's width */
 .export-actions {
-  position: relative;
-  flex: 0 0 32px;
+  position: static;
+  flex: 0 0 28px;
 }
 .export-actions > summary {
-  width: 32px;
+  width: 28px;
   height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 0 6px 6px 0;
+  border-left: 1px solid rgb(255 255 255 / 0.22);
+  border-radius: 0 999px 999px 0;
   background: var(--action);
   color: var(--on-accent);
   font-weight: 700;
@@ -633,7 +635,7 @@
   right: 0;
   bottom: calc(100% + 7px);
   z-index: 10;
-  width: 190px;
+  width: max(100%, 190px);
   padding: 4px;
   background: var(--raised);
   box-shadow: 0 8px 24px rgb(0 0 0 / 0.42);
@@ -648,58 +650,58 @@
   font-size: calc(11px * var(--text-scale));
   line-height: 1.35;
 }
-#right-foot > .btn1 {
-  flex: 1;
-  min-width: 0;
-  min-height: 36px;
-  /* balance the separate 32px menu area when centering the label */
-  padding-inline: 46px 14px;
-  border-radius: 6px 0 0 6px;
+#export-go > .btn1 {
+  width: auto;
+  height: 100%;
+  padding: 0 calc(14px * var(--density-scale));
+  border-radius: 999px 0 0 999px;
   background: var(--action);
   color: var(--on-accent);
-  font-size: calc(12.5px * var(--text-scale));
-  font-weight: 700;
+  font-size: calc(12px * var(--text-scale));
+  font-weight: 650;
+  white-space: nowrap;
 }
-#right-foot .export-actions-menu .btn2 {
+#export-go .export-actions-menu .btn2 {
   background: transparent;
 }
-#right-foot > .btn1:disabled {
+#export-go > .btn1:disabled {
   background: var(--raised);
   color: var(--dim);
 }
-#right-foot > .btn1:hover:not(:disabled),
+#export-go > .btn1:hover:not(:disabled),
 .export-actions > summary:hover,
 .export-actions[open] > summary {
   background: var(--action-hover);
 }
-#right-foot > .btn1:disabled + .export-actions > summary {
+#export-go > .btn1:disabled + .export-actions > summary {
+  border-left-color: var(--hair-2);
   background: var(--raised);
   color: var(--text);
 }
-#right-foot > .btn1:disabled + .export-actions > summary:hover,
-#right-foot > .btn1:disabled + .export-actions[open] > summary {
+#export-go > .btn1:disabled + .export-actions > summary:hover,
+#export-go > .btn1:disabled + .export-actions[open] > summary {
   background: var(--raised-2);
 }
 /* pressed sits after hover so it wins while the pointer is still over the button.
    the button and its menu arrow are one control, so the pair shrinks together */
-#right-foot {
+#export-go {
   transition: transform 120ms var(--ease-out);
 }
 /* the ease back lives on hover, where a release happens, so an accent change repaints instantly */
 .export-actions > summary:hover {
   transition: background-color 120ms var(--ease-out);
 }
-#right-foot > .btn1:active:not(:disabled),
-#right-foot .export-actions > summary:active {
+#export-go > .btn1:active:not(:disabled),
+#export-go .export-actions > summary:active {
   background: color-mix(in srgb, var(--action) 84%, #000);
   transform: none;
   transition-duration: 0s;
 }
-#right-foot > .btn1:disabled + .export-actions > summary:active {
+#export-go > .btn1:disabled + .export-actions > summary:active {
   background: color-mix(in srgb, var(--raised) 84%, #000);
   transition-duration: 0s;
 }
-#right-foot:has(> .btn1:active:not(:disabled)) {
+#export-go:has(> .btn1:active:not(:disabled)) {
   transform: scale(0.98);
   transition-duration: 80ms;
 }

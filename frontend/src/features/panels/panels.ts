@@ -378,7 +378,6 @@ export function installPanels(host: PanelsHost): PanelsApi {
     byId("insp-edit")?.classList.toggle("no-video", !host.selPath());
     byId("insp-audio")?.classList.toggle("hid", !video || hiddenUi.has("panel_audio"));
     byId("insp-export")?.classList.toggle("hid", video);
-    byId("right-foot")?.classList.toggle("hid", video);
     if (video) renderAudioMixerList();
     if (remember !== false) rememberInspectorTab(inspectorTab);
   }

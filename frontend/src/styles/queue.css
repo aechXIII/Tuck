@@ -523,4 +523,10 @@
   #qcnt .q-saved-sep {
     display: none;
   }
+  /* beside the export button only the percent fits while exporting; the name and count are in
+     the Exports panel, and a finished batch still says "3 exported" */
+  #qbar:not(.finished) #qfname,
+  #qcnt {
+    display: none;
+  }
 }

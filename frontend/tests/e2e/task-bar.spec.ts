@@ -194,16 +194,17 @@ test("the export button says it acts on the selected video", async ({ page }) =>
   await expect(page.locator("#btn-one")).toHaveText("Upscale this video");
 });
 
-test("This video holds the transform and the audio of the selected video together", async ({ page }) => {
+test("This video holds the transform and audio together, and export stays in reach", async ({ page }) => {
   await open(page, { holdPlans: true });
   await expect(page.locator("#insp-tab-edit")).toHaveText("This video");
   await page.locator("#insp-tab-edit").click();
   await expect(page.locator("#insp-edit")).toBeVisible();
   await expect(page.locator("#insp-audio")).toBeVisible();
-  await expect(page.locator("#right-foot")).toBeHidden();
+  // the export button lives in the bottom bar, so editing a video never hides it
+  await expect(page.locator("#export-go")).toBeVisible();
   await page.locator("#insp-tab-export").click();
   await expect(page.locator("#insp-audio")).toBeHidden();
-  await expect(page.locator("#right-foot")).toBeVisible();
+  await expect(page.locator("#export-go")).toBeVisible();
 });
 
 test("an Inspector last left on the old Audio panel opens This video", async ({ page }) => {

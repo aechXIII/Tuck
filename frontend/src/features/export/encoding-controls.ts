@@ -1163,7 +1163,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
   }
 
   function closeExportMenu(): void {
-    document.querySelector<HTMLDetailsElement>("#right-foot .export-actions")?.removeAttribute("open");
+    document.querySelector<HTMLDetailsElement>("#export-go .export-actions")?.removeAttribute("open");
   }
 
   async function compressOne(): Promise<void> {
