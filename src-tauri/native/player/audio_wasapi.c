@@ -319,8 +319,11 @@ void audio_output_reset(AudioOutput *o, uint64_t generation) {
     o->paused = 1;
     o->reset = 1;
     o->reset_generation = generation;
-    /* the queue takes only the new generation from now on, even before the device has reset */
+    /* the queue takes only the new generation from now on, even before the device has reset, and
+       what the old one played must not count for the new one in a status read before then */
     pcm_reset(&o->pcm, generation);
+    o->played = 0;
+    o->played_at = qpc_seconds();
     LeaveCriticalSection(&o->lock);
     apply(o);
 }

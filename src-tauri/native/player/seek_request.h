@@ -19,6 +19,12 @@ static inline int seek_request_accept(SeekRequest *state, uint64_t id, uint64_t 
     return 1;
 }
 
+/* a restart before the seek's frame was shown (a new speed, a shorter timeline, sound added)
+   moves the seek to the new generation, whose first frame then confirms it */
+static inline void seek_request_follow(SeekRequest *state, uint64_t generation) {
+    if (state->requested != state->confirmed) state->generation = generation;
+}
+
 static inline int seek_request_confirm(SeekRequest *state, uint64_t generation) {
     if (!state->requested || generation != state->generation) return 0;
     state->confirmed = state->requested;

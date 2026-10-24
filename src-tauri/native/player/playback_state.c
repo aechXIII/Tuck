@@ -75,6 +75,13 @@ unsigned playback_video_capacity(int fps) {
     return capacity > 40 ? 40 : capacity;
 }
 
+unsigned playback_queue_capacity(double display_rate, double frame_rate) {
+    double rate = display_rate > 0 ? display_rate : frame_rate;
+    /* a 24 fps video on a 360 Hz display would otherwise keep 40 frames, about 1 GB at 4K */
+    if (frame_rate > 0 && frame_rate < rate) rate = frame_rate;
+    return playback_video_capacity((int)lround(rate > 0 ? rate : 60));
+}
+
 double playback_keep_step(double window, double frame_interval) {
     if (!(window > 0)) return 0;
     double step = frame_interval > 0 ? window - frame_interval : window;
@@ -84,6 +91,11 @@ double playback_keep_step(double window, double frame_interval) {
 double playback_next_keep(double next, double time, double step) {
     if (!(step > 0)) return next;
     return next + (floor((time - next) / step + 1e-5) + 1) * step;
+}
+
+double playback_frame_due_by(double position, int playing) {
+    /* paused, the same rounding allowance the decoder uses when it picks a seek's frame */
+    return position + (playing ? 0.001 : 1e-6);
 }
 
 /* 100 ms of audio before the endpoint starts; endpoints wanting more than that are refused */

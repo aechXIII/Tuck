@@ -25,8 +25,6 @@
 #include "playback_state.h"
 #include "render.h"
 
-/* playing, a frame due within this much counts as due now */
-#define FRAME_SLACK 0.001
 /* sound that should be heard but isn't for this long means no speaker takes it (a PipeWire with
    no sound devices, as on desktops whose sound still runs through PulseAudio) */
 #define SOUND_STALL_SECONDS 1.5
@@ -60,6 +58,8 @@ struct TuckVideo {
     AudioTrack *audio;
     PreviewLut lut;
     /* under lock */
+    /* the sound's level the page last set, for a track made later by a mix */
+    double volume;
     /* the LUT changed, so the frame on screen should be drawn again */
     int lut_changed;
     /* the timeline's footage; no segments is the file as it is */
@@ -112,8 +112,13 @@ static void wake_render(void *opaque) {
    clock runs */
 static void follow_clock(TuckVideo *v, const TuckPlayerStatus *status) {
     int segment = edits_segment_at(v->edits, v->edit_count, status->position_seconds);
-    /* playing to the end keeps the last picture, as the HTML player does */
-    if (segment == EDITS_GAP && status->ended && v->picture_clock == status->generation) segment = v->picture_segment;
+    /* playing to the end keeps the last picture, as the HTML player does. After new edits the
+       remembered segment may be past the end of the list, so it is looked up again: the one
+       playback ended in */
+    if (segment == EDITS_GAP && status->ended && v->picture_clock == status->generation)
+        segment = !v->picture_stale && v->picture_segment < (int)v->edit_count
+                      ? v->picture_segment
+                      : edits_segment_at(v->edits, v->edit_count, status->position_seconds - 1e-6);
     if (status->generation != v->picture_clock || segment != v->picture_segment || v->picture_stale) {
         v->picture_clock = status->generation;
         v->picture_segment = segment;
@@ -217,7 +222,10 @@ static int take_frame(TuckVideo *v, const TuckPlayerStatus *status) {
     /* a seek waits for its own first frame; crossing into a segment shows the last frame until the
        new footage arrives */
     int first = status->seek_pending && p.clock == status->generation;
-    if (!decoder_take(v->decoder, p.source + FRAME_SLACK, p.request, first, &next)) return 0;
+    /* a seek's frame that a hidden window couldn't show yet is drawn again; taking the next one
+       each time would drain the queue and let the decoder run far past the seek */
+    if (first && v->shown.frame && v->shown.generation == p.request) return 1;
+    if (!decoder_take(v->decoder, playback_frame_due_by(p.source, !status->paused), p.request, first, &next)) return 0;
     decoded_frame_clear(&v->shown);
     v->shown = next;
     return 1;
@@ -298,6 +306,7 @@ static void *render_main(void *opaque) {
         if (v->lut_changed) redraw = 1;
         v->lut_changed = 0;
         pthread_mutex_unlock(&v->lock);
+        int deferred = 0;
         if (redraw) {
             uint64_t clock = shown_clock(v);
             RenderOutcome outcome = v->shown.frame
@@ -305,9 +314,12 @@ static void *render_main(void *opaque) {
                                         : renderer_clear(v->renderer);
             drawn(v, outcome, renderer_error(v->renderer), clock);
             if (outcome == RENDER_SUBMITTED) redraw = 0;
+            deferred = outcome == RENDER_DEFERRED;
         }
         int running = !status.paused || status.seek_pending;
-        wait_for_work(v, running ? 0.001 : 0.016);
+        /* a hidden, minimized or empty window shows nothing; trying again about once a refresh
+           is soon enough */
+        wait_for_work(v, running && !deferred ? 0.001 : 0.016);
     }
     return NULL;
 }
@@ -416,8 +428,11 @@ int tuck_video_due(TuckVideo *v, double shown_at) {
     pthread_mutex_unlock(&v->lock);
     Picture p = picture_now(v, &status);
     if (p.segment == EDITS_GAP) return lut_changed || v->shown.frame != NULL || status.seek_pending;
+    int first = status.seek_pending && p.clock == status.generation;
+    /* the seek's frame is taken but a draw couldn't show it yet */
+    if (first && v->shown.frame && v->shown.generation == p.request) return 1;
     return lut_changed ||
-           decoder_ready(v->decoder, p.source + FRAME_SLACK, p.request, status.seek_pending && p.clock == status.generation);
+           decoder_ready(v->decoder, playback_frame_due_by(p.source, !status.paused), p.request, first);
 }
 
 int tuck_video_draw(TuckVideo *v, TuckGlRenderer *renderer, const TuckVideoTarget *target, double shown_at) {
@@ -459,6 +474,7 @@ TuckVideo *tuck_video_open(const TuckVideoOpen *open, char *error, size_t error_
     preview_lut_init(&v->lut);
     v->clock = tuck_player_create(open->duration_seconds, now_seconds());
     v->duration = open->duration_seconds;
+    v->volume = 1;
     if (!v->clock) {
         snprintf(error, error_size, "The video length is not valid.");
         goto failed;
@@ -569,6 +585,8 @@ int tuck_video_mix(TuckVideo *v, const TuckMixVoice *voices, int32_t voice_count
             v->audio = audio_track_new(v->duration, v->sound_error, sizeof(v->sound_error));
             v->sound = v->audio ? TUCK_SOUND_PLAYING : TUCK_SOUND_UNAVAILABLE;
             if (v->audio) {
+                /* a new track starts at full level, but the page may have muted this video already */
+                audio_track_volume(v->audio, (float)v->volume);
                 double now = now_seconds();
                 tuck_player_follow_sound(v->clock, 1, now);
                 tuck_player_restart(v->clock, now);
@@ -632,7 +650,11 @@ void tuck_video_lut_strength(TuckVideo *v, double strength) {
 }
 
 void tuck_video_volume(TuckVideo *v, double gain) {
-    if (v->audio && isfinite(gain)) audio_track_volume(v->audio, (float)gain);
+    if (!isfinite(gain)) return;
+    pthread_mutex_lock(&v->lock);
+    v->volume = fmin(1, fmax(0, gain));
+    if (v->audio) audio_track_volume(v->audio, (float)v->volume);
+    pthread_mutex_unlock(&v->lock);
 }
 
 void tuck_video_status(TuckVideo *v, TuckVideoStatus *status) {

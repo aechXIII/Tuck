@@ -76,6 +76,13 @@ static void capacities(void) {
     CHECK(playback_video_capacity(60) == 14);
     CHECK(playback_video_capacity(300) == 40);
     CHECK(playback_video_capacity(360) == 40);
+    /* a 24 fps video on a 360 Hz display queues 200 ms of its own frames, not 40 */
+    CHECK(playback_queue_capacity(360, 24) == 7);
+    CHECK(playback_queue_capacity(60, 60) == 14);
+    CHECK(playback_queue_capacity(60, 120) == 14);
+    CHECK(playback_queue_capacity(360, 0) == 40);
+    CHECK(playback_queue_capacity(0, 24) == 7);
+    CHECK(playback_queue_capacity(0, 0) == 14);
     CHECK(playback_audio_prebuffer(1920) == 4800);
     CHECK(playback_audio_prebuffer(4800) == 4800);
     CHECK(playback_audio_prebuffer(0) == 0);
@@ -146,6 +153,14 @@ static void seek_requests(void) {
     CHECK(state.confirmed == 2);
     CHECK(seek_request_confirm(&state, 101));
     CHECK(state.confirmed == 100);
+    /* a restart before the seek's frame showed moves the seek to the restart's generation */
+    CHECK(seek_request_accept(&state, 101, 103));
+    seek_request_follow(&state, 104);
+    CHECK(!seek_request_confirm(&state, 103));
+    CHECK(seek_request_confirm(&state, 104) && state.confirmed == 101);
+    /* a confirmed seek stays where it was */
+    seek_request_follow(&state, 105);
+    CHECK(state.generation == 104);
 }
 
 static void audio_timing(void) {
@@ -437,6 +452,51 @@ static void restart_in_place(void) {
     tuck_player_destroy(player);
 }
 
+/* a restart before a seek's frame is shown (a new speed, sound added, a shorter timeline) still
+   confirms the seek once the restart's own frame is shown, so the page's playhead moves on */
+static void seek_through_restart(void) {
+    TuckPlayer *player = tuck_player_create(10, 100);
+    CHECK(player != NULL);
+    if (!player) return;
+    tuck_player_frame_presented(player, 1, 100);
+    tuck_player_play(player, 100);
+
+    CHECK(tuck_player_seek(player, 1, 4, 101));
+    CHECK(tuck_player_set_rate(player, 2, 101.01));
+    TuckPlayerStatus s = status_at(player, 101.02);
+    CHECK(s.seek_pending && s.confirmed_seek_request_id == 0 && close_to(s.position_seconds, 4) && s.rate == 2);
+    /* the frame of the seek's own generation came too late to count */
+    tuck_player_frame_presented(player, s.generation - 1, 101.03);
+    CHECK(status_at(player, 101.03).confirmed_seek_request_id == 0);
+    tuck_player_frame_presented(player, s.generation, 101.04);
+    s = status_at(player, 101.04);
+    CHECK(!s.seek_pending && s.confirmed_seek_request_id == 1);
+
+    CHECK(tuck_player_seek(player, 2, 6, 102));
+    tuck_player_restart(player, 102.01);
+    s = status_at(player, 102.02);
+    CHECK(s.seek_pending && s.confirmed_seek_request_id == 1 && close_to(s.position_seconds, 6));
+    tuck_player_frame_presented(player, s.generation, 102.03);
+    CHECK(status_at(player, 102.03).confirmed_seek_request_id == 2);
+
+    /* past the new end: the seek is confirmed by the end's frame */
+    CHECK(tuck_player_seek(player, 3, 8, 103));
+    CHECK(tuck_player_set_duration(player, 5, 103.01));
+    s = status_at(player, 103.02);
+    CHECK(s.ended && s.seek_pending && s.position_seconds == 5 && s.confirmed_seek_request_id == 2);
+    tuck_player_frame_presented(player, s.generation, 103.03);
+    CHECK(status_at(player, 103.03).confirmed_seek_request_id == 3);
+
+    /* once confirmed, a later restart's frame doesn't confirm anything again */
+    tuck_player_play(player, 104);
+    s = status_at(player, 104);
+    CHECK(s.seek_pending && s.seek_request_id == 3 && s.confirmed_seek_request_id == 3);
+    tuck_player_frame_presented(player, s.generation, 104.01);
+    CHECK(status_at(player, 104.01).confirmed_seek_request_id == 3);
+    CHECK(tuck_player_seek(player, 4, 1, 105));
+    tuck_player_destroy(player);
+}
+
 /* whatever the phase between source frames, the keep grid and the refreshes, every refresh window
    holds a kept frame, at every speed, as long as the source has a frame for each refresh */
 static void keep_grid(void) {
@@ -477,6 +537,18 @@ static void keep_grid(void) {
     CHECK(playback_keep_step(0, 1 / 60.0) == 0);
     CHECK(playback_keep_step(1 / 60.0, 1 / 60.0) == 0);
     CHECK(close_to(playback_keep_step(4 / 60.0, 1 / 60.0), 3 / 60.0));
+}
+
+/* playing, a frame due within a millisecond is shown now; paused, a seek half a millisecond
+   before frame 45 keeps frame 44, as the decoder picked it, while a seek onto frame 45's own time
+   shows it whatever the rounding */
+static void frame_due(void) {
+    const double frame = 45 / 30.0;
+    CHECK(playback_frame_due_by(frame - 0.0005, 1) >= frame);
+    CHECK(playback_frame_due_by(frame - 0.002, 1) < frame);
+    CHECK(playback_frame_due_by(frame - 0.0005, 0) < frame);
+    CHECK(playback_frame_due_by(frame - 1e-9, 0) >= frame);
+    CHECK(playback_frame_due_by(1.5, 0) >= 1.5000000001);
 }
 
 /* a draw picks its frame for when it reaches the screen, without moving the clock there */
@@ -647,6 +719,7 @@ int tuck_player_test_failures(void) {
     engine();
     playback_rate();
     restart_in_place();
+    seek_through_restart();
     timeline_length();
     timeline_edits();
     mix_rules();
@@ -654,6 +727,7 @@ int tuck_player_test_failures(void) {
     sound_clock();
     position_ahead();
     keep_grid();
+    frame_due();
     sound_stall();
     lut_strength();
     framebuffer_cache();

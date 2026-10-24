@@ -498,10 +498,9 @@ void decoder_close(Decoder *d) {
 void decoder_set_cadence(Decoder *d, double interval) {
     pthread_mutex_lock(&d->lock);
     d->cadence = playback_keep_step(interval, d->frame_rate > 0 ? 1 / d->frame_rate : 0);
-    /* the queue holds a display rate's worth, which the GPU pool was made for, however close the
-       kept frames are */
-    double rate = interval > 0 ? 1 / interval : d->frame_rate;
-    d->capacity = playback_video_capacity((int)lround(rate > 0 ? rate : 60));
+    /* the queue holds no more than a display rate's worth, which the GPU pool was made for,
+       however close the kept frames are */
+    d->capacity = playback_queue_capacity(interval > 0 ? 1 / interval : 0, d->frame_rate);
     if (d->capacity < 2) d->capacity = 2;
     pthread_cond_broadcast(&d->changed);
     pthread_mutex_unlock(&d->lock);
@@ -518,8 +517,11 @@ void decoder_seek(Decoder *d, double seconds, uint64_t generation) {
 
 int decoder_take(Decoder *d, double time, uint64_t generation, int first, DecodedFrame *out) {
     pthread_mutex_lock(&d->lock);
-    while (d->count && d->queue[d->head].generation != generation) queue_drop_head(d);
-    int found = d->count && d->queue[d->head].ready && (first || d->queue[d->head].time <= time);
+    /* frames of a newer request stay: a seek may have asked for them after the caller read its
+       request number, and that seek needs its first frame */
+    while (d->count && d->queue[d->head].generation < generation) queue_drop_head(d);
+    int found = d->count && d->queue[d->head].generation == generation && d->queue[d->head].ready &&
+                (first || d->queue[d->head].time <= time);
     if (found) {
         while (!first && d->count > 1 && queued(d, 1)->ready && queued(d, 1)->time <= time) queue_drop_head(d);
         *out = d->queue[d->head];

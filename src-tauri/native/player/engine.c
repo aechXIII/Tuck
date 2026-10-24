@@ -68,6 +68,7 @@ static void note_running(TuckPlayer *player, double now) {
 /* a new position: new generation, clock held on it until its first frame is shown */
 static void restart_at(TuckPlayer *player, double seconds) {
     player->generation++;
+    seek_request_follow(&player->seeks, player->generation);
     clock_reset(&player->clock, seconds, player->generation);
     hold_clock(player, 1);
     player->played = 0;
