@@ -1163,7 +1163,9 @@ export function createLibrary(host: LibraryHost): LibraryApi {
         (element) => element.dataset.clipAction === action,
       )
       : null;
-    (button ?? card).focus();
+    // rows redraw on every export progress poll, so scrolling the focused row back into view
+    // would pull the list away from wherever the user scrolled
+    (button ?? card).focus({ preventScroll: true });
   }
 
   function focusCard(path: string): void {

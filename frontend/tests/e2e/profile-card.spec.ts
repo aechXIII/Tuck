@@ -168,7 +168,7 @@ for (const width of [1240, 960]) {
     expect(upscaleBounds.height).toBeLessThan(compressHeight - 80);
     await page.locator("#prof-pick").click();
     await expect(page.locator("#prof-options").getByRole("group", { name: "Upscale", exact: true }).getByRole("option")).toHaveCount(1);
-    await expect(page.locator("#prof-options").getByRole("group", { name: "Compress, switches to Compress", exact: true }).getByRole("option")).toHaveCount(2);
+    await expect(page.locator("#prof-options").getByRole("group", { name: "Compress, switches the task", exact: true }).getByRole("option")).toHaveCount(2);
     await expect(page.locator("#prof-options").getByRole("option", { name: "4K", exact: true })).toHaveAccessibleDescription("4K · source frame rate");
     await page.keyboard.press("Escape");
     await page.locator("#export-res-select-trigger").click();
@@ -425,8 +425,8 @@ test("an Upscale profile picked from the keyboard in Compress switches the task"
   await open(page);
   await page.locator("#prof-pick").focus();
   await page.keyboard.press("ArrowDown");
-  const upscale = page.getByRole("group", { name: "Upscale, switches to Upscale", exact: true });
-  await expect(upscale.locator(".profile-group-head")).toHaveText("Upscaleswitches to Upscale");
+  const upscale = page.getByRole("group", { name: "Upscale, switches the task", exact: true });
+  await expect(upscale.locator(".profile-group-head")).toHaveText("Upscaleswitches the task");
   await expect(upscale.getByRole("option")).toHaveCount(1);
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("ArrowDown");
@@ -444,7 +444,7 @@ test("an Upscale profile picked from the keyboard in Compress switches the task"
     .toEqual(expect.objectContaining({ last_task: "upscale", last_upscale_profile_id: "upscale-4k", last_compress_profile_id: "discord" }));
   // the Compress profiles now switch back, and Compress keeps the profile it had
   await page.locator("#prof-pick").click();
-  const compress = page.getByRole("group", { name: "Compress, switches to Compress", exact: true });
+  const compress = page.getByRole("group", { name: "Compress, switches the task", exact: true });
   await expect(page.locator("#prof-options > [role=group]").first()).toHaveAccessibleName("Upscale");
   await expect(compress.getByRole("option", { name: "Discord", exact: true })).toHaveAttribute("aria-selected", "false");
   await page.keyboard.press("Escape");

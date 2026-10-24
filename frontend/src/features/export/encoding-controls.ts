@@ -1613,7 +1613,8 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
       const box = document.createElement("div");
       box.className = "profile-group";
       box.setAttribute("role", "group");
-      const switchNote = group.switches ? `switches to ${label}` : "";
+      // the heading already names the task, so the note doesn't repeat it
+      const switchNote = group.switches ? "switches the task" : "";
       box.setAttribute("aria-label", switchNote ? `${label}, ${switchNote}` : label);
       const head = document.createElement("div");
       head.className = "profile-group-head";
@@ -1811,9 +1812,12 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     const unsaved = unsavedProfile();
     sel.value = pid;
     onProfileChange();
-    if (unsaved) {
-      toast(`Changes to ${unsaved.name} discarded.`, "", { label: "Undo", run: () => restoreUnsaved(unsaved) });
-    }
+    offerUnsavedUndo(unsaved);
+  }
+
+  function offerUnsavedUndo(unsaved: UnsavedProfile | null): void {
+    if (!unsaved) return;
+    toast(`Changes to ${unsaved.name} discarded.`, "", { label: "Undo", run: () => restoreUnsaved(unsaved) });
   }
 
   // the task switches the same way its task button does, so everything that follows a switch
@@ -1834,9 +1838,11 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     if (sel.value !== pid) {
       if ([...sel.options].some((option) => option.value === pid)) chooseProfile(pid);
       else {
+        const unsaved = unsavedProfile();
         remember();
         refilter();
         void persistSession();
+        offerUnsavedUndo(unsaved);
       }
     }
     return profilePick.getClientRects().length ? profilePick : null;
@@ -1844,11 +1850,15 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
 
   function restoreUnsaved(unsaved: UnsavedProfile): void {
     const sel = select("prof-sel");
-    // after a task switch that profile is not on offer here, so there is nothing to bring back
-    if (![...sel.options].some((option) => option.value === unsaved.pid)) return;
-    sel.value = unsaved.pid;
+    const offered = [...sel.options].some((option) => option.value === unsaved.pid);
+    // a profile hidden from the picker is only on offer while it is in use, so it comes back once
+    // it is in use again; after a task switch it belongs to the other task and stays put
+    const profile = profiles().find((entry) => entry.profile_id === unsaved.pid);
+    if (!offered && (!profile || taskIndex(profileTask(profile)) !== wf)) return;
     if (wf === 0) lastComp = unsaved.pid;
     else lastUpscale = unsaved.pid;
+    if (!offered) refilter();
+    sel.value = unsaved.pid;
     applyProfile(false, unsaved.settings);
     profileSnapshot = unsaved.snapshot;
     updateDirty();
