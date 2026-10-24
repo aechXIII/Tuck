@@ -171,6 +171,37 @@ fn launch_first_available(
     }))
 }
 
+/// The path without the extended-length prefix (`\\?\C:\...`, `\\?\UNC\server\share\...`) that
+/// canonical paths carry on Windows, such as files sent to Tuck on its command line. Explorer
+/// doesn't take that form, so a path handed to it is written the ordinary way.
+#[cfg(target_os = "windows")]
+fn explorer_path(path: &Path) -> PathBuf {
+    use std::path::{Component, Prefix};
+
+    let mut components = path.components();
+    let Some(Component::Prefix(prefix)) = components.next() else {
+        return path.to_path_buf();
+    };
+    let mut plain = match prefix.kind() {
+        Prefix::VerbatimDisk(drive) => PathBuf::from(format!("{}:\\", char::from(drive))),
+        Prefix::VerbatimUNC(server, share) => {
+            let mut root = std::ffi::OsString::from(r"\\");
+            root.push(server);
+            root.push(r"\");
+            root.push(share);
+            root.push(r"\");
+            PathBuf::from(root)
+        }
+        _ => return path.to_path_buf(),
+    };
+    for component in components {
+        if component != Component::RootDir {
+            plain.push(component);
+        }
+    }
+    plain
+}
+
 impl Opener for SystemOpener {
     fn reveal(&self, path: &Path) -> std::io::Result<()> {
         #[cfg(target_os = "windows")]
@@ -180,7 +211,7 @@ impl Opener for SystemOpener {
             // keep Explorer's switch separate from the quoted file path
             std::process::Command::new("explorer.exe")
                 .raw_arg("/select,")
-                .arg(path)
+                .arg(explorer_path(path))
                 .spawn()
                 .map(|_| ())
         }
@@ -223,7 +254,7 @@ impl Opener for SystemOpener {
         #[cfg(target_os = "windows")]
         {
             std::process::Command::new("explorer")
-                .arg(path)
+                .arg(explorer_path(path))
                 .spawn()
                 .map(|_| ())
         }
@@ -248,7 +279,7 @@ impl Opener for SystemOpener {
             // Explorer opens a file in its default app; it also splits arguments at commas, so
             // the path goes in quotes, which a Windows path can never contain
             let mut quoted = std::ffi::OsString::from("\"");
-            quoted.push(path.as_os_str());
+            quoted.push(explorer_path(path).as_os_str());
             quoted.push("\"");
             std::process::Command::new("explorer.exe")
                 .raw_arg(quoted)
@@ -403,6 +434,30 @@ mod tests {
                 Ok(())
             }
         }
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn explorer_gets_paths_without_the_extended_length_prefix() {
+        assert_eq!(
+            explorer_path(Path::new(r"\\?\X:\Videos\a, b\clip.mp4")),
+            PathBuf::from(r"X:\Videos\a, b\clip.mp4")
+        );
+        assert_eq!(
+            explorer_path(Path::new(r"\\?\UNC\server\share\Videos\clip.mp4")),
+            PathBuf::from(r"\\server\share\Videos\clip.mp4")
+        );
+        assert_eq!(
+            explorer_path(Path::new(r"C:\Videos\clip.mp4")),
+            PathBuf::from(r"C:\Videos\clip.mp4")
+        );
+        // the export a launch from Send To finishes keeps its source's canonical form
+        let canonical = std::fs::canonicalize(std::env::temp_dir()).unwrap();
+        assert!(canonical.to_string_lossy().starts_with(r"\\?\"));
+        assert!(!explorer_path(&canonical)
+            .to_string_lossy()
+            .starts_with(r"\\?\"));
+        assert!(explorer_path(&canonical).is_dir());
     }
 
     #[test]
