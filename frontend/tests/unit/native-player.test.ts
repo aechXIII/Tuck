@@ -516,6 +516,69 @@ test("an edit to a moved clip goes to the engine as a new timeline", async () =>
   }
 });
 
+test("clips moved flush against each other reach the engine in order", async () => {
+  // a move lands one rounding error past the next clip's start, as `(start - length) + length` can
+  const end = 0.1 + 0.2;
+  const run = setup({
+    duration: 5,
+    segments: [
+      { start: 0, end, sourceStart: 1 },
+      { start: 0.3, end: 2, sourceStart: 2 },
+    ],
+  });
+  try {
+    await run.load();
+    const sent = run.fixture.edits.at(-1)?.segments;
+    assert.equal(sent?.length, 2, "the shell takes the timeline");
+    assert.equal(sent?.[1]?.start, end);
+    assert.ok(Math.abs((sent?.[1]?.sourceStart ?? 0) - 2) < 1e-9);
+  } finally {
+    run.player.dispose();
+  }
+});
+
+test("a timeline the shell refuses is sent once more, not every frame", async () => {
+  const errors: unknown[] = [];
+  const original = console.error;
+  console.error = (...values: unknown[]) => errors.push(values);
+  const ranges: SegmentRange[] = [{ start: 0, end: 2, sourceStart: 1 }];
+  let refusals = 2;
+  let attempts = 0;
+  const run = setup({
+    duration: 5,
+    segments: ranges,
+    wrap: (invoke) => async (command, args) => {
+      if (command === "player_edits") {
+        attempts++;
+        if (refusals > 0) {
+          refusals--;
+          throw { code: "BACKEND_TIMEOUT", message: "The backend did not answer in time.", details: {} };
+        }
+      }
+      return invoke(command, args);
+    },
+  });
+  try {
+    await run.load();
+    assert.equal(attempts, 2, "tried once more");
+    run.player.updateTime();
+    run.player.updateTime();
+    await settle();
+    assert.equal(attempts, 2, "then left until the timeline changes");
+    // a refusal that passes: the next try shows the new arrangement
+    refusals = 1;
+    ranges[0] = { start: 0, end: 2, sourceStart: 1.5 };
+    run.player.updateTime();
+    await settle();
+    assert.equal(attempts, 4);
+    assert.deepEqual(run.fixture.edits.at(-1)?.segments, [{ start: 0, end: 2, sourceStart: 1.5 }]);
+    assert.equal(errors.length, 3);
+  } finally {
+    console.error = original;
+    run.player.dispose();
+  }
+});
+
 test("frame steps and saved frames pause first", async () => {
   const run = setup({ fps: 25 });
   try {
@@ -540,21 +603,77 @@ test("frame steps and saved frames pause first", async () => {
   }
 });
 
-test("replies for the previous video are ignored", async () => {
+test("a video that leaves the stage stops playing, and its replies are ignored", async () => {
   const run = setup();
   try {
     await run.load();
+    // the play is still on its way when the stage empties
     run.player.togglePlay();
     run.video.dispatchEvent(new CustomEvent(SOURCE_EVENT, { detail: null }));
     await settle();
     assert.equal(run.player.isPlaying(), false);
     assert.equal(run.classes.has("playing"), false);
+    assert.deepEqual(run.commands().map((command) => command.kind), ["play", "pause"],
+      "the engine keeps no sound of a video that left");
     run.player.togglePlay();
     await settle();
-    assert.equal(run.commands().length, 1, "nothing is sent until the next video opens");
+    assert.equal(run.commands().length, 2, "nothing more is sent until the next video opens");
+    const engine = await run.fixture.invoke("player_status", {}) as NativePlayerStatus;
+    assert.equal(engine.paused, true);
     await run.load();
     assert.equal(run.fixture.calls.filter((call) => call.command === "player_open").length, 2);
   } finally {
+    run.player.dispose();
+  }
+
+  // a paused video has nothing to stop
+  const paused = setup();
+  try {
+    await paused.load();
+    paused.video.dispatchEvent(new CustomEvent(SOURCE_EVENT, { detail: null }));
+    await settle();
+    assert.deepEqual(paused.commands(), []);
+  } finally {
+    paused.player.dispose();
+  }
+});
+
+test("a mix compiled for a video the engine refused never reaches the engine", async () => {
+  const errors: unknown[] = [];
+  const original = console.error;
+  console.error = (...values: unknown[]) => errors.push(values);
+  const mix = { duration: 10, voices: [] };
+  const compiles: Array<() => void> = [];
+  const refusals: Array<() => void> = [];
+  let opens = 0;
+  const run = setup({
+    wrap: (invoke) => async (command, args) => {
+      if (command === "player_open" && ++opens === 2) {
+        await new Promise<void>((resolve) => refusals.push(resolve));
+        throw { code: "PLAYER_OPEN_FAILED", message: "The video could not be opened.", details: {} };
+      }
+      return invoke(command, args);
+    },
+    compilePreviewMix: () => new Promise((resolve) => compiles.push(() => resolve({ ok: true, value: { data: mix } }))),
+  });
+  try {
+    await run.load();
+    await run.advance(100);
+    compiles.shift()?.();
+    await run.advance(20);
+    assert.equal(run.fixture.mixes.length, 1);
+    // the next video's mix is compiled while the engine is still opening it, then the open fails
+    run.video.dispatchEvent(new CustomEvent(SOURCE_EVENT, { detail: "a" }));
+    await run.advance(100);
+    assert.equal(compiles.length, 1);
+    refusals.shift()?.();
+    await settle();
+    compiles.shift()?.();
+    await run.advance(100);
+    assert.equal(run.fixture.mixes.length, 1, "the engine still holds the previous video");
+    assert.equal(errors.length, 1);
+  } finally {
+    console.error = original;
     run.player.dispose();
   }
 });

@@ -128,8 +128,23 @@ export function installEditorRuntime(
   const requestPreview = (): void => {
     void encoding?.reqPreview();
     // whatever changes the export's plan can change what the native player should play
-    player?.refreshMix?.();
+    refreshMix(true);
   };
+  // the request the selected video's export would send, which the native player's sound is made from
+  function previewMixRequest(): ReturnType<EncodingControlsApi["previewMixRequest"]> {
+    return session.selPath ? encoding?.previewMixRequest(session.selPath) ?? null : null;
+  }
+  // some changes reach that request without a preview request, such as a task switch or a cut's
+  // Include audio, so the export's sync points compile the sound again when the request changed
+  let mixRequestKey: string | null = null;
+  function refreshMix(always: boolean): void {
+    if (!player?.refreshMix) return;
+    const request = previewMixRequest();
+    const key = request ? JSON.stringify(request) : null;
+    if (!always && key === mixRequestKey) return;
+    mixRequestKey = key;
+    player.refreshMix();
+  }
   // the native player plays the whole mix itself, so the page's own audio elements stay quiet
   let nativeAudio = false;
 
@@ -297,7 +312,7 @@ export function installEditorRuntime(
 
   const playerHost: PlayerHost = {
     byId,
-    previewMixRequest: () => (session.selPath ? encoding?.previewMixRequest(session.selPath) ?? null : null),
+    previewMixRequest,
     compilePreviewMix: (request) => getBackendClient().compilePreviewMix(request),
     clips: () => session.clips,
     selPath: () => session.selPath,
@@ -473,7 +488,10 @@ export function installEditorRuntime(
     session,
     byId,
     getBackendClient,
-    syncFrameExport: () => frameExport?.sync(),
+    syncFrameExport: () => {
+      frameExport?.sync();
+      refreshMix(false);
+    },
     syncSelects: () => selects.sync(windowRef.document),
     syncTransformControls: () => transform.syncTransformControls(),
     paintCropOverlay: () => transform.paintCropOverlay(),
@@ -505,6 +523,8 @@ export function installEditorRuntime(
     renderClips: () => library.renderClips(),
     paintCutTimeline: () => {
       timeline.paintCutOverlay();
+      // a cut plays only the source's own sound, and none without Include audio
+      refreshMix(false);
       const cutTask = encoding?.workflow() === 2;
       if (cutTask !== workspaceCutTask) {
         workspaceCutTask = cutTask;

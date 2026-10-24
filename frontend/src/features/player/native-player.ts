@@ -1,5 +1,6 @@
 import type {
   NativeEdits,
+  NativeEditSegment,
   NativePlayerStatus,
   PlayerEngine,
 } from "../../backend/native-player.ts";
@@ -32,6 +33,8 @@ type Step =
   | { readonly kind: "open"; readonly duration: number; readonly path: string | null }
   | { readonly kind: "play" }
   | { readonly kind: "pause" }
+  // a pause for the video that left the stage, which the engine plays on until the next open
+  | { readonly kind: "stop" }
   | { readonly kind: "seek"; readonly seconds: number }
   | { readonly kind: "volume"; readonly volume: number }
   | { readonly kind: "rate"; readonly rate: number }
@@ -101,6 +104,8 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
   let lutBusy = false;
   // the segments the engine's timeline was last given, so an edit, slip or undo is sent again
   let lastRanges: SegmentRange[] | null = null;
+  // a timeline the shell refused is sent once more at the next sync, not again every frame
+  let editsRetried = false;
   // the newest mix request, so an older compile that finishes late is dropped
   let mixRevision = 0;
   let mixTimer = 0;
@@ -152,14 +157,18 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
   // skips cut parts by seeking as before
   function editsFor(ranges: readonly SegmentRange[]): NativeEdits {
     if (!hasPlacement(ranges)) return { duration: host.videoDuration(), segments: [] };
-    return {
-      duration: Math.max(host.videoDuration(), ranges.at(-1)?.end ?? 0),
-      segments: ranges.map((segment) => ({
-        start: segment.start,
-        end: segment.end,
-        sourceStart: segment.sourceStart ?? segment.start,
-      })),
-    };
+    // the shell refuses the whole timeline unless each clip starts at or after the one before
+    // ends, and a clip moved flush against another can overlap it by a rounding error
+    const segments: NativeEditSegment[] = [];
+    let previousEnd = 0;
+    for (const segment of ranges) {
+      const start = Math.max(segment.start, previousEnd);
+      if (!(segment.end > start)) continue;
+      const sourceStart = (segment.sourceStart ?? segment.start) + (start - segment.start);
+      segments.push({ start, end: segment.end, sourceStart: Math.max(0, sourceStart) });
+      previousEnd = segment.end;
+    }
+    return { duration: Math.max(host.videoDuration(), ranges.at(-1)?.end ?? 0), segments };
   }
 
   // an edit, a slip or an undo changes the timeline; the engine shows the new footage at once
@@ -167,6 +176,8 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
     if (disposed || !opened) return;
     const ranges = segments();
     if (lastRanges && sameRanges(ranges, lastRanges)) return;
+    // a new timeline gets its own retry
+    if (lastRanges) editsRetried = false;
     lastRanges = copyRanges(ranges);
     const edits = editsFor(ranges);
     if (!(edits.duration > 0)) return;
@@ -184,13 +195,21 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
     }, MIX_DELAY_MS);
   }
 
+  // a mix still waiting or being compiled is for a video the engine won't play
+  function dropMix(): void {
+    mixRevision++;
+    if (mixTimer) clock.clearTimeout(mixTimer);
+    mixTimer = 0;
+  }
+
   async function sendMix(): Promise<void> {
     const request = host.previewMixRequest?.();
     if (!request || !host.compilePreviewMix) return;
     const revision = ++mixRevision;
     const sentEpoch = epoch;
     const result = await host.compilePreviewMix(request);
-    if (disposed || sentEpoch !== epoch || revision !== mixRevision) return;
+    // the video it was compiled for must still be the one open
+    if (disposed || !opened || sentEpoch !== epoch || revision !== mixRevision) return;
     if (!result.ok || !isPreviewMix(result.value.data)) {
       console.error("The preview mix could not be made", result.ok ? "unreadable reply" : result.error);
       // an edit the export refuses would export no sound, so the old mix stops; the export panel
@@ -238,6 +257,8 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
         return engine.mix(step.mix);
       case "status":
         return engine.status();
+      case "stop":
+        return engine.command({ kind: "pause" });
       default:
         return engine.command({ kind: step.kind });
     }
@@ -251,6 +272,13 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
         const sentEpoch = epoch;
         const result = await send(step);
         if (disposed || sentEpoch !== epoch) continue;
+        // the reply is about the video that left; an engine with no video has nothing to stop
+        if (step.kind === "stop") {
+          if (!result.ok && result.error.code !== "PLAYER_NOT_OPEN") {
+            console.error("The native player could not stop the previous video", result.error);
+          }
+          continue;
+        }
         if (result.ok) {
           if (result.value) accept(result.value);
         } else refuse(step, result.error);
@@ -302,12 +330,18 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
       opened = false;
       // what was queued behind the open has no engine to go to
       steps.length = 0;
+      dropMix();
       // a file the engine refused isn't tried again until the stage shows a video anew
       shownPath = null;
       if (reportedFailure !== epoch) {
         reportedFailure = epoch;
         video?.dispatchEvent(new Event(SOURCE_FAILED_EVENT));
       }
+    }
+    // without another try the picture keeps the old arrangement until the next edit
+    if (step.kind === "edits" && !editsRetried) {
+      editsRetried = true;
+      lastRanges = null;
     }
     if (step.kind === "seek") target = null;
     if (step.kind === "play") {
@@ -515,10 +549,14 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
     if (speed !== 1) enqueue({ kind: "rate", rate: speed });
     // then the timeline and the mix the edit makes
     lastRanges = null;
+    editsRetried = false;
     syncEdits();
   }
 
   function resetSource(): void {
+    // there is no close: the engine plays the old video's sound on until the next open replaces
+    // it, which may never come, so it is told to stop
+    const stop = wantPlaying || status?.paused === false || steps.some((step) => step.kind === "stop");
     epoch++;
     steps.length = 0;
     opened = false;
@@ -530,16 +568,14 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
     mirrorBusy = false;
     mirrorWanted = null;
     lastRanges = null;
-    // a mix still being compiled is for the video that left
-    mixRevision++;
-    if (mixTimer) clock.clearTimeout(mixTimer);
-    mixTimer = 0;
+    dropMix();
     if (seekFrame) clock.cancelAnimationFrame(seekFrame);
     seekFrame = 0;
     stopFrameLoop();
     stopPoll();
     host.byId("btn-play")?.classList.remove("playing");
     setGap(false);
+    if (stop) enqueue({ kind: "stop" });
   }
 
   function onSource(event: Event): void {
