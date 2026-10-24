@@ -221,6 +221,59 @@ pub async fn copy_file_to_clipboard(
     })?
 }
 
+fn paste_error() -> PublicBackendError {
+    PublicBackendError::new("INTERNAL_ERROR", "Could not read the clipboard. Try again.")
+}
+
+/// The existing files on the clipboard: files copied in a file manager, or absolute paths
+/// copied as text. Anything else gives an empty list, since a paste with nothing to add is
+/// not an error.
+#[tauri::command]
+pub async fn read_clipboard_files(
+    app: tauri::AppHandle,
+) -> Result<Vec<String>, PublicBackendError> {
+    let paths = copied_paths(&app).await?;
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::platform::file_clipboard::existing_files(paths)
+    })
+    .await
+    .map_err(|_| paste_error())
+}
+
+#[cfg(windows)]
+async fn copied_paths(app: &tauri::AppHandle) -> Result<Vec<PathBuf>, PublicBackendError> {
+    use crate::platform::file_clipboard::{paths_from_text, read_copied_files};
+    let files = tauri::async_runtime::spawn_blocking(read_copied_files)
+        .await
+        .map_err(|_| paste_error())??;
+    if let Some(files) = files {
+        return Ok(files);
+    }
+    // an empty or non-text clipboard reads as an error here, which only means nothing to add
+    Ok(app
+        .clipboard()
+        .read_text()
+        .map(|text| paths_from_text(&text))
+        .unwrap_or_default())
+}
+
+#[cfg(target_os = "linux")]
+async fn copied_paths(app: &tauri::AppHandle) -> Result<Vec<PathBuf>, PublicBackendError> {
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    app.run_on_main_thread(move || {
+        crate::platform::file_clipboard::read_copied_files(move |paths| {
+            let _ = sender.send(paths);
+        });
+    })
+    .map_err(|_| paste_error())?;
+    receiver.await.map_err(|_| paste_error())
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
+async fn copied_paths(_app: &tauri::AppHandle) -> Result<Vec<PathBuf>, PublicBackendError> {
+    Ok(Vec::new())
+}
+
 #[tauri::command]
 pub async fn open_output_folder(path: String) -> Result<(), PublicBackendError> {
     tauri::async_runtime::spawn_blocking(move || open_with_validation(&path, &SystemOpener))

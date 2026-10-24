@@ -50,6 +50,7 @@ test("production commands are the source of the existing shortcut guide", () => 
   assert.equal(new Set(commandIds).size, commandIds.length);
   assert.deepEqual(defaultBindings, {
     "file.add-videos": ["Ctrl+O"],
+    "file.paste-videos": ["Ctrl+V"],
     "media.remove-current": ["Ctrl+Delete", "Ctrl+Backspace"],
     "settings.open": ["Ctrl+,"],
     "app.exit": ["Ctrl+Q"],
@@ -103,6 +104,7 @@ test("production commands are the source of the existing shortcut guide", () => 
         column: 0,
         items: [
           { label: "Add videos", bindings: "Ctrl + O" },
+          { label: "Paste videos", bindings: "Ctrl + V" },
           { label: "Remove video", bindings: "Ctrl + Del or Ctrl + Backspace" },
           { label: "Open settings", bindings: "Ctrl + ," },
           { label: "Exit Tuck", bindings: "Ctrl + Q" },
@@ -816,7 +818,7 @@ test("the production guide renders every physical key with one base keycap style
     ),
   );
 
-  assert.equal(shortcuts.search(shortcuts.sections, "").total, 24);
+  assert.equal(shortcuts.search(shortcuts.sections, "").total, 25);
   assert.deepEqual(
     Array.from(shortcutIds).filter((id) => !renderedIds.has(id)),
     [],
@@ -856,6 +858,33 @@ test("Ctrl+Delete and Ctrl+Backspace remove the current video, but never while t
   assert.equal(typing.defaultPrevented, false);
   assert.equal(registry.dispatch(keyEvent("Delete", { ctrlKey: true }), { ...editor, settingsOpen: true }), null);
   assert.deepEqual(calls, ["remove", "remove", "delete", "delete"]);
+});
+
+test("Ctrl+V pastes videos in the editor, but a text field keeps its own paste", () => {
+  const registry = shortcuts.createRegistry(shortcuts.commands.filter((command) => command.id === "file.paste-videos"));
+  const calls: string[] = [];
+  registry.registerAction("file.paste-videos", () => calls.push("paste"));
+  const editor = { modalOpen: false, settingsOpen: false, formControlFocused: false, textEntryFocused: false };
+
+  const paste = keyEvent("v", { ctrlKey: true });
+  assert.equal(registry.dispatch(paste, editor), "file.paste-videos");
+  assert.equal(paste.defaultPrevented, true);
+  // a focused button can't take a paste, so the editor still gets it
+  assert.equal(registry.dispatch(keyEvent("v", { ctrlKey: true }), { ...editor, formControlFocused: true }), "file.paste-videos");
+
+  const typing = keyEvent("v", { ctrlKey: true });
+  assert.equal(registry.dispatch(typing, { ...editor, formControlFocused: true, textEntryFocused: true }), null);
+  assert.equal(typing.defaultPrevented, false);
+  assert.equal(registry.dispatch(keyEvent("v", { ctrlKey: true }), { ...editor, modalOpen: true }), null);
+  assert.equal(registry.dispatch(keyEvent("v"), editor), null);
+  assert.deepEqual(calls, ["paste", "paste"]);
+
+  const result = shortcuts.search(shortcuts.sections, "paste");
+  assert.deepEqual(
+    result.sections.flatMap((section) => section.items.map((item) => item.label)),
+    ["Paste videos"],
+  );
+  assert.deepEqual(result.keyIds.slice().sort(), ["ctrl", "v"]);
 });
 
 test("removing the current video is in the guide and lights the keys that were searched", () => {

@@ -35,6 +35,25 @@ test("file copy invokes the native file command and preserves native errors", as
   assert.equal((await createTauriBackendClient(async () => { throw new Error("Offline"); }).copyFile(path)).ok, false);
 });
 
+test("pasting reads the clipboard's files natively and rejects anything but a list of paths", async () => {
+  const calls: unknown[] = [];
+  const files = ["C:\\videos\\録画 #1.mp4", "D:\\clips\\two.mov"];
+  const client = createTauriBackendClient(async (command, args) => {
+    calls.push({ command, args });
+    return files;
+  });
+  assert.deepEqual(await client.readClipboardFiles(), { ok: true, value: { files } });
+  assert.deepEqual(calls, [{ command: "read_clipboard_files", args: {} }]);
+  assert.deepEqual(await createTauriBackendClient(async () => []).readClipboardFiles(), { ok: true, value: { files: [] } });
+
+  for (const malformed of [null, "C:\\video.mp4", [1], { files }]) {
+    const result = await createTauriBackendClient(async () => malformed).readClipboardFiles();
+    assert.equal(result.ok, false, JSON.stringify(malformed));
+  }
+  const error = { code: "CLIPBOARD_UNAVAILABLE", message: "The clipboard is busy. Try pasting again.", details: {} };
+  assert.deepEqual(await createTauriBackendClient(async () => { throw error; }).readClipboardFiles(), { ok: false, error });
+});
+
 test("finished exports are opened and dragged by queue id, and native errors are kept", async () => {
   const calls: unknown[] = [];
   const client = createTauriBackendClient(async (command, args) => {

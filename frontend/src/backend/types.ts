@@ -249,6 +249,8 @@ export interface NativeBackendClient {
   closeWindow(): Promise<BackendResult<EmptyPayload>>;
   pickLutFile(): Promise<BackendResult<PathSelection>>;
   pickFiles(): Promise<BackendResult<FileSelection>>;
+  /** existing files copied in a file manager or as absolute paths; an empty list when there are none */
+  readClipboardFiles(): Promise<BackendResult<FileSelection>>;
   pickAudioFiles(): Promise<BackendResult<FileSelection>>;
   pickFolder(): Promise<BackendResult<PathSelection>>;
   pickFfmpegFile(): Promise<BackendResult<PathSelection>>;

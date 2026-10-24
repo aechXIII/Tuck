@@ -864,6 +864,19 @@ class TauriTransport implements TauriBackendClient {
     }
   }
 
+  async readClipboardFiles(): Promise<BackendResult<FileSelection>> {
+    try {
+      const files: unknown = await this.#invoke("read_clipboard_files", {});
+      if (!Array.isArray(files) || !files.every((file) => typeof file === "string")) {
+        return backendFailure("TAURI_INVOKE_FAILED", "Could not read the clipboard. Try again.", { method: "readClipboardFiles" });
+      }
+      return { ok: true, value: { files } };
+    } catch (error) {
+      if (isBackendError(error)) return { ok: false, error };
+      return backendFailure("TAURI_INVOKE_FAILED", errorMessage(error, "Could not read the clipboard. Try again."), { method: "readClipboardFiles" });
+    }
+  }
+
   async pickAudioFiles(): Promise<BackendResult<FileSelection>> {
     try {
       const files = (await this.#invoke("pick_audio_files", {})) as string[];

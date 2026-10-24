@@ -47,7 +47,7 @@ import { installSettings, type SettingsApi } from "../settings/settings.ts";
 import { checkUpdates, checkUpdatesFromSettings } from "./updates.ts";
 import { routeDroppedPaths } from "./drop-routing.ts";
 import { fetchPlatformCapabilities, shouldShowUpdater, supportsFileDragOut, usesElementFullscreen } from "../../platform/capabilities.ts";
-import { errorSummary, formatBytes, formatTime } from "./format.ts";
+import { errorSummary, formatBytes, formatTime, withReason } from "./format.ts";
 import {
   closeActiveModal,
   closeMod,
@@ -725,9 +725,32 @@ export function installEditorRuntime(
     bindDelegatedEvents(windowRef.document.body, handlers);
   }
 
+  // dropped and pasted files go to the same places: audio to the audio panel, the rest to the Library
+  function importFiles(paths: readonly string[]): void {
+    const { videoPaths, audioPaths } = routeDroppedPaths(paths);
+    if (videoPaths.length) library.addFiles(videoPaths);
+    if (audioPaths.length) audio.addAudioFiles(audioPaths, []);
+  }
+
+  // a clipboard without files adds nothing and says nothing, like pasting into an empty field
+  async function pasteFiles(): Promise<void> {
+    const result = await getBackendClient().readClipboardFiles();
+    if (!result.ok) {
+      toast(withReason("Couldn’t paste videos.", result.error.message), "err");
+      return;
+    }
+    importFiles(result.value.files);
+  }
+
   function installEditorShortcuts(): void {
     shortcuts.registerAction("file.add-videos", () => {
       void library.browse();
+    });
+    shortcuts.registerAction("file.paste-videos", {
+      enabled: () => hasBackendClient(),
+      execute: () => {
+        void pasteFiles();
+      },
     });
     // the same removal as the card's remove button, so Undo and kept edits work the same way
     shortcuts.registerAction("media.remove-current", {
@@ -889,9 +912,7 @@ export function installEditorRuntime(
             } else if (payload.type === "drop") {
               overlay?.classList.remove("show");
               dropZone?.classList.remove("over");
-              const { videoPaths, audioPaths } = routeDroppedPaths(payload.paths);
-              if (videoPaths.length) library.addFiles(videoPaths);
-              if (audioPaths.length) audio.addAudioFiles(audioPaths, []);
+              importFiles(payload.paths);
             }
           });
         } catch (error) {

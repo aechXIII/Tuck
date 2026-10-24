@@ -542,6 +542,14 @@ class DeterministicFakeBackend implements BackendClient {
     );
   }
 
+  readClipboardFiles() {
+    return this.#record(
+      "readClipboardFiles",
+      [],
+      this.#responses.readClipboardFiles ?? success({ files: [] }),
+    );
+  }
+
   pickAudioFiles() {
     return this.#record(
       "pickAudioFiles",

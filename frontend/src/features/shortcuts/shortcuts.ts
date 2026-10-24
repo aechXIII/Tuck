@@ -196,6 +196,15 @@ const COMMANDS: CommandDefinition[] = [
     context: "editor",
   },
   {
+    id: "file.paste-videos",
+    category: "General",
+    column: 0,
+    label: "Paste videos",
+    // a text field keeps its own paste
+    bindings: ["Ctrl+V"],
+    context: "editor-no-text-entry",
+  },
+  {
     id: "media.remove-current",
     category: "General",
     column: 0,
@@ -840,7 +849,7 @@ const KEYBOARD_LAYOUT: readonly (readonly KeyboardKeySpec[])[] = [
     [34, "Z", "z"],
     [34, "X"],
     [34, "C"],
-    [34, "V"],
+    [34, "V", "v"],
     [34, "B"],
     [34, "N"],
     [34, "M", "m"],
