@@ -94,6 +94,9 @@ pub fn prepare_runtime_environment() {
         set_default_env(key, value);
     }
     let appdir = std::env::var_os("APPDIR").map(PathBuf::from);
+    if appdir.is_none() {
+        warn_about_missing_gstreamer_plugins();
+    }
     if let Some(modules) = bundled_gio_module_dir(appdir.clone()) {
         set_default_env("GIO_MODULE_DIR", modules);
     }
@@ -364,6 +367,61 @@ pub fn watch_fullscreen(window: &tauri::WebviewWindow) -> tauri::Result<()> {
     Ok(())
 }
 
+/// What the webview needs to play an MP4 preview with sound: any one of each entry's plugin
+/// files, and the name the warning gives it.
+const WEBVIEW_GSTREAMER_PLUGINS: [(&[&str], &str); 3] = [
+    (&["libgstautodetect.so"], "autoaudiosink"),
+    (&["libgstisomp4.so"], "qtdemux"),
+    (&["libgstlibav.so", "libgstva.so"], "an H.264 decoder"),
+];
+
+/// A run from source uses the system's GStreamer, and an AppImage bundles its own. Without
+/// the good plugins WebKit can't open an MP4 and aborts its web process the first time it
+/// needs sound, so say so once at startup instead of leaving a crash with no reason.
+fn warn_about_missing_gstreamer_plugins() {
+    let missing = missing_gstreamer_plugins(&gstreamer_plugin_dirs());
+    if !missing.is_empty() {
+        eprintln!(
+            "GStreamer plugins are missing ({}): video previews and sound in the webview won't work. \
+             Install the base, good, bad and libav GStreamer plugins.",
+            missing.join(", ")
+        );
+    }
+}
+
+fn gstreamer_plugin_dirs() -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = ["GST_PLUGIN_SYSTEM_PATH_1_0", "GST_PLUGIN_PATH_1_0"]
+        .iter()
+        .filter_map(std::env::var_os)
+        .flat_map(|paths| std::env::split_paths(&paths).collect::<Vec<_>>())
+        .collect();
+    if std::env::var_os("GST_PLUGIN_SYSTEM_PATH_1_0").is_none() {
+        dirs.extend(
+            [
+                "/usr/lib/gstreamer-1.0",
+                "/usr/lib64/gstreamer-1.0",
+                "/usr/lib/x86_64-linux-gnu/gstreamer-1.0",
+                "/usr/local/lib/gstreamer-1.0",
+            ]
+            .map(PathBuf::from),
+        );
+    }
+    dirs
+}
+
+/// The needs that none of the folders has a plugin file for.
+fn missing_gstreamer_plugins(dirs: &[PathBuf]) -> Vec<&'static str> {
+    WEBVIEW_GSTREAMER_PLUGINS
+        .iter()
+        .filter(|(files, _)| {
+            !files
+                .iter()
+                .any(|file| dirs.iter().any(|dir| dir.join(file).is_file()))
+        })
+        .map(|(_, need)| *need)
+        .collect()
+}
+
 /// Resolve the AppImage's own GIO module directory, or `None` when not running
 /// from an AppImage or when the bundle has no such directory.
 fn bundled_gio_module_dir(appdir: Option<PathBuf>) -> Option<PathBuf> {
@@ -464,6 +522,28 @@ mod tests {
         assert_eq!(gdk_backend(false, display), None);
         assert_eq!(gdk_backend(true, None), None);
         assert_eq!(gdk_backend(true, Some(OsStr::new(""))), None);
+    }
+
+    #[test]
+    fn missing_gstreamer_plugins_are_named_by_the_element_they_bring() {
+        let empty = test_dir("gst-empty");
+        let full = test_dir("gst-full");
+        for file in ["libgstautodetect.so", "libgstisomp4.so", "libgstva.so"] {
+            std::fs::write(full.join(file), b"").expect("plugin stand-in should be writable");
+        }
+        assert_eq!(
+            missing_gstreamer_plugins(std::slice::from_ref(&empty)),
+            vec!["autoaudiosink", "qtdemux", "an H.264 decoder"]
+        );
+        // either decoder plugin is enough
+        assert!(missing_gstreamer_plugins(&[empty.clone(), full.clone()]).is_empty());
+        std::fs::remove_file(full.join("libgstisomp4.so")).expect("stand-in should be removable");
+        assert_eq!(
+            missing_gstreamer_plugins(std::slice::from_ref(&full)),
+            vec!["qtdemux"]
+        );
+        let _ = std::fs::remove_dir_all(empty);
+        let _ = std::fs::remove_dir_all(full);
     }
 
     fn gpus(drivers: &[&str], render_node: bool) -> GpuInfo {
