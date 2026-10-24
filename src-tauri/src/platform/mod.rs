@@ -5,6 +5,7 @@ pub mod local_documents;
 pub mod opener;
 pub mod startup;
 pub mod window_chrome;
+pub mod window_state;
 
 #[cfg(target_os = "linux")]
 mod linux;

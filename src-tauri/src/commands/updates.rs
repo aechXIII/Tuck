@@ -155,6 +155,8 @@ pub async fn check_for_updates(
         // Windows runs this just before it starts the installer and exits, so
         // exports are cancelled and their partial files removed first
         .on_before_exit(move || {
+            // the installer ends the app without an exit event, so the window is saved here
+            crate::platform::window_state::save(&exit_app);
             if let Some(close) = exit_app.try_state::<CloseState>() {
                 close.begin_exit();
             }

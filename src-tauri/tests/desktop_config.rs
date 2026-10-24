@@ -6,6 +6,20 @@ fn tauri_config() -> Value {
 }
 
 #[test]
+fn main_window_starts_hidden_so_it_opens_where_it_was_last_time() {
+    // the shell restores the saved size and place and then shows the window
+    let config = tauri_config();
+    let window = &config["app"]["windows"][0];
+    assert_eq!(window["label"], Value::from("main"));
+    assert_eq!(window["visible"], Value::Bool(false));
+    // set_interface_size counts on this minimum, so it doesn't set it again and un-maximize
+    assert_eq!(window["minWidth"], Value::from(960));
+    assert_eq!(window["minHeight"], Value::from(640));
+    let source = include_str!("../src/lib.rs");
+    assert!(source.contains("window_state::restore_and_show(&window)"));
+}
+
+#[test]
 fn desktop_config_keeps_native_drag_drop_and_local_sidecar_csp() {
     let config = tauri_config();
     let window = &config["app"]["windows"][0];

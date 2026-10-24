@@ -133,6 +133,10 @@ pub fn run() {
                 window.set_decorations(false)?;
                 platform::windows_caption::remember_app(app.handle());
             }
+            // the window starts hidden so it appears where it was last time without a jump
+            if let Some(window) = app.get_webview_window("main") {
+                platform::window_state::restore_and_show(&window);
+            }
             #[cfg(target_os = "linux")]
             if let Some(window) = app.get_webview_window("main") {
                 platform::watch_fullscreen(&window)?;
@@ -212,19 +216,31 @@ pub fn run() {
     ]);
 
     builder
-        .on_window_event(|window, event| {
-            if let tauri::WindowEvent::Resized(_) = event {
+        .on_window_event(|window, event| match event {
+            tauri::WindowEvent::Moved(_) => platform::window_state::observe(window, true),
+            tauri::WindowEvent::Resized(_) => {
                 notify_window_resized(window);
+                platform::window_state::observe(window, false);
             }
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+            tauri::WindowEvent::CloseRequested { api, .. } => {
+                platform::window_state::settle(window);
+                // written now too, in case the app ends without an exit event
+                platform::window_state::save(window.app_handle());
                 // keep the shell alive until running exports are confirmed and its
                 // backend has released the installed files
                 api.prevent_close();
                 handle_close_request(window);
             }
+            _ => {}
         })
-        .run(tauri::generate_context!())
-        .expect("Tauri desktop shell failed to run");
+        .build(tauri::generate_context!())
+        .expect("Tauri desktop shell failed to start")
+        .run(|app, event| {
+            // also reached before a restart, so a restarted Tuck opens where this one was
+            if let tauri::RunEvent::Exit = event {
+                platform::window_state::save(app);
+            }
+        });
 }
 
 #[cfg(test)]

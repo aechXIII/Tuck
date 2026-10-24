@@ -1,3 +1,5 @@
+use std::sync::{Mutex, PoisonError};
+
 use serde::Deserialize;
 use tauri::window::{ProgressBarState, ProgressBarStatus};
 use tauri::{LogicalSize, UserAttentionType};
@@ -6,8 +8,11 @@ use tauri_plugin_notification::NotificationExt;
 use crate::backend::protocol::PublicBackendError;
 
 /// The layout is designed for at least this many CSS pixels.
-const MIN_LAYOUT_WIDTH: f64 = 960.0;
-const MIN_LAYOUT_HEIGHT: f64 = 640.0;
+pub(crate) const MIN_LAYOUT_WIDTH: f64 = 960.0;
+pub(crate) const MIN_LAYOUT_HEIGHT: f64 = 640.0;
+
+// the minimum tauri.conf.json gives the main window, until one is set here
+static WINDOW_MIN_SIZE: Mutex<(f64, f64)> = Mutex::new((MIN_LAYOUT_WIDTH, MIN_LAYOUT_HEIGHT));
 
 const MAX_NOTIFICATION_TITLE: usize = 120;
 const MAX_NOTIFICATION_BODY: usize = 400;
@@ -50,15 +55,26 @@ pub fn set_interface_size(
         min_width = min_width.min(screen.width);
         min_height = min_height.min(screen.height);
     }
-    window
-        .set_min_size(Some(LogicalSize::new(min_width, min_height)))
-        .map_err(failed)?;
+    let normal = !window.is_maximized().unwrap_or(false)
+        && !window.is_fullscreen().unwrap_or(false)
+        && !window.is_minimized().unwrap_or(false);
+    // Windows applies a new minimum by setting the size again, which also restores a maximized
+    // window, so the minimum only changes when it differs and the window is at its normal size
+    let mut applied = WINDOW_MIN_SIZE
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    if normal && *applied != (min_width, min_height) {
+        window
+            .set_min_size(Some(LogicalSize::new(min_width, min_height)))
+            .map_err(failed)?;
+        *applied = (min_width, min_height);
+    }
+    drop(applied);
     let current = window
         .inner_size()
         .map_err(failed)?
         .to_logical::<f64>(scale);
-    let maximized = window.is_maximized().unwrap_or(false);
-    if !maximized && (current.width < min_width || current.height < min_height) {
+    if normal && (current.width < min_width || current.height < min_height) {
         window
             .set_size(LogicalSize::new(
                 current.width.max(min_width),
