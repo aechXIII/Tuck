@@ -13,7 +13,7 @@ use serde::Serialize;
 use super::engine::{Edits, Mix, PlayerStatus, RawStatus};
 
 // must match TUCK_VIDEO_ABI in native/player/tuck_video.h
-pub const ABI: c_int = 8;
+pub const ABI: c_int = 9;
 
 #[cfg(windows)]
 const FILE_NAME: &str = "tuck_player.dll";
@@ -118,6 +118,7 @@ struct Api {
     edits: EditsFn,
     lut_table: LutTableFn,
     lut_strength: VolumeFn,
+    lut_split: VolumeFn,
     status: StatusFn,
     #[cfg(target_os = "linux")]
     gl: GlApi,
@@ -299,6 +300,9 @@ fn resolve(symbol: impl Fn(&CStr) -> Option<*const c_void>) -> Result<Api, Strin
             lut_strength: std::mem::transmute::<*const c_void, VolumeFn>(find(
                 c"tuck_video_lut_strength",
             )?),
+            lut_split: std::mem::transmute::<*const c_void, VolumeFn>(find(
+                c"tuck_video_lut_split",
+            )?),
             status: std::mem::transmute::<*const c_void, StatusFn>(find(c"tuck_video_status")?),
             #[cfg(target_os = "linux")]
             gl: GlApi {
@@ -470,6 +474,12 @@ impl Video {
     /// How much of the LUT shows, 0 to 1.
     pub fn lut_strength(&mut self, strength: f64) {
         unsafe { (self.api.lut_strength)(self.handle.as_ptr(), strength) }
+    }
+
+    /// Compares the LUT: from 0 to 1 across the picture, the picture as it is left of `split` and
+    /// with the LUT right of it; `None` shows the LUT everywhere.
+    pub fn lut_split(&mut self, split: Option<f64>) {
+        unsafe { (self.api.lut_split)(self.handle.as_ptr(), split.unwrap_or(-1.0)) }
     }
 
     pub fn status(&mut self) -> (PlayerStatus, VideoInfo) {

@@ -310,7 +310,8 @@ static void *render_main(void *opaque) {
         if (redraw) {
             uint64_t clock = shown_clock(v);
             RenderOutcome outcome = v->shown.frame
-                                        ? renderer_draw(v->renderer, &v->shown, preview_lut_current(&v->lut))
+                                        ? renderer_draw(v->renderer, &v->shown, preview_lut_current(&v->lut),
+                                                        preview_lut_split(&v->lut))
                                         : renderer_clear(v->renderer);
             drawn(v, outcome, renderer_error(v->renderer), clock);
             if (outcome == RENDER_SUBMITTED) redraw = 0;
@@ -452,7 +453,8 @@ int tuck_video_draw(TuckVideo *v, TuckGlRenderer *renderer, const TuckVideoTarge
         if (clock) drawn(v, RENDER_SUBMITTED, NULL, clock);
         return 0;
     }
-    RenderOutcome outcome = gl_renderer_draw(renderer, &v->shown, target, preview_lut_current(&v->lut));
+    RenderOutcome outcome = gl_renderer_draw(renderer, &v->shown, target, preview_lut_current(&v->lut),
+                                             preview_lut_split(&v->lut));
     drawn(v, outcome, gl_renderer_error(renderer), clock);
     return outcome == RENDER_SUBMITTED;
 }
@@ -646,6 +648,11 @@ int tuck_video_lut_table(TuckVideo *v, const float *table, int32_t size) {
 
 void tuck_video_lut_strength(TuckVideo *v, double strength) {
     preview_lut_set_strength(&v->lut, strength);
+    lut_changed(v);
+}
+
+void tuck_video_lut_split(TuckVideo *v, double split) {
+    preview_lut_set_split(&v->lut, split);
     lut_changed(v);
 }
 

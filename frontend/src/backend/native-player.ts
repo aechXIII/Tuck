@@ -219,7 +219,12 @@ export function createTauriPlayerEngine(
       const body = change && !keepTable
         ? new Uint8Array(change.table.buffer, change.table.byteOffset, change.table.byteLength)
         : new Uint8Array(0);
-      const headers = { "x-lut-size": String(change?.size ?? 0), "x-lut-strength": String(change?.strength ?? 1) };
+      const headers: Record<string, string> = {
+        "x-lut-size": String(change?.size ?? 0),
+        "x-lut-strength": String(change?.strength ?? 1),
+      };
+      // only while comparing; without it the LUT covers the whole picture
+      if (typeof change?.split === "number") headers["x-lut-split"] = String(change.split);
       try {
         await invokeBytes("player_lut", body, headers);
         return { ok: true, value: null };

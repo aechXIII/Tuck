@@ -281,7 +281,7 @@ static int map_hardware(Renderer *r, const DecodedFrame *item, struct pl_frame *
     return 1;
 }
 
-RenderOutcome renderer_draw(Renderer *r, const DecodedFrame *item, const struct pl_custom_lut *lut) {
+RenderOutcome renderer_draw(Renderer *r, const DecodedFrame *item, const struct pl_custom_lut *lut, double split) {
     int width, height;
     client_size(r->window, &width, &height);
     if (width < 1 || height < 1) return RENDER_DEFERRED;
@@ -314,8 +314,7 @@ RenderOutcome renderer_draw(Renderer *r, const DecodedFrame *item, const struct 
     AVRational sar = item->frame->sample_aspect_ratio;
     if (sar.num > 0 && sar.den > 0) aspect *= (float)av_q2d(sar);
     pl_rect2df_aspect_set_rot(&target.crop, aspect, image.rotation - target.rotation, 0);
-    struct pl_render_params params = render_params(lut);
-    int rendered = pl_render_image(r->renderer, &image, &target, &params);
+    int rendered = render_with_lut(r->renderer, &image, &target, lut, split);
     if (!pl_swapchain_submit_frame(r->swapchain)) rendered = 0;
     outcome = rendered ? RENDER_SUBMITTED : RENDER_FAILED;
     if (!rendered) snprintf(r->error, sizeof(r->error), "The preview could not draw the picture.");

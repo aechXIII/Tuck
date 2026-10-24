@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "lut_blend.h"
+#include "lut_split.h"
 #include "render.h"
 
 /* libplacebo keeps an uploaded LUT until its signature changes, and the Linux renderer outlives
@@ -16,6 +17,7 @@ void preview_lut_init(PreviewLut *lut) {
     memset(lut, 0, sizeof(*lut));
     pthread_mutex_init(&lut->lock, NULL);
     lut->strength = 1;
+    lut->split = -1;
 }
 
 void preview_lut_destroy(PreviewLut *lut) {
@@ -50,6 +52,20 @@ void preview_lut_set_strength(PreviewLut *lut, double strength) {
     pthread_mutex_unlock(&lut->lock);
 }
 
+void preview_lut_set_split(PreviewLut *lut, double split) {
+    pthread_mutex_lock(&lut->lock);
+    /* the split only moves where the table shows, so the blended table stays */
+    lut->split = isfinite(split) && split >= 0 ? fmin(1, split) : -1;
+    pthread_mutex_unlock(&lut->lock);
+}
+
+double preview_lut_split(PreviewLut *lut) {
+    pthread_mutex_lock(&lut->lock);
+    double split = lut->split;
+    pthread_mutex_unlock(&lut->lock);
+    return split;
+}
+
 struct pl_render_params render_params(const struct pl_custom_lut *lut) {
     struct pl_render_params params = pl_render_default_params;
     if (lut) {
@@ -58,6 +74,29 @@ struct pl_render_params render_params(const struct pl_custom_lut *lut) {
         params.lut_type = PL_LUT_NATIVE;
     }
     return params;
+}
+
+int render_with_lut(pl_renderer renderer, const struct pl_frame *image, const struct pl_frame *target,
+                    const struct pl_custom_lut *lut, double split) {
+    if (!lut || !(split > 0)) {
+        struct pl_render_params params = render_params(lut);
+        return pl_render_image(renderer, image, target, &params);
+    }
+    struct pl_render_params plain = render_params(NULL);
+    if (!pl_render_image(renderer, image, target, &plain)) return 0;
+    if (split >= 1) return 1;
+    struct pl_frame image_part = *image, target_part = *target;
+    SplitRect target_rect, image_rect;
+    lut_split_right((SplitRect){target->crop.x0, target->crop.y0, target->crop.x1, target->crop.y1},
+                    (SplitRect){image->crop.x0, image->crop.y0, image->crop.x1, image->crop.y1},
+                    image->rotation - target->rotation, split, &target_rect, &image_rect);
+    target_part.crop = (pl_rect2df){target_rect.x0, target_rect.y0, target_rect.x1, target_rect.y1};
+    image_part.crop = (pl_rect2df){image_rect.x0, image_rect.y0, image_rect.x1, image_rect.y1};
+    /* drawn over the plain picture, so nothing around the LUT's part may be cleared */
+    struct pl_render_params graded = render_params(lut);
+    graded.border = PL_CLEAR_SKIP;
+    graded.background = PL_CLEAR_SKIP;
+    return pl_render_image(renderer, &image_part, &target_part, &graded);
 }
 
 const struct pl_custom_lut *preview_lut_current(PreviewLut *lut) {

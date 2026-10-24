@@ -220,6 +220,21 @@
               ><span class="crop-handle" data-handle="w"></span>
             </div>
           </div>
+          <div id="lut-compare" class="lut-compare" hidden>
+            <div
+              id="lut-compare-divider"
+              class="lc-divider"
+              role="slider"
+              tabindex="0"
+              aria-label="Split between original and LUT"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              aria-valuenow="50"
+              aria-valuetext="50% original"
+            ><span class="lc-handle"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 8l-4 4 4 4M14 8l4 4-4 4"></path></svg></span></div>
+            <span class="lc-label lc-label-original">Original</span>
+            <span id="lut-compare-name" class="lc-label lc-label-lut"></span>
+          </div>
         </div>
         <div id="player-bar">
           <div id="stage-controls">
@@ -917,6 +932,8 @@
                       <input type="range" id="lut-strength" min="0" max="100" step="1" value="100" disabled />
                       <output id="lut-strength-value" for="lut-strength">100%</output>
                     </div>
+                    <label class="toggle-row export-toggle" for="lut-compare-toggle"><span>Compare</span><input type="checkbox" role="switch" id="lut-compare-toggle" aria-describedby="lut-compare-help" disabled /><span class="toggle-track" aria-hidden="true"></span></label>
+                    <p id="lut-compare-help" class="lut-help">Original on the left, with the LUT on the right.</p>
                   </div>
                   <p id="lut-error" class="blend-error" role="alert" hidden></p>
                   <p id="lut-status" class="lut-status" role="status" hidden></p>

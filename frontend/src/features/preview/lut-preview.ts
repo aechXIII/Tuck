@@ -1,8 +1,12 @@
+import { lutInset, mediaPicture, turnOf } from "./lut-compare.ts";
+
 /** The export's LUT as the preview shows it; `size`³ RGB samples with R changing fastest. */
 export interface LutChange {
   readonly table: Float32Array;
   readonly size: number;
   readonly strength: number;
+  /** while comparing, 0 to 1 across the shown picture: the original left of it, the LUT right */
+  readonly split: number | null;
 }
 
 /**
@@ -14,6 +18,8 @@ export const LUT_REQUEST_EVENT = "tuck-lut-request";
 
 export interface LutPreview {
   set(table: Float32Array, size: number, strength: number): void;
+  /** shows the LUT only right of `split` across the picture, or everywhere with null */
+  split(split: number | null): void;
   clear(): void;
   dispose(): void;
 }
@@ -77,6 +83,7 @@ export function createLutPreview(
   let disposed = false;
   let frameCallback: number | null = null;
   let animationCallback: number | null = null;
+  let compareSplit: number | null = null;
 
   function stopFrames(): void {
     if (frameCallback !== null) video.cancelVideoFrameCallback(frameCallback);
@@ -168,11 +175,28 @@ export function createLutPreview(
     }
   }
 
+  // the layer covers the same box as the video, so while comparing it is clipped to the part of
+  // that box right of the split as the screen shows it, whatever the box's turn or flip
+  function clipLayer(style: CSSStyleDeclaration): void {
+    let clip = style.getPropertyValue("clip-path");
+    const viewport = video.ownerDocument.getElementById("media-viewport");
+    if (compareSplit !== null && viewport) {
+      const picture = mediaPicture(video, viewport);
+      const box = video.getBoundingClientRect();
+      if (picture.width >= 1 && box.width > 0) {
+        const share = (picture.x + compareSplit * picture.width - box.left) / box.width;
+        clip = lutInset(turnOf(video), share);
+      }
+    }
+    if (canvas.style.clipPath !== clip) canvas.style.clipPath = clip;
+  }
+
   function syncGeometry(): void {
     const style = getComputedStyle(video);
-    for (const property of ["left", "top", "width", "height", "transform", "transform-origin", "object-fit", "object-position", "visibility", "opacity", "display", "clip-path", "border-radius"]) {
+    for (const property of ["left", "top", "width", "height", "transform", "transform-origin", "object-fit", "object-position", "visibility", "opacity", "display", "border-radius"]) {
       canvas.style.setProperty(property, style.getPropertyValue(property));
     }
+    clipLayer(style);
     const bounds = video.getBoundingClientRect();
     const scale = Math.min(1, 1920 / Math.max(video.videoWidth, video.videoHeight),
       Math.max(1, bounds.width, bounds.height) * devicePixelRatio / Math.max(1, video.videoWidth, video.videoHeight));
@@ -277,6 +301,12 @@ export function createLutPreview(
       } catch {
         fail("LUT preview is unavailable on this graphics device. The LUT still applies to export.");
       }
+    },
+    split(next) {
+      if (disposed || next === compareSplit) return;
+      compareSplit = next;
+      // a paused picture isn't drawn again, so the clip moves with the divider on its own
+      clipLayer(getComputedStyle(video));
     },
     clear,
     dispose() {

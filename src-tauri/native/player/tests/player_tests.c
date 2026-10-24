@@ -8,6 +8,7 @@
 #include "../engine.h"
 #include "../framebuffer_cache.h"
 #include "../lut_blend.h"
+#include "../lut_split.h"
 #include "../mix.h"
 #include "../playback_state.h"
 #include "../seek_request.h"
@@ -551,6 +552,35 @@ static void frame_due(void) {
     CHECK(playback_frame_due_by(1.5, 0) >= 1.5000000001);
 }
 
+static int same_rect(SplitRect a, SplitRect b) {
+    return fabsf(a.x0 - b.x0) < 1e-4f && fabsf(a.y0 - b.y0) < 1e-4f && fabsf(a.x1 - b.x1) < 1e-4f &&
+           fabsf(a.y1 - b.y1) < 1e-4f;
+}
+
+/* comparing the LUT a quarter of the way in: the screen is cut along x, and the image along the
+   axis its clockwise turn lays across the screen, so the LUT's part shows the right of the picture */
+static void lut_split(void) {
+    const SplitRect target = {100, 10, 500, 235}, image = {0, 0, 1920, 1080};
+    SplitRect on_screen, from_image;
+    lut_split_right(target, image, 0, 0.25, &on_screen, &from_image);
+    CHECK(same_rect(on_screen, (SplitRect){200, 10, 500, 235}));
+    CHECK(same_rect(from_image, (SplitRect){480, 0, 1920, 1080}));
+    /* turned right, the image's top shows on the right of the screen */
+    lut_split_right(target, image, 1, 0.25, &on_screen, &from_image);
+    CHECK(same_rect(on_screen, (SplitRect){200, 10, 500, 235}));
+    CHECK(same_rect(from_image, (SplitRect){0, 0, 1920, 810}));
+    lut_split_right(target, image, 2, 0.25, &on_screen, &from_image);
+    CHECK(same_rect(from_image, (SplitRect){0, 0, 1440, 1080}));
+    lut_split_right(target, image, 3, 0.25, &on_screen, &from_image);
+    CHECK(same_rect(from_image, (SplitRect){0, 270, 1920, 1080}));
+    /* a turn counted past a full one, or backwards, is the same turn */
+    lut_split_right(target, image, -3, 0.25, &on_screen, &from_image);
+    CHECK(same_rect(from_image, (SplitRect){0, 0, 1920, 810}));
+    /* OpenGL's upside-down target keeps its rows; only x is cut */
+    lut_split_right((SplitRect){0, 235, 400, 10}, image, 0, 0.5, &on_screen, &from_image);
+    CHECK(same_rect(on_screen, (SplitRect){200, 235, 400, 10}));
+}
+
 /* a draw picks its frame for when it reaches the screen, without moving the clock there */
 static void position_ahead(void) {
     TuckPlayer *player = tuck_player_create(10, 100);
@@ -730,6 +760,7 @@ int tuck_player_test_failures(void) {
     frame_due();
     sound_stall();
     lut_strength();
+    lut_split();
     framebuffer_cache();
     return failures;
 }

@@ -95,7 +95,76 @@
   z-index: 1;
 }
 #timeline-gap-caption[hidden] { display: none; }
-#stage.timeline-gap :is(#media-viewport, #crop-ui, .preview-status) { visibility: hidden; }
+#stage.timeline-gap :is(#media-viewport, #crop-ui, #lut-compare, .preview-status) { visibility: hidden; }
+
+/* covers only the shown picture, so the split and its labels line up with the frame; it sits
+   under the crop box, which takes over the picture while cropping */
+.lut-compare {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+}
+.lut-compare[hidden] { display: none; }
+.lc-divider {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -12px;
+  width: 24px;
+  display: grid;
+  place-items: center;
+  cursor: ew-resize;
+  touch-action: none;
+  pointer-events: auto;
+}
+.lc-divider::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 11px;
+  width: 2px;
+  background: #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25);
+}
+.lc-handle {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+}
+.lc-handle svg {
+  display: block;
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: #18181b;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.lc-divider:focus { outline: none; }
+.lc-divider:focus-visible .lc-handle {
+  outline: 2px solid var(--accent-light);
+  outline-offset: 2px;
+}
+.lc-label {
+  position: absolute;
+  top: 10px;
+  max-width: calc(50% - 24px);
+  overflow: hidden;
+  padding: 3px 7px;
+  border-radius: var(--r-chip);
+  background: rgba(17, 17, 19, 0.78);
+  color: var(--text);
+  font: 600 calc(11.5px * var(--text-scale)) var(--font);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.lc-label-original { left: 10px; }
+.lc-label-lut { right: 10px; }
 
 .preview-status {
   position: absolute;

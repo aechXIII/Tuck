@@ -27,6 +27,8 @@ export interface FixtureLut {
   /** points per side; 0 removes the LUT */
   size: number;
   strength: number;
+  /** while the page compares, where the LUT starts across the picture; null covers all of it */
+  split: number | null;
   /** the table's values summed by place, to tell one table from another */
   checksum: number;
 }
@@ -136,7 +138,8 @@ export function createFixtureEngine(options: FixtureEngineOptions = {}): Fixture
       const sizeValid = lut !== undefined && Number.isInteger(lut.size) && (lut.size === 0 || (lut.size >= 2 && lut.size <= 65));
       const bytesValid = lut !== undefined && (lut.bytes === 0 || lut.bytes === lut.size ** 3 * 3 * 4);
       const strengthValid = lut !== undefined && Number.isFinite(lut.strength) && lut.strength >= 0 && lut.strength <= 1;
-      if (!sizeValid || !bytesValid || !strengthValid) throw failure("INVALID_REQUEST", "The LUT is not valid.");
+      const splitValid = lut !== undefined && (lut.split === null || (Number.isFinite(lut.split) && lut.split >= 0 && lut.split <= 1));
+      if (!sizeValid || !bytesValid || !strengthValid || !splitValid) throw failure("INVALID_REQUEST", "The LUT is not valid.");
       return null;
     }
     if (command !== "player_command" && command !== "player_status" && command !== "player_edits" && command !== "player_mix") {
@@ -233,6 +236,7 @@ export function createFixtureEngine(options: FixtureEngineOptions = {}): Fixture
       bytes: bytes.byteLength,
       size: Number(headers["x-lut-size"]),
       strength: Number(headers["x-lut-strength"]),
+      split: headers["x-lut-split"] === undefined ? null : Number(headers["x-lut-split"]),
       checksum: Math.round(checksum * 1000) / 1000,
     };
   }

@@ -1,4 +1,5 @@
 import type { BackendClient, LutEntry } from "../../backend/types.ts";
+import { installLutCompare } from "../preview/lut-compare.ts";
 import { createLutPreview, LUT_CHANGE_EVENT, LUT_REQUEST_EVENT, type LutChange } from "../preview/lut-preview.ts";
 import { createLutPicker } from "./lut-picker.ts";
 
@@ -19,6 +20,7 @@ export function installLutControls(root: HTMLElement, video: HTMLVideoElement,
   client: () => BackendClient, changed: (planChanged?: boolean) => void) {
   const enabled = root.querySelector<HTMLInputElement>("#lut-enabled")!;
   const strength = root.querySelector<HTMLInputElement>("#lut-strength")!;
+  const compareToggle = root.querySelector<HTMLInputElement>("#lut-compare-toggle")!;
   const importButton = root.querySelector<HTMLButtonElement>("#lut-import")!;
   const errorNode = root.querySelector<HTMLElement>("#lut-error")!;
   const status = root.querySelector<HTMLElement>("#lut-status")!;
@@ -36,14 +38,26 @@ export function installLutControls(root: HTMLElement, video: HTMLVideoElement,
   let backendError = "";
   let previewError = "";
   let profileLoadFailed = false;
+  // comparing is a way of looking at the preview, not an export setting, so it isn't saved
+  let comparing = false;
+  let split = 0.5;
   const picker = createLutPicker(root, selectLut, () => { void clearHistory(); });
   const preview = createLutPreview(video, message => { previewError = message; showError(); });
+  const compare = installLutCompare({document:video.ownerDocument, video, onSplit: next => {
+    split = next;
+    preview.split(split);
+    announce();
+  }});
+  const showsLut = (): boolean => settings.enabled && !!table && !backendError;
   // the native player draws the LUT itself and learns of each change from the video element; a
   // failed WebGL preview doesn't change what it shows
   let announced: LutChange | null = null;
   function announce(): void {
-    const next = settings.enabled && table && !backendError ? {table, size, strength:settings.strength} : null;
-    if (next?.table === announced?.table && next?.size === announced?.size && next?.strength === announced?.strength) return;
+    const next = showsLut() && table
+      ? {table, size, strength:settings.strength, split:comparing ? split : null}
+      : null;
+    if (next?.table === announced?.table && next?.size === announced?.size && next?.strength === announced?.strength &&
+        next?.split === announced?.split) return;
     announced = next;
     video.dispatchEvent(new CustomEvent(LUT_CHANGE_EVENT, {detail:announced}));
   }
@@ -81,6 +95,13 @@ export function installLutControls(root: HTMLElement, video: HTMLVideoElement,
       preview.set(table, size, settings.strength);
     }
     else preview.clear();
+    // there is nothing to compare once the LUT no longer shows
+    if (!showsLut() && !busy) comparing = false;
+    compareToggle.checked = comparing;
+    compareToggle.disabled = busy || !showsLut();
+    preview.split(comparing ? split : null);
+    if (comparing && showsLut()) compare.show(split, settings.name);
+    else compare.hide();
     announce();
     showError();
   }
@@ -197,6 +218,11 @@ export function installLutControls(root: HTMLElement, video: HTMLVideoElement,
     sync(); changed(false);
   });
   strength.addEventListener("change", () => changed());
+  compareToggle.addEventListener("change", () => {
+    comparing = compareToggle.checked;
+    split = 0.5;
+    sync();
+  });
   sync();
   return {
     refreshLibrary,

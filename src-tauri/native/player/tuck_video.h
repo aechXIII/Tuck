@@ -23,7 +23,7 @@
 #endif
 
 /* raise whenever a signature or struct below changes */
-#define TUCK_VIDEO_ABI 8
+#define TUCK_VIDEO_ABI 9
 
 /* TuckVideoStatus.sound */
 #define TUCK_SOUND_NONE 0
@@ -137,6 +137,9 @@ TUCK_VIDEO_EXPORT void tuck_video_volume(TuckVideo *video, double gain);
 TUCK_VIDEO_EXPORT int tuck_video_lut_table(TuckVideo *video, const float *table, int32_t size);
 /* how much of the LUT shows, 0 to 1; 0 shows the picture as it is */
 TUCK_VIDEO_EXPORT void tuck_video_lut_strength(TuckVideo *video, double strength);
+/* Compares the LUT: from 0 to 1 across the picture as shown, the picture as it is left of `split`
+   and with the LUT right of it. A negative value shows the LUT everywhere again. */
+TUCK_VIDEO_EXPORT void tuck_video_lut_split(TuckVideo *video, double split);
 TUCK_VIDEO_EXPORT void tuck_video_status(TuckVideo *video, TuckVideoStatus *status);
 
 #ifndef _WIN32

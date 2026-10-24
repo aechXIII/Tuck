@@ -15,6 +15,11 @@
 /* the render parameters for drawing with `lut`, or without one when it is NULL */
 struct pl_render_params render_params(const struct pl_custom_lut *lut);
 
+/* Draws `image` into `target` with `lut`, or, with a split from 0 to 1, without it and then with it
+   over the part right of the split only. 0 when libplacebo could not draw. */
+int render_with_lut(pl_renderer renderer, const struct pl_frame *image, const struct pl_frame *target,
+                    const struct pl_custom_lut *lut, double split);
+
 #ifdef _WIN32
 
 typedef struct Renderer Renderer;
@@ -28,8 +33,10 @@ enum AVPixelFormat renderer_hardware_format(void);
 AVBufferRef *renderer_device(Renderer *renderer);
 AVFrame *renderer_keep(Renderer *renderer, const AVFrame *frame);
 /* RENDER_SUBMITTED only when the frame was presented; a seek is confirmed by nothing less */
-/* `lut` is the preview's colour LUT, or NULL */
-RenderOutcome renderer_draw(Renderer *renderer, const DecodedFrame *frame, const struct pl_custom_lut *lut);
+/* `lut` is the preview's colour LUT, or NULL; with a `split` from 0 to 1 it shows only right of
+   that share of the picture (preview_lut_split) */
+RenderOutcome renderer_draw(Renderer *renderer, const DecodedFrame *frame, const struct pl_custom_lut *lut,
+                            double split);
 /* black across the preview, for a timeline gap; RENDER_SUBMITTED only when presented */
 RenderOutcome renderer_clear(Renderer *renderer);
 /* the preview changed size since the last draw */
@@ -40,9 +47,9 @@ const char *renderer_error(Renderer *renderer);
 
 #else
 
-/* with the GL area's context current, from its render handler */
+/* with the GL area's context current, from its render handler; `lut` and `split` as above */
 RenderOutcome gl_renderer_draw(TuckGlRenderer *renderer, const DecodedFrame *frame,
-                               const TuckVideoTarget *target, const struct pl_custom_lut *lut);
+                               const TuckVideoTarget *target, const struct pl_custom_lut *lut, double split);
 const char *gl_renderer_error(TuckGlRenderer *renderer);
 
 #endif

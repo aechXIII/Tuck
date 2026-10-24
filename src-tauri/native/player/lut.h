@@ -19,6 +19,8 @@ typedef struct PreviewLut {
     float *table;
     int size;
     double strength;
+    /* where the LUT starts across the picture while the preview compares, or -1 for everywhere */
+    double split;
     uint64_t changes;
     /* the drawing thread's */
     uint64_t applied;
@@ -31,6 +33,10 @@ void preview_lut_destroy(PreviewLut *lut);
 /* copies `size`³ RGB samples; NULL clears. 0 when the size is outside what the backend accepts */
 int preview_lut_set_table(PreviewLut *lut, const float *table, int size);
 void preview_lut_set_strength(PreviewLut *lut, double strength);
+/* 0 to 1 across the picture as shown: the picture as it is left of it, with the LUT right of it;
+   anything else (negative, not a number) shows the LUT everywhere */
+void preview_lut_set_split(PreviewLut *lut, double split);
+double preview_lut_split(PreviewLut *lut);
 /* the drawing thread's LUT for the next frame, or NULL for none; valid until the next call */
 const struct pl_custom_lut *preview_lut_current(PreviewLut *lut);
 

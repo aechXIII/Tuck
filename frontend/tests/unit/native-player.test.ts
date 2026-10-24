@@ -290,16 +290,25 @@ test("the export's LUT reaches the native picture, its table only when it change
       run.video.dispatchEvent(new CustomEvent("tuck-lut", { detail }));
       await settle();
     };
-    await send({ table, size: 2, strength: 0.5 });
-    await send({ table, size: 2, strength: 0.8 });
+    await send({ table, size: 2, strength: 0.5, split: null });
+    await send({ table, size: 2, strength: 0.8, split: null });
     await send(null);
-    await send({ table: new Float32Array(table), size: 2, strength: 1 });
-    assert.deepEqual(run.luts.map((lut) => [lut.bytes, lut.headers["x-lut-size"], lut.headers["x-lut-strength"]]), [
-      [96, "2", "0.5"],
-      [0, "2", "0.8"],
-      [0, "0", "1"],
-      [96, "2", "1"],
-    ]);
+    const next = new Float32Array(table);
+    await send({ table: next, size: 2, strength: 1, split: null });
+    // comparing moves only the split, so the table isn't sent again
+    await send({ table: next, size: 2, strength: 1, split: 0.35 });
+    await send({ table: next, size: 2, strength: 1, split: null });
+    assert.deepEqual(
+      run.luts.map((lut) => [lut.bytes, lut.headers["x-lut-size"], lut.headers["x-lut-strength"], lut.headers["x-lut-split"]]),
+      [
+        [96, "2", "0.5", undefined],
+        [0, "2", "0.8", undefined],
+        [0, "0", "1", undefined],
+        [96, "2", "1", undefined],
+        [0, "2", "1", "0.35"],
+        [0, "2", "1", undefined],
+      ],
+    );
   } finally {
     run.player.dispose();
   }

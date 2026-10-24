@@ -399,6 +399,8 @@ struct PreviewLut {
     /// `size`³ RGB samples from 0 to 1, R changing fastest
     table: Option<(Arc<[f32]>, i32)>,
     strength: f64,
+    /// while the page compares: from 0 to 1 across the picture, where the LUT starts
+    split: Option<f64>,
 }
 
 impl Default for PreviewLut {
@@ -406,16 +408,19 @@ impl Default for PreviewLut {
         PreviewLut {
             table: None,
             strength: 1.0,
+            split: None,
         }
     }
 }
 
-/// A change to the preview's LUT: a new table (or none), or only a new strength.
+/// A change to the preview's LUT: a new table (or none), or only a new strength or split.
 #[derive(Clone, Debug, PartialEq)]
 pub struct LutUpdate {
     /// `None` keeps the table; `Some(None)` removes it
     pub table: Option<Option<(Vec<f32>, i32)>>,
     pub strength: f64,
+    /// `None` shows the LUT across the whole picture
+    pub split: Option<f64>,
 }
 
 // the sizes the backend accepts from a .cube file
@@ -441,6 +446,7 @@ fn show_lut(video: &mut Video, lut: &PreviewLut) {
     // the page only sends sizes the library takes, so a refusal can't happen here
     video.lut_table(table);
     video.lut_strength(lut.strength);
+    video.lut_split(lut.split);
 }
 
 impl PlayerState {
@@ -501,6 +507,9 @@ impl PlayerState {
     /// Changes the preview's LUT for the open video and the ones opened after it.
     pub fn set_lut(&self, update: LutUpdate) -> Result<(), PlayerError> {
         if !(0.0..=1.0).contains(&update.strength)
+            || update
+                .split
+                .is_some_and(|split| !(0.0..=1.0).contains(&split))
             || update.table.as_ref().is_some_and(|table| {
                 table.as_ref().is_some_and(|(data, size)| {
                     !LUT_SIZES.contains(size)
@@ -516,6 +525,7 @@ impl PlayerState {
             lut.table = table.map(|(data, size)| (Arc::from(data), size));
         }
         lut.strength = update.strength;
+        lut.split = update.split;
         if let Some(Backend::Video(video)) = self.backend().as_mut() {
             show_lut(video, &lut);
         }
@@ -862,7 +872,13 @@ mod tests {
         let state = PlayerState::default();
         let table =
             |size: i32, value: f32| Some(Some((vec![value; (size as usize).pow(3) * 3], size)));
-        let update = |table, strength| state.set_lut(LutUpdate { table, strength });
+        let update = |table, strength| {
+            state.set_lut(LutUpdate {
+                table,
+                strength,
+                split: None,
+            })
+        };
         assert_eq!(update(table(2, 0.5), 0.7), Ok(()));
         assert_eq!(
             update(None, 0.2),
@@ -890,6 +906,30 @@ mod tests {
         );
         assert_eq!(update(Some(None), 1.0), Ok(()));
         assert!(locked(&state.lut).table.is_none());
+    }
+
+    #[test]
+    fn the_lut_comparison_split_is_checked_and_kept_for_later_videos() {
+        let state = PlayerState::default();
+        let split = |split| {
+            state.set_lut(LutUpdate {
+                table: None,
+                strength: 1.0,
+                split,
+            })
+        };
+        assert_eq!(split(Some(0.25)), Ok(()));
+        assert_eq!(locked(&state.lut).split, Some(0.25));
+        for refused in [-0.1, 1.1, f64::NAN, f64::INFINITY] {
+            assert_eq!(split(Some(refused)), Err(PlayerError::InvalidLut));
+        }
+        assert_eq!(
+            locked(&state.lut).split,
+            Some(0.25),
+            "a refused split leaves the comparison as it was"
+        );
+        assert_eq!(split(None), Ok(()));
+        assert_eq!(locked(&state.lut).split, None);
     }
 
     #[test]

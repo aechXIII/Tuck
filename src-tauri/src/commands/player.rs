@@ -177,12 +177,22 @@ pub fn player_command(
     state.command(command).map_err(player_error)
 }
 
-/// The page's LUT as it sends it: the size and strength in headers, the table as raw
-/// little-endian floats, so a 65³ table doesn't travel as megabytes of JSON. An empty body with a
-/// size keeps the table and changes only the strength; size 0 removes the LUT.
-fn parse_lut(size: Option<&str>, strength: Option<&str>, body: &[u8]) -> Option<LutUpdate> {
+/// The page's LUT as it sends it: the size, strength and comparison split in headers, the table as
+/// raw little-endian floats, so a 65³ table doesn't travel as megabytes of JSON. An empty body with
+/// a size keeps the table and changes only the strength and split; size 0 removes the LUT. Without
+/// a split the LUT covers the whole picture.
+fn parse_lut(
+    size: Option<&str>,
+    strength: Option<&str>,
+    split: Option<&str>,
+    body: &[u8],
+) -> Option<LutUpdate> {
     let size: i32 = size?.trim().parse().ok()?;
     let strength: f64 = strength?.trim().parse().ok()?;
+    let split = match split {
+        Some(value) => Some(value.trim().parse::<f64>().ok()?),
+        None => None,
+    };
     let table = if size == 0 {
         Some(None)
     } else if !LUT_SIZES.contains(&size) {
@@ -202,7 +212,11 @@ fn parse_lut(size: Option<&str>, strength: Option<&str>, body: &[u8]) -> Option<
             size,
         )))
     };
-    Some(LutUpdate { table, strength })
+    Some(LutUpdate {
+        table,
+        strength,
+        split,
+    })
 }
 
 /// Shows the export's LUT in the native preview, for this video and the ones opened after it.
@@ -222,8 +236,13 @@ pub fn player_lut(
         tauri::ipc::InvokeBody::Raw(bytes) => &bytes[..],
         tauri::ipc::InvokeBody::Json(_) => &[],
     };
-    let update = parse_lut(header("x-lut-size"), header("x-lut-strength"), body)
-        .ok_or_else(|| player_error(PlayerError::InvalidLut))?;
+    let update = parse_lut(
+        header("x-lut-size"),
+        header("x-lut-strength"),
+        header("x-lut-split"),
+        body,
+    )
+    .ok_or_else(|| player_error(PlayerError::InvalidLut))?;
     state.set_lut(update).map_err(player_error)
 }
 
@@ -409,26 +428,47 @@ mod tests {
                 .collect::<Vec<_>>()
         };
         let table = floats(&[0.25; 24]);
-        let update = parse_lut(Some("2"), Some("0.5"), &table).expect("a table");
+        let update = parse_lut(Some("2"), Some("0.5"), None, &table).expect("a table");
         assert_eq!(update.strength, 0.5);
         assert_eq!(update.table, Some(Some((vec![0.25; 24], 2))));
         assert_eq!(
-            parse_lut(Some("2"), Some("0.8"), &[]).map(|update| update.table),
+            update.split, None,
+            "without a split the LUT covers the picture"
+        );
+        assert_eq!(
+            parse_lut(Some("2"), Some("0.8"), None, &[]).map(|update| update.table),
             Some(None),
             "an empty body keeps the table"
         );
         assert_eq!(
-            parse_lut(Some("0"), Some("1"), &[]).map(|update| update.table),
+            parse_lut(Some("0"), Some("1"), None, &[]).map(|update| update.table),
             Some(Some(None)),
             "size 0 removes the LUT"
         );
-        assert!(parse_lut(None, Some("1"), &table).is_none());
-        assert!(parse_lut(Some("2"), None, &table).is_none());
-        assert!(parse_lut(Some("two"), Some("1"), &table).is_none());
-        assert!(parse_lut(Some("66"), Some("1"), &table).is_none());
+        assert!(parse_lut(None, Some("1"), None, &table).is_none());
+        assert!(parse_lut(Some("2"), None, None, &table).is_none());
+        assert!(parse_lut(Some("two"), Some("1"), None, &table).is_none());
+        assert!(parse_lut(Some("66"), Some("1"), None, &table).is_none());
         assert!(
-            parse_lut(Some("2"), Some("1"), &table[..95]).is_none(),
+            parse_lut(Some("2"), Some("1"), None, &table[..95]).is_none(),
             "a partial float is refused"
+        );
+    }
+
+    #[test]
+    fn comparing_moves_only_the_split_and_keeps_the_table() {
+        let update = parse_lut(Some("2"), Some("1"), Some("0.35"), &[]).expect("a split");
+        assert_eq!(update.split, Some(0.35));
+        assert_eq!(update.table, None, "the table stays as it was");
+        assert!(
+            parse_lut(Some("2"), Some("1"), Some("half"), &[]).is_none(),
+            "a split that isn't a number is refused"
+        );
+        // the range itself is the engine's to check, with the strength's
+        let wide = parse_lut(Some("2"), Some("1"), Some("1.5"), &[]).expect("parsed");
+        assert_eq!(
+            PlayerState::default().set_lut(wide),
+            Err(PlayerError::InvalidLut)
         );
     }
 
