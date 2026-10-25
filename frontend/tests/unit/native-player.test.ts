@@ -612,6 +612,35 @@ test("frame steps and saved frames pause first", async () => {
   }
 });
 
+test("a skip keeps playing, as in the HTML player, and only moves while paused", async () => {
+  const run = setup({ duration: 20 });
+  try {
+    await run.load();
+    run.player.togglePlay();
+    await run.advance(500);
+    const from = run.player.timelineTime();
+    run.player.seekBy(3);
+    await run.advance(50);
+    assert.equal(run.player.isPlaying(), true);
+    assert.ok(!run.commands().slice(-3).some((command) => command.kind === "pause"), "no pause on the way");
+    const seek = run.seeks().at(-1);
+    assert.ok(seek?.seconds != null && Math.abs(seek.seconds - (from + 3)) < 0.05);
+    await run.advance(400);
+    assert.ok(run.player.timelineTime() > from + 3.2, "the clock runs on from the new spot");
+
+    run.player.togglePlay();
+    await settle();
+    const paused = run.player.timelineTime();
+    run.player.seekBy(-2);
+    run.frame();
+    await settle();
+    assert.equal(run.player.isPlaying(), false);
+    assert.ok(Math.abs((run.seeks().at(-1)?.seconds ?? 0) - (paused - 2)) < 0.05);
+  } finally {
+    run.player.dispose();
+  }
+});
+
 test("a video that leaves the stage stops playing, and its replies are ignored", async () => {
   const run = setup();
   try {

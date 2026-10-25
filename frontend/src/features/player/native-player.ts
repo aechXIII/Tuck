@@ -681,6 +681,16 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
     seekPreview(position() + direction * (1 / fps));
   }
 
+  // a skip keeps playing as in the HTML player; with moved clips it pauses there too
+  function seekBy(seconds: number): void {
+    if (disposed || !wantPlaying || placed()) {
+      seekPreview(position() + seconds);
+      return;
+    }
+    syncEdits();
+    continuePlaybackAt(Math.max(0, Math.min(host.videoDuration(), position() + seconds)));
+  }
+
   function seekToRatio(ratio: number): void {
     const full = host.videoDuration();
     if (!full || !Number.isFinite(full)) return;
@@ -724,7 +734,7 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
     timelineTime: position,
     sourceTime: sourcePosition,
     togglePlay,
-    seekBy: (seconds) => seekPreview(position() + seconds),
+    seekBy,
     stepFrame,
     toggleFullscreen: () => host.stageFullscreen?.toggle(),
     // the editor asks for this when the timeline changes, such as when a probe brings the length
