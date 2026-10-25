@@ -246,19 +246,21 @@
 }
 #btn-save-frame[aria-disabled="true"] { opacity: 0.45; cursor: default; }
 /* in Lossless cut the start and end chips widen the middle; on a narrow player the timeline's
-   own time readout and the mute button stand in for the time and the volume slider */
-@container player-bar (max-width: 700px) {
+   own time readout and the mute button stand in for the time and the volume slider. The width is
+   where the time and the slider stop fitting beside the chips */
+@container player-bar (max-width: 800px) {
   body.task-cut #ptime,
   body.task-cut #vbar {
     display: none;
   }
 }
 
-/* Play sits in the middle column, so it stays put when the cut controls open around it */
+/* Play sits in the middle column, so it stays put when the cut controls open around it; a side
+   never gets narrower than its own buttons, which would push them over the cut chips */
 #stage-controls {
   flex-shrink: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  grid-template-columns: minmax(min-content, 1fr) auto minmax(min-content, 1fr);
   align-items: center;
   column-gap: calc(12px * var(--density-scale));
   padding: 0;

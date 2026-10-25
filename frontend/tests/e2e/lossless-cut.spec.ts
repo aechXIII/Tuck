@@ -13,7 +13,7 @@ const plan: CutPlanPreview = {
   segments:[{requested:{start:time(0),end:time(12)},resolved:{start:time(0),end:time(11.9)},start_kind:"at_start",end_frames_moved:3,audio_source:null,audio_output:null,audio_packet_count:0,copied:null}],
 };
 
-async function setup(page: Page, options: {pending?:boolean; collapsed?:boolean; moved?:boolean; shortMoved?:boolean; files?:string[]; startupCut?:boolean; holdAnalysis?:boolean; holdExportPlan?:boolean; rejectExport?:boolean; scanning?:boolean; exact?:boolean; planOverride?:Partial<CutPlanPreview>; queueAfterEnqueue?:unknown} = {}) {
+async function setup(page: Page, options: {pending?:boolean; collapsed?:boolean; moved?:boolean; shortMoved?:boolean; files?:string[]; startupCut?:boolean; holdAnalysis?:boolean; holdExportPlan?:boolean; rejectExport?:boolean; scanning?:boolean; exact?:boolean; planOverride?:Partial<CutPlanPreview>; queueAfterEnqueue?:unknown; timeFormat?:string} = {}) {
   const fixture = healthyBackendFixture();
   fixture.startup.files = options.files ?? [source];
   fixture.responses.probeFile = {data:{duration:12,width:1920,height:1080,fps:30,has_audio:true,video_codec:"h264",audio_codec:"aac",file_size:15000000}};
@@ -35,6 +35,7 @@ async function setup(page: Page, options: {pending?:boolean; collapsed?:boolean;
   if (options.holdAnalysis) fixture.holdMethods = ["getCutAnalysis"];
   if (options.rejectExport) fixture.responses.enqueueWithOptions = {ok:false,error:"The video changed. Check the cut points.",code:"SOURCE_CHANGED"};
   if (options.startupCut) fixture.responses.getSettings = {...fixture.responses.getSettings as object,last_task:"cut"};
+  if (options.timeFormat) fixture.responses.getSettings = {...fixture.responses.getSettings as object,time_format:options.timeFormat};
   if (options.queueAfterEnqueue) fixture.queueStateAfterEnqueue = options.queueAfterEnqueue;
   await installFakeBackend(page,fixture);
   await page.addInitScript(({planJson,collapsed,moved,holdExportPlan,exact}) => {
@@ -500,6 +501,28 @@ test("the player bar marks the selected segment and steps between keyframes", as
   await expect(page.locator("#tl-corner-time")).toHaveAttribute("aria-label", /^Playhead at 0:\d\d\.\d\d of 0:12\.00$/);
   await expect(page.getByRole("button", {name: "Next keyframe"})).toBeHidden();
   await expect(page.getByRole("button", {name: "Next frame"})).toBeVisible();
+});
+
+test("the player bar's buttons never run into the cut chips", async ({page}) => {
+  // the longest time readout
+  await setup(page,{timeFormat:"timecode"});
+  await page.locator("#wf-l").click();
+  await expect(page.locator("#btn-cut-go-end .cut-point-value")).toHaveText("00:00:12:00");
+  // across the three-column layout, where the player is narrowest
+  for (const width of [1180, 1240, 1300, 1360, 1420, 1500]) {
+    await page.setViewportSize({width,height:800});
+    await page.waitForTimeout(100);
+    const boxes = await page.locator("#stage-controls").evaluate(bar => [...bar.querySelectorAll<HTMLElement>("#ptime, button, input, .cut-point")]
+      .filter(element => !element.closest(".cut-point") || element.classList.contains("cut-point"))
+      .map(element => ({id: element.id || element.className, box: element.getBoundingClientRect(), shown: element.checkVisibility()}))
+      .filter(item => item.shown && item.box.width > 0)
+      .map(item => ({id: item.id, left: item.box.left, right: item.box.right})));
+    for (const [index, a] of boxes.entries()) {
+      for (const b of boxes.slice(index + 1)) {
+        expect(a.right <= b.left + 0.5 || b.right <= a.left + 0.5, `${width}: ${a.id} overlaps ${b.id}`).toBe(true);
+      }
+    }
+  }
 });
 
 test("a placed lossless row seeks its retained source at the matching project position", async ({page}) => {
