@@ -175,12 +175,11 @@ test("a finished queue says what exported and what failed, with the saving", asy
   await expect(page.locator("#exports-saved")).toHaveText("Saved 9.5 MB so far");
 });
 
-test("at 960 wide a finished batch still says how many exported, in full", async ({ page }) => {
-  await open(page, { width: 960, queue: [
-    { id: "a", source: "Morning ride.mp4", source_path: MORNING, state: "completed", result_path: "C:\\videos\\a.mp4", result_size: 5_000_000 },
-  ] });
-  await expect(page.locator("#qfname")).toHaveText("1 exported");
-  const bar = await page.evaluate(() => {
+const exported = (count: number) => Array.from({ length: count }, (_, index) => (
+  { id: `done-${index}`, source: "Morning ride.mp4", source_path: MORNING, state: "completed", result_path: `C:\\videos\\${index}.mp4`, result_size: 5_000_000 }));
+
+async function measureBar(page: Page) {
+  return page.evaluate(() => {
     const box = (id: string) => document.getElementById(id)!.getBoundingClientRect();
     const name = document.getElementById("qfname")!;
     return {
@@ -192,9 +191,31 @@ test("at 960 wide a finished batch still says how many exported, in full", async
       exportStart: box("export-go").left,
     };
   });
+}
+
+for (const width of [960, 1180]) {
+  test(`at ${width} wide a finished batch says how many exported in full, beside a centred task switch`, async ({ page }) => {
+    await open(page, { width, queue: exported(12) });
+    // Arial and Liberation Sans have the same widths and are on every test machine; the Linux
+    // runners would otherwise fall back to DejaVu Sans, which is wider than the bar is made for
+    await page.addStyleTag({ content: ':root { --font: Arial, "Liberation Sans", sans-serif; }' });
+    await expect(page.locator("#qfname")).toHaveText("12 exported");
+    await expect(page.locator("#btn-one")).toHaveText("Compress this video");
+    const bar = await measureBar(page);
+    expect(bar.cut).toBe(false);
+    expect(Math.abs(bar.centre)).toBeLessThanOrEqual(1);
+    expect(bar.tabsEnd).toBeLessThanOrEqual(bar.status);
+    expect(bar.statusEnd).toBeLessThanOrEqual(bar.exportStart);
+  });
+}
+
+test("a status too wide for its half moves the task switch aside instead of cutting the count", async ({ page }) => {
+  await open(page, { width: 960, queue: exported(12) });
+  await page.addStyleTag({ content: "#qfname { letter-spacing: 6px; }" });
+  await expect(page.locator("#qfname")).toHaveText("12 exported");
+  const bar = await measureBar(page);
   expect(bar.cut).toBe(false);
-  // the switch may give up a few pixels of centring here, never the count
-  expect(Math.abs(bar.centre)).toBeLessThanOrEqual(6);
+  expect(bar.centre).toBeLessThan(-1);
   expect(bar.tabsEnd).toBeLessThanOrEqual(bar.status);
   expect(bar.statusEnd).toBeLessThanOrEqual(bar.exportStart);
 });

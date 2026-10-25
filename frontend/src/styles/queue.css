@@ -244,8 +244,14 @@
 #qcnt:empty {
   display: none;
 }
-#qcnt {
+/* a finished batch's count never gives way; the failures and savings after it do */
+#qbar.finished #qfname {
   flex-shrink: 0;
+}
+#qcnt {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: var(--dim);
   font: 500 calc(11px * var(--text-scale)) var(--font);
   white-space: nowrap;
@@ -518,25 +524,38 @@
   margin-left: auto;
 }
 
-@media (max-width: 1100px) {
-  #qcnt .q-saved,
-  #qcnt .q-saved-sep {
-    display: none;
-  }
-  /* beside the export button only the percent fits while exporting; the name and count are in
-     the Exports panel, and a finished batch still says "3 exported" */
+@media (max-width: 1365px) {
+  /* beside the export button only the percent fits while exporting and "3 exported" when done;
+     the file name, failures and savings are in the Exports panel */
   #qbar:not(.finished) #qfname,
   #qcnt {
     display: none;
   }
-  /* the count keeps its room beside the export button: the tabs narrow, and the end side, which
-     only holds a percent or "3 exported" here, never gets less than it needs, so the switch
-     moves a few pixels off the centre at the smallest window instead */
+  /* what is left never gives way: where a wide font or text size still doesn't fit, the switch
+     moves aside instead of cutting the count or running into it */
   #task-bar {
     grid-template-columns: minmax(0, 1fr) auto minmax(max-content, 1fr);
-    gap: calc(10px * var(--density-scale));
+  }
+  .task-tab {
+    padding: 0 calc(10px * var(--density-scale));
+  }
+  #qstatus {
+    gap: 6px;
+  }
+}
+@media (max-width: 1100px) {
+  /* the tabs keep only their names, so the switch stays centred beside the export side with the
+     wider Linux fonts too */
+  #task-bar {
+    gap: calc(6px * var(--density-scale));
   }
   .task-tab {
     padding: 0 calc(8px * var(--density-scale));
+  }
+  .task-tab svg {
+    display: none;
+  }
+  #qstatus {
+    padding: 0 6px;
   }
 }
