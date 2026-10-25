@@ -131,6 +131,11 @@ pub fn run() {
                 window.with_webview(platform::configure_webview)?;
                 // the page draws the title bar; Linux keeps its desktop's frame
                 window.set_decorations(false)?;
+                // without decorations the minimum has to make room for the resize borders
+                commands::desktop::keep_minimum_size(
+                    &window,
+                    commands::desktop::InterfaceSize::Default,
+                )?;
                 platform::windows_caption::remember_app(app.handle());
             }
             // the window starts hidden so it appears where it was last time without a jump

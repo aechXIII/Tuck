@@ -44,8 +44,23 @@ pub fn set_interface_size(
 ) -> Result<(), PublicBackendError> {
     let failed =
         |_| PublicBackendError::new("INTERNAL_ERROR", "Could not change the interface size.");
-    let scale = window.scale_factor().map_err(failed)?;
+    keep_minimum_size(&window, size).map_err(failed)?;
+    window.set_zoom(size.zoom()).map_err(failed)?;
+    crate::platform::window_chrome::set_page_zoom(size.zoom());
+    place_caption_overlay(&window);
+    Ok(())
+}
+
+/// Keeps the window at least as large as the page's minimum layout. Also called as the window
+/// is set up, since the page only asks again when the interface size isn't the default.
+pub(crate) fn keep_minimum_size(
+    window: &tauri::WebviewWindow,
+    size: InterfaceSize,
+) -> tauri::Result<()> {
+    let scale = window.scale_factor()?;
     let (mut min_width, mut min_height) = size.min_window_size();
+    let frame = minimum_frame(window, scale);
+    let (mut outer_width, mut outer_height) = (min_width + frame.0, min_height + frame.1);
     // keep the minimum within the current screen's usable area
     if let Ok(Some(monitor)) = window.current_monitor() {
         let screen = monitor
@@ -54,6 +69,8 @@ pub fn set_interface_size(
             .to_logical::<f64>(monitor.scale_factor());
         min_width = min_width.min(screen.width);
         min_height = min_height.min(screen.height);
+        outer_width = outer_width.min(screen.width);
+        outer_height = outer_height.min(screen.height);
     }
     let normal = !window.is_maximized().unwrap_or(false)
         && !window.is_fullscreen().unwrap_or(false)
@@ -63,29 +80,38 @@ pub fn set_interface_size(
     let mut applied = WINDOW_MIN_SIZE
         .lock()
         .unwrap_or_else(PoisonError::into_inner);
-    if normal && *applied != (min_width, min_height) {
-        window
-            .set_min_size(Some(LogicalSize::new(min_width, min_height)))
-            .map_err(failed)?;
-        *applied = (min_width, min_height);
+    if normal && *applied != (outer_width, outer_height) {
+        window.set_min_size(Some(LogicalSize::new(outer_width, outer_height)))?;
+        *applied = (outer_width, outer_height);
     }
     drop(applied);
-    let current = window
-        .inner_size()
-        .map_err(failed)?
-        .to_logical::<f64>(scale);
+    let current = window.inner_size()?.to_logical::<f64>(scale);
     if normal && (current.width < min_width || current.height < min_height) {
-        window
-            .set_size(LogicalSize::new(
-                current.width.max(min_width),
-                current.height.max(min_height),
-            ))
-            .map_err(failed)?;
+        window.set_size(LogicalSize::new(
+            current.width.max(min_width),
+            current.height.max(min_height),
+        ))?;
     }
-    window.set_zoom(size.zoom()).map_err(failed)?;
-    crate::platform::window_chrome::set_page_zoom(size.zoom());
-    place_caption_overlay(&window);
     Ok(())
+}
+
+// tao gives a window without decorations its minimum as the outer size, but Windows keeps the
+// resize borders around the page, so they are added back to keep the page at its minimum
+#[cfg(windows)]
+fn minimum_frame(window: &tauri::WebviewWindow, scale: f64) -> (f64, f64) {
+    match (window.outer_size(), window.inner_size()) {
+        (Ok(outer), Ok(inner)) => (
+            f64::from(outer.width.saturating_sub(inner.width)) / scale,
+            f64::from(outer.height.saturating_sub(inner.height)) / scale,
+        ),
+        _ => (0.0, 0.0),
+    }
+}
+
+// GTK applies the minimum to the page itself
+#[cfg(not(windows))]
+fn minimum_frame(_window: &tauri::WebviewWindow, _scale: f64) -> (f64, f64) {
+    (0.0, 0.0)
 }
 
 // clearing old page zoom also moves the maximize button under its Snap Layouts overlay
