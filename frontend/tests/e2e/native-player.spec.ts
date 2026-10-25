@@ -166,6 +166,33 @@ test("the diagnostic report carries the shell's report on the native player", as
   expect(preview).toMatchObject({ mode: "engine", library: null, status: { durationSeconds: DURATION } });
 });
 
+test("the native picture stays visible in element fullscreen", async ({ page }) => {
+  await open(page, "engine");
+  await expect(page.locator("html")).toHaveClass(/\bnative-preview\b/);
+  await page.getByRole("button", { name: "Fullscreen", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => document.fullscreenElement?.id ?? null)).toBe("center");
+  const painted = () => page.evaluate(() => {
+    const stage = getComputedStyle(document.getElementById("stage")!);
+    return {
+      stageColor: stage.backgroundColor,
+      stageImage: stage.backgroundImage,
+      backdrop: getComputedStyle(document.getElementById("center")!, "::backdrop").backgroundColor,
+      editor: getComputedStyle(document.getElementById("left")!).visibility,
+    };
+  });
+  // the stage is a black frame around a see-through hole, and nothing between the window and the
+  // card paints over the picture
+  const inFullscreen = await painted();
+  expect(inFullscreen.stageColor).toBe("rgba(0, 0, 0, 0)");
+  expect(inFullscreen.stageImage).toContain("linear-gradient(rgb(0, 0, 0), rgb(0, 0, 0))");
+  expect(inFullscreen.backdrop).toBe("rgba(0, 0, 0, 0)");
+  expect(inFullscreen.editor).toBe("hidden");
+
+  await page.getByRole("button", { name: "Fullscreen", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => document.fullscreenElement)).toBeNull();
+  expect((await painted()).editor).toBe("visible");
+});
+
 test("with the switch off the HTML player plays as before", async ({ page }) => {
   await open(page, "off");
   const play = page.locator("#btn-play");

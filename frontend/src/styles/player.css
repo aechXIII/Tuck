@@ -221,8 +221,12 @@
 }
 #center:fullscreen #stage,
 :root.stage-fullscreen #stage {
-  background: #000;
   border-radius: 0;
+}
+/* the native preview keeps its hole in this fill, below */
+:root:not(.native-preview) #center:fullscreen #stage,
+:root.stage-fullscreen:not(.native-preview) #stage {
+  background: #000;
 }
 /* the controls sit on the card, one inset below the screen and one above the card's edge */
 #player-bar {
@@ -555,7 +559,12 @@ body:not(.task-cut) #stage-controls [data-cut-only] {
 :root.native-preview #media-viewport.native-unplayable > img { visibility: visible; }
 /* the picture shows through every layer under the hole, so the editor the full screen card
    covers must not paint there */
-:root.native-preview.stage-fullscreen #stage { --hole-fill: #000; }
-:root.native-preview.stage-fullscreen :is(#tb, #left, #right, #timeline-resizer, #audio-editor, #task-bar, #exports-panel) {
+:root.native-preview.stage-fullscreen #stage,
+:root.native-preview #center:fullscreen #stage { --hole-fill: #000; }
+:root.native-preview.stage-fullscreen :is(#tb, #left, #right, #timeline-resizer, #audio-editor, #task-bar, #exports-panel),
+:root.native-preview:has(#center:fullscreen) :is(#tb, #left, #right, #timeline-resizer, #audio-editor, #task-bar, #exports-panel) {
   visibility: hidden;
 }
+/* element fullscreen (Windows) lays a black backdrop between the editor and the card, which would
+   cover the picture under the hole */
+:root.native-preview #center::backdrop { background: transparent; }
