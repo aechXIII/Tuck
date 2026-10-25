@@ -118,16 +118,34 @@ fn clamp_axis(position: i32, start: i32, length: u32, size: u32) -> i32 {
     i64::from(position).clamp(i64::from(start), last.max(i64::from(start))) as i32
 }
 
+// the usable area widened by the frame's hidden margins (left, top, right, bottom)
+fn reach(area: Area, hidden: (u32, u32, u32, u32)) -> Area {
+    Area {
+        x: area.x.saturating_sub_unsigned(hidden.0),
+        y: area.y.saturating_sub_unsigned(hidden.1),
+        width: area.width.saturating_add(hidden.0).saturating_add(hidden.2),
+        height: area
+            .height
+            .saturating_add(hidden.1)
+            .saturating_add(hidden.3),
+        scale: area.scale,
+    }
+}
+
 /// Fits a saved window onto the displays there are now.
 ///
-/// `displays` lists the primary display first. `frame` is the outer size minus the inner size.
-/// The window goes back on the display it overlaps most, moved fully into its usable area;
-/// when it overlaps none (that display was unplugged), the desktop places it. The size keeps
-/// its logical size, never drops below the layout's minimum and never exceeds the display.
+/// `displays` lists the primary display first. `frame` is the outer size minus the inner size,
+/// and `hidden` the part of that frame on each side (left, top, right, bottom) that nobody sees,
+/// such as Windows' invisible resize borders: a window snapped to a screen edge reaches past the
+/// usable area by exactly that much. The window goes back on the display it overlaps most, moved
+/// fully into its usable area; when it overlaps none (that display was unplugged), the desktop
+/// places it. The size keeps its logical size, never drops below the layout's minimum and never
+/// exceeds the display.
 pub fn plan_restore(
     saved: &SavedWindow,
     displays: &[Area],
     frame: (u32, u32),
+    hidden: (u32, u32, u32, u32),
     min_logical: (f64, f64),
     positions: bool,
 ) -> Placement {
@@ -150,6 +168,8 @@ pub fn plan_restore(
     });
     let area = home.or_else(|| displays.first().copied());
     let scale = area.map_or(bounds.scale, |area| area.scale);
+    let area = area.map(|area| reach(area, hidden));
+    let home = home.map(|area| reach(area, hidden));
     let fit = |saved: u32, min_logical: f64, available: Option<u32>| -> u32 {
         let wanted = (f64::from(saved) * scale / bounds.scale).round();
         let min = (min_logical * scale).ceil();
@@ -388,6 +408,30 @@ fn write_saved(file: &Path, saved: &SavedWindow) -> std::io::Result<()> {
     std::fs::rename(&temporary, file)
 }
 
+// Windows counts the invisible resize borders in the outer rectangle, and Snap lines the visible
+// edges up with the usable area, so only each border's one visible pixel has to stay inside it
+#[cfg(windows)]
+fn hidden_frame(window: &tauri::WebviewWindow, frame: (u32, u32)) -> (u32, u32, u32, u32) {
+    let (Ok(outer), Ok(inner)) = (window.outer_position(), window.inner_position()) else {
+        return (0, 0, 0, 0);
+    };
+    let left = u32::try_from(inner.x - outer.x).unwrap_or(0);
+    let top = u32::try_from(inner.y - outer.y).unwrap_or(0);
+    let hidden = |border: u32| border.saturating_sub(1);
+    (
+        hidden(left),
+        hidden(top),
+        hidden(frame.0.saturating_sub(left)),
+        hidden(frame.1.saturating_sub(top)),
+    )
+}
+
+// elsewhere the frame is the desktop's own and its title bar must stay on screen
+#[cfg(not(windows))]
+fn hidden_frame(_window: &tauri::WebviewWindow, _frame: (u32, u32)) -> (u32, u32, u32, u32) {
+    (0, 0, 0, 0)
+}
+
 fn place(window: &tauri::WebviewWindow, placement: &Placement) -> tauri::Result<()> {
     window.set_size(PhysicalSize::new(placement.width, placement.height))?;
     if let Some((x, y)) = placement.position {
@@ -418,6 +462,7 @@ pub fn restore_and_show(window: &tauri::WebviewWindow) {
             &saved,
             &display_areas(window),
             frame,
+            hidden_frame(window, frame),
             (MIN_LAYOUT_WIDTH, MIN_LAYOUT_HEIGHT),
             positions,
         )
@@ -511,6 +556,7 @@ mod tests {
     use super::*;
 
     const MIN: (f64, f64) = (960.0, 640.0);
+    const NONE: (u32, u32, u32, u32) = (0, 0, 0, 0);
 
     fn bounds(x: i32, y: i32, width: u32, height: u32) -> Bounds {
         Bounds {
@@ -542,6 +588,7 @@ mod tests {
             &saved(bounds(200, 120, 1400, 900), false),
             &[display(0, 0, 1920, 1040, 1.0)],
             (0, 0),
+            NONE,
             MIN,
             true,
         );
@@ -564,6 +611,7 @@ mod tests {
             &saved(bounds(2200, 100, 1240, 800), true),
             &displays,
             (0, 0),
+            NONE,
             MIN,
             true,
         );
@@ -583,6 +631,7 @@ mod tests {
             &saved(bounds(3900, 1000, 1240, 800), false),
             &displays,
             (0, 0),
+            NONE,
             MIN,
             true,
         );
@@ -592,10 +641,53 @@ mod tests {
             &saved(bounds(100, -300, 1240, 800), false),
             &displays,
             (0, 0),
+            NONE,
             MIN,
             true,
         );
         assert_eq!(placement.position, Some((100, 0)));
+    }
+
+    #[test]
+    fn a_snapped_window_comes_back_where_it_was() {
+        // Win+Left on a 2560x1392 work area: the outer rectangle with its invisible 7 px resize
+        // borders starts at -7 and ends 7 px below the usable area
+        let displays = [display(0, 0, 2560, 1392, 1.0)];
+        let hidden = (7, 0, 7, 7);
+        let left = plan_restore(
+            &saved(bounds(-7, 0, 1278, 1390), false),
+            &displays,
+            (16, 9),
+            hidden,
+            MIN,
+            true,
+        );
+        assert_eq!(
+            (left.position, left.width, left.height),
+            (Some((-7, 0)), 1278, 1390)
+        );
+        let right = plan_restore(
+            &saved(bounds(1273, 0, 1278, 1390), false),
+            &displays,
+            (16, 9),
+            hidden,
+            MIN,
+            true,
+        );
+        assert_eq!(
+            (right.position, right.width, right.height),
+            (Some((1273, 0)), 1278, 1390)
+        );
+        // the visible window still never leaves the usable area
+        let off = plan_restore(
+            &saved(bounds(-40, 0, 1278, 1390), false),
+            &displays,
+            (16, 9),
+            hidden,
+            MIN,
+            true,
+        );
+        assert_eq!(off.position, Some((-7, 0)));
     }
 
     #[test]
@@ -605,6 +697,7 @@ mod tests {
             &saved(bounds(10, 10, 400, 300), false),
             &displays,
             (0, 0),
+            NONE,
             MIN,
             true,
         );
@@ -613,6 +706,7 @@ mod tests {
             &saved(bounds(0, 0, 3000, 2000), false),
             &displays,
             (16, 39),
+            NONE,
             MIN,
             true,
         );
@@ -626,6 +720,7 @@ mod tests {
             &saved(bounds(0, 0, 1240, 800), false),
             &[display(0, 0, 900, 600, 1.0)],
             (0, 0),
+            NONE,
             MIN,
             true,
         );
@@ -639,6 +734,7 @@ mod tests {
             &saved(bounds(100, 100, 1240, 800), false),
             &[display(0, 0, 3840, 2080, 2.0)],
             (0, 0),
+            NONE,
             MIN,
             true,
         );
@@ -652,6 +748,7 @@ mod tests {
             &saved(saved_hidpi, false),
             &[display(0, 0, 1920, 1040, 1.0)],
             (0, 0),
+            NONE,
             MIN,
             true,
         );
@@ -664,6 +761,7 @@ mod tests {
             &saved(bounds(300, 200, 1400, 900), false),
             &[display(0, 0, 1920, 1040, 1.0)],
             (0, 0),
+            NONE,
             MIN,
             false,
         );
@@ -677,6 +775,7 @@ mod tests {
             &saved(bounds(0, 0, 500, 500), false),
             &[],
             (0, 0),
+            NONE,
             MIN,
             true,
         );
