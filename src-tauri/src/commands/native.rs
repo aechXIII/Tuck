@@ -30,6 +30,13 @@ const AUDIO_EXTENSIONS: &[&str] = &[
     "mp3", "wav", "flac", "m4a", "aac", "ogg", "opus", "wma", "aif", "aiff",
 ];
 
+// owned by Tuck's window, so the dialog opens over it, on its display, and stays in front of it
+fn file_dialog<R: tauri::Runtime>(
+    window: &tauri::Window<R>,
+) -> tauri_plugin_dialog::FileDialogBuilder<R> {
+    window.dialog().file().set_parent(window)
+}
+
 fn paths_to_strings(paths: Vec<tauri_plugin_dialog::FilePath>) -> Vec<String> {
     paths
         .into_iter()
@@ -44,9 +51,7 @@ fn path_opt_to_string(path: Option<tauri_plugin_dialog::FilePath>) -> String {
 
 #[tauri::command]
 pub async fn pick_video_files(window: tauri::Window) -> Result<Vec<String>, PublicBackendError> {
-    let files = window
-        .dialog()
-        .file()
+    let files = file_dialog(&window)
         .add_filter("Video files", VIDEO_EXTENSIONS)
         .add_filter("All files", &["*"])
         .blocking_pick_files();
@@ -55,9 +60,7 @@ pub async fn pick_video_files(window: tauri::Window) -> Result<Vec<String>, Publ
 
 #[tauri::command]
 pub async fn pick_audio_files(window: tauri::Window) -> Result<Vec<String>, PublicBackendError> {
-    let files = window
-        .dialog()
-        .file()
+    let files = file_dialog(&window)
         .add_filter("Audio files", AUDIO_EXTENSIONS)
         .add_filter("All files", &["*"])
         .blocking_pick_files();
@@ -66,9 +69,7 @@ pub async fn pick_audio_files(window: tauri::Window) -> Result<Vec<String>, Publ
 
 #[tauri::command]
 pub async fn pick_lut_file(window: tauri::Window) -> Result<String, PublicBackendError> {
-    let file = window
-        .dialog()
-        .file()
+    let file = file_dialog(&window)
         .add_filter("LUT files", &["cube", "lut"])
         .blocking_pick_file();
     Ok(path_opt_to_string(file))
@@ -76,7 +77,7 @@ pub async fn pick_lut_file(window: tauri::Window) -> Result<String, PublicBacken
 
 #[tauri::command]
 pub async fn pick_folder(window: tauri::Window) -> Result<String, PublicBackendError> {
-    let folder = window.dialog().file().blocking_pick_folder();
+    let folder = file_dialog(&window).blocking_pick_folder();
     Ok(path_opt_to_string(folder))
 }
 
@@ -95,7 +96,7 @@ pub async fn pick_ffprobe_file(window: tauri::Window) -> Result<String, PublicBa
 fn executable_file_dialog<R: tauri::Runtime>(
     window: &tauri::Window<R>,
 ) -> tauri_plugin_dialog::FileDialogBuilder<R> {
-    let dialog = window.dialog().file();
+    let dialog = file_dialog(window);
     let dialog = match executable_filter_extensions() {
         Some(extensions) => dialog.add_filter("Executable", extensions),
         None => dialog,
@@ -116,9 +117,7 @@ fn executable_filter_extensions() -> Option<&'static [&'static str]> {
 
 #[tauri::command]
 pub async fn pick_import_file(window: tauri::Window) -> Result<String, PublicBackendError> {
-    let file = window
-        .dialog()
-        .file()
+    let file = file_dialog(&window)
         .add_filter("JSON profiles", &["json"])
         .add_filter("All files", &["*"])
         .blocking_pick_file();
@@ -157,7 +156,7 @@ pub async fn pick_save_file(
     default_name: Option<String>,
     format: Option<SaveFileFormat>,
 ) -> Result<String, PublicBackendError> {
-    let mut dialog = window.dialog().file();
+    let mut dialog = file_dialog(&window);
     if let Some(name) = default_name {
         let (directory, name) = save_file_location(&name);
         if let Some(directory) = directory {
