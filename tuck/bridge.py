@@ -83,7 +83,7 @@ from .models.ui_preferences import (
 from .output_paths import sweep_stale_outputs_later
 from .planner import plan
 from .planner_options import CutOutputOptions, OutputOptions, output_options
-from .probe import is_ffprobe_available, probe_audio
+from .probe import FFprobeMissing, describe_probe_failure, is_ffprobe_available, probe_audio
 from .probe import probe as probe_video
 from .probe_cache import ProbeCache
 from .profile_service import ProfileService
@@ -311,13 +311,13 @@ class BridgeAPI:
         try:
             path = self._validate_path(path)
         except (ValueError, FileNotFoundError) as e:
-            return {"ok": False, "error": str(e)}
+            return self._probe_failed(path, e)
         try:
             info = self._probe_once(path)
 
             return {"ok": True, "data": video_info_dict(info)}
         except Exception as e:
-            return {"ok": False, "error": str(e)}
+            return self._probe_failed(path, e)
 
     def probe_audio_file(self, path: str) -> BridgeResult:
         try:
@@ -325,7 +325,16 @@ class BridgeAPI:
             info = self._probe_audio_once(path)
             return {"ok": True, "data": audio_info_dict(info)}
         except Exception as e:
-            return {"ok": False, "error": str(e)}
+            return self._probe_failed(path, e)
+
+    @staticmethod
+    def _probe_failed(path: object, exc: Exception) -> BridgeResult:
+        # the Library shows the plain reason; FFprobe's own words stay in the log
+        logger.warning("Could not read %s: %s", path, exc)
+        error = describe_probe_failure(exc)
+        if isinstance(exc, FileNotFoundError) and not isinstance(exc, FFprobeMissing):
+            return {"ok": False, "error": error, "code": "invalid_path"}
+        return {"ok": False, "error": error}
 
     def get_timeline_frames(
         self,

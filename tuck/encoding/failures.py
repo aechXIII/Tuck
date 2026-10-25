@@ -1,12 +1,14 @@
-"""Turn FFmpeg's stderr into a short explanation people can act on.
+"""Turn FFmpeg's stderr and file system errors into a short explanation people can act on.
 
-The full FFmpeg output stays on the error for Diagnostics; these messages only say what went
-wrong and what to try next.
+The full FFmpeg output or system error stays on the export for Copy details; these messages
+only say what went wrong and what to try next.
 """
 
 from __future__ import annotations
 
+import errno
 import re
+from pathlib import Path, PurePath, PureWindowsPath
 
 # keys FFmpeg writes for `-progress`; they crowd out the lines that explain a failure
 _PROGRESS_LINE_RE = re.compile(
@@ -80,8 +82,7 @@ ENCODER_FAILED_MESSAGE = (
 )
 FILTER_FAILED_MESSAGE = (
     "Tuck couldn't convert this video's picture with the current export settings. "
-    "Try removing the LUT, crop or frame blending, or open Diagnostics on this export "
-    "for FFmpeg's details."
+    "Try removing the LUT, crop or frame blending. Copy details has FFmpeg's full output."
 )
 DECODER_MISSING_MESSAGE = (
     "Tuck couldn't decode this video. FFmpeg may not support its format, or the file may be "
@@ -201,5 +202,80 @@ def describe_ffmpeg_failure(stderr: str, returncode: int) -> str:
         return INPUT_DAMAGED_MESSAGE
     return (
         f"FFmpeg stopped with an error (exit code {returncode}) and the export wasn't saved. "
-        "Open Diagnostics on this export for FFmpeg's full output."
+        "Retry once. If it stops again, use Copy details and add them to a bug report."
     )
+
+
+_PICK_ANOTHER_FOLDER = "Pick another folder in Settings > Files & names, then Retry."
+NO_PERMISSION_MESSAGE = (
+    f"Tuck doesn't have permission to save in the export folder. {_PICK_ANOTHER_FOLDER}"
+)
+FOLDER_IN_USE_MESSAGE = (
+    "Another app is using a file in the export folder. Close it, then Retry. "
+    "Copy details names the file."
+)
+OUTPUT_FAILED_MESSAGE = (
+    "Tuck couldn't save the export in the export folder. Check that its drive is connected, "
+    "or pick another folder in Settings > Files & names, then Retry."
+)
+FILE_ERROR_MESSAGE = (
+    "Tuck couldn't open a file this export needs. Check that the video and the export folder "
+    "are still in place, then Retry. Copy details has the full error."
+)
+
+_DISK_FULL_ERRNOS = frozenset(
+    code for code in (errno.ENOSPC, errno.EFBIG, getattr(errno, "EDQUOT", None)) if code is not None
+)
+_ACCESS_ERRNOS = frozenset({errno.EACCES, errno.EPERM})
+_MISSING_ERRNOS = frozenset({errno.ENOENT, errno.ENOTDIR})
+# Windows reports these as plain access or missing-path errors; only its own code tells them apart
+_WINDOWS_WRITE_PROTECTED = 19
+_WINDOWS_NOT_READY = frozenset({21, 53, 67})
+_WINDOWS_IN_USE = frozenset({32, 33})
+
+
+def _is_output_path(path: PurePath, folder: PurePath) -> bool:
+    # creating the folder can fail on any folder above it, and writing on any file inside it
+    return path.is_relative_to(folder) or folder.is_relative_to(path)
+
+
+def describe_file_error(exc: OSError, output_folder: str | Path | None = None) -> str | None:
+    """A calm explanation for a file system error raised while preparing or saving an export.
+
+    Returns None for errors Tuck raised with its own wording, which carry no error number.
+    """
+    if exc.errno is None:
+        return None
+    code = exc.errno
+    winerror = getattr(exc, "winerror", None)
+    if code in _DISK_FULL_ERRNOS:
+        return DISK_FULL_MESSAGE
+    folder = PurePath(output_folder) if output_folder else None
+    path = PurePath(exc.filename) if isinstance(exc.filename, str) and exc.filename else None
+
+    if folder is not None and path is not None and _is_output_path(path, folder):
+        if code == errno.EROFS or winerror == _WINDOWS_WRITE_PROTECTED:
+            drive = PureWindowsPath(str(folder)).drive
+            where = (
+                f"{drive} is read-only" if drive else "The export folder is on a read-only drive"
+            )
+            return f"{where}, so the export couldn't be saved. {_PICK_ANOTHER_FOLDER}"
+        if winerror in _WINDOWS_IN_USE:
+            return FOLDER_IN_USE_MESSAGE
+        if code in _MISSING_ERRNOS or winerror in _WINDOWS_NOT_READY:
+            return (
+                f"The export folder {folder} can't be reached. Its drive may be disconnected. "
+                "Connect it, or pick another folder in Settings > Files & names, then Retry."
+            )
+        if code in _ACCESS_ERRNOS:
+            return NO_PERMISSION_MESSAGE
+        return OUTPUT_FAILED_MESSAGE
+
+    if path is not None and (code in _MISSING_ERRNOS or winerror in _WINDOWS_NOT_READY):
+        return (
+            f"Tuck can't find {path.name} any more. It may have been moved, renamed or deleted. "
+            "Put it back, then Retry."
+        )
+    if code in _ACCESS_ERRNOS:
+        return ACCESS_DENIED_MESSAGE
+    return FILE_ERROR_MESSAGE

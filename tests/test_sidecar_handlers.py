@@ -201,6 +201,23 @@ def test_missing_probe_path_uses_the_stable_invalid_path_code() -> None:
     assert response.error.code == "INVALID_PATH"
 
 
+def test_a_missing_file_keeps_its_code_when_the_message_is_plain_words() -> None:
+    class MissingFileApi(RecordingApi):
+        def probe_file(self, path: str) -> dict[str, object]:
+            return {
+                "ok": False,
+                "error": "Tuck can't find this file any more.",
+                "code": "invalid_path",
+            }
+
+    response = dispatch(MissingFileApi(), _request("probe_file", {"path": "C:/missing.mp4"}))
+
+    assert response.ok is False
+    assert response.error is not None
+    assert response.error.code == "INVALID_PATH"
+    assert response.error.message == "Tuck can't find this file any more."
+
+
 def test_malformed_legacy_success_flag_cannot_be_promoted_to_a_protocol_success() -> None:
     class MalformedApi(RecordingApi):
         def get_queue_state(self) -> dict[str, object]:

@@ -202,7 +202,13 @@ test("failed exports and unreadable files need attention and say so briefly", ()
   const status = descendants(created).find((element) => element.className === "c-status attention");
   assert.ok(status);
   assert.equal(status.textContent, "Can't read file");
-  assert.equal(status.dataset.tip, "moov atom not found");
+  // the reason is on the row itself, not only in a hover tooltip, and read out as its description
+  const reason = descendants(created).find((element) => element.className === "c-note c-reason");
+  assert.ok(reason);
+  assert.equal(reason.textContent, "moov atom not found");
+  assert.equal(reason.dataset.tip, "moov atom not found");
+  assert.equal(reason.attributes["aria-hidden"], "true");
+  assert.equal(status.dataset.tip, undefined);
   assert.equal(created.attributes["aria-description"], "moov atom not found");
   const retry = action(created, "retry-probe");
   assert.ok(retry);

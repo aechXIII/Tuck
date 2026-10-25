@@ -597,3 +597,63 @@ def test_finished_item_records_the_encoder_auto_really_used(tmp_path, monkeypatc
     assert done
     assert item.effective_encoder == "libx264"
     assert item.encoder_fallback == fallback
+
+
+@pytest.mark.skipif(os.name == "nt" or os.geteuid() == 0, reason="needs POSIX folder permissions")
+def test_an_export_folder_that_cannot_be_created_is_explained(tmp_path, monkeypatch):
+    from tuck.encoding.failures import NO_PERMISSION_MESSAGE
+    from tuck.output_transaction import OutputTransaction
+
+    locked = tmp_path / "locked"
+    locked.mkdir()
+    locked.chmod(0o500)
+    q = ProcessingQueue()
+
+    def fake_encode(plan, on_progress=None):
+        # the real export opens its output the same way before FFmpeg starts
+        with OutputTransaction(Path(plan.output)):
+            raise AssertionError("the folder should not have been created")
+
+    monkeypatch.setattr(q._engine, "encode", fake_encode)
+    item = q.enqueue(
+        EncodePlan(
+            source=str(tmp_path / "clip.mp4"),
+            output=str(locked / "Tucked" / "clip_tucked.mp4"),
+            target_size=1024 * 1024,
+        )
+    )
+    try:
+        q.start()
+        _wait_until_finished(q, item)
+    finally:
+        q.stop()
+        locked.chmod(0o700)
+    assert item.state == QueueState.FAILED
+    assert item.error == NO_PERMISSION_MESSAGE
+    assert item.progress_info is not None
+    assert item.progress_info.message == NO_PERMISSION_MESSAGE
+    # the system's own words stay for Copy details
+    assert item.error_detail.startswith("PermissionError: [Errno 13]")
+    assert str(locked / "Tucked") in item.error_detail
+
+
+def test_a_failure_in_tucks_own_words_is_kept(tmp_path, monkeypatch):
+    q = ProcessingQueue()
+
+    def fake_encode(plan, on_progress=None):
+        raise FileExistsError("Cannot reserve an output name. Try another output folder.")
+
+    monkeypatch.setattr(q._engine, "encode", fake_encode)
+    item = q.enqueue(
+        EncodePlan(
+            source=str(tmp_path / "clip.mp4"),
+            output=str(tmp_path / "clip_tucked.mp4"),
+            target_size=1024 * 1024,
+        )
+    )
+    try:
+        q.start()
+        _wait_until_finished(q, item)
+    finally:
+        q.stop()
+    assert item.error == "Cannot reserve an output name. Try another output folder."

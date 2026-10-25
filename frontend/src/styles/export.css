@@ -396,6 +396,12 @@
   color: var(--text);
   font-variant-numeric: tabular-nums;
 }
+/* a size that can't hold the video says so here, with one that can */
+#sz-grp .sz-error {
+  margin: 9px 0 0;
+  color: color-mix(in srgb, var(--warn) 70%, var(--text));
+  font: 400 calc(11px * var(--text-scale))/1.45 var(--font);
+}
 #sz-grp .sz-detail {
   margin-top: 8px;
   font: 400 calc(9.5px * var(--text-scale))/1.4 var(--mono);

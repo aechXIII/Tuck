@@ -511,7 +511,7 @@ export function createLibrary(host: LibraryHost): LibraryApi {
   }
 
   function metaStr(clip: EditorClip): { text: string } {
-    // the reason sits on the status line's tooltip; an unreadable file has no details to show
+    // the reason sits under the status line; an unreadable file has no details to show
     if (clip.error) return { text: "" };
     if (!clip.probed) return { text: "…" };
     const data = clip.probeData;
@@ -925,7 +925,7 @@ export function createLibrary(host: LibraryHost): LibraryApi {
       const detail = clip._queueState === "failed" && clip._queueError
         ? fullReason(clip._queueError)
         : needsTool
-          ? "Tuck can’t read videos without FFprobe. Choose it in Settings › Media, then retry."
+          ? "Tuck can’t read videos without FFprobe. Choose it in Settings > Media tools."
           : clip.error ? fullReason(clip.error) : "";
       const full = clip.probed ? clip.probeData?.duration || 0 : 0;
       const itemId = clip._queueItemId || "";

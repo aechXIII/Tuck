@@ -86,7 +86,7 @@ def _normalize_result(request: Request, value: object) -> Response:
                     message = "The backend could not complete the request."
                 field = value.get("field")
                 details: dict[str, JsonValue] = {"method": request.method}
-                if field in ("lut", "frame_blending", "cut"):
+                if field in ("lut", "frame_blending", "target_size", "cut"):
                     details["field"] = field
                 if field == "cut" and isinstance(value.get("_request_id"), int):
                     details["_request_id"] = value["_request_id"]
@@ -136,6 +136,9 @@ def _domain_code(method: str, field: object, code: object) -> str | None:
         return code.upper()
     if method == "retry_item" and code in RETRY_REFUSAL_CODES:
         return code.upper()
+    # a probe's message is plain words now, so a missing file says so with its code
+    if method in {"probe_file", "probe_audio_file"} and code == "invalid_path":
+        return "INVALID_PATH"
     return None
 
 

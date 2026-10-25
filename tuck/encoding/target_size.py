@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
-from ..formatting import format_size
-from ..models import AUDIO_OVERHEAD_FACTOR
+from ..formatting import format_clock
+from ..models import AUDIO_OVERHEAD_FACTOR, PlanValidationError
+
+_MB = 1024 * 1024
 
 MIN_VIDEO_BITRATE = 50_000
 MAX_AUDIO_BITRATE = 320_000
@@ -61,6 +64,35 @@ class RetryDecision:
     reason: str
 
 
+class TargetSizeTooSmall(PlanValidationError):
+    """The target can't hold this length of video; the message names a size that can."""
+
+    def __init__(self, target_size: int, duration_s: float, suggested_size: int) -> None:
+        super().__init__(
+            "target_size",
+            f"{_megabytes(target_size)} is too small for {format_clock(duration_s)} of video. "
+            f"Try at least {_megabytes(suggested_size)}, or trim it.",
+        )
+        self.target_size = target_size
+        self.suggested_size = suggested_size
+
+
+def _megabytes(size: int) -> str:
+    # a no-break space keeps the number and its unit on one line when the message wraps
+    if size < _MB // 10:
+        return f"{max(1, round(size / 1024))}\u00a0KB"
+    value = size / _MB
+    rounded = round(value)
+    return f"{rounded}\u00a0MB" if abs(value - rounded) < 0.05 else f"{value:.1f}\u00a0MB"
+
+
+def _friendly_size(size: int) -> int:
+    """Round a size up to a whole number people would type: 7, 30, 140 or 1100 MB."""
+    mb = size / _MB
+    step = 1 if mb < 10 else 5 if mb < 100 else 10 if mb < 1000 else 100
+    return math.ceil(mb / step) * step * _MB
+
+
 def calculate_target_size_bitrates(
     target_size: int,
     duration_s: float,
@@ -71,19 +103,60 @@ def calculate_target_size_bitrates(
     overhead_factor: float = AUDIO_OVERHEAD_FACTOR,
     audio_tracks: int = 1,
 ) -> TargetSizePlan:
-    """audio_bitrate, in and out, is per track; the audio budget covers all of them"""
+    """audio_bitrate, in and out, is per track; the audio budget covers all of them
+
+    Raises TargetSizeTooSmall when the target can't hold the video, with the smallest
+    whole-number size that can.
+    """
     if duration_s <= 0:
         raise ValueError(f"Invalid encode duration for target size: {duration_s:.3f}s")
+
+    def plan_for(size: int) -> TargetSizePlan | None:
+        return _plan_bitrates(
+            size,
+            duration_s,
+            audio_bitrate,
+            hardware_encoder=hardware_encoder,
+            min_video_bitrate=min_video_bitrate,
+            overhead_factor=overhead_factor,
+            audio_tracks=audio_tracks,
+        )
+
+    plan = plan_for(target_size)
+    if plan is not None:
+        return plan
+    # a larger target only ever leaves more room, so halving the range finds the smallest that fits
+    low, high = max(0, target_size), max(_MB, target_size * 2)
+    while plan_for(high) is None:
+        low, high = high, high * 2
+    while high - low > 1024:
+        middle = (low + high) // 2
+        if plan_for(middle) is None:
+            low = middle
+        else:
+            high = middle
+    raise TargetSizeTooSmall(target_size, duration_s, _friendly_size(high))
+
+
+def _plan_bitrates(
+    target_size: int,
+    duration_s: float,
+    audio_bitrate: int,
+    *,
+    hardware_encoder: bool,
+    min_video_bitrate: int,
+    overhead_factor: float,
+    audio_tracks: int,
+) -> TargetSizePlan | None:
+    """The bitrates for this target, or None when it is too small to hold the video."""
     if target_size < 1024:
-        raise ValueError(f"Target size too small: {target_size} bytes")
+        return None
 
     safety = overhead_factor + (HARDWARE_SAFETY_EXTRA if hardware_encoder else 0.0)
     safety = min(max(safety, 0.02), 0.25)
     effective_target = int(target_size * (1.0 - safety))
     if effective_target < 1024:
-        raise ValueError(
-            f"Target size ({format_size(target_size)}) is too small after applying a safety margin."
-        )
+        return None
 
     tracks = max(1, audio_tracks)
     audio_br = min(max(int(audio_bitrate), 0), MAX_AUDIO_BITRATE)
@@ -96,23 +169,13 @@ def calculate_target_size_bitrates(
 
     video_size_budget = effective_target - audio_size
     if video_size_budget <= 0:
-        raise ValueError(
-            f"Target size ({format_size(target_size)}) too small for "
-            f"{duration_s:.1f}s video with audio. "
-            f"Try a larger target or lower audio bitrate."
-        )
+        return None
 
     video_br = int((video_size_budget * 8.0) / duration_s)
     if video_br < min_video_bitrate:
         min_total = int((min_video_bitrate / 8.0) * duration_s + audio_size + target_size * safety)
         if min_total > target_size:
-            raise ValueError(
-                f"Target size ({format_size(target_size)}) is not realistic for "
-                f"{duration_s:.1f}s of video. "
-                f"Required video bitrate would be below "
-                f"{min_video_bitrate // 1000} kbps. "
-                f"Try a larger target or a shorter trim."
-            )
+            return None
         video_br = min_video_bitrate
 
     estimated = int((video_br / 8.0) * duration_s + audio_size + target_size * safety)

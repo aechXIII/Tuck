@@ -13,6 +13,7 @@ from pathlib import Path
 
 from .cutting.analysis import check_request
 from .cutting.packets import rebuild_cut_plan
+from .encoding.failures import describe_file_error
 from .engine import EncodeCancelled, FFmpegEngine
 from .models import EncodePlan, QueueItem, QueueState
 from .models.cutting import CutPlan
@@ -63,6 +64,16 @@ def _check_source_unchanged(plan: EncodePlan) -> None:
             "This video changed after it was added to the queue. "
             "Add it again so the export is planned for the new version.",
         )
+
+
+def _failure_message(exc: Exception, plan: EncodePlan | CutPlan | None) -> str:
+    """What the Exports panel says about a failed export; file system errors get plain words."""
+    if isinstance(exc, OSError):
+        output = plan.output_path if isinstance(plan, CutPlan) else plan.output if plan else ""
+        message = describe_file_error(exc, Path(output).parent if output else None)
+        if message:
+            return message
+    return str(exc)
 
 
 class ProcessingQueue:
@@ -454,16 +465,21 @@ class ProcessingQueue:
                     item.finished_at = datetime.now(timezone.utc).isoformat()
                 logger.info("Cancelled: %s", Path(item.plan.source).name if item.plan else "?")
             except Exception as e:
+                message = _failure_message(e, item.plan)
                 with self._condition:
                     item.state = QueueState.FAILED
-                    item.error = str(e)
+                    item.error = message
                     item.error_code = str(getattr(e, "code", ""))
-                    detail = getattr(e, "stderr", "") or getattr(e, "detail", "") or ""
-                    if not detail:
-                        detail = getattr(self._engine, "last_stderr", "") or ""
+                    if message != str(e):
+                        # the system's own words stay with the export for Copy details
+                        detail = f"{type(e).__name__}: {e}"
+                    else:
+                        detail = getattr(e, "stderr", "") or getattr(e, "detail", "") or ""
+                        if not detail:
+                            detail = getattr(self._engine, "last_stderr", "") or ""
                     item.error_detail = str(detail)[-4000:]
                     item.status_text = "Failed"
-                    item.progress_info = EncodeProgress(stage=EncodeStage.FAILED, message=str(e))
+                    item.progress_info = EncodeProgress(stage=EncodeStage.FAILED, message=message)
                     item.finished_at = datetime.now(timezone.utc).isoformat()
                 logger.error(
                     "Failed: %s: %s",

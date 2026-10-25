@@ -1,6 +1,10 @@
+import wave
+
 import pytest
 
 from tuck.bridge import BridgeAPI
+from tuck.media_tools import find_ffprobe
+from tuck.probe import FILE_MISSING_MESSAGE, NO_VIDEO_MESSAGE, UNREADABLE_MESSAGE
 
 
 class TestBridgePathValidation:
@@ -161,3 +165,37 @@ class TestBridgeDragDropSafety:
         resp = api.create_plan(payload)
         assert not resp["ok"]
         assert "error" in resp
+
+
+class TestUnreadableFilesInPlainWords:
+    @pytest.fixture
+    def api(self, tmp_path, monkeypatch):
+        import tuck.settings as settings_mod
+
+        monkeypatch.setattr(settings_mod, "_config_dir", lambda: tmp_path / "config")
+        monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path / "data")
+        monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path / "cache")
+        if not find_ffprobe():
+            pytest.skip("ffprobe is needed to read the files")
+        return BridgeAPI()
+
+    def test_a_damaged_file_says_it_cant_be_read(self, api, tmp_path):
+        source = tmp_path / "broken.mp4"
+        source.write_bytes(b"not a video at all" * 64)
+
+        assert api.probe_file(str(source)) == {"ok": False, "error": UNREADABLE_MESSAGE}
+
+    def test_a_file_without_video_says_so(self, api, tmp_path):
+        source = tmp_path / "voice.wav"
+        with wave.open(str(source), "wb") as audio:
+            audio.setnchannels(1)
+            audio.setsampwidth(2)
+            audio.setframerate(8000)
+            audio.writeframes(b"\0\0" * 8000)
+
+        assert api.probe_file(str(source)) == {"ok": False, "error": NO_VIDEO_MESSAGE}
+
+    def test_a_missing_file_says_it_moved(self, api, tmp_path):
+        result = api.probe_file(str(tmp_path / "gone.mp4"))
+
+        assert result == {"ok": False, "error": FILE_MISSING_MESSAGE, "code": "invalid_path"}

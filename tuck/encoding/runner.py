@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import errno
 import logging
 import os
 import subprocess
@@ -217,12 +218,15 @@ class FFmpegEngine:
 
     def _validate_sources(self, plan: EncodePlan, source: Path) -> None:
         if not source.is_file():
-            raise FileNotFoundError(f"Source file not found: {source}")
+            # the error number and file name let the Exports panel say which file went missing
+            raise FileNotFoundError(errno.ENOENT, "Source file not found", str(source))
         for track in plan.audio_tracks:
             for clip in track.clips:
                 audio_source = Path(clip.source)
                 if not audio_source.is_file():
-                    raise FileNotFoundError(f"Audio source file not found: {audio_source}")
+                    raise FileNotFoundError(
+                        errno.ENOENT, "Audio source file not found", str(audio_source)
+                    )
 
     def _run_candidates(
         self,

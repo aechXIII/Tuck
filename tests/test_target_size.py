@@ -2,6 +2,7 @@ import pytest
 
 from tuck.encoding.target_size import (
     MIN_VIDEO_BITRATE,
+    TargetSizeTooSmall,
     calculate_target_size_bitrates,
     decide_retry,
     is_content_limited,
@@ -188,3 +189,104 @@ class TestMeasuredRetryPolicy:
     )
     def test_missing_size_or_bitrate_does_not_request_an_encode(self, actual, target, bitrate):
         assert not decide_retry(actual, target, bitrate, 0, 3).should_retry
+
+
+MB = 1024 * 1024
+
+
+class TestATargetThatCannotWork:
+    def test_says_the_size_the_length_and_a_size_that_works(self):
+        with pytest.raises(TargetSizeTooSmall) as error:
+            calculate_target_size_bitrates(20 * MB, 3600.0, 128_000)
+        assert str(error.value) == (
+            "20\u00a0MB is too small for 1:00:00 of video. Try at least 30\u00a0MB, or trim it."
+        )
+        assert error.value.field == "target_size"
+        assert error.value.suggested_size == 30 * MB
+
+    @pytest.mark.parametrize(
+        ("target", "duration", "audio", "tracks", "hardware"),
+        [
+            (20 * MB, 3600.0, 128_000, 1, False),
+            (20 * MB, 3600.0, 128_000, 1, True),
+            (2 * MB, 3600.0, 320_000, 3, False),
+            (MB, 155.0, 0, 1, False),
+            (8 * MB, 2 * 3600.0, 96_000, 2, True),
+            (500, 10.0, 128_000, 1, False),
+        ],
+    )
+    def test_the_suggested_size_works_and_one_step_less_does_not(
+        self, target, duration, audio, tracks, hardware
+    ):
+        def plan(size):
+            return calculate_target_size_bitrates(
+                size, duration, audio, hardware_encoder=hardware, audio_tracks=tracks
+            )
+
+        with pytest.raises(TargetSizeTooSmall) as error:
+            plan(target)
+        suggested = error.value.suggested_size
+        assert suggested > target
+        assert plan(suggested).video_bitrate >= MIN_VIDEO_BITRATE
+        # the suggestion is a round number people would type, with no room to spare below it
+        mb = suggested // MB
+        assert suggested % MB == 0
+        step = 1 if mb <= 10 else 5 if mb <= 100 else 10
+        with pytest.raises(TargetSizeTooSmall):
+            plan(suggested - step * MB)
+
+    @pytest.mark.parametrize(
+        ("target", "duration", "text"),
+        [
+            (MB, 155.0, "1 MB is too small for 2:35 of video. Try at least 2 MB, or trim it."),
+            (
+                int(7.5 * MB),
+                5400.0,
+                "7.5 MB is too small for 1:30:00 of video. Try at least 45 MB, or trim it.",
+            ),
+            (500, 10.0, "1 KB is too small for 0:10 of video. Try at least 1 MB, or trim it."),
+        ],
+    )
+    def test_sizes_and_lengths_read_the_way_the_editor_shows_them(self, target, duration, text):
+        with pytest.raises(TargetSizeTooSmall) as error:
+            calculate_target_size_bitrates(target, duration, 128_000)
+        # sizes keep their unit on the same line
+        assert str(error.value).replace("\u00a0", " ") == text
+
+
+def test_the_size_problem_reaches_the_page_as_a_target_size_error(tmp_path, monkeypatch):
+    from tuck.bridge import BridgeAPI
+    from tuck.models import VideoInfo
+    from tuck.settings import configure_storage_root
+    from tuck.sidecar.handlers import dispatch
+    from tuck.sidecar.protocol import Request
+
+    monkeypatch.setattr("tuck.settings._settings_manager", None)
+    monkeypatch.setattr("tuck.settings._storage_root", None)
+    configure_storage_root(tmp_path / "storage")
+    try:
+        source = tmp_path / "match.mp4"
+        source.write_bytes(b"source")
+        api = BridgeAPI()
+        info = VideoInfo(
+            path=str(source),
+            duration=3600,
+            width=1280,
+            height=720,
+            fps=30,
+            video_codec="h264",
+            pixel_format="yuv420p",
+            has_audio=True,
+            audio_bitrate=128_000,
+        )
+        monkeypatch.setattr(api, "_probe_once", lambda path: info)
+        raw = {"source": str(source), "target_size_mb": 20}
+        response = dispatch(api, Request("plan", "create_plan", {"request": raw}))
+    finally:
+        monkeypatch.setattr("tuck.settings._settings_manager", None)
+        configure_storage_root(None)
+
+    assert not response.ok
+    assert response.error is not None
+    assert response.error.details["field"] == "target_size"
+    assert response.error.message.startswith("20\u00a0MB is too small for 1:00:00 of video.")

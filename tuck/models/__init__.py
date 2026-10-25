@@ -809,7 +809,9 @@ def positioned_frame_ranges(segments: list[Segment], fps: float) -> list[tuple[i
 
 
 class PlanValidationError(ValueError):
-    def __init__(self, field: Literal["lut", "frame_blending"], message: str) -> None:
+    def __init__(
+        self, field: Literal["lut", "frame_blending", "target_size"], message: str
+    ) -> None:
         super().__init__(message)
         self.field = field
 

@@ -80,7 +80,7 @@ test("a batch with failures says so once, and Show opens the first failed export
   await expect(summary).toBeVisible();
   // one message for the batch, not one per failed video
   await expect(page.locator(".toast")).toHaveCount(1);
-  await expect(page.locator(".clip", { hasText: "Bravo.mp4" }).locator(".c-status")).toHaveAttribute("data-tip", "Encoder stopped unexpectedly");
+  await expect(page.locator(".clip", { hasText: "Bravo.mp4" }).locator(".c-reason")).toHaveText("Encoder stopped unexpectedly");
   await summary.getByRole("button", { name: "Show" }).click();
   await expect(page.locator("#exports-panel")).toBeVisible();
   await expect(page.getByRole("button", { name: "Retry Bravo.mp4" })).toBeFocused();

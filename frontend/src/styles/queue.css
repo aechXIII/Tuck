@@ -455,8 +455,19 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* a failure's reason ends with what to do, so it wraps instead of being cut; a longer one shows
+   whole while a button on its row has focus */
 .exports-detail.failed {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
   color: color-mix(in srgb, var(--warn) 85%, var(--text));
+  line-height: 1.45;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.exports-row.failed:focus-within .exports-detail.failed {
+  -webkit-line-clamp: unset;
 }
 /* quiet text actions under a failed or cancelled export */
 .exports-more {

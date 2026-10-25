@@ -278,6 +278,17 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+/* why a video needs attention; a long reason shows whole while its row has focus */
+.c-reason {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.clip:focus-within .c-reason {
+  -webkit-line-clamp: unset;
+}
 .c-line.attention {
   color: color-mix(in srgb, var(--warn) 80%, var(--text));
 }

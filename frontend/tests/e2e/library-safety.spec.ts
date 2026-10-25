@@ -151,8 +151,8 @@ test("a missing FFprobe is said once, and its videos point at Settings", async (
   await open(page, fixture, 2);
   await expect(page.locator(".toast", { hasText: "Tuck can’t find FFprobe, so videos can’t be read." })).toHaveCount(1);
   await expect(card(page, "Morning ride.mp4").locator(".c-status")).toHaveText("No FFprobe");
-  await expect(card(page, "Morning ride.mp4").locator(".c-status")).toHaveAttribute(
-    "data-tip", "Tuck can’t read videos without FFprobe. Choose it in Settings › Media, then retry.");
+  await expect(card(page, "Morning ride.mp4").locator(".c-reason")).toHaveText(
+    "Tuck can’t read videos without FFprobe. Choose it in Settings > Media tools.");
   await card(page, "Evening.mp4").getByRole("button", { name: "Set up FFprobe in Settings" }).click();
   await expect(page.getByRole("heading", { name: "Media tools" })).toBeVisible();
 });

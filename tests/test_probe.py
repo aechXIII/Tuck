@@ -2,15 +2,27 @@ from __future__ import annotations
 
 import os
 import subprocess
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 from tuck.media_tools import find_ffmpeg, find_ffprobe
 from tuck.probe import (
+    FFPROBE_MISSING_MESSAGE,
+    FILE_MISSING_MESSAGE,
+    NO_AUDIO_MESSAGE,
+    NO_PERMISSION_MESSAGE,
+    NO_VIDEO_MESSAGE,
+    TOO_SLOW_MESSAGE,
+    UNREADABLE_MESSAGE,
+    FFprobeMissing,
+    MissingStream,
+    ProbeTimeout,
     _parse_display_rotation,
     _run_ffprobe_json,
     _video_info,
+    describe_probe_failure,
     probe,
     probe_audio,
 )
@@ -289,3 +301,44 @@ def test_subtitle_tracks_survive_a_saved_plan(tmp_path) -> None:
     older = EncodePlan.from_dict(saved_before_subtitles)
     assert older.source_info is not None
     assert older.source_info.text_subtitle_track is None
+
+
+@pytest.mark.parametrize(
+    ("exc", "message"),
+    [
+        (MissingStream("video", Path("song.mp3")), NO_VIDEO_MESSAGE),
+        (MissingStream("audio", Path("clip.mp4")), NO_AUDIO_MESSAGE),
+        (FFprobeMissing("ffprobe not found."), FFPROBE_MISSING_MESSAGE),
+        (FileNotFoundError("File not found: /videos/clip.mp4"), FILE_MISSING_MESSAGE),
+        (PermissionError(13, "Permission denied", "/videos/clip.mp4"), NO_PERMISSION_MESSAGE),
+        (ProbeTimeout("ffprobe timed out probing: clip.mp4"), TOO_SLOW_MESSAGE),
+        (
+            subprocess.CalledProcessError(1, ["ffprobe", "-v", "quiet", "--", "clip.mp4"]),
+            UNREADABLE_MESSAGE,
+        ),
+        (ValueError("Cannot determine duration for: clip.mp4"), UNREADABLE_MESSAGE),
+        (OSError(5, "Input/output error"), UNREADABLE_MESSAGE),
+    ],
+)
+def test_probe_failures_are_said_in_plain_words(exc, message) -> None:
+    assert describe_probe_failure(exc) == message
+
+
+def test_a_file_without_a_video_stream_is_told_apart(tmp_path, monkeypatch) -> None:
+    source = tmp_path / "song.mp3"
+    source.write_bytes(b"audio")
+    monkeypatch.setattr("tuck.media_tools.find_ffprobe", lambda: "ffprobe")
+    monkeypatch.setattr(
+        "tuck.probe.subprocess.run",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            returncode=0,
+            stdout='{"format":{"duration":"3"},"streams":[{"codec_type":"audio"}]}',
+            stderr="",
+        ),
+    )
+
+    with pytest.raises(MissingStream) as error:
+        probe(source)
+    assert error.value.kind == "video"
+    # code that reads any unusable file as a ValueError still does
+    assert isinstance(error.value, ValueError)

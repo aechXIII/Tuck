@@ -250,6 +250,11 @@ export function installQueue(deps: QueueDeps): QueueApi {
       detail.textContent = row.note && row.detail ? `${row.detail} · ${row.note}` : row.note || row.detail;
     }
     detail.title = detail.textContent ?? "";
+    if (row.kind === "failed") {
+      // the reason and its next step are read with the row's buttons, and show whole while one has focus
+      detail.id = `exports-detail-${row.id}`;
+      for (const button of element.querySelectorAll("button")) button.setAttribute("aria-describedby", detail.id);
+    }
     element.append(detail);
     const copyError = fileCopy.state(row.id, row.resultPath).error;
     if (copyError) {
@@ -273,7 +278,9 @@ export function installQueue(deps: QueueDeps): QueueApi {
         return button;
       };
       if (row.kind === "failed") {
-        more.append(link("Copy details", "export-item-copy-details", `Copy details for ${row.name}`));
+        const copyDetails = link("Copy details", "export-item-copy-details", `Copy details for ${row.name}`);
+        copyDetails.setAttribute("aria-describedby", detail.id);
+        more.append(copyDetails);
       }
       more.append(link("Remove", "export-item-remove", `Remove ${row.name} from Exports`));
       element.append(more);

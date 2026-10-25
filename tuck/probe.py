@@ -25,6 +25,57 @@ _FULL_TURN = 360
 _PROBE_TIMEOUT = 60  # seconds
 _PROBE_MAX_PACKETS = 1000
 
+NO_VIDEO_MESSAGE = "This file has no video."
+NO_AUDIO_MESSAGE = "This file has no sound."
+UNREADABLE_MESSAGE = (
+    "Tuck can't read this file. It may be damaged or in a format FFmpeg doesn't support."
+)
+FFPROBE_MISSING_MESSAGE = (
+    "Tuck can't read videos without FFprobe. Choose it in Settings > Media tools, then Retry."
+)
+FILE_MISSING_MESSAGE = (
+    "Tuck can't find this file any more. It may have been moved, renamed or deleted."
+)
+NO_PERMISSION_MESSAGE = (
+    "Tuck doesn't have permission to open this file. "
+    "Check that no other app has it locked, then Retry."
+)
+TOO_SLOW_MESSAGE = (
+    "Reading this file took too long. Check that its drive is still connected, then Retry."
+)
+
+
+class FFprobeMissing(FileNotFoundError):
+    """No FFprobe was found, so no file can be read."""
+
+
+class MissingStream(ValueError):
+    """The file was read, but it has no stream of the kind asked for."""
+
+    def __init__(self, kind: str, source: Path) -> None:
+        super().__init__(f"No {kind} stream found in: {source}")
+        self.kind = kind
+
+
+class ProbeTimeout(RuntimeError):
+    """FFprobe gave no answer in time, as happens with a sleeping or disconnected drive."""
+
+
+def describe_probe_failure(exc: BaseException) -> str:
+    """Plain words for why a file couldn't be read; the full error goes to the log."""
+    if isinstance(exc, MissingStream):
+        return NO_VIDEO_MESSAGE if exc.kind == "video" else NO_AUDIO_MESSAGE
+    if isinstance(exc, FFprobeMissing):
+        return FFPROBE_MISSING_MESSAGE
+    if isinstance(exc, FileNotFoundError):
+        return FILE_MISSING_MESSAGE
+    if isinstance(exc, PermissionError):
+        return NO_PERMISSION_MESSAGE
+    if isinstance(exc, ProbeTimeout):
+        return TOO_SLOW_MESSAGE
+    return UNREADABLE_MESSAGE
+
+
 # ffprobe's names for FFmpeg's color values (libavutil/pixdesc.c), so both readers agree
 _COLOR_RANGES = {0: "unknown", 1: "tv", 2: "pc"}
 _COLOR_PRIMARIES = {
@@ -153,7 +204,7 @@ def _run_ffprobe_json(ffprobe_path: str, source: Path, context: str) -> dict:
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         )
     except subprocess.TimeoutExpired:
-        raise RuntimeError(f"ffprobe timed out {context}: {source}") from None
+        raise ProbeTimeout(f"ffprobe timed out {context}: {source}") from None
 
     if result.returncode != 0:
         raise subprocess.CalledProcessError(
@@ -260,7 +311,7 @@ def _audio_fields(audio_stream: dict | None) -> tuple[bool, str, int, int, int]:
 def probe(source: str | Path) -> VideoInfo:
     ffprobe_path = media_tools.find_ffprobe()
     if not ffprobe_path:
-        raise FileNotFoundError(
+        raise FFprobeMissing(
             "ffprobe not found. Install FFmpeg and ensure ffprobe is on PATH "
             "or set the path in settings."
         )
@@ -282,7 +333,7 @@ def probe(source: str | Path) -> VideoInfo:
 def _video_info(source: Path, file_size: int, data: dict) -> VideoInfo:
     video_stream, audio_stream = _select_streams(data.get("streams", []))
     if not video_stream:
-        raise ValueError(f"No video stream found in: {source}")
+        raise MissingStream("video", source)
 
     fmt = data.get("format", {})
     duration = _video_duration(fmt, video_stream, source)
@@ -361,7 +412,7 @@ def _stream_int(stream: dict, name: str) -> int:
 def probe_audio(source: str | Path) -> AudioInfo:
     ffprobe_path = media_tools.find_ffprobe()
     if not ffprobe_path:
-        raise FileNotFoundError(
+        raise FFprobeMissing(
             "ffprobe not found. Install FFmpeg and ensure ffprobe is on PATH "
             "or set the path in settings."
         )
@@ -383,7 +434,7 @@ def _audio_info(source: Path, data: dict) -> AudioInfo:
         None,
     )
     if audio_stream is None:
-        raise ValueError(f"No audio stream found in: {source}")
+        raise MissingStream("audio", source)
 
     fmt = data.get("format", {})
     duration = _audio_duration(fmt, audio_stream, source)

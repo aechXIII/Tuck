@@ -283,6 +283,8 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
 
   // the video whose plan notes are showing under the profile card
   let warningsPath: string | null = null;
+  // the selected video's plan said the target size can't hold it; the message names one that can
+  let sizeProblem: { path: string; message: string } | null = null;
   // set while an export request is with the backend, so a second press can't queue the same videos twice
   let enqueueing = false;
   // most requests return before a label could be read, so the busy state waits a moment instead of flashing
@@ -317,6 +319,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     if (warningsPath && warningsPath !== session.selPath) paintPlanWarnings(null);
     if (wf === 2) {
       el("btn-copy").hidden = true;
+      el("btn-one").removeAttribute("aria-describedby");
       cutting.render();
       return;
     }
@@ -329,7 +332,11 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     const all = el<HTMLButtonElement>("btn-all");
     // the settings are shared; this button acts on the selected video only
     let label = up ? "Upscale this video" : "Compress this video";
-    one.disabled = !selReady || !blending.valid() || !lut.valid() || !videoSettingsValid();
+    const sizeMessage = paintSizeProblem();
+    one.disabled = !selReady || !blending.valid() || !lut.valid() || !videoSettingsValid() || !!sizeMessage;
+    // the button is off because of the size, and says so to assistive tech
+    if (sizeMessage) one.setAttribute("aria-describedby", "sz-error");
+    else one.removeAttribute("aria-describedby");
     const alreadyQueued = readiness.ready.filter((path) => isQueueActive(session.clips[path]?._queueState)).length;
     const exported = readiness.ready.length + readiness.loading.length - alreadyQueued;
     all.textContent = (up ? "Upscale all" : "Compress all") + (exported ? ` (${exported})` : "");
@@ -1047,6 +1054,22 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     });
   }
 
+  // shown under Target size while it applies to the selected video; returns the message shown
+  function paintSizeProblem(): string {
+    const message = sizeProblem && sizeProblem.path === session.selPath ? sizeProblem.message : "";
+    const line = el("sz-error");
+    if (line.textContent !== message) line.textContent = message;
+    line.hidden = !message;
+    return message;
+  }
+
+  function setSizeProblem(path: string | null, message: string): void {
+    const next = path && message ? { path, message } : null;
+    if (next?.path === sizeProblem?.path && next?.message === sizeProblem?.message) return;
+    sizeProblem = next;
+    updateActionButtons();
+  }
+
   // the selected video's plan notes, shown under the profile card; nothing shows while it is replanned
   function paintPlanWarnings(plan: unknown, path: string | null = null): void {
     const list = el("export-plan-warnings");
@@ -1065,8 +1088,12 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     const path = session.selPath;
     const clip = path ? session.clips[path] : undefined;
     paintPlanWarnings(null);
-    if (!clip || !clip.probed) return;
+    if (!clip || !clip.probed) {
+      setSizeProblem(null, "");
+      return;
+    }
     if (!videoSettingsValid() || !lut.valid()) {
+      setSizeProblem(null, "");
       clip.planData = null;
       // settings that can't be planned have no estimate, so no placeholder waits for one
       clip._hadEstimate = false;
@@ -1097,8 +1124,9 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
         const field = r.details?.field;
         lut.setBackendError(field === "lut" ? message : "");
         blending.setBackendError(field === "frame_blending" ? message : "");
+        setSizeProblem(path, field === "target_size" ? message : "");
         const generalError = el("export-plan-error");
-        generalError.textContent = field === "lut" || field === "frame_blending" ? "" : message;
+        generalError.textContent = field === "lut" || field === "frame_blending" || field === "target_size" ? "" : message;
         generalError.hidden = !generalError.textContent;
         if (!r.ok) {
           clip._hadEstimate = false;

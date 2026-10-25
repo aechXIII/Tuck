@@ -38,7 +38,7 @@ export interface ClipCardModel {
   queueState?: QueueItemState | "" | undefined;
   resultPath?: string | undefined;
   statusLabel?: string | undefined;
-  // the full reason behind a failed export or unreadable file, shown on hover
+  // the full reason behind a failed export or unreadable file, shown under its status
   detail?: string | undefined;
   progress?: number | undefined;
   progressIndeterminate?: boolean | undefined;
@@ -278,8 +278,7 @@ function appendLine<T extends ClipCardElement>(
   } else if (state === "failed" || state === "cancelled" || model.probeError) {
     const attention = libraryGroup(model) === "attention";
     if (attention) line.className = "c-line attention";
-    const status = text(attention ? "c-status attention" : "c-status", model.statusLabel || "");
-    if (model.detail) status.dataset.tip = model.detail;
+    text(attention ? "c-status attention" : "c-status", model.statusLabel || "");
     if (model.setupTool) {
       const setup = createActionButton(documentRef, "open-tool-settings", "Set up " + model.setupTool + " in Settings", "c-act");
       setup.textContent = "Set up";
@@ -290,6 +289,15 @@ function appendLine<T extends ClipCardElement>(
       line.appendChild(retry);
     } else if (model.queueItemId) {
       line.appendChild(createActionButton(documentRef, "retry", "Retry", "c-act"));
+    }
+    if (model.detail) {
+      main.appendChild(line);
+      // the reason and what to do sit under the status; the row reads it out as its description
+      const reason = createElement(documentRef, "div", "c-note c-reason", model.detail);
+      reason.dataset.tip = model.detail;
+      reason.setAttribute("aria-hidden", "true");
+      main.appendChild(reason);
+      return;
     }
   } else if (state === "completed") {
     line.className = "c-line done";
