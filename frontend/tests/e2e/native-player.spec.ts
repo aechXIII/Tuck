@@ -243,6 +243,50 @@ test("a video without a preview link still plays in the native player, placed by
   await expect.poll(async () => (await engineCalls(page)).some((call) => call.kind === "play")).toBe(true);
 });
 
+interface Placement {
+  viewport: { x: number; y: number; width: number; height: number };
+  view: { x: number; y: number; width: number; height: number; quarterTurns: number; flipHorizontal: boolean; flipVertical: boolean; stretch: boolean };
+}
+
+// where the shell was last told the picture is, and which part of it shows there
+function lastPlacement(page: Page): Promise<Placement | undefined> {
+  return page.evaluate(() => (window.__fixtureSurface ?? [])
+    .filter((call) => call.command === "preview_surface_viewport").at(-1)?.args as Placement | undefined);
+}
+
+async function transform(page: Page, selector: string): Promise<void> {
+  await page.locator(selector).evaluate((button) => (button as HTMLButtonElement).click());
+}
+
+test("the native picture follows the editor's turn and flips", async ({ page }) => {
+  await openWithoutPreviewLink(page, false);
+  const placed = async () => {
+    const placement = await lastPlacement(page);
+    if (!placement) return null;
+    const { viewport, view } = placement;
+    const round = (value: number) => Math.round(value * 100) / 100;
+    return { aspect: round(viewport.width / viewport.height), ...view, x: round(view.x), y: round(view.y),
+      width: round(view.width), height: round(view.height) };
+  };
+  const whole = { x: 0, y: 0, width: 1, height: 1, quarterTurns: 0, flipHorizontal: false, flipVertical: false, stretch: false };
+  await expect.poll(placed).toEqual({ aspect: 1.78, ...whole });
+
+  // turned right, the 64 by 36 picture stands up in a portrait box
+  await transform(page, '[data-action-click="transform-rotation"][data-rotation="90"]');
+  await expect.poll(placed).toEqual({ aspect: 0.56, ...whole, quarterTurns: 1 });
+  await transform(page, '[data-action-click="transform-flip"][data-action-value="horizontal"]');
+  await expect.poll(placed).toEqual({ aspect: 0.56, ...whole, quarterTurns: 1, flipHorizontal: true });
+
+  // while cropping, the whole turned picture stays under the page's crop box, as in the HTML player
+  await transform(page, '[data-action-click="transform-crop-aspect"][data-aspect="1:1"]');
+  await expect(page.locator("#crop-ui")).toHaveClass(/on/);
+  await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+  expect(await placed()).toEqual({ aspect: 0.56, ...whole, quarterTurns: 1, flipHorizontal: true });
+
+  await transform(page, '[data-action-click="transform-reset-all"]');
+  await expect.poll(placed).toEqual({ aspect: 1.78, ...whole });
+});
+
 test("a video the native player can't open shows its picture and why", async ({ page }) => {
   await openWithoutPreviewLink(page, true);
   await expect(page.locator("#media-viewport #thumb")).toBeVisible();

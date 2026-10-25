@@ -11,9 +11,10 @@ use std::sync::OnceLock;
 use serde::Serialize;
 
 use super::engine::{Edits, Mix, PlayerStatus, RawStatus};
+use super::PictureView;
 
 // must match TUCK_VIDEO_ABI in native/player/tuck_video.h
-pub const ABI: c_int = 9;
+pub const ABI: c_int = 10;
 
 #[cfg(windows)]
 const FILE_NAME: &str = "tuck_player.dll";
@@ -93,6 +94,21 @@ struct RawEditSegment {
     end: f64,
     source_start: f64,
 }
+
+// TuckVideoView in tuck_video.h
+#[repr(C)]
+struct RawView {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    quarter_turns: i32,
+    flip_horizontal: i32,
+    flip_vertical: i32,
+    stretch: i32,
+}
+
+type ViewFn = unsafe extern "C" fn(*mut c_void, *const RawView) -> c_int;
 type LutTableFn = unsafe extern "C" fn(*mut c_void, *const f32, i32) -> c_int;
 type StatusFn = unsafe extern "C" fn(*mut c_void, *mut RawVideoStatus);
 #[cfg(target_os = "linux")]
@@ -119,6 +135,7 @@ struct Api {
     lut_table: LutTableFn,
     lut_strength: VolumeFn,
     lut_split: VolumeFn,
+    view: ViewFn,
     status: StatusFn,
     #[cfg(target_os = "linux")]
     gl: GlApi,
@@ -303,6 +320,7 @@ fn resolve(symbol: impl Fn(&CStr) -> Option<*const c_void>) -> Result<Api, Strin
             lut_split: std::mem::transmute::<*const c_void, VolumeFn>(find(
                 c"tuck_video_lut_split",
             )?),
+            view: std::mem::transmute::<*const c_void, ViewFn>(find(c"tuck_video_view")?),
             status: std::mem::transmute::<*const c_void, StatusFn>(find(c"tuck_video_status")?),
             #[cfg(target_os = "linux")]
             gl: GlApi {
@@ -482,6 +500,22 @@ impl Video {
         unsafe { (self.api.lut_split)(self.handle.as_ptr(), split.unwrap_or(-1.0)) }
     }
 
+    /// Which part of the picture fills the preview and how it is turned. False when the library
+    /// refuses the view.
+    pub fn view(&mut self, view: &PictureView) -> bool {
+        let raw = RawView {
+            x: view.x,
+            y: view.y,
+            width: view.width,
+            height: view.height,
+            quarter_turns: i32::from(view.quarter_turns),
+            flip_horizontal: i32::from(view.flip_horizontal),
+            flip_vertical: i32::from(view.flip_vertical),
+            stretch: i32::from(view.stretch),
+        };
+        unsafe { (self.api.view)(self.handle.as_ptr(), &raw) != 0 }
+    }
+
     pub fn status(&mut self) -> (PlayerStatus, VideoInfo) {
         let mut raw = RawVideoStatus {
             clock: RawStatus::default(),
@@ -629,6 +663,15 @@ mod tests {
         assert_eq!(std::mem::offset_of!(RawMixPiece, loop_span), 64);
         assert_eq!(std::mem::size_of::<RawMixPiece>(), 72);
         assert_eq!(std::mem::size_of::<RawEditSegment>(), 24);
+    }
+
+    #[test]
+    fn the_view_struct_matches_the_c_layout() {
+        // TuckVideoView in tuck_video.h
+        assert_eq!(std::mem::offset_of!(RawView, height), 24);
+        assert_eq!(std::mem::offset_of!(RawView, quarter_turns), 32);
+        assert_eq!(std::mem::offset_of!(RawView, stretch), 44);
+        assert_eq!(std::mem::size_of::<RawView>(), 48);
     }
 
     #[test]

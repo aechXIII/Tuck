@@ -134,7 +134,7 @@ void tuck_gl_renderer_clear(TuckGlRenderer *r, const TuckVideoTarget *t) {
 }
 
 RenderOutcome gl_renderer_draw(TuckGlRenderer *r, const DecodedFrame *item, const TuckVideoTarget *t,
-                               const struct pl_custom_lut *lut, double split) {
+                               const struct pl_custom_lut *lut, double split, const TuckVideoView *view) {
     int framebuffer = 0;
     if (t->width < 1 || t->height < 1 || t->picture_width < 1 || t->picture_height < 1) return RENDER_DEFERRED;
     if (!wrap_target(r, t, &framebuffer)) return RENDER_FAILED;
@@ -163,10 +163,7 @@ RenderOutcome gl_renderer_draw(TuckGlRenderer *r, const DecodedFrame *item, cons
         (float)t->picture_x, (float)t->picture_y,
         (float)(t->picture_x + t->picture_width), (float)(t->picture_y + t->picture_height),
     };
-    float aspect = pl_rect2df_aspect(&image.crop);
-    AVRational sar = frame->sample_aspect_ratio;
-    if (sar.num > 0 && sar.den > 0) aspect *= (float)av_q2d(sar);
-    pl_rect2df_aspect_set_rot(&picture, aspect, image.rotation, 0);
+    render_place_view(&image, &picture, 0, frame->sample_aspect_ratio, view);
     /* OpenGL counts rows from the bottom; a flipped rectangle draws the picture upright */
     target.crop = (pl_rect2df){picture.x0, (float)t->height - picture.y0, picture.x1, (float)t->height - picture.y1};
     int ok = render_with_lut(r->renderer, &image, &target, lut, split);

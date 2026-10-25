@@ -12,6 +12,7 @@
 #include "../mix.h"
 #include "../playback_state.h"
 #include "../seek_request.h"
+#include "../view.h"
 
 static int failures;
 
@@ -581,6 +582,66 @@ static void lut_split(void) {
     CHECK(same_rect(on_screen, (SplitRect){200, 235, 400, 10}));
 }
 
+static int same_view_rect(ViewRect a, ViewRect b) {
+    return fabsf(a.x0 - b.x0) < 1e-3f && fabsf(a.y0 - b.y0) < 1e-3f && fabsf(a.x1 - b.x1) < 1e-3f &&
+           fabsf(a.y1 - b.y1) < 1e-3f;
+}
+
+/* the editor's crop, turn and flips: the part of the decoded planes to draw and its turn */
+static void view_geometry(void) {
+    const ViewRect planes = {0, 0, 1920, 1080};
+    int rotation = -1;
+    TuckVideoView whole = VIEW_WHOLE;
+    /* no view draws the whole picture as the file turns it, as before views existed */
+    CHECK(same_view_rect(view_image_crop(planes, 0, &whole, &rotation), planes) && rotation == 0);
+    CHECK(same_view_rect(view_image_crop(planes, 1, &whole, &rotation), planes) && rotation == 1);
+
+    TuckVideoView crop = {0.25, 0, 0.5, 0.5, 0, 0, 0, 0};
+    CHECK(same_view_rect(view_image_crop(planes, 0, &crop, &rotation), (ViewRect){480, 0, 1440, 540}));
+    /* a phone video stored sideways: the top half the editor sees is the planes' left half */
+    TuckVideoView top = {0, 0, 1, 0.5, 0, 0, 0, 0};
+    CHECK(same_view_rect(view_image_crop(planes, 1, &top, &rotation), (ViewRect){0, 0, 960, 1080}));
+    /* turned the other way, the left half the editor sees is the planes' top half */
+    TuckVideoView left = {0, 0, 0.5, 1, 0, 0, 0, 0};
+    CHECK(same_view_rect(view_image_crop(planes, 3, &left, &rotation), (ViewRect){0, 0, 1920, 540}));
+    CHECK(same_view_rect(view_image_crop(planes, 2, &left, &rotation), (ViewRect){960, 0, 1920, 1080}));
+
+    /* the editor's turn adds to the file's */
+    TuckVideoView turned = {0, 0, 1, 1, 1, 0, 0, 0};
+    view_image_crop(planes, 1, &turned, &rotation);
+    CHECK(rotation == 2);
+    /* flips mirror the picture as shown: across the planes' x unturned, across their y turned */
+    TuckVideoView mirrored = {0, 0, 1, 1, 0, 1, 0, 0};
+    CHECK(same_view_rect(view_image_crop(planes, 0, &mirrored, &rotation), (ViewRect){1920, 0, 0, 1080}));
+    mirrored.quarter_turns = 1;
+    CHECK(same_view_rect(view_image_crop(planes, 0, &mirrored, &rotation), (ViewRect){0, 1080, 1920, 0}));
+    TuckVideoView upside = {0, 0, 1, 1, 0, 0, 1, 0};
+    CHECK(same_view_rect(view_image_crop(planes, 0, &upside, &rotation), (ViewRect){0, 1080, 1920, 0}));
+    CHECK(same_view_rect(view_image_crop(planes, 3, &upside, &rotation), (ViewRect){1920, 0, 0, 1080}));
+    /* a plane rectangle that starts inside the texture, as a decoder's crop does */
+    CHECK(same_view_rect(view_image_crop((ViewRect){8, 4, 1928, 1084}, 0, &crop, &rotation),
+                         (ViewRect){488, 4, 1448, 544}));
+    CHECK(fabsf(view_crop_aspect((ViewRect){1920, 0, 0, 1080}) - 16.0f / 9) < 1e-5f);
+
+    CHECK(view_valid(&whole) && view_valid(&crop) && view_valid(&mirrored));
+    TuckVideoView bad = crop;
+    bad.width = 0;
+    CHECK(!view_valid(&bad));
+    bad = crop;
+    bad.x = 0.6;
+    CHECK(!view_valid(&bad));
+    bad = crop;
+    bad.y = NAN;
+    CHECK(!view_valid(&bad));
+    bad = crop;
+    bad.quarter_turns = 4;
+    CHECK(!view_valid(&bad));
+    bad = crop;
+    bad.flip_vertical = 2;
+    CHECK(!view_valid(&bad));
+    CHECK(!view_valid(NULL));
+}
+
 /* a draw picks its frame for when it reaches the screen, without moving the clock there */
 static void position_ahead(void) {
     TuckPlayer *player = tuck_player_create(10, 100);
@@ -761,6 +822,7 @@ int tuck_player_test_failures(void) {
     sound_stall();
     lut_strength();
     lut_split();
+    view_geometry();
     framebuffer_cache();
     return failures;
 }

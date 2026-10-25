@@ -60,8 +60,10 @@ struct TuckVideo {
     /* under lock */
     /* the sound's level the page last set, for a track made later by a mix */
     double volume;
-    /* the LUT changed, so the frame on screen should be drawn again */
-    int lut_changed;
+    /* the editor's crop, turn and flips */
+    TuckVideoView view;
+    /* the LUT or the view changed, so the frame on screen should be drawn again */
+    int draw_again;
     /* the timeline's footage; no segments is the file as it is */
     EditSegment *edits;
     size_t edit_count;
@@ -303,15 +305,16 @@ static void *render_main(void *opaque) {
         if (take_frame(v, &status)) redraw = 1;
         if (renderer_resized(v->renderer)) redraw = 1;
         pthread_mutex_lock(&v->lock);
-        if (v->lut_changed) redraw = 1;
-        v->lut_changed = 0;
+        if (v->draw_again) redraw = 1;
+        v->draw_again = 0;
+        TuckVideoView view = v->view;
         pthread_mutex_unlock(&v->lock);
         int deferred = 0;
         if (redraw) {
             uint64_t clock = shown_clock(v);
             RenderOutcome outcome = v->shown.frame
                                         ? renderer_draw(v->renderer, &v->shown, preview_lut_current(&v->lut),
-                                                        preview_lut_split(&v->lut))
+                                                        preview_lut_split(&v->lut), &view)
                                         : renderer_clear(v->renderer);
             drawn(v, outcome, renderer_error(v->renderer), clock);
             if (outcome == RENDER_SUBMITTED) redraw = 0;
@@ -425,14 +428,14 @@ int tuck_video_due(TuckVideo *v, double shown_at) {
     TuckPlayerStatus status;
     if (!clock_now(v, &status, shown_at)) return 0;
     pthread_mutex_lock(&v->lock);
-    int lut_changed = v->lut_changed;
+    int again = v->draw_again;
     pthread_mutex_unlock(&v->lock);
     Picture p = picture_now(v, &status);
-    if (p.segment == EDITS_GAP) return lut_changed || v->shown.frame != NULL || status.seek_pending;
+    if (p.segment == EDITS_GAP) return again || v->shown.frame != NULL || status.seek_pending;
     int first = status.seek_pending && p.clock == status.generation;
     /* the seek's frame is taken but a draw couldn't show it yet */
     if (first && v->shown.frame && v->shown.generation == p.request) return 1;
-    return lut_changed ||
+    return again ||
            decoder_ready(v->decoder, playback_frame_due_by(p.source, !status.paused), p.request, first);
 }
 
@@ -444,7 +447,8 @@ int tuck_video_draw(TuckVideo *v, TuckGlRenderer *renderer, const TuckVideoTarge
     }
     take_frame(v, &status);
     pthread_mutex_lock(&v->lock);
-    v->lut_changed = 0;
+    v->draw_again = 0;
+    TuckVideoView view = v->view;
     pthread_mutex_unlock(&v->lock);
     uint64_t clock = shown_clock(v);
     if (!v->shown.frame) {
@@ -454,7 +458,7 @@ int tuck_video_draw(TuckVideo *v, TuckGlRenderer *renderer, const TuckVideoTarge
         return 0;
     }
     RenderOutcome outcome = gl_renderer_draw(renderer, &v->shown, target, preview_lut_current(&v->lut),
-                                             preview_lut_split(&v->lut));
+                                             preview_lut_split(&v->lut), &view);
     drawn(v, outcome, gl_renderer_error(renderer), clock);
     return outcome == RENDER_SUBMITTED;
 }
@@ -477,6 +481,7 @@ TuckVideo *tuck_video_open(const TuckVideoOpen *open, char *error, size_t error_
     v->clock = tuck_player_create(open->duration_seconds, now_seconds());
     v->duration = open->duration_seconds;
     v->volume = 1;
+    v->view = VIEW_WHOLE;
     if (!v->clock) {
         snprintf(error, error_size, "The video length is not valid.");
         goto failed;
@@ -631,12 +636,16 @@ int tuck_video_edits(TuckVideo *v, const TuckEditSegment *segments, int32_t coun
     return 1;
 }
 
-/* the frame on screen is drawn again with the new LUT, also while paused */
-static void lut_changed(TuckVideo *v) {
-    pthread_mutex_lock(&v->lock);
-    v->lut_changed = 1;
+/* under lock: the frame on screen is drawn again with the new LUT or view, also while paused */
+static void ask_redraw(TuckVideo *v) {
+    v->draw_again = 1;
     v->signalled = 1;
     pthread_cond_signal(&v->wake);
+}
+
+static void lut_changed(TuckVideo *v) {
+    pthread_mutex_lock(&v->lock);
+    ask_redraw(v);
     pthread_mutex_unlock(&v->lock);
 }
 
@@ -654,6 +663,17 @@ void tuck_video_lut_strength(TuckVideo *v, double strength) {
 void tuck_video_lut_split(TuckVideo *v, double split) {
     preview_lut_set_split(&v->lut, split);
     lut_changed(v);
+}
+
+int tuck_video_view(TuckVideo *v, const TuckVideoView *view) {
+    if (!view_valid(view)) return 0;
+    pthread_mutex_lock(&v->lock);
+    if (memcmp(&v->view, view, sizeof(*view)) != 0) {
+        v->view = *view;
+        ask_redraw(v);
+    }
+    pthread_mutex_unlock(&v->lock);
+    return 1;
 }
 
 void tuck_video_volume(TuckVideo *v, double gain) {

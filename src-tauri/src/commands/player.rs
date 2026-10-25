@@ -7,7 +7,7 @@ use crate::platform::window_chrome::css_to_physical;
 use crate::player::engine::{
     Edits, LutUpdate, Mix, PlayerCommand, PlayerError, PlayerState, PlayerStatus, LUT_SIZES,
 };
-use crate::player::{library, preview_mode, PreviewMode, Viewport};
+use crate::player::{library, preview_mode, PictureView, PreviewMode, Viewport};
 
 fn surface_error(message: &str) -> PublicBackendError {
     PublicBackendError::new("PREVIEW_SURFACE_FAILED", message)
@@ -58,6 +58,10 @@ fn player_error(error: PlayerError) -> PublicBackendError {
         PlayerError::InvalidLut => {
             PublicBackendError::new("INVALID_REQUEST", "The LUT preview data is invalid.")
         }
+        PlayerError::InvalidView => PublicBackendError::new(
+            "INVALID_REQUEST",
+            "The preview's crop or turn is out of range.",
+        ),
         PlayerError::Video(message) => PublicBackendError::new("VIDEO_FAILED", message),
     }
 }
@@ -319,19 +323,30 @@ async fn show_surface(window: &tauri::WebviewWindow) -> Result<(), PublicBackend
     open_surface(window).await
 }
 
-/// Moves the picture to where the page's hole is, in CSS pixels.
+/// Moves the picture to where the page's hole is, in CSS pixels, and shows the part of it the
+/// editor's crop and turn leave there.
 #[tauri::command]
 pub fn preview_surface_viewport(
     window: tauri::WebviewWindow,
+    state: tauri::State<'_, PlayerState>,
     viewport: Viewport,
+    view: PictureView,
 ) -> Result<(), PublicBackendError> {
     require_surface_mode()?;
     let viewport = viewport
         .validate()
         .map_err(|message| PublicBackendError::new("INVALID_REQUEST", message))?;
+    let view = view
+        .validate()
+        .map_err(|message| PublicBackendError::new("INVALID_REQUEST", message))?;
     let scale = window.scale_factor().unwrap_or(1.0);
+    let player = state.inner().clone();
     window
-        .run_on_main_thread(move || set_viewport(viewport, scale))
+        .run_on_main_thread(move || {
+            set_viewport(viewport, scale);
+            // right after the move, so the next frame has the new place and the new crop together
+            let _ = player.set_view(view);
+        })
         .map_err(|_| surface_error("Could not move the preview."))
 }
 

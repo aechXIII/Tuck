@@ -100,9 +100,99 @@ impl Viewport {
     }
 }
 
+/// Which part of the picture fills the preview and how it is turned: the editor's crop, turn and
+/// flips. The part is in shares of the picture as the file's own rotation shows it.
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PictureView {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    /// quarter turns to the right on top of the file's own rotation
+    pub quarter_turns: u8,
+    pub flip_horizontal: bool,
+    pub flip_vertical: bool,
+    /// fills the preview even where that changes the picture's shape, as the Stretch sizing does
+    pub stretch: bool,
+}
+
+impl Default for PictureView {
+    fn default() -> Self {
+        PictureView {
+            x: 0.0,
+            y: 0.0,
+            width: 1.0,
+            height: 1.0,
+            quarter_turns: 0,
+            flip_horizontal: false,
+            flip_vertical: false,
+            stretch: false,
+        }
+    }
+}
+
+impl PictureView {
+    // the page rounds its shares, so they may end a hair past the picture's edge (view.h agrees)
+    const SLACK: f64 = 1e-6;
+
+    pub fn validate(self) -> Result<Self, &'static str> {
+        let share = |value: f64| value.is_finite() && value >= 0.0;
+        let inside = share(self.x)
+            && share(self.y)
+            && share(self.width)
+            && share(self.height)
+            && self.width > 0.0
+            && self.height > 0.0
+            && self.x + self.width <= 1.0 + Self::SLACK
+            && self.y + self.height <= 1.0 + Self::SLACK;
+        if !inside || self.quarter_turns > 3 {
+            return Err("The preview's crop or turn is out of range.");
+        }
+        Ok(self)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_view_must_stay_inside_the_picture() {
+        let view = |x: f64, width: f64, quarter_turns: u8| PictureView {
+            x,
+            width,
+            quarter_turns,
+            ..PictureView::default()
+        };
+        assert!(PictureView::default().validate().is_ok());
+        assert!(view(0.25, 0.5, 3).validate().is_ok());
+        assert!(
+            view(0.5, 0.5000001, 0).validate().is_ok(),
+            "rounding past the edge is fine"
+        );
+        assert!(view(0.6, 0.5, 0).validate().is_err());
+        assert!(view(0.0, 0.0, 0).validate().is_err());
+        assert!(view(-0.1, 0.5, 0).validate().is_err());
+        assert!(view(f64::NAN, 0.5, 0).validate().is_err());
+        assert!(view(0.0, 1.0, 4).validate().is_err());
+    }
+
+    #[test]
+    fn views_parse_strictly_from_the_page() {
+        let parse = |json: &str| serde_json::from_str::<PictureView>(json);
+        let view = parse(
+            r#"{"x":0.1,"y":0,"width":0.5,"height":1,"quarterTurns":1,"flipHorizontal":true,"flipVertical":false,"stretch":false}"#,
+        )
+        .expect("a full view");
+        assert_eq!(view.quarter_turns, 1);
+        assert!(view.flip_horizontal);
+        assert!(parse(r#"{"x":0,"y":0,"width":1,"height":1}"#).is_err());
+        assert!(parse(
+            r#"{"x":0,"y":0,"width":1,"height":1,"quarterTurns":-1,"flipHorizontal":false,"flipVertical":false,"stretch":false}"#
+        )
+        .is_err());
+    }
 
     fn viewport(x: f64, y: f64, width: f64, height: f64) -> Viewport {
         Viewport {

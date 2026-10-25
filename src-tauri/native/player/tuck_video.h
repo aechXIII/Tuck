@@ -23,7 +23,7 @@
 #endif
 
 /* raise whenever a signature or struct below changes */
-#define TUCK_VIDEO_ABI 9
+#define TUCK_VIDEO_ABI 10
 
 /* TuckVideoStatus.sound */
 #define TUCK_SOUND_NONE 0
@@ -140,6 +140,25 @@ TUCK_VIDEO_EXPORT void tuck_video_lut_strength(TuckVideo *video, double strength
 /* Compares the LUT: from 0 to 1 across the picture as shown, the picture as it is left of `split`
    and with the LUT right of it. A negative value shows the LUT everywhere again. */
 TUCK_VIDEO_EXPORT void tuck_video_lut_split(TuckVideo *video, double split);
+
+/* The editor's crop, turn and flips: which part of the picture fills the preview and how it is
+   turned onto it. The part is in shares of the picture's width and height as the file's own
+   rotation shows it, the picture the editor crops; 0, 0, 1, 1 is all of it. */
+typedef struct TuckVideoView {
+    double x, y, width, height;
+    /* quarter turns to the right on top of the file's own rotation, 0 to 3 */
+    int32_t quarter_turns;
+    /* 1 mirrors the picture as shown, after the turn */
+    int32_t flip_horizontal;
+    int32_t flip_vertical;
+    /* 1 fills the preview even where that changes the picture's shape, as the Stretch sizing
+       does; 0 keeps the shape and leaves bars */
+    int32_t stretch;
+} TuckVideoView;
+
+/* Shows `view` from the next frame on, also while paused. 0 when a share is outside the picture,
+   the turn outside 0 to 3 or a switch not 0 or 1. */
+TUCK_VIDEO_EXPORT int tuck_video_view(TuckVideo *video, const TuckVideoView *view);
 TUCK_VIDEO_EXPORT void tuck_video_status(TuckVideo *video, TuckVideoStatus *status);
 
 #ifndef _WIN32

@@ -10,6 +10,7 @@ use std::time::Instant;
 use serde::{Deserialize, Serialize};
 
 use super::library::{Video, VideoInfo};
+use super::PictureView;
 
 #[repr(C)]
 struct TuckPlayer {
@@ -185,6 +186,8 @@ pub enum PlayerError {
     InvalidRate,
     /// a LUT table or strength the preview can't use
     InvalidLut,
+    /// a crop outside the picture or a turn that isn't a quarter turn
+    InvalidView,
     /// a mix with a piece, voice or file the player can't use
     InvalidMix,
     /// timeline segments out of order, overlapping or outside the timeline
@@ -432,6 +435,8 @@ pub struct PlayerState {
     backend: Arc<Mutex<Option<Backend>>>,
     /// kept apart from the video, so every newly opened video shows the LUT too
     lut: Arc<Mutex<PreviewLut>>,
+    /// the editor's crop and turn, kept apart for the same reason
+    view: Arc<Mutex<PictureView>>,
 }
 
 fn locked<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -498,6 +503,8 @@ impl PlayerState {
         )
         .map_err(PlayerError::Video)?;
         show_lut(&mut video, &locked(&self.lut));
+        // set_view only keeps views the library takes
+        video.view(&locked(&self.view));
         let mut backend = Backend::Video(video);
         let status = backend.status();
         *self.backend() = Some(backend);
@@ -528,6 +535,16 @@ impl PlayerState {
         lut.split = update.split;
         if let Some(Backend::Video(video)) = self.backend().as_mut() {
             show_lut(video, &lut);
+        }
+        Ok(())
+    }
+
+    /// Shows the editor's crop and turn in the open video and the ones opened after it.
+    pub fn set_view(&self, view: PictureView) -> Result<(), PlayerError> {
+        let view = view.validate().map_err(|_| PlayerError::InvalidView)?;
+        *locked(&self.view) = view;
+        if let Some(Backend::Video(video)) = self.backend().as_mut() {
+            video.view(&view);
         }
         Ok(())
     }
@@ -930,6 +947,28 @@ mod tests {
         );
         assert_eq!(split(None), Ok(()));
         assert_eq!(locked(&state.lut).split, None);
+    }
+
+    #[test]
+    fn the_view_is_checked_and_kept_for_later_videos() {
+        let state = PlayerState::default();
+        assert_eq!(*locked(&state.view), PictureView::default());
+        let turned = PictureView {
+            x: 0.25,
+            width: 0.5,
+            quarter_turns: 1,
+            flip_horizontal: true,
+            ..PictureView::default()
+        };
+        assert_eq!(state.set_view(turned), Ok(()), "kept with no video open");
+        assert_eq!(*locked(&state.view), turned);
+        let outside = PictureView { x: 0.75, ..turned };
+        assert_eq!(state.set_view(outside), Err(PlayerError::InvalidView));
+        assert_eq!(
+            *locked(&state.view),
+            turned,
+            "a refused view leaves the last one"
+        );
     }
 
     #[test]
