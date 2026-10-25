@@ -25,6 +25,7 @@ import { installPanels, type PanelsApi } from "../panels/panels.ts";
 import type { AudioClipRangeInfo } from "../panels/panels.ts";
 import { installPlayer, type PlayerApi, type PlayerHost } from "../player/player.ts";
 import { installNativePlayer } from "../player/native-player.ts";
+import { SOURCE_FAILED_EVENT } from "../preview/preview-controller.ts";
 import { createStageFullscreen, tauriWindowFullscreen } from "../player/stage-fullscreen.ts";
 import { createTauriPlayerEngine, readPlayerReport } from "../../backend/native-player.ts";
 import { installFrameExport } from "../player/frame-export.ts";
@@ -145,8 +146,28 @@ export function installEditorRuntime(
     mixRequestKey = key;
     player.refreshMix();
   }
-  // the native player plays the whole mix itself, so the page's own audio elements stay quiet
+  // the native player is playing, and plays the whole mix itself, so the page's own audio
+  // elements stay quiet
   let nativeAudio = false;
+  // Hardware playback: the native player plays every video it can open. One it can't plays in
+  // the built-in player instead, and the next video tries the native player again
+  let nativeOffered = false;
+  // the videos the native player couldn't play, and why, which the diagnostic report says
+  const nativeRefused = new Map<string, string>();
+  function usePlayer(native: boolean, takeOver: boolean): void {
+    if (native === nativeAudio) return;
+    player.dispose();
+    player = native
+      ? installNativePlayer(playerHost, createTauriPlayerEngine(), { takeOver })
+      : installPlayer(playerHost);
+    nativeAudio = native;
+    // the stage and the native surface follow the player that is on
+    windowRef.document.documentElement.classList.toggle("native-preview", native);
+    audio.syncPreview();
+  }
+  function choosePlayer(path: string): void {
+    if (nativeOffered) usePlayer(!nativeRefused.has(path), false);
+  }
 
   const resizeInterface = createInterfaceSizer((size) => getBackendClient().setInterfaceSize(size));
   const sessionFiles = createSessionFiles({
@@ -420,9 +441,20 @@ export function installEditorRuntime(
     History: history,
   });
 
+  // the native player couldn't open or play the selected video
+  byId("vid")?.addEventListener(SOURCE_FAILED_EVENT, (event) => {
+    const path = session.selPath;
+    if (!nativeAudio || !path) return;
+    const reason = event instanceof CustomEvent && typeof event.detail === "string" ? event.detail : "";
+    nativeRefused.set(path, reason);
+    usePlayer(false, false);
+    library.reloadPreview();
+  });
+
   library = createLibrary({
     session,
     documentRef: windowRef.document,
+    choosePlayer,
     windowRef,
     audio,
     history,
@@ -473,7 +505,14 @@ export function installEditorRuntime(
     removeClip: (path) => library.removeClip(path),
     editCount: (path) => history.editCount(path),
     onSendto: (data) => handleSendto(data),
-    previewReport: () => (hasTauriInvoke(windowRef) ? readPlayerReport() : Promise.resolve(null)),
+    previewReport: async () => {
+      if (!hasTauriInvoke(windowRef)) return null;
+      const report = await readPlayerReport();
+      const path = session.selPath;
+      // the shell knows its own player; only the page knows a video went to the built-in one
+      if (!report || !path || !nativeRefused.has(path)) return report;
+      return { ...report, videoFallback: nativeRefused.get(path) || "no reason given" };
+    },
   });
 
   let workspaceCutTask = false;
@@ -970,14 +1009,10 @@ export function installEditorRuntime(
     } catch {
       toast("Could not load settings.", "err");
     }
-    // a developer switch for now: the native player takes over before any video is shown
+    // Hardware playback: the native player takes over before any video is shown
     const nativePreview = hasTauriInvoke(windowRef) ? (await fetchPlatformCapabilities()).nativePreview : "off";
-    if (nativePreview === "engine" || nativePreview === "player") {
-      player.dispose();
-      player = installNativePlayer(playerHost, createTauriPlayerEngine());
-      nativeAudio = true;
-      audio.syncPreview();
-    }
+    nativeOffered = nativePreview === "engine" || nativePreview === "player";
+    if (nativeOffered) usePlayer(true, true);
     if (
       session.appSettings.check_updates !== false &&
       shouldShowUpdater(await fetchPlatformCapabilities())

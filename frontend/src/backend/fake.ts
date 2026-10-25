@@ -6,6 +6,7 @@ import type {
   FrameExportRequest,
   DiagnosticsContext,
   DataPayload,
+  HardwarePlayback,
   InterfaceSize,
   TaskbarProgressState,
   PlanRequest,
@@ -600,6 +601,22 @@ class DeterministicFakeBackend implements BackendClient {
 
   setInterfaceSize(size: InterfaceSize) {
     return this.#record("setInterfaceSize", [size], this.#responses.setInterfaceSize ?? success({}));
+  }
+
+  // like the shell, a saved choice is read back but this run keeps the one it started with
+  #hardwarePlayback: HardwarePlayback = { on: true, running: true };
+
+  hardwarePlayback() {
+    return this.#record("hardwarePlayback", [], this.#responses.hardwarePlayback ?? success(this.#hardwarePlayback));
+  }
+
+  setHardwarePlayback(on: boolean) {
+    if (!this.#responses.setHardwarePlayback) this.#hardwarePlayback = { ...this.#hardwarePlayback, on };
+    return this.#record("setHardwarePlayback", [on], this.#responses.setHardwarePlayback ?? success(this.#hardwarePlayback));
+  }
+
+  restartTuck() {
+    return this.#record("restartTuck", [], this.#responses.restartTuck ?? success({}));
   }
 
   notifyWhenUnfocused(title: string, body: string) {

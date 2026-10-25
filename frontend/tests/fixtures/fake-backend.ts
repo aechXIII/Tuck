@@ -110,6 +110,7 @@ export async function installFakeBackend(
         }
         return { ok: true, value: raw };
       };
+      let hardwarePlayback = { on: true, running: true };
       const respond = async (
         method: keyof BackendClient,
         args: readonly unknown[],
@@ -233,6 +234,18 @@ export async function installFakeBackend(
         pickImportFile: () => respond("pickImportFile", []),
         pickSaveFile: (defaultName = "profiles.json",format?: "json" | "png") => respond("pickSaveFile", format ? [defaultName,format] : [defaultName]),
         setInterfaceSize: (size: string) => respond("setInterfaceSize", [size]),
+        // like the shell, a saved choice is read back while this run keeps the one it started with
+        hardwarePlayback: async () => {
+          const answer = await respond("hardwarePlayback", []);
+          return responses.hardwarePlayback ? answer : { ok: true, value: { ...hardwarePlayback } };
+        },
+        setHardwarePlayback: async (on: boolean) => {
+          const answer = await respond("setHardwarePlayback", [on]);
+          if (responses.setHardwarePlayback) return answer;
+          hardwarePlayback = { ...hardwarePlayback, on };
+          return { ok: true, value: { ...hardwarePlayback } };
+        },
+        restartTuck: () => respond("restartTuck", []),
         notifyWhenUnfocused: (title: string, body: string) =>
           respond("notifyWhenUnfocused", [title, body]),
         setTaskbarProgress: (state: string, progress: number | null, flash: boolean) =>

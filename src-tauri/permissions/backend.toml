@@ -15,13 +15,13 @@ commands.allow = ["minimize_window", "toggle_maximize_window", "set_window_fulls
 
 [[permission]]
 identifier = "allow-desktop-preferences"
-description = "Allows the interface size setting, the queue-finished notification and taskbar progress."
-commands.allow = ["set_interface_size", "notify_when_unfocused", "set_taskbar_progress"]
+description = "Allows the interface size setting, the Hardware playback choice, the queue-finished notification and taskbar progress."
+commands.allow = ["set_interface_size", "hardware_playback", "set_hardware_playback", "notify_when_unfocused", "set_taskbar_progress"]
 
 [[permission]]
 identifier = "allow-app-lifecycle"
-description = "Allows the page to answer a close request and to restart Tuck after its backend stopped."
-commands.allow = ["acknowledge_close_request", "confirm_close", "restart_app"]
+description = "Allows the page to answer a close request, to restart Tuck after its backend stopped, and to restart it when the user asks."
+commands.allow = ["acknowledge_close_request", "confirm_close", "restart_app", "restart_tuck"]
 
 [[permission]]
 identifier = "allow-preview-surface"

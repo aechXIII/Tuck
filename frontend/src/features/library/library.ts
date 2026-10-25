@@ -16,7 +16,6 @@ import {
   createPreviewController,
   missingPictureMessage,
   SOURCE_EVENT,
-  SOURCE_FAILED_EVENT,
   SOURCE_READY_EVENT,
   type PreviewController,
 } from "../preview/preview-controller.ts";
@@ -69,6 +68,8 @@ export interface LibraryEncodingHooks {
   libraryChanged?: (paths: readonly string[]) => void;
   // Settings at its media tools, where FFmpeg and FFprobe are chosen
   openMediaSettings?: () => void;
+  // the editor picks the player for a video before its preview loads
+  choosePlayer?: (path: string) => void;
 }
 
 export interface LibraryAudioHooks {
@@ -106,6 +107,8 @@ export interface LibraryApi {
   removeClip(path: string): void;
   removeAllClips(): void;
   selectClip(path: string): void;
+  // loads the selected video's preview again, as Retry does, such as for another player
+  reloadPreview(): void;
   renderClips(): void;
   browse(): Promise<void>;
   retryProbeClip(path: string): Promise<void>;
@@ -197,7 +200,6 @@ export function createLibrary(host: LibraryHost): LibraryApi {
   }
 
   function announceSource(video: HTMLVideoElement, path: string | null): void {
-    byId("media-viewport")?.classList.remove("native-unplayable");
     syncPictureSize(video, path);
     video.dispatchEvent(new CustomEvent(SOURCE_EVENT, { detail: path }));
   }
@@ -395,12 +397,6 @@ export function createLibrary(host: LibraryHost): LibraryApi {
   const stageVideo = asHTMLVideoElement(byId("vid"));
   stageVideo?.addEventListener(SOURCE_READY_EVENT, () => {
     if (nativePicture()) revealVideo();
-  });
-  stageVideo?.addEventListener(SOURCE_FAILED_EVENT, () => {
-    const path = session.selPath;
-    if (!nativePicture() || !path) return;
-    byId("media-viewport")?.classList.add("native-unplayable");
-    void loadThumb(path, missingPictureMessage(session.clips[path]?.probeData?.video_codec, null));
   });
 
   const probe = createProbeCoordinator({
@@ -1024,6 +1020,7 @@ export function createLibrary(host: LibraryHost): LibraryApi {
   }
 
   function selectClip(path: string): void {
+    host.choosePlayer?.(path);
     preview.select(path);
     session.selPath = path;
     host.history?.updateButtons?.();
@@ -1328,6 +1325,9 @@ export function createLibrary(host: LibraryHost): LibraryApi {
     removeClip,
     removeAllClips,
     selectClip,
+    reloadPreview: () => {
+      if (session.selPath) preview.select(session.selPath);
+    },
     renderClips,
     browse,
     retryProbeClip,

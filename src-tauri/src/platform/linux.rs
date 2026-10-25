@@ -6,6 +6,8 @@ use std::sync::OnceLock;
 
 use tokio::process::{Child, Command};
 
+use super::APP_IDENTIFIER;
+
 /// How WebKitGTK draws the window, chosen once per launch before the WebView starts.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Renderer {
@@ -45,8 +47,6 @@ const VIRTUAL_DISPLAY_DRIVERS: &[&str] = &[
     "vgem",
 ];
 
-// must match the identifier in tauri.conf.json, which also names WebKit's own cache folder
-const APP_IDENTIFIER: &str = "com.tuck.app";
 const RENDERER_FAILURE_FILE: &str = "gpu-renderer-failed";
 
 /// Prepare process-wide environment before the WebView and its child processes
@@ -118,7 +118,8 @@ pub fn prepare_runtime_environment() {
         }
     }
     set_default_env("GTK_THEME", "Adwaita:dark");
-    let player = crate::player::preview_mode() == crate::player::PreviewMode::Player;
+    // what this run asks for: the library is only checked later, once its folder is known
+    let player = crate::player::requested_mode() == crate::player::PreviewMode::Player;
     if let Some(backend) = gdk_backend(player, std::env::var_os("WAYLAND_DISPLAY").as_deref()) {
         // replaced, not defaulted: the AppImage's launcher has already set it to x11
         std::env::set_var("GDK_BACKEND", backend);

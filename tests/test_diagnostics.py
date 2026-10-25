@@ -223,6 +223,31 @@ class TestPreviewReport:
         text = build_diagnostics(preview=preview_report({"mode": "off"}))
         assert "Video preview\n-------------\npreview: built-in player\n" in text
 
+    def test_the_built_in_player_says_why_it_plays(self):
+        turned_off = {"mode": "off", "requested": "off", "hardwarePlayback": False}
+        text = build_diagnostics(preview=preview_report(turned_off))
+        assert "preview: built-in player, Hardware playback is off in Settings\n" in text
+        missing = {
+            "mode": "off",
+            "requested": "player",
+            "hardwarePlayback": True,
+            "library": {"loaded": False, "interface": 10, "error": "The library is missing."},
+            "status": None,
+        }
+        text = build_diagnostics(preview=preview_report(missing))
+        assert "preview: built-in player, the native player library could not be used\n" in text
+        assert "player library: not loaded, The library is missing. (needs interface 10)" in text
+
+    def test_a_video_the_native_player_could_not_play_says_so(self):
+        report = {**self._report(), "videoFallback": "Could not open /home/alice/clip.mkv"}
+        text = build_diagnostics(preview=preview_report(report))
+        assert "preview: native player\n" in text
+        assert (
+            "this video: built-in player, the native player couldn't play it "
+            "(Could not open <path>)"
+        ) in text
+        assert "alice" not in text
+
     def test_page_values_are_checked_and_paths_hidden(self):
         report = self._report(
             softwareReason="<script>",

@@ -60,6 +60,7 @@ export const SETTINGS_INDEX: readonly SettingsEntry[] = [
   { id: "reopen", page: "general", label: "Reopen last videos", keywords: "session library restore startup" },
   { id: "loop", page: "general", label: "Loop playback", keywords: "repeat play again player" },
   { id: "skip-length", page: "general", label: "Skip length", keywords: "seek jump seconds arrow shift player" },
+  { id: "hardware-playback", page: "general", label: "Hardware playback", keywords: "gpu graphics card native player preview video decode acceleration" },
   { id: "timeline-preserve-source", page: "general", label: "Preserve footage when moving clips", keywords: "timeline video source audio trim drag old legacy movement" },
   { id: "time-format", page: "general", label: "Time format", keywords: "timecode frames seconds timeline player clock" },
   { id: "timeline-frames", page: "general", label: "Show frames", keywords: "timeline video track pictures thumbnails" },

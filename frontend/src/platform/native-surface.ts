@@ -198,7 +198,9 @@ export async function installNativeSurface(win: Window): Promise<void> {
   let sent: PlacedPicture | null = null;
   let frame = 0;
   const measure = (): PlacedPicture => {
-    if (stage.classList.contains("timeline-gap")) return { rect: NO_PICTURE, view: WHOLE_PICTURE };
+    // the editor turns the native preview off for a video it plays in the built-in player
+    const off = !root.classList.contains("native-preview") || stage.classList.contains("timeline-gap");
+    if (off) return { rect: NO_PICTURE, view: WHOLE_PICTURE };
     // the probed size stands in while the webview hasn't read the file, or can't
     const width = video.videoWidth || Number(video.dataset.pictureWidth) || 0;
     const height = video.videoHeight || Number(video.dataset.pictureHeight) || 0;
@@ -226,6 +228,7 @@ export async function installNativeSurface(win: Window): Promise<void> {
   for (const element of [doc.body, stage, viewport, video]) resized.observe(element);
   // showing a video, the timeline gap and the crop/zoom transform all change attributes here
   const changed = new MutationObserver(schedule);
+  changed.observe(root, { attributes: true, attributeFilter: ["class"] });
   changed.observe(stage, { attributes: true, attributeFilter: ["class", "style", "hidden"] });
   changed.observe(video, {
     attributes: true,

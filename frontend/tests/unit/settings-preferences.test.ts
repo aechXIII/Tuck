@@ -19,7 +19,7 @@ test("search finds settings by label, keyword, or page, in page order", () => {
   assert.deepEqual(folder, ["save-to", "show-folder", "logs", "settings-folder"]);
   // every word has to match
   assert.deepEqual(searchSettings("export folder", SETTINGS_INDEX).map((entry) => entry.id), ["save-to", "show-folder"]);
-  assert.deepEqual(searchSettings("GPU", SETTINGS_INDEX).map((entry) => entry.id), ["encoders"]);
+  assert.deepEqual(searchSettings("GPU", SETTINGS_INDEX).map((entry) => entry.id), ["hardware-playback", "encoders"]);
   assert.deepEqual(searchSettings("   ", SETTINGS_INDEX), []);
   assert.deepEqual(searchSettings("hdr", SETTINGS_INDEX), []);
 });
@@ -29,6 +29,12 @@ test("search finds frame visibility, framing, and offline documents", () => {
   assert.deepEqual(searchSettings("HUD", SETTINGS_INDEX).map((entry) => entry.id), ["timeline-frame-mode"]);
   assert.deepEqual(searchSettings("license", SETTINGS_INDEX).map((entry) => entry.id), ["license", "third-party-notices"]);
   assert.deepEqual(searchSettings("third party", SETTINGS_INDEX).map((entry) => entry.id), ["third-party-notices"]);
+});
+
+test("search finds Hardware playback by what it does", () => {
+  for (const query of ["hardware playback", "graphics card", "native player", "preview decode"]) {
+    assert.deepEqual(searchSettings(query, SETTINGS_INDEX).map((entry) => entry.id), ["hardware-playback"], query);
+  }
 });
 
 test("search finds the old clip movement setting", () => {

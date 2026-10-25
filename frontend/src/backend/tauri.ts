@@ -20,6 +20,7 @@ import type {
   EmptyPayload,
   EncoderPayload,
   FileSelection,
+  HardwarePlayback,
   InterfaceSize,
   TaskbarProgressState,
   LutPayload,
@@ -934,6 +935,42 @@ class TauriTransport implements TauriBackendClient {
     } catch (error) {
       if (isBackendError(error)) return { ok: false, error };
       return backendFailure("TAURI_INVOKE_FAILED", errorMessage(error, "Could not change the interface size"), { method: "setInterfaceSize" });
+    }
+  }
+
+  async hardwarePlayback(): Promise<BackendResult<HardwarePlayback>> {
+    return this.#hardwarePlaybackCall("hardware_playback", {}, "hardwarePlayback", "Could not read the Hardware playback choice");
+  }
+
+  async setHardwarePlayback(on: boolean): Promise<BackendResult<HardwarePlayback>> {
+    return this.#hardwarePlaybackCall("set_hardware_playback", { on }, "setHardwarePlayback", "Could not save the Hardware playback choice");
+  }
+
+  async #hardwarePlaybackCall(
+    command: string,
+    args: Record<string, unknown>,
+    method: string,
+    fallback: string,
+  ): Promise<BackendResult<HardwarePlayback>> {
+    try {
+      const value = (await this.#invoke(command, args)) as Partial<HardwarePlayback> | null;
+      if (typeof value?.on !== "boolean" || typeof value.running !== "boolean") {
+        return backendFailure("INVALID_RESPONSE", "The shell sent a Hardware playback choice Tuck could not read.", { method });
+      }
+      return { ok: true, value: { on: value.on, running: value.running } };
+    } catch (error) {
+      if (isBackendError(error)) return { ok: false, error };
+      return backendFailure("TAURI_INVOKE_FAILED", errorMessage(error, fallback), { method });
+    }
+  }
+
+  async restartTuck(): Promise<BackendResult<EmptyPayload>> {
+    try {
+      await this.#invoke("restart_tuck", {});
+      return { ok: true, value: {} };
+    } catch (error) {
+      if (isBackendError(error)) return { ok: false, error };
+      return backendFailure("TAURI_INVOKE_FAILED", errorMessage(error, "Could not restart Tuck"), { method: "restartTuck" });
     }
   }
 

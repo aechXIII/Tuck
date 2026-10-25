@@ -80,6 +80,12 @@ export interface Settings extends JsonObject {
   readonly hidden_profile_ids?: readonly string[];
 }
 
+/** Hardware playback in Settings: `on` is saved for the next start, `running` is what this run started with. */
+export interface HardwarePlayback {
+  readonly on: boolean;
+  readonly running: boolean;
+}
+
 export type AccentColor = "violet" | "blue" | "teal" | "green" | "amber" | "rose";
 export type InterfaceSize = "compact" | "default" | "large";
 export type TextSize = "default" | "large" | "extra_large";
@@ -258,6 +264,11 @@ export interface NativeBackendClient {
   pickImportFile(): Promise<BackendResult<PathSelection>>;
   pickSaveFile(defaultName?: string, format?: "json" | "png"): Promise<BackendResult<PathSelection>>;
   setInterfaceSize(size: InterfaceSize): Promise<BackendResult<EmptyPayload>>;
+  hardwarePlayback(): Promise<BackendResult<HardwarePlayback>>;
+  /** saves the choice for the next start; the running preview keeps its player */
+  setHardwarePlayback(on: boolean): Promise<BackendResult<HardwarePlayback>>;
+  /** restarts Tuck at the user's request; running exports stop, so ask about them first */
+  restartTuck(): Promise<BackendResult<EmptyPayload>>;
   notifyWhenUnfocused(title: string, body: string): Promise<BackendResult<NotificationResult>>;
   setTaskbarProgress(state: TaskbarProgressState, progress: number | null, flash: boolean): Promise<BackendResult<EmptyPayload>>;
 }

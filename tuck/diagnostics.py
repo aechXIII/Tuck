@@ -74,6 +74,11 @@ class PreviewReport:
     """The preview as the desktop shell reports it, checked field by field"""
 
     mode: str
+    # what the run asked for, from Hardware playback or the developer switch
+    requested: str = ""
+    hardware_playback: bool | None = None
+    # why the page plays the selected video in the built-in player instead
+    video_fallback: str = ""
     library_loaded: bool | None = None
     library_interface: int | None = None
     library_error: str = ""
@@ -102,6 +107,13 @@ def preview_report(value: object) -> PreviewReport | None:
     if not isinstance(value, Mapping) or value.get("mode") not in _PREVIEW_MODES:
         return None
     fields: dict[str, Any] = {"mode": value["mode"]}
+    requested = value.get("requested")
+    if requested in _PREVIEW_MODES:
+        fields["requested"] = requested
+    hardware_playback = value.get("hardwarePlayback")
+    if isinstance(hardware_playback, bool):
+        fields["hardware_playback"] = hardware_playback
+    fields["video_fallback"] = _text(value.get("videoFallback"))
     library = value.get("library")
     if isinstance(library, Mapping) and isinstance(library.get("loaded"), bool):
         fields["library_loaded"] = library["loaded"]
@@ -136,8 +148,24 @@ def preview_report(value: object) -> PreviewReport | None:
     return PreviewReport(**fields)
 
 
+def _preview_mode(preview: PreviewReport) -> str:
+    mode = _PREVIEW_MODES[preview.mode]
+    if preview.mode != "off":
+        return mode
+    if preview.requested == "player":
+        return f"{mode}, the native player library could not be used"
+    if preview.hardware_playback is False:
+        return f"{mode}, Hardware playback is off in Settings"
+    return mode
+
+
 def _preview_lines(preview: PreviewReport) -> list[str]:
-    lines = ["Video preview", "-------------", f"preview: {_PREVIEW_MODES[preview.mode]}"]
+    lines = ["Video preview", "-------------", f"preview: {_preview_mode(preview)}"]
+    if preview.video_fallback:
+        lines.append(
+            f"this video: built-in player, the native player couldn't play it "
+            f"({preview.video_fallback})"
+        )
     if preview.library_loaded is not None:
         expected = f"interface {preview.library_interface}" if preview.library_interface else ""
         if preview.library_loaded:

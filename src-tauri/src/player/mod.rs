@@ -1,7 +1,7 @@
-//! Native preview player. The page leaves a transparent hole where the picture belongs and the
-//! desktop shell draws below it, so the page's own controls (crop handles, menus, dialogs) stay on
-//! top without any z-order tricks. The engine owns the playback clock and seek rules; it does not
-//! decode yet, so the surface still shows a test picture.
+//! Native preview player, Hardware playback in Settings. The page leaves a transparent hole where
+//! the picture belongs and the desktop shell draws below it, so the page's own controls (crop
+//! handles, menus, dialogs) stay on top without any z-order tricks. The engine owns the playback
+//! clock and seek rules; the native player library decodes and draws.
 
 use std::sync::OnceLock;
 
@@ -9,6 +9,7 @@ use serde::Deserialize;
 
 pub mod engine;
 pub mod library;
+pub mod preference;
 #[cfg(target_os = "linux")]
 pub mod surface_linux;
 #[cfg(windows)]
@@ -46,12 +47,67 @@ impl PreviewMode {
     }
 }
 
-/// Read once: a developer switch until the player plays real video and gets a setting.
-pub fn preview_mode() -> PreviewMode {
+/// What this run asks for, read once before the window system starts: the developer switch
+/// `TUCK_NATIVE_PREVIEW` when it is set, otherwise the user's Hardware playback choice.
+pub fn requested_mode() -> PreviewMode {
     static MODE: OnceLock<PreviewMode> = OnceLock::new();
     *MODE.get_or_init(|| {
-        PreviewMode::from_switch(std::env::var("TUCK_NATIVE_PREVIEW").ok().as_deref())
+        requested(
+            std::env::var("TUCK_NATIVE_PREVIEW").ok().as_deref(),
+            preference::hardware_playback_at_start,
+        )
     })
+}
+
+fn requested(switch: Option<&str>, hardware_playback: impl FnOnce() -> bool) -> PreviewMode {
+    match switch {
+        Some(value) => PreviewMode::from_switch(Some(value)),
+        None if hardware_playback() => PreviewMode::Player,
+        None => PreviewMode::Off,
+    }
+}
+
+/// How the preview plays in this run, and why it uses the built-in player when the native
+/// player was asked for.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PreviewChoice {
+    pub mode: PreviewMode,
+    /// why the native player library could not be used; empty when it was not asked for or loaded
+    pub fallback: String,
+}
+
+/// Decided once, after the packaged resource folder is known: the native player only when its
+/// library loads, so a missing or mismatched library leaves the built-in player instead of a
+/// preview that can't open anything.
+pub fn preview_choice() -> &'static PreviewChoice {
+    static CHOICE: OnceLock<PreviewChoice> = OnceLock::new();
+    CHOICE.get_or_init(|| choose(requested_mode(), library::check))
+}
+
+fn choose(
+    requested: PreviewMode,
+    check_library: impl FnOnce() -> Result<(), String>,
+) -> PreviewChoice {
+    if requested != PreviewMode::Player {
+        return PreviewChoice {
+            mode: requested,
+            fallback: String::new(),
+        };
+    }
+    match check_library() {
+        Ok(()) => PreviewChoice {
+            mode: PreviewMode::Player,
+            fallback: String::new(),
+        },
+        Err(reason) => PreviewChoice {
+            mode: PreviewMode::Off,
+            fallback: reason,
+        },
+    }
+}
+
+pub fn preview_mode() -> PreviewMode {
+    preview_choice().mode
 }
 
 /// Where the picture is, in CSS pixels from the page's top left corner.
@@ -201,6 +257,38 @@ mod tests {
             width,
             height,
         }
+    }
+
+    #[test]
+    fn hardware_playback_picks_the_native_player_unless_the_switch_says_otherwise() {
+        assert_eq!(requested(None, || true), PreviewMode::Player);
+        assert_eq!(requested(None, || false), PreviewMode::Off);
+        assert_eq!(requested(Some("off"), || unreachable!()), PreviewMode::Off);
+        assert_eq!(
+            requested(Some("engine"), || unreachable!()),
+            PreviewMode::Engine
+        );
+        assert_eq!(
+            requested(Some("player"), || unreachable!()),
+            PreviewMode::Player
+        );
+    }
+
+    #[test]
+    fn a_library_that_can_not_load_leaves_the_built_in_player() {
+        let missing = choose(PreviewMode::Player, || {
+            Err("The native player library is missing.".to_string())
+        });
+        assert_eq!(missing.mode, PreviewMode::Off);
+        assert_eq!(missing.fallback, "The native player library is missing.");
+        let loaded = choose(PreviewMode::Player, || Ok(()));
+        assert_eq!(
+            (loaded.mode, loaded.fallback.as_str()),
+            (PreviewMode::Player, "")
+        );
+        // nothing else needs the library
+        let engine = choose(PreviewMode::Engine, || unreachable!());
+        assert_eq!(engine.mode, PreviewMode::Engine);
     }
 
     #[test]

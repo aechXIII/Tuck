@@ -414,6 +414,37 @@ test("a settings import keeps the backend's message and rejects a malformed repl
   assert.equal((await malformed.importSettingsFromFile("C:\backup.json")).ok, false);
 });
 
+test("Hardware playback and restarting are native commands, and the shell's answer is checked", async () => {
+  const calls: Array<{ command: string; args: Record<string, unknown> }> = [];
+  let saved = true;
+  const client = createTauriBackendClient(async (command, args) => {
+    calls.push({ command, args });
+    if (command === "set_hardware_playback") saved = args.on === true;
+    if (command === "restart_tuck") return null;
+    return { on: saved, running: true };
+  });
+  assert.deepEqual(await client.hardwarePlayback(), { ok: true, value: { on: true, running: true } });
+  assert.deepEqual(await client.setHardwarePlayback(false), { ok: true, value: { on: false, running: true } });
+  assert.deepEqual(await client.restartTuck(), { ok: true, value: {} });
+  assert.deepEqual(calls, [
+    { command: "hardware_playback", args: {} },
+    { command: "set_hardware_playback", args: { on: false } },
+    { command: "restart_tuck", args: {} },
+  ]);
+
+  const odd = createTauriBackendClient(async () => ({ on: "yes", running: true }));
+  const read = await odd.hardwarePlayback();
+  assert.equal(read.ok, false);
+  if (!read.ok) assert.equal(read.error.code, "INVALID_RESPONSE");
+
+  const refusing = createTauriBackendClient(async () => {
+    throw { code: "INTERNAL_ERROR", message: "Could not save the Hardware playback choice.", details: {} };
+  });
+  const saving = await refusing.setHardwarePlayback(true);
+  assert.equal(saving.ok, false);
+  if (!saving.ok) assert.equal(saving.error.message, "Could not save the Hardware playback choice.");
+});
+
 test("interface size and notifications are native commands", async () => {
   const calls: Array<{ command: string; args: Record<string, unknown> }> = [];
   const client = createTauriBackendClient(async (command, args) => {

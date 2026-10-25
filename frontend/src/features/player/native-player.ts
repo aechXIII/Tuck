@@ -60,7 +60,12 @@ const LINK_FAILURES = new Set([
  * `<video>` keeps the paused position for code that still reads it. Commands go one at a time in
  * order, so seek request IDs always go up and a late reply never moves the playhead back.
  */
-export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): PlayerApi {
+export function installNativePlayer(
+  host: PlayerHost,
+  engine: PlayerEngine,
+  // false when the editor switches players for the next video, so the one on stage isn't opened
+  options: { readonly takeOver?: boolean } = {},
+): PlayerApi {
   const clock = host.clock ?? defaultClock();
   const now = clock.now ?? (() => performance.now());
   const volume = installVolumeControls(host);
@@ -300,7 +305,7 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
     if (next.video?.failed && reportedFailure !== epoch) {
       reportedFailure = epoch;
       console.error("The native player stopped", next.video.error);
-      video?.dispatchEvent(new Event(SOURCE_FAILED_EVENT));
+      video?.dispatchEvent(new CustomEvent(SOURCE_FAILED_EVENT, { detail: next.video.error }));
     } else if (!next.video?.failed && !next.seekPending && reportedReady !== epoch) {
       // the first frame of this video is showing
       reportedReady = epoch;
@@ -335,7 +340,7 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
       shownPath = null;
       if (reportedFailure !== epoch) {
         reportedFailure = epoch;
-        video?.dispatchEvent(new Event(SOURCE_FAILED_EVENT));
+        video?.dispatchEvent(new CustomEvent(SOURCE_FAILED_EVENT, { detail: error.message }));
       }
     }
     // without another try the picture keeps the old arrangement until the next edit
@@ -716,7 +721,7 @@ export function installNativePlayer(host: PlayerHost, engine: PlayerEngine): Pla
     video.dispatchEvent(new Event(LUT_REQUEST_EVENT));
     // the engine replaces the HTML player, which may already have a video showing
     if (!video.paused) video.pause();
-    if (video.readyState >= 1) onLoadedMetadata();
+    if (options.takeOver !== false && video.readyState >= 1) onLoadedMetadata();
   }
   volume.updateMuteIcon();
 

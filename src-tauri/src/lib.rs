@@ -9,7 +9,8 @@ use backend::{BackendLaunchConfig, BackendState};
 use commands::backend::backend_request;
 use commands::desktop::{notify_when_unfocused, set_interface_size, set_taskbar_progress};
 use commands::lifecycle::{
-    acknowledge_close_request, confirm_close, handle_close_request, restart_app, CloseState,
+    acknowledge_close_request, confirm_close, handle_close_request, restart_app, restart_tuck,
+    CloseState,
 };
 use commands::native::{
     close_window, copy_file_to_clipboard, copy_text, open_config_folder, open_export_file,
@@ -18,8 +19,9 @@ use commands::native::{
     pick_video_files, platform_capabilities, read_clipboard_files, start_export_drag,
 };
 use commands::player::{
-    player_command, player_edits, player_lut, player_mix, player_open, player_report,
-    player_status, preview_surface_open, preview_surface_viewport,
+    hardware_playback, player_command, player_edits, player_lut, player_mix, player_open,
+    player_report, player_status, preview_surface_open, preview_surface_viewport,
+    set_hardware_playback,
 };
 use commands::startup::{
     extract_startup_args, get_startup_files, handle_second_instance, StartupState,
@@ -197,6 +199,7 @@ pub fn run() {
         acknowledge_close_request,
         confirm_close,
         restart_app,
+        restart_tuck,
         check_for_updates,
         download_update,
         install_update,
@@ -210,6 +213,8 @@ pub fn run() {
         set_interface_size,
         notify_when_unfocused,
         set_taskbar_progress,
+        hardware_playback,
+        set_hardware_playback,
         preview_surface_open,
         preview_surface_viewport,
         player_open,

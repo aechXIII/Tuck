@@ -23,7 +23,8 @@ interface Call {
   path?: string | null;
 }
 
-async function open(page: Page, nativePreview: "engine" | "off", mix?: unknown): Promise<void> {
+// a small real video the webview can play, at the preview link every test video gets
+async function serveMedia(page: Page): Promise<void> {
   const body = await readFile(resolve("frontend/tests/fixtures/media/two-source-tracks.mp4"));
   await page.route("https://engine.test/media", (route) => {
     const range = /^bytes=(\d+)-(\d*)$/.exec(route.request().headers().range ?? "");
@@ -34,8 +35,13 @@ async function open(page: Page, nativePreview: "engine" | "off", mix?: unknown):
       ...(range ? { "Content-Range": `bytes ${start}-${end}/${body.length}` } : {}),
     }, body: body.subarray(start, end + 1) });
   });
+}
+
+async function open(page: Page, nativePreview: "engine" | "off", mix?: unknown, queue?: unknown[]): Promise<void> {
+  await serveMedia(page);
   const fixture = healthyBackendFixture();
   fixture.startup.files = ["C:\\videos\\Video.mp4"];
+  if (queue) fixture.responses.getQueueState = { items: queue };
   fixture.responses.probeFile = { ok: true, data: { duration: DURATION, width: 64, height: 64, fps: 10, has_audio: true } };
   fixture.responses.getMediaUrl = { ok: true, url: "https://engine.test/media", token: "" };
   fixture.responses.getThumbnail = { ok: true, thumbnail: "" };
@@ -287,8 +293,98 @@ test("the native picture follows the editor's turn and flips", async ({ page }) 
   await expect.poll(placed).toEqual({ aspect: 1.78, ...whole });
 });
 
-test("a video the native player can't open shows its picture and why", async ({ page }) => {
-  await openWithoutPreviewLink(page, true);
-  await expect(page.locator("#media-viewport #thumb")).toBeVisible();
-  await expect(page.locator("#preview-status")).toContainText("can’t be shown here");
+const REFUSED = "C:\\videos\\Refused.mp4";
+
+// two videos; the engine refuses the first, as it would a file it can't decode
+async function openWithRefusedVideo(page: Page): Promise<void> {
+  await serveMedia(page);
+  const fixture = healthyBackendFixture();
+  fixture.startup.files = [REFUSED, "C:\\videos\\Video.mp4"];
+  fixture.responses.probeFile = { ok: true, data: { duration: DURATION, width: 64, height: 64, fps: 10, has_audio: true } };
+  fixture.responses.getMediaUrl = { ok: true, url: "https://engine.test/media", token: "" };
+  fixture.responses.getThumbnail = { ok: true, thumbnail: "" };
+  await page.setViewportSize({ width: 1240, height: 800 });
+  await installFakeBackend(page, fixture);
+  await page.addInitScript({ content: fixtureEngineScript({ nativePreview: "engine" }) });
+  await page.addInitScript((refused) => {
+    const shell = Reflect.get(window, "__TAURI_INTERNALS__") as { invoke: (command: string, args: unknown) => Promise<unknown> };
+    const invoke = shell.invoke;
+    shell.invoke = (command, args) =>
+      command === "player_open" && (args as { request?: { path?: string } } | undefined)?.request?.path === refused
+        ? Promise.reject({ code: "VIDEO_FAILED", message: "The video could not be decoded.", details: {} })
+        : invoke(command, args);
+  }, REFUSED);
+  await page.goto("/");
+  await expect(page.locator(".tl-segment")).toBeVisible();
+}
+
+test("a video the native player can't open plays in the built-in player, and the next one goes back", async ({ page }) => {
+  await openWithRefusedVideo(page);
+  const html = page.locator("html");
+  await expect(html).not.toHaveClass(/native-preview/);
+  await expect(page.locator("#vid")).toBeVisible();
+  // the native surface draws nothing over the built-in player's picture
+  await expect.poll(async () => (await lastPlacement(page))?.viewport.width).toBe(0);
+  const play = page.locator("#btn-play");
+  await play.click();
+  await expect.poll(() => page.locator("#vid").evaluate((video: HTMLVideoElement) => video.currentTime)).toBeGreaterThan(0.3);
+  await play.click();
+  await expect(play).not.toHaveClass(/playing/);
+
+  await page.locator("#clips .clip").nth(1).click();
+  await expect(html).toHaveClass(/native-preview/);
+  await expect.poll(async () => (await engineCalls(page)).filter((call) => call.command === "player_open").map((call) => call.path))
+    .toContain("C:\\videos\\Video.mp4");
+  await expect.poll(async () => (await lastPlacement(page))?.viewport.width ?? 0).toBeGreaterThan(0);
+  // the first video stays with the built-in player
+  await page.locator("#clips .clip").first().click();
+  await expect(html).not.toHaveClass(/native-preview/);
+  expect((await engineCalls(page)).filter((call) => call.command === "player_open" && call.path === REFUSED)).toEqual([]);
+});
+
+function calls(page: Page, method: string): Promise<(readonly unknown[])[]> {
+  return page.evaluate((method) => (window.__tuckFakeBackendCalls ?? [])
+    .filter((call) => call.method === method).map((call) => call.args), method);
+}
+
+test("Hardware playback saves for the next start and offers a restart", async ({ page }) => {
+  await open(page, "engine");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const setting = page.getByRole("switch", { name: "Hardware playback", exact: true });
+  const restart = page.getByRole("button", { name: "Restart Tuck", exact: true });
+  await expect(setting).toBeChecked();
+  await expect(restart).toBeHidden();
+  await setting.setChecked(false);
+  await expect(restart).toBeVisible();
+  expect(await calls(page, "setHardwarePlayback")).toEqual([[false]]);
+  // this run still plays with the native player, so turning it back on needs no restart
+  await setting.setChecked(true);
+  await expect(restart).toBeHidden();
+  await setting.setChecked(false);
+  await restart.click();
+  await expect(page.locator("#app-closing")).toContainText("Restarting Tuck");
+  await expect.poll(() => calls(page, "restartTuck")).toEqual([[]]);
+  // the choice belongs to the shell, never to the backend's settings
+  expect(JSON.stringify(await calls(page, "saveSettings"))).not.toContain("hardware");
+});
+
+test("restarting for Hardware playback asks before it stops running exports", async ({ page }) => {
+  await open(page, "engine", undefined, [{ id: "run", source: "Video.mp4", source_path: "C:\\videos\\Video.mp4", state: "running", progress: 40 }]);
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("switch", { name: "Hardware playback", exact: true }).setChecked(false);
+  await page.getByRole("button", { name: "Restart Tuck", exact: true }).click();
+  await expect(page.getByText("Stop 1 export and restart Tuck?")).toBeVisible();
+  expect(await calls(page, "restartTuck")).toEqual([]);
+  await page.getByRole("button", { name: "Restart anyway", exact: true }).click();
+  await expect.poll(() => calls(page, "restartTuck")).toEqual([[]]);
+});
+
+test("a plain browser has no Hardware playback switch", async ({ page }) => {
+  test.skip(process.env.TUCK_E2E_NATIVE_PREVIEW === "engine", "the switch's own desktop stand-in plays natively");
+  const fixture = healthyBackendFixture();
+  await installFakeBackend(page, fixture);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await expect(page.getByRole("switch", { name: "Loop playback", exact: true })).toBeVisible();
+  await expect(page.getByRole("switch", { name: "Hardware playback", exact: true })).toHaveCount(0);
 });

@@ -3,6 +3,7 @@ import type { BackendClient, UpdateCheck } from "../../backend/types.ts";
 import {
   activeExportCount,
   cancelExit,
+  QUEUE_CHECK_TIMEOUT_MS,
   showExitScreen,
   stopExportsQuestion,
   withTimeout,
@@ -17,9 +18,6 @@ import {
 import { legacyBackendResult } from "./backend-compat.ts";
 import { byId } from "./session.ts";
 import { closeMod, confirmToast, showMod, toast } from "./toast.ts";
-
-// long enough for a busy queue, short enough that the install never feels stuck
-const QUEUE_CHECK_TIMEOUT_MS = 2_000;
 
 export interface UpdateNoteBlock {
   type: "heading" | "bullet" | "text";

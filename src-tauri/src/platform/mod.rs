@@ -7,6 +7,9 @@ pub mod startup;
 pub mod window_chrome;
 pub mod window_state;
 
+// must match the identifier in tauri.conf.json, which also names Tauri's and WebKit's own folders
+pub(crate) const APP_IDENTIFIER: &str = "com.tuck.app";
+
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "windows")]

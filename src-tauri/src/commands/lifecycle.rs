@@ -229,6 +229,22 @@ pub async fn restart_app(
     app.restart();
 }
 
+/// Restarts Tuck when the user asks, such as after changing Hardware playback. The page has
+/// already asked about running exports; stopping the backend cancels them and removes their
+/// unfinished files, as closing does.
+#[tauri::command]
+pub async fn restart_tuck(
+    app: tauri::AppHandle,
+    close: tauri::State<'_, CloseState>,
+) -> Result<(), PublicBackendError> {
+    // already closing or restarting
+    if close.begin_exit() == CloseDecision::Ignore {
+        return Ok(());
+    }
+    shut_down_backend(&app).await;
+    app.restart();
+}
+
 /// The page died with the GPU renderer, so nothing on screen can be saved or asked
 /// about. The platform layer has already chosen software drawing for the next launch,
 /// so a restart brings the editor back instead of leaving a blank window.

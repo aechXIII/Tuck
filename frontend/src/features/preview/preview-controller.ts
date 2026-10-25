@@ -7,6 +7,7 @@ import type { EditorClip } from "../editor/types.ts";
 // for the webview to read the file
 export const SOURCE_EVENT = "tuck-source";
 // that player's answer for the announced video: its first frame is showing, or it can't show it
+// (a CustomEvent whose detail says why), and the editor then plays it in the built-in player
 export const SOURCE_READY_EVENT = "tuck-source-ready";
 export const SOURCE_FAILED_EVENT = "tuck-source-failed";
 

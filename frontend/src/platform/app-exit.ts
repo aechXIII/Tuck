@@ -3,7 +3,10 @@ import { listen } from "@tauri-apps/api/event";
 
 import { hideStatusScreens, showStatusScreen } from "./status-screen.ts";
 
-export type ExitPurpose = "close" | "update";
+export type ExitPurpose = "close" | "update" | "restart";
+
+// long enough for a busy queue, short enough that an install or restart never feels stuck
+export const QUEUE_CHECK_TIMEOUT_MS = 2_000;
 
 let exiting = false;
 
@@ -16,12 +19,14 @@ export function exitScreenCopy(count: number | null, purpose: ExitPurpose): { ti
   if (purpose === "update") {
     return { title: "Installing the update…", detail: "Tuck closes now and opens again when the update is installed." };
   }
+  const verb = purpose === "restart" ? "restarts" : "closes";
   if (count !== 0) {
     return {
       title: "Stopping exports…",
-      detail: "Tuck closes once the exports have stopped and their unfinished files are removed.",
+      detail: `Tuck ${verb} once the exports have stopped and their unfinished files are removed.`,
     };
   }
+  if (purpose === "restart") return { title: "Restarting Tuck…", detail: "Tuck opens again in a moment." };
   return { title: "Closing Tuck…", detail: "This only takes a moment." };
 }
 
@@ -70,22 +75,26 @@ function exportsPhrase(count: number): string {
  * What to ask before work is stopped. `count` is null when Tuck could not find out
  * whether anything is running.
  */
-export function stopExportsQuestion(count: number | null, purpose: "close" | "update"): StopExportsQuestion {
-  const outcome = purpose === "close" ? "close Tuck" : "install the update";
+export function stopExportsQuestion(count: number | null, purpose: ExitPurpose): StopExportsQuestion {
+  const outcome = { close: "close Tuck", update: "install the update", restart: "restart Tuck" }[purpose];
   const cancelLabel = "Keep working";
-  const confirmLabel = purpose === "close" ? "Close anyway" : "Install anyway";
-  const restart = purpose === "update" ? " Tuck opens again once the update is installed." : "";
+  const confirmLabel = { close: "Close anyway", update: "Install anyway", restart: "Restart anyway" }[purpose];
+  const reopens = {
+    close: "",
+    update: " Tuck opens again once the update is installed.",
+    restart: " Tuck opens again right away.",
+  }[purpose];
   if (count === null) {
     return {
-      title: purpose === "close" ? "Close Tuck?" : "Install the update now?",
-      message: `Tuck couldn't check whether exports are running. Any export in progress stops when you ${outcome}.${restart}`,
+      title: { close: "Close Tuck?", update: "Install the update now?", restart: "Restart Tuck?" }[purpose],
+      message: `Tuck couldn't check whether exports are running. Any export in progress stops when you ${outcome}.${reopens}`,
       confirmLabel,
       cancelLabel,
     };
   }
   return {
     title: `Stop ${exportsPhrase(count)} and ${outcome}?`,
-    message: `Exports that are running or waiting stop now. Finished exports are kept.${restart}`,
+    message: `Exports that are running or waiting stop now. Finished exports are kept.${reopens}`,
     confirmLabel,
     cancelLabel,
   };

@@ -1,4 +1,12 @@
-import type { BackendClient, SendToKind } from "../../backend/types.ts";
+import type { BackendClient, HardwarePlayback, SendToKind } from "../../backend/types.ts";
+import {
+  activeExportCount,
+  cancelExit,
+  QUEUE_CHECK_TIMEOUT_MS,
+  showExitScreen,
+  stopExportsQuestion,
+  withTimeout,
+} from "../../platform/app-exit.ts";
 import { bindDelegatedEvents } from "../../ui/delegated-events.ts";
 import { settingsSnapshot } from "../../state/settings-state.ts";
 import {
@@ -147,6 +155,8 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
   let statusTimer: ReturnType<typeof setTimeout> | undefined;
   let settingsReturnFocus: Element | null = null;
   let capabilities: PlatformCapabilities | null = null;
+  // the shell's Hardware playback choice; null where there is no desktop shell to play natively
+  let hardwarePlayback: HardwarePlayback | null = null;
 
   function valueOr<T>(value: T | undefined | null, fallback: T): T {
     return value === undefined || value === null ? fallback : value;
@@ -372,6 +382,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
           label: `${value} s`,
         })), str(s.skip_seconds, "3"), { "data-settings-change": "save" }),
       }),
+      hardwarePlayback && hardwarePlaybackRows(hardwarePlayback),
     )), section("Timeline", card(
       switchRow({
         setting: "timeline-preserve-source",
@@ -409,6 +420,69 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         ], str(s.timeline_frame_mode, "center"), { "data-settings-change": "save" }),
       }),
     ))];
+  }
+
+  // the shell keeps this choice, not the backend, and a run keeps the player it started with
+  function hardwarePlaybackRows(state: HardwarePlayback): Content {
+    return [
+      switchRow({
+        setting: "hardware-playback",
+        id: "set-hardware-playback",
+        label: "Hardware playback",
+        description: "Play previews on the graphics card, with exact frames and full color. Turn off if a video doesn't play right. Applies after a restart.",
+        checked: state.on,
+        attributes: { "data-settings-change": "hardware-playback" },
+      }),
+      row({
+        setting: "hardware-playback-restart",
+        label: "Restart to apply the change",
+        control: button("Restart Tuck", { action: "restart-tuck" }),
+        sub: true,
+        hidden: state.on === state.running,
+      }),
+    ];
+  }
+
+  async function changeHardwarePlayback(target: HTMLInputElement): Promise<void> {
+    const on = target.checked;
+    showSaving();
+    const result = await client().setHardwarePlayback(on);
+    if (!result.ok) {
+      // the switch shows what is saved, so a refused change goes back
+      target.checked = !on;
+      toast(result.error.message || "Could not save the Hardware playback choice.", "err");
+      showNotSaved(false);
+      return;
+    }
+    hardwarePlayback = result.value;
+    target.checked = result.value.on;
+    const restart = document.querySelector<HTMLElement>('#settings-page [data-setting="hardware-playback-restart"]');
+    if (restart) restart.hidden = result.value.on === result.value.running;
+    showSaved();
+  }
+
+  // restarting stops running exports, so it asks first, as closing does
+  async function restartTuck(): Promise<void> {
+    const queue = await withTimeout(client().getQueueState(), QUEUE_CHECK_TIMEOUT_MS, null);
+    const count = queue?.ok ? activeExportCount(queue.value) : null;
+    const restart = async (): Promise<void> => {
+      showExitScreen(document, count, "restart");
+      const result = await client().restartTuck();
+      if (result.ok) return;
+      cancelExit(document);
+      toast(result.error.message || "Could not restart Tuck.", "err");
+    };
+    if (count === 0) {
+      await restart();
+      return;
+    }
+    const question = stopExportsQuestion(count, "restart");
+    confirmToast(question.message, () => void restart(), {
+      title: question.title,
+      confirmLabel: question.confirmLabel,
+      cancelLabel: question.cancelLabel,
+      danger: true,
+    });
   }
 
   function appearancePage(s: SettingsRecord): Content {
@@ -1010,6 +1084,11 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       return;
     }
     const s = await loadSettings();
+    if (page === "general") {
+      // only a desktop shell plays natively; a plain browser reports no native preview at all
+      const shell = caps.nativePreview !== undefined ? await client().hardwarePlayback() : null;
+      hardwarePlayback = shell?.ok ? shell.value : null;
+    }
     const builders: Record<SettingsPage, () => Content> = {
       general: () => generalPage(s),
       appearance: () => appearancePage(s),
@@ -2361,6 +2440,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         "export-settings": () => void exportSettings(),
         "import-settings": () => void importSettings(),
         "reset-settings": () => resetSettings(),
+        "restart-tuck": () => void restartTuck(),
       },
       input: {
         search: (target) => onSearchInput(target as HTMLInputElement),
@@ -2376,6 +2456,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         "profile-speed": () => peSpeedChanged(),
         "profile-preset": () => pePresetChanged(),
         save: () => void autosave(),
+        "hardware-playback": (target) => void changeHardwarePlayback(target as HTMLInputElement),
         location: (target) => void chooseLocation(target as HTMLInputElement),
         visibility: () => {
           syncVisibilityChoices();

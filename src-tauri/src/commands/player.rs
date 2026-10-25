@@ -7,7 +7,10 @@ use crate::platform::window_chrome::css_to_physical;
 use crate::player::engine::{
     Edits, LutUpdate, Mix, PlayerCommand, PlayerError, PlayerState, PlayerStatus, LUT_SIZES,
 };
-use crate::player::{library, preview_mode, PictureView, PreviewMode, Viewport};
+use crate::player::{
+    library, preference, preview_choice, preview_mode, requested_mode, PictureView, PreviewChoice,
+    PreviewMode, Viewport,
+};
 
 fn surface_error(message: &str) -> PublicBackendError {
     PublicBackendError::new("PREVIEW_SURFACE_FAILED", message)
@@ -17,7 +20,8 @@ fn not_turned_on() -> PublicBackendError {
     PublicBackendError::new("NOT_AVAILABLE", "The native preview is not turned on.")
 }
 
-// the page cannot turn the surface on by itself; only this run's switch can
+// the page cannot turn the surface on by itself; only this run's start can, from Hardware
+// playback or the developer switch
 fn require_surface_mode() -> Result<(), PublicBackendError> {
     match preview_mode() {
         PreviewMode::Surface | PreviewMode::Engine | PreviewMode::Player => Ok(()),
@@ -263,8 +267,13 @@ pub struct LibraryReport {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlayerReport {
+    /// how the preview plays in this run
     mode: &'static str,
-    /// only when this run decodes with the native player library
+    /// what this run asked for, from Hardware playback or the developer switch
+    requested: &'static str,
+    /// the Hardware playback choice this run started with
+    hardware_playback: bool,
+    /// only when this run asked for the native player library
     library: Option<LibraryReport>,
     /// the open video's status, when the native engine has one
     status: Option<PlayerStatus>,
@@ -274,31 +283,66 @@ pub struct PlayerReport {
 /// made, and it works with the native preview off.
 #[tauri::command]
 pub fn player_report(state: tauri::State<'_, PlayerState>) -> PlayerReport {
-    build_report(preview_mode(), state.inner(), library::check)
+    build_report(
+        preview_choice(),
+        requested_mode(),
+        preference::hardware_playback_at_start(),
+        state.inner(),
+    )
 }
 
 fn build_report(
-    mode: PreviewMode,
+    choice: &PreviewChoice,
+    requested: PreviewMode,
+    hardware_playback: bool,
     state: &PlayerState,
-    check_library: impl FnOnce() -> Result<(), String>,
 ) -> PlayerReport {
-    let library = (mode == PreviewMode::Player).then(|| {
-        let result = check_library();
-        LibraryReport {
-            loaded: result.is_ok(),
-            interface: library::ABI,
-            error: result.err().unwrap_or_default(),
-        }
+    let library = (requested == PreviewMode::Player).then(|| LibraryReport {
+        loaded: choice.fallback.is_empty(),
+        interface: library::ABI,
+        error: choice.fallback.clone(),
     });
-    let status = match mode {
+    let status = match choice.mode {
         PreviewMode::Engine | PreviewMode::Player => state.status().ok(),
         PreviewMode::Off | PreviewMode::Surface => None,
     };
     PlayerReport {
-        mode: mode.as_str(),
+        mode: choice.mode.as_str(),
+        requested: requested.as_str(),
+        hardware_playback,
         library,
         status,
     }
+}
+
+/// The Hardware playback choice in Settings.
+#[derive(Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HardwarePlayback {
+    /// the saved choice, which the next start uses
+    on: bool,
+    /// the choice this run started with
+    running: bool,
+}
+
+#[tauri::command]
+pub fn hardware_playback() -> HardwarePlayback {
+    HardwarePlayback {
+        on: preference::hardware_playback(),
+        running: preference::hardware_playback_at_start(),
+    }
+}
+
+/// Saves the Hardware playback choice for the next start. The running preview keeps its player.
+#[tauri::command]
+pub fn set_hardware_playback(on: bool) -> Result<HardwarePlayback, PublicBackendError> {
+    preference::save_hardware_playback(on).map_err(|_| {
+        PublicBackendError::new(
+            "INTERNAL_ERROR",
+            "Could not save the Hardware playback choice.",
+        )
+    })?;
+    Ok(hardware_playback())
 }
 
 #[tauri::command]
@@ -410,28 +454,83 @@ fn set_viewport(viewport: Viewport, _scale: f64) {
 mod tests {
     use super::*;
 
+    fn choice(mode: PreviewMode, fallback: &str) -> PreviewChoice {
+        PreviewChoice {
+            mode,
+            fallback: fallback.to_string(),
+        }
+    }
+
     #[test]
     fn the_report_says_how_the_preview_plays_and_why_the_library_failed() {
         let state = PlayerState::default();
-        let off = build_report(PreviewMode::Off, &state, || unreachable!());
-        assert_eq!(
-            (off.mode, off.library.is_none(), off.status.is_none()),
-            ("off", true, true)
+        let off = build_report(
+            &choice(PreviewMode::Off, ""),
+            PreviewMode::Off,
+            false,
+            &state,
         );
+        assert_eq!(
+            (off.mode, off.requested, off.hardware_playback),
+            ("off", "off", false),
+            "Hardware playback turned off"
+        );
+        assert!(off.library.is_none() && off.status.is_none());
 
-        let missing = build_report(PreviewMode::Player, &state, || {
-            Err("The native player library is missing.".to_string())
-        });
+        let missing = build_report(
+            &choice(PreviewMode::Off, "The native player library is missing."),
+            PreviewMode::Player,
+            true,
+            &state,
+        );
+        assert_eq!(
+            (missing.mode, missing.requested),
+            ("off", "player"),
+            "the built-in player plays instead"
+        );
         let library = missing.library.expect("the player reports its library");
         assert!(!library.loaded);
         assert_eq!(library.interface, library::ABI);
         assert_eq!(library.error, "The native player library is missing.");
         assert!(missing.status.is_none(), "no video is open yet");
 
+        let loaded = build_report(
+            &choice(PreviewMode::Player, ""),
+            PreviewMode::Player,
+            true,
+            &state,
+        );
+        assert!(loaded.library.expect("a library").loaded);
+
         state.open(12.0).expect("the bare clock opens");
-        let open = build_report(PreviewMode::Engine, &state, || unreachable!());
+        let open = build_report(
+            &choice(PreviewMode::Engine, ""),
+            PreviewMode::Engine,
+            true,
+            &state,
+        );
         assert!(open.library.is_none(), "the bare clock uses no library");
         assert_eq!(open.status.expect("an open video").duration_seconds, 12.0);
+    }
+
+    #[test]
+    fn the_report_and_the_setting_reach_the_page_in_its_names() {
+        let state = PlayerState::default();
+        let report = build_report(
+            &choice(PreviewMode::Player, ""),
+            PreviewMode::Player,
+            true,
+            &state,
+        );
+        let json = serde_json::to_value(&report).expect("serializes");
+        assert_eq!(json["requested"], "player");
+        assert_eq!(json["hardwarePlayback"], true);
+        let setting = serde_json::to_value(HardwarePlayback {
+            on: false,
+            running: true,
+        })
+        .expect("serializes");
+        assert_eq!(setting, serde_json::json!({"on": false, "running": true}));
     }
 
     #[test]

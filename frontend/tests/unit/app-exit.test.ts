@@ -53,6 +53,11 @@ test("the stop-exports question names the count and the way out", () => {
   assert.match(update.message, /opens again/);
   // when the queue could not be read, the question stays honest about it
   assert.match(stopExportsQuestion(null, "close").message, /couldn't check/);
+  const restart = stopExportsQuestion(2, "restart");
+  assert.equal(restart.title, "Stop 2 exports and restart Tuck?");
+  assert.equal(restart.confirmLabel, "Restart anyway");
+  assert.match(restart.message, /opens again right away/);
+  assert.equal(stopExportsQuestion(null, "restart").title, "Restart Tuck?");
 });
 
 test("the closing screen says exports are stopping when there may be some", () => {
@@ -60,6 +65,8 @@ test("the closing screen says exports are stopping when there may be some", () =
   assert.equal(exitScreenCopy(null, "close").title, "Stopping exports…");
   assert.equal(exitScreenCopy(0, "close").title, "Closing Tuck…");
   assert.equal(exitScreenCopy(0, "update").title, "Installing the update…");
+  assert.equal(exitScreenCopy(0, "restart").title, "Restarting Tuck…");
+  assert.match(exitScreenCopy(1, "restart").detail, /restarts once the exports have stopped/);
 });
 
 function fakeShell(activeExports: number | null) {
