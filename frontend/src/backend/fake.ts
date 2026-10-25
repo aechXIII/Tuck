@@ -239,6 +239,30 @@ class DeterministicFakeBackend implements BackendClient {
     );
   }
 
+  clearFinished() {
+    return this.#record(
+      "clearFinished",
+      [],
+      this.#responses.clearFinished ?? success({}),
+    );
+  }
+
+  retryAllItems() {
+    return this.#record(
+      "retryAllItems",
+      [],
+      this.#responses.retryAllItems ?? success({ item_ids: [] }),
+    );
+  }
+
+  resumeExports() {
+    return this.#record(
+      "resumeExports",
+      [],
+      this.#responses.resumeExports ?? success({ item_ids: [] }),
+    );
+  }
+
   moveItem(itemId: string, newIndex: number) {
     return this.#record(
       "moveItem",

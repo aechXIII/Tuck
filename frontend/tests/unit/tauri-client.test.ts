@@ -571,3 +571,22 @@ test("a waveform the backend can't make keeps its error", async () => {
   const result = await client.getWaveform("C:\clip.mkv", 2);
   assert.equal(result.ok, false);
 });
+
+test("Retry all, Resume and Clear finished are whole-queue commands that send no payload", async () => {
+  const calls: unknown[] = [];
+  const client = createTauriBackendClient(async (_command, args) => {
+    calls.push(args);
+    return { item_ids: ["a", "b"], count: 2 };
+  });
+  assert.deepEqual(await client.retryAllItems(), { ok: true, value: { item_ids: ["a", "b"], count: 2 } });
+  assert.deepEqual(await client.resumeExports(), { ok: true, value: { item_ids: ["a", "b"], count: 2 } });
+  assert.equal((await client.clearFinished()).ok, true);
+  assert.deepEqual(calls, [
+    { command: { command: "retry_all_items" } },
+    { command: { command: "resume_exports" } },
+    { command: { command: "clear_finished" } },
+  ]);
+  // the page focuses the first queued export by id, so a reply without ids is not a success
+  const malformed = createTauriBackendClient(async () => ({ item_ids: [3] }));
+  assert.equal((await malformed.retryAllItems()).ok, false);
+});

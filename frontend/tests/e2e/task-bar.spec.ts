@@ -177,6 +177,9 @@ test("a finished queue says what exported and what failed, with the saving", asy
 
 const exported = (count: number) => Array.from({ length: count }, (_, index) => (
   { id: `done-${index}`, source: "Morning ride.mp4", source_path: MORNING, state: "completed", result_path: `C:\\videos\\${index}.mp4`, result_size: 5_000_000 }));
+// brought back after Tuck closed mid-batch, waiting for Resume
+const paused = (count: number) => Array.from({ length: count }, (_, index) => (
+  { id: `paused-${index}`, source: "Morning ride.mp4", source_path: MORNING, state: "paused" }));
 
 async function measureBar(page: Page) {
   return page.evaluate(() => {
@@ -193,13 +196,14 @@ async function measureBar(page: Page) {
   });
 }
 
-for (const width of [960, 1180]) {
-  test(`at ${width} wide a finished batch says how many exported in full, beside a centred task switch`, async ({ page }) => {
-    await open(page, { width, queue: exported(12) });
+for (const [kind, queue, count] of [["finished", exported(12), "12 exported"], ["paused", paused(12), "12 exports paused"]] as const) for (const width of [960, 1180]) {
+  test(`at ${width} wide a ${kind} batch says "${count}" in full, beside a centred task switch`, async ({ page }) => {
+    await open(page, { width, queue });
     // Arial and Liberation Sans have the same widths and are on every test machine; the Linux
     // runners would otherwise fall back to DejaVu Sans, which is wider than the bar is made for
     await page.addStyleTag({ content: ':root { --font: Arial, "Liberation Sans", sans-serif; }' });
-    await expect(page.locator("#qfname")).toHaveText("12 exported");
+    await expect(page.locator("#qbar")).toHaveClass(new RegExp(kind));
+    await expect(page.locator("#qfname")).toHaveText(count);
     await expect(page.locator("#btn-one")).toHaveText("Compress this video");
     const bar = await measureBar(page);
     expect(bar.cut).toBe(false);

@@ -1,7 +1,9 @@
 """Cut intent, measured media boundaries, and export previews."""
 
 import math
-from dataclasses import dataclass, field
+import types
+import typing
+from dataclasses import dataclass, field, fields, is_dataclass
 from fractions import Fraction
 from functools import cached_property
 
@@ -282,3 +284,69 @@ class CutPlan:
     @property
     def output(self) -> str:
         return self.output_path
+
+    def to_dict(self) -> dict[str, object]:
+        """Everything but the analysis, which is read again before the plan runs."""
+        data = _plain(self)
+        assert isinstance(data, dict)
+        return data
+
+    @classmethod
+    def from_dict(cls, raw: object) -> "CutPlan":
+        try:
+            plan = _rebuild(cls, raw)
+        except (TypeError, KeyError) as exc:
+            raise ValueError(f"Invalid cut plan: {exc}") from exc
+        assert isinstance(plan, CutPlan)
+        return plan
+
+
+def _plain(value: object) -> object:
+    if isinstance(value, MediaTime):
+        return value.to_dict()
+    if is_dataclass(value) and not isinstance(value, type):
+        return {
+            f.name: _plain(getattr(value, f.name))
+            for f in fields(value)
+            if not isinstance(getattr(value, f.name), CutAnalysis)
+        }
+    if isinstance(value, tuple):
+        return [_plain(item) for item in value]
+    return value
+
+
+# the reverse of _plain for the dataclasses a cut plan holds, checked against their annotations
+def _rebuild(kind: object, raw: object) -> object:
+    if kind is MediaTime:
+        return MediaTime.from_dict(raw)
+    if kind is CutAnalysis:
+        return None
+    origin = typing.get_origin(kind)
+    if origin in (typing.Union, types.UnionType):
+        options = [arg for arg in typing.get_args(kind) if arg is not type(None)]
+        if raw is None:
+            return None
+        if len(options) != 1:
+            raise TypeError(f"unsupported field type {kind}")
+        return _rebuild(options[0], raw)
+    if origin is tuple:
+        item_kind, *rest = typing.get_args(kind)
+        if rest != [Ellipsis] or not isinstance(raw, list):
+            raise TypeError("expected a list")
+        return tuple(_rebuild(item_kind, item) for item in raw)
+    if isinstance(kind, type) and is_dataclass(kind):
+        if not isinstance(raw, dict):
+            raise TypeError(f"expected an object for {kind.__name__}")
+        hints = typing.get_type_hints(kind)
+        values = {
+            f.name: _rebuild(hints[f.name], raw[f.name])
+            for f in fields(kind)
+            if f.init and f.name in raw
+        }
+        return kind(**values)
+    if kind in (int, str, bool):
+        # JSON true is not a number, and a number is not a flag
+        if type(raw) is not kind:
+            raise TypeError(f"expected {getattr(kind, '__name__', kind)}")
+        return raw
+    raise TypeError(f"unsupported field type {kind}")

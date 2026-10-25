@@ -44,6 +44,11 @@ export interface QueueState extends JsonObject {
   readonly items: readonly JsonObject[];
 }
 
+/** The exports a whole-queue action sent back to the queue, in the order they will run. */
+export interface QueuedIdsPayload extends JsonObject {
+  readonly item_ids: readonly string[];
+}
+
 export interface Settings extends JsonObject {
   readonly profiles?: readonly Profile[];
   readonly cut_suffix?: string;
@@ -206,8 +211,13 @@ export interface DomainBackendClient {
   removeItem(itemId: string): Promise<BackendResult<EmptyPayload>>;
   cancelAllItems(): Promise<BackendResult<EmptyPayload>>;
   clearCompleted(): Promise<BackendResult<EmptyPayload>>;
+  // completed and canceled exports; failed ones stay so they can be retried
+  clearFinished(): Promise<BackendResult<EmptyPayload>>;
   moveItem(itemId: string, newIndex: number): Promise<BackendResult<EmptyPayload>>;
   retryItem(itemId: string): Promise<BackendResult<EmptyPayload>>;
+  retryAllItems(): Promise<BackendResult<QueuedIdsPayload>>;
+  // exports that came back paused after Tuck closed mid-batch
+  resumeExports(): Promise<BackendResult<QueuedIdsPayload>>;
   stopAfterCurrent(): Promise<BackendResult<EmptyPayload>>;
   getQueueState(): Promise<BackendResult<QueueState>>;
   getDiagnostics(context?: DiagnosticsContext): Promise<BackendResult<DiagnosticsPayload>>;

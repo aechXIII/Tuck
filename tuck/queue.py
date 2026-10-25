@@ -20,6 +20,7 @@ from .models.progress import EncodeProgress, EncodeStage
 from .output_paths import resolve_output_collision, sweep_stale_outputs
 from .power import keep_awake
 from .probe import probe
+from .queue_store import UnfinishedExportStore, export_record
 from .request_work import RequestWork
 
 logger = logging.getLogger(__name__)
@@ -27,6 +28,8 @@ logger = logging.getLogger(__name__)
 
 # every code a refused retry carries; the desktop bridge passes these through as they are
 RETRY_REFUSAL_CODES = frozenset({"source_changed", "source_unavailable"})
+
+_SOURCE_MISSING = "Tuck can't find this video any more. It may have been moved, renamed or deleted."
 
 
 class RetryRefused(Exception):
@@ -76,6 +79,10 @@ class ProcessingQueue:
         self._cancelling = 0
         self._cancel_generation = 0
         self._retry_work: set[RequestWork] = set()
+        # exports queued without a fresh look at their video; it is checked when each one starts
+        self._check_before_run: set[str] = set()
+        self._store: UnfinishedExportStore | None = None
+        self._closed = False
 
     @property
     def items(self) -> list[QueueItem]:
@@ -94,18 +101,27 @@ class ProcessingQueue:
             )
 
     def enqueue(self, plan: EncodePlan | CutPlan, *, work: RequestWork | None = None) -> QueueItem:
+        with self._condition:
+            item = self._add_pending(plan, work)
+        self._save_unfinished()
+        return item
+
+    def _add_pending(
+        self, plan: EncodePlan | CutPlan, work: RequestWork | None, *, restored: bool = False
+    ) -> QueueItem:
+        # called with the queue lock held
         item = QueueItem(
             plan=copy.deepcopy(plan),
             state=QueueState.PENDING,
             added_at=datetime.now(timezone.utc).isoformat(),
             status_text="Pending",
+            restored=restored,
         )
-        with self._condition:
-            if work is not None:
-                check_request(work)
-            self._items[item.id] = item
-            self._pending.append(item.id)
-            self._condition.notify()
+        if work is not None:
+            check_request(work)
+        self._items[item.id] = item
+        self._pending.append(item.id)
+        self._condition.notify()
         return item
 
     def cancel(self, item_id: str) -> bool:
@@ -118,12 +134,16 @@ class ProcessingQueue:
                 item.state = QueueState.CANCELLED
                 item.status_text = "Canceled"
                 item.finished_at = datetime.now(timezone.utc).isoformat()
-                return True
-            if item.state == QueueState.RUNNING:
+                cancelled_waiting = True
+            elif item.state == QueueState.RUNNING:
                 self._cancelling += 1
+                cancelled_waiting = False
             else:
                 return False
-        self._cancel_engine()
+        if cancelled_waiting:
+            self._save_unfinished()
+        else:
+            self._cancel_engine()
         return True
 
     def _cancel_engine(self) -> None:
@@ -147,6 +167,7 @@ class ProcessingQueue:
                     item.status_text = "Canceled"
                     item.finished_at = datetime.now(timezone.utc).isoformat()
             self._pending.clear()
+        self._save_unfinished()
         self._cancel_engine()
 
     def remove(self, item_id: str) -> bool:
@@ -159,7 +180,9 @@ class ProcessingQueue:
             if item.state == QueueState.PENDING:
                 self._remove_pending_id(item_id)
             del self._items[item_id]
-            return True
+            self._check_before_run.discard(item_id)
+        self._save_unfinished()
+        return True
 
     def move_item(self, item_id: str, new_index: int) -> bool:
         with self._condition:
@@ -173,10 +196,16 @@ class ProcessingQueue:
             idx = max(0, min(int(new_index), len(ids)))
             ids.insert(idx, item_id)
             self._pending = deque(ids)
-            return True
+        self._save_unfinished()
+        return True
 
     def clear_completed(self) -> int:
+        """What "Clear finished jobs" in Settings removes once a batch is done."""
         return self._clear_states({QueueState.COMPLETED})
+
+    def clear_finished(self) -> int:
+        """Completed and canceled exports; failed ones stay so they can be retried."""
+        return self._clear_states({QueueState.COMPLETED, QueueState.CANCELLED})
 
     def _clear_states(self, states: set[QueueState]) -> int:
         with self._condition:
@@ -184,6 +213,58 @@ class ProcessingQueue:
             for iid in to_remove:
                 del self._items[iid]
             return len(to_remove)
+
+    def retry_all(self) -> list[str]:
+        """Queue every failed and canceled export again, in list order, keeping each one's row.
+
+        Unlike a single retry this doesn't read each video first, which for a cut can take a
+        while; each export checks its video when it starts and fails with the reason instead.
+        """
+        with self._condition:
+            retried = [
+                item
+                for item in self._items.values()
+                if item.plan is not None and item.state in (QueueState.FAILED, QueueState.CANCELLED)
+            ]
+            for item in retried:
+                self._requeue(item)
+            if retried:
+                self._condition.notify()
+        if retried:
+            self._save_unfinished()
+        return [item.id for item in retried]
+
+    def resume_paused(self) -> list[str]:
+        """Queue the exports brought back from an earlier run, in the order they were queued."""
+        with self._condition:
+            resumed = [item for item in self._items.values() if item.state == QueueState.PAUSED]
+            for item in resumed:
+                self._requeue(item)
+            if resumed:
+                self._condition.notify()
+        if resumed:
+            self._save_unfinished()
+        return [item.id for item in resumed]
+
+    def _requeue(self, item: QueueItem) -> None:
+        # called with the queue lock held
+        if isinstance(item.plan, CutPlan):
+            # the keyframes are read again rather than trusting the earlier scan
+            item.plan = dataclasses.replace(item.plan, analysis=None)
+        item.state = QueueState.PENDING
+        item.progress = 0.0
+        item.progress_info = None
+        item.status_text = "Waiting"
+        item.error = ""
+        item.error_detail = ""
+        item.error_code = ""
+        item.result_path = ""
+        item.result_size = 0
+        item.started_at = ""
+        item.finished_at = ""
+        self._check_before_run.add(item.id)
+        self._remove_pending_id(item.id)
+        self._pending.append(item.id)
 
     def retry(self, item_id: str, *, work: RequestWork | None = None) -> QueueItem | None:
         work = work or RequestWork()
@@ -215,10 +296,13 @@ class ProcessingQueue:
                     or generation != self._cancel_generation
                 ):
                     return None
-                return self.enqueue(retry_plan, work=work)
+                # an export from an earlier run stays apart from the Library after a retry too
+                retried = self._add_pending(retry_plan, work, restored=original.restored)
         finally:
             with self._condition:
                 self._retry_work.discard(work)
+        self._save_unfinished()
+        return retried
 
     def stop_after_current(self) -> None:
         with self._condition:
@@ -236,6 +320,7 @@ class ProcessingQueue:
             if self._current_item is None:
                 self._running = False
             self._condition.notify_all()
+        self._save_unfinished()
 
     def set_run_preferences(self, *, keep_awake: bool, low_priority: bool) -> None:
         """Apply the user's export choices; they take effect from the next export."""
@@ -248,12 +333,16 @@ class ProcessingQueue:
             if self._running and self._worker_thread and self._worker_thread.is_alive():
                 return
             self._running = True
+            self._closed = False
             self._stop_after_current = False
             self._worker_thread = threading.Thread(target=self._worker, daemon=True)
             self._worker_thread.start()
 
     def stop(self) -> None:
         with self._condition:
+            # closing Tuck cancels the running export, but it should come back next time
+            self._store = None
+            self._closed = True
             self._cancel_generation += 1
             for work in self._retry_work:
                 work.set()
@@ -309,6 +398,9 @@ class ProcessingQueue:
                 item.error = ""
                 item.error_detail = ""
                 item.error_code = ""
+                check_source = item_id in self._check_before_run
+                self._check_before_run.discard(item_id)
+            self._save_unfinished()
 
             try:
                 plan = item.plan
@@ -316,6 +408,9 @@ class ProcessingQueue:
                     raise ValueError("No plan associated with queue item")
 
                 attempt_plan = copy.deepcopy(plan)
+                # a cut reads its video again and refuses a changed one on its own
+                if check_source and isinstance(attempt_plan, EncodePlan):
+                    _check_source_unchanged(attempt_plan)
                 if isinstance(attempt_plan, EncodePlan) and not attempt_plan.replace_existing:
                     output = Path(attempt_plan.output)
                     # a reservation left by a crashed export must not push this one to _1
@@ -387,6 +482,7 @@ class ProcessingQueue:
                     self._running = False
                     self._stop_after_current = False
                 idle = not self._pending
+            self._save_unfinished()
 
             # released outside the queue lock; on Linux it waits for the helper to exit
             if holding_awake and (idle or stop_now):
@@ -395,6 +491,77 @@ class ProcessingQueue:
             self._check_terminal()
             if stop_now:
                 break
+
+    def restore(self, store: UnfinishedExportStore) -> list[str]:
+        """Bring back the exports an earlier run left waiting or running, paused.
+
+        From here on every change to the waiting, running or paused exports is written to
+        ``store``. Exports queued before this call are kept and saved along with the restored
+        ones. A restored export whose video is gone comes back failed and is not saved again.
+        """
+        saved = store.load()
+        restored: list[QueueItem] = []
+        folders: set[Path] = set()
+        for export in saved:
+            item = QueueItem(
+                id=export.item_id,
+                plan=export.plan,
+                state=QueueState.PAUSED,
+                added_at=export.added_at,
+                status_text="Paused",
+                restored=True,
+            )
+            missing = _missing_input(export.plan)
+            if missing:
+                item.state = QueueState.FAILED
+                item.status_text = "Failed"
+                item.error = missing
+                item.error_code = "source_unavailable"
+                item.finished_at = datetime.now(timezone.utc).isoformat()
+            elif export.was_running:
+                folders.add(Path(export.plan.output).parent)
+            restored.append(item)
+        # the interrupted exports' reservations and scratch folders go before anything new starts
+        for folder in folders:
+            sweep_stale_outputs(folder)
+        with self._condition:
+            # Tuck closed while this ran; the file still holds what the next start needs
+            if self._closed:
+                return []
+            for item in restored:
+                if item.id in self._items:
+                    item.id = QueueItem().id
+                self._items[item.id] = item
+            self._store = store
+        self._save_unfinished()
+        logger.info("Restored %d unfinished exports", len(restored))
+        return [item.id for item in restored]
+
+    def _save_unfinished(self) -> None:
+        """Write the waiting, running and paused exports, in the order they would run."""
+        with self._condition:
+            store = self._store
+            if store is None:
+                return
+            revision = store.ticket()
+            ordered: list[QueueItem] = []
+            if self._current_item is not None and self._current_item.state == QueueState.RUNNING:
+                ordered.append(self._current_item)
+            ordered += [
+                item
+                for item_id in self._pending
+                if (item := self._items.get(item_id)) is not None
+                and item.state == QueueState.PENDING
+            ]
+            ordered += [item for item in self._items.values() if item.state == QueueState.PAUSED]
+            records = [
+                export_record(
+                    item.id, item.plan, item.added_at, running=item.state == QueueState.RUNNING
+                )
+                for item in ordered
+                if item.plan is not None
+            ]
+        store.save(revision, records)
 
     def _on_progress(self, item: QueueItem, progress: EncodeProgress | float) -> None:
         with self._condition:
@@ -423,6 +590,23 @@ class ProcessingQueue:
                 self._running = False
                 self._condition.notify_all()
             self._engine.cancel()
+
+
+def _missing_input(plan: EncodePlan | CutPlan) -> str:
+    """Why a restored export can't run as saved, or "" when its files are still in place."""
+    if not Path(plan.source).is_file():
+        return _SOURCE_MISSING
+    if isinstance(plan, EncodePlan):
+        others = [clip.source for track in plan.audio_tracks for clip in track.clips]
+        if plan.lut_filter_path:
+            others.append(plan.lut_filter_path)
+        for path in others:
+            if not Path(path).is_file():
+                return (
+                    f"Tuck can't find “{Path(path).name}” any more, which this export uses. "
+                    "Add the video again to export it."
+                )
+    return ""
 
 
 _queue: ProcessingQueue | None = None

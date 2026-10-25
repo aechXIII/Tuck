@@ -244,8 +244,9 @@
 #qcnt:empty {
   display: none;
 }
-/* a finished batch's count never gives way; the failures and savings after it do */
-#qbar.finished #qfname {
+/* a finished or paused batch's count never gives way; the failures and savings after it do */
+#qbar.finished #qfname,
+#qbar.paused #qfname {
   flex-shrink: 0;
 }
 #qcnt {
@@ -256,8 +257,9 @@
   font: 500 calc(11px * var(--text-scale)) var(--font);
   white-space: nowrap;
 }
-/* finished: "2 exported · 1 failed" reads as one line */
-#qbar.finished #qcnt::before {
+/* finished: "2 exported · 1 failed" reads as one line, and so does "2 exports paused · 1 failed" */
+#qbar.finished #qcnt::before,
+#qbar.paused #qcnt::before {
   content: "· ";
 }
 #qcnt .q-failed {
@@ -296,7 +298,8 @@
   animation: none;
   background: repeating-linear-gradient(90deg, var(--accent-light) 0 6px, transparent 6px 12px), var(--raised-2);
 }
-#qbar.finished #qprog {
+#qbar.finished #qprog,
+#qbar.paused #qprog {
   display: none;
 }
 
@@ -395,6 +398,18 @@
   padding: 8px 8px 3px;
   color: var(--dim);
   font: 600 calc(10.5px * var(--text-scale)) var(--font);
+}
+/* the reason these exports wait, with the one control that starts them again */
+.exports-group-paused {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-right: 8px;
+}
+.exports-resume {
+  background: var(--raised);
+  color: var(--text);
 }
 .exports-row {
   display: grid;
@@ -525,9 +540,9 @@
 }
 
 @media (max-width: 1365px) {
-  /* beside the export button only the percent fits while exporting and "3 exported" when done;
-     the file name, failures and savings are in the Exports panel */
-  #qbar:not(.finished) #qfname,
+  /* beside the export button only the percent fits while exporting, and "3 exported" or
+     "2 exports paused" otherwise; the file name, failures and savings are in the Exports panel */
+  #qbar:not(.finished, .paused) #qfname,
   #qcnt {
     display: none;
   }

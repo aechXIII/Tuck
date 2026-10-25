@@ -101,6 +101,11 @@ pub enum BackendCommand {
     },
     CancelAllItems,
     ClearCompleted,
+    /// completed and canceled exports; failed ones stay for a retry
+    ClearFinished,
+    RetryAllItems,
+    /// exports brought back paused from an earlier run
+    ResumeExports,
     MoveItem {
         item_id: String,
         new_index: i64,
@@ -265,6 +270,9 @@ impl BackendCommand {
             Self::RemoveItem { item_id } => ("remove_item", json!({ "item_id": item_id })),
             Self::CancelAllItems => ("cancel_all_items", json!({})),
             Self::ClearCompleted => ("clear_completed", json!({})),
+            Self::ClearFinished => ("clear_finished", json!({})),
+            Self::RetryAllItems => ("retry_all_items", json!({})),
+            Self::ResumeExports => ("resume_exports", json!({})),
             Self::MoveItem { item_id, new_index } => (
                 "move_item",
                 json!({ "item_id": item_id, "new_index": new_index }),
@@ -374,6 +382,21 @@ fn reject_unsupported_backend_command(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn whole_queue_actions_take_no_payload() {
+        for (command, method) in [
+            ("clear_finished", "clear_finished"),
+            ("retry_all_items", "retry_all_items"),
+            ("resume_exports", "resume_exports"),
+        ] {
+            let parsed: BackendCommand = serde_json::from_value(json!({ "command": command }))
+                .expect("queue action is allowlisted");
+            let request = parsed.to_sidecar_request("queue").unwrap();
+            assert_eq!(request["method"], method);
+            assert_eq!(request["params"], json!({}));
+        }
+    }
 
     #[test]
     fn timeline_frames_validate_and_forward_the_source_grid() {

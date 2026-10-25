@@ -34,6 +34,7 @@ import type {
   Profile,
   ProfileInput,
   QueueState,
+  QueuedIdsPayload,
   SendToKind,
   SendToShortcut,
   SendToShortcuts,
@@ -83,6 +84,9 @@ type TauriBackendCommand =
   | { command: "remove_item"; payload: { item_id: string } }
   | { command: "cancel_all_items" }
   | { command: "clear_completed" }
+  | { command: "clear_finished" }
+  | { command: "retry_all_items" }
+  | { command: "resume_exports" }
   | { command: "move_item"; payload: { item_id: string; new_index: number } }
   | { command: "retry_item"; payload: { item_id: string } }
   | { command: "stop_after_current" }
@@ -174,6 +178,14 @@ function isQueueState(value: unknown): value is QueueState {
     isJsonObject(value) &&
     Array.isArray(value.items) &&
     value.items.every(isJsonObject)
+  );
+}
+
+function isQueuedIdsPayload(value: unknown): value is QueuedIdsPayload {
+  return (
+    isJsonObject(value) &&
+    Array.isArray(value.item_ids) &&
+    value.item_ids.every((id) => typeof id === "string")
   );
 }
 
@@ -537,6 +549,18 @@ class TauriTransport implements TauriBackendClient {
 
   clearCompleted(): Promise<BackendResult<EmptyPayload>> {
     return this.#request("clearCompleted", { command: "clear_completed" }, isJsonObject);
+  }
+
+  clearFinished(): Promise<BackendResult<EmptyPayload>> {
+    return this.#request("clearFinished", { command: "clear_finished" }, isJsonObject);
+  }
+
+  retryAllItems(): Promise<BackendResult<QueuedIdsPayload>> {
+    return this.#request("retryAllItems", { command: "retry_all_items" }, isQueuedIdsPayload);
+  }
+
+  resumeExports(): Promise<BackendResult<QueuedIdsPayload>> {
+    return this.#request("resumeExports", { command: "resume_exports" }, isQueuedIdsPayload);
   }
 
   moveItem(itemId: string, newIndex: number): Promise<BackendResult<EmptyPayload>> {

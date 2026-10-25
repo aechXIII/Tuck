@@ -821,6 +821,9 @@ impl BackendCommand {
             | Self::RemoveItem { .. }
             | Self::CancelAllItems
             | Self::ClearCompleted
+            | Self::ClearFinished
+            | Self::RetryAllItems
+            | Self::ResumeExports
             | Self::MoveItem { .. }
             | Self::StopAfterCurrent
             | Self::GetDiagnostics { .. }
@@ -932,6 +935,18 @@ mod state_tests {
 mod launch_config_tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn whole_queue_actions_answer_quickly() {
+        // each export checks its video when it starts, so these never wait on a scan
+        for command in [
+            BackendCommand::RetryAllItems,
+            BackendCommand::ResumeExports,
+            BackendCommand::ClearFinished,
+        ] {
+            assert_eq!(command.timeout(), LIGHT_REQUEST_TIMEOUT);
+        }
+    }
 
     #[test]
     fn retry_allows_time_for_cut_reanalysis() {

@@ -88,6 +88,7 @@ from .probe import probe as probe_video
 from .probe_cache import ProbeCache
 from .profile_service import ProfileService
 from .queue import RetryRefused, get_queue
+from .queue_store import STORE_NAME, UnfinishedExportStore
 from .request_work import RequestWork
 from .settings import get_settings_manager
 from .settings_backup import SettingsBackupService
@@ -137,6 +138,12 @@ class BridgeAPI:
         """Start the queue and the media server for a GUI or sidecar lifetime."""
         self._media_server.start()
         self._queue.start()
+        # exports left waiting or running last time come back paused; checking that their
+        # videos still exist can stall on an offline drive, so it doesn't hold up startup
+        store = UnfinishedExportStore(self._settings.data_dir / STORE_NAME)
+        threading.Thread(
+            target=self._queue.restore, args=(store,), name="tuck-restore-exports", daemon=True
+        ).start()
         # a crashed or killed export leaves its reservation and scratch folder behind
         settings = self._settings.load()
         if settings.output_location == OUTPUT_LOCATION_FOLDER and settings.output_dir:
@@ -620,6 +627,17 @@ class BridgeAPI:
 
     def clear_completed(self) -> BridgeResult:
         return {"ok": True, "count": self._queue.clear_completed()}
+
+    def clear_finished(self) -> BridgeResult:
+        return {"ok": True, "count": self._queue.clear_finished()}
+
+    def retry_all_items(self) -> BridgeResult:
+        ids: list[JsonValue] = list(self._queue.retry_all())
+        return {"ok": True, "item_ids": ids, "count": len(ids)}
+
+    def resume_exports(self) -> BridgeResult:
+        ids: list[JsonValue] = list(self._queue.resume_paused())
+        return {"ok": True, "item_ids": ids, "count": len(ids)}
 
     def move_item(self, item_id: str, new_index: int) -> BridgeResult:
         if isinstance(new_index, bool) or not isinstance(new_index, int):

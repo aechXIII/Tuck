@@ -463,3 +463,58 @@ test("the taskbar crosses the whole batch, goes red after failures and clears wh
   );
   assert.deepEqual(taskbarProgress([{ id: "c", source: "c", state: "completed" }], ok, taskbar), TASKBAR_IDLE);
 });
+
+test("Retry all counts failed and canceled exports, and Clear finished needs a completed or canceled one", () => {
+  const view = reduceQueueSnapshot(emptyQueueView(), {
+    items: [{ id: "a", state: "failed" }, { id: "b", state: "cancelled" }, { id: "c", state: "running" }],
+  });
+  assert.equal(view.retryable, 2);
+  assert.equal(view.clearDisabled, false);
+  const failedOnly = reduceQueueSnapshot(emptyQueueView(), { items: [{ id: "a", state: "failed" }] });
+  assert.equal(failedOnly.retryable, 1);
+  // a failed export stays for its retry, so there is nothing to clear
+  assert.equal(failedOnly.clearDisabled, true);
+});
+
+test("exports brought back after Tuck closed wait for Resume instead of reading as done", () => {
+  const items: QueueItem[] = [
+    { id: "p1", source: "a.mp4", state: "paused", restored: true },
+    { id: "p2", source: "b.mp4", state: "paused", restored: true },
+    { id: "gone", source: "c.mp4", state: "failed", restored: true, error: "Tuck can't find this video any more." },
+  ];
+  const view = reduceQueueSnapshot(emptyQueueView(), { items });
+  assert.equal(view.paused, 2);
+  assert.equal(view.active, false);
+  assert.equal(view.finished, false);
+  assert.equal(view.fname, "2 exports paused");
+  assert.equal(view.finishedToast, null);
+  assert.equal(reduceQueueSnapshot(emptyQueueView(), { items: [items[0]!] }).fname, "1 export paused");
+
+  const rows = exportRows(items, () => 0);
+  assert.deepEqual(rows.paused.map((row) => [row.id, row.kind, row.detail, row.action]), [
+    ["p1", "paused", "Paused", null],
+    ["p2", "paused", "Paused", null],
+  ]);
+  assert.deepEqual(rows.finished.map((row) => row.id), ["gone"]);
+
+  // while something runs, the bar is about that export and the paused ones are only counted
+  const running = reduceQueueSnapshot(emptyQueueView(), { items: [...items, { id: "new", source: "d.mp4", state: "running" }] });
+  assert.equal(running.fname, "d.mp4");
+  assert.equal(running.paused, 2);
+  assert.equal(queueItemState("paused"), "paused");
+  assert.equal(isQueueActive("paused"), false);
+  assert.equal(formatQueueStatus({ state: "paused" }), "Paused");
+});
+
+test("a restored export is never tied to a Library video, even one with the same file", () => {
+  const watched = watchExports(
+    [
+      { id: "old", source_path: "C:/a.mp4", state: "pending", restored: true },
+      { id: "new", source_path: "C:/a.mp4", state: "pending" },
+    ],
+    {},
+    (source) => source,
+    () => 1,
+  );
+  assert.deepEqual(watched, { new: { path: "C:/a.mp4", edits: 1 } });
+});

@@ -1,4 +1,5 @@
 import os
+import time
 from dataclasses import replace
 from pathlib import Path
 from threading import Event, Thread
@@ -376,4 +377,34 @@ def test_mixed_queue_cancellation_does_not_affect_the_next_job(cut, tmp_path, mo
         )
     finally:
         release.set()
+        queue.stop()
+
+
+def test_a_cut_left_waiting_comes_back_after_a_restart_and_exports(cut, tmp_path):
+    from tuck.queue_store import UnfinishedExportStore
+
+    _, _, plan = cut
+    store = UnfinishedExportStore(tmp_path / "data" / "unfinished-exports.json")
+    earlier = ProcessingQueue()
+    earlier.restore(store)
+    earlier.enqueue(plan)
+    earlier.stop()
+
+    queue = ProcessingQueue()
+    (item_id,) = queue.restore(store)
+    item = queue._items[item_id]
+    assert item.state == QueueState.PAUSED
+    assert replace(item.plan, analysis=None) == replace(plan, analysis=None)
+    queue.resume_paused()
+    queue.start()
+    try:
+        finish(queue, [item])
+        assert item.state == QueueState.COMPLETED, item.error
+        assert Path(item.result_path).is_file()
+        # the queue rewrites the file just after it says the export finished
+        deadline = time.monotonic() + 5
+        while store.path.exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert not store.path.exists()
+    finally:
         queue.stop()

@@ -216,6 +216,7 @@ def queue_item_dict(item: QueueItem) -> dict[str, Any]:
             "added_at": item.added_at,
             "started_at": item.started_at,
             "finished_at": item.finished_at,
+            "restored": item.restored,
         }
     duration = float(plan.effective_duration or 0.0) if plan is not None else 0.0
     if duration <= 0 and plan is not None and plan.source_info is not None:
@@ -258,6 +259,8 @@ def queue_item_dict(item: QueueItem) -> dict[str, Any]:
         "warnings": list(plan.warnings) if plan else [],
         "effective_encoder": item.effective_encoder,
         "encoder_fallback": item.encoder_fallback,
+        # from an earlier run of Tuck, so no Library video stands for it
+        "restored": item.restored,
         # the size this export aimed for, in bytes; 0 when it had no target
         "target_size": int(plan.target_size) if plan is not None and plan.target_size else 0,
     }

@@ -1,4 +1,4 @@
-import type { BackendClient, JsonObject } from "../../backend/types.ts";
+import type { BackendClient, BackendResult, JsonObject, QueuedIdsPayload } from "../../backend/types.ts";
 import { SegmentEditing } from "../timeline/segments.ts";
 import { legacyBackendResult } from "../editor/backend-compat.ts";
 import { formatBytes, formatTime, withReason } from "../editor/format.ts";
@@ -58,7 +58,10 @@ export interface QueueApi {
   dragExportOut: (itemId: string) => Promise<void>;
   stopAfterCurrent: () => void;
   cancelAll: () => void;
-  clearDone: (announce?: boolean) => Promise<void>;
+  // completed and canceled exports leave the list; failed ones stay for Retry
+  clearFinished: () => Promise<void>;
+  retryAll: () => Promise<void>;
+  resumeExports: () => Promise<void>;
   copyDiagnostics: (itemId?: string) => Promise<void>;
   toggleExports: () => void;
   // opens Exports with focus on this export's row
@@ -81,8 +84,8 @@ export function installQueue(deps: QueueDeps): QueueApi {
     if (node) node.disabled = disabled;
   };
 
-  // "1 waiting · 1 failed · saved 1.1 GB", with the failures in warning colour
-  const paintQueueCounts = (waiting: number, failed: number, saved: number): void => {
+  // "1 waiting · 2 paused · 1 failed · saved 1.1 GB", with the failures in warning colour
+  const paintQueueCounts = (waiting: number, paused: number, failed: number, saved: number): void => {
     const counts = byId("qcnt");
     if (!counts) return;
     const doc = counts.ownerDocument;
@@ -100,6 +103,7 @@ export function installQueue(deps: QueueDeps): QueueApi {
       parts.push(part);
     };
     if (waiting) add(`${waiting} waiting`);
+    if (paused) add(`${paused} paused`);
     if (failed) add(`${failed} failed`, "q-failed");
     if (saved > 0) add(`saved ${formatBytes(saved)}`, "q-saved");
     counts.replaceChildren(...parts);
@@ -254,8 +258,8 @@ export function installQueue(deps: QueueDeps): QueueApi {
       error.textContent = `${copyError} Use Show to find the file.`;
       element.append(error);
     }
-    // a failed export can hand over its log; failed and cancelled ones can leave the list
-    if (row.kind === "failed" || row.kind === "cancelled") {
+    // a failed export can hand over its log; failed, cancelled and paused ones can leave the list
+    if (row.kind === "failed" || row.kind === "cancelled" || row.kind === "paused") {
       const more = doc.createElement("span");
       more.className = "exports-more";
       const link = (label: string, action: string, name: string): HTMLButtonElement => {
@@ -311,10 +315,12 @@ export function installQueue(deps: QueueDeps): QueueApi {
     };
     group("", rows.running);
     group("Waiting", rows.waiting);
+    if (rows.paused.length) nodes.push(pausedHeading(doc, rows.paused.length));
+    group("", rows.paused);
     group("Finished", rows.finished);
     list.replaceChildren(...nodes);
     // an export added while the list is open fades into its place, once; polls never replay it
-    const listed = new Set([...rows.running, ...rows.waiting, ...rows.finished].map((row) => row.id));
+    const listed = new Set([...rows.running, ...rows.waiting, ...rows.paused, ...rows.finished].map((row) => row.id));
     if (shownRowIds && motionEnabled(doc)) {
       for (const element of list.querySelectorAll<HTMLElement>(".exports-row")) {
         const id = element.dataset.exportId ?? "";
@@ -326,11 +332,17 @@ export function installQueue(deps: QueueDeps): QueueApi {
       }
     }
     shownRowIds = listed;
-    if (focused?.id) {
+    if (focused?.id || focused?.action === "queue-resume") {
       const match = Array.from(list.querySelectorAll<HTMLElement>("button")).find(
-        (button) => button.dataset.itemId === focused.id && button.dataset.actionClick === focused.action,
+        (button) => (button.dataset.itemId ?? "") === focused.id && button.dataset.actionClick === focused.action,
       );
       match?.focus();
+    }
+    const retry = byId<HTMLButtonElement>("btn-retry-all");
+    if (retry) {
+      const count = queueView.retryable;
+      retry.hidden = count === 0;
+      retry.textContent = `Retry all (${count})`;
     }
     text("exports-count", `${items.length} this session`);
     const saved = byId("exports-saved");
@@ -343,6 +355,23 @@ export function installQueue(deps: QueueDeps): QueueApi {
         saved.replaceChildren();
       }
     }
+  }
+
+  // exports from before Tuck closed say why they wait, with the one control that starts them
+  function pausedHeading(doc: Document, count: number): HTMLElement {
+    const heading = doc.createElement("div");
+    heading.className = "exports-group exports-group-paused";
+    const label = doc.createElement("span");
+    label.textContent = "Paused when Tuck closed";
+    const resume = doc.createElement("button");
+    resume.type = "button";
+    resume.className = "exports-btn exports-resume";
+    resume.textContent = headerRequest === "resume" ? "Resuming…" : "Resume";
+    resume.setAttribute("aria-label", count === 1 ? "Resume 1 paused export" : `Resume ${count} paused exports`);
+    if (headerRequest === "resume") resume.setAttribute("aria-disabled", "true");
+    resume.dataset.actionClick = "queue-resume";
+    heading.append(label, resume);
+    return heading;
   }
 
   function installExportsDismissal(): void {
@@ -373,6 +402,8 @@ export function installQueue(deps: QueueDeps): QueueApi {
   const queueActiveItemIds: Record<string, true> = {};
   // a Cancel or Retry the backend hasn't answered yet; rows are rebuilt on every poll, so it lives here
   const rowRequests: Record<string, "cancel" | "retry"> = {};
+  // a Retry all or Resume the backend hasn't answered yet
+  let headerRequest: "" | "retry-all" | "resume" = "";
   let queueView: QueueViewState = emptyQueueView();
   let watchedExports: Record<string, WatchedExport> = {};
   // failures already told to screen reader users while the rest of their batch kept going
@@ -401,7 +432,9 @@ export function installQueue(deps: QueueDeps): QueueApi {
     const map: Record<string, QueueItem> = {};
     queueItemsById = {};
     for (const item of items) {
-      if (item.source_path) map[item.source_path] = item;
+      // an export from before Tuck last closed was planned from edits that are gone, so it
+      // never speaks for a video added to the Library since
+      if (item.source_path && !item.restored) map[item.source_path] = item;
       if (item.id) queueItemsById[item.id] = item;
     }
     for (const path of Object.keys(session.clips)) {
@@ -529,6 +562,7 @@ export function installQueue(deps: QueueDeps): QueueApi {
 
       toggleHidden("qbar", !queueView.barVisible);
       byId("qbar")?.classList.toggle("finished", queueView.finished);
+      byId("qbar")?.classList.toggle("paused", !queueView.active && queueView.paused > 0);
       setDisabled("btn-stop-after", queueView.stopAfterDisabled);
       setDisabled("btn-cancel", queueView.cancelDisabled);
       setDisabled("btn-clear", queueView.clearDisabled);
@@ -539,7 +573,8 @@ export function installQueue(deps: QueueDeps): QueueApi {
       }
       if (exportsOpen) renderExports(items);
       const saved = queueView.finished ? exportRows(items, sourceSize).saved : 0;
-      paintQueueCounts(queueView.waiting, queueView.failed, saved);
+      // with nothing running the bar's own label already counts the paused exports
+      paintQueueCounts(queueView.waiting, queueView.active ? queueView.paused : 0, queueView.failed, saved);
       const progress = byId<HTMLProgressElement>("qprog");
       if (progress) {
         if (queueView.indeterminate) progress.removeAttribute("value");
@@ -556,7 +591,7 @@ export function installQueue(deps: QueueDeps): QueueApi {
       pollingQueue = false;
     }
     for (const path of removeVideos) deps.removeClip(path);
-    if (clearFinished) await clearDone(false);
+    if (clearFinished) await clearCompletedAutomatically();
   }
 
   function startRowRequest(itemId: string, action: "cancel" | "retry"): boolean {
@@ -685,7 +720,52 @@ export function installQueue(deps: QueueDeps): QueueApi {
     }, { title: "Cancel all exports?", confirmLabel: "Cancel exports", cancelLabel: "Keep exporting", danger: true });
   }
 
-  async function clearDone(announce = true): Promise<void> {
+  // the export the backend just queued again, or the first one still listed, so focus never
+  // falls out of the panel when the button that was pressed goes away
+  function focusInExports(itemId = ""): void {
+    const buttons = Array.from(byId("exports-list")?.querySelectorAll<HTMLElement>("button") ?? []);
+    const next = buttons.find((button) => itemId && button.dataset.itemId === itemId) ?? buttons[0];
+    const status = byId("qstatus");
+    (next ?? (byId("qbar")?.classList.contains("hid") ? null : status))?.focus();
+  }
+
+  async function runHeaderRequest(
+    kind: "retry-all" | "resume",
+    request: () => Promise<BackendResult<QueuedIdsPayload>>,
+    failure: string,
+  ): Promise<void> {
+    if (headerRequest) return;
+    headerRequest = kind;
+    if (exportsOpen) renderExports(lastItems);
+    let firstId = "";
+    try {
+      const result = await request();
+      if (!result.ok) {
+        toast(withReason(failure, result.error.message), "err");
+        return;
+      }
+      firstId = result.value.item_ids[0] ?? "";
+    } catch {
+      toast(`${failure} Try again.`, "err");
+      return;
+    } finally {
+      headerRequest = "";
+    }
+    await pollQueue();
+    focusInExports(firstId);
+  }
+
+  // every failed and canceled export goes back to the queue in list order, each in its own row
+  function retryAll(): Promise<void> {
+    return runHeaderRequest("retry-all", () => client().retryAllItems(), "Couldn’t retry the exports.");
+  }
+
+  function resumeExports(): Promise<void> {
+    return runHeaderRequest("resume", () => client().resumeExports(), "Couldn’t resume the exports.");
+  }
+
+  // "Clear finished jobs" in Settings; canceled exports stay so Retry all can still reach them
+  async function clearCompletedAutomatically(): Promise<void> {
     const r = await legacyBackendResult(client().clearCompleted());
     if (!r.ok) {
       toast(withReason("Couldn’t clear finished exports.", r.error), "err");
@@ -694,12 +774,27 @@ export function installQueue(deps: QueueDeps): QueueApi {
     for (const clip of Object.values(session.clips)) {
       if (clip?._queueState === "completed") forgetFinishedExport(clip);
     }
-    const count = Number(r.count) || 0;
-    if (announce) {
-      toast(count === 1 ? "Cleared 1 finished export." : `Cleared ${count} finished exports.`, "ok");
-    }
     await pollQueue();
     deps.renderClips();
+  }
+
+  async function clearFinished(): Promise<void> {
+    const r = await legacyBackendResult(client().clearFinished());
+    if (!r.ok) {
+      toast(withReason("Couldn’t clear finished exports.", r.error), "err");
+      return;
+    }
+    for (const clip of Object.values(session.clips)) {
+      if (clip?._queueState === "completed" || clip?._queueState === "cancelled") forgetFinishedExport(clip);
+    }
+    const count = Number(r.count) || 0;
+    toast(count === 1 ? "Cleared 1 finished export." : `Cleared ${count} finished exports.`, "ok");
+    const clear = byId("btn-clear");
+    const hadFocus = clear !== null && clear.ownerDocument.activeElement === clear;
+    await pollQueue();
+    deps.renderClips();
+    // the button is disabled now that nothing is left to clear
+    if (hadFocus) focusInExports();
   }
 
   function buildDiagnosticsContext(itemId?: string): Record<string, unknown> {
@@ -856,7 +951,9 @@ export function installQueue(deps: QueueDeps): QueueApi {
     dragExportOut,
     stopAfterCurrent,
     cancelAll,
-    clearDone,
+    clearFinished,
+    retryAll,
+    resumeExports,
     copyDiagnostics,
     toggleExports,
     showExport,

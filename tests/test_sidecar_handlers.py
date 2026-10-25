@@ -38,6 +38,18 @@ class RecordingApi:
         self.calls.append(("get_queue_state", None))
         return {"items": [], "current_id": None, "pending_ids": []}
 
+    def retry_all_items(self) -> dict[str, object]:
+        self.calls.append(("retry_all_items", None))
+        return {"ok": True, "item_ids": ["a", "b"], "count": 2}
+
+    def resume_exports(self) -> dict[str, object]:
+        self.calls.append(("resume_exports", None))
+        return {"ok": True, "item_ids": ["c"], "count": 1}
+
+    def clear_finished(self) -> dict[str, object]:
+        self.calls.append(("clear_finished", None))
+        return {"ok": True, "count": 3}
+
     def get_storage_paths(self) -> dict[str, object]:
         self.calls.append(("get_storage_paths", None))
         return {"ok": True, "config_dir": "C:/Tuck/config", "log_dir": "C:/Tuck/data/logs"}
@@ -118,6 +130,25 @@ def test_removing_a_finished_export_is_bound_through_the_allowlist() -> None:
 
     assert api.calls == [("remove_item", "item-9")]
     assert response.ok is True
+
+
+def test_retry_all_resume_and_clear_finished_take_no_parameters() -> None:
+    api = RecordingApi()
+
+    retried = dispatch(api, _request("retry_all_items", {}))
+    resumed = dispatch(api, _request("resume_exports", {}))
+    cleared = dispatch(api, _request("clear_finished", {}))
+    for method in ("retry_all_items", "resume_exports", "clear_finished"):
+        assert dispatch(api, _request(method, {"item_id": "a"})).ok is False
+
+    assert api.calls == [
+        ("retry_all_items", None),
+        ("resume_exports", None),
+        ("clear_finished", None),
+    ]
+    assert retried.result == {"item_ids": ["a", "b"], "count": 2}
+    assert resumed.result == {"item_ids": ["c"], "count": 1}
+    assert cleared.result == {"count": 3}
 
 
 def test_storage_paths_are_available_only_through_the_allowlisted_empty_request() -> None:

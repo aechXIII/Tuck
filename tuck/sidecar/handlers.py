@@ -265,6 +265,21 @@ def _clear_completed(api: BridgeAPI, params: dict[str, object]) -> object:
     return api.clear_completed()
 
 
+def _clear_finished(api: BridgeAPI, params: dict[str, object]) -> object:
+    _empty(params)
+    return api.clear_finished()
+
+
+def _retry_all_items(api: BridgeAPI, params: dict[str, object]) -> object:
+    _empty(params)
+    return api.retry_all_items()
+
+
+def _resume_exports(api: BridgeAPI, params: dict[str, object]) -> object:
+    _empty(params)
+    return api.resume_exports()
+
+
 def _move_item(api: BridgeAPI, params: dict[str, object]) -> object:
     if (
         set(params) != {"item_id", "new_index"}
@@ -515,6 +530,9 @@ _HANDLERS: dict[str, Handler] = {
     "remove_item": _remove_item,
     "cancel_all_items": _cancel_all_items,
     "clear_completed": _clear_completed,
+    "clear_finished": _clear_finished,
+    "retry_all_items": _retry_all_items,
+    "resume_exports": _resume_exports,
     "move_item": _move_item,
     "stop_after_current": _stop_after_current,
     "get_queue_state": _get_queue_state,

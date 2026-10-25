@@ -1,7 +1,7 @@
 import type { TaskbarProgressState } from "../../backend/types.ts";
 
 // the states tuck/models QueueState sends; anything else is treated as unknown
-export const QUEUE_ITEM_STATES = ["pending", "running", "completed", "failed", "cancelled"] as const;
+export const QUEUE_ITEM_STATES = ["pending", "running", "completed", "failed", "cancelled", "paused"] as const;
 export type QueueItemState = (typeof QUEUE_ITEM_STATES)[number];
 
 export function queueItemState(value: unknown): QueueItemState | "" {
@@ -24,6 +24,7 @@ export function queuedVideoLabel(
   indeterminate: boolean | undefined,
 ): string {
   if (state === "pending") return "Queued";
+  if (state === "paused") return "Paused";
   const phase = (statusText || "").split(" · ")[0] || "";
   const label = phase && phase !== "Encoding" && phase !== "Pending" ? phase : "Exporting";
   const percent = Math.round(Math.max(0, Math.min(100, progress || 0)));
@@ -57,6 +58,8 @@ export interface QueueItem {
   readonly encoder_fallback?: string;
   /** The size the export aimed for, in bytes; 0 when it had none. */
   readonly target_size?: number;
+  /** Came back from before Tuck last closed, so no video in the Library stands for it. */
+  readonly restored?: boolean;
   readonly [key: string]: unknown;
 }
 
@@ -91,9 +94,13 @@ export interface QueueViewState {
   readonly stopAfterDisabled: boolean;
   readonly cancelDisabled: boolean;
   readonly clearDisabled: boolean;
-  /** The export running now, or how many exported once nothing is left. */
+  /** Failed and canceled exports, which Retry all sends back to the queue. */
+  readonly retryable: number;
+  /** Exports brought back after Tuck closed mid-batch, waiting for Resume. */
+  readonly paused: number;
+  /** The export running now, how many exported once nothing is left, or how many are paused. */
   readonly fname: string;
-  /** Nothing is running or waiting, but finished exports are still listed. */
+  /** Nothing is running, waiting or paused, but finished exports are still listed. */
   readonly finished: boolean;
   /** How far the running export is, e.g. "42% · 1:23 left". */
   readonly detail: string;
@@ -118,6 +125,8 @@ export function emptyQueueView(): QueueViewState {
     stopAfterDisabled: true,
     cancelDisabled: true,
     clearDisabled: true,
+    retryable: 0,
+    paused: 0,
     fname: "",
     finished: false,
     detail: "",
@@ -249,7 +258,8 @@ export function watchExports(
       next[item.id] = known;
       continue;
     }
-    if (!isQueueActive(item.state) || !item.source_path) continue;
+    // an export from before Tuck last closed was planned from edits that are gone
+    if (!isQueueActive(item.state) || !item.source_path || item.restored) continue;
     const path = libraryPath(item.source_path);
     if (path) next[item.id] = { path, edits: editCount(path) };
   }
@@ -343,6 +353,7 @@ export function formatQueueStatus(item: QueueItem | null | undefined, attempt = 
   if (item.state === "completed") return "Completed";
   if (item.state === "failed") return "Failed";
   if (item.state === "cancelled") return "Canceled";
+  if (item.state === "paused") return "Paused";
   return item.state ?? "";
 }
 
@@ -370,7 +381,7 @@ export function queueCompletionOutput(
   return latest?.result_path ?? "";
 }
 
-export type ExportRowKind = "running" | "waiting" | "failed" | "cancelled" | "completed";
+export type ExportRowKind = "running" | "waiting" | "paused" | "failed" | "cancelled" | "completed";
 
 export interface ExportRow {
   readonly id: string;
@@ -389,6 +400,8 @@ export interface ExportRow {
 export interface ExportRows {
   readonly running: readonly ExportRow[];
   readonly waiting: readonly ExportRow[];
+  /** Brought back after Tuck closed; one Resume queues them all. */
+  readonly paused: readonly ExportRow[];
   readonly finished: readonly ExportRow[];
   /** Bytes saved by finished exports whose sizes are both known. */
   readonly saved: number;
@@ -403,6 +416,7 @@ export function exportRows(
 ): ExportRows {
   const running: ExportRow[] = [];
   const waiting: ExportRow[] = [];
+  const paused: ExportRow[] = [];
   const finished: ExportRow[] = [];
   let saved = 0;
   for (const item of items) {
@@ -419,6 +433,8 @@ export function exportRows(
         progress: item.progress_info?.indeterminate ? null : progress, action: "cancel"});
     } else if (item.state === "pending") {
       waiting.push({...base, kind: "waiting", detail: "Waiting", sizes: null, progress: null, action: "cancel"});
+    } else if (item.state === "paused") {
+      paused.push({...base, kind: "paused", detail: "Paused", sizes: null, progress: null, action: null});
     } else if (item.state === "failed") {
       finished.push({...base, kind: "failed", detail: item.error ? `Failed: ${item.error}` : "Failed", sizes: null, progress: null, action: "retry"});
     } else if (item.state === "cancelled") {
@@ -431,7 +447,7 @@ export function exportRows(
       finished.push({...base, kind: "completed", detail: sizes ? "" : "Done", sizes, progress: null, action: base.resultPath ? "show" : null});
     }
   }
-  return {running, waiting, finished, saved};
+  return {running, waiting, paused, finished, saved};
 }
 
 // whole numbers once it is fast enough that a tenth no longer matters
@@ -510,6 +526,8 @@ export function reduceQueueSnapshot(
   const pending = items.filter((item) => item.state === "pending");
   const completedCount = items.filter((item) => item.state === "completed").length;
   const failed = items.filter((item) => item.state === "failed").length;
+  const cancelled = items.filter((item) => item.state === "cancelled").length;
+  const paused = items.filter((item) => item.state === "paused").length;
   const active = running.length + pending.length;
 
   const activeItemIds: Record<string, true> = { ...previous.activeItemIds };
@@ -543,6 +561,9 @@ export function reduceQueueSnapshot(
     indeterminate = pi.indeterminate === true;
     fname = first.source ?? "?";
     detail = runningDetail(first, progress, formatDuration, attempt);
+  } else if (!pending.length && paused) {
+    // nothing runs until Resume, so the bar says what is waiting for it rather than "Done"
+    fname = paused === 1 ? "1 export paused" : `${paused} exports paused`;
   } else if (!pending.length && items.length) {
     progress = 100;
     fname = completedCount ? `${completedCount} exported` : "Done";
@@ -559,9 +580,11 @@ export function reduceQueueSnapshot(
     active: active > 0,
     stopAfterDisabled: active === 0,
     cancelDisabled: active === 0,
-    clearDisabled: completedCount === 0,
+    clearDisabled: completedCount + cancelled === 0,
+    retryable: failed + cancelled,
+    paused,
     fname,
-    finished: items.length > 0 && active === 0,
+    finished: items.length > 0 && active === 0 && paused === 0,
     detail,
     waiting: pending.length,
     failed,

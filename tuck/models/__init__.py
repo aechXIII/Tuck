@@ -273,6 +273,8 @@ class QueueState(Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
+    # brought back after Tuck closed mid-batch; it waits outside the queue until resumed
+    PAUSED = "paused"
 
 
 @dataclass
@@ -1437,6 +1439,8 @@ class QueueItem:
     # the encoder the export really ran with, which Auto picks at run time
     effective_encoder: str = ""
     encoder_fallback: str = ""
+    # came back from an earlier run of Tuck rather than from this session's Library
+    restored: bool = False
 
 
 @dataclass
