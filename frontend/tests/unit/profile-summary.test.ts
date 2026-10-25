@@ -42,6 +42,19 @@ test("a profile sums up its target, size and frame rate in a few words", () => {
     profileSummary({ workflow: "upscale", rate_control: "explicit_bitrate", explicit_bitrate_kbps: 25000, resolution_mode: "custom", custom_width: 2560, custom_height: 1440, fps_mode: "source" }),
     "25 Mbps · 1440p · source frame rate",
   );
+  // a short side reads the same for every video, tall or wide
+  assert.equal(
+    profileSummary({ workflow: "upscale", resolution_mode: "short_side", short_side: 1440, custom_width: 2560, custom_height: 1440, fps_mode: "source" }),
+    "1440p · source frame rate",
+  );
+  assert.equal(
+    profileSummary({ workflow: "upscale", resolution_mode: "short_side", short_side: 2160, fps_mode: "source" }),
+    "4K · source frame rate",
+  );
+  assert.equal(
+    profileSummary({ workflow: "compression", target_size_bytes: 8 * MB, resolution_mode: "short_side", short_side: 900, fps_mode: "source" }),
+    "Target 8 MB · 900p · source frame rate",
+  );
 });
 
 test("a change names what moved away from the saved profile", () => {
@@ -56,4 +69,10 @@ test("a change names what moved away from the saved profile", () => {
     profileChangeSummary(saved, { ...saved, size: "20", fps: "60", lut: '{"enabled":true}', rm: "custom" }),
     "Changed target size, resolution and 2 more",
   );
+});
+
+test("picking another short side counts as a resolution change", () => {
+  const saved = { size: "500", rm: "short_side", rw: "", rh: "", rs: "1440", sc: "lanczos" };
+  assert.equal(profileChangeSummary(saved, { ...saved, rs: "2160" }), "Changed resolution");
+  assert.equal(profileChangeSummary(saved, { ...saved, sc: "neighbor" }), "Changed scaling");
 });

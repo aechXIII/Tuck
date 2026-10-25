@@ -1664,10 +1664,8 @@ class TestProfileShortcutLinks:
 
         assert resp["ok"], resp
         path = Path(resp["path"])
-        assert path.name == "Tuck - 4K Upscale (3840x2160).lnk"
-        assert _FileBackedLink(path).Description.endswith(
-            "|Upscale with Tuck (4K Upscale (3840x2160))"
-        )
+        assert path.name == "Tuck - 4K Upscale.lnk"
+        assert _FileBackedLink(path).Description.endswith("|Upscale with Tuck (4K Upscale)")
 
 
 class TestProfileUpdateRenamesShortcut:

@@ -80,17 +80,18 @@ test("repeated initials cycle choices while a longer prefix selects its match", 
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByRole("button", { name: "Profiles", exact: true }).click();
   const trigger = page.locator("#set-ds-trigger");
+  await expect(page.locator("#set-ds")).toHaveValue("lanczos");
   await trigger.focus();
-  await trigger.press("b");
-  await trigger.press("b");
+  // Smooth and Sharp pixels share an initial, so three presses land on Sharp pixels
+  await trigger.press("s");
+  await trigger.press("s");
+  await trigger.press("s");
   await trigger.press("Enter");
-  await expect(page.locator("#set-ds")).toHaveValue("Bicubic");
-  await chooseSelect(page, trigger, "Point");
-  await trigger.press("b");
-  await trigger.press("i");
-  await trigger.press("c");
+  await expect(page.locator("#set-ds")).toHaveValue("neighbor");
+  await trigger.press("s");
+  await trigger.press("m");
   await trigger.press("Enter");
-  await expect(page.locator("#set-ds")).toHaveValue("Bicubic");
+  await expect(page.locator("#set-ds")).toHaveValue("lanczos");
 });
 
 test("profile speed and preset controls stay synchronized after programmatic updates", async ({ page }) => {

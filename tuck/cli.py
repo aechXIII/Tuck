@@ -606,6 +606,7 @@ def _profile_with_resolution(profile, resolution):
 
 
 def _cmd_profiles(args) -> int:
+    from .models.encoding_policy import RES_MODE_SHORT_SIDE, short_side_name
     from .settings import get_settings_manager
 
     mgr = get_settings_manager()
@@ -618,11 +619,12 @@ def _cmd_profiles(args) -> int:
         table.add_column("Workflow")
         table.add_column("Target", justify="right")
         for p in mgr.get_profiles():
-            target = (
-                f"{p.custom_width}x{p.custom_height}"
-                if p.workflow == "upscale"
-                else f"{p.target_size_bytes / (1024 * 1024):.0f} MB"
-            )
+            if p.workflow != "upscale":
+                target = f"{p.target_size_bytes / (1024 * 1024):.0f} MB"
+            elif p.resolution_mode == RES_MODE_SHORT_SIDE:
+                target = short_side_name(p.short_side)
+            else:
+                target = f"{p.custom_width}x{p.custom_height}"
             table.add_row(p.profile_id, p.name, p.workflow.title(), target)
         console.print(table)
         return 0

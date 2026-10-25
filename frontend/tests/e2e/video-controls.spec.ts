@@ -24,13 +24,14 @@ for (const width of [1240, 960]) {
     const fps = page.getByLabel("Target frame rate", {exact:true});
     const fpsPreset = page.getByLabel("Output frame rate", {exact:true});
     await expect(page.getByLabel("Custom width", {exact:true})).toBeHidden();
-    await expect(page.getByLabel("Scaler algorithm")).toBeVisible();
+    await expect(page.getByLabel("Scaling", {exact:true})).toBeVisible();
+    await expect(page.getByLabel("Scaling", {exact:true})).toHaveAccessibleDescription(/Sharp pixels keeps hard edges/);
     expect(await page.locator("#export-fps-select option").evaluateAll(options => options.map(o => (o as HTMLOptionElement).value))).toEqual(["source", "24", "30", "60", "120", "custom"]);
     await expect(fps).toBeHidden();
     await expect(fps).toHaveValue("900");
     await chooseSelect(page, fpsPreset, "60");
     await expect(fps).toHaveValue("60");
-    await chooseSelect(page, resolution, "1280x720");
+    await chooseSelect(page, resolution, "720p");
     await expect(page.getByLabel("Custom width", {exact:true})).toHaveValue("1280");
     await expect(page.getByLabel("Custom height", {exact:true})).toHaveValue("720");
     await chooseSelect(page, resolution, "custom");
@@ -61,9 +62,13 @@ for (const width of [1240, 960]) {
     await expect(fps).toHaveValue("900");
     await page.getByRole("button", {name:"Upscale",exact:true}).click();
     await chooseSelect(page, fpsPreset, "60");
-    await chooseSelect(page, resolution, "3840x2160");
+    await chooseSelect(page, resolution, "2160p");
     await expect(page.getByLabel("Custom width", {exact:true})).toHaveValue("3840");
     await expect(page.getByRole("button", {name:"Upscale this video",exact:true})).toBeEnabled();
+    await page.getByRole("button", {name:"Upscale this video",exact:true}).click();
+    // a preset sizes each video's short side, so the planner gets the side, not a box
+    const upscale = await page.evaluate(() => (window.__tuckFakeBackendCalls ?? []).filter(c => c.method === "enqueueWithOptions").at(-1)?.args[0]);
+    expect(upscale).toMatchObject({workflow:"upscale",resolution_mode:"short_side",short_side:2160,scaler:"lanczos"});
     expect(errors).toEqual([]);
   });
 }

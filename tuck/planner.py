@@ -21,6 +21,7 @@ from .models import (
     RC_EXPLICIT_BITRATE,
     RES_MODE_CUSTOM,
     RES_MODE_LIMIT,
+    RES_MODE_SHORT_SIDE,
     RES_MODE_SOURCE,
     SIZING_MODE_STRETCH,
     WORKFLOW_UPSCALE,
@@ -40,6 +41,7 @@ from .models import (
     estimate_size_from_bitrate,
     oriented_dimensions,
     segment_timeline_duration,
+    short_side_dimensions,
     source_audio_output_pieces,
     validate_audio_tracks,
     validate_segments,
@@ -48,6 +50,7 @@ from .models.encoding_policy import (
     AMF_ENCODERS,
     NVENC_ENCODERS,
     VAAPI_ENCODERS,
+    short_side_name,
 )
 from .output_paths import export_directory, resolve_output_collision
 from .planner_options import resolve_plan_options
@@ -178,43 +181,9 @@ def plan(
 
     target_size = resolve_target_size(profile, request)
 
-    if output is None:
-        stem = source.stem
-        out_parent = export_directory(source, output_dir, output_subfolder)
-        suffix_template = upscale_suffix if workflow == WORKFLOW_UPSCALE else compression_suffix
-        target_w_for_name, target_h_for_name = _make_even(info.width, info.height)
-        if res_mode == RES_MODE_CUSTOM:
-            cw = (
-                request.custom_width
-                if request and request.custom_width is not None and request.custom_width > 0
-                else profile.custom_width
-            )
-            ch = (
-                request.custom_height
-                if request and request.custom_height is not None and request.custom_height > 0
-                else profile.custom_height
-            )
-            if cw is not None and cw > 0 and ch is not None and ch > 0:
-                target_w_for_name, target_h_for_name = _make_even(cw, ch)
-        size_mb = int(target_size / (1024 * 1024))
-        size_str = f"{size_mb}MB" if size_mb else ""
-        name_suffix = (
-            suffix_template.replace("{size}", size_str)
-            .replace("{width}", str(target_w_for_name))
-            .replace("{height}", str(target_h_for_name))
-        )
-        output = out_parent / f"{stem}{name_suffix}.mp4"
-    else:
-        output = Path(output)
-
-    ensure_output_differs_from_source(output, source)
-
-    # replacing keeps the chosen name; the old file is only swapped out once the export is done
-    if not replace_existing:
-        output = resolve_output_collision(output, respect_reservation=False)
-
     oriented_width, oriented_height = oriented_dimensions(transform, info.width, info.height)
     resolution_width, resolution_height = oriented_width, oriented_height
+    kept_short_side: int | None = None
     if transform.sizing_mode == SIZING_MODE_STRETCH:
         resolution_width, resolution_height = oriented_dimensions(
             replace(transform, crop=None),
@@ -239,6 +208,20 @@ def plan(
             else profile.custom_height
         )
         requested_output = OutputGeometry(max(2, int(cw)), max(2, int(ch)))
+    elif res_mode == RES_MODE_SHORT_SIDE:
+        short_side = (
+            request.short_side
+            if request and request.short_side is not None and request.short_side > 0
+            else profile.short_side
+        )
+        if workflow == WORKFLOW_UPSCALE and min(resolution_width, resolution_height) >= short_side:
+            # Upscale never makes a video smaller, so one already this size keeps its own
+            kept_short_side = short_side
+            requested_output = OutputGeometry(*_make_even(resolution_width, resolution_height))
+        else:
+            requested_output = OutputGeometry(
+                *short_side_dimensions(resolution_width, resolution_height, short_side)
+            )
     elif res_mode == RES_MODE_LIMIT:
         limit_width, limit_height = _scale_resolution(
             resolution_width, resolution_height, profile.max_width, profile.max_height
@@ -255,6 +238,27 @@ def plan(
 
     if target_w <= 0 or target_h <= 0:
         raise ValueError("Resolution scaling resulted in zero dimension")
+
+    if output is None:
+        suffix_template = upscale_suffix if workflow == WORKFLOW_UPSCALE else compression_suffix
+        size_mb = int(target_size / (1024 * 1024))
+        size_str = f"{size_mb}MB" if size_mb else ""
+        # the name gives the size the export really has, not the size that was asked for
+        name_suffix = (
+            suffix_template.replace("{size}", size_str)
+            .replace("{width}", str(target_w))
+            .replace("{height}", str(target_h))
+        )
+        out_parent = export_directory(source, output_dir, output_subfolder)
+        output = out_parent / f"{source.stem}{name_suffix}.mp4"
+    else:
+        output = Path(output)
+
+    ensure_output_differs_from_source(output, source)
+
+    # replacing keeps the chosen name; the old file is only swapped out once the export is done
+    if not replace_existing:
+        output = resolve_output_collision(output, respect_reservation=False)
 
     target_fps, apply_fps = resolve_frame_rate(fps_mode, info, profile, request)
 
@@ -338,6 +342,12 @@ def plan(
 
     tone_map_hdr, warnings = plan_colors(info)
     warnings += subtitle_warnings(info, len(segments))
+    if workflow == WORKFLOW_UPSCALE:
+        warnings += upscale_size_warnings(
+            (target_w, target_h),
+            (transform_geometry.oriented_width, transform_geometry.oriented_height),
+            kept_short_side,
+        )
 
     is_upscale = workflow == WORKFLOW_UPSCALE
 
@@ -563,6 +573,28 @@ def subtitle_warnings(info: VideoInfo, segment_count: int) -> list[str]:
         return [
             f"This video has {len(info.subtitle_codecs)} subtitle tracks. "
             "Only the first text track is kept."
+        ]
+    return []
+
+
+def upscale_size_warnings(
+    output: tuple[int, int], video: tuple[int, int], kept_short_side: int | None
+) -> list[str]:
+    """Says when an Upscale export doesn't make the video any larger."""
+    output_size = f"{output[0]}x{output[1]}"
+    if kept_short_side is not None:
+        name = short_side_name(kept_short_side)
+        if min(video) > kept_short_side:
+            return [
+                f"This video is already larger than {name}, so it keeps its size of {output_size}."
+            ]
+        return [f"This video is already {name}, so it keeps its size of {output_size}."]
+    if output == video:
+        return [f"The output is the same size as the video ({output_size}), so it isn't upscaled."]
+    if output[0] * output[1] < video[0] * video[1]:
+        return [
+            f"The output, {output_size}, is smaller than the video "
+            f"({video[0]}x{video[1]}), so it isn't upscaled."
         ]
     return []
 

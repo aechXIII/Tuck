@@ -54,7 +54,7 @@ class TestSettingsManager:
         mgr = SettingsManager()
         s = mgr.load()
         assert s.default_profile_id == PROFILE_ID_DISCORD_FREE
-        assert s.version == 1
+        assert s.version == 2
         assert s.encoder_cache_days == 7
 
     def test_get_profiles_returns_defaults(self, tmp_path, monkeypatch):
@@ -218,9 +218,11 @@ class TestMigration:
         monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
 
         old_default = DEFAULT_PROFILES[0].to_dict()
+        old_default.pop("short_side")
         old_default.update(
             name="Discord Free - 10MB",
             target_size_bytes=10 * 1024 * 1024,
+            scaler="neighbor",
             schema_version=4,
         )
         _atomic_write(
@@ -232,6 +234,7 @@ class TestMigration:
 
         assert profile.name == "Discord Free - 20MB"
         assert profile.target_size_bytes == 20 * 1024 * 1024
+        assert profile.scaler == "lanczos"
         assert profile.schema_version == PROFILE_SCHEMA_VERSION
 
     def test_customized_discord_free_profile_stays_at_10mb(self, tmp_path, monkeypatch):

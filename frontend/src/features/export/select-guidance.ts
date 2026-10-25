@@ -10,14 +10,6 @@ const encoder: Readonly<Record<string, string>> = {
   hevc_amf: "Fast H.265 encoding on an AMD GPU",
 };
 
-const scaler: Readonly<Record<string, string>> = {
-  bilinear: "Fast resizing with softer edges",
-  bicubic: "Smooth resizing with balanced detail",
-  lanczos: "Sharper detail in resized frames",
-  point: "Keep hard pixel edges",
-  neighbor: "Nearest-neighbor sampling",
-};
-
 const speed: Readonly<Record<string, string>> = {
   fast: "Finish sooner",
   balanced: "A balance of size and speed",
@@ -39,7 +31,6 @@ const rate: Readonly<Record<string, string>> = {
 
 export function selectGuidance(id: string, value: string): string {
   if (["enc-sel", "pe-enc"].includes(id)) return encoder[value] ?? "";
-  if (["scaler-sel", "pe-scaler", "set-ds"].includes(id)) return scaler[value.toLowerCase()] ?? "";
   if (["speed-sel", "pe-speed"].includes(id)) return speed[value] ?? "";
   if (id === "pe-sizing") return sizing[value] ?? "";
   if (["rc-sel", "pe-rc"].includes(id)) return rate[value] ?? "";

@@ -5,6 +5,8 @@ from ..desktop_platform import is_linux_desktop
 RES_MODE_SOURCE = "source"
 RES_MODE_LIMIT = "limit"
 RES_MODE_CUSTOM = "custom"
+# sizes the shorter side, so a vertical video stays vertical (1440 means 2560x1440 or 1440x2560)
+RES_MODE_SHORT_SIDE = "short_side"
 FPS_MODE_SOURCE = "source"
 FPS_MODE_LIMIT = "limit"
 FPS_MODE_CUSTOM = "custom"
@@ -24,7 +26,12 @@ SCALER_LANCZOS = "lanczos"
 SCALER_NEIGHBOR = "neighbor"
 SCALER_POINT = "point"
 
-VALID_RES_MODES = frozenset({RES_MODE_SOURCE, RES_MODE_LIMIT, RES_MODE_CUSTOM})
+
+def short_side_name(short_side: int) -> str:
+    return "4K" if short_side == 2160 else f"{short_side}p"
+
+
+VALID_RES_MODES = frozenset({RES_MODE_SOURCE, RES_MODE_LIMIT, RES_MODE_CUSTOM, RES_MODE_SHORT_SIDE})
 VALID_FPS_MODES = frozenset({FPS_MODE_SOURCE, FPS_MODE_LIMIT, FPS_MODE_CUSTOM})
 VALID_RC_MODES = frozenset({RC_TARGET_SIZE, RC_EXPLICIT_BITRATE})
 VALID_WORKFLOWS = frozenset({WORKFLOW_COMPRESSION, WORKFLOW_UPSCALE})
@@ -32,6 +39,20 @@ VALID_RC_METHODS = frozenset({RCM_CRF, RCM_CQP, RCM_CQ, RCM_CBR, RCM_VBR})
 VALID_SCALERS = frozenset(
     {SCALER_BILINEAR, SCALER_BICUBIC, SCALER_LANCZOS, SCALER_NEIGHBOR, SCALER_POINT}
 )
+# Tuck offers two kinds of scaling, Smooth (lanczos) and Sharp pixels (neighbor); older
+# profiles, settings and commands may still name one of the other filters
+_SMOOTH_SCALERS = frozenset({SCALER_BILINEAR, SCALER_BICUBIC, SCALER_LANCZOS})
+_SHARP_SCALERS = frozenset({SCALER_NEIGHBOR, SCALER_POINT, "nearest"})
+
+
+def normalize_scaler(value: object) -> str:
+    """Maps any accepted scaler name to lanczos or neighbor; raises ValueError otherwise."""
+    if isinstance(value, str) and value in _SMOOTH_SCALERS:
+        return SCALER_LANCZOS
+    if isinstance(value, str) and value in _SHARP_SCALERS:
+        return SCALER_NEIGHBOR
+    raise ValueError(f"scaler must be one of {sorted(VALID_SCALERS)}")
+
 
 ENCODER_AUTO = "auto"
 ENCODER_AUTO_COMPRESSION = "auto_compression"

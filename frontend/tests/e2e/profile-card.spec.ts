@@ -103,7 +103,7 @@ for (const width of [1240, 960]) {
       await expect(dirty).toBeVisible();
       await expect.poll(() => page.evaluate(() => window.__tuckFakeBackendCalls
         ?.filter(call => call.method === "createPlan").at(-1)?.args[0]))
-        .toMatchObject({ resolution_mode: "custom", custom_width: 1280, custom_height: 720 });
+        .toMatchObject({ resolution_mode: "short_side", short_side: 720 });
       expect(await page.evaluate(() => window.__tuckFakeBackendCalls
         ?.filter(call => call.method === "updateProfile"))).toHaveLength(0);
       await page.getByRole("button", { name: "Discard", exact: true }).click();
@@ -184,7 +184,7 @@ for (const width of [1240, 960]) {
     await page.locator("#export-res-select-popup").getByRole("option", { name: "2560 × 1440", exact: true }).click();
     await page.getByRole("button", { name: "Save to profile", exact: true }).click();
     await expect.poll(() => page.evaluate(() => window.__tuckFakeBackendCalls?.find(call => call.method === "updateProfile")?.args))
-      .toEqual(["upscale-4k", expect.objectContaining({ workflow: "upscale", custom_width: 2560, custom_height: 1440 })]);
+      .toEqual(["upscale-4k", expect.objectContaining({ workflow: "upscale", resolution_mode: "short_side", short_side: 1440 })]);
     await expect(page.locator("#prof-changed")).toBeHidden();
     await expect(card.locator("#sz-grp")).toBeHidden();
     await expect(page.locator("#res-w")).toHaveValue("2560");

@@ -50,16 +50,20 @@ test("size presets keep only the three approved quick decisions", () => {
 
 test("export video facades preserve source and common output decisions", () => {
   const landscape = inspectorUi.resolutionChoices(2560, 1440);
-  assert.ok(landscape.some(option => option.value === "1280x720"));
-  assert.ok(landscape.some(option => option.value === "3840x2160"));
+  const label = (choices: inspectorUi.ChoiceOption[], value: string) =>
+    choices.find(option => option.value === value)?.label;
+  assert.equal(label(landscape, "720p"), "1280 × 720");
+  assert.equal(label(landscape, "2160p"), "3840 × 2160");
   assert.equal(landscape[0]?.value, "source");
-  assert.ok(inspectorUi.resolutionChoices(1080, 1920).some(option => option.value === "720x1280"));
-  assert.ok(inspectorUi.resolutionChoices(3440, 1440).some(option => option.value === "2580x1080"));
+  assert.equal(label(inspectorUi.resolutionChoices(1080, 1920), "720p"), "720 × 1280");
+  assert.equal(label(inspectorUi.resolutionChoices(3440, 1440), "1080p"), "2580 × 1080");
   assert.deepEqual(inspectorUi.resolutionDecision("1920x1080"), {
     mode: "custom",
     width: 1920,
     height: 1080,
   });
+  assert.deepEqual(inspectorUi.resolutionDecision("1440p"), { mode: "short_side", shortSide: 1440 });
+  assert.deepEqual(inspectorUi.resolutionDecision("custom"), { mode: "custom" });
   assert.deepEqual(inspectorUi.resolutionDecision("source"), { mode: "source" });
   const fps = inspectorUi.frameRateChoices(60);
   assert.deepEqual(fps.map(option => option.value), ["source", "24", "30", "60", "120", "custom"]);
@@ -89,4 +93,30 @@ test("inspector startup resolves fixed and last-used panel preferences", () => {
   assert.equal(inspectorUi.startupTab("last", "audio"), "audio");
   assert.equal(inspectorUi.startupTab("last", "unexpected"), "export");
   assert.equal(inspectorUi.startupTab("unexpected", "audio"), "export");
+});
+
+test("resolution presets size the short side so vertical videos stay vertical", () => {
+  assert.deepEqual(inspectorUi.shortSideSize(1080, 1920, 1440), { width: 1440, height: 2560 });
+  assert.deepEqual(inspectorUi.shortSideSize(1920, 1080, 1440), { width: 2560, height: 1440 });
+  assert.deepEqual(inspectorUi.shortSideSize(1080, 1080, 2160), { width: 2160, height: 2160 });
+  // halves round up, the same as the planner
+  assert.deepEqual(inspectorUi.shortSideSize(853, 480, 1440), { width: 2560, height: 1440 });
+  assert.deepEqual(inspectorUi.shortSideSize(2560, 1080, 1440), { width: 3414, height: 1440 });
+});
+
+test("the resolution menu shows the preset a short side or a matching size picks", () => {
+  const state = (mode: string, shortSide: number, width = 0, height = 0) => ({ mode, shortSide, width, height });
+  assert.equal(inspectorUi.resolutionChoiceValue(1080, 1920, state("short_side", 1440)), "1440p");
+  assert.equal(inspectorUi.resolutionChoiceValue(1080, 1920, state("short_side", 900)), "custom");
+  assert.equal(inspectorUi.resolutionChoiceValue(1080, 1920, state("source", 1440)), "source");
+  assert.equal(inspectorUi.resolutionChoiceValue(1920, 1080, state("custom", 0, 2560, 1440)), "1440p");
+  // a landscape box on a vertical video is a custom size, not 1440p
+  assert.equal(inspectorUi.resolutionChoiceValue(1080, 1920, state("custom", 0, 2560, 1440)), "custom");
+});
+
+test("scaling offers Smooth and Sharp pixels and reads anything else as Smooth", () => {
+  assert.deepEqual(inspectorUi.SCALING_CHOICES.map(choice => choice.label), ["Smooth", "Sharp pixels"]);
+  assert.equal(inspectorUi.scalingChoice("neighbor"), "neighbor");
+  assert.equal(inspectorUi.scalingChoice("lanczos"), "lanczos");
+  assert.equal(inspectorUi.scalingChoice(undefined), "lanczos");
 });

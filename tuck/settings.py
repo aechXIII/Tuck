@@ -48,6 +48,7 @@ from .models import (
     RCM_CRF,
     RES_MODE_LIMIT,
     RES_MODE_SOURCE,
+    SCALER_LANCZOS,
     WORKFLOW_COMPRESSION,
     WORKFLOW_UPSCALE,
     AppSettings,
@@ -55,6 +56,7 @@ from .models import (
     dicts_to_profiles,
     find_profile_by_id,
     migrate_profile_ids,
+    normalize_scaler,
     profile_id_migrations,
     profiles_to_dicts,
     read_profiles_json,
@@ -558,6 +560,17 @@ class SettingsManager:
                 data["default_profile_id"] = _map_old_default_name(old_default)
             data.pop("profiles", None)
             data["version"] = 1
+
+        # version 2 offers Smooth and Sharp pixels, with Smooth for new profiles; neighbor
+        # was the default before, so it doesn't say what anyone chose
+        if "default_scaler" in data:
+            raw = data["default_scaler"]
+            try:
+                scaler = normalize_scaler(raw)
+            except ValueError:
+                scaler = SCALER_LANCZOS
+            data["default_scaler"] = SCALER_LANCZOS if version < 2 and raw == "neighbor" else scaler
+        data["version"] = max(2, data.get("version", 0))
 
         if "default_profile_id" not in data or not data["default_profile_id"]:
             data["default_profile_id"] = PROFILE_ID_DISCORD_FREE

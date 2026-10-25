@@ -862,13 +862,15 @@
                   </div>
                     <div id="scaler-row" class="video-control-group">
                       <label for="scaler-sel">Scaling</label>
-                      <select id="scaler-sel" data-action-change="encoding-preview-dirty" aria-label="Scaler algorithm">
-                        <option>Bilinear</option><option>Bicubic</option><option>Lanczos</option><option>Point</option><option selected>Neighbor</option>
+                      <select id="scaler-sel" data-action-change="encoding-preview-dirty" aria-describedby="scaler-note">
+                        <option value="lanczos" selected>Smooth</option><option value="neighbor">Sharp pixels</option>
                       </select>
+                      <p id="scaler-note" class="setting-note video-control-note">Smooth keeps detail when the size changes. Sharp pixels keeps hard edges, for pixel-art games.</p>
                     </div>
                   <p id="video-error" class="blend-error" role="alert" hidden></p>
                   <input type="checkbox" id="use-source-res" checked hidden />
                   <input type="hidden" id="res-mode" value="source" />
+                  <input type="hidden" id="res-short" value="1080" />
                   <input type="checkbox" id="use-source-fps" checked hidden />
                   <input type="hidden" id="fps-val" value="30" />
                 </div>

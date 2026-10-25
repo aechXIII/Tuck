@@ -58,7 +58,7 @@ from .models import (
     VideoInfo,
     find_profile_by_id,
 )
-from .models.encoding_policy import VALID_SCALERS
+from .models.encoding_policy import SCALER_LANCZOS, normalize_scaler
 from .models.export_preferences import (
     OUTPUT_LOCATION_FOLDER,
     normalize_output_location,
@@ -844,7 +844,7 @@ class BridgeAPI:
         profiles = self._settings.get_profiles()
         return {
             "default_profile_id": s.default_profile_id,
-            "default_scaler": getattr(s, "default_scaler", "neighbor"),
+            "default_scaler": getattr(s, "default_scaler", SCALER_LANCZOS),
             "output_dir": s.output_dir,
             "ffmpeg_path": s.ffmpeg_path,
             "ffprobe_path": s.ffprobe_path,
@@ -1031,7 +1031,9 @@ class BridgeAPI:
                     val = data[key]
                     if not isinstance(val, str):
                         return {"ok": False, "error": "default_scaler must be string"}
-                    if val not in VALID_SCALERS:
+                    try:
+                        preferences[key] = normalize_scaler(val)
+                    except ValueError:
                         return {"ok": False, "error": f"Invalid scaler: {val}"}
                 if key == "default_profile_id":
                     pid = data[key]

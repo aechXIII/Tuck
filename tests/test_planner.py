@@ -345,8 +345,15 @@ class TestPlan:
         assert p.apply_scale is True
         assert p.scaler == SCALER_LANCZOS
 
-    def test_plan_scaler_passed_through(self, skip_if_no_ffprobe, sample_video_path):
-        for scaler in ["bilinear", "bicubic", "lanczos", "nearest"]:
+    def test_plan_scaler_is_smooth_or_sharp_pixels(self, skip_if_no_ffprobe, sample_video_path):
+        expected = {
+            "bilinear": "lanczos",
+            "bicubic": "lanczos",
+            "lanczos": "lanczos",
+            "point": "neighbor",
+            "nearest": "neighbor",
+        }
+        for scaler, planned in expected.items():
             profile = Profile(
                 name="test",
                 profile_id=f"test-scaler-{scaler}",
@@ -358,7 +365,7 @@ class TestPlan:
                 scaler=scaler,
             )
             p = plan(str(sample_video_path), profile)
-            assert p.scaler == scaler
+            assert p.scaler == planned
 
     def test_plan_request_scaler_override(self, skip_if_no_ffprobe, sample_video_path):
         """Request scaler overrides profile scaler."""
@@ -685,15 +692,16 @@ class TestUpscaleWorkflow:
         assert p.workflow == WORKFLOW_UPSCALE
         assert p.video_bitrate == 0
         assert p.estimated_size == 0
-        assert p.target_width == 2560
+        # the sample is square, and 1440p sizes its short side
+        assert p.target_width == 1440
         assert p.target_height == 1440
 
     def test_upscale_4k_profile_dimensions(self, skip_if_no_ffprobe, sample_video_path):
-        """4K upscale profile targets 3840x2160."""
+        """4K upscale makes the short side 2160."""
         profile = find_profile_by_id(DEFAULT_PROFILES, PROFILE_ID_4K_UPSCALE)
         p = plan(str(sample_video_path), profile)
         assert p.workflow == WORKFLOW_UPSCALE
-        assert p.target_width == 3840
+        assert p.target_width == 2160
         assert p.target_height == 2160
         assert p.video_bitrate == 0
 

@@ -344,6 +344,23 @@ def fit_output_dimensions(
     )
 
 
+def short_side_dimensions(
+    source_width: int,
+    source_height: int,
+    short_side: int,
+) -> tuple[int, int]:
+    """The frame scaled so its shorter side is short_side, in even numbers."""
+    _positive_int(source_width, "source width")
+    _positive_int(source_height, "source height")
+    _positive_int(short_side, "short side")
+    shorter = min(source_width, source_height)
+    # rounds halves up like the Resolution menu does, so its labels match the export
+    return (
+        max(2, math.floor(source_width * short_side / shorter / 2 + 0.5) * 2),
+        max(2, math.floor(source_height * short_side / shorter / 2 + 0.5) * 2),
+    )
+
+
 def fill_crop_dimensions(
     source_width: int,
     source_height: int,

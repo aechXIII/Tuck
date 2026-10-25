@@ -24,8 +24,32 @@ export interface ChoiceOption {
 
 export type ResolutionDecision =
   | { mode: "source" }
+  | { mode: "short_side"; shortSide: number }
   | { mode: "custom"; width: number; height: number }
   | { mode: "custom" };
+
+export interface ResolutionState {
+  mode: string;
+  shortSide: number;
+  width: number;
+  height: number;
+}
+
+// the presets size the shorter side, so a vertical video stays vertical
+const SHORT_SIDES = [480, 720, 1080, 1440, 2160];
+
+// stored scaler names; Python reads older names as one of these two
+export const SCALING_CHOICES: readonly ChoiceOption[] = [
+  { value: "lanczos", label: "Smooth" },
+  { value: "neighbor", label: "Sharp pixels" },
+];
+
+export const SCALING_NOTE =
+  "Smooth keeps detail when the size changes. Sharp pixels keeps hard edges, for pixel-art games.";
+
+export function scalingChoice(value: unknown): string {
+  return value === "neighbor" ? "neighbor" : "lanczos";
+}
 
 function videoCodec(encoder: string | null | undefined): string {
   const id = String(encoder || "").toLowerCase();
@@ -95,17 +119,30 @@ export function sizePresets(): number[] {
   return [20, 50, 200, 500];
 }
 
+// the video scaled so its shorter side is shortSide, in even numbers; the planner rounds the same way
+export function shortSideSize(
+  sourceWidth: number,
+  sourceHeight: number,
+  shortSide: number,
+): { width: number; height: number } {
+  const width = Math.max(0, Math.round(Number(sourceWidth) || 0));
+  const height = Math.max(0, Math.round(Number(sourceHeight) || 0));
+  const shorter = Math.min(width, height) || 1080;
+  return {
+    width: Math.max(2, Math.round(width * shortSide / shorter / 2) * 2),
+    height: Math.max(2, Math.round(height * shortSide / shorter / 2) * 2),
+  };
+}
+
 export function resolutionChoices(
   sourceWidth: number,
   sourceHeight: number,
 ): ChoiceOption[] {
   const width = Math.max(0, Math.round(Number(sourceWidth) || 0));
   const height = Math.max(0, Math.round(Number(sourceHeight) || 0));
-  const shortSide = Math.min(width, height) || 1080;
-  const presets = [480, 720, 1080, 1440, 2160].map(size => {
-    const w = Math.max(2, Math.round(width * size / shortSide / 2) * 2);
-    const h = Math.max(2, Math.round(height * size / shortSide / 2) * 2);
-    return {value: `${w}x${h}`, label: `${w} × ${h}`};
+  const presets = SHORT_SIDES.map(size => {
+    const output = shortSideSize(width, height, size);
+    return {value: `${size}p`, label: `${output.width} × ${output.height}`};
   });
   return [
     { value: "source", label: `Source · ${width} × ${height}` },
@@ -114,8 +151,27 @@ export function resolutionChoices(
   ];
 }
 
+// the menu entry for the current resolution; a custom size that matches a preset shows as it
+export function resolutionChoiceValue(
+  sourceWidth: number,
+  sourceHeight: number,
+  state: ResolutionState,
+): string {
+  if (state.mode === "source") return "source";
+  if (state.mode === "short_side") {
+    return SHORT_SIDES.includes(state.shortSide) ? `${state.shortSide}p` : "custom";
+  }
+  const preset = SHORT_SIDES.find(size => {
+    const output = shortSideSize(sourceWidth, sourceHeight, size);
+    return output.width === state.width && output.height === state.height;
+  });
+  return preset === undefined ? "custom" : `${preset}p`;
+}
+
 export function resolutionDecision(value: string | null | undefined): ResolutionDecision {
   if (value === "source") return { mode: "source" };
+  const preset = /^(\d+)p$/.exec(String(value || ""));
+  if (preset?.[1]) return { mode: "short_side", shortSide: Number(preset[1]) };
   const match = /^(\d+)x(\d+)$/.exec(String(value || ""));
   if (!match) return { mode: "custom" };
   const widthRaw = match[1];

@@ -74,6 +74,7 @@ def profile_ui_dict(
         "max_height": profile.max_height,
         "custom_width": profile.custom_width,
         "custom_height": profile.custom_height,
+        "short_side": profile.short_side,
         "fps_mode": profile.fps_mode,
         "max_fps": profile.max_fps,
         "custom_fps": profile.custom_fps,

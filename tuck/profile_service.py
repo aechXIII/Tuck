@@ -11,6 +11,7 @@ from .bridge_validation import normalize_profile_ui_payload
 from .desktop_platform import is_linux_desktop
 from .models import (
     PROFILE_ID_DISCORD_FREE,
+    SCALER_LANCZOS,
     Profile,
     export_profiles_json,
     find_profile_by_id,
@@ -79,7 +80,7 @@ class ProfileService:
         data.pop("profile_id", None)
         data["profile_id"] = uuid.uuid4().hex[:12]
         if "scaler" not in data:
-            data["scaler"] = self._settings.get_setting("default_scaler", "neighbor")
+            data["scaler"] = self._settings.get_setting("default_scaler", SCALER_LANCZOS)
 
         try:
             validated = Profile.from_dict(data)

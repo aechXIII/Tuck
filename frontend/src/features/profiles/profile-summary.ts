@@ -8,6 +8,7 @@ export interface ProfileFields {
   readonly custom_height?: unknown;
   readonly max_width?: unknown;
   readonly max_height?: unknown;
+  readonly short_side?: unknown;
   readonly fps_mode?: unknown;
   readonly custom_fps?: unknown;
   readonly max_fps?: unknown;
@@ -27,12 +28,17 @@ function trimmed(value: number): string {
   return String(Math.round(value * 100) / 100);
 }
 
+const SIZE_NAMES: Readonly<Record<number, string>> = { 2160: "4K", 1440: "1440p", 1080: "1080p", 720: "720p", 480: "480p" };
+
 function sizeLabel(profile: ProfileFields): string {
+  if (profile.resolution_mode === "short_side") {
+    const side = num(profile.short_side);
+    return side ? SIZE_NAMES[side] ?? `${side}p` : "";
+  }
   const width = num(profile.custom_width) || num(profile.max_width);
   const height = num(profile.custom_height) || num(profile.max_height);
   if (profile.resolution_mode === "source" || !width || !height) return "";
-  const names: Record<number, string> = { 2160: "4K", 1440: "1440p", 1080: "1080p", 720: "720p", 480: "480p" };
-  const name = width > height && names[height] ? names[height] : `${width}×${height}`;
+  const name = width > height && SIZE_NAMES[height] ? SIZE_NAMES[height] : `${width}×${height}`;
   return profile.resolution_mode === "limit" ? `up to ${name}` : name;
 }
 
@@ -68,6 +74,7 @@ const CHANGE_NAMES: Record<string, string> = {
   rm: "resolution",
   rw: "resolution",
   rh: "resolution",
+  rs: "resolution",
   sc: "scaling",
   fps: "frame rate",
   blending: "frame blending",

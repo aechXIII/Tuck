@@ -568,6 +568,7 @@
 .adjust-panel-body .setting-note { font-size: calc(11px * var(--text-scale)); }
 #encoder-note { margin-left: 114px; }
 .video-control-group > select { width: 100%; }
+.video-control-group > .video-control-note { grid-column: 1 / -1; margin: 0; line-height: 1.45; }
 .video-dimensions { grid-column: 2; display: grid; grid-template-columns: minmax(0, 1fr) 12px minmax(0, 1fr); gap: 7px; align-items: end; }
 .video-dimensions label { display: grid; gap: 5px; font-size: calc(10px * var(--text-scale)); color: var(--muted); min-width: 0; }
 .video-dimensions input { width: 100%; box-sizing: border-box; }

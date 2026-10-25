@@ -94,7 +94,7 @@ export const SETTINGS_INDEX: readonly SettingsEntry[] = [
   { id: "profiles", page: "profiles", label: "Profiles", keywords: "presets discord manage pin favorite favourite hide picker" },
   { id: "new-profile", page: "profiles", label: "New profile", keywords: "create add preset" },
   { id: "import-profiles", page: "profiles", label: "Import profiles", keywords: "json file" },
-  { id: "default-scaler", page: "profiles", label: "Scaler", keywords: "default upscale resize lanczos bicubic neighbor" },
+  { id: "default-scaler", page: "profiles", label: "Scaling", keywords: "scaler default upscale resize smooth sharp pixels pixel art lanczos neighbor" },
   { id: "send-to", page: "explorer", label: "Send to", keywords: "right-click context menu shortcuts explorer" },
   { id: "profile-shortcuts", page: "explorer", label: "Profile shortcuts", keywords: "send to right-click" },
   { id: "ffmpeg", page: "media", label: "FFmpeg", keywords: "path tools location" },

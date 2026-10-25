@@ -69,6 +69,9 @@ from .encoding_policy import (
     RES_MODE_LIMIT as RES_MODE_LIMIT,
 )
 from .encoding_policy import (
+    RES_MODE_SHORT_SIDE as RES_MODE_SHORT_SIDE,
+)
+from .encoding_policy import (
     RES_MODE_SOURCE as RES_MODE_SOURCE,
 )
 from .encoding_policy import (
@@ -128,6 +131,9 @@ from .encoding_policy import (
     validate_preset_for_encoder,
     validate_rc_method_for_encoder,
     validate_tune_for_encoder,
+)
+from .encoding_policy import (
+    normalize_scaler as normalize_scaler,
 )
 from .encoding_policy import (
     validate_rate_control_matrix as validate_rate_control_matrix,
@@ -194,6 +200,9 @@ from .transforms import (
 from .transforms import (
     oriented_dimensions as oriented_dimensions,
 )
+from .transforms import (
+    short_side_dimensions as short_side_dimensions,
+)
 from .ui_preferences import DEFAULT_CUT_SUFFIX, START_TASK_LAST
 
 PROFILE_ID_DISCORD_FREE = "discord-free"
@@ -218,7 +227,10 @@ DISCORD_NITRO_LIMIT = 500 * 1024 * 1024
 MIN_TARGET_SIZE_BYTES = 2 * 1024 * 1024
 MIN_SEGMENT_DURATION = 0.05
 
-PROFILE_SCHEMA_VERSION = 6
+PROFILE_SCHEMA_VERSION = 7
+# version 7 sizes the built-in Upscale profiles by their short side and makes the built-in
+# profiles scale smoothly
+SCHEMA_SMOOTH_SHORT_SIDE = 7
 
 
 def normalize_profile_id(profile_id: str) -> str:
@@ -810,6 +822,7 @@ class PlanRequest:
     resolution_mode: str | None = None
     custom_width: int | None = None
     custom_height: int | None = None
+    short_side: int | None = None
 
     fps_mode: str | None = None
     custom_fps: float | None = None
@@ -874,6 +887,8 @@ class PlanRequest:
                 raise ValueError("custom_width must be >= 2")
             if self.custom_height is not None and self.custom_height < 2:
                 raise ValueError("custom_height must be >= 2")
+        if self.short_side is not None and self.short_side < 2:
+            raise ValueError("short_side must be >= 2")
         if (
             self.fps_mode == FPS_MODE_CUSTOM
             and self.custom_fps is not None
@@ -891,11 +906,11 @@ class PlanRequest:
         if self.target_size_bytes is not None and self.target_size_bytes < MIN_TARGET_SIZE_BYTES:
             raise ValueError("target_size_bytes must be at least 2 MB")
 
-        if self.scaler is not None and self.scaler not in VALID_SCALERS:
-            if self.scaler == "nearest":
-                self.scaler = SCALER_NEIGHBOR
-            else:
-                raise ValueError(f"Invalid scaler: {self.scaler!r}")
+        if self.scaler is not None:
+            try:
+                normalize_scaler(self.scaler)
+            except ValueError:
+                raise ValueError(f"Invalid scaler: {self.scaler!r}") from None
 
         if self.video_encoder is not None and self.video_encoder not in VALID_VIDEO_ENCODER_CHOICES:
             raise ValueError(f"video_encoder must be one of {sorted(VALID_VIDEO_ENCODER_CHOICES)}")
@@ -1229,6 +1244,7 @@ class Profile:
     max_height: int = 1080
     custom_width: int = 1920
     custom_height: int = 1080
+    short_side: int = 1080
 
     fps_mode: str = FPS_MODE_SOURCE
     max_fps: float = 30.0
@@ -1239,7 +1255,7 @@ class Profile:
     rate_control: str = RC_TARGET_SIZE
     explicit_bitrate: int = 0
 
-    scaler: str = SCALER_NEIGHBOR
+    scaler: str = SCALER_LANCZOS
 
     audio_bitrate: int = 128_000
     audio_channels: int = 2
@@ -1295,6 +1311,7 @@ class Profile:
             "max_height": self.max_height,
             "custom_width": self.custom_width,
             "custom_height": self.custom_height,
+            "short_side": self.short_side,
             "fps_mode": self.fps_mode,
             "max_fps": self.max_fps,
             "custom_fps": self.custom_fps,
@@ -1356,7 +1373,7 @@ class Profile:
         ):
             merged = _migrate_profile_data(merged)
         if source_schema_version < PROFILE_SCHEMA_VERSION:
-            merged = _migrate_builtin_profile_defaults(merged)
+            merged = _migrate_builtin_profile_defaults(merged, source_schema_version)
             merged["schema_version"] = PROFILE_SCHEMA_VERSION
         _validate_profile_dict(merged)
         transform_data = merged.get("transform_intent")
@@ -1368,6 +1385,7 @@ class Profile:
             max_height=merged.get("max_height", 1080),
             custom_width=merged.get("custom_width", 1920),
             custom_height=merged.get("custom_height", 1080),
+            short_side=merged.get("short_side", 1080),
             fps_mode=merged.get("fps_mode", FPS_MODE_SOURCE),
             max_fps=merged.get("max_fps", 30.0),
             custom_fps=merged.get("custom_fps", 30.0),
@@ -1375,6 +1393,7 @@ class Profile:
             frame_blending=FrameBlending.from_dict(merged.get("frame_blending", {})),
             rate_control=merged.get("rate_control", RC_TARGET_SIZE),
             explicit_bitrate=merged.get("explicit_bitrate", 0),
+            # a profile saved before scaling was a choice used neighbor
             scaler=merged.get("scaler", SCALER_NEIGHBOR),
             audio_bitrate=merged.get("audio_bitrate", 128_000),
             audio_channels=merged.get("audio_channels", 2),
@@ -1422,10 +1441,10 @@ class QueueItem:
 
 @dataclass
 class AppSettings:
-    version: int = 1
+    version: int = 2
     default_profile_id: str = PROFILE_ID_DISCORD_FREE
     profile_ids_version: int = 1
-    default_scaler: str = SCALER_NEIGHBOR
+    default_scaler: str = SCALER_LANCZOS
     output_dir: str = ""
     ffmpeg_path: str = ""
     ffprobe_path: str = ""
@@ -1532,14 +1551,15 @@ DEFAULT_PROFILES: list[Profile] = [
     ),
     Profile(
         profile_id=PROFILE_ID_1440P_UPSCALE,
-        name="1440p Upscale (2560x1440)",
+        name="1440p Upscale",
         target_size_bytes=500 * 1024 * 1024,
-        resolution_mode=RES_MODE_CUSTOM,
+        resolution_mode=RES_MODE_SHORT_SIDE,
         custom_width=2560,
         custom_height=1440,
+        short_side=1440,
         fps_mode=FPS_MODE_SOURCE,
         rate_control=RC_TARGET_SIZE,
-        scaler=SCALER_NEIGHBOR,
+        scaler=SCALER_LANCZOS,
         keep_audio=True,
         workflow=WORKFLOW_UPSCALE,
         rate_control_method=RCM_CRF,
@@ -1549,14 +1569,15 @@ DEFAULT_PROFILES: list[Profile] = [
     ),
     Profile(
         profile_id=PROFILE_ID_4K_UPSCALE,
-        name="4K Upscale (3840x2160)",
+        name="4K Upscale",
         target_size_bytes=500 * 1024 * 1024,
-        resolution_mode=RES_MODE_CUSTOM,
+        resolution_mode=RES_MODE_SHORT_SIDE,
         custom_width=3840,
         custom_height=2160,
+        short_side=2160,
         fps_mode=FPS_MODE_SOURCE,
         rate_control=RC_TARGET_SIZE,
-        scaler=SCALER_NEIGHBOR,
+        scaler=SCALER_LANCZOS,
         keep_audio=True,
         workflow=WORKFLOW_UPSCALE,
         rate_control_method=RCM_CRF,
@@ -1664,6 +1685,7 @@ _PROFILE_KNOWN = frozenset(
         "max_height",
         "custom_width",
         "custom_height",
+        "short_side",
         "fps_mode",
         "max_fps",
         "custom_fps",
@@ -1759,16 +1781,41 @@ _LEGACY_DISCORD_FREE_DEFAULTS: dict[str, Any] = {
 }
 
 
-def _migrate_builtin_profile_defaults(data: dict[str, Any]) -> dict[str, Any]:
-    is_untouched_discord_free = all(
-        data.get(key) == expected for key, expected in _LEGACY_DISCORD_FREE_DEFAULTS.items()
-    )
-    if not is_untouched_discord_free:
-        return data
+# the box the built-in Upscale profiles fitted videos into before they sized the short side
+_LEGACY_UPSCALE_SIZES: dict[str, tuple[str, int, int, int, str]] = {
+    PROFILE_ID_1440P_UPSCALE: ("1440p Upscale (2560x1440)", 2560, 1440, 1440, "1440p Upscale"),
+    PROFILE_ID_4K_UPSCALE: ("4K Upscale (3840x2160)", 3840, 2160, 2160, "4K Upscale"),
+}
 
+
+def _migrate_builtin_profile_defaults(
+    data: dict[str, Any], source_schema_version: int
+) -> dict[str, Any]:
+    """Moves built-in profiles to new defaults; a user's own profiles keep what they saved."""
     migrated = dict(data)
-    migrated["name"] = "Discord Free - 20MB"
-    migrated["target_size_bytes"] = DISCORD_FREE_LIMIT
+    if all(data.get(key) == expected for key, expected in _LEGACY_DISCORD_FREE_DEFAULTS.items()):
+        migrated["name"] = "Discord Free - 20MB"
+        migrated["target_size_bytes"] = DISCORD_FREE_LIMIT
+
+    profile_id = data.get("profile_id")
+    if source_schema_version >= SCHEMA_SMOOTH_SHORT_SIDE or profile_id not in BUILTIN_PROFILE_IDS:
+        return migrated
+    # neighbor was the only default before, so it says nothing about the video
+    if data.get("scaler", SCALER_NEIGHBOR) == SCALER_NEIGHBOR:
+        migrated["scaler"] = SCALER_LANCZOS
+    legacy = _LEGACY_UPSCALE_SIZES.get(str(profile_id))
+    if legacy is not None:
+        old_name, width, height, short_side, new_name = legacy
+        # a box that was changed by hand is the user's choice and stays a box
+        if (
+            data.get("resolution_mode") == RES_MODE_CUSTOM
+            and data.get("custom_width") == width
+            and data.get("custom_height") == height
+        ):
+            migrated["resolution_mode"] = RES_MODE_SHORT_SIDE
+            migrated["short_side"] = short_side
+        if data.get("name") == old_name:
+            migrated["name"] = new_name
     return migrated
 
 
@@ -1819,6 +1866,13 @@ def _validate_profile_dict(data: dict[str, Any]) -> None:
                 raise ValueError(f"{key} must be a finite number, not boolean")
             if not math.isfinite(val) or val < 1:
                 raise ValueError(f"{key} must be finite and >= 1")
+
+    if "short_side" in data:
+        val = data["short_side"]
+        if isinstance(val, float) and val.is_integer():
+            val = data["short_side"] = int(val)
+        if isinstance(val, bool) or not isinstance(val, int) or val < 2:
+            raise ValueError("short_side must be a whole number of at least 2")
 
     if "max_fps" in data:
         val = data["max_fps"]
@@ -1873,12 +1927,8 @@ def _validate_profile_dict(data: dict[str, Any]) -> None:
     if data.get("workflow", WORKFLOW_COMPRESSION) == WORKFLOW_COMPRESSION and ebr:
         raise ValueError("Compression profiles cannot persist an explicit bitrate")
 
-    scaler = data.get("scaler", SCALER_NEIGHBOR)
-    if scaler not in VALID_SCALERS:
-        if scaler == "nearest":
-            data["scaler"] = SCALER_NEIGHBOR
-        else:
-            raise ValueError(f"scaler must be one of {sorted(VALID_SCALERS)}")
+    if "scaler" in data:
+        data["scaler"] = normalize_scaler(data["scaler"])
 
     video_encoder = data.get("video_encoder", "libx264")
     if video_encoder not in VALID_VIDEO_ENCODER_CHOICES:

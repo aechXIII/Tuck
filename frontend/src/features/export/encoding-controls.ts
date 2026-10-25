@@ -245,9 +245,11 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     if (up) {
       select("two-pass").value = "off";
       input("use-source-res").checked = false;
+      if (input("res-mode").value === "source") input("res-mode").value = "custom";
+    } else if (input("use-source-res").checked) {
+      input("res-mode").value = "source";
+    } else if (input("res-mode").value !== "short_side") {
       input("res-mode").value = "custom";
-    } else {
-      input("res-mode").value = input("use-source-res").checked ? "source" : "custom";
     }
     onResMode();
     updateRcOpts();
@@ -363,11 +365,14 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     const audioBitrateKbps = input("audio-br").value;
     const speed = select("speed-sel").value;
     const videoEncoder = select("enc-sel").value;
+    // the plan has the size the export really gets, such as Upscale keeping a larger video's size
+    const plan = session.selPath ? session.clips[session.selPath]?.planData : null;
+    const planned = plan && num(plan.target_width) > 0 && num(plan.target_height) > 0;
     const summary = InspectorUi.exportSummary({
       workflow: workflowName(),
       targetSizeMb: Number(input("sz-slider").value),
-      width: Number(input("res-w").value),
-      height: Number(input("res-h").value),
+      width: planned ? num(plan.target_width) : Number(input("res-w").value),
+      height: planned ? num(plan.target_height) : Number(input("res-h").value),
       fps: Number(input("fps-val").value),
       videoEncoder,
       audioBitrateKbps: Number(audioBitrateKbps),
@@ -436,12 +441,12 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     if (resolution.dataset.explicitCustom === "1") resolution.value = "custom";
     else if (input("use-source-res").checked) resolution.value = "source";
     else {
-      const customResolution = `${input("res-w").value}x${input("res-h").value}`;
-      resolution.value = Array.from(resolution.options).some(
-        (option) => option.value === customResolution,
-      )
-        ? customResolution
-        : "custom";
+      resolution.value = InspectorUi.resolutionChoiceValue(source.width, source.height, {
+        mode: input("res-mode").value,
+        shortSide: Number(input("res-short").value),
+        width: Number(input("res-w").value),
+        height: Number(input("res-h").value),
+      });
     }
     if (frameRate.dataset.explicitCustom === "1") frameRate.value = "custom";
     else if (input("use-source-fps").checked) frameRate.value = "source";
@@ -468,12 +473,13 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     const decision = InspectorUi.resolutionDecision(value);
     const isSource = decision.mode === "source";
     input("use-source-res").checked = isSource;
-    input("res-mode").value = isSource ? "source" : "custom";
+    input("res-mode").value = decision.mode;
+    if (decision.mode === "short_side") input("res-short").value = String(decision.shortSide);
     if (decision.mode === "custom" && "width" in decision && decision.width && decision.height) {
       input("res-w").value = String(decision.width);
       input("res-h").value = String(decision.height);
     }
-    if (isSource) syncResolutionToClip(true);
+    if (isSource || decision.mode === "short_side") syncResolutionToClip(isSource);
     onResMode();
     updateActionButtons();
     syncExportVideoFacades();
@@ -673,8 +679,11 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     input("sz-badge").value = String(sizeMb);
     updateSizePresets(sizeMb);
     el("export-res-select").dataset.explicitCustom = "";
-    input("res-mode").value = p.resolution_mode === "custom" ? "custom" : "source";
-    input("use-source-res").checked = wf === 0 && p.resolution_mode !== "custom";
+    const resolutionMode =
+      p.resolution_mode === "custom" || p.resolution_mode === "short_side" ? p.resolution_mode : "source";
+    input("res-mode").value = resolutionMode;
+    input("use-source-res").checked = wf === 0 && resolutionMode === "source";
+    input("res-short").value = String(num(p.short_side) || 1080);
     input("res-w").value = String(num(p.custom_width) || num(p.max_width) || 1920);
     input("res-h").value = String(num(p.custom_height) || num(p.max_height) || 1080);
     syncResolutionToClip();
@@ -696,9 +705,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     input("audio-br").value = String(Math.round((num(p.audio_bitrate) || 128000) / 1000));
     input("audio-br").disabled = !!p.keep_audio;
     select("two-pass").value = p.two_pass ? "on" : "off";
-    const sc = typeof p.scaler === "string" ? p.scaler : "neighbor";
-    select("scaler-sel").value =
-      sc === "neighbor" ? "Neighbor" : sc.charAt(0).toUpperCase() + sc.slice(1);
+    select("scaler-sel").value = InspectorUi.scalingChoice(p.scaler);
     const profileEncoder = typeof p.video_encoder === "string" ? p.video_encoder : "libx264";
     select("enc-sel").value = platformCapabilities
       ? encoderForPlatform(profileEncoder, platformCapabilities)
@@ -836,6 +843,15 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     if (forceSourceValue || input("use-source-res").checked) {
       input("res-w").value = String(clip.probeData.width || 1920);
       input("res-h").value = String(clip.probeData.height || 1080);
+    } else if (input("res-mode").value === "short_side") {
+      // the size this video gets, which Custom starts from
+      const size = InspectorUi.shortSideSize(
+        clip.probeData.width || 1920,
+        clip.probeData.height || 1080,
+        Number(input("res-short").value) || 1080,
+      );
+      input("res-w").value = String(size.width);
+      input("res-h").value = String(size.height);
     }
   }
 
@@ -972,9 +988,10 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
       workflow: workflowName(),
       profileId: select("prof-sel").value,
       targetSizeMb: parseInt(input("sz-slider").value, 10) || 0,
-      resolutionMode: input("res-mode").value === "custom" ? "custom" : "source",
+      resolutionMode: resolutionMode(),
       customWidth: parseInt(input("res-w").value, 10) || 0,
       customHeight: parseInt(input("res-h").value, 10) || 0,
+      shortSide: parseInt(input("res-short").value, 10) || 0,
       scaler: select("scaler-sel").value,
       useSourceFps: input("use-source-fps").checked,
       customFps: Number(input("fps-val").value),
@@ -992,6 +1009,11 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
       bitrateKbps: parseInt(input("br-val").value, 10) || 0,
       tune: select("tune-sel").value,
     };
+  }
+
+  function resolutionMode(): ExportFormState["resolutionMode"] {
+    const mode = input("res-mode").value;
+    return mode === "custom" || mode === "short_side" ? mode : "source";
   }
 
   function buildRequest(source: string, requestId?: number): Record<string, unknown> {
@@ -1093,6 +1115,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
         clip.planData = data;
         if (session.selPath !== path) return;
         paintPlanWarnings(data, path);
+        syncExportSummary();
         deps.renderClips?.();
         deps.paintCropOverlay();
         void planLibrary();
@@ -1423,15 +1446,17 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     const value = (id: string): string => byId<HTMLInputElement | HTMLSelectElement>(id)?.value ?? "";
     const checked = (id: string): boolean => byId<HTMLInputElement>(id)?.checked ?? false;
     // while size and frame rate follow the source they come from the video, not the profile
-    const sourceSize = value("res-mode") === "source";
+    // a short side gives each video its own width and height, so only the side counts
+    const customSize = value("res-mode") === "custom";
     return {
       pid: value("prof-sel"),
       blending: JSON.stringify(blending.read()),
       lut: JSON.stringify(lut.read()),
       size: value("sz-slider"),
       rm: value("res-mode"),
-      rw: sourceSize ? "" : value("res-w"),
-      rh: sourceSize ? "" : value("res-h"),
+      rw: customSize ? value("res-w") : "",
+      rh: customSize ? value("res-h") : "",
+      rs: value("res-mode") === "short_side" ? value("res-short") : "",
       fps: checked("use-source-fps") ? "source" : value("fps-val"),
       ka: checked("keep-audio"),
       abr: value("audio-br"),

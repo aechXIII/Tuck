@@ -19,9 +19,11 @@ export interface ExportFormState {
   workflow: Workflow;
   profileId: string;
   targetSizeMb: number;
-  resolutionMode: "source" | "custom";
+  /** "short_side" sizes the shorter side to shortSide, so each video keeps its orientation. */
+  resolutionMode: "source" | "custom" | "short_side";
   customWidth: number;
   customHeight: number;
+  shortSide?: number;
   scaler: string;
   useSourceFps: boolean;
   customFps: number;
@@ -105,6 +107,10 @@ export function buildPlanRequest(
     req.custom_width = toInt(form.customWidth);
     req.custom_height = toInt(form.customHeight);
     req.scaler = form.scaler.toLowerCase();
+  } else if (form.resolutionMode === "short_side") {
+    req.resolution_mode = "short_side";
+    req.short_side = toInt(form.shortSide ?? 0);
+    req.scaler = form.scaler.toLowerCase();
   } else {
     req.resolution_mode = "source";
   }
@@ -166,6 +172,7 @@ export function buildProfilePayload(
     custom_height: toInt(form.customHeight),
     max_width: toInt(form.customWidth),
     max_height: toInt(form.customHeight),
+    ...(form.resolutionMode === "short_side" ? { short_side: toInt(form.shortSide ?? 0) } : {}),
     fps_mode: form.useSourceFps ? "source" : "custom",
     custom_fps: form.customFps,
     max_fps: form.customFps,

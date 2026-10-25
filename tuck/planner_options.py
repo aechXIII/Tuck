@@ -3,10 +3,19 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TypedDict
 
-from .models import AppSettings, AudioTrack, PlanRequest, Profile, Segment, SourceTrackSetting
+from .models import (
+    SCALER_LANCZOS,
+    AppSettings,
+    AudioTrack,
+    PlanRequest,
+    Profile,
+    Segment,
+    SourceTrackSetting,
+)
 from .models.encoding_policy import (
     native_preset_for_encoder,
     normalize_legacy_rc_matrix,
+    normalize_scaler,
     size_target_rate_control_method,
     validate_encoder_supported_on_desktop,
     validate_rate_control_matrix,
@@ -92,7 +101,7 @@ def resolve_plan_options(profile: Profile, request: PlanRequest | None) -> PlanO
     source_audio_extra_tracks: list[SourceTrackSetting] = []
     audio_tracks: list[AudioTrack] = []
     keep_audio = bool(profile.keep_audio)
-    scaler = profile.scaler or "neighbor"
+    scaler = profile.scaler or SCALER_LANCZOS
     video_encoder = profile.video_encoder
     crf = profile.crf
     tune = profile.tune
@@ -147,6 +156,7 @@ def resolve_plan_options(profile: Profile, request: PlanRequest | None) -> PlanO
             qp = request.qp
 
     validate_encoder_supported_on_desktop(video_encoder)
+    scaler = normalize_scaler(scaler)
     preset = native_preset_for_encoder(preset, video_encoder)
     validate_tune_for_encoder(tune, video_encoder)
     validate_rc_method_for_encoder(rate_control_method, video_encoder)

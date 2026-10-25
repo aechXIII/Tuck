@@ -723,7 +723,9 @@ export function installQueue(deps: QueueDeps): QueueApi {
       resolution:
         byId<HTMLInputElement>("res-mode")?.value === "custom"
           ? `${value("res-w")}x${value("res-h")}`
-          : "source",
+          : byId<HTMLInputElement>("res-mode")?.value === "short_side"
+            ? `${value("res-short")}p`
+            : "source",
       fps: checked("use-source-fps") ? "source" : number("fps-val"),
       two_pass: byId<HTMLSelectElement>("two-pass")
         ? byId<HTMLSelectElement>("two-pass")!.value === "on"

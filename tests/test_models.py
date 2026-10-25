@@ -15,11 +15,13 @@ from tuck.models import (
     RC_EXPLICIT_BITRATE,
     RC_TARGET_SIZE,
     RES_MODE_CUSTOM,
+    RES_MODE_SHORT_SIDE,
     RES_MODE_SOURCE,
     SCALER_BICUBIC,
     SCALER_BILINEAR,
     SCALER_LANCZOS,
     SCALER_NEIGHBOR,
+    SCALER_POINT,
     CropRect,
     EncodePlan,
     OutputGeometry,
@@ -442,16 +444,25 @@ class TestProfile:
             Profile.from_dict(d)
 
     def test_profile_default_scaler(self):
-        p = DEFAULT_PROFILES[0]
-        d = p.to_dict()
-        assert d.get("scaler") == SCALER_NEIGHBOR
+        assert Profile(name="New").scaler == SCALER_LANCZOS
+        for p in DEFAULT_PROFILES:
+            assert p.to_dict()["scaler"] == SCALER_LANCZOS
 
-    def test_profile_scaler_roundtrip(self):
-        for scaler in [SCALER_BILINEAR, SCALER_BICUBIC, SCALER_LANCZOS, SCALER_NEIGHBOR]:
-            p = Profile(name="Test", profile_id="test-scaler", scaler=scaler)
-            d = p.to_dict()
+    def test_profile_scaler_reads_old_names_as_smooth_or_sharp_pixels(self):
+        expected = {
+            SCALER_BILINEAR: SCALER_LANCZOS,
+            SCALER_BICUBIC: SCALER_LANCZOS,
+            SCALER_LANCZOS: SCALER_LANCZOS,
+            SCALER_NEIGHBOR: SCALER_NEIGHBOR,
+            SCALER_POINT: SCALER_NEIGHBOR,
+            "nearest": SCALER_NEIGHBOR,
+        }
+        for saved, scaler in expected.items():
+            d = Profile(name="Test", profile_id="test-scaler").to_dict()
+            d["scaler"] = saved
             restored = Profile.from_dict(d)
             assert restored.scaler == scaler
+            assert Profile.from_dict(restored.to_dict()).scaler == scaler
 
     def test_profile_scaler_backward_compat(self):
         d = DEFAULT_PROFILES[0].to_dict()
@@ -485,19 +496,23 @@ class TestProfile:
     def test_builtin_1440p_profile_dimensions_and_scaler(self):
         p = find_profile_by_id(DEFAULT_PROFILES, PROFILE_ID_1440P_UPSCALE)
         assert p is not None
-        assert p.resolution_mode == RES_MODE_CUSTOM
+        assert p.name == "1440p Upscale"
+        assert p.resolution_mode == RES_MODE_SHORT_SIDE
+        assert p.short_side == 1440
         assert p.custom_width == 2560
         assert p.custom_height == 1440
-        assert p.scaler == SCALER_NEIGHBOR
+        assert p.scaler == SCALER_LANCZOS
         assert p.target_size_bytes == 500 * 1024 * 1024
 
     def test_builtin_4k_profile_dimensions_and_scaler(self):
         p = find_profile_by_id(DEFAULT_PROFILES, PROFILE_ID_4K_UPSCALE)
         assert p is not None
-        assert p.resolution_mode == RES_MODE_CUSTOM
+        assert p.name == "4K Upscale"
+        assert p.resolution_mode == RES_MODE_SHORT_SIDE
+        assert p.short_side == 2160
         assert p.custom_width == 3840
         assert p.custom_height == 2160
-        assert p.scaler == SCALER_NEIGHBOR
+        assert p.scaler == SCALER_LANCZOS
         assert p.target_size_bytes == 500 * 1024 * 1024
 
     def test_default_profiles_have_correct_modes(self):

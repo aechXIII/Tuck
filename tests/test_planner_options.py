@@ -57,7 +57,8 @@ def test_request_values_override_profile_options_without_mutating_inputs() -> No
     assert options.audio_enabled is False
     assert options.source_audio_muted is True
     assert options.source_audio_gain_db == -3.0
-    assert options.scaler == "bicubic"
+    # bicubic is one of the older smooth filters, and exports use Smooth for it
+    assert options.scaler == "lanczos"
     assert options.preset == "fast"
     assert options.two_pass is False
     assert profile.keep_audio is True

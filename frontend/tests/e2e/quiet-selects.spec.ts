@@ -59,7 +59,7 @@ test("Quiet dropdowns show compact labels and a neutral selection", async ({ pag
   await trigger.click();
   const popup = page.locator("#set-ds-popup");
   const options = popup.getByRole("option");
-  await expect(options).toHaveText(["Bilinear", "Bicubic", "Lanczos", "Point", "Neighbor"]);
+  await expect(options).toHaveText(["Smooth", "Sharp pixels"]);
   await expect(popup.getByRole("combobox")).toHaveCount(0);
   const geometry = await options.evaluateAll(rows => rows.map(row => row.getBoundingClientRect().height));
   for (const height of geometry) expect(height).toBeCloseTo(33, 2);
@@ -72,8 +72,8 @@ test("Quiet dropdowns show compact labels and a neutral selection", async ({ pag
   expect(selected.background).toBe("rgba(0, 0, 0, 0)");
   expect(selected.check).toBe("visible");
   expect(selected.text).toBe(selected.foreground);
-  await popup.getByRole("option", { name: "Bicubic", exact: true }).click();
-  await expect(page.locator("#set-ds")).toHaveValue("Bicubic");
+  await popup.getByRole("option", { name: "Sharp pixels", exact: true }).click();
+  await expect(page.locator("#set-ds")).toHaveValue("neighbor");
   await expect(trigger).toBeFocused();
 });
 

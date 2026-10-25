@@ -31,6 +31,7 @@ import {
   type ProfileListEntry,
 } from "../profiles/profile-list.ts";
 import { legacyBackendResult } from "../editor/backend-compat.ts";
+import { SCALING_CHOICES, SCALING_NOTE, scalingChoice } from "../panels/inspector-ui.ts";
 import {
   encoderForPlatform,
   encodersForPlatform,
@@ -124,7 +125,12 @@ const ACCENTS: readonly { value: string; label: string }[] = [
   { value: "rose", label: "Rose" },
 ];
 
-const SCALERS = ["Bilinear", "Bicubic", "Lanczos", "Point", "Neighbor"] as const;
+const SCALING = SCALING_CHOICES.map(({ value, label }) => [value, label] as const);
+
+// a profile's resolution presets size the shorter side, as the Inspector's do
+const RESOLUTIONS = [
+  ["480", "480p"], ["720", "720p"], ["1080", "1080p"], ["1440", "1440p"], ["2160", "4K"], ["custom", "Custom size"],
+] as const;
 
 const NAMING_TOKENS: Readonly<Record<string, readonly string[]>> = {
   "set-cs": ["{size}"],
@@ -700,7 +706,6 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
   }
 
   function profilesPage(s: SettingsRecord): Content {
-    const scaler = str(s.default_scaler, "neighbor");
     const filters = choiceGroup("set-profile-filter", "Filter profiles", [
       { value: "all", label: "All" },
       { value: "compression", label: "Compress" },
@@ -719,10 +724,10 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       section("When a profile doesn’t choose", card(
         row({
           setting: "default-scaler",
-          label: "Scaler",
+          label: "Scaling",
           labelFor: "set-ds",
-          control: selectControl("set-ds", SCALERS.map((name) => [name, name] as const),
-            SCALERS.find((name) => name.toLowerCase() === scaler) ?? "Neighbor",
+          description: SCALING_NOTE,
+          control: selectControl("set-ds", SCALING, scalingChoice(s.default_scaler),
             { "data-settings-change": "save" }),
         }),
       )),
@@ -949,7 +954,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
           background_exports: checked("set-background"),
         };
       case "profiles":
-        return { default_scaler: select("set-ds").value.toLowerCase() };
+        return { default_scaler: select("set-ds").value };
       case "media":
         return {
           ffmpeg_path: el("set-ffmpeg").dataset.path || "",
@@ -1470,7 +1475,9 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     const up = (p.workflow || "compression") === "upscale";
     const res = p.resolution_mode === "custom"
       ? `${num(p.custom_width) || num(p.max_width)} × ${num(p.custom_height) || num(p.max_height)}`
-      : "Source resolution";
+      : p.resolution_mode === "short_side"
+        ? num(p.short_side) === 2160 ? "4K" : `${num(p.short_side)}p`
+        : "Source resolution";
     const fps = p.fps_mode === "custom" ? `${num(p.custom_fps) || num(p.max_fps) || 30} FPS` : "Source FPS";
     const audio = p.keep_audio ? "Keep audio" : `${num(p.audio_bitrate_kbps) || 128} kbps audio`;
     const transform = p.transform_intent as SettingsRecord | undefined;
@@ -1690,7 +1697,6 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     const task = h("span", { class: "set-choice", role: "group", "aria-label": "Task" },
       taskButton("pe-c", "compression", "Compress"),
       taskButton("pe-u", "upscale", "Upscale"));
-    const scalers = SCALERS.map((name) => [name, name] as const);
     return [section("Profile", card(
       row({ setting: "pe-name", label: "Profile name", labelFor: "pe-name", control: textInput("pe-name", "", "Profile name", { width: 280, attributes: { "data-settings-input": "editor-name" } }) }),
       row({ setting: "pe-task", label: "Task", control: task }),
@@ -1706,13 +1712,21 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       }),
     ))), section("Video", card(
       h("div", { id: "pe-source-res-row" }, editorSwitch("pe-source-res", "Use source resolution", "pe-source-res")),
+      h("div", { id: "pe-res-row" }, row({
+        setting: "pe-res",
+        label: "Resolution",
+        labelFor: "pe-res",
+        sub: true,
+        description: "Presets set the shorter side, so vertical videos stay vertical.",
+        control: selectControl("pe-res", RESOLUTIONS, "1080", { "data-settings-change": "profile-visibility" }),
+      })),
       h("div", { class: "set-row sub", id: "pe-dim", "data-setting": "pe-dim" },
-        h("span", { class: "set-row-text" }, h("span", { class: "set-row-words" }, h("span", { class: "set-label" }, "Resolution"))),
+        h("span", { class: "set-row-text" }, h("span", { class: "set-row-words" }, h("span", { class: "set-label" }, "Custom size"))),
         h("span", { class: "set-row-control" },
           textInput("pe-w", "1920", "Custom width", { mono: true, width: 88, attributes: { type: "number", min: "1" } }),
           h("span", { class: "set-times", "aria-hidden": "true" }, "×"),
           textInput("pe-h", "1080", "Custom height", { mono: true, width: 88, attributes: { type: "number", min: "1" } }))),
-      h("div", { id: "pe-scaler-row" }, row({ setting: "pe-scaler", label: "Scaler", labelFor: "pe-scaler", sub: true, control: selectControl("pe-scaler", scalers, "Neighbor") })),
+      h("div", { id: "pe-scaler-row" }, row({ setting: "pe-scaler", label: "Scaling", labelFor: "pe-scaler", sub: true, description: SCALING_NOTE, control: selectControl("pe-scaler", SCALING, "lanczos") })),
       editorSwitch("pe-source-fps", "Use source frame rate", "pe-source-fps"),
       h("div", { id: "pe-fps-row" }, row({
         setting: "pe-fps",
@@ -1861,7 +1875,8 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     const cpu = !["auto", "auto_compression", "auto_fast"].includes(select("pe-enc").value) && isCpuEncoder(select("pe-enc").value);
     const twoPass = twoPassEligible(peTask(), select("pe-enc").value);
     const quality = up && (rc === "CRF" || rc === "CQ");
-    el("pe-dim").classList.toggle("hid", source);
+    el("pe-res-row").classList.toggle("hid", source);
+    el("pe-dim").classList.toggle("hid", source || select("pe-res").value !== "custom");
     el("pe-scaler-row").classList.toggle("hid", source);
     el("pe-fps-row").classList.toggle("hid", sourceFps);
     input("pe-audio").disabled = keep;
@@ -1908,14 +1923,16 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     if (original.rate_control_method === "cqp" && rcDisplay === "CQ") rc = "cqp";
     const selectedEncoder = select("pe-enc").value;
     const encoder = editorCapabilities ? encoderForPlatform(selectedEncoder, editorCapabilities) : selectedEncoder;
+    const resolution = select("pe-res").value;
     const data: SettingsRecord = {
       name: input("pe-name").value.trim() || "Profile",
       target_size_mb: peInt("pe-size", 50),
-      resolution_mode: input("pe-source-res").checked ? "source" : "custom",
+      resolution_mode: input("pe-source-res").checked ? "source" : resolution === "custom" ? "custom" : "short_side",
       custom_width: peInt("pe-w", 1920),
       custom_height: peInt("pe-h", 1080),
       max_width: peInt("pe-w", 1920),
       max_height: peInt("pe-h", 1080),
+      short_side: resolution === "custom" ? valueOr(num(original.short_side), 1080) : parseInt(resolution, 10),
       fps_mode: input("pe-source-fps").checked ? "source" : "custom",
       custom_fps: peFloat("pe-fps", 30),
       max_fps: peFloat("pe-fps", 30),
@@ -1923,7 +1940,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       keep_audio: input("pe-audio-source").checked,
       two_pass: twoPassEligible(task, encoder) && input("pe-two-pass").checked,
       preset: select("pe-preset").value,
-      scaler: select("pe-scaler").value.toLowerCase(),
+      scaler: select("pe-scaler").value,
       video_encoder: encoder,
       workflow: task,
       rate_control_method: rc,
@@ -1954,15 +1971,18 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       if (Array.isArray(profiles)) p = profiles.find((x) => x.profile_id === settingsProfileId);
     }
     editorOriginal = (p as SettingsRecord | undefined) ?? {};
-    const scaler = p ? String(p.scaler) : String(appSettings().default_scaler || "neighbor");
     const fps = p ? valueOr(num(p.custom_fps), valueOr(num(p.max_fps), 30)) : 30;
     input("pe-name").value = p ? p.name ?? "" : "";
     peSetSize(p ? Math.round(valueOr(num(p.target_size_bytes), 50 * 1024 * 1024) / (1024 * 1024)) : 50);
     input("pe-w").value = String(p ? valueOr(num(p.custom_width), valueOr(num(p.max_width), 1920)) : 1920);
     input("pe-h").value = String(p ? valueOr(num(p.custom_height), valueOr(num(p.max_height), 1080)) : 1080);
-    const scalerName = (value: string): string | undefined => SCALERS.find((name) => name.toLowerCase() === value);
-    select("pe-scaler").value = scalerName(scaler) ?? scalerName(String(appSettings().default_scaler || "neighbor")) ?? "Neighbor";
-    input("pe-source-res").checked = p ? p.resolution_mode !== "custom" : true;
+    select("pe-scaler").value = scalingChoice(p ? p.scaler : appSettings().default_scaler);
+    // a saved box stays a box; a profile that used the source size starts from 1080p
+    const shortSide = p && p.resolution_mode === "short_side" ? String(num(p.short_side)) : "";
+    select("pe-res").value = shortSide && RESOLUTIONS.some(([value]) => value === shortSide)
+      ? shortSide
+      : p && (p.resolution_mode === "custom" || p.resolution_mode === "limit" || shortSide) ? "custom" : "1080";
+    input("pe-source-res").checked = p ? p.resolution_mode !== "custom" && p.resolution_mode !== "short_side" : true;
     input("pe-source-fps").checked = p ? p.fps_mode !== "custom" : true;
     peSetFps(fps);
     input("pe-audio-source").checked = !!(p && p.keep_audio);

@@ -525,11 +525,56 @@ test("Send To shortcuts are switched on and off one at a time", async ({ page })
     window.__tuckFakeBackendCalls?.find((call) => call.method === "removeGenericSendto")?.args)).toEqual(["open"]);
 });
 
-test("the default scaler is set from Profiles", async ({ page }) => {
+test("the default scaling is set from Profiles", async ({ page }) => {
   await start(page);
   await openSettings(page, "profiles");
-  await chooseSelect(page, page.locator("#set-ds-trigger"), "Bicubic");
-  await savedWith(page, "default_scaler", "bicubic");
+  await chooseSelect(page, page.locator("#set-ds-trigger"), { label: "Sharp pixels" });
+  await savedWith(page, "default_scaler", "neighbor");
+});
+
+test("the profile editor keeps a short side and offers Smooth or Sharp pixels", async ({ page }) => {
+  const upscale = {
+    profile_id: "1440p-upscale", name: "1440p Upscale", workflow: "upscale", builtin: true,
+    resolution_mode: "short_side", short_side: 1440, custom_width: 2560, custom_height: 1440,
+    scaler: "lanczos", fps_mode: "source", rate_control_method: "crf", crf: 18, video_encoder: "libx264",
+  };
+  const fixture = { profiles: [...profiles, upscale] };
+  await start(page, fixture, { getProfilesJson: fixture.profiles });
+  await openSettings(page, "profiles");
+  await page.getByRole("button", { name: "Edit 1440p Upscale", exact: true }).click();
+  await expect(page.locator("#pe-res")).toHaveValue("1440");
+  await expect(page.locator("#pe-w")).toBeHidden();
+  await expect(page.locator("#pe-scaler")).toHaveValue("lanczos");
+  await expect(page.locator("#set-row-pe-scaler-desc")).toHaveText(
+    "Smooth keeps detail when the size changes. Sharp pixels keeps hard edges, for pixel-art games.");
+  await chooseSelect(page, page.locator("#pe-scaler-trigger"), { label: "Sharp pixels" });
+  await chooseSelect(page, page.locator("#pe-res-trigger"), { label: "4K" });
+  await page.getByRole("button", { name: "Save profile", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.__tuckFakeBackendCalls
+    ?.find((call) => call.method === "updateProfile")?.args)).toEqual(["1440p-upscale", expect.objectContaining({
+    resolution_mode: "short_side", short_side: 2160, scaler: "neighbor",
+  })]);
+});
+
+test("a profile editor custom size is saved as a box", async ({ page }) => {
+  await start(page);
+  await openSettings(page, "profiles");
+  await page.getByRole("button", { name: "New profile", exact: true }).click();
+  await page.getByLabel("Profile name", { exact: true }).fill("Wide");
+  await expect(page.locator("#pe-scaler-trigger")).toBeHidden();
+  await page.getByText("Use source resolution", { exact: true }).click();
+  await expect(page.locator("#pe-res")).toHaveValue("1080");
+  await expect(page.locator("#pe-scaler-trigger")).toBeVisible();
+  await expect(page.locator("#pe-scaler")).toHaveValue("lanczos");
+  await expect(page.locator("#pe-w")).toBeHidden();
+  await chooseSelect(page, page.locator("#pe-res-trigger"), "custom");
+  await page.locator("#pe-w").fill("2560");
+  await page.locator("#pe-h").fill("1080");
+  await page.getByRole("button", { name: "Save profile", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.__tuckFakeBackendCalls
+    ?.find((call) => call.method === "createProfile")?.args[0])).toEqual(expect.objectContaining({
+    resolution_mode: "custom", custom_width: 2560, custom_height: 1080, scaler: "lanczos",
+  }));
 });
 
 test("a change made while the previous one is still saving is saved too", async ({ page }) => {

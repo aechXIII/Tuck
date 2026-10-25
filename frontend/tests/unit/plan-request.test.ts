@@ -16,7 +16,7 @@ function form(overrides: Partial<ExportFormState> = {}): ExportFormState {
     resolutionMode: "source",
     customWidth: 1920,
     customHeight: 1080,
-    scaler: "Neighbor",
+    scaler: "neighbor",
     useSourceFps: true,
     customFps: 30,
     keepAudio: false,
@@ -64,7 +64,7 @@ test("keep-audio suppresses an explicit audio bitrate", () => {
 
 test("custom resolution adds width, height, and a lowercased scaler", () => {
   const req = buildPlanRequest(
-    form({ resolutionMode: "custom", customWidth: 1280, customHeight: 720, scaler: "Lanczos" }),
+    form({ resolutionMode: "custom", customWidth: 1280, customHeight: 720, scaler: "lanczos" }),
     { source: "s" },
   );
   assert.equal(req.resolution_mode, "custom");
@@ -253,4 +253,19 @@ test("plan warnings read as a list of sentences, and nothing for older plans", (
   assert.deepEqual(planWarnings({ warnings: ["HDR colours stay as they are.", "", 3] }), ["HDR colours stay as they are."]);
   assert.deepEqual(planWarnings({ estimated_size_mb: 9 }), []);
   assert.deepEqual(planWarnings(null), []);
+});
+
+test("a short side goes to the planner, which sizes each video by it", () => {
+  const short = form({ workflow: "upscale", resolutionMode: "short_side", shortSide: 1440, scaler: "lanczos" });
+  const req = buildPlanRequest(short, { source: "s" });
+  assert.equal(req.resolution_mode, "short_side");
+  assert.equal(req.short_side, 1440);
+  assert.equal(req.scaler, "lanczos");
+  assert.ok(!("custom_width" in req));
+
+  const saved = buildProfilePayload(short, { name: "Tall", currentProfile: null, clip: null });
+  assert.equal(saved.resolution_mode, "short_side");
+  assert.equal(saved.short_side, 1440);
+  assert.equal(saved.scaler, "lanczos");
+  assert.ok(!("short_side" in buildProfilePayload(form(), { name: "Box", currentProfile: null, clip: null })));
 });

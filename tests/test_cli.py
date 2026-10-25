@@ -201,6 +201,10 @@ class TestCLIIntegration:
         assert "discord-10mb" not in captured.out
         assert "discord-50mb" in captured.out
         assert "discord-500mb" in captured.out
+        # Upscale profiles size the short side, so they show 1440p and 4K, not a box
+        assert "1440p" in captured.out
+        assert "4K" in captured.out
+        assert "2560x1440" not in captured.out
 
     def test_no_args_shows_help(self, capsys):
         code = cli_main([])

@@ -18,10 +18,10 @@ from .models import (
 from .models.encoding_policy import (
     RC_TARGET_SIZE,
     VALID_RC_METHODS,
-    VALID_SCALERS,
     VALID_VIDEO_ENCODER_CHOICES,
     VALID_WORKFLOWS,
     WORKFLOW_COMPRESSION,
+    normalize_scaler,
     validate_encoder_supported_on_desktop,
     validate_preset_for_encoder,
     validate_rate_control_matrix,
@@ -220,6 +220,7 @@ def parse_plan_request(
         resolution_mode=_opt_str(raw, "resolution_mode"),
         custom_width=_opt_int(raw, "custom_width"),
         custom_height=_opt_int(raw, "custom_height"),
+        short_side=_opt_int(raw, "short_side"),
         fps_mode=_opt_str(raw, "fps_mode"),
         custom_fps=_opt_float(raw, "custom_fps"),
         lut=lut,
@@ -331,10 +332,7 @@ def normalize_profile_ui_payload(data: dict[str, Any]) -> dict[str, Any]:
         scaler = data["scaler"]
         if not isinstance(scaler, str):
             raise ValueError(f"scaler must be a string, not {type(scaler).__name__}")
-        if scaler == "nearest":
-            data["scaler"] = "neighbor"
-        elif scaler not in VALID_SCALERS:
-            raise ValueError(f"scaler must be one of {sorted(VALID_SCALERS)}")
+        data["scaler"] = normalize_scaler(scaler)
 
     if "workflow" in data:
         wf = data["workflow"]

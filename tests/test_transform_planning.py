@@ -137,7 +137,7 @@ def test_source_resolution_stretch_uses_uncropped_source_canvas(tmp_path):
     assert result.apply_scale
     assert build_plan_video_filters(result) == [
         "crop=758:1080:581:0:exact=1",
-        "scale=1920:1080:flags=neighbor",
+        "scale=1920:1080:flags=lanczos",
         "setsar=1",
     ]
 

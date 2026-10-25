@@ -597,7 +597,7 @@ test("custom export fields share edges and selected clips have matching handles"
   await page.goto("/");
   await page.locator("#btn-add").click();
   await chooseSelect(page, page.locator("#export-res-select-trigger"), { label: "Custom…" });
-  await expect(page.getByLabel("Scaler algorithm")).toBeVisible();
+  await expect(page.getByLabel("Scaling", { exact: true })).toBeVisible();
   const geometry = await page.evaluate(() => {
     const rect = (s: string) => document.querySelector(s)!.getBoundingClientRect();
     const select = document.querySelector("#export-res-select-trigger")!;
