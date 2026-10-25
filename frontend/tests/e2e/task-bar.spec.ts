@@ -175,6 +175,30 @@ test("a finished queue says what exported and what failed, with the saving", asy
   await expect(page.locator("#exports-saved")).toHaveText("Saved 9.5 MB so far");
 });
 
+test("at 960 wide a finished batch still says how many exported, in full", async ({ page }) => {
+  await open(page, { width: 960, queue: [
+    { id: "a", source: "Morning ride.mp4", source_path: MORNING, state: "completed", result_path: "C:\\videos\\a.mp4", result_size: 5_000_000 },
+  ] });
+  await expect(page.locator("#qfname")).toHaveText("1 exported");
+  const bar = await page.evaluate(() => {
+    const box = (id: string) => document.getElementById(id)!.getBoundingClientRect();
+    const name = document.getElementById("qfname")!;
+    return {
+      cut: name.scrollWidth > name.clientWidth,
+      centre: box("task-wf").left + box("task-wf").width / 2 - window.innerWidth / 2,
+      tabsEnd: box("task-wf").right,
+      status: box("qbar").left,
+      statusEnd: box("qbar").right,
+      exportStart: box("export-go").left,
+    };
+  });
+  expect(bar.cut).toBe(false);
+  // the switch may give up a few pixels of centring here, never the count
+  expect(Math.abs(bar.centre)).toBeLessThanOrEqual(6);
+  expect(bar.tabsEnd).toBeLessThanOrEqual(bar.status);
+  expect(bar.statusEnd).toBeLessThanOrEqual(bar.exportStart);
+});
+
 test("at 960 wide the drawers stop above the bottom bar, which stays usable", async ({ page }) => {
   await open(page, { width: 960 });
   await page.getByRole("button", { name: "Inspector", exact: true }).click();

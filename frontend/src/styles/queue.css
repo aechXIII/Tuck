@@ -529,4 +529,14 @@
   #qcnt {
     display: none;
   }
+  /* the count keeps its room beside the export button: the tabs narrow, and the end side, which
+     only holds a percent or "3 exported" here, never gets less than it needs, so the switch
+     moves a few pixels off the centre at the smallest window instead */
+  #task-bar {
+    grid-template-columns: minmax(0, 1fr) auto minmax(max-content, 1fr);
+    gap: calc(10px * var(--density-scale));
+  }
+  .task-tab {
+    padding: 0 calc(8px * var(--density-scale));
+  }
 }
