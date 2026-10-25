@@ -39,13 +39,17 @@ def launch_environment(base: dict[str, str], app_root: Path, data_root: Path) ->
 
     The AppImage runtime sets APPDIR. Without it the bundled launcher points GStreamer at the
     host's plugins, and Tuck skips its own AppImage setup, so the smoke would test neither.
+    The window is looked for on DISPLAY, so a Wayland desktop is left out: with the native
+    player on, Tuck would open there instead (WSLg sets WAYLAND_DISPLAY even under xvfb-run).
     """
-    return dict(
+    environment = dict(
         base,
         APPDIR=str(app_root),
         TUCK_SIDECAR_DATA_ROOT=str(data_root),
         TUCK_DESKTOP_PLATFORM="linux",
     )
+    environment.pop("WAYLAND_DISPLAY", None)
+    return environment
 
 
 def _tuck_window_is_visible() -> bool:

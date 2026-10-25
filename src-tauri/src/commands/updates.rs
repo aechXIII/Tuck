@@ -20,7 +20,7 @@ use tauri_plugin_updater::UpdaterExt;
 
 use crate::backend::protocol::PublicBackendError;
 use crate::backend::BackendState;
-use crate::commands::lifecycle::{shut_down_backend, CloseState};
+use crate::commands::lifecycle::{restart, shut_down_backend, CloseState};
 use crate::platform::capabilities::{capabilities_for_target, current_capabilities};
 
 /// The install failed after Tuck had already stopped its backend for the installer.
@@ -294,7 +294,7 @@ pub async fn install_update(
         close.begin_exit();
     }
     shut_down_backend(&app).await;
-    app.restart();
+    restart(&app);
 }
 
 /// Linux swaps the AppImage inside install() and restarts afterwards, so the exit is

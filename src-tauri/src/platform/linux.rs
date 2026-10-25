@@ -1,8 +1,9 @@
 use std::ffi::{OsStr, OsString};
 use std::io;
+use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 
 use tokio::process::{Child, Command};
 
@@ -29,6 +30,18 @@ struct RendererChoice {
 }
 
 static RENDERER: OnceLock<RendererChoice> = OnceLock::new();
+
+/// The environment Tuck was started with, before Tuck changed anything in it
+static LAUNCH_ENVIRONMENT: OnceLock<Vec<(OsString, OsString)>> = OnceLock::new();
+
+/// The AppImage to start once this Tuck has exited, when a restart asked for one
+static RELAUNCH: Mutex<Option<AppImageRelaunch>> = Mutex::new(None);
+
+#[derive(Debug, PartialEq, Eq)]
+struct AppImageRelaunch {
+    appimage: PathBuf,
+    environment: Vec<(OsString, OsString)>,
+}
 
 /// Display drivers of virtual machines and firmware framebuffers. WebKitGTK's GPU
 /// renderer crashes or falls back to software GL on these.
@@ -77,7 +90,8 @@ const RENDERER_FAILURE_FILE: &str = "gpu-renderer-failed";
 ///   crash on some Wayland setups (Tauri issue 8541). With the native player on,
 ///   Tuck runs GTK natively on a Wayland desktop instead: under X11, GTK 3's GL
 ///   area uses GLX, which can't take decoded GPU frames, so every frame shown
-///   would be copied through memory (see [`gdk_backend`]).
+///   would be copied through memory (see [`gdk_backend`]). A player library that
+///   can't be used keeps X11, so the built-in player runs as it always has.
 ///
 /// Each value is only set when the user has not already chosen one, so setting
 /// `WEBKIT_DISABLE_COMPOSITING_MODE=1` yourself forces software drawing. Because
@@ -87,6 +101,7 @@ const RENDERER_FAILURE_FILE: &str = "gpu-renderer-failed";
 /// - `TUCK_WEBKIT_COMPOSITING=1` forces GPU compositing without the DMABUF
 ///   renderer.
 pub fn prepare_runtime_environment() {
+    let _ = LAUNCH_ENVIRONMENT.set(std::env::vars_os().collect());
     let choice = renderer_choice();
     let _ = RENDERER.set(choice);
     eprintln!("WebKit renderer: {:?}", choice.renderer);
@@ -94,8 +109,10 @@ pub fn prepare_runtime_environment() {
         set_default_env(key, value);
     }
     let appdir = std::env::var_os("APPDIR").map(PathBuf::from);
-    if appdir.is_none() {
-        warn_about_missing_gstreamer_plugins();
+    match &appdir {
+        // the same folder Tauri gives later, known now so the library is checked before GTK starts
+        Some(appdir) => crate::player::library::use_resource_dir(appdir.join(TUCK_RESOURCE_DIR)),
+        None => warn_about_missing_gstreamer_plugins(),
     }
     if let Some(modules) = bundled_gio_module_dir(appdir.clone()) {
         set_default_env("GIO_MODULE_DIR", modules);
@@ -118,8 +135,8 @@ pub fn prepare_runtime_environment() {
         }
     }
     set_default_env("GTK_THEME", "Adwaita:dark");
-    // what this run asks for: the library is only checked later, once its folder is known
-    let player = crate::player::requested_mode() == crate::player::PreviewMode::Player;
+    // a library that can't be used leaves the built-in player on the launcher's backend
+    let player = crate::player::preview_mode() == crate::player::PreviewMode::Player;
     if let Some(backend) = gdk_backend(player, std::env::var_os("WAYLAND_DISPLAY").as_deref()) {
         // replaced, not defaulted: the AppImage's launcher has already set it to x11
         std::env::set_var("GDK_BACKEND", backend);
@@ -130,6 +147,88 @@ pub fn prepare_runtime_environment() {
 fn gdk_backend(native_player: bool, wayland_display: Option<&OsStr>) -> Option<&'static str> {
     let wayland = wayland_display.is_some_and(|display| !display.is_empty());
     (native_player && wayland).then_some("wayland")
+}
+
+/// Asks for this AppImage to be started again once Tuck has exited, and says whether it
+/// applies. Outside an AppImage, Tauri's own restart starts the program again.
+pub fn relaunch_appimage_on_exit() -> bool {
+    let relaunch = LAUNCH_ENVIRONMENT
+        .get()
+        .zip(std::env::current_exe().ok())
+        .and_then(|(launch, exe)| appimage_relaunch(launch, &exe));
+    let asked = relaunch.is_some();
+    *RELAUNCH
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = relaunch;
+    asked
+}
+
+/// Starts the AppImage a restart asked for. Runs once the plugins have handled the exit:
+/// while this Tuck still holds the single-instance name, the new one would hand it its
+/// files and quit.
+pub fn relaunch_if_asked() {
+    let relaunch = RELAUNCH
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .take();
+    let Some(relaunch) = relaunch else {
+        return;
+    };
+    let started = std::process::Command::new(&relaunch.appimage)
+        .args(std::env::args_os().skip(1))
+        .env_clear()
+        .envs(relaunch.environment)
+        .spawn();
+    if let Err(error) = started {
+        eprintln!("could not start Tuck again: {error}");
+    }
+}
+
+/// The AppImage file and the environment Tuck was launched with, minus every entry inside
+/// the running AppImage. Its launcher puts its own folders first in `LD_LIBRARY_PATH`,
+/// `PATH` and more, and they are gone once this Tuck exits. The next launcher is a `bash`
+/// script, and the host's bash would load the bundled libraries: Arch's stops on the older
+/// Ubuntu readline with "undefined symbol". `None` when Tuck isn't running from an AppImage.
+fn appimage_relaunch(launch: &[(OsString, OsString)], exe: &Path) -> Option<AppImageRelaunch> {
+    let value = |name: &str| {
+        launch
+            .iter()
+            .find(|(key, _)| key == name)
+            .map(|(_, value)| value.as_os_str())
+    };
+    let appimage = value("APPIMAGE").filter(|path| !path.is_empty())?;
+    let appdir = value("APPDIR")?.as_bytes();
+    let appdir = appdir.strip_suffix(b"/").unwrap_or(appdir);
+    // the variables alone could be left over from whatever started Tuck
+    if appdir.is_empty() || !exe.starts_with(OsStr::from_bytes(appdir)) {
+        return None;
+    }
+    let environment = launch
+        .iter()
+        .filter_map(|(key, value)| Some((key.clone(), without_entries_in(value, appdir)?)))
+        .collect();
+    Some(AppImageRelaunch {
+        appimage: PathBuf::from(appimage),
+        environment,
+    })
+}
+
+/// A variable's value without its `:`-separated entries inside `dir`, or `None` when no
+/// other entry is left. A value with no entry inside `dir` is kept exactly as it was.
+fn without_entries_in(value: &OsStr, dir: &[u8]) -> Option<OsString> {
+    let inside = |entry: &[u8]| {
+        entry
+            .strip_prefix(dir)
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with(b"/"))
+    };
+    let entries = value.as_bytes().split(|&byte| byte == b':');
+    if !entries.clone().any(inside) {
+        return Some(value.to_owned());
+    }
+    let kept: Vec<&[u8]> = entries
+        .filter(|entry| !entry.is_empty() && !inside(entry))
+        .collect();
+    (!kept.is_empty()).then(|| OsString::from_vec(kept.join(&b':')))
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -143,6 +242,7 @@ struct GstreamerPaths {
 }
 
 /// Tauri bundles Tuck's resources under `usr/lib/<product name>` in the AppImage.
+const TUCK_RESOURCE_DIR: &str = "usr/lib/Tuck";
 const TUCK_PLUGIN_DIR: &str = "usr/lib/Tuck/gstreamer";
 
 /// Points symlinks at fixed paths in Tuck's cache folder to the bundled GStreamer
@@ -523,6 +623,62 @@ mod tests {
         assert_eq!(gdk_backend(false, display), None);
         assert_eq!(gdk_backend(true, None), None);
         assert_eq!(gdk_backend(true, Some(OsStr::new(""))), None);
+    }
+
+    fn variables(list: &[(&str, &str)]) -> Vec<(OsString, OsString)> {
+        list.iter()
+            .map(|(name, value)| (OsString::from(name), OsString::from(value)))
+            .collect()
+    }
+
+    #[test]
+    fn a_restarted_appimage_starts_without_the_running_package_folders() {
+        let launch = variables(&[
+            ("APPIMAGE", "/home/me/Apps/Tuck.AppImage"),
+            ("APPDIR", "/tmp/.mount_Tuck.Ab12Cd"),
+            (
+                "LD_LIBRARY_PATH",
+                "/tmp/.mount_Tuck.Ab12Cd/usr/lib/:/tmp/.mount_Tuck.Ab12Cd//usr/lib/x86_64-linux-gnu/:/opt/mine/lib",
+            ),
+            ("PATH", "/tmp/.mount_Tuck.Ab12Cd/usr/bin/:/usr/local/bin:/usr/bin"),
+            ("PYTHONHOME", "/tmp/.mount_Tuck.Ab12Cd/usr/"),
+            ("GST_PLUGIN_SYSTEM_PATH_1_0", "/tmp/.mount_Tuck.Ab12Cd/usr/lib/gstreamer-1.0:"),
+            ("XDG_DATA_DIRS", "/tmp/.mount_Tuck.Ab12Cd/usr/share/:/usr/share:/usr/local/share"),
+            // another AppImage's folder and values without the package stay exactly as they were
+            ("OTHER", "/tmp/.mount_Tuck.Ab12CdX/usr/lib::/x"),
+            ("GTK_THEME", "Adwaita:dark"),
+        ]);
+        let exe = Path::new("/tmp/.mount_Tuck.Ab12Cd/usr/bin/Tuck");
+        let relaunch = appimage_relaunch(&launch, exe).expect("Tuck runs from an AppImage");
+        assert_eq!(
+            relaunch.appimage,
+            PathBuf::from("/home/me/Apps/Tuck.AppImage")
+        );
+        assert_eq!(
+            relaunch.environment,
+            variables(&[
+                ("APPIMAGE", "/home/me/Apps/Tuck.AppImage"),
+                ("LD_LIBRARY_PATH", "/opt/mine/lib"),
+                ("PATH", "/usr/local/bin:/usr/bin"),
+                ("XDG_DATA_DIRS", "/usr/share:/usr/local/share"),
+                ("OTHER", "/tmp/.mount_Tuck.Ab12CdX/usr/lib::/x"),
+                ("GTK_THEME", "Adwaita:dark"),
+            ])
+        );
+    }
+
+    #[test]
+    fn only_tuck_running_inside_an_appimage_relaunches_it() {
+        let appimage = ("APPIMAGE", "/home/me/Tuck.AppImage");
+        let mounted = Path::new("/tmp/.mount_Tuck.Ab12Cd/usr/bin/Tuck");
+        let launch = variables(&[appimage, ("APPDIR", "/tmp/.mount_Tuck.Ab12Cd")]);
+        // an extracted package, or variables left over from whatever started Tuck
+        let extracted = Path::new("/home/me/squashfs-root/usr/bin/Tuck");
+        assert_eq!(appimage_relaunch(&launch, extracted), None);
+        let no_file = variables(&[("APPDIR", "/tmp/.mount_Tuck.Ab12Cd")]);
+        assert_eq!(appimage_relaunch(&no_file, mounted), None);
+        let root = variables(&[appimage, ("APPDIR", "/")]);
+        assert_eq!(appimage_relaunch(&root, Path::new("/usr/bin/Tuck")), None);
     }
 
     #[test]

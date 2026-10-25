@@ -250,6 +250,9 @@ pub fn run() {
             // also reached before a restart, so a restarted Tuck opens where this one was
             if let tauri::RunEvent::Exit = event {
                 platform::window_state::save(app);
+                // plugins have handled Exit first, so the single-instance name is free
+                #[cfg(target_os = "linux")]
+                platform::relaunch_if_asked();
             }
         });
 }

@@ -680,11 +680,15 @@ def test_appimage_gui_smoke_runs_apprun_as_the_appimage_runtime_would(tmp_path: 
     spec.loader.exec_module(smoke)
     app_root = tmp_path / "squashfs-root"
 
-    environment = smoke.launch_environment({"DISPLAY": ":0"}, app_root, tmp_path / "data")
+    environment = smoke.launch_environment(
+        {"DISPLAY": ":99", "WAYLAND_DISPLAY": "wayland-0"}, app_root, tmp_path / "data"
+    )
 
     assert environment["APPDIR"] == str(app_root)
-    assert environment["DISPLAY"] == ":0"
+    assert environment["DISPLAY"] == ":99"
     assert environment["TUCK_SIDECAR_DATA_ROOT"] == str(tmp_path / "data")
+    # the window is looked for on the X display, so Tuck must not open on a Wayland desktop
+    assert "WAYLAND_DISPLAY" not in environment
 
 
 def test_linux_package_verifier_requires_the_staged_dav1d_plugin(tmp_path: Path) -> None:

@@ -215,6 +215,20 @@ fn ensure_restart_allowed(backend_running: bool) -> Result<(), PublicBackendErro
     Ok(())
 }
 
+/// Exits and starts Tuck again. Like Tauri's own restart it never returns, so the page keeps
+/// its closing screen until the window goes.
+pub(crate) fn restart(app: &tauri::AppHandle) -> ! {
+    #[cfg(target_os = "linux")]
+    if crate::platform::relaunch_appimage_on_exit() {
+        // Tauri's restart would hand the new AppImage this one's library folders
+        app.exit(0);
+        loop {
+            std::thread::park();
+        }
+    }
+    app.restart()
+}
+
 /// Restarts Tuck after its backend could not start or stopped unexpectedly.
 #[tauri::command]
 pub async fn restart_app(
@@ -226,7 +240,7 @@ pub async fn restart_app(
     close.begin_exit();
     // reap whatever is left of the old backend before the new shell starts one
     shut_down_backend(&app).await;
-    app.restart();
+    restart(&app);
 }
 
 /// Restarts Tuck when the user asks, such as after changing Hardware playback. The page has
@@ -242,7 +256,7 @@ pub async fn restart_tuck(
         return Ok(());
     }
     shut_down_backend(&app).await;
-    app.restart();
+    restart(&app);
 }
 
 /// The page died with the GPU renderer, so nothing on screen can be saved or asked
@@ -254,7 +268,7 @@ pub async fn restart_after_gpu_renderer_crash(app: tauri::AppHandle) {
         close.begin_exit();
     }
     shut_down_backend(&app).await;
-    app.restart();
+    restart(&app);
 }
 
 #[cfg(test)]

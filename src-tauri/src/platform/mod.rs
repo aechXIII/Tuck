@@ -24,8 +24,9 @@ use tokio::process::Command;
 
 #[cfg(target_os = "linux")]
 pub use linux::{
-    configure_child_process, prepare_runtime_environment, terminate_process_tree, watch_fullscreen,
-    watch_gpu_renderer, ProcessTreeGuard,
+    configure_child_process, prepare_runtime_environment, relaunch_appimage_on_exit,
+    relaunch_if_asked, terminate_process_tree, watch_fullscreen, watch_gpu_renderer,
+    ProcessTreeGuard,
 };
 #[cfg(target_os = "windows")]
 pub use windows::{configure_webview, terminate_process_tree, ProcessTreeGuard};
