@@ -225,16 +225,34 @@ fn paste_error() -> PublicBackendError {
     PublicBackendError::new("INTERNAL_ERROR", "Could not read the clipboard. Try again.")
 }
 
-/// The existing files on the clipboard: files copied in a file manager, or absolute paths
-/// copied as text. Anything else gives an empty list, since a paste with nothing to add is
-/// not an error.
+// a paste takes what the video and audio pickers offer, so a copied document never reaches the
+// Library as a video that can't be read
+fn pickable_files(files: Vec<String>) -> Vec<String> {
+    files
+        .into_iter()
+        .filter(|file| {
+            std::path::Path::new(file)
+                .extension()
+                .and_then(|extension| extension.to_str())
+                .is_some_and(|extension| {
+                    let extension = extension.to_ascii_lowercase();
+                    VIDEO_EXTENSIONS.contains(&extension.as_str())
+                        || AUDIO_EXTENSIONS.contains(&extension.as_str())
+                })
+        })
+        .collect()
+}
+
+/// The existing video and audio files on the clipboard: files copied in a file manager, or
+/// absolute paths copied as text. Anything else gives an empty list, since a paste with nothing
+/// to add is not an error.
 #[tauri::command]
 pub async fn read_clipboard_files(
     app: tauri::AppHandle,
 ) -> Result<Vec<String>, PublicBackendError> {
     let paths = copied_paths(&app).await?;
     tauri::async_runtime::spawn_blocking(move || {
-        crate::platform::file_clipboard::existing_files(paths)
+        pickable_files(crate::platform::file_clipboard::existing_files(paths))
     })
     .await
     .map_err(|_| paste_error())
@@ -518,6 +536,28 @@ mod tests {
                 Some(PathBuf::from(r"\\server\videos\żółć")),
                 "frame.png".into()
             )
+        );
+    }
+
+    #[test]
+    fn a_paste_takes_only_what_the_video_and_audio_pickers_offer() {
+        let files = [
+            r"X:\clips\Match.MP4",
+            r"X:\clips\take.mkv",
+            r"X:\clips\music.flac",
+            r"X:\clips\notes.txt",
+            r"X:\clips\cover.png",
+            r"X:\clips\no extension",
+        ]
+        .map(String::from)
+        .to_vec();
+        assert_eq!(
+            pickable_files(files),
+            [
+                r"X:\clips\Match.MP4",
+                r"X:\clips\take.mkv",
+                r"X:\clips\music.flac"
+            ]
         );
     }
 
