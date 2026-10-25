@@ -275,10 +275,12 @@ export function createFixtureEngine(options: FixtureEngineOptions = {}): Fixture
  * a plain success, like the window chrome tests do.
  */
 export function fixtureEngineScript(options: { frameDelayMs?: number; nativePreview?: "engine" | "off" } = {}): string {
+  // what the page assumes in a plain browser, so a spec run through the native engine sees the
+  // same desktop it was written for, file drag-out included
   const capabilities = {
     platform: "windows", architecture: "x86_64", customTitleBar: true,
     sendToIntegration: true, publicCli: true, automaticUpdater: true,
-    hardwareAcceleration: true, packaged: false,
+    hardwareAcceleration: true, fileDragOut: true, packaged: false,
     nativePreview: options.nativePreview ?? "engine",
   };
   return `(() => {
