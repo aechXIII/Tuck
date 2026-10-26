@@ -13,6 +13,7 @@ from .encoding.target_size import (
 )
 from .formatting import format_size
 from .models import (
+    DISCORD_PROFILE_IDS,
     ENCODER_AUTO,
     ENCODER_AUTO_FAST,
     FPS_MODE_CUSTOM,
@@ -342,6 +343,7 @@ def plan(
 
     tone_map_hdr, warnings = plan_colors(info)
     warnings += subtitle_warnings(info, len(segments))
+    warnings += discord_warnings(profile, video_encoder)
     if workflow == WORKFLOW_UPSCALE:
         warnings += upscale_size_warnings(
             (target_w, target_h),
@@ -471,6 +473,29 @@ def plan(
     )
 
     return enc_plan
+
+
+# H.264 plays in Discord's chat on every device; H.265 (HEVC) plays only where the viewer's
+# device can decode it, and everyone else gets a file to download
+HEVC_ENCODERS = frozenset({"libx265", "hevc_nvenc", "hevc_amf", "hevc_vaapi"})
+DISCORD_HEVC_WARNING = (
+    "Discord doesn't play H.265 in the chat on every device, so some friends would have to "
+    "download it. H.264 plays everywhere."
+)
+
+
+def discord_warnings(profile: Profile, video_encoder: str) -> list[str]:
+    """Advice when a Discord profile's encoder makes a file the chat may not play.
+
+    Every export is 8-bit and Tuck has no AV1 encoder, so H.265 is the only case today. Auto
+    tries H.264 first, so it doesn't warn.
+    """
+    meant_for_discord = (
+        profile.profile_id in DISCORD_PROFILE_IDS or "discord" in profile.name.casefold()
+    )
+    if meant_for_discord and video_encoder in HEVC_ENCODERS:
+        return [DISCORD_HEVC_WARNING]
+    return []
 
 
 def resolve_target_size(profile: Profile, request: PlanRequest | None) -> int:

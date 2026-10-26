@@ -220,6 +220,10 @@ BUILTIN_PROFILE_IDS: frozenset[str] = frozenset(
         PROFILE_ID_4K_UPSCALE,
     }
 )
+# the profiles made for sending to Discord, which shares its own plays-everywhere advice
+DISCORD_PROFILE_IDS: frozenset[str] = frozenset(
+    {PROFILE_ID_DISCORD_FREE, PROFILE_ID_DISCORD_NITRO_BASIC, PROFILE_ID_DISCORD_NITRO}
+)
 
 DISCORD_FREE_LIMIT = 20 * 1024 * 1024
 DISCORD_NITRO_BASIC_LIMIT = 50 * 1024 * 1024
