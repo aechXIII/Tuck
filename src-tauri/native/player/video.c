@@ -35,6 +35,15 @@
    the app */
 static atomic_int speakers_missing;
 
+/* a mix kept for a sound track that is still opening, in the video's own copies */
+typedef struct PendingMix {
+    char **paths;
+    int *streams;
+    size_t voice_count;
+    MixPiece *pieces;
+    size_t piece_count;
+} PendingMix;
+
 struct TuckVideo {
     pthread_mutex_t lock;
     pthread_cond_t wake;
@@ -86,6 +95,13 @@ struct TuckVideo {
     /* what the sound was last asked for */
     uint64_t sound_generation;
     int sound_running;
+    /* A video without sound of its own gets a track from its first mix with sound. Its device
+       opens on a thread of its own: PipeWire can take seconds to answer, and the caller holds this
+       lock and the shell's player lock, which every draw waits for. The newest mix sent
+       meanwhile waits in `pending`, under lock. */
+    pthread_t sound_opener;
+    int sound_opener_started;
+    PendingMix pending;
 };
 
 static double now_seconds(void) {
@@ -513,11 +529,16 @@ failed:
     return NULL;
 }
 
+static void pending_mix_free(PendingMix *m);
+
 void tuck_video_close(TuckVideo *v) {
     if (!v) return;
     atomic_store(&v->stopping, 1);
     wake_render(v);
     stop_drawing(v);
+    /* a track still opening is closed by its own thread once it sees the video stopping */
+    if (v->sound_opener_started) pthread_join(v->sound_opener, NULL);
+    pending_mix_free(&v->pending);
     audio_track_close(v->audio);
     decoded_frame_clear(&v->shown);
     /* queued frames hold GPU textures or surfaces, so the decoder goes before the device */
@@ -564,6 +585,79 @@ int tuck_video_rate(TuckVideo *v, double rate) {
 #define MIX_VOICE_LIMIT 256
 #define MIX_PIECE_LIMIT 65536
 
+static void pending_mix_free(PendingMix *m) {
+    for (size_t i = 0; i < m->voice_count; i++) free(m->paths[i]);
+    free(m->paths);
+    free(m->streams);
+    free(m->pieces);
+    memset(m, 0, sizeof(*m));
+}
+
+/* replaces the kept mix with copies of this one; 0 when out of memory, keeping the old one */
+static int pending_mix_set(PendingMix *m, const char *const *paths, const int *streams, size_t voice_count,
+                           const MixPiece *pieces, size_t piece_count) {
+    PendingMix next = {
+        .paths = voice_count ? calloc(voice_count, sizeof(*next.paths)) : NULL,
+        .streams = voice_count ? malloc(voice_count * sizeof(*next.streams)) : NULL,
+        .voice_count = voice_count,
+        .pieces = piece_count ? malloc(piece_count * sizeof(*next.pieces)) : NULL,
+        .piece_count = piece_count,
+    };
+    int ok = (!voice_count || (next.paths && next.streams)) && (!piece_count || next.pieces);
+    for (size_t i = 0; ok && i < voice_count; i++) {
+        next.streams[i] = streams[i];
+        ok = (next.paths[i] = strdup(paths[i])) != NULL;
+    }
+    if (!ok) {
+        /* the strings not copied yet are NULL, as calloc left them */
+        if (!next.paths) next.voice_count = 0;
+        pending_mix_free(&next);
+        return 0;
+    }
+    if (piece_count) memcpy(next.pieces, pieces, piece_count * sizeof(*pieces));
+    pending_mix_free(m);
+    *m = next;
+    return 1;
+}
+
+static void *open_sound(void *opaque) {
+    TuckVideo *v = opaque;
+    pthread_mutex_lock(&v->lock);
+    double duration = v->duration;
+    pthread_mutex_unlock(&v->lock);
+    char error[160];
+    AudioTrack *track = audio_track_new(duration, error, sizeof(error));
+    AudioTrack *spare = NULL;
+    pthread_mutex_lock(&v->lock);
+    PendingMix *m = &v->pending;
+    if (atomic_load(&v->stopping)) {
+        spare = track;
+    } else if (!track) {
+        v->sound = TUCK_SOUND_UNAVAILABLE;
+        snprintf(v->sound_error, sizeof(v->sound_error), "%s", error);
+    } else if (!audio_track_set_mix(track, (const char *const *)m->paths, m->streams, m->voice_count, m->pieces,
+                                    m->piece_count)) {
+        spare = track;
+        v->sound = TUCK_SOUND_UNAVAILABLE;
+        snprintf(v->sound_error, sizeof(v->sound_error), "Out of memory while opening the sound.");
+    } else {
+        v->audio = track;
+        v->sound = TUCK_SOUND_PLAYING;
+        /* edits and the level may have changed while the device opened */
+        audio_track_set_duration(track, v->duration);
+        audio_track_volume(track, (float)v->volume);
+        /* a video without sound of its own starts its clock on the mix, from the spot it is at */
+        double now = now_seconds();
+        tuck_player_follow_sound(v->clock, 1, now);
+        tuck_player_restart(v->clock, now);
+    }
+    pending_mix_free(m);
+    if (!atomic_load(&v->stopping)) after_command(v);
+    pthread_mutex_unlock(&v->lock);
+    audio_track_close(spare);
+    return NULL;
+}
+
 int tuck_video_mix(TuckVideo *v, const TuckMixVoice *voices, int32_t voice_count, const TuckMixPiece *pieces,
                    int32_t piece_count) {
     if (voice_count < 0 || piece_count < 0 || voice_count > MIX_VOICE_LIMIT || piece_count > MIX_PIECE_LIMIT ||
@@ -588,20 +682,22 @@ int tuck_video_mix(TuckVideo *v, const TuckMixVoice *voices, int32_t voice_count
     }
     if (usable) {
         pthread_mutex_lock(&v->lock);
-        /* a video without sound of its own starts its clock on the mix, from the spot it is at */
-        if (!v->audio && voice_count && v->sound == TUCK_SOUND_NONE) {
-            v->audio = audio_track_new(v->duration, v->sound_error, sizeof(v->sound_error));
-            v->sound = v->audio ? TUCK_SOUND_PLAYING : TUCK_SOUND_UNAVAILABLE;
-            if (v->audio) {
-                /* a new track starts at full level, but the page may have muted this video already */
-                audio_track_volume(v->audio, (float)v->volume);
-                double now = now_seconds();
-                tuck_player_follow_sound(v->clock, 1, now);
-                tuck_player_restart(v->clock, now);
+        if (!v->audio && v->sound == TUCK_SOUND_NONE && (voice_count || v->sound_opener_started)) {
+            /* the first mix with sound opens a track; until it is open each mix replaces the last */
+            usable = pending_mix_set(&v->pending, paths, streams, (size_t)voice_count, mix, (size_t)piece_count);
+            if (usable && !v->sound_opener_started) {
+                if (pthread_create(&v->sound_opener, NULL, open_sound, v) == 0) {
+                    v->sound_opener_started = 1;
+                } else {
+                    v->sound = TUCK_SOUND_UNAVAILABLE;
+                    snprintf(v->sound_error, sizeof(v->sound_error), "The sound could not start its thread.");
+                    pending_mix_free(&v->pending);
+                }
             }
+        } else if (v->audio) {
+            /* without a sound device the mix is taken and plays nowhere, as the video's own sound does */
+            usable = audio_track_set_mix(v->audio, paths, streams, (size_t)voice_count, mix, (size_t)piece_count);
         }
-        /* without a sound device the mix is taken and plays nowhere, as the video's own sound does */
-        if (v->audio) usable = audio_track_set_mix(v->audio, paths, streams, (size_t)voice_count, mix, (size_t)piece_count);
         after_command(v);
         pthread_mutex_unlock(&v->lock);
     }
