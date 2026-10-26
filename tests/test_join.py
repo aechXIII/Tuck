@@ -146,6 +146,21 @@ def test_a_video_without_sound_gets_silence_in_a_re_encoded_join():
     assert "anullsrc=r=48000:cl=stereo,atrim=duration=12.500000[a1]" in joined
 
 
+def test_a_re_encoded_join_mixes_every_sound_track_into_one():
+    two = _probe()
+    two["streams"].append(dict(two["streams"][1]))
+    recording = source_from_probe(Path("/videos/a.mp4"), two)
+    command = encode_command("ffmpeg", [recording, _source("b.mp4")], Path("/o.mp4"), "libx264")
+    graph = command[command.index("-filter_complex") + 1]
+    # game and microphone are both heard, at their own levels, like an export with one track
+    assert "[0:a:0]aresample=48000," in graph and "[0:a:1]aresample=48000," in graph
+    mixed = "[a0t0][a0t1]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0[a0]"
+    assert mixed in graph
+    assert "[1:a:0]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo[a1]" in graph
+    assert "concat=n=2:v=1:a=1" in graph
+    assert command.count("-map") == 2
+
+
 def test_graphics_card_encoders_are_tried_before_the_processor():
     available = ["h264_nvenc", "h264_amf", "libx264", "hevc_nvenc", "libx265"]
     assert encode_candidates(available) == ["h264_nvenc", "h264_amf", "libx264"]
@@ -450,3 +465,40 @@ def test_real_ffmpeg_re_encodes_clips_that_differ(tmp_path):
     assert audio["codec_name"] == "aac"
     assert float(data["format"]["duration"]) == pytest.approx(4.0, abs=0.15)
     assert Path(result.output_path).name == "wide_joined.mp4"
+
+
+@needs_ffmpeg
+def test_real_ffmpeg_re_encoded_join_keeps_a_second_sound_track(tmp_path):
+    if "libx264" not in _encoders():
+        pytest.skip("this FFmpeg has no libx264 to make and re-encode the test clips")
+    assert TOOLS is not None
+    # a recording with a silent game track and the sound on its second (microphone) track
+    recording = tmp_path / "recording.mp4"
+    TOOLS.run(
+        [
+            *("-y", "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=30"),
+            *("-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo"),
+            *("-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000"),
+            *("-map", "0:v", "-map", "1:a", "-map", "2:a", "-t", "2", "-ac", "2"),
+            *("-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p"),
+            *("-c:a", "aac", "-b:a", "96k", str(recording)),
+        ]
+    )
+    other = _clip(tmp_path / "small.mp4", size="160x160", rate=25, seconds=2, audio=False)
+    joins = _real_service()
+    try:
+        joins.start([recording, other], "real-tracks")
+        wait_until(lambda: joins.get("real-tracks").status != "running", timeout=120)
+        result = joins.get("real-tracks")
+    finally:
+        joins.close()
+    assert result.status == "done", result.message
+    output = Path(result.output_path)
+    audio = [s for s in _streams(output)["streams"] if s["codec_type"] == "audio"]
+    assert len(audio) == 1
+    levels = TOOLS.run(
+        ["-v", "info", "-i", str(output), "-t", "1.8", "-af", "volumedetect", "-f", "null", "-"]
+    ).stderr.decode("utf-8", "replace")
+    loudest = float(levels.split("max_volume:")[1].split("dB")[0])
+    # the microphone's tone is there, not only the silent first track
+    assert loudest > -40, levels[-400:]

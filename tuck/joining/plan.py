@@ -65,11 +65,6 @@ class JoinSource:
     audio_tracks: tuple[AudioFacts, ...] = ()
 
     @property
-    def audio(self) -> AudioFacts | None:
-        # a re-encoded join keeps the first track, the one players play
-        return self.audio_tracks[0] if self.audio_tracks else None
-
-    @property
     def display_size(self) -> tuple[int, int]:
         # a phone video stored sideways plays upright, and so does its part of the join
         if self.video.rotation % 180 == 90:
@@ -229,7 +224,7 @@ def copy_mismatch(sources: list[JoinSource]) -> str:
             b.extradata,
         ):
             return "the videos were recorded with different encoder settings"
-        if (first.audio is None) != (other.audio is None):
+        if bool(first.audio_tracks) != bool(other.audio_tracks):
             return "some videos have sound and some don't"
         if len(first.audio_tracks) != len(other.audio_tracks):
             return "the videos have different numbers of sound tracks"
@@ -302,11 +297,13 @@ def encode_graph(sources: list[JoinSource], *, vaapi: bool) -> tuple[str, bool]:
     """A filter graph that fits every video to the first one's picture.
 
     Pictures are scaled to fit and centred on black, so nothing is cropped or stretched.
-    Videos without sound get silence, so the sound stays in step with the pictures.
+    Every sound track of a video is mixed into the one the result has, as an export with one
+    audio track does, so a recording's microphone isn't lost. Videos without sound get
+    silence, so the sound stays in step with the pictures.
     Returns the graph and whether the result has sound.
     """
     width, height = (_even(side) for side in sources[0].display_size)
-    has_audio = any(source.audio for source in sources)
+    has_audio = any(source.audio_tracks for source in sources)
     parts: list[str] = []
     labels: list[str] = []
     for index, source in enumerate(sources):
@@ -317,12 +314,21 @@ def encode_graph(sources: list[JoinSource], *, vaapi: bool) -> tuple[str, bool]:
         labels.append(f"[v{index}]")
         if not has_audio:
             continue
-        if source.audio:
+        tracks = len(source.audio_tracks)
+        for track in range(tracks):
+            label = f"a{index}" if tracks == 1 else f"a{index}t{track}"
             parts.append(
-                f"[{index}:a:0]aresample={AUDIO_RATE},"
-                f"aformat=sample_fmts=fltp:channel_layouts=stereo[a{index}]"
+                f"[{index}:a:{track}]aresample={AUDIO_RATE},"
+                f"aformat=sample_fmts=fltp:channel_layouts=stereo[{label}]"
             )
-        else:
+        if tracks > 1:
+            # summed at their own levels, without amix lowering each one
+            inputs = "".join(f"[a{index}t{track}]" for track in range(tracks))
+            parts.append(
+                f"{inputs}amix=inputs={tracks}:duration=longest:dropout_transition=0:"
+                f"normalize=0[a{index}]"
+            )
+        if not tracks:
             parts.append(
                 f"anullsrc=r={AUDIO_RATE}:cl=stereo,atrim=duration={source.duration:.6f}[a{index}]"
             )
