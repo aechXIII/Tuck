@@ -310,6 +310,36 @@ def test_the_bridge_compiles_the_mix_from_the_export_request(
     assert api.compile_preview_mix({"source": str(tmp_path / "missing.mp4")})["ok"] is False
 
 
+def test_a_picture_setting_the_export_refuses_keeps_the_preview_sound(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import tuck.settings as settings_mod
+    from tuck.bridge import BridgeAPI
+    from tuck.probe_cache import ProbeCache
+
+    for folder in ("_config_dir", "_data_dir", "_cache_dir"):
+        monkeypatch.setattr(settings_mod, folder, lambda: tmp_path)
+    video = tmp_path / "video.mp4"
+    video.write_bytes(b"video")
+    api = BridgeAPI()
+    api._settings.load()
+    api._probe_cache = ProbeCache(lambda path: _info())
+    sound = {"source": str(video), "source_audio_gain_db": -6}
+    # a LUT file that is gone, and a bitrate that can't fit the size: only the picture needs either
+    picture = {
+        "lut": {"enabled": True, "path": str(tmp_path / "gone.cube"), "strength": 1.0},
+        "rate_control": "explicit_bitrate",
+        "explicit_bitrate": 50_000_000,
+        "target_size_bytes": 2 * 1024 * 1024,
+    }
+    assert api.create_plan({**sound, **picture})["ok"] is False
+
+    refused = api.compile_preview_mix({**sound, **picture})
+
+    assert refused["ok"] is True, refused
+    assert refused["data"] == api.compile_preview_mix(sound)["data"]
+
+
 def test_the_bridge_compiles_a_lossless_cut_with_moved_clips_from_its_request(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

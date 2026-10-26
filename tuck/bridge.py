@@ -12,7 +12,12 @@ from typing import Any
 from av.error import FFmpegError
 
 from . import __version__
-from .audio_mix import compile_cut_preview_mix, compile_preview_mix
+from .audio_mix import (
+    compile_cut_preview_mix,
+    compile_preview_mix,
+    preview_mix_profile,
+    preview_mix_request,
+)
 from .bridge_contract import BridgeResult, JsonValue
 from .bridge_serialization import (
     audio_info_dict,
@@ -467,11 +472,13 @@ class BridgeAPI:
                     cut_request.source, segments, streams, cut_request.include_audio, moved
                 )
             else:
-                plan_request = self._parse_plan_request(raw)
+                # a setting only the picture needs can refuse the export but not its sound
+                plan_request = self._parse_plan_request(preview_mix_request(raw))
                 profile = self._resolve_profile(plan_request.profile_id)
                 if profile is None:
                     return {"ok": False, "error": f"Profile not found: {plan_request.profile_id}"}
-                mix = compile_preview_mix(self._build_plan(plan_request, profile))
+                sound_plan = self._build_plan(plan_request, preview_mix_profile(profile))
+                mix = compile_preview_mix(sound_plan)
         except PlanValidationError as error:
             return {"ok": False, "error": str(error), "field": error.field}
         except (ValueError, TypeError, OSError) as error:

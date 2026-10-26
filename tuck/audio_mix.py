@@ -6,6 +6,7 @@ fade, loop and muted-stretch rules from here, so the preview sounds the way the 
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from .models import (
@@ -13,6 +14,7 @@ from .models import (
     AudioTrack,
     EncodePlan,
     MuteRange,
+    Profile,
     Segment,
     TimelineAudioPiece,
     map_source_range_to_output,
@@ -23,6 +25,56 @@ from .models import (
 _EDGE = 1e-6
 # what a muted stretch leaves of a piece is dropped when it is shorter than one sample
 _SLIVER = 1 / 192_000
+
+# export request fields that only shape the picture, its size or its encoder. The preview's
+# sound is planned without them, so a LUT, frame blending or a size that can't fit, which only
+# the picture needs, never silences the preview
+_PICTURE_FIELDS = frozenset(
+    {
+        "target_size_bytes",
+        "resolution_mode",
+        "custom_width",
+        "custom_height",
+        "short_side",
+        "fps_mode",
+        "custom_fps",
+        "lut",
+        "frame_blending",
+        "rate_control",
+        "explicit_bitrate",
+        "scaler",
+        "video_encoder",
+        "crf",
+        "cq",
+        "tune",
+        "two_pass",
+        "preset",
+        "workflow",
+        "rate_control_method",
+        "qp",
+        "transform",
+    }
+)
+# a size budget any timeline fits
+_SOUND_PLAN_SIZE = 1 << 40
+
+
+def preview_mix_request(request: Mapping[str, object]) -> dict[str, object]:
+    """The export request with only what its sound depends on."""
+    return {key: value for key, value in request.items() if key not in _PICTURE_FIELDS}
+
+
+def preview_mix_profile(profile: Profile) -> Profile:
+    """`profile`'s sound settings on a stock compression setup, for planning the preview's sound."""
+    return Profile(
+        name=profile.name,
+        profile_id=profile.profile_id,
+        target_size_bytes=_SOUND_PLAN_SIZE,
+        audio_bitrate=profile.audio_bitrate,
+        audio_channels=profile.audio_channels,
+        audio_sample_rate=profile.audio_sample_rate,
+        keep_audio=profile.keep_audio,
+    )
 
 
 def without_ranges(
