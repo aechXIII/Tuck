@@ -166,6 +166,26 @@ class DeterministicFakeBackend implements BackendClient {
     );
   }
 
+  joinVideos(paths: readonly string[], workId: string) {
+    return this.#record(
+      "joinVideos",
+      [paths, workId],
+      this.#responses.joinVideos ?? notConfigured("No join fixture is configured."),
+    );
+  }
+
+  getJoin(workId: string) {
+    return this.#record(
+      "getJoin",
+      [workId],
+      this.#responses.getJoin ?? notConfigured("No join fixture is configured."),
+    );
+  }
+
+  cancelJoin(workId: string) {
+    return this.#record("cancelJoin", [workId], this.#responses.cancelJoin ?? success({ cancelled: false }));
+  }
+
   createPlan(request: CutPlanRequest): Promise<BackendResult<CutPlanPayload>>;
   createPlan(request: PlanRequest): Promise<BackendResult<DataPayload>>;
   createPlan(request: PlanRequest): Promise<BackendResult<DataPayload>> {

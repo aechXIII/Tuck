@@ -182,6 +182,18 @@
               </svg>
             </button>
           </div>
+          <!-- shows with two or more videos chosen, and while they are joined into one -->
+          <div id="lib-join" class="lib-join" hidden>
+            <div class="lib-join-row">
+              <span id="lib-join-text" class="lib-join-text"></span>
+              <button type="button" class="lib-join-action" id="lib-join-dismiss" hidden>Dismiss</button>
+              <button type="button" class="lib-join-action" id="lib-join-cancel" hidden>Cancel</button>
+              <button type="button" class="lib-join-btn" id="btn-join" data-tip="Make one new video from these, in Library order" hidden>Join</button>
+            </div>
+            <progress id="lib-join-bar" max="100" aria-label="Joining videos" hidden></progress>
+            <p id="lib-join-note" class="lib-join-note" hidden></p>
+            <span id="lib-join-status" class="sr-only" role="status"></span>
+          </div>
         </div>
         <div id="lib-panel-media">
           <div id="clips">

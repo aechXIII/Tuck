@@ -26,6 +26,9 @@ export interface ClipCardEvent {
   target?: ClipCardElement | EventTarget | null;
   key?: string;
   button?: number;
+  ctrlKey?: boolean;
+  metaKey?: boolean;
+  shiftKey?: boolean;
   stopPropagation?(): void;
   preventDefault?(): void;
 }
@@ -77,8 +80,13 @@ export interface ClipResult {
   pending?: boolean | undefined;
 }
 
+// how a press adds to the Library selection: one row more or less, or every row up to this one
+export type ClipPick = "toggle" | "range";
+
 export interface ClipCardCallbacks {
-  select(path: string): void;
+  select(path: string, pick?: ClipPick): void;
+  // Shift with an arrow key: the selection reaches one row further up or down
+  extendSelection?(path: string, delta: number): void;
   togglePlay(path: string): void;
   remove(path: string): void;
   openResult(path: string): void;
@@ -354,6 +362,11 @@ function appendLine<T extends ClipCardElement>(
   main.appendChild(line);
 }
 
+function pickFrom(event: ClipCardEvent): ClipPick | undefined {
+  if (event.shiftKey) return "range";
+  return event.ctrlKey || event.metaKey ? "toggle" : undefined;
+}
+
 function libraryGroup(model: ClipCardModel): string {
   if (model.queueState === "failed" || model.probeError) return "attention";
   return "videos";
@@ -419,7 +432,7 @@ export function createClipCard<T extends ClipCardElement>(
   card.setAttribute("tabindex", "0");
   card.setAttribute("role", "option");
   card.setAttribute("aria-selected", model.selected ? "true" : "false");
-  card.setAttribute("aria-keyshortcuts", "Enter Space Delete ArrowUp ArrowDown");
+  card.setAttribute("aria-keyshortcuts", "Enter Space Control+Space Delete ArrowUp ArrowDown Shift+ArrowUp Shift+ArrowDown");
   // the row shows the name and one line; the full details sit on hover
   const meta = model.meta ? String(model.meta.text) : "";
   card.setAttribute("title", meta && meta !== "…" ? name + " · " + meta : name);
@@ -451,7 +464,7 @@ export function createClipCard<T extends ClipCardElement>(
   card.addEventListener("click", (event) => {
     const action = actionFromTarget(event.target, card);
     if (!action) {
-      callbacks.select(model.path);
+      callbacks.select(model.path, pickFrom(event));
       return;
     }
     event.stopPropagation?.();
@@ -476,7 +489,12 @@ export function createClipCard<T extends ClipCardElement>(
     // Enter and Space on a row's own button press that button rather than select the row
     if ((event.key === "Enter" || event.key === " ") && !actionFromTarget(event.target, card)) {
       event.preventDefault?.();
-      callbacks.select(model.path);
+      callbacks.select(model.path, event.ctrlKey || event.metaKey ? "toggle" : undefined);
+    }
+    if (event.shiftKey && (event.key === "ArrowUp" || event.key === "ArrowDown") && callbacks.extendSelection) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      callbacks.extendSelection(model.path, event.key === "ArrowUp" ? -1 : 1);
     }
     if (event.key === "Delete" || event.key === "Backspace") {
       event.preventDefault?.();

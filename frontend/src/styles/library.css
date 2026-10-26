@@ -415,3 +415,99 @@
 .clip[data-clip-path] .c4:hover {
   background: color-mix(in srgb, var(--danger) 18%, var(--sink));
 }
+
+/* two or more chosen videos, and the join that makes one video of them */
+.lib-join {
+  display: flex;
+  flex-direction: column;
+  gap: calc(6px * var(--density-scale));
+}
+.lib-join[hidden] {
+  display: none;
+}
+.lib-join-row {
+  min-height: calc(28px * var(--density-scale));
+  display: flex;
+  align-items: center;
+  gap: calc(6px * var(--density-scale));
+}
+.lib-join-text {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: var(--text);
+  font-size: calc(11.5px * var(--text-scale));
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lib-join[data-state="failed"] .lib-join-text {
+  color: var(--danger);
+}
+.lib-join-btn,
+.lib-join-action {
+  flex: 0 0 auto;
+  min-height: calc(28px * var(--density-scale));
+  padding: 0 calc(12px * var(--density-scale));
+  border: 0;
+  border-radius: 6px;
+  font-family: var(--font);
+  font-size: calc(11.5px * var(--text-scale));
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 120ms var(--ease-out), color 120ms var(--ease-out);
+}
+.lib-join-btn {
+  background: var(--raised);
+  color: var(--text);
+}
+.lib-join-btn:hover {
+  background: var(--raised-2);
+}
+.lib-join-action {
+  background: transparent;
+  color: var(--muted);
+}
+.lib-join-action:hover:not(:disabled) {
+  background: var(--raised);
+  color: var(--text);
+}
+.lib-join-action:disabled {
+  cursor: default;
+}
+.lib-join-btn:focus-visible,
+.lib-join-action:focus-visible {
+  outline: 2px solid var(--accent-light);
+  outline-offset: 1px;
+}
+.lib-join-btn[hidden],
+.lib-join-action[hidden] {
+  display: none;
+}
+.lib-join progress {
+  width: 100%;
+  height: 3px;
+  appearance: none;
+  border: 0;
+  border-radius: 2px;
+  background: var(--raised-2);
+  overflow: hidden;
+}
+.lib-join progress[hidden] {
+  display: none;
+}
+.lib-join progress::-webkit-progress-bar {
+  background: var(--raised-2);
+}
+.lib-join progress::-webkit-progress-value {
+  background: var(--accent);
+}
+.lib-join-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: calc(11px * var(--text-scale));
+  line-height: 1.4;
+}
+.lib-join-note[hidden] {
+  display: none;
+}

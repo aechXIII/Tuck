@@ -33,6 +33,7 @@ import {
   type ClipCardElement,
   type ClipCardEvent,
   type ClipCardModel,
+  type ClipPick,
   type ClipResult,
 } from "./clip-card.ts";
 import { createClipLoader } from "./clip-loader.ts";
@@ -66,6 +67,8 @@ export interface LibraryEncodingHooks {
   setInspectorTab?: (tab: string, persist?: boolean) => void;
   // every Library change ends in a render, so this sees each new list of videos
   libraryChanged?: (paths: readonly string[]) => void;
+  // the videos chosen together, in Library order; the one on the stage is always among them
+  selectionChanged?: (paths: readonly string[]) => void;
   // Settings at its media tools, where FFmpeg and FFprobe are chosen
   openMediaSettings?: () => void;
   // the editor picks the player for a video before its preview loads
@@ -109,6 +112,8 @@ export interface LibraryApi {
   selectClip(path: string): void;
   // loads the selected video's preview again, as Retry does, such as for another player
   reloadPreview(): void;
+  // the chosen videos in Library order, the one on the stage included
+  selectedPaths(): string[];
   renderClips(): void;
   browse(): Promise<void>;
   retryProbeClip(path: string): Promise<void>;
@@ -142,6 +147,10 @@ export function createLibrary(host: LibraryHost): LibraryApi {
   const session = host.session;
   const documentRef = host.documentRef ?? document;
   const windowRef = host.windowRef ?? window;
+
+  // videos chosen with the one on the stage, with Ctrl or Shift; the Library order, not the
+  // order they were chosen in, is the order anything done with them uses
+  let picked = new Set<string>();
 
   const clipReorder: ClipReorderState = {
     active: false,
@@ -860,13 +869,15 @@ export function createLibrary(host: LibraryHost): LibraryApi {
   function appendLibraryClip(container: HTMLElement, model: ClipCardModel): void {
     const path = model.path;
     const div = createClipCard(documentRef as unknown as ClipCardDocument, model, {
-      select() {
+      select(_path, how) {
         if (clipReorder.moved) {
           clipReorder.moved = false;
           return;
         }
-        selectClip(path);
+        if (how) pickClip(path, how);
+        else selectClip(path);
       },
+      extendSelection,
       togglePlay() {
         selectClip(path);
         host.togglePlay?.();
@@ -895,6 +906,7 @@ export function createLibrary(host: LibraryHost): LibraryApi {
     if (clipReorder.active) return;
     const keys = orderedClipKeys();
     host.libraryChanged?.(keys);
+    host.selectionChanged?.(selectedPaths());
     const cdiv = byId("clips");
     const el = byId("drop-z");
     if (!cdiv || !el) return;
@@ -935,7 +947,7 @@ export function createLibrary(host: LibraryHost): LibraryApi {
       return {
         path,
         name: clip.name,
-        selected: session.selPath === path,
+        selected: session.selPath === path || picked.has(path),
         queueItemId: clip._queueItemId || "",
         queueState: clip._queueState || "",
         resultPath: clip._resultPath || "",
@@ -1019,8 +1031,56 @@ export function createLibrary(host: LibraryHost): LibraryApi {
     setPreviewStatus("unavailable", shown, reason);
   }
 
+  function selectedPaths(): string[] {
+    for (const path of picked) if (!session.clips[path] || path === session.selPath) picked.delete(path);
+    return orderedClipKeys().filter((path) => path === session.selPath || picked.has(path));
+  }
+
+  // the order rows are shown in, which keys and Shift-clicks move through
+  function shownOrder(): string[] {
+    return groupedClipPaths(
+      orderedClipKeys().map((path) => ({
+        path,
+        name: session.clips[path]?.name || path,
+        queueState: session.clips[path]?._queueState || "",
+        probeError: !!session.clips[path]?.error,
+      })),
+    );
+  }
+
+  // the video on the stage stays chosen; other rows join or leave the selection around it
+  function pickClip(path: string, how: ClipPick): void {
+    if (!session.clips[path]) return;
+    const anchor = session.selPath;
+    if (!anchor || !session.clips[anchor]) {
+      selectClip(path);
+      return;
+    }
+    if (how === "toggle") {
+      if (path === anchor) return;
+      if (picked.has(path)) picked.delete(path);
+      else picked.add(path);
+    } else {
+      const order = shownOrder();
+      const from = order.indexOf(anchor);
+      const to = order.indexOf(path);
+      if (from < 0 || to < 0) return;
+      picked = new Set(order.slice(Math.min(from, to), Math.max(from, to) + 1).filter((item) => item !== anchor));
+    }
+    renderClips();
+  }
+
+  function extendSelection(path: string, delta: number): void {
+    const order = shownOrder();
+    const next = order[order.indexOf(path) + delta];
+    if (!next) return;
+    pickClip(next, "range");
+    focusCard(next);
+  }
+
   function selectClip(path: string): void {
     host.choosePlayer?.(path);
+    picked = new Set();
     preview.select(path);
     session.selPath = path;
     host.history?.updateButtons?.();
@@ -1290,14 +1350,7 @@ export function createLibrary(host: LibraryHost): LibraryApi {
   }
 
   function moveSelection(delta: number, event?: Event): void {
-    const keys = groupedClipPaths(
-      orderedClipKeys().map((path) => ({
-        path,
-        name: session.clips[path]?.name || path,
-        queueState: session.clips[path]?._queueState || "",
-        probeError: !!session.clips[path]?.error,
-      })),
-    );
+    const keys = shownOrder();
     if (!keys.length) return;
     const focusedClip = libraryClipTarget(event);
     const currentPath = focusedClip?.dataset.clipPath || session.selPath;
@@ -1328,6 +1381,7 @@ export function createLibrary(host: LibraryHost): LibraryApi {
     reloadPreview: () => {
       if (session.selPath) preview.select(session.selPath);
     },
+    selectedPaths,
     renderClips,
     browse,
     retryProbeClip,

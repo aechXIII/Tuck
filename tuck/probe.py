@@ -259,7 +259,7 @@ def _video_dimensions(video_stream: dict, source: Path) -> tuple[int, int, int, 
     coded_height = int(video_stream.get("height", 0))
     if coded_width <= 0 or coded_height <= 0:
         raise ValueError(f"Invalid resolution in: {source}")
-    display_rotation = _parse_display_rotation(video_stream)
+    display_rotation = parse_display_rotation(video_stream)
     if display_rotation in (90, 270):
         width, height = coded_height, coded_width
     else:
@@ -450,7 +450,7 @@ def _audio_info(source: Path, data: dict) -> AudioInfo:
     )
 
 
-def _parse_display_rotation(video_stream: dict) -> int:
+def parse_display_rotation(video_stream: dict) -> int:
     values: list[tuple[Any, int]] = []
     side_data = video_stream.get("side_data_list", [])
     if isinstance(side_data, list):

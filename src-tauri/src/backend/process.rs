@@ -814,6 +814,8 @@ impl BackendCommand {
             | Self::AnalyzeCut { .. }
             | Self::GetCutAnalysis { .. }
             | Self::CancelCutWork { .. }
+            | Self::GetJoin { .. }
+            | Self::CancelJoin { .. }
             | Self::ListLuts
             | Self::ClearLutHistory
             | Self::GetQueueState
@@ -858,6 +860,7 @@ impl BackendCommand {
             | Self::GetMediaUrl { .. }
             | Self::ReleaseMediaToken { .. }
             | Self::CreatePlan { .. }
+            | Self::JoinVideos { .. }
             | Self::CompilePreviewMix { .. }
             | Self::EnqueueWithOptions { .. }
             | Self::RetryItem { .. }

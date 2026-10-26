@@ -3,6 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { backendFailure, errorMessage, isBackendError } from "./errors.ts";
 import { isCutAnalysisPayload, isCutCancellation, isCutPlanPayload } from "./cutting-types.ts";
 import { isFrameExportResult } from "./frame-types.ts";
+import { isJoinCancellation, isJoinStatus } from "./join-types.ts";
+import type { JoinCancellation, JoinStatus } from "./join-types.ts";
 import { isPreviewMixPayload } from "./preview-mix-types.ts";
 import type { PreviewMixPayload } from "./preview-mix-types.ts";
 import type { FrameExportRequest, FrameExportResult } from "./frame-types.ts";
@@ -75,6 +77,9 @@ type TauriBackendCommand =
     payload: { path: string; keyframes_revision?: number; keyframes_from?: number };
   }
   | { command: "cancel_cut_work"; payload: { work_id: string } }
+  | { command: "join_videos"; payload: { paths: readonly string[]; work_id: string } }
+  | { command: "get_join"; payload: { work_id: string } }
+  | { command: "cancel_join"; payload: { work_id: string } }
   | { command: "create_plan"; payload: { request: PlanRequest } }
   | { command: "compile_preview_mix"; payload: { request: PlanRequest } }
   | { command: "enqueue_with_options"; payload: { request: PlanRequest } }
@@ -484,6 +489,26 @@ class TauriTransport implements TauriBackendClient {
       "cancelCutWork",
       { command: "cancel_cut_work", payload: { work_id: workId } },
       isCutCancellation,
+    );
+  }
+
+  joinVideos(paths: readonly string[], workId: string): Promise<BackendResult<JoinStatus>> {
+    return this.#request(
+      "joinVideos",
+      { command: "join_videos", payload: { paths: [...paths], work_id: workId } },
+      isJoinStatus,
+    );
+  }
+
+  getJoin(workId: string): Promise<BackendResult<JoinStatus>> {
+    return this.#request("getJoin", { command: "get_join", payload: { work_id: workId } }, isJoinStatus);
+  }
+
+  cancelJoin(workId: string): Promise<BackendResult<JoinCancellation>> {
+    return this.#request(
+      "cancelJoin",
+      { command: "cancel_join", payload: { work_id: workId } },
+      isJoinCancellation,
     );
   }
 

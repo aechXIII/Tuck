@@ -21,6 +21,7 @@ import {
 import { installHistory, type HistoryApi } from "../history/history.ts";
 import * as ClipDetails from "../library/clip-details.ts";
 import { createLibrary, type LibraryApi } from "../library/library.ts";
+import { installJoin, type JoinApi } from "../library/join.ts";
 import { installPanels, type PanelsApi } from "../panels/panels.ts";
 import type { AudioClipRangeInfo } from "../panels/panels.ts";
 import { installPlayer, type PlayerApi, type PlayerHost } from "../player/player.ts";
@@ -451,6 +452,7 @@ export function installEditorRuntime(
     library.reloadPreview();
   });
 
+  let join: JoinApi | undefined;
   library = createLibrary({
     session,
     documentRef: windowRef.document,
@@ -462,6 +464,7 @@ export function installEditorRuntime(
       startScreen.sync(paths.length > 0);
       if (started) sessionFiles.track(paths);
     },
+    selectionChanged: (paths) => join?.sync(paths),
     applyProfile: (force) => encoding?.applyProfile(force),
     applySelectedProfileTransform: (clip, force) =>
       encoding?.applySelectedProfileTransform(clip, force),
@@ -493,6 +496,16 @@ export function installEditorRuntime(
     setInspectorTab: (tab, persist) => panels.setInspectorTab(tab, persist),
     openMediaSettings: () => void settings.open("media"),
   });
+
+  join = installJoin({
+    client: getBackendClient,
+    documentRef: windowRef.document,
+    addVideo: (path) => {
+      library.addFiles([path]);
+      library.selectClip(path);
+    },
+  });
+  join.sync(library.selectedPaths());
 
   queue = installQueue({
     session,

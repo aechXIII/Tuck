@@ -5,6 +5,8 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, TypeGuard
 
 from ..cutting.serialization import KeyframeCursor
+from ..joining.plan import MAX_JOIN_VIDEOS
+from ..joining.service import JOIN_ERROR_CODES
 from ..models.cutting import CUT_ERROR_CODES
 from ..queue import RETRY_REFUSAL_CODES
 from ..request_work import RequestWork
@@ -86,7 +88,7 @@ def _normalize_result(request: Request, value: object) -> Response:
                     message = "The backend could not complete the request."
                 field = value.get("field")
                 details: dict[str, JsonValue] = {"method": request.method}
-                if field in ("lut", "frame_blending", "target_size", "cut"):
+                if field in ("lut", "frame_blending", "target_size", "cut", "join"):
                     details["field"] = field
                 if field == "cut" and isinstance(value.get("_request_id"), int):
                     details["_request_id"] = value["_request_id"]
@@ -133,6 +135,8 @@ def _domain_code(method: str, field: object, code: object) -> str | None:
     if not isinstance(code, str):
         return None
     if field == "cut" and code in CUT_ERROR_CODES:
+        return code.upper()
+    if field == "join" and code in JOIN_ERROR_CODES:
         return code.upper()
     if method == "retry_item" and code in RETRY_REFUSAL_CODES:
         return code.upper()
@@ -483,6 +487,27 @@ def _cancel_cut_work(api: BridgeAPI, params: dict[str, object]) -> object:
     return api.cancel_cut_work(_string(params, "work_id"))
 
 
+def _join_videos(api: BridgeAPI, params: dict[str, object]) -> object:
+    paths, work_id = params.get("paths"), params.get("work_id")
+    if (
+        set(params) != {"paths", "work_id"}
+        or not isinstance(paths, list)
+        or not 2 <= len(paths) <= MAX_JOIN_VIDEOS
+        or not all(isinstance(path, str) and path for path in paths)
+        or not isinstance(work_id, str)
+    ):
+        raise _ParameterError
+    return api.join_videos([str(path) for path in paths], work_id)
+
+
+def _get_join(api: BridgeAPI, params: dict[str, object]) -> object:
+    return api.get_join(_string(params, "work_id"))
+
+
+def _cancel_join(api: BridgeAPI, params: dict[str, object]) -> object:
+    return api.cancel_join(_string(params, "work_id"))
+
+
 def _export_frame(api: BridgeAPI, params: dict[str, object], work: RequestWork) -> object:
     if set(params) != {"request"}:
         raise _ParameterError
@@ -522,6 +547,9 @@ _HANDLERS: dict[str, Handler] = {
     "analyze_cut": _analyze_cut,
     "get_cut_analysis": _get_cut_analysis,
     "cancel_cut_work": _cancel_cut_work,
+    "join_videos": _join_videos,
+    "get_join": _get_join,
+    "cancel_join": _cancel_join,
     "load_lut": _load_lut,
     "list_luts": _list_luts,
     "clear_lut_history": _clear_lut_history,

@@ -3,6 +3,9 @@ use serde_json::{json, Value};
 
 use crate::backend::{BackendState, PublicBackendError};
 
+// matches the sidecar's own limit, which checks the request again
+const MAX_JOIN_VIDEOS: usize = 100;
+
 /// The generic Send To shortcuts Tuck can manage. Serde rejects any other
 /// value before a request reaches the sidecar.
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -80,6 +83,17 @@ pub enum BackendCommand {
         keyframes_from: Option<u64>,
     },
     CancelCutWork {
+        work_id: String,
+    },
+    /// joins Library videos, in this order, into one new file beside the first one
+    JoinVideos {
+        paths: Vec<String>,
+        work_id: String,
+    },
+    GetJoin {
+        work_id: String,
+    },
+    CancelJoin {
         work_id: String,
     },
     CreatePlan {
@@ -268,6 +282,17 @@ impl BackendCommand {
                 ("get_cut_analysis", payload)
             }
             Self::CancelCutWork { work_id } => ("cancel_cut_work", json!({ "work_id": work_id })),
+            Self::JoinVideos { paths, work_id } => {
+                if !(2..=MAX_JOIN_VIDEOS).contains(&paths.len()) {
+                    return Err(PublicBackendError::new(
+                        "INVALID_REQUEST",
+                        "Choose between 2 and 100 videos to join.",
+                    ));
+                }
+                ("join_videos", json!({ "paths": paths, "work_id": work_id }))
+            }
+            Self::GetJoin { work_id } => ("get_join", json!({ "work_id": work_id })),
+            Self::CancelJoin { work_id } => ("cancel_join", json!({ "work_id": work_id })),
             Self::CreatePlan { request } => ("create_plan", json!({ "request": request })),
             Self::CompilePreviewMix { request } => {
                 ("compile_preview_mix", json!({ "request": request }))
@@ -575,6 +600,56 @@ mod tests {
         assert!(serde_json::from_value::<BackendCommand>(json!({
             "command": "analyze_cut",
             "payload": {"path": "/media/a.mp4", "work_id": "w3", "background": "yes"},
+        }))
+        .is_err());
+    }
+
+    #[test]
+    fn join_commands_forward_the_videos_in_order_and_nothing_else() {
+        let paths = json!(["/media/b.mp4", "/media/a.mp4"]);
+        let request = serde_json::from_value::<BackendCommand>(json!({
+            "command": "join_videos",
+            "payload": {"paths": paths, "work_id": "join-1"},
+        }))
+        .unwrap()
+        .to_sidecar_request("r1")
+        .unwrap();
+        assert_eq!(request["method"], "join_videos");
+        assert_eq!(
+            request["params"],
+            json!({"paths": paths, "work_id": "join-1"})
+        );
+        for (command, method) in [("get_join", "get_join"), ("cancel_join", "cancel_join")] {
+            let request = serde_json::from_value::<BackendCommand>(json!({
+                "command": command, "payload": {"work_id": "join-1"},
+            }))
+            .unwrap()
+            .to_sidecar_request("r2")
+            .unwrap();
+            assert_eq!(request["method"], method);
+            assert_eq!(request["params"], json!({"work_id": "join-1"}));
+        }
+        // one video is nothing to join, and an output path is never the webview's to name
+        let one = serde_json::from_value::<BackendCommand>(json!({
+            "command": "join_videos",
+            "payload": {"paths": ["/media/a.mp4"], "work_id": "join-2"},
+        }))
+        .unwrap();
+        assert_eq!(
+            one.to_sidecar_request("r3").unwrap_err().code,
+            "INVALID_REQUEST"
+        );
+        let request = serde_json::from_value::<BackendCommand>(json!({
+            "command": "join_videos",
+            "payload": {"paths": paths, "work_id": "join-3", "output": "/media/x.mp4"},
+        }))
+        .unwrap()
+        .to_sidecar_request("r4")
+        .unwrap();
+        assert!(request["params"].get("output").is_none());
+        assert!(serde_json::from_value::<BackendCommand>(json!({
+            "command": "join_videos",
+            "payload": {"paths": "/media/a.mp4", "work_id": "join-4"},
         }))
         .is_err());
     }

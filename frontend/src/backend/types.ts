@@ -1,5 +1,6 @@
 import type { CutAnalysisPayload, CutCancellation, CutPlanPayload, CutPlanRequest, KeyframeCursor } from "./cutting-types.ts";
 import type { FrameExportRequest, FrameExportResult } from "./frame-types.ts";
+import type { JoinCancellation, JoinStatus } from "./join-types.ts";
 import type { PreviewMixPayload } from "./preview-mix-types.ts";
 import type { TimelineFramesPayload } from "./timeline-frame-types.ts";
 export type { FrameExportRequest, FrameExportResult, VideoTransformJSON, LutSettingsJSON } from "./frame-types.ts";
@@ -190,6 +191,10 @@ export interface DomainBackendClient {
   analyzeCut(path: string, workId: string, background?: boolean): Promise<BackendResult<CutAnalysisPayload>>;
   getCutAnalysis(path: string, keyframes?: KeyframeCursor): Promise<BackendResult<CutAnalysisPayload>>;
   cancelCutWork(workId: string): Promise<BackendResult<CutCancellation>>;
+  /** starts joining videos, in this order, into one new file beside the first one */
+  joinVideos(paths: readonly string[], workId: string): Promise<BackendResult<JoinStatus>>;
+  getJoin(workId: string): Promise<BackendResult<JoinStatus>>;
+  cancelJoin(workId: string): Promise<BackendResult<JoinCancellation>>;
   clearLutHistory(): Promise<BackendResult<LutHistoryClearedPayload>>;
   listLuts(): Promise<BackendResult<LutLibraryPayload>>;
   loadLut(path: string): Promise<BackendResult<LutPayload>>;

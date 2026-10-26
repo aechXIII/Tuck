@@ -46,6 +46,8 @@ from .encoding.capabilities import (
 from .engine import cleanup_cache, is_ffmpeg_available
 from .engine import get_available_encoders as _engine_available_encoders
 from .frame_export import export_frame
+from .joining.plan import JoinError
+from .joining.service import JoinService
 from .media_server import get_media_server
 from .media_tools import find_ffmpeg, find_ffprobe
 from .models import (
@@ -112,6 +114,7 @@ class BridgeAPI:
         self._probe_cache = ProbeCache(lambda path: probe_video(path))
         self._audio_probe_cache = ProbeCache(lambda path: probe_audio(path))
         self._cut_analysis = CutAnalysisService()
+        self._joins = JoinService()
 
         self._media_server = get_media_server()
         self._media_server.set_thumbnail_cache_dir(self._settings.cache_dir / "thumbs")
@@ -153,6 +156,7 @@ class BridgeAPI:
     def stop_background_services(self) -> None:
         """Stop process-owned services using the GUI cleanup order."""
         self._cut_analysis.close()
+        self._joins.close()
         self._queue.stop()
         self._media_server.stop()
         cleanup_cache(self._settings.cache_dir)
@@ -413,6 +417,30 @@ class BridgeAPI:
 
     def cancel_cut_work(self, work_id: str) -> BridgeResult:
         return {"ok": True, "cancelled": self._cut_analysis.cancel(work_id)}
+
+    def join_videos(self, paths: list[str], work_id: str) -> BridgeResult:
+        """Start joining videos, in this order, into one new file beside the first one."""
+        try:
+            for path in paths:
+                validate_path(path)
+            # named beside the first video as the Library shows it, not where a link leads
+            sources = [Path(path).absolute() for path in paths]
+            return {"ok": True, **self._joins.start(sources, work_id).to_dict()}
+        except JoinError as exc:
+            return {"ok": False, "error": str(exc), "code": exc.code, "field": "join"}
+        except (ValueError, OSError):
+            return {
+                "ok": False,
+                "error": "A video to join can't be found. Check that it is still in place.",
+                "code": "invalid_join",
+                "field": "join",
+            }
+
+    def get_join(self, work_id: str) -> BridgeResult:
+        return {"ok": True, **self._joins.get(work_id).to_dict()}
+
+    def cancel_join(self, work_id: str) -> BridgeResult:
+        return {"ok": True, "cancelled": self._joins.cancel(work_id)}
 
     def compile_preview_mix(self, request: object) -> BridgeResult:
         """The native player's preview mix for an export request, compiled from the export's own

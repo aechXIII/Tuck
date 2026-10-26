@@ -19,10 +19,10 @@ from tuck.probe import (
     FFprobeMissing,
     MissingStream,
     ProbeTimeout,
-    _parse_display_rotation,
     _run_ffprobe_json,
     _video_info,
     describe_probe_failure,
+    parse_display_rotation,
     probe,
     probe_audio,
 )
@@ -114,21 +114,21 @@ def test_ffprobe_fallback_reads_relative_dash_prefixed_paths(tmp_path, monkeypat
 )
 def test_parse_display_rotation_normalizes_quarter_turns(value, expected) -> None:
     stream = {"side_data_list": [{"rotation": value}]}
-    assert _parse_display_rotation(stream) == expected
+    assert parse_display_rotation(stream) == expected
 
 
 @pytest.mark.parametrize(("tag", "expected"), [("90", 270), ("270", 90), ("-90", 90), ("180", 180)])
 def test_parse_display_rotation_supports_legacy_rotate_tag(tag, expected) -> None:
-    assert _parse_display_rotation({"tags": {"rotate": tag}}) == expected
+    assert parse_display_rotation({"tags": {"rotate": tag}}) == expected
 
 
 def test_display_matrix_takes_precedence_over_legacy_tag() -> None:
     stream = {"side_data_list": [{"rotation": 90}], "tags": {"rotate": "270"}}
-    assert _parse_display_rotation(stream) == 90
+    assert parse_display_rotation(stream) == 90
 
 
 def test_parse_display_rotation_preserves_non_quarter_angles() -> None:
-    assert _parse_display_rotation({"side_data_list": [{"rotation": 45}]}) == 45
+    assert parse_display_rotation({"side_data_list": [{"rotation": 45}]}) == 45
 
 
 def test_probe_reports_display_oriented_dimensions(tmp_path) -> None:

@@ -99,7 +99,7 @@ test("clip cards keep backend data inert and delegate exact action values", () =
   assert.match(text, /globalThis\.pwned=true/);
   assert.equal(
     card.attributes["aria-keyshortcuts"],
-    "Enter Space Delete ArrowUp ArrowDown",
+    "Enter Space Control+Space Delete ArrowUp ArrowDown Shift+ArrowUp Shift+ArrowDown",
   );
   // the picture's address is an attribute, never markup
   const image = descendants(card).find((element) => element.tagName === "img");
