@@ -9,11 +9,13 @@ from typing import Any
 from .models import (
     MIN_TARGET_SIZE_BYTES,
     AudioTrack,
+    MuteRange,
     PlanRequest,
     PlanValidationError,
     Segment,
     SourceTrackSetting,
     VideoTransform,
+    parse_mute_ranges,
 )
 from .models.encoding_policy import (
     RC_TARGET_SIZE,
@@ -194,6 +196,12 @@ def _parse_source_track_settings(raw: dict[str, Any]) -> list[SourceTrackSetting
     return [SourceTrackSetting.from_dict(item) for item in value]
 
 
+def _parse_mute_ranges(raw: dict[str, Any], field: str) -> list[MuteRange] | None:
+    if field not in raw:
+        return None
+    return list(parse_mute_ranges(raw[field]))
+
+
 def parse_plan_request(
     raw: dict[str, Any],
     validate_path_fn: Callable[[str], str],
@@ -234,7 +242,10 @@ def parse_plan_request(
         source_audio_gain_db=_opt_float(raw, "source_audio_gain_db"),
         source_audio_segments=_parse_optional_segments(raw, "source_audio_segments"),
         source_audio_extra_tracks=_parse_source_track_settings(raw),
+        source_audio_mute_ranges=_parse_mute_ranges(raw, "source_audio_mute_ranges"),
         audio_tracks=_parse_audio_tracks(raw, validate_path_fn),
+        mix_audio_tracks=_opt_bool(raw, "mix_audio_tracks"),
+        even_out_loudness=_opt_bool(raw, "even_out_loudness"),
         scaler=_opt_str(raw, "scaler"),
         video_encoder=_opt_str(raw, "video_encoder"),
         crf=_opt_int(raw, "crf"),

@@ -27,6 +27,7 @@ from .models import (
     SIZING_MODE_STRETCH,
     WORKFLOW_UPSCALE,
     EncodePlan,
+    MuteRange,
     OutputGeometry,
     PlanRequest,
     PlanValidationError,
@@ -94,6 +95,8 @@ def plan(
     source_audio_segments = options.source_audio_segments
     source_audio_extra_tracks = options.source_audio_extra_tracks
     audio_tracks = options.audio_tracks
+    mix_audio_tracks = options.mix_audio_tracks
+    even_out_loudness = options.even_out_loudness
     keep_audio = options.keep_audio
     scaler = options.scaler
     video_encoder = options.video_encoder
@@ -292,7 +295,11 @@ def plan(
     )
     source_audio_pieces = source_audio_output_pieces(segments, source_audio_segments)
     kept_tracks = kept_source_tracks(
-        info, source_audio_muted, source_audio_gain_db, source_audio_extra_tracks
+        info,
+        source_audio_muted,
+        source_audio_gain_db,
+        source_audio_extra_tracks,
+        options.source_audio_mute_ranges,
     )
     source_audio = (
         audio_enabled
@@ -305,15 +312,21 @@ def plan(
     audio_independent = source_audio_segments is not None and audio_independent_from_pieces(
         source_audio_pieces, segments
     )
-    audio_filters_required = imported_audio or (
-        source_audio
-        and (
-            len(segments) > 1
-            or positioned
-            or any(abs(track.gain_db) > 1e-9 for track in kept_tracks)
-            or audio_independent
-            or blending.enabled
+    audio_filters_required = (
+        imported_audio
+        or (
+            source_audio
+            and (
+                len(segments) > 1
+                or positioned
+                or any(abs(track.gain_db) > 1e-9 for track in kept_tracks)
+                or any(track.mute_ranges for track in kept_tracks)
+                or (mix_audio_tracks and len(kept_tracks) > 1)
+                or audio_independent
+                or blending.enabled
+            )
         )
+        or (even_out_loudness and audio_enabled and (source_audio or imported_audio))
     )
 
     copy_audio = False
@@ -338,8 +351,8 @@ def plan(
         copy_audio = False
         audio_br = min(info.audio_bitrate or audio_br, MAX_AUDIO_BITRATE)
 
-    # audio_br is per track, and every kept source track is exported at it
-    source_audio_tracks = max(1, len(kept_tracks))
+    # audio_br is per written track: one for the mix, or one for each kept source track
+    source_audio_tracks = 1 if mix_audio_tracks else max(1, len(kept_tracks))
 
     tone_map_hdr, warnings = plan_colors(info)
     warnings += subtitle_warnings(info, len(segments))
@@ -428,6 +441,8 @@ def plan(
         source_audio_segments=source_audio_segments,
         source_audio_tracks=kept_tracks,
         audio_tracks=audio_tracks,
+        mix_audio_tracks=mix_audio_tracks,
+        even_out_loudness=even_out_loudness,
         two_pass=two_pass,
         preset=preset,
         crf=crf,
@@ -565,15 +580,16 @@ def kept_source_tracks(
     first_muted: bool,
     first_gain_db: float,
     extra: list[SourceTrackSetting],
+    first_mute_ranges: tuple[MuteRange, ...] = (),
 ) -> list[SourceAudioTrack]:
     """The source audio tracks an export keeps; a track nobody set is kept at full volume"""
     if not info.has_audio:
         return []
-    kept = [] if first_muted else [SourceAudioTrack(0, first_gain_db)]
+    kept = [] if first_muted else [SourceAudioTrack(0, first_gain_db, first_mute_ranges)]
     for index in range(1, max(1, info.audio_stream_count)):
         setting = extra[index - 1] if index - 1 < len(extra) else SourceTrackSetting()
         if not setting.muted:
-            kept.append(SourceAudioTrack(index, setting.gain_db))
+            kept.append(SourceAudioTrack(index, setting.gain_db, setting.mute_ranges))
     return kept
 
 

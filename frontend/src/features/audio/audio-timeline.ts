@@ -5,6 +5,7 @@ import type {
   AudioClip,
   AudioTimelineState,
   AudioTrack,
+  MuteRange,
   SourceAudioTrackState,
 } from "../editor/types.ts";
 import { confirmToast, toast, type ConfirmIntent } from "../editor/toast.ts";
@@ -13,6 +14,7 @@ import { withShortcut } from "../shortcuts/shortcuts.ts";
 import * as SegmentEditing from "../timeline/segments.ts";
 import * as TimelineCore from "../timeline/timeline-core.ts";
 import * as core from "./audio-core.ts";
+import * as Mutes from "./mute-ranges.ts";
 import { browserSourcePreviewPlayers, createSourceAudioPreview } from "./source-audio-preview.ts";
 
 const waveformGenerations = new Map<string, number>();
@@ -123,6 +125,20 @@ interface GroupTrimDrag extends PointerGeometry {
   readonly edge: "start" | "end";
 }
 
+// a stretch of an audio lane chosen with Shift-drag, in the lane's own time
+interface LaneRange {
+  readonly lane: string;
+  start: number;
+  end: number;
+}
+
+interface RangeDrag extends PointerGeometry {
+  readonly kind: "range";
+  readonly lane: string;
+  readonly anchor: number;
+  readonly band: HTMLElement;
+}
+
 interface ImportedDrag extends PointerGeometry {
   readonly kind: "imported";
   readonly action: "move" | "slip" | "trim-start" | "trim-end";
@@ -133,7 +149,7 @@ interface ImportedDrag extends PointerGeometry {
   readonly element: HTMLElement;
 }
 
-type DragState = GroupMoveDrag | GroupTrimDrag | ImportedDrag;
+type DragState = GroupMoveDrag | GroupTrimDrag | ImportedDrag | RangeDrag;
 
 function isElement(value: EventTarget | null): value is Element {
   return (
@@ -217,6 +233,9 @@ export function installAudioTimeline(host: AudioTimelineHost) {
 
   let selectedClipId: string | null = null;
   let selectedTrackId = "source";
+  // a stretch chosen but not muted yet, and a muted stretch picked to change or unmute
+  let rangeSelection: LaneRange | null = null;
+  let selectedMute: { lane: string; index: number } | null = null;
   let idCounter = 0;
   let dragState: DragState | null = null;
   let previewElements: Record<string, HTMLAudioElement> = {};
@@ -357,6 +376,245 @@ export function installAudioTimeline(host: AudioTimelineHost) {
 
   function dbToGain(db: number) {
     return Math.pow(10, Number(db || 0) / 20);
+  }
+
+  // edits made through the api or the keyboard are one undo step each
+  const historyRecorder = host.History?.action ? { action: host.History.action } : null;
+  function recordedCommandFor<A extends unknown[], R>(label: string, run: (...args: A) => R) {
+    return recordedCommand(historyRecorder, () => session.selPath, run, label);
+  }
+
+  // a lane is named by what it plays: "source" for the source's first track, "source:N" for
+  // its track N counted from 0, or an added track's id
+  function laneKey(lane: HTMLElement): string | null {
+    if (lane.id === "source-audio-lane") return "source";
+    if (lane.dataset.sourceTrack) return "source:" + lane.dataset.sourceTrack;
+    return lane.dataset.trackId ?? null;
+  }
+
+  function isSourceLane(key: string): boolean {
+    return key === "source" || key.startsWith("source:");
+  }
+
+  function extraForLane(state: AudioTimelineState, key: string): SourceAudioTrackState | null {
+    return arrayItem(extraTracks(state), Number(key.slice("source:".length)) - 1);
+  }
+
+  function laneRanges(state: AudioTimelineState, key: string): MuteRange[] {
+    if (key === "source") return state.sourceMuteRanges ?? [];
+    if (isSourceLane(key)) return extraForLane(state, key)?.muteRanges ?? [];
+    return state.tracks.find((track) => track.id === key)?.muteRanges ?? [];
+  }
+
+  function setLaneRanges(state: AudioTimelineState, key: string, ranges: MuteRange[]): void {
+    if (key === "source") {
+      state.sourceMuteRanges = ranges;
+      return;
+    }
+    const target = isSourceLane(key)
+      ? extraForLane(state, key)
+      : state.tracks.find((track) => track.id === key);
+    if (target) target.muteRanges = ranges;
+  }
+
+  function laneName(state: AudioTimelineState, key: string): string {
+    if (key === "source") return "Source audio";
+    if (isSourceLane(key)) return sourceTrackName(Number(key.slice("source:".length)));
+    return state.tracks.find((track) => track.id === key)?.name || "Audio track";
+  }
+
+  // source lanes show the video's segments, so their muted stretches are kept in source time
+  // and follow the sound through cuts and moves; an added track's lane is its own time
+  function laneSegments(clip: EditorClip, key: string): SegmentLike[] | null {
+    return isSourceLane(key) ? SegmentEditing.segmentsForClip(clip, sourceDuration(clip)) : null;
+  }
+
+  function laneToStored(clip: EditorClip, key: string, start: number, end: number): MuteRange[] {
+    const segments = laneSegments(clip, key);
+    return segments ? Mutes.laneToSourceRanges(segments, start, end) : [{ start, end }];
+  }
+
+  function storedAt(clip: EditorClip, key: string, laneTime: number): number | null {
+    const segments = laneSegments(clip, key);
+    if (!segments || !SegmentEditing.hasPlacement(segments)) return laneTime;
+    return SegmentEditing.sourceTimeAt(segments, laneTime);
+  }
+
+  function selectedMuteRange(state: AudioTimelineState): MuteRange | null {
+    if (!selectedMute) return null;
+    return arrayItem(laneRanges(state, selectedMute.lane), selectedMute.index);
+  }
+
+  function clearRangeChoice() {
+    rangeSelection = null;
+    selectedMute = null;
+  }
+
+  function placeBand(band: HTMLElement, range: LaneRange, total: number) {
+    band.style.left = pct(range.start, total);
+    band.style.width = pct(Math.max(0, range.end - range.start), total);
+  }
+
+  // muted stretches lie over the waveform as a flat line, so the lane shows a quiet gap
+  function paintLaneMutes(
+    lane: HTMLElement,
+    clip: EditorClip,
+    state: AudioTimelineState,
+    total: number,
+  ) {
+    lane.querySelectorAll(".audio-mute-range, .audio-range-selection").forEach((el) => el.remove());
+    const key = laneKey(lane);
+    if (cutTask()) delete lane.dataset.tip;
+    else lane.dataset.tip = "Shift-drag to choose a stretch to mute";
+    if (!key || cutTask() || total <= 0) return;
+    const segments = laneSegments(clip, key);
+    const name = laneName(state, key);
+    laneRanges(state, key).forEach((range, index) => {
+      const selected = selectedMute?.lane === key && selectedMute.index === index;
+      const shown = segments ? Mutes.sourceToLaneRanges(segments, range) : [range];
+      for (const piece of shown) {
+        const el = documentRef.createElement("div");
+        el.className = "audio-mute-range" + (selected ? " selected" : "");
+        el.dataset.muteLane = key;
+        el.dataset.muteIndex = String(index);
+        el.tabIndex = 0;
+        el.setAttribute("role", "button");
+        el.setAttribute("aria-pressed", selected ? "true" : "false");
+        el.setAttribute(
+          "aria-label",
+          name + " muted from " + core.formatSourceTime(range.start) + " to " +
+            core.formatSourceTime(range.end),
+        );
+        el.dataset.tip = "Muted";
+        el.style.left = pct(piece.start, total);
+        el.style.width = pct(piece.end - piece.start, total);
+        lane.appendChild(el);
+      }
+    });
+    if (rangeSelection?.lane === key) {
+      const band = documentRef.createElement("div");
+      band.className = "audio-range-selection";
+      band.setAttribute("aria-hidden", "true");
+      placeBand(band, rangeSelection, total);
+      lane.appendChild(band);
+    }
+  }
+
+  function paintImportedMutes(clip: EditorClip, state: AudioTimelineState, total: number) {
+    byId("imported-audio-tracks")
+      ?.querySelectorAll<HTMLElement>(".audio-lane")
+      .forEach((lane) => paintLaneMutes(lane, clip, state, total));
+  }
+
+  function selectMute(key: string, index: number) {
+    setTimelineSelection(isSourceLane(key) ? "source" : key, null);
+    selectedMute = { lane: key, index };
+    paintTimelineSelection();
+    paintMixer(selectedVideo());
+  }
+
+  function beginRangeDrag(event: PointerEvent, lane: HTMLElement, total: number) {
+    const key = laneKey(lane);
+    const clip = selectedVideo();
+    const state = ensureState(clip);
+    if (!key || !clip || !state) return;
+    const rect = lane.getBoundingClientRect();
+    const at = Math.max(0, Math.min(total, ((event.clientX - rect.left) / rect.width) * total));
+    setTimelineSelection(isSourceLane(key) ? "source" : key, null);
+    rangeSelection = { lane: key, start: at, end: at };
+    paintLaneMutes(lane, clip, state, total);
+    const band = lane.querySelector<HTMLElement>(".audio-range-selection");
+    if (!band) return;
+    dragState = { kind: "range", lane: key, anchor: at, band, startX: event.clientX, rect, total };
+    if (event.pointerId != null) {
+      try {
+        lane.setPointerCapture(event.pointerId);
+      } catch (err) {}
+    }
+    event.preventDefault();
+    paintMixer(clip);
+  }
+
+  function moveRangeDrag(drag: RangeDrag, event: PointerEvent) {
+    let at = ((event.clientX - drag.rect.left) / drag.rect.width) * drag.total;
+    if (typeof host.snapCandidateTime === "function")
+      at = host.snapCandidateTime(at, audioClipSnapCandidates(null), drag.rect.width / drag.total);
+    at = Math.max(0, Math.min(drag.total, at));
+    rangeSelection = { lane: drag.lane, start: Math.min(drag.anchor, at), end: Math.max(drag.anchor, at) };
+    placeBand(drag.band, rangeSelection, drag.total);
+  }
+
+  const muteSelection = recordedCommandFor("mute range", function () {
+    const clip = selectedVideo();
+    const state = ensureState(clip);
+    const range = rangeSelection;
+    if (!clip || !state || !range || cutTask()) return;
+    const added = laneToStored(clip, range.lane, range.start, range.end);
+    const next = Mutes.addMuteRanges(laneRanges(state, range.lane), added);
+    const first = added[0];
+    if (!next || !first) {
+      notify("Choose a longer stretch to mute.", "err");
+      return;
+    }
+    setLaneRanges(state, range.lane, next);
+    rangeSelection = null;
+    selectedMute = { lane: range.lane, index: Mutes.muteRangeIndexAt(next, first.start) };
+    render();
+    setPlanDirty(clip);
+  });
+
+  const unmuteSelected = recordedCommandFor("unmute range", function () {
+    const clip = selectedVideo();
+    const state = ensureState(clip);
+    const choice = selectedMute;
+    if (!clip || !state || !choice || !selectedMuteRange(state)) return;
+    setLaneRanges(state, choice.lane, Mutes.removeMuteRange(laneRanges(state, choice.lane), choice.index));
+    selectedMute = null;
+    render();
+    setPlanDirty(clip);
+  });
+
+  const trimSelectedMute = recordedCommandFor("trim mute range", function (edge: "start" | "end") {
+    const clip = selectedVideo();
+    const state = ensureState(clip);
+    const choice = selectedMute;
+    const range = state ? selectedMuteRange(state) : null;
+    if (!clip || !state || !choice || !range) return;
+    const at = storedAt(clip, choice.lane, sourceTime());
+    const next = at == null ? null : Mutes.setMuteRangeEdge(laneRanges(state, choice.lane), choice.index, edge, at);
+    if (!next || at == null) {
+      notify("Move the playhead so the muted stretch keeps some length.", "err");
+      return;
+    }
+    const kept = edge === "start" ? (at + range.end) / 2 : (range.start + at) / 2;
+    setLaneRanges(state, choice.lane, next);
+    selectedMute = { lane: choice.lane, index: Mutes.muteRangeIndexAt(next, kept) };
+    render();
+    setPlanDirty(clip);
+  });
+
+  // a chosen stretch isn't an edit yet, so its edges move without an undo step
+  function setRangeSelectionEdge(edge: "start" | "end") {
+    if (!rangeSelection) return;
+    const at = sourceTime();
+    const start = edge === "start" ? at : rangeSelection.start;
+    const end = edge === "end" ? at : rangeSelection.end;
+    if (end - start < Mutes.MIN_MUTE) {
+      notify("Move the playhead so the selection keeps some length.", "err");
+      return;
+    }
+    rangeSelection = { ...rangeSelection, start, end };
+    render();
+  }
+
+  function sourceMutedAt(
+    clip: EditorClip,
+    ranges: readonly MuteRange[] | undefined,
+    laneTime: number,
+  ): boolean {
+    if (!ranges?.length) return false;
+    const at = storedAt(clip, "source", laneTime);
+    return at != null && Mutes.isMutedAt(ranges, at);
   }
 
   function setPlanDirty(clip: EditorClip | null | undefined) {
@@ -504,9 +762,21 @@ export function installAudioTimeline(host: AudioTimelineHost) {
       audioClipElement.classList.toggle("selected", selected);
       audioClipElement.setAttribute("aria-pressed", selected ? "true" : "false");
     });
+    const choice = selectedMute;
+    documentRef.querySelectorAll<HTMLElement>(".audio-mute-range").forEach((element) => {
+      const selected =
+        !!choice &&
+        choice.lane === element.dataset.muteLane &&
+        String(choice.index) === element.dataset.muteIndex;
+      element.classList.toggle("selected", selected);
+      element.setAttribute("aria-pressed", selected ? "true" : "false");
+    });
+    if (!rangeSelection)
+      documentRef.querySelectorAll(".audio-range-selection").forEach((band) => band.remove());
   }
 
   function setTimelineSelection(trackId: string, clipId: string | null | undefined) {
+    clearRangeChoice();
     let selection = core.timelineSelection(trackId, clipId);
     selectedTrackId = selection.trackId;
     selectedClipId = selection.clipId;
@@ -588,6 +858,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
         ),
       );
     });
+    paintLaneMutes(lane, clip, state, total);
   }
 
   function renderSourceExtraTracks(
@@ -877,6 +1148,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
       let tracks = byId("imported-audio-tracks");
       if (tracks) tracks.replaceChildren();
       if (typeof host.syncTimelineTrackCount === "function") host.syncTimelineTrackCount(0);
+      paintOutputOptions(clip, null);
       paintMixer(clip);
       return;
     }
@@ -884,7 +1156,12 @@ export function installAudioTimeline(host: AudioTimelineHost) {
     let state = ensureState(clip);
     if (!state) return;
     reconcile(clip);
+    // undo can take away the muted stretch that was picked
+    if (selectedMute && !selectedMuteRange(state)) selectedMute = null;
+    if (rangeSelection && cutTask()) rangeSelection = null;
     let total = sourceDuration(clip);
+    paintOutputOptions(clip, state);
+    const muteFocused = !!documentRef.activeElement?.closest(".audio-mute-range");
     let master = byId("audio-master-toggle");
     if (master) {
       master.classList.toggle("on", state.enabled);
@@ -905,6 +1182,11 @@ export function installAudioTimeline(host: AudioTimelineHost) {
       tracks.appendChild(row);
       if (track.id === focusedTrackId) row.querySelector<HTMLButtonElement>(".seq-track-mute")?.focus();
     });
+    paintImportedMutes(clip, state, total);
+    if (muteFocused && selectedMute)
+      documentRef.querySelector<HTMLElement>(
+        `.audio-mute-range[data-mute-index="${selectedMute.index}"][data-mute-lane="${CSS.escape(selectedMute.lane)}"]`,
+      )?.focus();
     // the source's other tracks are as tall as added ones, so they count the same
     if (typeof host.syncTimelineTrackCount === "function")
       host.syncTimelineTrackCount(state.tracks.length + extraTracks(state).length);
@@ -912,6 +1194,42 @@ export function installAudioTimeline(host: AudioTimelineHost) {
     paintTimelineSelection();
     updatePlayheads(sourceTime(), total);
     applyPreviewVolume();
+  }
+
+  function paintOutputOptions(clip: EditorClip | null | undefined, state: AudioTimelineState | null) {
+    const cut = cutTask();
+    const hasAudio = !!clip?.probeData?.has_audio;
+    const kept = state ? Mutes.keptSourceTrackCount(hasAudio, state.sourceMuted, extraTracks(state)) : 0;
+    const enabled = !!state && state.enabled && !cut;
+    const layoutRow = byId("audio-layout-row");
+    if (layoutRow) {
+      // the choice only matters when there is more than one track to write
+      layoutRow.hidden = cut || !state || kept < 2;
+      const mix = state?.mixTracks !== false;
+      layoutRow.querySelectorAll<HTMLButtonElement>("[data-audio-layout]").forEach((button) => {
+        const on = (button.dataset.audioLayout === "mix") === mix;
+        button.classList.toggle("on", on);
+        button.setAttribute("aria-pressed", on ? "true" : "false");
+        button.disabled = !enabled;
+      });
+      const note = byId("audio-layout-note");
+      if (note) {
+        note.textContent = !mix
+          ? "Each track is kept on its own. Discord, phones and most players only play the first."
+          : kept > 2
+            ? "All tracks are mixed together, so Discord and phones play every one. Separate tracks keep them apart for editing later."
+            : "Game and mic are mixed together, so Discord and phones play both. Separate tracks keep them apart for editing later.";
+      }
+    }
+    const loudnessRow = byId("audio-loudness-row");
+    if (loudnessRow) loudnessRow.hidden = cut || !state;
+    const loudness = byId("audio-loudness-toggle");
+    if (loudness) {
+      const on = state?.evenLoudness === true;
+      loudness.classList.toggle("on", on);
+      loudness.setAttribute("aria-checked", on ? "true" : "false");
+      loudness.toggleAttribute("disabled", !enabled);
+    }
   }
 
   function paintMixer(clip: EditorClip | null | undefined) {
@@ -939,7 +1257,17 @@ export function installAudioTimeline(host: AudioTimelineHost) {
       selectedFragment = findSelected(clip);
       fragmentMuted = !!(selectedFragment && selectedFragment.clip.muted);
     }
-    if (fragMute) {
+    const fragLabel = fragMute?.querySelector(".timeline-command-label");
+    if (fragLabel) fragLabel.textContent = rangeSelection ? "Mute selection" : "Mute audio";
+    if (fragMute && (rangeSelection || selectedMute)) {
+      // a chosen stretch is muted by the same button; a muted one shows it pressed
+      const label = rangeSelection ? "Mute selection" : "Unmute this stretch";
+      fragMute.classList.remove("hid");
+      fragMute.classList.toggle("on", !rangeSelection);
+      fragMute.setAttribute("aria-pressed", rangeSelection ? "false" : "true");
+      fragMute.setAttribute("aria-label", label);
+      fragMute.dataset.tip = label;
+    } else if (fragMute) {
       let hasFragmentTarget = selectedTrackId === "source" || !!selectedFragment;
       fragMute.classList.toggle("hid", !hasFragmentTarget);
       fragMute.classList.toggle("on", fragmentMuted);
@@ -988,6 +1316,18 @@ export function installAudioTimeline(host: AudioTimelineHost) {
     let videoClip = selectedVideo();
     let total = sourceDuration(videoClip);
     if (!lane || !videoClip || total <= 0 || lane.clientWidth <= 0) return;
+    // Shift-drag chooses a stretch of this track to mute, over clips or not
+    if (event.shiftKey && !cutTask()) {
+      beginRangeDrag(event, lane, total);
+      return;
+    }
+    const muteCandidate = target?.closest(".audio-mute-range") ?? null;
+    const muteEl = isHtmlElement(muteCandidate) ? muteCandidate : null;
+    if (muteEl?.dataset.muteLane) {
+      selectMute(muteEl.dataset.muteLane, Number(muteEl.dataset.muteIndex));
+      event.preventDefault();
+      return;
+    }
     if (!clipEl) {
       let ratio = (event.clientX - lane.getBoundingClientRect().left) / lane.clientWidth;
       apiObject.seekSource(Math.max(0, Math.min(total, ratio * total)));
@@ -1164,6 +1504,11 @@ export function installAudioTimeline(host: AudioTimelineHost) {
 
   function onPointerMove(event: PointerEvent) {
     if (!dragState) return;
+    if (dragState.kind === "range") {
+      moveRangeDrag(dragState, event);
+      event.preventDefault();
+      return;
+    }
     if (dragState.kind === "group-move" || dragState.kind === "group-trim") {
       event.preventDefault();
       _groupDragEvent = event;
@@ -1265,6 +1610,13 @@ export function installAudioTimeline(host: AudioTimelineHost) {
     let completedDrag = dragState;
     dragState = null;
     _groupDragEvent = null;
+    if (completedDrag.kind === "range") {
+      // choosing a stretch edits nothing, so there is no undo step to keep or revert
+      const range = rangeSelection;
+      if (cancelled || !range || range.end - range.start < Mutes.MIN_MUTE) rangeSelection = null;
+      render();
+      return;
+    }
     if (cancelled) host.History?.revert?.();
     if (completedDrag.kind === "imported") {
       completedDrag.element.classList.remove("slipping");
@@ -1358,6 +1710,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
       return SegmentEditing.segmentIndexAtTime(kept, time, 0.02) >= 0 ? previewBaseVolume() : 0;
     }
     if (!state.enabled || state.sourceMuted || !sourceAudioAudibleAt(clip, time)) return 0;
+    if (sourceMutedAt(clip, state.sourceMuteRanges, time)) return 0;
     return Math.max(0, Math.min(1, previewBaseVolume() * dbToGain(state.sourceGainDb)));
   }
 
@@ -1402,9 +1755,14 @@ export function installAudioTimeline(host: AudioTimelineHost) {
         : state.enabled && sourceAudioAudibleAt(videoClip, time);
       // the native player keeps its hidden video paused, so the source position comes from the player
       const sourcePosition = host.getSourceTime?.() ?? (Number(video.currentTime) || 0);
+      // the position here is already source time, which muted stretches on source tracks are in
+      const silent = (ranges: readonly MuteRange[] | undefined) => !cut && Mutes.isMutedAt(ranges, sourcePosition);
       sourcePreview.sync(sourcePosition, video.playbackRate || 1, audible ? base : 0, playing && audible, [
-        { muted: !cut && state.sourceMuted, gainDb: cut ? 0 : state.sourceGainDb },
-        ...extraTracks(state).map((track) => ({ muted: !cut && track.muted, gainDb: cut ? 0 : track.gainDb })),
+        { muted: !cut && (state.sourceMuted || silent(state.sourceMuteRanges)), gainDb: cut ? 0 : state.sourceGainDb },
+        ...extraTracks(state).map((track) => ({
+          muted: !cut && (track.muted || silent(track.muteRanges)),
+          gainDb: cut ? 0 : track.gainDb,
+        })),
       ]);
     } else {
       void sourcePreview.clear();
@@ -1437,11 +1795,14 @@ export function installAudioTimeline(host: AudioTimelineHost) {
           element.currentTime = sourcePos;
         } catch (err) {}
       }
+      // a muted stretch keeps the element playing in place, only silent
+      const stretchGain = Mutes.isMutedAt(track.muteRanges, time) ? 0 : 1;
       element.volume = Math.max(
         0,
         Math.min(
           1,
           base *
+            stretchGain *
             dbToGain(track.gainDb + active.gainDb) *
             clipFadeFactor(active, local),
         ),
@@ -1690,19 +2051,26 @@ export function installAudioTimeline(host: AudioTimelineHost) {
           loop: boolean;
           muted: boolean;
         }>;
+        mute_ranges?: MuteRange[];
       }>;
       source_audio_segments?: Array<{ start: number; end: number; timeline_start?: number }>;
-      source_audio_extra_tracks?: Array<{ muted: boolean; gain_db: number }>;
+      source_audio_extra_tracks?: Array<{ muted: boolean; gain_db: number; mute_ranges?: MuteRange[] }>;
+      source_audio_mute_ranges?: MuteRange[];
+      mix_audio_tracks: boolean;
+      even_out_loudness: boolean;
     } = {
       audio_enabled: !!state.enabled,
       source_audio_muted: !!state.sourceMuted,
       source_audio_gain_db: Number(state.sourceGainDb) || 0,
+      mix_audio_tracks: state.mixTracks !== false,
+      even_out_loudness: state.evenLoudness === true,
       audio_tracks: state.tracks.map(function(track: AudioTrackState) {
         return {
           track_id: track.id,
           name: track.name,
           gain_db: Number(track.gainDb) || 0,
           muted: !!track.muted,
+          ...mutePayload(track.muteRanges),
           clips: track.clips.map(function(audioClip: AudioClipState) {
             return {
               source: track.path,
@@ -1744,14 +2112,54 @@ export function installAudioTimeline(host: AudioTimelineHost) {
       payload.source_audio_extra_tracks = extras.map((extra) => ({
         muted: !!extra.muted,
         gain_db: Number(extra.gainDb) || 0,
+        ...mutePayload(extra.muteRanges),
       }));
+    if (state.sourceMuteRanges?.length)
+      payload.source_audio_mute_ranges = state.sourceMuteRanges.map((range) => ({ ...range }));
     return payload;
   }
 
-  // edits made through the api or the keyboard are one undo step each
-  const history = host.History?.action ? { action: host.History.action } : null;
-  const recorded = <A extends unknown[], R>(label: string, run: (...args: A) => R) =>
-    recordedCommand(history, () => session.selPath, run, label);
+  function mutePayload(ranges: readonly MuteRange[] | undefined): { mute_ranges?: MuteRange[] } {
+    return ranges?.length ? { mute_ranges: ranges.map((range) => ({ ...range })) } : {};
+  }
+
+  const recorded = recordedCommandFor;
+
+  const toggleFragmentMuted = recorded("mute audio clip", function () {
+    let clip = selectedVideo();
+    if (!clip || cutTask()) return;
+    if (selectedTrackId !== "source") {
+      let selected = findSelected(clip);
+      if (!selected) return;
+      selected.clip.muted = !selected.clip.muted;
+      render();
+      setPlanDirty(clip);
+      return;
+    }
+    if (!SegmentEditing) return;
+    let full = sourceDuration(clip);
+    let segs = SegmentEditing.segmentsForClip(clip, full);
+    let active = Number.isInteger(clip.activeSegment) ? clip.activeSegment : 0;
+    const activeSegment = arrayItem(segs, active);
+    if (!activeSegment) return;
+    activeSegment.muted = !activeSegment.muted;
+    if (typeof host.setClipSegments === "function")
+      host.setClipSegments(clip, segs, active);
+    if (typeof host.paintTrimChrome === "function") host.paintTrimChrome();
+    render();
+    setPlanDirty(clip);
+  });
+
+  const exportAsOneTrack = recorded("export as one track", () => setMixTracks(true));
+  const exportAsSeparateTracks = recorded("export as separate tracks", () => setMixTracks(false));
+  function setMixTracks(mix: boolean) {
+    let clip = selectedVideo();
+    let state = ensureState(clip);
+    if (!state || cutTask() || (state.mixTracks !== false) === mix) return;
+    state.mixTracks = mix;
+    render();
+    setPlanDirty(clip);
+  }
 
   let apiObject = {
     render: render,
@@ -1759,6 +2167,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
     selectVideo: function(clip: EditorClip | null | undefined) {
       void sourcePreview.clear();
       stopPreviewElements();
+      clearRangeChoice();
       setTimelineSelection("source", null);
       if (clip) {
         ensureState(clip);
@@ -1813,6 +2222,22 @@ export function installAudioTimeline(host: AudioTimelineHost) {
       }
     },
     addPaths: addPaths,
+    setMixTracks: function(mix: boolean) {
+      return mix ? exportAsOneTrack() : exportAsSeparateTracks();
+    },
+    toggleLoudness: recorded("even out loudness", function () {
+      let clip = selectedVideo();
+      let state = ensureState(clip);
+      if (!state || cutTask()) return;
+      state.evenLoudness = !state.evenLoudness;
+      render();
+      setPlanDirty(clip);
+    }),
+    muteSelection: muteSelection,
+    unmuteSelectedRange: unmuteSelected,
+    hasRangeSelection: function () {
+      return !!rangeSelection;
+    },
     toggleMaster: recorded("include audio", function () {
       let clip = selectedVideo();
       let state = ensureState(clip);
@@ -1821,30 +2246,12 @@ export function installAudioTimeline(host: AudioTimelineHost) {
       render();
       setPlanDirty(clip);
     }),
-    toggleFragmentMute: recorded("mute audio clip", function () {
-      let clip = selectedVideo();
-      if (!clip || cutTask()) return;
-      if (selectedTrackId !== "source") {
-        let selected = findSelected(clip);
-        if (!selected) return;
-        selected.clip.muted = !selected.clip.muted;
-        render();
-        setPlanDirty(clip);
-        return;
-      }
-      if (!SegmentEditing) return;
-      let full = sourceDuration(clip);
-      let segs = SegmentEditing.segmentsForClip(clip, full);
-      let active = Number.isInteger(clip.activeSegment) ? clip.activeSegment : 0;
-        const activeSegment = arrayItem(segs, active);
-        if (!activeSegment) return;
-        activeSegment.muted = !activeSegment.muted;
-      if (typeof host.setClipSegments === "function")
-        host.setClipSegments(clip, segs, active);
-      if (typeof host.paintTrimChrome === "function") host.paintTrimChrome();
-      render();
-      setPlanDirty(clip);
-    }),
+    // a chosen stretch or a picked muted one comes first, then the segment or added clip
+    toggleFragmentMute: function () {
+      if (rangeSelection) return muteSelection();
+      if (selectedMute) return unmuteSelected();
+      return toggleFragmentMuted();
+    },
     selectTrack: function(trackId: string) {
       setTimelineSelection(trackId || "source", null);
       paintMixer(selectedVideo());
@@ -2074,8 +2481,23 @@ export function installAudioTimeline(host: AudioTimelineHost) {
     if (event.key === "Escape" && dragState) {
       event.preventDefault();
       finishPointerDrag(true);
+    } else if (event.key === "Escape" && !event.defaultPrevented && (rangeSelection || selectedMute)) {
+      event.preventDefault();
+      clearRangeChoice();
+      render();
+    } else if (event.key === "Enter" || event.key === " ") {
+      // muted stretches are buttons: Enter or Space picks one, like a click
+      const element = isElement(event.target) ? event.target.closest<HTMLElement>(".audio-mute-range") : null;
+      if (!element?.dataset.muteLane) return;
+      event.preventDefault();
+      selectMute(element.dataset.muteLane, Number(element.dataset.muteIndex));
     }
   });
+  documentRef.getElementById("audio-layout-row")?.addEventListener("click", (event) => {
+    const button = isElement(event.target) ? event.target.closest<HTMLButtonElement>("[data-audio-layout]") : null;
+    if (button && !button.disabled) apiObject.setMixTracks(button.dataset.audioLayout === "mix");
+  });
+  documentRef.getElementById("audio-loudness-toggle")?.addEventListener("click", () => apiObject.toggleLoudness());
   let video = documentRef.getElementById("vid");
   if (video) {
     video.addEventListener("play", syncPreview);
@@ -2088,7 +2510,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
   function canSetSelectionBoundary() {
     let clip = selectedVideo();
     if (!clip) return false;
-    if (findSelected(clip)) return true;
+    if (rangeSelection || selectedMute || findSelected(clip)) return true;
     return (
       selectedTrackId === "source" &&
       typeof host.canTrimActiveSegmentToPlayhead === "function" &&
@@ -2096,19 +2518,23 @@ export function installAudioTimeline(host: AudioTimelineHost) {
     );
   }
   function setSelectionBoundary(endpoint: "start" | "end") {
-    if (findSelected(selectedVideo())) apiObject.trimSelectedToPlayhead(endpoint);
+    if (rangeSelection) setRangeSelectionEdge(endpoint);
+    else if (selectedMute) trimSelectedMute(endpoint);
+    else if (findSelected(selectedVideo())) apiObject.trimSelectedToPlayhead(endpoint);
     else host.trimActiveSegmentToPlayhead?.(endpoint);
   }
   host.TuckShortcuts?.registerAction("edit.delete-selection", {
     enabled: function () {
       return (
         !!selectedClipId ||
+        !!selectedMute ||
         (typeof host.canRemoveActiveSegment === "function" &&
           host.canRemoveActiveSegment())
       );
     },
     execute: function () {
-      if (selectedClipId) apiObject.deleteSelected();
+      if (selectedMute) unmuteSelected();
+      else if (selectedClipId) apiObject.deleteSelected();
       else host.removeActiveSegment?.();
     },
   });
@@ -2117,6 +2543,8 @@ export function installAudioTimeline(host: AudioTimelineHost) {
       let clip = selectedVideo();
       if (!clip || cutTask()) return false;
       return (
+        !!rangeSelection ||
+        !!selectedMute ||
         selectedTrackId === "source" ||
         selectedTrackId === "video" ||
         !!findSelected(clip)

@@ -34,11 +34,19 @@ export interface AudioClip {
   [key: string]: unknown;
 }
 
+// a stretch of one audio track that plays silent: in the source's own time on a source
+// track, so it stays on the same sound through cuts and moves, and in track time on an added one
+export interface MuteRange {
+  start: number;
+  end: number;
+}
+
 export interface AudioTrack {
   id: string;
   sourceDuration: number;
   clips: AudioClip[];
   muted?: boolean;
+  muteRanges?: MuteRange[];
   name?: string;
   path?: string;
   color?: string;
@@ -54,10 +62,11 @@ export interface AudioTrack {
 }
 
 // one of the source's audio tracks after the first; it follows the source audio edits and
-// is exported as its own track
+// is mixed into the export's one track, or written as its own with Separate tracks
 export interface SourceAudioTrackState {
   muted: boolean;
   gainDb: number;
+  muteRanges?: MuteRange[];
   waveformUrl: string;
   waveformToken: string;
   waveformLoading: boolean;
@@ -72,7 +81,11 @@ export interface AudioTimelineState {
   sourceWaveformLoading: boolean;
   // the source's second audio track onwards, filled in once the video is probed
   sourceExtraTracks?: SourceAudioTrackState[];
+  sourceMuteRanges?: MuteRange[];
   tracks: AudioTrack[];
+  // false writes each kept source track as its own; unset is the shared default, one track
+  mixTracks?: boolean;
+  evenLoudness?: boolean;
 }
 
 export interface ClipBadge {

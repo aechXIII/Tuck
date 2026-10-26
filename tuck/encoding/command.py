@@ -8,7 +8,13 @@ from pathlib import Path
 from struct import pack
 from typing import TYPE_CHECKING
 
-from ..audio_mix import ClipPiece, audible_clips, clip_pieces, clip_placements
+from ..audio_mix import (
+    ClipPiece,
+    audible_clips,
+    audible_placements,
+    clip_pieces,
+    without_ranges,
+)
 from ..models import (
     RCM_CBR,
     RCM_CQ,
@@ -42,6 +48,15 @@ if TYPE_CHECKING:
     from .vaapi import VaapiEncodeDevice
 
 scaler_to_ffmpeg_flag = _filters.scaler_to_ffmpeg_flag
+
+
+# Even out loudness evens the whole export to a level that sits well next to other shared
+# videos: -14 LUFS integrated, the level most sharing sites and players play at, with true
+# peaks held 1.5 dB under full scale so the AAC encoder doesn't push them over. One pass in
+# dynamic mode brings quiet stretches up and loud ones down as it goes; a measured second
+# pass would only set one gain for the whole clip, which leaves a quiet mic quiet next to a
+# loud game. loudnorm works at 192 kHz inside, so the output goes back to the export's rate.
+LOUDNESS_TARGET = "loudnorm=I=-14:TP=-1.5:LRA=11"
 
 
 def _source_audio(track: int) -> str:
@@ -95,7 +110,7 @@ def _source_audio_chain(
     prefix = f"t{position}" if position else ""
     mix_inputs: list[str] = []
     if audio_independent:
-        for piece in source_pieces:
+        for piece in without_ranges(source_pieces, track.mute_ranges):
             filters = [
                 f"atrim=start={fmt_ffmpeg_time(piece.source_start)}:"
                 f"end={fmt_ffmpeg_time(piece.source_end)}",
@@ -118,6 +133,13 @@ def _source_audio_chain(
             mix_label = f"{prefix}mix{len(mix_inputs)}"
             graph_parts.append(f"[{stream}]{','.join(filters)}[{mix_label}]")
             mix_inputs.append(f"[{mix_label}]")
+        if not mix_inputs:
+            # muted from end to end, the track is still written, as silence of the same length
+            graph_parts.append(
+                f"[{stream}]volume=0,asetpts=PTS-STARTPTS,apad=whole_dur={output_duration},"
+                f"atrim=duration={output_duration}[{prefix}mix0]"
+            )
+            mix_inputs.append(f"[{prefix}mix0]")
         return mix_inputs
 
     source_audio_inputs: list[str] = []
@@ -153,13 +175,14 @@ def _source_audio_chain(
     return [f"[{prefix}mix0]"]
 
 
-def _mix_to(graph_parts: list[str], mix_inputs: list[str], label: str) -> None:
+def _mix_to(graph_parts: list[str], mix_inputs: list[str], label: str, finish: str = "") -> None:
+    """Sums `mix_inputs` into one output track; `finish` runs on the sum, such as loudnorm"""
     if len(mix_inputs) == 1:
-        graph_parts.append(f"{mix_inputs[0]}anull[{label}]")
+        graph_parts.append(f"{mix_inputs[0]}{finish or 'anull'}[{label}]")
     else:
         graph_parts.append(
             "".join(mix_inputs) + f"amix=inputs={len(mix_inputs)}:duration=longest:"
-            f"dropout_transition=0:normalize=0[{label}]"
+            f"dropout_transition=0:normalize=0{',' + finish if finish else ''}[{label}]"
         )
 
 
@@ -620,11 +643,20 @@ def build_base_cmd(
     imported_clips = project_imported_clips if include_audio and plan.audio_enabled else []
     source_has_audio = plan.source_info is None or plan.source_info.has_audio
     source_pieces = source_audio_output_pieces(segments, plan.source_audio_segments)
-    audio_independent = positioned or (
-        plan.source_audio_segments is not None
-        and audio_independent_from_pieces(source_pieces, segments)
-    )
     kept_tracks = plan.kept_source_tracks
+    # a muted stretch splits a track's pieces apart, so each piece is placed on its own
+    muted_stretches = any(track.mute_ranges for track in kept_tracks)
+    audio_independent = (
+        positioned
+        or muted_stretches
+        or (
+            plan.source_audio_segments is not None
+            and audio_independent_from_pieces(source_pieces, segments)
+        )
+    )
+    mix_tracks = plan.mix_audio_tracks and len(kept_tracks) > 1
+    loudness = plan.even_out_loudness
+    finish = f"{LOUDNESS_TARGET},aresample={max(1, plan.audio_sample_rate)}" if loudness else ""
     source_audio_active = bool(
         include_audio
         and plan.audio_enabled
@@ -636,13 +668,23 @@ def build_base_cmd(
     source_gain_edits = any(abs(track.gain_db) > 1e-9 for track in kept_tracks)
     audio_filters_required = bool(imported_clips) or bool(
         source_audio_active
-        and (len(segments) > 1 or source_gain_edits or audio_independent or blending)
+        and (
+            len(segments) > 1
+            or source_gain_edits
+            or audio_independent
+            or blending
+            or mix_tracks
+            or loudness
+        )
     )
     timeline_audio_edits = bool(
         plan.audio_enabled
         and (
             project_imported_clips
-            or (source_has_audio and source_gain_edits)
+            or (
+                source_has_audio
+                and (source_gain_edits or mix_tracks or loudness or muted_stretches)
+            )
             or (source_audio_active and audio_independent)
         )
     )
@@ -775,6 +817,8 @@ def build_base_cmd(
                 and not imported_inputs
                 and not source_gain_edits
                 and not audio_independent
+                and not mix_tracks
+                and not loudness
             )
             source_audio_inputs: list[str] = []
             for index, segment in enumerate(segments):
@@ -854,22 +898,24 @@ def build_base_cmd(
                     blending=blending,
                     output_duration=output_duration,
                 )
-                if position == 0:
+                if position == 0 or mix_tracks:
                     mix_inputs.extend(track_inputs)
                 else:
-                    _mix_to(graph_parts, track_inputs, f"aout{position}")
+                    _mix_to(graph_parts, track_inputs, f"aout{position}", finish)
                     extra_audio_labels.append(f"[aout{position}]")
 
         # added audio is mixed into the first track only
         for input_index, track, clip in imported_inputs:
-            for piece in clip_pieces(track, clip, clip_placements(clip, segments, positioned)):
+            for piece in clip_pieces(
+                track, clip, audible_placements(track, clip, segments, positioned)
+            ):
                 mix_label = f"mix{len(mix_inputs)}"
                 clip_filters = _imported_clip_filters(plan, clip, piece, output_duration)
                 graph_parts.append(f"[{input_index}:a:0]{','.join(clip_filters)}[{mix_label}]")
                 mix_inputs.append(f"[{mix_label}]")
 
         if mix_inputs:
-            _mix_to(graph_parts, mix_inputs, "aout")
+            _mix_to(graph_parts, mix_inputs, "aout", finish)
             filtered_audio = True
 
         if positioned:

@@ -1,7 +1,7 @@
 """Where each sound in an edit plays and how loud it is.
 
 The export's FFmpeg graph and the native player's preview mix both take their placement, gain,
-fade and loop rules from here, so the preview sounds the way the export will.
+fade, loop and muted-stretch rules from here, so the preview sounds the way the export will.
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ from .models import (
     AudioClip,
     AudioTrack,
     EncodePlan,
+    MuteRange,
     Segment,
     TimelineAudioPiece,
     map_source_range_to_output,
@@ -20,6 +21,39 @@ from .models import (
 
 # a piece that starts or ends this close to its clip's edge carries that edge's fade
 _EDGE = 1e-6
+# what a muted stretch leaves of a piece is dropped when it is shorter than one sample
+_SLIVER = 1 / 192_000
+
+
+def without_ranges(
+    pieces: list[TimelineAudioPiece], ranges: tuple[MuteRange, ...]
+) -> list[TimelineAudioPiece]:
+    """`pieces` with the muted stretches taken out. Ranges are in the pieces' own `source_start`
+    time, so a muted stretch stays on the same sound wherever the piece lands in the output."""
+    if not ranges:
+        return list(pieces)
+    result: list[TimelineAudioPiece] = []
+    for piece in pieces:
+        kept = [(float(piece.source_start), float(piece.source_end))]
+        for mute in ranges:
+            next_kept: list[tuple[float, float]] = []
+            for start, end in kept:
+                if mute.end <= start or mute.start >= end:
+                    next_kept.append((start, end))
+                    continue
+                if mute.start > start:
+                    next_kept.append((start, float(mute.start)))
+                if mute.end < end:
+                    next_kept.append((float(mute.end), end))
+            kept = next_kept
+        for start, end in kept:
+            if end - start >= _SLIVER:
+                result.append(
+                    TimelineAudioPiece(
+                        start, end, piece.output_start + (start - float(piece.source_start))
+                    )
+                )
+    return result
 
 
 @dataclass(frozen=True)
@@ -43,6 +77,14 @@ def clip_placements(
     if positioned:
         return [TimelineAudioPiece(clip.timeline_start, clip.timeline_end, clip.timeline_start)]
     return map_source_range_to_output(segments, clip.timeline_start, clip.timeline_end)
+
+
+def audible_placements(
+    track: AudioTrack, clip: AudioClip, segments: list[Segment], positioned: bool
+) -> list[TimelineAudioPiece]:
+    """`clip_placements` less the track's muted stretches, which are counted in the same time
+    as the clip's own place on the track"""
+    return without_ranges(clip_placements(clip, segments, positioned), track.mute_ranges)
 
 
 def clip_pieces(
@@ -132,8 +174,10 @@ def _source_pieces(plan: EncodePlan, positioned: bool) -> list[TimelineAudioPiec
 def compile_preview_mix(plan: EncodePlan) -> PreviewMix:
     """The mix the native player plays for `plan`, from the same rules as the export.
 
-    The preview sums every source stream the export keeps, where the export writes each as its
-    own track, and applies gains above 0 dB as the export does, without a limiter."""
+    The preview sums every source stream the export keeps, as the export does when it mixes
+    them into one track (with Separate tracks it writes each as its own), and applies gains
+    above 0 dB as the export does, without a limiter. Even out loudness is left out: it works
+    over the whole export, so the preview plays the levels as they are set."""
     segments = plan.effective_segments
     positioned = bool(segments and segments[0].timeline_start is not None)
     duration = _timeline_length(plan, positioned)
@@ -141,8 +185,9 @@ def compile_preview_mix(plan: EncodePlan) -> PreviewMix:
         return PreviewMix(duration, ())
     voices: list[MixVoice] = []
     if plan.source_info is None or plan.source_info.has_audio:
-        pieces = _source_pieces(plan, positioned)
+        source_pieces = _source_pieces(plan, positioned)
         for track in plan.kept_source_tracks:
+            pieces = without_ranges(source_pieces, track.mute_ranges)
             gain = db_to_gain(track.gain_db)
             voices.append(
                 MixVoice(
@@ -162,7 +207,9 @@ def compile_preview_mix(plan: EncodePlan) -> PreviewMix:
             )
     added: dict[str, list[MixPiece]] = {}
     for track, clip in audible_clips(plan):
-        for piece in clip_pieces(track, clip, clip_placements(clip, segments, positioned)):
+        for piece in clip_pieces(
+            track, clip, audible_placements(track, clip, segments, positioned)
+        ):
             # without moved clips the player skips cuts itself, so each piece stays at its
             # source time, but fades and loop phase still follow the export's pieces
             start = piece.output_start if positioned else clip.timeline_start + piece.local_offset

@@ -146,6 +146,53 @@
 .transform-segment button.danger:hover {
   color: var(--danger);
 }
+/* a muted stretch covers the waveform with a flat line, so the track reads as a quiet gap */
+.audio-mute-range {
+  position: absolute;
+  top: var(--tl-inset);
+  bottom: var(--tl-inset);
+  z-index: 2;
+  min-width: 3px;
+  border-radius: var(--r-chip);
+  background: var(--sink);
+  cursor: pointer;
+}
+.audio-mute-range::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  top: 50%;
+  height: 1px;
+  background: var(--dim);
+}
+.audio-mute-range:hover {
+  background: var(--raised);
+}
+.audio-mute-range.selected {
+  background: color-mix(in srgb, var(--text) 26%, var(--sink));
+}
+.audio-mute-range.selected::before {
+  background: var(--text);
+}
+.audio-mute-range:focus-visible {
+  outline: 2px solid var(--accent-light);
+  outline-offset: 1px;
+}
+/* a stretch chosen with Shift-drag and not muted yet */
+.audio-range-selection {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 3;
+  border-radius: var(--r-chip);
+  background: color-mix(in srgb, var(--text) 16%, transparent);
+  pointer-events: none;
+}
+body.task-cut .audio-mute-range,
+body.task-cut .audio-range-selection {
+  display: none;
+}
 .audio-waveform {
   position: absolute;
   inset: 0;

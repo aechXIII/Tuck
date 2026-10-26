@@ -436,6 +436,62 @@ class Segment:
         return segment
 
 
+# more muted stretches on one track than anyone makes by hand, so a request stays bounded
+MAX_MUTE_RANGES = 256
+
+
+@dataclass(frozen=True)
+class MuteRange:
+    """A stretch of one audio track that plays silent. Source tracks count it in the source's
+    own time, so it stays on the same sound when segments are cut or moved; added tracks count
+    it in the track's time, like their clips."""
+
+    start: float
+    end: float
+
+    def validate(self) -> None:
+        for name in ("start", "end"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ValueError(f"mute range {name} must be a number")
+            if not math.isfinite(float(value)):
+                raise ValueError(f"mute range {name} must be finite")
+        if self.start < 0:
+            raise ValueError("mute range start must be >= 0")
+        if self.end <= self.start:
+            raise ValueError("mute range end must be after its start")
+
+    def to_dict(self) -> dict[str, float]:
+        return {"start": float(self.start), "end": float(self.end)}
+
+    @classmethod
+    def from_dict(cls, data: object) -> MuteRange:
+        if not isinstance(data, dict) or set(data) != {"start", "end"}:
+            raise ValueError("mute range must be an object with start and end")
+        mute = cls(start=data["start"], end=data["end"])
+        mute.validate()
+        return mute
+
+
+def parse_mute_ranges(value: object) -> tuple[MuteRange, ...]:
+    if not isinstance(value, (list, tuple)):
+        raise ValueError("mute_ranges must be an array")
+    if len(value) > MAX_MUTE_RANGES:
+        raise ValueError("mute_ranges has too many ranges")
+    return tuple(
+        item if isinstance(item, MuteRange) else MuteRange.from_dict(item) for item in value
+    )
+
+
+def _validate_mute_ranges(value: object) -> None:
+    if not isinstance(value, tuple) or not all(isinstance(item, MuteRange) for item in value):
+        raise ValueError("mute_ranges must be mute ranges")
+    if len(value) > MAX_MUTE_RANGES:
+        raise ValueError("mute_ranges has too many ranges")
+    for item in value:
+        item.validate()
+
+
 @dataclass(frozen=True)
 class AudioClip:
     source: str
@@ -560,6 +616,7 @@ class AudioTrack:
     clips: list[AudioClip] = field(default_factory=list)
     gain_db: float = 0.0
     muted: bool = False
+    mute_ranges: tuple[MuteRange, ...] = ()
 
     def validate(
         self,
@@ -576,6 +633,7 @@ class AudioTrack:
             raise ValueError("audio track gain_db must be between -60 and 12")
         if not isinstance(self.muted, bool):
             raise ValueError("audio track muted must be a boolean")
+        _validate_mute_ranges(self.mute_ranges)
         previous_end = 0.0
         for index, clip in enumerate(self.clips):
             if not isinstance(clip, AudioClip):
@@ -595,13 +653,14 @@ class AudioTrack:
             "gain_db": float(self.gain_db),
             "muted": self.muted,
             "clips": [clip.to_dict() for clip in self.clips],
+            "mute_ranges": [mute.to_dict() for mute in self.mute_ranges],
         }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> AudioTrack:
         if not isinstance(data, dict):
             raise ValueError("audio track must be an object")
-        allowed = {"track_id", "name", "gain_db", "muted", "clips"}
+        allowed = {"track_id", "name", "gain_db", "muted", "clips", "mute_ranges"}
         unknown = set(data) - allowed
         if unknown:
             raise ValueError(f"unknown audio track field: {sorted(unknown)[0]}")
@@ -614,6 +673,7 @@ class AudioTrack:
             gain_db=data.get("gain_db", 0.0),
             muted=data.get("muted", False),
             clips=[AudioClip.from_dict(item) for item in raw_clips],
+            mute_ranges=parse_mute_ranges(data.get("mute_ranges", [])),
         )
         track.validate()
         return track
@@ -632,16 +692,17 @@ MAX_SOURCE_AUDIO_TRACKS = 64
 
 @dataclass(frozen=True)
 class SourceTrackSetting:
-    """Mute and volume of one of the source's audio tracks after the first"""
+    """Mute, volume and muted stretches of one of the source's audio tracks after the first"""
 
     muted: bool = False
     gain_db: float = 0.0
+    mute_ranges: tuple[MuteRange, ...] = ()
 
     @classmethod
     def from_dict(cls, data: object) -> SourceTrackSetting:
         if not isinstance(data, dict):
             raise ValueError("source audio track settings must be objects")
-        unknown = set(data) - {"muted", "gain_db"}
+        unknown = set(data) - {"muted", "gain_db", "mute_ranges"}
         if unknown:
             raise ValueError(f"unknown source audio track field: {sorted(unknown)[0]}")
         muted = data.get("muted", False)
@@ -649,7 +710,11 @@ class SourceTrackSetting:
             raise ValueError("source audio track muted must be a boolean")
         gain_db = data.get("gain_db", 0.0)
         _validate_gain_db("source audio track gain_db", gain_db)
-        return cls(muted=muted, gain_db=float(gain_db))
+        return cls(
+            muted=muted,
+            gain_db=float(gain_db),
+            mute_ranges=parse_mute_ranges(data.get("mute_ranges", [])),
+        )
 
 
 @dataclass(frozen=True)
@@ -658,6 +723,7 @@ class SourceAudioTrack:
 
     index: int
     gain_db: float = 0.0
+    mute_ranges: tuple[MuteRange, ...] = ()
 
     @classmethod
     def from_dict(cls, data: object) -> SourceAudioTrack:
@@ -668,7 +734,11 @@ class SourceAudioTrack:
             raise ValueError("source audio track index must be a whole number >= 0")
         gain_db = data.get("gain_db", 0.0)
         _validate_gain_db("source audio track gain_db", gain_db)
-        return cls(index=index, gain_db=float(gain_db))
+        return cls(
+            index=index,
+            gain_db=float(gain_db),
+            mute_ranges=parse_mute_ranges(data.get("mute_ranges", [])),
+        )
 
 
 def validate_audio_tracks(
@@ -848,7 +918,12 @@ class PlanRequest:
     source_audio_segments: list[Segment] | None = None
     # the source's second audio track onwards; source_audio_muted and _gain_db cover the first
     source_audio_extra_tracks: list[SourceTrackSetting] | None = None
+    # the stretches of the source's first audio track that play silent
+    source_audio_mute_ranges: list[MuteRange] | None = None
     audio_tracks: list[AudioTrack] | None = None
+    # write every kept source audio track as one mixed track rather than one track each
+    mix_audio_tracks: bool | None = None
+    even_out_loudness: bool | None = None
 
     scaler: str | None = None
 
@@ -954,7 +1029,12 @@ class PlanRequest:
             if self.source_audio_segments:
                 validate_segments(self.source_audio_segments)
 
-        for name in ("audio_enabled", "source_audio_muted"):
+        for name in (
+            "audio_enabled",
+            "source_audio_muted",
+            "mix_audio_tracks",
+            "even_out_loudness",
+        ):
             value = getattr(self, name)
             if value is not None and not isinstance(value, bool):
                 raise ValueError(f"{name} must be a boolean")
@@ -978,6 +1058,12 @@ class PlanRequest:
                 isinstance(item, SourceTrackSetting) for item in self.source_audio_extra_tracks
             ):
                 raise ValueError("source_audio_extra_tracks items must be track settings")
+            for item in self.source_audio_extra_tracks:
+                _validate_mute_ranges(item.mute_ranges)
+        if self.source_audio_mute_ranges is not None:
+            if not isinstance(self.source_audio_mute_ranges, list):
+                raise ValueError("source_audio_mute_ranges must be an array")
+            _validate_mute_ranges(tuple(self.source_audio_mute_ranges))
         if self.audio_tracks is not None:
             if not isinstance(self.audio_tracks, list):
                 raise ValueError("audio_tracks must be an array")
@@ -1045,11 +1131,15 @@ class EncodePlan:
     source_audio_muted: bool = False
     source_audio_gain_db: float = 0.0
     source_audio_segments: list[Segment] | None = None
-    # the source audio tracks the export keeps, each as its own output track with its own
-    # volume; added audio is mixed into the first. None is a plan from before tracks were
-    # chosen, which keeps the first one only
+    # the source audio tracks the export keeps, each with its own volume; added audio is
+    # mixed into the first. None is a plan from before tracks were chosen, which keeps the
+    # first one only
     source_audio_tracks: list[SourceAudioTrack] | None = None
     audio_tracks: list[AudioTrack] = field(default_factory=list)
+    # the kept tracks are written as one mixed track; a plan from before the choice existed
+    # wrote each as its own, so that stays the default here and the planner asks for the mix
+    mix_audio_tracks: bool = False
+    even_out_loudness: bool = False
     two_pass: bool = True
     preset: str = "medium"
     crf: int = 23
@@ -1124,9 +1214,16 @@ class EncodePlan:
         return [SourceAudioTrack(0, self.source_audio_gain_db)]
 
     @property
+    def output_audio_track_count(self) -> int:
+        """How many audio tracks the export writes when it writes any"""
+        if self.mix_audio_tracks:
+            return 1
+        return max(1, len(self.kept_source_tracks))
+
+    @property
     def total_audio_bitrate(self) -> int:
-        """audio_bitrate is per track, and each kept source audio track is written at it"""
-        return self.audio_bitrate * max(1, len(self.kept_source_tracks))
+        """audio_bitrate is per track, and each written audio track is encoded at it"""
+        return self.audio_bitrate * self.output_audio_track_count
 
     def to_dict(self) -> dict[str, Any]:
         import dataclasses

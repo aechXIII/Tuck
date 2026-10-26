@@ -24,6 +24,7 @@ from tuck.models import (
     WORKFLOW_COMPRESSION,
     WORKFLOW_UPSCALE,
     CropRect,
+    MuteRange,
     PlanRequest,
     Profile,
     Segment,
@@ -1170,6 +1171,7 @@ class TestPlanStages:
         request = PlanRequest(
             source_audio_muted=True,
             source_audio_extra_tracks=[SourceTrackSetting(gain_db=-6.0)],
+            mix_audio_tracks=False,
         )
         result = plan(
             source, Profile(name="Tracks", two_pass=False), request=request, source_info=info
@@ -1198,7 +1200,24 @@ class TestPlanStages:
         )
         assert off.source_audio_tracks == []
 
-    def test_the_size_budget_pays_for_every_audio_track(self, tmp_path):
+    def test_the_size_budget_pays_for_every_separate_audio_track(self, tmp_path):
+        source = self._source(tmp_path)
+        profile = Profile(name="Size", two_pass=False, target_size_bytes=8 * 1024 * 1024)
+        one = plan(source, profile, source_info=self._info(source))
+        three = plan(
+            source,
+            profile,
+            request=PlanRequest(mix_audio_tracks=False),
+            source_info=self._info(source, audio_stream_count=3, audio_codecs=["aac"] * 3),
+        )
+        assert three.mix_audio_tracks is False
+        assert three.output_audio_track_count == 3
+        assert three.audio_bitrate == one.audio_bitrate
+        assert three.total_audio_bitrate == 3 * one.audio_bitrate
+        assert three.video_bitrate < one.video_bitrate
+        assert three.estimated_size <= profile.target_size_bytes
+
+    def test_tracks_are_mixed_into_one_by_default_and_budgeted_as_one(self, tmp_path):
         source = self._source(tmp_path)
         profile = Profile(name="Size", two_pass=False, target_size_bytes=8 * 1024 * 1024)
         one = plan(source, profile, source_info=self._info(source))
@@ -1207,10 +1226,57 @@ class TestPlanStages:
             profile,
             source_info=self._info(source, audio_stream_count=3, audio_codecs=["aac"] * 3),
         )
-        assert three.audio_bitrate == one.audio_bitrate
-        assert three.total_audio_bitrate == 3 * one.audio_bitrate
-        assert three.video_bitrate < one.video_bitrate
-        assert three.estimated_size <= profile.target_size_bytes
+        assert three.mix_audio_tracks is True
+        assert three.output_audio_track_count == 1
+        assert len(three.source_audio_tracks or []) == 3
+        assert three.total_audio_bitrate == one.audio_bitrate
+        assert three.video_bitrate == one.video_bitrate
+
+    def test_mixing_tracks_reencodes_audio_that_could_be_copied(self, tmp_path):
+        source = self._source(tmp_path)
+        info = self._info(source, audio_stream_count=2, audio_codecs=["aac", "aac"])
+        profile = Profile(name="Keep", two_pass=False, keep_audio=True)
+        mixed = plan(source, profile, source_info=info)
+        assert mixed.copy_audio is False
+        # one remaining track has nothing to mix, so it is still copied
+        alone = plan(
+            source,
+            profile,
+            request=PlanRequest(source_audio_extra_tracks=[SourceTrackSetting(muted=True)]),
+            source_info=info,
+        )
+        assert alone.copy_audio is True
+
+    def test_even_out_loudness_reencodes_and_is_planned_off_by_default(self, tmp_path):
+        source = self._source(tmp_path)
+        info = self._info(source)
+        profile = Profile(name="Keep", two_pass=False, keep_audio=True)
+        assert plan(source, profile, source_info=info).even_out_loudness is False
+        even = plan(source, profile, request=PlanRequest(even_out_loudness=True), source_info=info)
+        assert even.even_out_loudness is True
+        assert even.copy_audio is False
+
+    def test_muted_stretches_reach_each_kept_source_track(self, tmp_path):
+        source = self._source(tmp_path)
+        info = self._info(source, audio_stream_count=2, audio_codecs=["aac", "aac"])
+        first = [MuteRange(1.0, 2.0)]
+        second = (MuteRange(3.0, 4.0),)
+        result = plan(
+            source,
+            Profile(name="Keep", two_pass=False, keep_audio=True),
+            request=PlanRequest(
+                source_audio_mute_ranges=first,
+                source_audio_extra_tracks=[SourceTrackSetting(mute_ranges=second)],
+                mix_audio_tracks=False,
+            ),
+            source_info=info,
+        )
+        assert result.source_audio_tracks == [
+            SourceAudioTrack(0, 0.0, tuple(first)),
+            SourceAudioTrack(1, 0.0, second),
+        ]
+        # silence has to be written into the audio, so it can't be copied
+        assert result.copy_audio is False
 
     @pytest.mark.parametrize(
         ("codecs", "copied"),
@@ -1221,6 +1287,7 @@ class TestPlanStages:
         result = plan(
             source,
             Profile(name="Keep", two_pass=False, keep_audio=True),
+            request=PlanRequest(mix_audio_tracks=False),
             source_info=self._info(source, audio_stream_count=2, audio_codecs=codecs),
         )
         assert result.copy_audio is copied

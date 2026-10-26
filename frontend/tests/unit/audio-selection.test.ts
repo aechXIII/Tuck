@@ -52,8 +52,19 @@ const activeVideoSegment = selectable();
 activeVideoSegment.classList.toggle("active", true);
 const fragmentMute = Object.assign(selectable(), {
   dataset: {} as Record<string, string>,
+  querySelector() {
+    return null;
+  },
 });
 const sourceLane = {
+  id: "source-audio-lane",
+  dataset: {} as Record<string, string>,
+  querySelector() {
+    return null;
+  },
+  querySelectorAll() {
+    return [];
+  },
   addEventListener() {},
   replaceChildren() {},
   appendChild(child: unknown) {
@@ -67,8 +78,8 @@ const sourceLane = {
 const video = { addEventListener() {}, currentTime: 4, paused: true, volume: 1 };
 const importedTracks = {
   addEventListener() {},
-  querySelectorAll() {
-    return [importedRow];
+  querySelectorAll(selector: string) {
+    return selector === ".audio-lane" ? [] : [importedRow];
   },
   replaceChildren() {},
   appendChild() {},

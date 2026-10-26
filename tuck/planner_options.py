@@ -7,6 +7,7 @@ from .models import (
     SCALER_LANCZOS,
     AppSettings,
     AudioTrack,
+    MuteRange,
     PlanRequest,
     Profile,
     Segment,
@@ -74,7 +75,10 @@ class PlanOptions:
     source_audio_gain_db: float
     source_audio_segments: list[Segment] | None
     source_audio_extra_tracks: list[SourceTrackSetting]
+    source_audio_mute_ranges: tuple[MuteRange, ...]
     audio_tracks: list[AudioTrack]
+    mix_audio_tracks: bool
+    even_out_loudness: bool
     keep_audio: bool
     scaler: str
     video_encoder: str
@@ -99,7 +103,11 @@ def resolve_plan_options(profile: Profile, request: PlanRequest | None) -> PlanO
     source_audio_gain_db = 0.0
     source_audio_segments: list[Segment] | None = None
     source_audio_extra_tracks: list[SourceTrackSetting] = []
+    source_audio_mute_ranges: tuple[MuteRange, ...] = ()
     audio_tracks: list[AudioTrack] = []
+    # players, phones and chat apps mostly play only the first track, so sharing mixes them
+    mix_audio_tracks = True
+    even_out_loudness = False
     keep_audio = bool(profile.keep_audio)
     scaler = profile.scaler or SCALER_LANCZOS
     video_encoder = profile.video_encoder
@@ -130,8 +138,14 @@ def resolve_plan_options(profile: Profile, request: PlanRequest | None) -> PlanO
             source_audio_segments = list(request.source_audio_segments)
         if request.source_audio_extra_tracks is not None:
             source_audio_extra_tracks = list(request.source_audio_extra_tracks)
+        if request.source_audio_mute_ranges is not None:
+            source_audio_mute_ranges = tuple(request.source_audio_mute_ranges)
         if request.audio_tracks is not None:
             audio_tracks = list(request.audio_tracks)
+        if request.mix_audio_tracks is not None:
+            mix_audio_tracks = request.mix_audio_tracks
+        if request.even_out_loudness is not None:
+            even_out_loudness = request.even_out_loudness
         if request.keep_audio is not None:
             keep_audio = bool(request.keep_audio)
         if request.scaler is not None:
@@ -192,7 +206,10 @@ def resolve_plan_options(profile: Profile, request: PlanRequest | None) -> PlanO
         source_audio_gain_db=source_audio_gain_db,
         source_audio_segments=source_audio_segments,
         source_audio_extra_tracks=source_audio_extra_tracks,
+        source_audio_mute_ranges=source_audio_mute_ranges,
         audio_tracks=audio_tracks,
+        mix_audio_tracks=mix_audio_tracks,
+        even_out_loudness=even_out_loudness,
         keep_audio=keep_audio,
         scaler=scaler,
         video_encoder=video_encoder,

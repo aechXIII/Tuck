@@ -695,6 +695,25 @@
                 <span class="audio-toggle-track" aria-hidden="true"><span class="audio-toggle-thumb"></span></span>
               </button>
             </div>
+            <div class="audio-option" id="audio-layout-row" hidden>
+              <div class="audio-option-head">
+                <span class="audio-option-title" id="audio-layout-title">Export as</span>
+                <div class="audio-layout-choice" role="group" aria-labelledby="audio-layout-title" aria-describedby="audio-layout-note">
+                  <button type="button" data-audio-layout="mix" class="on" aria-pressed="true">One track</button>
+                  <button type="button" data-audio-layout="separate" aria-pressed="false">Separate tracks</button>
+                </div>
+              </div>
+              <p class="audio-option-note" id="audio-layout-note"></p>
+            </div>
+            <div class="audio-option" id="audio-loudness-row" hidden>
+              <div class="audio-option-head">
+                <span class="audio-option-title" id="audio-loudness-title">Even out loudness</span>
+                <button type="button" id="audio-loudness-toggle" class="audio-master-toggle" role="switch" aria-checked="false" aria-labelledby="audio-loudness-title" aria-describedby="audio-loudness-note">
+                  <span class="audio-toggle-track" aria-hidden="true"><span class="audio-toggle-thumb"></span></span>
+                </button>
+              </div>
+              <p class="audio-option-note" id="audio-loudness-note">Brings quiet voices up and loud moments down to a steady level for sharing. The preview plays without it.</p>
+            </div>
             <div class="audio-section-heading">
               <span class="audio-section-title">Tracks <span id="audio-track-count">0</span></span>
               <button type="button" class="audio-track-add" data-action-click="browse-audio"><span aria-hidden="true">+</span> Add</button>
