@@ -319,10 +319,21 @@ static int seek_further_back(Decoder *d) {
 
 static void decode_failed(Decoder *d, int code) {
     if (d->hardware_codec) {
-        /* the GPU can't decode this stream after all; start over in software from the same spot */
+        /* the GPU can't decode this stream after all; carry on in software */
         char error[160];
         if (open_codec(d, 0, TUCK_SOFTWARE_STREAM, error, sizeof(error))) {
-            d->generation = 0;
+            if (!d->started) {
+                /* nothing of this request is queued yet, so it starts over at its target */
+                d->generation = 0;
+                return;
+            }
+            /* mid-playback the queued frames stay, and decoding goes on from the next frame the
+               queue needs; going back to where playback started would make the picture wait
+               while all of that is decoded again */
+            double next = d->next;
+            if (!seek_from(d, next)) return;
+            d->next = next;
+            d->started = 1;
             return;
         }
     }
