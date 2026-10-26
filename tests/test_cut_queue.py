@@ -151,10 +151,12 @@ def test_retry_reanalyzes_and_rebuilds_the_cut_outside_queue_lock(cut, monkeypat
         return scan(*args, **kwargs)
 
     monkeypatch.setattr(packets, "analyze_source", analyze)
+    queued = item.plan
     retry = queue.retry(item.id)
-    assert calls and retry is not None and retry.plan is not item.plan
-    assert retry.plan == item.plan
-    assert item.state == QueueState.CANCELLED
+    # the export keeps its row and runs the cut rebuilt from the fresh reading
+    assert calls and retry is not None and retry is item and retry.plan is not queued
+    assert retry.plan == queued
+    assert item.state == QueueState.PENDING
 
 
 def test_retry_returns_the_current_plan_when_boundaries_changed(cut):

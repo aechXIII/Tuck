@@ -192,15 +192,29 @@ class TestQueueOrdering:
         item.progress = 40.0
         q._pending.clear()
         retry = q.retry(item.id)
-        assert retry is not None
-        assert retry.id != item.id
+        assert retry is not None and retry is item
         assert retry.state == QueueState.PENDING
+        assert retry.error == ""
         assert retry.plan is not plan
         assert retry.plan == plan
         assert retry.plan.trim_start == 1.0
         assert retry.plan.transform.crop == crop
         assert retry.progress == 0.0
         assert retry.id in q.pending_ids
+
+    def test_a_single_retry_keeps_the_row_as_retry_all_does(self):
+        q = ProcessingQueue()
+        failed = q.enqueue(_plan("a"))
+        waiting = q.enqueue(_plan("b"))
+        failed.state = QueueState.FAILED
+        q._pending.remove(failed.id)
+        retry = q.retry(failed.id)
+        # one row for the export, where it was, and it runs after what was already waiting
+        assert retry is failed
+        assert [item.id for item in q.items] == [failed.id, waiting.id]
+        assert q.pending_ids == [waiting.id, failed.id]
+        # its video was read just now, so it isn't read again when it starts
+        assert failed.id not in q._check_before_run
 
     def test_retry_preserves_canonical_segments_and_selected_duration(self):
         q = ProcessingQueue()

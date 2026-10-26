@@ -307,13 +307,18 @@ class ProcessingQueue:
                     or generation != self._cancel_generation
                 ):
                     return None
-                # an export from an earlier run stays apart from the Library after a retry too
-                retried = self._add_pending(retry_plan, work, restored=original.restored)
+                check_request(work)
+                # the export keeps its row, as with Retry all, and runs the plan just checked;
+                # an export from an earlier run stays apart from the Library this way too
+                self._requeue(original)
+                original.plan = retry_plan
+                self._check_before_run.discard(original.id)
+                self._condition.notify()
         finally:
             with self._condition:
                 self._retry_work.discard(work)
         self._save_unfinished()
-        return retried
+        return original
 
     def stop_after_current(self) -> None:
         with self._condition:

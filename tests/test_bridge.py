@@ -1669,12 +1669,15 @@ class TestBridgeQueueManagement:
         api = BridgeAPI()
         item = api._queue.enqueue(EncodePlan(source="source.mp4", output="output.mp4"))
         item.state = QueueState.FAILED
+        rows = len(api._queue.items)
 
         response = api.retry_item(item.id)
 
+        # the export is queued again in its own row
         assert response["ok"]
-        assert api._queue.items[-1].state == QueueState.PENDING
-        assert api._queue.items[-1].plan == item.plan
+        assert response["item_id"] == item.id
+        assert len(api._queue.items) == rows
+        assert item.state == QueueState.PENDING
 
     def test_stop_after_current_cancels_pending_items(self, tmp_path, monkeypatch):
         import tuck.settings as settings_mod
