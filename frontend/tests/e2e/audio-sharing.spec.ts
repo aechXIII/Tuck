@@ -140,6 +140,41 @@ test("a chosen stretch is muted as one undo step and shows as a quiet gap", asyn
   await expect(page.locator("#source-audio-lane .seq-audio-clip")).toHaveCount(1);
 });
 
+test("a stretch is marked from the keyboard with Shift+I and Shift+O and muted with M", async ({ page }) => {
+  await open(page);
+  const ruler = (await page.locator("#sequence-ruler").boundingBox())!;
+  const seek = (share: number) => page.mouse.click(ruler.x + ruler.width * share, ruler.y + ruler.height / 2);
+  const band = page.locator("#source-audio-lane .audio-range-selection");
+  const mute = page.locator("#audio-fragment-mute");
+
+  // from the playhead to the end, then its end brought back to the playhead
+  await seek(0.25);
+  await page.keyboard.press("Shift+I");
+  await expect(band).toHaveCount(1);
+  await expect(mute).toHaveText(/Mute selection/);
+  // marking is not an edit, and plain I and O still belong to trimming
+  await expect(page.locator("#btn-undo")).toBeDisabled();
+  await seek(0.5);
+  await page.keyboard.press("Shift+O");
+  await page.keyboard.press("m");
+  await expect(band).toHaveCount(0);
+  await expect(page.locator("#source-audio-lane .audio-mute-range")).toHaveCount(1);
+  await expect(page.locator("#btn-undo")).toHaveAttribute("aria-label", "Undo mute range");
+  await expect.poll(async () => {
+    const ranges = (await lastPlanRequest(page))?.source_audio_mute_ranges as { start: number; end: number }[] | undefined;
+    return ranges?.map((range) => [Math.round(range.start), Math.round(range.end)]);
+  }).toEqual([[3, 6]]);
+
+  // Shift+O alone marks from the start to the playhead
+  await page.keyboard.press("Escape");
+  await seek(0.75);
+  await page.keyboard.press("Shift+O");
+  await expect(band).toHaveCount(1);
+  const shown = await band.evaluate((element) => ({ left: element.style.left, width: Number.parseFloat(element.style.width) }));
+  expect(shown.left).toBe("0%");
+  expect(shown.width).toBeCloseTo(75, 0);
+});
+
 test("a muted stretch on the second track is sent with that track and its end follows O", async ({ page }) => {
   await open(page, 2);
   await chooseStretch(page, "#source-extra-tracks .audio-lane", 0.5, 0.75);

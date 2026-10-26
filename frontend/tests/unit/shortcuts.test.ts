@@ -83,6 +83,8 @@ test("production commands are the source of the existing shortcut guide", () => 
     "timeline.slip-segment": ["Alt+Drag"],
     "timeline.set-selection-start": ["I"],
     "timeline.set-selection-end": ["O"],
+    "audio.mark-stretch-start": ["Shift+I"],
+    "audio.mark-stretch-end": ["Shift+O"],
     "timeline.previous-keyframe": ["["],
     "timeline.next-keyframe": ["]"],
     "timeline.zoom-in": ["Ctrl+="],
@@ -164,6 +166,7 @@ test("production commands are the source of the existing shortcut guide", () => 
           { label: "Delete selected item", bindings: "Del or Backspace" },
           { label: "Adjust a segment's source", bindings: "Alt + Drag" },
           { label: "Set selected start / end", bindings: "I or O" },
+          { label: "Mark a stretch to mute", bindings: "Shift + I or Shift + O" },
           { label: "Previous / next keyframe", bindings: "[ or ]" },
           {
             label: "Zoom timeline in / out",
@@ -824,7 +827,7 @@ test("the production guide renders every physical key with one base keycap style
     ),
   );
 
-  assert.equal(shortcuts.search(shortcuts.sections, "").total, 28);
+  assert.equal(shortcuts.search(shortcuts.sections, "").total, 29);
   assert.deepEqual(
     Array.from(shortcutIds).filter((id) => !renderedIds.has(id)),
     [],

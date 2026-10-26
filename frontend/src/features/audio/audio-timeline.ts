@@ -615,6 +615,32 @@ export function installAudioTimeline(host: AudioTimelineHost) {
     render();
   }
 
+  // the keyboard's way to choose a stretch: Shift+I marks from the playhead to the lane's end and
+  // Shift+O from its start to the playhead, then either moves its own edge; M mutes the stretch.
+  // Plain I and O stay with trimming. The lane is the selected one, the source's for the video
+  function markStretch(edge: "start" | "end") {
+    const clip = selectedVideo();
+    const state = ensureState(clip);
+    if (!clip || !state || cutTask()) return;
+    if (rangeSelection) {
+      setRangeSelectionEdge(edge);
+      return;
+    }
+    const lane = selectedMute?.lane ?? (selectedTrackId === "video" ? "source" : selectedTrackId);
+    const total = sourceDuration(clip);
+    const at = Math.max(0, Math.min(total, sourceTime()));
+    const start = edge === "start" ? at : 0;
+    const end = edge === "start" ? total : at;
+    if (end - start < Mutes.MIN_MUTE) {
+      notify("Move the playhead so the selection keeps some length.", "err");
+      return;
+    }
+    setTimelineSelection(isSourceLane(lane) ? "source" : lane, null);
+    selectedMute = null;
+    rangeSelection = { lane, start, end };
+    render();
+  }
+
   function sourceMutedAt(
     clip: EditorClip,
     ranges: readonly MuteRange[] | undefined,
@@ -2575,6 +2601,15 @@ export function installAudioTimeline(host: AudioTimelineHost) {
     execute: function () {
       setSelectionBoundary("end");
     },
+  });
+  const canMarkStretch = () => !!selectedVideo()?.probed && !cutTask();
+  host.TuckShortcuts?.registerAction("audio.mark-stretch-start", {
+    enabled: canMarkStretch,
+    execute: () => markStretch("start"),
+  });
+  host.TuckShortcuts?.registerAction("audio.mark-stretch-end", {
+    enabled: canMarkStretch,
+    execute: () => markStretch("end"),
   });
   host.TuckShortcuts?.registerAction("timeline.split", function () {
     if (typeof host.splitAtPlayhead === "function") host.splitAtPlayhead();
