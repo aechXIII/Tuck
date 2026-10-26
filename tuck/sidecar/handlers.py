@@ -450,13 +450,17 @@ def _load_lut(api: BridgeAPI, params: dict[str, object]) -> object:
 
 
 def _analyze_cut(api: BridgeAPI, params: dict[str, object]) -> object:
+    path, work_id = params.get("path"), params.get("work_id")
+    # a read ahead for a video that isn't on screen says so; one for the screen leaves it out
+    background = params.get("background", False)
     if (
-        set(params) != {"path", "work_id"}
-        or not isinstance(params["path"], str)
-        or not isinstance(params["work_id"], str)
+        set(params) - {"background"} != {"path", "work_id"}
+        or not isinstance(path, str)
+        or not isinstance(work_id, str)
+        or not isinstance(background, bool)
     ):
         raise _ParameterError
-    return api.analyze_cut(params["path"], params["work_id"])
+    return api.analyze_cut(path, work_id, background=background)
 
 
 def _get_cut_analysis(api: BridgeAPI, params: dict[str, object]) -> object:

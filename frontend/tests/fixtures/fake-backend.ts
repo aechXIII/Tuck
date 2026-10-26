@@ -173,7 +173,8 @@ export async function installFakeBackend(
         createPlan: (request: unknown) => respond("createPlan", [request]),
         compilePreviewMix: (request: unknown) => respond("compilePreviewMix", [request]),
         exportFrame: (request: unknown) => respond("exportFrame", [request]),
-        analyzeCut: (path: string, workId: string) => respond("analyzeCut", [path, workId]),
+        analyzeCut: (path: string, workId: string, background?: boolean) =>
+          respond("analyzeCut", background ? [path, workId, true] : [path, workId]),
         getCutAnalysis: (path: string) => respond("getCutAnalysis", [path]),
         cancelCutWork: (workId: string) => respond("cancelCutWork", [workId]),
         enqueueWithOptions: (request: unknown) => respond("enqueueWithOptions", [request]),

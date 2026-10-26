@@ -6,7 +6,7 @@ import { formatBytes, formatTimeToHundredths } from "../editor/format.ts";
 import { toast } from "../editor/toast.ts";
 import { isQueueActive, queuedVideoLabel } from "../queue/queue-view.ts";
 import { swapLabel } from "../../ui/motion.ts";
-import { createCutState, cutSegmentStatus, cutStartUnchecked, cutTime, cutTrackSummary, encodedSeconds, mediaSeconds, reduceCutState, shownSegment } from "./cut-state.ts";
+import { createCutState, cutOutputLine, cutSegmentStatus, cutStartUnchecked, cutTime, cutTrackSummary, encodedSeconds, mediaSeconds, notReadyNote, reduceCutState, shownSegment, type NotReadyReason } from "./cut-state.ts";
 
 interface CutControlsDeps {
   session: EditorSession;
@@ -38,6 +38,12 @@ export function installCutControls(deps: CutControlsDeps) {
   let settled = Promise.resolve();
   let settle = () => {};
   let waiting = false;
+  // keyframes of the other Library videos are read one at a time while this task is open, so
+  // Export all cuts doesn't need every video opened first. The backend has one keyframe
+  // reader, so one read ahead at a time is all it can use, and the video on screen goes first.
+  let ahead: {clip:EditorClip;workId:string | null} | null = null;
+  let aheadTicket = 0;
+  let aheadTimer: ReturnType<typeof setTimeout> | undefined;
   const main = element("main");
   const playerBar = element("player-bar");
   // on narrow windows the Inspector opens over the stage; in the cut task it stops above the
@@ -92,11 +98,49 @@ export function installCutControls(deps: CutControlsDeps) {
     scanning = null;
   }
 
+  // a video that needs nothing more before Export all cuts: planned for its current cuts, or
+  // stopped by a problem that is shown when it is opened
+  function settledAhead(clip: EditorClip): boolean {
+    const current = state(clip);
+    return !!current.error || !!current.plan && current.requestKey === JSON.stringify(deps.request(clip));
+  }
+
+  function stopReadAhead(): void {
+    aheadTicket += 1;
+    clearTimeout(aheadTimer);
+    if (ahead?.workId) void client().cancelCutWork(ahead.workId);
+    ahead = null;
+  }
+
+  // waits a moment, so reading ahead never competes with what was just clicked or dragged
+  function readAheadSoon(): void {
+    clearTimeout(aheadTimer);
+    aheadTimer = setTimeout(readAhead,400);
+  }
+
+  function readAhead(): void {
+    if (!active || busy || waiting || ahead || pendingPath) return;
+    const shown = selected();
+    const clip = session.clipOrder.map(path => session.clips[path])
+      .find((item): item is EditorClip => !!item && item !== shown && item.probed && !item.error && !exporting(item) && !settledAhead(item));
+    if (!clip) return;
+    const ticket = ++aheadTicket;
+    ahead = {clip,workId:null};
+    // opening the video hands its read to the Inspector, which picks up where this left off
+    const current = () => active && !busy && aheadTicket === ticket && session.clips[clip.path] === clip && selected() !== clip;
+    void prepare(clip,current,ticket).finally(() => {
+      if (aheadTicket !== ticket) return;
+      ahead = null;
+      render();
+    });
+  }
+
   function setActive(value: boolean): void {
     active = value;
     // nothing to coalesce when the task opens, so keyframes start reading straight away
     if (value) refresh(0);
     else {
+      stopReadAhead();
       if (!busy) {
         ticket += 1;
         clearTimeout(timer);
@@ -129,7 +173,10 @@ export function installCutControls(deps: CutControlsDeps) {
     },delay);
   }
 
-  async function prepare(clip: EditorClip, current: () => boolean): Promise<CutPlanPreview | null> {
+  // aheadOf is the read-ahead ticket when the video isn't on screen; such a read waits behind
+  // the one on screen, and one stopped for it is simply read again later
+  async function prepare(clip: EditorClip, current: () => boolean, aheadOf?: number): Promise<CutPlanPreview | null> {
+    const background = aheadOf !== undefined;
     try {
       // each status read sends only the keyframes this clip doesn't hold yet
       let held = state(clip).analysis;
@@ -138,9 +185,10 @@ export function installCutControls(deps: CutControlsDeps) {
       if (!result.ok) throw new Error(result.error.message);
       if (["missing","cancelled","failed"].includes(result.value.status)) {
         const workId = crypto.randomUUID();
-        scanning = {clip,workId};
+        if (!background) scanning = {clip,workId};
+        else if (ahead && aheadTicket === aheadOf) ahead.workId = workId;
         clip.cutState = reduceCutState(state(clip),{type:"scan",workId});
-        result = await client().analyzeCut(clip.path,workId);
+        result = await client().analyzeCut(clip.path,workId,background);
       }
       while (current()) {
         if (!result.ok) throw new Error(result.error.message);
@@ -155,12 +203,15 @@ export function installCutControls(deps: CutControlsDeps) {
         if (selected() === clip) render();
         if (analysis.status === "ready") {
           if (!more) break;
+        } else if (background && analysis.status === "cancelled") {
+          return null;
         } else if (!["reading","pending"].includes(analysis.status)) {
           throw new Error(analysis.issue?.message ?? "Keyframes could not be read. Read them again to retry.");
         } else {
-          scanning = {clip,workId:analysis.work_id};
-          // a status read is cheap, and a short video is often read in well under a second
-          await new Promise(resolve => setTimeout(resolve,150));
+          if (!background) scanning = {clip,workId:analysis.work_id};
+          // a status read is cheap, and a short video is often read in well under a second;
+          // a read ahead is checked less often, since nobody is watching it
+          await new Promise(resolve => setTimeout(resolve,background ? 400 : 150));
           if (!current()) return null;
         }
         result = await client().getCutAnalysis(clip.path,keyframeCursor(held));
@@ -262,9 +313,11 @@ export function installCutControls(deps: CutControlsDeps) {
     else bar.removeAttribute("value");
     element("out-name").textContent = shown?.output_path.split(/[\\/]/).pop() || "Output appears when the cut is ready.";
     element("out-name").title = shown?.output_path ?? "";
+    element("out-plan").textContent = shown ? cutOutputLine(shown.segments.length,formatBytes(shown.estimated_bytes)) : "";
+    element("out-plan").hidden = !shown;
     const videoCodec = clip?.probeData?.video_codec === "h264" ? "H.264" : clip?.probeData?.video_codec?.toUpperCase() || "Video";
     const audioCodec = clip?.probeData?.audio_codec?.toUpperCase() || "Audio";
-    element("out-meta").textContent = shown ? `${shown.container.toUpperCase()} · ${videoCodec}${shown.include_audio ? ` + ${audioCodec}` : ""} · ${cutTime(mediaSeconds(shown.exported_duration))} · about ${formatBytes(shown.estimated_bytes)}` : "";
+    element("out-meta").textContent = shown ? `${shown.container.toUpperCase()} · ${videoCodec}${shown.include_audio ? ` + ${audioCodec}` : ""} · ${cutTime(mediaSeconds(shown.exported_duration))}` : "";
     const tracks = shown ? cutTrackSummary(shown) : {kept:"",dropped:[]};
     element("out-tracks").textContent = tracks.kept;
     element("out-tracks").hidden = !tracks.kept;
@@ -299,9 +352,26 @@ export function installCutControls(deps: CutControlsDeps) {
     all.textContent = `Export all cuts${clips.length ? ` (${clips.length})` : ""}`;
     all.disabled = !clips.length || busy || waiting || clips.some(item => !exportable(item));
     const note = element("btn-all-note");
-    note.textContent = all.disabled && clips.length > 1 ? "Every video needs its cuts ready first." : "";
+    note.textContent = all.disabled && clips.length > 1 && !busy && !waiting
+      ? notReadyNote(session.clipOrder.flatMap(path => {
+        const item = session.clips[path];
+        const reason = item && notReady(item);
+        return item && reason ? [{name:item.name,reason}] : [];
+      }))
+      : "";
     note.hidden = !note.textContent;
     deps.paintTimeline();
+    readAheadSoon();
+  }
+
+  function notReady(clip: EditorClip): NotReadyReason | null {
+    if (exportable(clip)) return null;
+    if (exporting(clip)) return "exporting";
+    if (clip.error) return "unreadable";
+    if (!clip.probed) return "details";
+    const current = state(clip);
+    if (current.error || current.plan?.issues.length) return "problem";
+    return "keyframes";
   }
 
   function focusRow(index: number): void {
@@ -320,6 +390,7 @@ export function installCutControls(deps: CutControlsDeps) {
       waiting = false;
     }
     if (busy) return;
+    stopReadAhead();
     const clips = all ? session.clipOrder.map(path => session.clips[path]).filter((clip): clip is EditorClip => !!clip) : selected() ? [selected()!] : [];
     if (!clips.length || clips.some(clip => !ready(clip) || exporting(clip))) return;
     const reviewed = clips.map(clip => ({clip,fingerprint:state(clip).plan!.fingerprint,requestKey:state(clip).requestKey}));

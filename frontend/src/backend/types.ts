@@ -186,7 +186,8 @@ export interface LutPayload extends JsonObject {
 
 export interface DomainBackendClient {
   exportFrame(request: FrameExportRequest): Promise<BackendResult<FrameExportResult>>;
-  analyzeCut(path: string, workId: string): Promise<BackendResult<CutAnalysisPayload>>;
+  /** a background read waits behind the video on screen and gives way to it */
+  analyzeCut(path: string, workId: string, background?: boolean): Promise<BackendResult<CutAnalysisPayload>>;
   getCutAnalysis(path: string, keyframes?: KeyframeCursor): Promise<BackendResult<CutAnalysisPayload>>;
   cancelCutWork(workId: string): Promise<BackendResult<CutCancellation>>;
   clearLutHistory(): Promise<BackendResult<LutHistoryClearedPayload>>;

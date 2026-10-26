@@ -435,3 +435,31 @@ def test_a_replaced_keyframe_list_gets_a_new_revision(tmp_path):
         service.close()
     assert revisions[0] == revisions[1] == started
     assert revisions[2] != started
+
+
+def test_a_read_ahead_says_so_and_anything_else_is_refused(api, monkeypatch, tmp_path):
+    path = tmp_path / "source.mp4"
+    path.write_bytes(b"fixture")
+    calls = []
+
+    def start(source, work_id, *, background):
+        calls.append((work_id, background))
+        return api._cut_analysis.get(source)
+
+    monkeypatch.setattr(api._cut_analysis, "start", start)
+    for work_id, extra in (("screen", {}), ("ahead", {"background": True})):
+        response = dispatch(
+            api, Request(work_id, "analyze_cut", {"path": str(path), "work_id": work_id, **extra})
+        )
+        assert response.ok
+    assert calls == [("screen", False), ("ahead", True)]
+    for background in (1, "yes", None):
+        bad = dispatch(
+            api,
+            Request(
+                "bad",
+                "analyze_cut",
+                {"path": str(path), "work_id": "x", "background": background},
+            ),
+        )
+        assert bad.error.code == "INVALID_REQUEST"

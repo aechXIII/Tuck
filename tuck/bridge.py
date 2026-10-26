@@ -393,10 +393,11 @@ class BridgeAPI:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
-    def analyze_cut(self, path: str, work_id: str) -> BridgeResult:
+    def analyze_cut(self, path: str, work_id: str, *, background: bool = False) -> BridgeResult:
         try:
             source = Path(validate_path(path))
-            return {"ok": True, **analysis_snapshot_dict(self._cut_analysis.start(source, work_id))}
+            snapshot = self._cut_analysis.start(source, work_id, background=background)
+            return {"ok": True, **analysis_snapshot_dict(snapshot)}
         except (ValueError, OSError) as exc:
             return {"ok": False, "error": str(exc), "code": "analysis_failed", "field": "cut"}
 

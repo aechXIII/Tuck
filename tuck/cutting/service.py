@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections import OrderedDict
+from collections import OrderedDict, deque
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from functools import partial
@@ -36,6 +36,12 @@ Scanner = Callable[[Path, Event, ProgressCallback, SourceIdentity], CutAnalysis]
 Previewer = Callable[[Path, Callable[[], bool], ProgressCallback], None]
 logger = logging.getLogger(__name__)
 
+# keyframes of the videos people opened, kept as before
+FOREGROUND_KEPT = 2
+# and of videos read ahead while the Lossless cut task is open; an analysis holds every packet's
+# timing, so this stays small and an older one is read again when it's needed
+BACKGROUND_KEPT = 4
+
 
 @dataclass(frozen=True)
 class AnalysisSnapshot:
@@ -60,6 +66,8 @@ class _Work:
     path: Path
     snapshot: AnalysisSnapshot
     cancel: Event = field(default_factory=Event)
+    # read ahead for a video nobody is looking at; it waits its turn and never stops other work
+    background: bool = False
 
 
 class CutAnalysisService:
@@ -76,13 +84,18 @@ class CutAnalysisService:
         self._condition = Condition()
         self._thread: Thread | None = None
         self._current: _Work | None = None
-        self._pending: _Work | None = None
+        self._pending: deque[_Work] = deque()
         self._closed = False
         self._history: OrderedDict[str, _Work] = OrderedDict()
         self._cache: OrderedDict[tuple[SourceIdentity, str], CutAnalysis] = OrderedDict()
         self._revisions = count(1)
 
-    def start(self, path: Path, work_id: str) -> AnalysisSnapshot:
+    def start(self, path: Path, work_id: str, *, background: bool = False) -> AnalysisSnapshot:
+        """Read a video's keyframes.
+
+        A read for the video on screen goes first and stops whatever is being read; a
+        background read waits behind other work and is the one stopped when they meet.
+        """
         if not work_id or len(work_id) > 128:
             raise ValueError("Analysis work ID must contain 1 to 128 characters")
         resolved = path.resolve()
@@ -91,31 +104,55 @@ class CutAnalysisService:
                 raise ValueError("Cut analysis is closed")
             if any(w.snapshot.work_id == work_id for w in self._history.values()):
                 raise ValueError("Analysis work ID must be new")
-            if self._current and self._current.snapshot.status in {"reading", "pending"}:
-                self._cancel_work(self._current)
             snapshot = AnalysisSnapshot(
                 work_id,
                 "pending",
                 AnalysisProgress(None, MediaTime(0)),
                 keyframes_revision=next(self._revisions),
             )
-            work = _Work(resolved, snapshot)
-            self._current = self._pending = work
+            work = _Work(resolved, snapshot, background=background)
+            replaced = self._history.get(str(resolved))
+            if replaced is not None and replaced.snapshot.status in {"reading", "pending"}:
+                self._cancel_work(replaced)
+            if background:
+                self._pending.append(work)
+            else:
+                # one video is on screen at a time, so an older read for the screen is dropped
+                for other in (self._current, *self._pending):
+                    if (
+                        other
+                        and (other is self._current or not other.background)
+                        and other.snapshot.status in {"reading", "pending"}
+                    ):
+                        self._cancel_work(other)
+                self._pending.appendleft(work)
             self._history[str(resolved)] = work
             self._history.move_to_end(str(resolved))
-            while len(self._history) > 2:
-                self._history.popitem(last=False)
+            self._forget_old_work()
             if self._thread is None:
                 self._thread = Thread(target=self._run, name="tuck-cut-analysis", daemon=True)
                 self._thread.start()
             self._condition.notify_all()
             return snapshot
 
+    def _forget_old_work(self) -> None:
+        # reads ahead only ever push out other reads ahead, so a video someone opened keeps
+        # its keyframes however many others are read meanwhile
+        for background, kept in ((False, FOREGROUND_KEPT), (True, BACKGROUND_KEPT)):
+            paths = [key for key, work in self._history.items() if work.background is background]
+            for key in paths[: max(0, len(paths) - kept)]:
+                work = self._history.pop(key)
+                if work.snapshot.status in {"reading", "pending"}:
+                    self._cancel_work(work)
+
     def get(self, path: Path) -> AnalysisSnapshot:
         with self._condition:
-            work = self._history.get(str(path.resolve()))
+            key = str(path.resolve())
+            work = self._history.get(key)
             if work is None:
                 return AnalysisSnapshot("", "missing", AnalysisProgress(None, MediaTime(0)))
+            # a video still being planned or exported stays among the ones kept
+            self._history.move_to_end(key)
             snapshot = work.snapshot
             if snapshot.analysis is not None:
                 try:
@@ -206,14 +243,14 @@ class CutAnalysisService:
     def _run(self) -> None:
         while True:
             with self._condition:
-                self._condition.wait_for(lambda: self._closed or self._pending is not None)
+                self._condition.wait_for(lambda: self._closed or bool(self._pending))
                 if self._closed:
                     return
-                pending = self._pending
-                self._pending = None
-                if pending is None or pending.cancel.is_set():
+                pending = self._pending.popleft()
+                if pending.cancel.is_set():
                     continue
                 work: _Work = pending
+                self._current = work
                 work.snapshot = replace(work.snapshot, status="reading")
 
             def progress(

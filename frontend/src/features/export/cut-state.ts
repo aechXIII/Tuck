@@ -124,3 +124,30 @@ export function cutTrackSummary(plan: CutPlanPreview): {kept: string; dropped: s
     .map(track => track.reason);
   return {kept: parts.length ? `Also keeps ${parts.join(", ")}` : "", dropped: [...new Set(reasons)]};
 }
+
+// what the cut makes, said once under the file name: several kept segments become one file
+export function cutOutputLine(segmentCount: number, size: string): string {
+  const made = segmentCount > 1 ? "Kept segments are joined into this one file" : "The kept segment is saved as this file";
+  return size ? `${made} · about ${size}` : made;
+}
+
+export type NotReadyReason = "details" | "keyframes" | "exporting" | "unreadable" | "problem";
+
+const NOT_READY_LABELS: Record<NotReadyReason, string> = {
+  details: "Reading video details",
+  keyframes: "Waiting for keyframes",
+  exporting: "Already exporting",
+  unreadable: "Can't be read",
+  problem: "Can't be cut yet",
+};
+
+// names the videos Export all cuts is waiting for, grouped by why, a few names per group
+export function notReadyNote(videos: readonly {name: string; reason: NotReadyReason}[], shown = 3): string {
+  const groups = new Map<NotReadyReason, string[]>();
+  for (const video of videos) groups.set(video.reason, [...groups.get(video.reason) ?? [], video.name]);
+  return [...groups].map(([reason, names]) => {
+    const listed = names.slice(0, shown).join(", ");
+    const more = names.length - shown;
+    return `${NOT_READY_LABELS[reason]}: ${listed}${more > 0 ? ` and ${more} more` : ""}.`;
+  }).join(" ");
+}

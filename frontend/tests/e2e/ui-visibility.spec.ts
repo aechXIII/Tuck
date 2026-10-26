@@ -141,6 +141,7 @@ test("Export all cuts says why it is unavailable", async ({page}) => {
   await page.goto("/");
   await page.locator(".export-actions > summary").click();
   await expect(page.locator("#btn-all")).toBeDisabled();
-  await expect(page.locator("#btn-all-note")).toHaveText("Every video needs its cuts ready first.");
-  await expect(page.locator("#btn-all")).toHaveAccessibleDescription("Every video needs its cuts ready first.");
+  // it names the videos it is still waiting for
+  await expect(page.locator("#btn-all-note")).toHaveText("Waiting for keyframes: Morning ride.mp4, Second.mp4.");
+  await expect(page.locator("#btn-all")).toHaveAccessibleDescription("Waiting for keyframes: Morning ride.mp4, Second.mp4.");
 });

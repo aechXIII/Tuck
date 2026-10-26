@@ -67,6 +67,9 @@ pub enum BackendCommand {
     AnalyzeCut {
         path: String,
         work_id: String,
+        // a read ahead for a video that isn't on screen; it waits behind the one that is
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        background: bool,
     },
     GetCutAnalysis {
         path: String,
@@ -239,8 +242,16 @@ impl BackendCommand {
                 ("get_media_url", payload)
             }
             Self::ReleaseMediaToken { token } => ("release_media_token", json!({ "token": token })),
-            Self::AnalyzeCut { path, work_id } => {
-                ("analyze_cut", json!({ "path": path, "work_id": work_id }))
+            Self::AnalyzeCut {
+                path,
+                work_id,
+                background,
+            } => {
+                let mut payload = json!({ "path": path, "work_id": work_id });
+                if *background {
+                    payload["background"] = json!(true);
+                }
+                ("analyze_cut", payload)
             }
             Self::GetCutAnalysis {
                 path,
@@ -535,6 +546,37 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn a_read_ahead_is_forwarded_only_when_asked_for() {
+        let ahead = serde_json::from_value::<BackendCommand>(json!({
+            "command": "analyze_cut",
+            "payload": {"path": "/media/a.mp4", "work_id": "w1", "background": true},
+        }))
+        .unwrap()
+        .to_sidecar_request("r1")
+        .unwrap();
+        assert_eq!(
+            ahead["params"],
+            json!({"path": "/media/a.mp4", "work_id": "w1", "background": true})
+        );
+        let shown = serde_json::from_value::<BackendCommand>(json!({
+            "command": "analyze_cut",
+            "payload": {"path": "/media/a.mp4", "work_id": "w2"},
+        }))
+        .unwrap()
+        .to_sidecar_request("r2")
+        .unwrap();
+        assert_eq!(
+            shown["params"],
+            json!({"path": "/media/a.mp4", "work_id": "w2"})
+        );
+        assert!(serde_json::from_value::<BackendCommand>(json!({
+            "command": "analyze_cut",
+            "payload": {"path": "/media/a.mp4", "work_id": "w3", "background": "yes"},
+        }))
+        .is_err());
     }
 
     #[test]

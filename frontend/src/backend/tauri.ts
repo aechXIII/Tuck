@@ -69,7 +69,7 @@ type TauriBackendCommand =
   | { command: "get_thumbnail"; payload: { path: string } }
   | { command: "get_media_url"; payload: { path: string } }
   | { command: "release_media_token"; payload: { token: string } }
-  | { command: "analyze_cut"; payload: { path: string; work_id: string } }
+  | { command: "analyze_cut"; payload: { path: string; work_id: string; background?: true } }
   | {
     command: "get_cut_analysis";
     payload: { path: string; keyframes_revision?: number; keyframes_from?: number };
@@ -460,10 +460,10 @@ class TauriTransport implements TauriBackendClient {
     );
   }
 
-  analyzeCut(path: string, workId: string): Promise<BackendResult<CutAnalysisPayload>> {
+  analyzeCut(path: string, workId: string, background = false): Promise<BackendResult<CutAnalysisPayload>> {
     return this.#request(
       "analyzeCut",
-      { command: "analyze_cut", payload: { path, work_id: workId } },
+      { command: "analyze_cut", payload: background ? { path, work_id: workId, background: true } : { path, work_id: workId } },
       isCutAnalysisPayload,
     );
   }

@@ -881,6 +881,7 @@ label.export-toggle {
 .cut-scan progress::-webkit-progress-bar { background: var(--raised-2); }
 .cut-scan progress::-webkit-progress-value { background: var(--accent); }
 .out-name { font: 600 calc(11.5px * var(--text-scale)) var(--font); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.out-plan { margin: 3px 0 0; font: 400 calc(11.5px * var(--text-scale))/1.4 var(--font); color: var(--muted); }
 .out-meta { margin-top: 3px; font: 400 calc(10px * var(--text-scale))/1.4 var(--mono); color: var(--dim); }
 #out-tracks { margin-top: 5px; font: 400 calc(10.5px * var(--text-scale))/1.45 var(--font); color: var(--muted); }
 /* export still goes ahead, so this reads as information rather than a warning */

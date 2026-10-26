@@ -131,10 +131,10 @@ class DeterministicFakeBackend implements BackendClient {
     );
   }
 
-  analyzeCut(path: string, workId: string) {
+  analyzeCut(path: string, workId: string, background = false) {
     return this.#record(
       "analyzeCut",
-      [path, workId],
+      background ? [path, workId, true] : [path, workId],
       this.#responses.analyzeCut ?? notConfigured("No cut analysis fixture is configured."),
     );
   }

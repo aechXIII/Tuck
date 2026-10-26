@@ -698,3 +698,86 @@ def test_a_pass_that_is_behind_cannot_take_keyframes_back(tmp_path):
     finally:
         release.set()
         cut_service.close()
+
+
+def _quick_analysis(identity):
+    from tuck.models.cutting import CutAnalysis, MediaTime
+
+    return CutAnalysis(
+        identity=identity,
+        streams=(),
+        origin=MediaTime(0),
+        frame_duration=MediaTime(1, 1, 30),
+        duration=MediaTime(1),
+        keyframes=(MediaTime(0),),
+        safe_ends=(),
+        audio_packets=(),
+        max_pts_dts_lag=MediaTime(0),
+        issues=(),
+        version="test",
+    )
+
+
+def test_reading_ahead_waits_for_the_video_on_screen_and_gives_way_to_it(tmp_path):
+    from tuck.cutting.analysis import check_cancel
+    from tuck.cutting.service import CutAnalysisService
+
+    shown, ahead, later = (tmp_path / f"{name}.mp4" for name in ("shown", "ahead", "later"))
+    for path in (shown, ahead, later):
+        path.write_bytes(path.name.encode())
+    gates = {path.name: Event() for path in (shown, ahead, later)}
+    started: list[str] = []
+
+    def scan(source, cancel, progress, identity):
+        started.append(source.name)
+        while not gates[source.name].wait(0.01):
+            check_cancel(cancel)
+        return _quick_analysis(identity)
+
+    service = CutAnalysisService(scanner=scan, previewer=lambda *_: None)
+
+    def status(path):
+        return service.get(path).status
+
+    try:
+        service.start(shown, "shown")
+        wait_until(lambda: started == ["shown.mp4"])
+        # a read ahead queues behind the video on screen instead of stopping it
+        service.start(ahead, "ahead", background=True)
+        assert status(shown) == "reading" and status(ahead) == "pending"
+        gates["shown.mp4"].set()
+        wait_until(lambda: status(shown) == "ready" and status(ahead) == "reading")
+        # opening another video stops the read ahead, which can be asked for again later
+        service.start(later, "later")
+        wait_until(lambda: status(ahead) == "cancelled")
+        gates["later.mp4"].set()
+        wait_until(lambda: status(later) == "ready")
+        assert started == ["shown.mp4", "ahead.mp4", "later.mp4"]
+    finally:
+        for gate in gates.values():
+            gate.set()
+        service.close()
+
+
+def test_reading_ahead_never_pushes_out_the_videos_people_opened(tmp_path):
+    from tuck.cutting.service import BACKGROUND_KEPT, CutAnalysisService
+
+    def scan(source, cancel, progress, identity):
+        return _quick_analysis(identity)
+
+    service = CutAnalysisService(scanner=scan, previewer=lambda *_: None)
+    opened = tmp_path / "opened.mp4"
+    opened.write_bytes(b"opened")
+    ahead = [tmp_path / f"ahead-{index}.mp4" for index in range(BACKGROUND_KEPT + 2)]
+    try:
+        service.start(opened, "opened")
+        wait_until(lambda: service.get(opened).status == "ready")
+        for index, path in enumerate(ahead):
+            path.write_bytes(path.name.encode())
+            service.start(path, f"ahead-{index}", background=True)
+            wait_until(lambda path=path: service.get(path).status == "ready")
+        assert service.get(opened).status == "ready"
+        assert [service.get(path).status for path in ahead[:2]] == ["missing", "missing"]
+        assert all(service.get(path).status == "ready" for path in ahead[2:])
+    finally:
+        service.close()
