@@ -356,6 +356,12 @@ int audio_output_failed(AudioOutput *o) {
     return failed;
 }
 
+/* opening already took the default device, or failed without one */
+int audio_output_unrouted(AudioOutput *o) {
+    (void)o;
+    return 0;
+}
+
 void audio_output_status(AudioOutput *o, AudioOutputStatus *status) {
     EnterCriticalSection(&o->lock);
     double played = o->played;

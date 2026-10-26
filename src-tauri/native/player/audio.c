@@ -449,6 +449,10 @@ void audio_track_volume(AudioTrack *t, float gain) {
     audio_output_volume(t->output, gain);
 }
 
+int audio_track_unrouted(AudioTrack *t) {
+    return audio_output_unrouted(t->output);
+}
+
 void audio_track_status(AudioTrack *t, AudioTrackStatus *status) {
     AudioOutputStatus output;
     audio_output_status(t->output, &output);

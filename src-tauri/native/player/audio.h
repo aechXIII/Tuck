@@ -39,6 +39,8 @@ int audio_track_set_mix(AudioTrack *track, const char *const *paths, const int *
    while `running`; `seconds` and `rate` only matter when the generation is new */
 void audio_track_want(AudioTrack *track, uint64_t generation, double seconds, double rate, int running);
 void audio_track_volume(AudioTrack *track, float gain);
+/* no sound device has taken the track's stream, as on a PipeWire with no sound devices */
+int audio_track_unrouted(AudioTrack *track);
 void audio_track_status(AudioTrack *track, AudioTrackStatus *status);
 
 #endif

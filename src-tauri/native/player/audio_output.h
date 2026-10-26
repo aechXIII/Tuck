@@ -37,6 +37,8 @@ void audio_output_pause(AudioOutput *output, int paused);
 void audio_output_volume(AudioOutput *output, float gain);
 /* the device stopped working; status says why */
 int audio_output_failed(AudioOutput *output);
+/* no device has taken the stream since it opened, so sound written to it is never heard */
+int audio_output_unrouted(AudioOutput *output);
 void audio_output_status(AudioOutput *output, AudioOutputStatus *status);
 
 #endif

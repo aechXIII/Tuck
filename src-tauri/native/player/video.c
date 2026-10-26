@@ -25,13 +25,14 @@
 #include "playback_state.h"
 #include "render.h"
 
-/* sound that should be heard but isn't for this long means no speaker takes it (a PipeWire with
-   no sound devices, as on desktops whose sound still runs through PulseAudio) */
+/* sound that should be heard but isn't for this long means no speaker takes it */
 #define SOUND_STALL_SECONDS 1.5
 #define NO_SPEAKER "No speaker is playing the sound."
 
-/* once nothing took the sound, later videos skip it instead of stalling again on their first
-   play; the library lives as long as the app */
+/* once no device at all took the sound (a PipeWire with no sound devices, as on desktops whose
+   sound still runs through PulseAudio), later videos skip it instead of stalling again on their
+   first play; a stall with a device there leaves them their sound. The library lives as long as
+   the app */
 static atomic_int speakers_missing;
 
 struct TuckVideo {
@@ -168,7 +169,7 @@ static void hear(TuckVideo *v, double now) {
     }
     tuck_player_sound_played(v->clock, sound.generation, sound.played, now);
     if (tuck_player_sound_stalled(v->clock, now, SOUND_STALL_SECONDS)) {
-        atomic_store(&speakers_missing, 1);
+        if (audio_track_unrouted(v->audio)) atomic_store(&speakers_missing, 1);
         lose_sound(v, NO_SPEAKER, now);
     }
 }

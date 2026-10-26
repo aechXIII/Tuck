@@ -109,6 +109,8 @@ struct AudioOutput {
     PcmQueue pcm;
     float gain;
     int paused, active, finished;
+    /* a format was agreed, which only happens once the stream is linked to a device */
+    int linked;
     /* frames handed to PipeWire in this generation */
     uint64_t submitted;
     double played;
@@ -219,9 +221,15 @@ static void on_process(void *opaque) {
     update_played(o);
 }
 
+static void on_param_changed(void *opaque, uint32_t id, const struct spa_pod *param) {
+    AudioOutput *o = opaque;
+    if (id == SPA_PARAM_Format && param) o->linked = 1;
+}
+
 static const struct pw_stream_events stream_events = {
     PW_VERSION_STREAM_EVENTS,
     .state_changed = on_state,
+    .param_changed = on_param_changed,
     .process = on_process,
 };
 
@@ -366,6 +374,13 @@ int audio_output_failed(AudioOutput *o) {
     int failed = o->error[0] != 0;
     pw.loop_unlock(o->loop);
     return failed;
+}
+
+int audio_output_unrouted(AudioOutput *o) {
+    pw.loop_lock(o->loop);
+    int unrouted = !o->linked;
+    pw.loop_unlock(o->loop);
+    return unrouted;
 }
 
 void audio_output_status(AudioOutput *o, AudioOutputStatus *status) {
