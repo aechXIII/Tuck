@@ -92,9 +92,15 @@ export function stopExportsQuestion(count: number | null, purpose: ExitPurpose):
       cancelLabel,
     };
   }
+  // unfinished exports are kept on disk and listed again, paused, when Tuck next opens
+  const comeBack = {
+    close: "Running and waiting exports stop now and come back paused the next time you open Tuck.",
+    update: "Running and waiting exports stop now. Tuck opens again once the update is installed, with them paused.",
+    restart: "Running and waiting exports stop now. Tuck opens again right away, with them paused.",
+  }[purpose];
   return {
     title: `Stop ${exportsPhrase(count)} and ${outcome}?`,
-    message: `Exports that are running or waiting stop now. Finished exports are kept.${reopens}`,
+    message: `${comeBack} Finished exports are kept.`,
     confirmLabel,
     cancelLabel,
   };
