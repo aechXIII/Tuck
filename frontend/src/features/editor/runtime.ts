@@ -48,7 +48,7 @@ import { segmentsAtExportedStarts } from "../timeline/cut-starts.ts";
 import { installQueue, type QueueApi } from "../queue/queue.ts";
 import { installSettings, type SettingsApi } from "../settings/settings.ts";
 import { checkUpdates, checkUpdatesFromSettings } from "./updates.ts";
-import { routeDroppedPaths } from "./drop-routing.ts";
+import { routeDroppedPaths, skippedDropMessage } from "./drop-routing.ts";
 import { fetchPlatformCapabilities, shouldShowUpdater, supportsFileDragOut, usesElementFullscreen } from "../../platform/capabilities.ts";
 import { errorSummary, formatBytes, formatTime, withReason } from "./format.ts";
 import {
@@ -820,11 +820,14 @@ export function installEditorRuntime(
     bindDelegatedEvents(windowRef.document.body, handlers);
   }
 
-  // dropped and pasted files go to the same places: audio to the audio panel, the rest to the Library
+  // dropped and pasted files go to the same places: audio to the audio panel, videos to the
+  // Library, and anything else is left out with a word about it (the clipboard is filtered already)
   function importFiles(paths: readonly string[]): void {
-    const { videoPaths, audioPaths } = routeDroppedPaths(paths);
+    const { videoPaths, audioPaths, skippedPaths } = routeDroppedPaths(paths);
     if (videoPaths.length) library.addFiles(videoPaths);
     if (audioPaths.length) audio.addAudioFiles(audioPaths, []);
+    const skipped = skippedDropMessage(skippedPaths);
+    if (skipped) toast(skipped);
   }
 
   // a clipboard without files adds nothing and says nothing, like pasting into an empty field

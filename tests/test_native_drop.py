@@ -112,11 +112,15 @@ def test_file_pickers_offer_exactly_the_files_tuck_serves() -> None:
     assert _rust_extensions("AUDIO_EXTENSIONS") == AUDIO_EXTENSIONS
 
 
-def test_drop_routing_sends_exactly_the_served_audio_files_to_the_audio_panel() -> None:
+def test_drop_routing_takes_exactly_the_served_videos_and_audio() -> None:
     source = (ROOT / "frontend/src/features/editor/drop-routing.ts").read_text(encoding="utf-8")
-    match = re.search(r"AUDIO_DROP_EXTENSIONS = new Set\(\[(.*?)\]\)", source, re.DOTALL)
-    assert match is not None
-    assert set(re.findall(r'"(\.[a-z0-9]+)"', match.group(1))) == AUDIO_EXTENSIONS
+    for name, served in (
+        ("VIDEO_DROP_EXTENSIONS", VIDEO_EXTENSIONS),
+        ("AUDIO_DROP_EXTENSIONS", AUDIO_EXTENSIONS),
+    ):
+        match = re.search(rf"{name} = new Set\(\[(.*?)\]\)", source, re.DOTALL)
+        assert match is not None, name
+        assert set(re.findall(r'"(\.[a-z0-9]+)"', match.group(1))) == served, name
 
 
 def test_every_served_file_type_has_a_content_type() -> None:

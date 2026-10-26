@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { isAudioPath, routeDroppedPaths } from "../../src/features/editor/drop-routing.ts";
+import { isAudioPath, routeDroppedPaths, skippedDropMessage } from "../../src/features/editor/drop-routing.ts";
 
 test("audio extensions are recognized regardless of case", () => {
   assert.equal(isAudioPath("/music/Sushi Dip.mp3"), true);
@@ -31,4 +31,20 @@ test("an all-audio drop routes nothing to the Library", () => {
   const { videoPaths, audioPaths } = routeDroppedPaths(["/x/one.mp3", "/x/two.aac"]);
   assert.deepEqual(videoPaths, []);
   assert.deepEqual(audioPaths, ["/x/one.mp3", "/x/two.aac"]);
+});
+
+test("a drop leaves out what is neither video nor audio, as pasting does, and says so", () => {
+  const routed = routeDroppedPaths([
+    "C:\\clips\\take.MKV",
+    "C:\\notes\\plan.txt",
+    "/a/folder.with.dots",
+    "/a/Clips",
+    "/a/.mp4",
+  ]);
+  assert.deepEqual(routed.videoPaths, ["C:\\clips\\take.MKV"]);
+  assert.deepEqual(routed.audioPaths, []);
+  assert.deepEqual(routed.skippedPaths, ["C:\\notes\\plan.txt", "/a/folder.with.dots", "/a/Clips", "/a/.mp4"]);
+  assert.equal(skippedDropMessage([]), null);
+  assert.equal(skippedDropMessage(["C:\\notes\\plan.txt"]), "Skipped plan.txt, which isn’t a video or audio file.");
+  assert.equal(skippedDropMessage(routed.skippedPaths), "Skipped 4 files that aren’t videos or audio.");
 });
