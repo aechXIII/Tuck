@@ -97,6 +97,8 @@ export function createSourceAudioPreview(host: SourcePreviewHost) {
       desired = { time, rate, base, playing, levels };
       apply();
     },
+    /** a video's streams are chosen, loading or playing, so there is something to clear */
+    active: () => selectedPath !== null || tracks.length > 0,
     clear,
   };
 }

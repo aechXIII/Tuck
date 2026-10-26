@@ -45,6 +45,8 @@ export interface AudioTimelineHost {
   getTimelineTime?: () => number;
   /** the native player plays the whole mix itself, from Python's compiled pieces */
   nativeAudio?: () => boolean;
+  /** why the native player plays without sound, said where the page's own preview says its problems */
+  nativeSoundProblem?: () => string | null;
   /** where the player is in the video's own source time; null in a timeline gap */
   getSourceTime?: () => number | null;
   isPlaying?: () => boolean;
@@ -221,14 +223,20 @@ export function installAudioTimeline(host: AudioTimelineHost) {
   const windowRef = host.windowRef ?? window;
   const notify = host.toast ?? toast;
   const confirm = host.confirmToast ?? confirmToast;
+  // one line says what keeps the preview's sound from playing; it is a live region, so an
+  // unchanged message isn't written again
+  let previewStatusText: string | null = null;
+  function showPreviewStatus(message: string | null): void {
+    if (message === previewStatusText) return;
+    previewStatusText = message;
+    const status = byId("source-audio-preview-status");
+    if (status) { status.textContent = message ?? ""; status.hidden = !message; }
+  }
   const sourcePreview = createSourceAudioPreview({
     request: (path, track) => getBackendClient().getMediaUrl(path, track),
     release: async (token) => { await getBackendClient().releaseMediaToken(token); },
     player: browserSourcePreviewPlayers(documentRef, windowRef),
-    status(message) {
-      const status = byId("source-audio-preview-status");
-      if (status) { status.textContent = message ?? ""; status.hidden = !message; }
-    },
+    status: showPreviewStatus,
   });
 
   let selectedClipId: string | null = null;
@@ -1740,8 +1748,9 @@ export function installAudioTimeline(host: AudioTimelineHost) {
     updatePlayheads(time, total);
     if (host.nativeAudio?.()) {
       // the native player plays the whole mix, so the page's own audio stays quiet
-      void sourcePreview.clear();
+      if (sourcePreview.active()) void sourcePreview.clear();
       stopPreviewElements();
+      showPreviewStatus(host.nativeSoundProblem?.() ?? null);
       return;
     }
     let base = previewBaseVolume();

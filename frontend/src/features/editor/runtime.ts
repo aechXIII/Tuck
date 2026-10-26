@@ -270,6 +270,7 @@ export function installEditorRuntime(
   const audio = installAudioTimeline({
     session,
     nativeAudio: () => nativeAudio,
+    nativeSoundProblem: () => (nativeAudio ? player.soundProblem?.() ?? null : null),
     cutTask: () => encoding?.workflow() === 2,
     byId,
     documentRef: windowRef.document,

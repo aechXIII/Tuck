@@ -676,6 +676,35 @@ test("a video that leaves the stage stops playing, and its replies are ignored",
   }
 });
 
+test("the player says why the engine plays without sound, and the next video starts without it", async () => {
+  const run = setup();
+  try {
+    await run.load();
+    assert.equal(run.player.soundProblem?.(), null);
+    run.fixture.sound = { state: "unavailable", error: "No speaker is playing the sound." };
+    run.player.togglePlay();
+    await run.advance(250);
+    assert.equal(run.player.soundProblem?.(),
+      "The preview plays without sound. No speaker is playing the sound. Export still works.");
+    run.player.togglePlay();
+    await run.advance(250);
+
+    run.video.dispatchEvent(new CustomEvent(SOURCE_EVENT, { detail: null }));
+    await settle();
+    assert.equal(run.player.soundProblem?.(), null);
+    // a sound that plays, or a file without any, is no problem; an empty reason still says what happened
+    run.fixture.sound = { state: "none", error: "" };
+    await run.load();
+    assert.equal(run.player.soundProblem?.(), null);
+    run.fixture.sound = { state: "unavailable", error: "" };
+    run.player.togglePlay();
+    await run.advance(250);
+    assert.equal(run.player.soundProblem?.(), "The preview plays without sound. Export still works.");
+  } finally {
+    run.player.dispose();
+  }
+});
+
 test("a mix compiled for a video the engine refused never reaches the engine", async () => {
   const errors: unknown[] = [];
   const original = console.error;

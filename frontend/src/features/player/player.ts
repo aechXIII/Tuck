@@ -82,6 +82,8 @@ export interface PlayerApi {
   changeSpeed: (direction: number) => void;
   /** the edit changed what should be heard; the native player compiles its mix again */
   refreshMix?: () => void;
+  /** why the native player plays the shown video without sound; null while its sound plays */
+  soundProblem?: () => string | null;
   resetSpeed: () => void;
   dispose: () => void;
 }

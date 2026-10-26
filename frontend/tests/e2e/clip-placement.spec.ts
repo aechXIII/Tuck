@@ -2,6 +2,8 @@ import { expect, test, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { healthyBackendFixture, installFakeBackend } from "../fixtures/fake-backend";
+import { fixtureEngineScript } from "../fixtures/fixture-engine";
+import { answerMixes, mixAnswers, newestMixRequest } from "../fixtures/native-mix";
 import type { JsonObject } from "../../src/backend/types.ts";
 
 const nativeMix = process.env.TUCK_E2E_NATIVE_PREVIEW === "engine";
@@ -9,7 +11,7 @@ const NATIVE_MIX = "the native player plays the sound in its own mix, so the pag
 
 declare global { interface Window { __clipPlacementAudio: HTMLAudioElement[] } }
 
-async function open(page: Page, width = 1240, media = false) {
+async function open(page: Page, width = 1240, media = false, native = false) {
   const fixture = healthyBackendFixture();
   fixture.startup.files = ["C:\\videos\\Video.mp4"];
   fixture.responses.probeFile = { ok: true, data: { duration: media ? 16 : 60, width: 1920, height: 1080, fps: 30, has_audio: true, file_size: 15000000 } };
@@ -40,6 +42,8 @@ async function open(page: Page, width = 1240, media = false) {
     });
   }
   await installFakeBackend(page, fixture);
+  // this spec's own shell stand-in, so the native versions run in every e2e run
+  if (native) await page.addInitScript({ content: fixtureEngineScript({ nativePreview: "engine" }) });
   await page.addInitScript(() => {
     const backend = window.tuckBackendClient!;
     let saved: JsonObject = {};
@@ -131,6 +135,87 @@ test("music continues through a black gap and the video resumes at its retained 
   await expect.poll(() => page.locator("#vid").evaluate((video: HTMLVideoElement) => video.currentTime)).toBeGreaterThan(source);
   await page.locator("#btn-play").click();
   await expect(page.locator("#btn-save-frame")).toBeEnabled();
+});
+
+// the native player plays the timeline and the mix Python compiles, so what it gets is checked
+function lastEdits(page: Page) {
+  return page.evaluate(() => window.__fixtureEngine?.edits.at(-1));
+}
+
+function lastSeek(page: Page): Promise<number | undefined> {
+  return page.evaluate(() => {
+    const seeks = (window.__fixtureEngine?.calls ?? []).map((call) => call.args.command as { kind?: string; seconds?: number } | undefined)
+      .filter((command) => command?.kind === "seek");
+    return seeks.at(-1)?.seconds;
+  });
+}
+
+async function playsNothingItself(page: Page): Promise<void> {
+  await page.waitForTimeout(500);
+  expect(await page.evaluate(() => window.__clipPlacementAudio.length)).toBe(0);
+  expect(await page.locator("#vid").evaluate((video: HTMLVideoElement) => video.paused)).toBe(true);
+}
+
+test("the native player gets moved footage and added music in project time", async ({ page }) => {
+  await open(page, 1240, true, true);
+  await answerMixes(page, 16);
+  await page.getByRole("button", { name: "Add audio", exact: true }).click();
+  const source = await trimAndMove(page);
+  // the retained footage starts the engine's timeline, and the music is mixed where it sits
+  await expect.poll(() => lastEdits(page)).toEqual({
+    duration: 16, segments: [{ start: 0, end: expect.closeTo(16 - source, 3), sourceStart: expect.closeTo(source, 3) }],
+  });
+  await expect.poll(() => newestMixRequest(page)).toMatchObject({
+    segments: [{ start: expect.closeTo(source, 3), timeline_start: expect.closeTo(0, 4) }],
+    audio_tracks: [{ clips: [{ source_in: 0, timeline_start: 0 }] }],
+  });
+  await expect.poll(async () => {
+    const { asked, playing } = await mixAnswers(page);
+    return asked > 0 && playing === asked;
+  }).toBe(true);
+
+  // a seek is in project time, and the hidden video keeps the footage shown there
+  const ruler = (await page.locator("#sequence-ruler").boundingBox())!;
+  await page.mouse.click(ruler.x + ruler.width / 16, ruler.y + ruler.height / 2);
+  await expect.poll(() => lastSeek(page)).toBeCloseTo(1, 1);
+  await expect.poll(() => page.locator("#vid").evaluate((video: HTMLVideoElement) => video.currentTime)).toBeCloseTo(source + 1, 1);
+  await page.locator("#btn-play").click();
+  await expect(page.locator("#btn-play")).toHaveClass(/playing/);
+  await playsNothingItself(page);
+  await page.locator("#btn-play").click();
+  await expect(page.locator("#btn-play")).not.toHaveClass(/playing/);
+});
+
+test("the native player plays through a black gap into the moved clip", async ({ page }) => {
+  await open(page, 1240, true, true);
+  await answerMixes(page, 16);
+  await page.getByRole("button", { name: "Add audio", exact: true }).click();
+  const source = await trimAndMove(page);
+  const clip = (await page.locator(".tl-segment").boundingBox())!;
+  const track = (await page.locator("#tl-track").boundingBox())!;
+  await page.mouse.move(clip.x + 100, clip.y + clip.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(clip.x + 100 + track.width / 8, clip.y + clip.height / 2, { steps: 5 });
+  await page.mouse.up();
+  // two seconds of black before the clip, which keeps its footage
+  await expect.poll(async () => (await lastEdits(page))?.segments[0]?.start ?? 0).toBeCloseTo(2, 1);
+  expect((await lastEdits(page))?.segments[0]?.sourceStart).toBeCloseTo(source, 3);
+  await expect.poll(() => newestMixRequest(page)).toMatchObject({
+    segments: [{ timeline_start: expect.closeTo(2, 1) }], audio_tracks: [{ clips: [{ timeline_start: 0 }] }],
+  });
+
+  const ruler = (await page.locator("#sequence-ruler").boundingBox())!;
+  await page.mouse.click(ruler.x + 1, ruler.y + ruler.height / 2);
+  await expect(page.locator("#timeline-gap-caption")).toBeVisible();
+  await expect(page.locator("#btn-save-frame")).toBeDisabled();
+  await page.locator("#btn-play").click();
+  await expect(page.locator("#btn-play")).toHaveClass(/playing/);
+  // the music plays in the engine's mix through the gap, and the picture comes in with the clip
+  await expect(page.locator("#timeline-gap-caption")).toBeHidden({ timeout: 5000 });
+  await playsNothingItself(page);
+  await page.locator("#btn-play").click();
+  await expect(page.locator("#btn-save-frame")).toBeEnabled();
+  await expect.poll(() => page.locator("#vid").evaluate((video: HTMLVideoElement) => video.currentTime)).toBeGreaterThan(source);
 });
 
 test("keyboard moves preserve footage and focus even when preview is unavailable", async ({ page }) => {

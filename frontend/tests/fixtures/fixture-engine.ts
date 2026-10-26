@@ -33,8 +33,16 @@ export interface FixtureLut {
   checksum: number;
 }
 
+/** What the engine says about the open video's sound, as the library reports it. */
+export interface FixtureSound {
+  state: "none" | "playing" | "unavailable";
+  error: string;
+}
+
 export interface FixtureEngine {
   invoke(command: string, args: unknown, options?: { headers?: Record<string, string> }): Promise<unknown>;
+  /** the sound each status reports; null reports no video, as the bare clock does */
+  sound: FixtureSound | null;
   /** every LUT the page sent, in order */
   luts: FixtureLut[];
   /** every timeline (its length and segments) and every mix the page sent, in order */
@@ -113,7 +121,10 @@ export function createFixtureEngine(options: FixtureEngineOptions = {}): Fixture
       seekPending: p.pending,
       ended: p.ended,
       rate: p.rate,
-      video: null,
+      video: engine.sound === null ? null : {
+        decoder: "fixture", hardware: false, softwareReason: null, frameRate: 30, presented: 0,
+        failed: false, error: "", sound: { state: engine.sound.state, underruns: 0, error: engine.sound.error },
+      },
     };
   }
 
@@ -242,6 +253,7 @@ export function createFixtureEngine(options: FixtureEngineOptions = {}): Fixture
   }
 
   const engine: FixtureEngine = {
+    sound: null,
     calls,
     luts,
     edits,

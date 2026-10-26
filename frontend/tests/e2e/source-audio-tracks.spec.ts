@@ -1,13 +1,15 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { healthyBackendFixture, installFakeBackend } from "../fixtures/fake-backend";
+import { fixtureEngineScript } from "../fixtures/fixture-engine";
+import { answerMixes, mixAnswers, newestMixRequest } from "../fixtures/native-mix";
 
 const VIDEO = "C:\\media\\Recording.mkv";
 const WAVEFORM = "data:image/svg+xml," + encodeURIComponent(
   '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="24"><path d="M20 4v16M60 2v20" stroke="white"/></svg>',
 );
 
-async function open(page: Page, audioStreamCount: number | undefined, waveform = WAVEFORM): Promise<void> {
+async function open(page: Page, audioStreamCount: number | undefined, waveform = WAVEFORM, native = false): Promise<void> {
   const fixture = healthyBackendFixture();
   fixture.responses.pickFiles = { ok: true, files: [VIDEO] };
   fixture.responses.probeFile = {
@@ -23,7 +25,10 @@ async function open(page: Page, audioStreamCount: number | undefined, waveform =
   fixture.responses.releaseMediaToken = { ok: true };
   await page.setViewportSize({ width: 1440, height: 900 });
   await installFakeBackend(page, fixture);
+  // this spec's own shell stand-in, so the native version runs in every e2e run
+  if (native) await page.addInitScript({ content: fixtureEngineScript({ nativePreview: "engine" }) });
   await page.goto("/");
+  if (native) await answerMixes(page, 12);
   await page.locator("#btn-add").click();
 }
 
@@ -65,6 +70,42 @@ test("multitrack preview asks for each exact audio stream and reports unavailabl
     .filter((call) => call.method === "getMediaUrl" && call.args.length === 2)
     .map((call) => call.args))).toEqual([[VIDEO, 0], [VIDEO, 1]]);
   await expect(page.locator("#source-audio-preview-status")).toContainText("Could not preview source audio");
+});
+
+test("the native player gets every audio track in its mix and the page says when it can't play them", async ({ page }) => {
+  await open(page, 2, WAVEFORM, true);
+  await page.locator("#insp-tab-edit").click();
+  const status = page.locator("#source-audio-preview-status");
+
+  // the engine reads each stream from the file itself, so the page asks for no stream links
+  await expect.poll(() => newestMixRequest(page)).toMatchObject({
+    source: VIDEO, source_audio_extra_tracks: [{ muted: false, gain_db: 0 }],
+  });
+  await expect.poll(() => mixAnswers(page)).toEqual({ asked: 1, playing: 1 });
+  expect(await page.evaluate(() => (window.__tuckFakeBackendCalls ?? [])
+    .filter((call) => call.method === "getMediaUrl" && call.args.length === 2).length)).toBe(0);
+  await expect(status).toBeHidden();
+
+  // the engine plays on its own clock when the device takes no sound, and the page says so
+  await page.evaluate(() => { window.__fixtureEngine!.sound = { state: "unavailable", error: "No speaker is playing the sound." }; });
+  await page.locator("#btn-play").click();
+  await expect(status).toHaveText("The preview plays without sound. No speaker is playing the sound. Export still works.");
+  await page.locator("#btn-play").click();
+  await expect(page.locator("#btn-play")).not.toHaveClass(/playing/);
+  // while it plays the line is written once, not on every status
+  const writes = await status.evaluate((element) => new Promise<number>((done) => {
+    let count = 0;
+    const watch = new MutationObserver((changes) => { count += changes.length; });
+    watch.observe(element, { childList: true, characterData: true, subtree: true });
+    (document.getElementById("btn-play") as HTMLButtonElement).click();
+    setTimeout(() => { watch.disconnect(); done(count); }, 600);
+  }));
+  expect(writes).toBe(0);
+  await page.locator("#btn-play").click();
+
+  // the message belongs to the video, so it leaves with it
+  await page.getByRole("button", { name: "Remove Recording.mkv" }).click();
+  await expect(status).toBeHidden();
 });
 
 test("an empty waveform response leaves the mixer responsive and does not retry itself", async ({ page }) => {

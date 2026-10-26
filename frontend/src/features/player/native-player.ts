@@ -54,6 +54,12 @@ const LINK_FAILURES = new Set([
   "MALFORMED_BRIDGE_RESULT",
 ]);
 
+// the engine's reason, such as "No speaker is playing the sound.", in a calm sentence
+function soundProblemText(reason: string): string {
+  const why = reason.trim();
+  return `The preview plays without sound.${why ? ` ${why}` : ""} Export still works.`;
+}
+
 /**
  * The editor's player driven by the native engine instead of the `<video>` element. The engine
  * owns the clock in timeline time; the page only asks it to play, pause and seek, and the hidden
@@ -90,6 +96,8 @@ export function installNativePlayer(
   let sentSeekId = 0;
   let previewSec: number | null = null;
   let previewGap = false;
+  // what the engine said about the shown video's sound, when it can't play it
+  let soundProblem: string | null = null;
   // the epoch whose decoder failure was already reported
   let reportedFailure = -1;
   let reportedSoftware = -1;
@@ -315,6 +323,11 @@ export function installNativePlayer(
       reportedSoftware = epoch;
       console.info("The native player decodes in software", next.video.decoder, next.video.softwareReason);
     }
+    // the page plays none of the sound itself, so it says when the engine can't
+    const sound = next.video?.sound;
+    const problem = sound?.state === "unavailable" ? soundProblemText(sound.error) : null;
+    const soundChanged = problem !== soundProblem;
+    soundProblem = problem;
     if (next.ended && wantPlaying) {
       finish();
       return;
@@ -325,7 +338,7 @@ export function installNativePlayer(
       mirror(sourcePosition());
     }
     // the source and imported audio follow this clock as they follow the HTML video's timeupdate
-    if (wasPaused !== next.paused || !next.paused || confirmed) host.AudioTimeline?.syncPreview?.();
+    if (wasPaused !== next.paused || !next.paused || confirmed || soundChanged) host.AudioTimeline?.syncPreview?.();
     schedulePoll();
   }
 
@@ -580,6 +593,10 @@ export function installNativePlayer(
     stopPoll();
     host.byId("btn-play")?.classList.remove("playing");
     setGap(false);
+    if (soundProblem !== null) {
+      soundProblem = null;
+      host.AudioTimeline?.syncPreview?.();
+    }
     if (stop) enqueue({ kind: "stop" });
   }
 
@@ -759,6 +776,7 @@ export function installNativePlayer(
     changeSpeed: (direction) => setSpeed(nextPlaybackSpeed(speed, direction)),
     resetSpeed: () => setSpeed(1),
     refreshMix: requestMix,
+    soundProblem: () => soundProblem,
     dispose: () => {
       if (disposed) return;
       resetSource();
