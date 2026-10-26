@@ -172,6 +172,8 @@ static void finish(AudioTrack *t) {
     audio_output_finish(t->output, t->generation);
 }
 
+static void take_mix(AudioTrack *t);
+
 /* takes up a new generation; 0 while there is none to play */
 static int follow_generation(AudioTrack *t) {
     pthread_mutex_lock(&t->lock);
@@ -202,6 +204,9 @@ static int follow_generation(AudioTrack *t) {
         t->generation_start = seconds;
         t->sent = 0;
         t->finished = 0;
+        /* the edit that made the timeline longer may be waiting still; against the old length a
+           start past it would finish at once, and the clock would wait for sound that never comes */
+        take_mix(t);
         if (seconds >= t->duration) finish(t);
     }
     follow_running(t);
