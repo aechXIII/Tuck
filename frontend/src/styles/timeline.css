@@ -982,7 +982,8 @@ body.task-cut #timeline-audio-tools {
   user-select: none;
 }
 
-.seq-tick:last-child span {
+/* the video's last tick keeps its label inside the ruler */
+.seq-tick.last span {
   right: 0;
   left: auto;
   transform: none;

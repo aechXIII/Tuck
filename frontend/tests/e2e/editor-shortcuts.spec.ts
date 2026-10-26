@@ -92,17 +92,18 @@ test("default editor keys run the same commands as the buttons", async ({ page }
   await page.keyboard.press("Delete");
   await expect(page.locator(".tl-segment")).toHaveCount(1);
 
+  // the slider counts doublings, so a fitted timeline reads 0
   const zoom = page.locator("#tl-zoom-slider");
-  await expect(zoom).toHaveValue("1");
+  await expect(zoom).toHaveValue("0");
   await page.keyboard.press("Control+=");
-  await expect.poll(async () => Number(await zoom.inputValue())).toBeGreaterThan(1);
+  await expect.poll(async () => Number(await zoom.inputValue())).toBeGreaterThan(0);
   const zoomedIn = Number(await zoom.inputValue());
   await page.keyboard.press("Control+-");
   await expect.poll(async () => Number(await zoom.inputValue())).toBeLessThan(zoomedIn);
   await page.keyboard.press("Control+=");
   await page.keyboard.press("Control+=");
   await page.keyboard.press("Control+0");
-  await expect(zoom).toHaveValue("1");
+  await expect(zoom).toHaveValue("0");
 
   await page.keyboard.press("Control+,");
   await expect(page.getByRole("dialog", { name: "Settings" })).toBeVisible();

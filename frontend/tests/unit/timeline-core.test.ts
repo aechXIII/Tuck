@@ -16,6 +16,54 @@ test("timeline zoom stays inside the supported range", () => {
   assert.equal(timeline.clampZoom(Number.NaN), 1);
 });
 
+test("long videos zoom until a screen shows about two seconds", () => {
+  // short videos keep the 8x they always had
+  assert.equal(timeline.maxZoom(12, 1000), 8);
+  assert.equal(timeline.maxZoom(0, 1000), 8);
+  // an hour shows 3.6 s per 1000 px screen, held back by the million-pixel cap
+  assert.equal(timeline.maxZoom(3600, 1000), 1000);
+  assert.equal(3600 / timeline.maxZoom(3600, 1000), 3.6);
+  // ten minutes reach the full two seconds
+  assert.equal(timeline.maxZoom(600, 1000), 300);
+  assert.equal(timeline.clampZoom(5000, timeline.maxZoom(600, 1000)), 300);
+  assert.equal(timeline.clampZoom(0.5, 300), 1);
+});
+
+test("the zoom slider moves in doublings and the wheel zooms smoothly", () => {
+  assert.equal(timeline.zoomSliderValue(1), 0);
+  assert.equal(timeline.zoomSliderValue(8), 3);
+  assert.equal(timeline.zoomFromSlider(3), 8);
+  assert.equal(timeline.zoomFromSlider("bad"), 1);
+  const zoomedIn = timeline.wheelZoom(4, -100, 0, 64);
+  assert.ok(zoomedIn > 4 && zoomedIn < 5, String(zoomedIn));
+  assert.ok(timeline.wheelZoom(4, 100, 0, 64) < 4);
+  // a line-based wheel notch counts as 16 px per line
+  assert.equal(timeline.wheelZoom(4, -3, 1, 64), timeline.wheelZoom(4, -48, 0, 64));
+  assert.equal(timeline.wheelZoom(60, -2000, 0, 64), 64);
+  assert.equal(timeline.wheelZoom(1.1, 2000, 0, 64), 1);
+  assert.equal(timeline.wheelZoom(3, 0, 0, 64), 3);
+});
+
+test("zooming around the pointer keeps the time under it in place", () => {
+  // the track starts 140 px in; the pointer sat 300 px into the frame over 25% of the track
+  const scroll = timeline.pointerAnchoredScroll(140, 8000, 0.25, 300, 1000, 8140);
+  assert.equal(scroll, 140 + 2000 - 300);
+  // never past either end
+  assert.equal(timeline.pointerAnchoredScroll(140, 8000, 0, 600, 1000, 8140), 0);
+  assert.equal(timeline.pointerAnchoredScroll(140, 8000, 1, 10, 1000, 8140), 7140);
+});
+
+test("a deep zoom draws only the ruler ticks on screen", () => {
+  assert.deepEqual(timeline.rulerTickRange(3600, 0.1, 1800, 1803.6), { first: 17999, last: 18037 });
+  assert.deepEqual(timeline.rulerTickRange(12, 1, 0, 12), { first: 0, last: 12 });
+  assert.deepEqual(timeline.rulerTickRange(12, 0, 0, 12), { first: 0, last: -1 });
+  assert.equal(timeline.visibleSpanText(3.6), "3.6 seconds");
+  assert.equal(timeline.visibleSpanText(1), "1 second");
+  assert.equal(timeline.visibleSpanText(450), "7 min 30 s");
+  assert.equal(timeline.visibleSpanText(3600), "1 h");
+  assert.equal(timeline.visibleSpanText(3900), "1 h 05 min");
+});
+
 test("zoom anchoring keeps the subject centered and clamps at both edges", () => {
   assert.equal(timeline.anchorScrollLeft(1000, 2000, 0.5), 500);
   assert.equal(timeline.anchorScrollLeft(1000, 2000, 0.1), 0);
@@ -89,10 +137,11 @@ test("the playhead moves itself and skips writes that change nothing", () => {
   timeline.placePlayhead(playhead, 12.5);
   assert.equal(left, "12.5%");
   timeline.placePlayhead(playhead, 12.5);
-  timeline.placePlayhead(playhead, 12.50004);
+  timeline.placePlayhead(playhead, 12.50000004);
   assert.equal(writes, 1);
+  // a hundredth of a pixel even on a million-pixel deep zoom
   timeline.placePlayhead(playhead, 100 / 3);
-  assert.equal(left, "33.333%");
+  assert.equal(left, "33.333333%");
   timeline.placePlayhead(playhead, 0);
   assert.equal(left, "0%");
   assert.equal(writes, 3);

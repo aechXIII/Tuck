@@ -827,20 +827,45 @@ function paintSelectionFrame(startPct: number, endPct: number, color: string) {
   }
 }
 
+// the stretch of the video the ruler last drew ticks for, so scrolling inside it draws nothing
+let rulerPainted: { full: number; pps: number; start: number; end: number } | null = null;
+
+// the times at the frame's left and right edges, plus a screen either side
+function rulerWindow(full: number): { start: number; end: number } {
+  const frame = byId("sequence-frame");
+  const track = byId("tl-track");
+  if (!frame || !track || !frame.classList.contains("is-zoomed")) return { start: 0, end: full };
+  const bounds = track.getBoundingClientRect();
+  const visible = frame.getBoundingClientRect();
+  if (!(bounds.width > 0)) return { start: 0, end: full };
+  const toTime = (x: number) => ((x - bounds.left) / bounds.width) * full;
+  const margin = visible.width;
+  return {
+    start: Math.max(0, toTime(visible.left - margin)),
+    end: Math.min(full, toTime(visible.right + margin)),
+  };
+}
+
 function paintSequenceRuler(full: number) {
   let ruler = byId("sequence-ruler");
   if (!ruler) return;
   ruler.replaceChildren();
+  rulerPainted = null;
   if (full <= 0) return;
   let pixelsPerSecond = timelinePxPerSecond();
   let step = TimelineCore.rulerStep(full, pixelsPerSecond);
   let majorEvery = TimelineCore.rulerMajorEvery(step, pixelsPerSecond);
-  let index = 0;
-  for (let t = 0; t <= full + 0.0001; t += step, index += 1) {
+  // a deep zoom on a long video would need tens of thousands of ticks, so only those near the
+  // screen are drawn and scrolling draws the next ones
+  const shown = rulerWindow(full);
+  const range = TimelineCore.rulerTickRange(full, step, shown.start, shown.end);
+  const lastTick = Math.floor(full / step + 1e-6);
+  for (let index = range.first; index <= range.last; index += 1) {
+    let t = index * step;
     let tick = documentRef.createElement("span");
     let isEndpoint = Math.abs(t - full) < 0.001;
     let isMajor = index % majorEvery === 0 || isEndpoint;
-    tick.className = "seq-tick" + (isMajor ? " major" : "");
+    tick.className = "seq-tick" + (isMajor ? " major" : "") + (index === lastTick ? " last" : "");
     tick.style.left = (t / full) * 100 + "%";
     if (isMajor) {
       let label = documentRef.createElement("span");
@@ -849,6 +874,24 @@ function paintSequenceRuler(full: number) {
     }
     ruler.appendChild(tick);
   }
+  rulerPainted = { full, pps: pixelsPerSecond, start: shown.start, end: shown.end };
+}
+
+// scrolling a zoomed timeline draws more ruler once the screen nears the edge of what was drawn
+function followRulerScroll() {
+  const painted = rulerPainted;
+  const full = videoDuration();
+  if (!painted || !(full > 0) || painted.full !== full) return;
+  const frame = byId("sequence-frame");
+  const track = byId("tl-track");
+  if (!frame || !track || !frame.classList.contains("is-zoomed")) return;
+  const bounds = track.getBoundingClientRect();
+  const visible = frame.getBoundingClientRect();
+  if (!(bounds.width > 0)) return;
+  const start = ((visible.left - bounds.left) / bounds.width) * full;
+  const end = ((visible.right - bounds.left) / bounds.width) * full;
+  if ((start >= painted.start || painted.start <= 0) && (end <= painted.end || painted.end >= full)) return;
+  paintSequenceRuler(full);
 }
 
 function syncTimelineUI() {
@@ -1582,49 +1625,126 @@ function timelineAnchorRatio() {
   return Math.min(1, Math.max(0, (host.getPreviewSec?.() ?? video.currentTime) / full));
 }
 
-function applyTimelineZoom(anchorRatio?: number) {
-  let frame = byId("sequence-frame");
-  if (!frame) return;
-  let anchor = Number.isFinite(anchorRatio) ? anchorRatio : timelineAnchorRatio();
+function currentMaxZoom() {
+  const frame = byId("sequence-frame");
+  return TimelineCore.maxZoom(videoDuration(), frame ? frame.clientWidth : 0);
+}
+
+function syncZoomSlider() {
+  let slider = byId("tl-zoom-slider");
+  if (!isInputElement(slider)) return;
+  const deepest = currentMaxZoom();
+  slider.max = String(TimelineCore.zoomSliderValue(deepest));
+  // a slider being dragged keeps its own value unless the zoom had to stop short of it
+  if (documentRef.activeElement !== slider || Math.abs(Number(slider.value) - TimelineCore.zoomSliderValue(timelineZoom)) > 1e-6) {
+    slider.value = String(TimelineCore.zoomSliderValue(timelineZoom));
+  }
+  const full = videoDuration();
+  const span = full > 0 ? TimelineCore.visibleSpanText(full / timelineZoom) : "";
+  if (span) slider.setAttribute("aria-valuetext", span + " on screen");
+  else slider.removeAttribute("aria-valuetext");
+}
+
+// the zoomed track's width, or zero while the frame has no size
+function applyZoomWidth(frame: HTMLElement): number {
   let zoomed = timelineZoom > TL_ZOOM_MIN;
   frame.classList.toggle("is-zoomed", zoomed);
-  if (zoomed) {
-    let base = Math.max(0, frame.clientWidth - 1);
-    if (base > 0) {
-      let contentWidth = base * timelineZoom;
-      frame.style.setProperty("--tl-width", contentWidth + "px");
-      frame.scrollLeft = TimelineCore.anchorScrollLeft(
-        frame.clientWidth,
-        contentWidth,
-        anchor,
-      );
-    }
-  } else {
+  if (!zoomed) {
     frame.style.removeProperty("--tl-width");
-    frame.scrollLeft = 0;
+    return 0;
   }
-  let slider = byId("tl-zoom-slider");
-  if (isInputElement(slider) && documentRef.activeElement !== slider) {
-    slider.value = String(timelineZoom);
-  }
+  let base = Math.max(0, frame.clientWidth - 1);
+  if (base <= 0) return 0;
+  let contentWidth = base * timelineZoom;
+  frame.style.setProperty("--tl-width", contentWidth + "px");
+  return contentWidth;
+}
+
+function finishZoom() {
+  syncZoomSlider();
   let full = videoDuration();
   if (full > 0) paintSequenceRuler(full);
   refreshFrames();
 }
 
+function applyTimelineZoom(anchorRatio?: number) {
+  let frame = byId("sequence-frame");
+  if (!frame) return;
+  timelineZoom = TimelineCore.clampZoom(timelineZoom, currentMaxZoom());
+  let anchor = Number.isFinite(anchorRatio) ? anchorRatio : timelineAnchorRatio();
+  const contentWidth = applyZoomWidth(frame);
+  if (contentWidth > 0) {
+    frame.scrollLeft = TimelineCore.anchorScrollLeft(frame.clientWidth, contentWidth, anchor);
+  } else if (timelineZoom <= TL_ZOOM_MIN) {
+    frame.scrollLeft = 0;
+  }
+  finishZoom();
+}
+
 function setTimelineZoom(level: number) {
   let anchor = timelineAnchorRatio();
-  timelineZoom = TimelineCore.clampZoom(level);
+  timelineZoom = TimelineCore.clampZoom(level, currentMaxZoom());
   applyTimelineZoom(anchor);
 }
 
+function setTimelineZoomFromSlider(value: unknown) {
+  setTimelineZoom(TimelineCore.zoomFromSlider(value));
+}
+
+// each press doubles or halves what fits on screen
 function nudgeTimelineZoom(delta: number) {
-  setTimelineZoom(timelineZoom + delta);
+  setTimelineZoom(timelineZoom * 2 ** delta);
 }
 
 function fitTimeline() {
   timelineZoom = TL_ZOOM_MIN;
   applyTimelineZoom(0);
+}
+
+// zooms so the time under the pointer stays under it; nothing eases, the view follows the wheel
+function zoomAroundPointer(level: number, clientX: number) {
+  const frame = byId("sequence-frame");
+  const track = byId("tl-track");
+  if (!frame || !track) return;
+  const before = track.getBoundingClientRect();
+  const visible = frame.getBoundingClientRect();
+  if (!(before.width > 0)) return;
+  const ratio = (clientX - before.left) / before.width;
+  const trackOffset = before.left - visible.left + frame.scrollLeft;
+  const next = TimelineCore.clampZoom(level, currentMaxZoom());
+  if (next === timelineZoom) return;
+  timelineZoom = next;
+  const contentWidth = applyZoomWidth(frame);
+  if (contentWidth > 0) {
+    const after = track.getBoundingClientRect();
+    frame.scrollLeft = TimelineCore.pointerAnchoredScroll(
+      trackOffset, after.width, ratio, clientX - visible.left, frame.clientWidth, frame.scrollWidth,
+    );
+  } else {
+    frame.scrollLeft = 0;
+  }
+  finishZoom();
+}
+
+// Ctrl+wheel (and a touchpad pinch, which arrives as one) zooms; a plain wheel still scrolls.
+// Several wheel events in one frame add up and apply once
+let wheelZoomTarget: number | null = null;
+let wheelZoomX = 0;
+let wheelZoomFrame = 0;
+function onTimelineWheel(event: WheelEvent) {
+  if (!(event.ctrlKey || event.metaKey)) return;
+  event.preventDefault();
+  if (!session.selPath || !(videoDuration() > 0)) return;
+  const from = wheelZoomTarget ?? timelineZoom;
+  wheelZoomTarget = TimelineCore.wheelZoom(from, event.deltaY, event.deltaMode, currentMaxZoom());
+  wheelZoomX = event.clientX;
+  if (wheelZoomFrame) return;
+  wheelZoomFrame = windowRef.requestAnimationFrame(() => {
+    wheelZoomFrame = 0;
+    const target = wheelZoomTarget;
+    wheelZoomTarget = null;
+    if (target != null) zoomAroundPointer(target, wheelZoomX);
+  });
 }
 
 let timelineResizeState: {
@@ -1896,6 +2016,7 @@ function initTimelineResizer() {
     setClipSegments: setClipSegments,
     setPlayheadUI: setPlayheadUI,
     setTimelineZoom: setTimelineZoom,
+    setTimelineZoomFromSlider: setTimelineZoomFromSlider,
     snapCandidateTime: snapCandidateTime,
     splitAtPlayhead: recorded("split", splitAtPlayhead),
     syncTimelineTrackCount: syncTimelineTrackCount,
@@ -1915,7 +2036,11 @@ function initTimelineResizer() {
     moveActiveSegment,
   });
   initTimelineResizer();
-  byId("sequence-frame")?.addEventListener("scroll", refreshFrames, {passive:true});
+  byId("sequence-frame")?.addEventListener("scroll", () => {
+    refreshFrames();
+    followRulerScroll();
+  }, {passive:true});
+  byId("sequence-frame")?.addEventListener("wheel", onTimelineWheel, {passive:false});
   let frameResize: ResizeObserver | null = null;
   if (typeof windowRef.ResizeObserver === "function") {
     frameResize = new windowRef.ResizeObserver(refreshFrames);

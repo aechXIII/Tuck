@@ -566,7 +566,7 @@ test("I past the end of a segment starts a new segment at the playhead", async (
   await expect(page.locator("#tl-time")).toHaveText("Keeping 0:08.00 of 0:12.00");
   await expect(page.locator("#tl-corner-time")).toHaveText("0:08.00");
   // the test video never finishes seeking, so redrawing must not pull the playhead back to it
-  await expect(page.locator("#seq-playhead")).toHaveAttribute("style",/left: 66\.667%/);
+  await expect(page.locator("#seq-playhead")).toHaveAttribute("style",/left: 66\.66\d*7%/);
 });
 
 test("a start that copies from a later keyframe is marked in the player bar", async ({page}) => {

@@ -778,7 +778,7 @@ export function installEditorRuntime(
         "encoding-frame-rate": (target) =>
           encoding.onFpsSlider((target as HTMLInputElement).value),
         "timeline-zoom": (target) =>
-          timeline.setTimelineZoom(Number((target as HTMLInputElement).value)),
+          timeline.setTimelineZoomFromSlider((target as HTMLInputElement).value),
       },
       change: {
         "encoding-profile": () => encoding.onProfileChange(),
