@@ -66,6 +66,8 @@ export interface TransformApi {
   setVideoRotation: (rotation: number) => void;
   toggleVideoFlip: (axis: "horizontal" | "vertical") => void;
   setSizingMode: (mode: string) => void;
+  // one crop number, in source pixels; anything else in the field puts the current value back
+  setCropField: (field: CropGeometry.CropField, value: string) => void;
   clearCrop: () => void;
   resetVideoTransform: () => void;
   resetVideoTransformValues: (clip: TransformClipValues) => void;
@@ -468,6 +470,36 @@ export function installTransform(host: TransformHost): TransformApi {
     return closest;
   }
 
+  function cropFieldInputs(): HTMLInputElement[] {
+    const group = doc.getElementById("crop-numbers");
+    return group ? Array.from(group.querySelectorAll<HTMLInputElement>("input[data-crop-field]")) : [];
+  }
+
+  // the numbers follow the box while it is dragged, except one the user is still typing in
+  function paintCropFields(clip: EditorClip | null, size: Size2D | null): void {
+    const group = doc.getElementById("crop-numbers");
+    if (!group) return;
+    const on = !!clip && !!size && (clip.cropAspect || "off") !== "off";
+    if (group.hidden === on) group.hidden = !on;
+    if (!on || !clip || !size) return;
+    const crop = CropGeometry.selectionCrop(clip.crop, size.width, size.height);
+    const maximum: Record<CropGeometry.CropField, number> = {
+      x: size.width - crop.width,
+      y: size.height - crop.height,
+      width: size.width,
+      height: size.height,
+    };
+    for (const input of cropFieldInputs()) {
+      const field = input.dataset.cropField;
+      if (!CropGeometry.isCropField(field)) continue;
+      const max = String(maximum[field]);
+      if (input.max !== max) input.max = max;
+      if (input.dataset.typing === "1" && doc.activeElement === input) continue;
+      const value = String(crop[field]);
+      if (input.value !== value) input.value = value;
+    }
+  }
+
   // the crop box fades in only when crop is turned on for the video already showing; switching
   // videos or repainting while its details load must not replay it
   let lastCropPaint: { path: string; cropOff: boolean } | null = null;
@@ -477,6 +509,7 @@ export function installTransform(host: TransformHost): TransformApi {
     const selection = doc.getElementById("crop-selection");
     const clip = selectedClip();
     const size = sourceSize(clip);
+    paintCropFields(clip, size);
     if (!ui || !selection || !clip || !size) {
       if (ui) ui.classList.remove("on");
       return;
@@ -656,6 +689,110 @@ export function installTransform(host: TransformHost): TransformApi {
     paintCropOverlay();
     host.renderClips?.();
     host.reqPreview?.();
+  }
+
+  function setCropField(field: CropGeometry.CropField, raw: string): void {
+    const clip = selectedClip();
+    const size = sourceSize(clip);
+    for (const input of cropFieldInputs()) delete input.dataset.typing;
+    if (!clip || !size || (clip.cropAspect || "off") === "off") {
+      paintCropOverlay();
+      return;
+    }
+    const value = raw.trim() === "" ? Number.NaN : Number(raw);
+    const next = CropGeometry.cropWithField(
+      clip.crop,
+      field,
+      value,
+      size.width,
+      size.height,
+      clip.cropAspect === "free" ? "free" : clip.cropAspect,
+      clip.rotation || 0,
+    );
+    clip.crop = CropGeometry.isFullCrop(next, size.width, size.height) ? null : next;
+    clip.transformOverride = true;
+    clip.planData = null;
+    paintCropOverlay();
+    host.renderClips?.();
+    host.reqPreview?.();
+  }
+
+  // arrow keys on the focused crop box; a held key is one undo step, taken when it is let go
+  let keyEdit = false;
+
+  function endCropKeys(): void {
+    if (!keyEdit) return;
+    keyEdit = false;
+    host.History?.commit();
+    host.renderClips?.();
+    host.reqPreview?.();
+  }
+
+  function onCropKeyDown(event: KeyboardEvent): void {
+    if (event.ctrlKey || event.metaKey || drag) return;
+    const clip = selectedClip();
+    const size = sourceSize(clip);
+    if (!clip || !size || (clip.cropAspect || "off") === "off") return;
+    const editor = cropEditorGeometry(clip, size);
+    const next = CropGeometry.cropAfterKey(
+      CropGeometry.selectionCrop(clip.crop, size.width, size.height),
+      event.key,
+      {
+        resize: event.altKey,
+        large: event.shiftKey,
+        map: editor.matrix,
+        sourceWidth: size.width,
+        sourceHeight: size.height,
+        aspect: clip.cropAspect === "free" ? "free" : clip.cropAspect,
+        rotation: clip.rotation || 0,
+      },
+    );
+    if (!next) return;
+    // the box takes the arrows, so they don't also step frames or change videos
+    event.preventDefault();
+    event.stopPropagation();
+    if (!keyEdit) {
+      keyEdit = true;
+      host.History?.begin(clip.path, "crop");
+    }
+    clip.crop = CropGeometry.isFullCrop(next, size.width, size.height) ? null : next;
+    clip.transformOverride = true;
+    clip.planData = null;
+    paintCropOverlay();
+  }
+
+  function onCropKeyUp(event: KeyboardEvent): void {
+    if (event.key.startsWith("Arrow")) endCropKeys();
+  }
+
+  function onCropFieldInput(event: Event): void {
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement) || !CropGeometry.isCropField(input.dataset.cropField)) return;
+    // typing waits for Enter or leaving the field; the field's own up and down arrows apply at once
+    const typed = typeof InputEvent !== "undefined" && event instanceof InputEvent && !!event.inputType;
+    if (typed) input.dataset.typing = "1";
+    else api.setCropField(input.dataset.cropField, input.value);
+  }
+
+  function onCropFieldChange(event: Event): void {
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement) || !CropGeometry.isCropField(input.dataset.cropField)) return;
+    api.setCropField(input.dataset.cropField, input.value);
+  }
+
+  function onCropFieldKeyDown(event: KeyboardEvent): void {
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement) || !CropGeometry.isCropField(input.dataset.cropField)) return;
+    if (event.key === "Enter") {
+      event.preventDefault();
+      api.setCropField(input.dataset.cropField, input.value);
+    } else if (event.key === "Escape" && input.dataset.typing === "1") {
+      // Esc puts back the number the crop has
+      event.preventDefault();
+      event.stopPropagation();
+      delete input.dataset.typing;
+      paintCropOverlay();
+    }
   }
 
   function resetVideoTransform(): void {
@@ -947,7 +1084,26 @@ export function installTransform(host: TransformHost): TransformApi {
   const selection = doc.getElementById("crop-selection");
   const stage = doc.getElementById("stage");
   let resizeObserver: ResizeObserver | null = null;
+  const cropNumbers = doc.getElementById("crop-numbers");
+  if (cropNumbers) {
+    cropNumbers.addEventListener("input", onCropFieldInput);
+    cropNumbers.addEventListener("change", onCropFieldChange);
+    cropNumbers.addEventListener("keydown", onCropFieldKeyDown);
+    cleanups.push(() => {
+      cropNumbers.removeEventListener("input", onCropFieldInput);
+      cropNumbers.removeEventListener("change", onCropFieldChange);
+      cropNumbers.removeEventListener("keydown", onCropFieldKeyDown);
+    });
+  }
   if (selection && stage) {
+    selection.addEventListener("keydown", onCropKeyDown);
+    selection.addEventListener("keyup", onCropKeyUp);
+    selection.addEventListener("blur", endCropKeys);
+    cleanups.push(() => {
+      selection.removeEventListener("keydown", onCropKeyDown);
+      selection.removeEventListener("keyup", onCropKeyUp);
+      selection.removeEventListener("blur", endCropKeys);
+    });
     selection.addEventListener("pointerdown", onCropPointerDown);
     stage.addEventListener("pointermove", onCropPointerMove);
     stage.addEventListener("pointerup", onCropPointerUp);
@@ -986,6 +1142,7 @@ export function installTransform(host: TransformHost): TransformApi {
     setVideoRotation: recorded("rotate", setVideoRotation),
     toggleVideoFlip: recorded("flip", toggleVideoFlip),
     setSizingMode: recorded("sizing", setSizingMode),
+    setCropField: recorded("crop", setCropField),
     clearCrop,
     resetVideoTransform: recorded("reset transform", resetVideoTransform),
     resetVideoTransformValues,

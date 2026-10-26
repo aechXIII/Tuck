@@ -238,6 +238,42 @@
   border-radius: 0;
   background: transparent;
 }
+/* exact crop numbers, in source pixels, under the aspect buttons while a crop is on */
+.crop-numbers {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: calc(6px * var(--density-scale));
+  margin: calc(2px * var(--density-scale)) 0 calc(4px * var(--density-scale));
+}
+.crop-numbers[hidden] {
+  display: none;
+}
+.crop-numbers label {
+  display: grid;
+  gap: calc(5px * var(--density-scale));
+  min-width: 0;
+  color: var(--muted);
+  font-size: calc(11.5px * var(--text-scale));
+}
+#right .crop-numbers input[type="number"] {
+  width: 100%;
+  min-width: 0;
+  height: var(--control-small-height);
+  padding: 0 calc(8px * var(--density-scale));
+  border-radius: 5px;
+  font: 500 calc(12px * var(--text-scale)) var(--mono);
+  font-variant-numeric: tabular-nums;
+  appearance: textfield;
+}
+.crop-numbers input::-webkit-inner-spin-button,
+.crop-numbers input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+#right .crop-numbers input[type="number"]:focus-visible {
+  outline: 2px solid var(--accent-light);
+  outline-offset: -2px;
+}
 #transform-fields .transform-segment button.icon svg {
   width: 11px;
   height: 11px;

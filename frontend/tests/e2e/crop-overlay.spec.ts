@@ -115,3 +115,91 @@ test("the crop overlay follows the preview when the window resizes", async ({ pa
   expect(selection.left).toBeGreaterThanOrEqual(stage.left - 1);
   expect(selection.right).toBeLessThanOrEqual(stage.right + 1);
 });
+
+function cropNumbers(page: Page) {
+  return Promise.all(
+    ["#crop-left", "#crop-top", "#crop-width", "#crop-height"].map((id) => page.locator(id).inputValue()),
+  );
+}
+
+test("crop numbers and the crop box follow each other, and each change is one undo step", async ({ page }) => {
+  await openCrop(page);
+  const group = page.getByRole("group", { name: "Crop in source pixels" });
+  await expect(group).toBeVisible();
+  expect(await cropNumbers(page)).toEqual(["0", "0", "1920", "1080"]);
+
+  // typing waits for Enter, then the box takes the new size
+  const before = await rect(page, "#crop-selection");
+  await page.locator("#crop-width").fill("960");
+  expect((await rect(page, "#crop-selection")).width).toBeCloseTo(before.width, 0);
+  await page.locator("#crop-width").press("Enter");
+  await expect.poll(async () => (await rect(page, "#crop-selection")).width).toBeCloseTo(before.width / 2, 0);
+  await expect(page.locator("#btn-undo")).toHaveAttribute("aria-label", "Undo crop");
+
+  // a position past the frame stops at its edge, and an odd size becomes even
+  await page.locator("#crop-left").fill("5000");
+  await page.locator("#crop-left").press("Enter");
+  await page.locator("#crop-height").fill("501");
+  await page.locator("#crop-height").press("Tab");
+  expect(await cropNumbers(page)).toEqual(["960", "0", "960", "502"]);
+  // something that isn't a number puts the current value back
+  await page.locator("#crop-top").fill("");
+  await page.locator("#crop-top").press("Enter");
+  await expect(page.locator("#crop-top")).toHaveValue("0");
+
+  // dragging the box updates the numbers
+  const box = (await page.locator("#crop-selection").boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 - box.width / 2, box.y + box.height / 2 + 40, { steps: 6 });
+  await page.mouse.up();
+  const [left, top] = await cropNumbers(page);
+  expect(Number(left)).toBeLessThan(960);
+  expect(Number(top)).toBeGreaterThan(0);
+
+  await page.locator("#btn-undo").click();
+  expect(await cropNumbers(page)).toEqual(["960", "0", "960", "502"]);
+});
+
+test("arrow keys move the focused crop box, Shift takes bigger steps and Alt resizes", async ({ page }) => {
+  await openCrop(page);
+  await page.locator("#crop-width").fill("800");
+  await page.locator("#crop-width").press("Enter");
+  await page.locator("#crop-height").fill("600");
+  await page.locator("#crop-height").press("Enter");
+  await page.locator("#crop-left").fill("100");
+  await page.locator("#crop-left").press("Enter");
+  await page.locator("#crop-top").fill("80");
+  await page.locator("#crop-top").press("Enter");
+
+  const playhead = () => page.locator("#seq-playhead").evaluate((element) => (element as HTMLElement).style.left);
+  const playheadBefore = await playhead();
+  const crop = page.getByRole("group", { name: "Crop box" });
+  await crop.focus();
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("Shift+ArrowDown");
+  expect(await cropNumbers(page)).toEqual(["101", "90", "800", "600"]);
+  await page.keyboard.press("Alt+ArrowRight");
+  await page.keyboard.press("Alt+Shift+ArrowUp");
+  expect(await cropNumbers(page)).toEqual(["101", "90", "802", "580"]);
+  // the box keeps the arrows: the playhead and the Library selection don't move
+  expect(await playhead()).toBe(playheadBefore);
+  await expect(crop).toBeFocused();
+  await expect(page.locator("#btn-undo")).toHaveAttribute("aria-label", "Undo crop");
+  await page.locator("#btn-undo").click();
+  expect(await cropNumbers(page)).toEqual(["101", "90", "802", "600"]);
+
+  // a locked ratio sets the other side to match
+  await page.getByRole("group", { name: "Crop aspect ratio" }).getByRole("button", { name: "16:9" }).click();
+  await page.locator("#crop-width").fill("1280");
+  await page.locator("#crop-width").press("Enter");
+  const [, , width, height] = await cropNumbers(page);
+  expect(Number(width) / Number(height)).toBeCloseTo(16 / 9, 2);
+  expect(width).toBe("1280");
+});
+
+test("crop numbers hide when crop is off", async ({ page }) => {
+  await openCrop(page);
+  await page.getByRole("group", { name: "Crop aspect ratio" }).getByRole("button", { name: "Off" }).click();
+  await expect(page.locator("#crop-numbers")).toBeHidden();
+});

@@ -221,7 +221,14 @@
             <div class="crop-dim" id="crop-dim-bottom"></div>
             <div class="crop-dim" id="crop-dim-left"></div>
             <div class="crop-dim" id="crop-dim-right"></div>
-            <div id="crop-selection" aria-label="Crop selection">
+            <div
+              id="crop-selection"
+              tabindex="0"
+              role="group"
+              aria-label="Crop box"
+              aria-description="Arrow keys move it. Alt with arrow keys resizes it. Hold Shift for bigger steps."
+              aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown Alt+ArrowLeft Alt+ArrowRight Alt+ArrowUp Alt+ArrowDown"
+            >
               <span class="crop-handle" data-handle="nw"></span
               ><span class="crop-handle" data-handle="n"></span
               ><span class="crop-handle" data-handle="ne"></span
@@ -554,6 +561,24 @@
                     4:3
                   </button>
                 </div>
+              </div>
+              <div id="crop-numbers" class="crop-numbers" role="group" aria-label="Crop in source pixels" hidden>
+                <label
+                  ><span>Left</span
+                  ><input type="number" id="crop-left" data-crop-field="x" min="0" step="1" inputmode="numeric" autocomplete="off"
+                /></label>
+                <label
+                  ><span>Top</span
+                  ><input type="number" id="crop-top" data-crop-field="y" min="0" step="1" inputmode="numeric" autocomplete="off"
+                /></label>
+                <label
+                  ><span>Width</span
+                  ><input type="number" id="crop-width" data-crop-field="width" min="2" step="2" inputmode="numeric" autocomplete="off"
+                /></label>
+                <label
+                  ><span>Height</span
+                  ><input type="number" id="crop-height" data-crop-field="height" min="2" step="2" inputmode="numeric" autocomplete="off"
+                /></label>
               </div>
               <div class="enc-field">
                 <label>Rotate</label>

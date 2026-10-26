@@ -447,3 +447,129 @@ export function previewTransformGeometry(
     output: output,
   };
 }
+
+export type CropField = "x" | "y" | "width" | "height";
+
+export function isCropField(value: unknown): value is CropField {
+  return value === "x" || value === "y" || value === "width" || value === "height";
+}
+
+/**
+ * The crop after one number field changes, in source pixels. Position moves the box and stops at
+ * the frame; a size stays even, grows from the top-left corner and slides the box back inside when
+ * it would run past the frame. A locked aspect ratio sets the other side to match. A value that is
+ * not a number changes nothing, so the field goes back to the current value.
+ */
+export function cropWithField(
+  current: CropRect | null | undefined,
+  field: CropField,
+  value: number,
+  sourceWidth: number,
+  sourceHeight: number,
+  aspect?: string | null,
+  rotation?: number,
+): CropRect {
+  const base = selectionCrop(current, sourceWidth, sourceHeight);
+  const result: CropRect = { x: base.x, y: base.y, width: base.width, height: base.height };
+  if (!Number.isFinite(value)) return result;
+  if (field === "x") {
+    result.x = clamp(Math.round(value), 0, sourceWidth - base.width);
+    return result;
+  }
+  if (field === "y") {
+    result.y = clamp(Math.round(value), 0, sourceHeight - base.height);
+    return result;
+  }
+  const ratio = aspectParts(aspect, rotation);
+  if (ratio) {
+    const locked = lockedSize(value, field === "width", sourceWidth, sourceHeight, ratio);
+    if (!locked) return result;
+    result.width = locked.width;
+    result.height = locked.height;
+  } else if (field === "width") {
+    const width = evenSize(value, sourceWidth);
+    if (!width) return result;
+    result.width = width;
+  } else {
+    const height = evenSize(value, sourceHeight);
+    if (!height) return result;
+    result.height = height;
+  }
+  result.x = clamp(result.x, 0, sourceWidth - result.width);
+  result.y = clamp(result.y, 0, sourceHeight - result.height);
+  return result;
+}
+
+// the linear part of the source-to-screen map: rotation, flips and scale
+export interface LinearMap {
+  a: number;
+  b: number;
+  c: number;
+  d: number;
+}
+
+// which way a screen direction points in the source, one source pixel per axis
+export function sourceDirection(map: LinearMap, dx: number, dy: number): { x: number; y: number } {
+  const determinant = map.a * map.d - map.b * map.c;
+  if (!determinant) return { x: 0, y: 0 };
+  const x = (map.d * dx - map.c * dy) / determinant;
+  const y = (-map.b * dx + map.a * dy) / determinant;
+  const unit = (value: number): number => (Math.abs(value) < 1e-9 ? 0 : Math.sign(value));
+  return { x: unit(x), y: unit(y) };
+}
+
+function handleFor(direction: { x: number; y: number }): string {
+  if (direction.x > 0) return "e";
+  if (direction.x < 0) return "w";
+  return direction.y < 0 ? "n" : "s";
+}
+
+const KEY_DIRECTIONS: Record<string, [number, number]> = {
+  ArrowLeft: [-1, 0],
+  ArrowRight: [1, 0],
+  ArrowUp: [0, -1],
+  ArrowDown: [0, 1],
+};
+
+/**
+ * The crop after an arrow key on the focused crop box. Arrows move the box the way it looks on
+ * screen, whatever the rotation and flips, 1 source pixel at a time or 10 with Shift. With Alt they
+ * move the box's right or bottom edge on screen, 2 pixels at a time (20 with Shift), or one step of
+ * a locked aspect ratio. Returns null for any other key.
+ */
+export function cropAfterKey(
+  origin: CropRect,
+  key: string,
+  options: {
+    resize: boolean;
+    large: boolean;
+    map: LinearMap;
+    sourceWidth: number;
+    sourceHeight: number;
+    aspect?: string | null;
+    rotation?: number;
+  },
+): CropRect | null {
+  const screen = KEY_DIRECTIONS[key];
+  if (!screen) return null;
+  const direction = sourceDirection(options.map, screen[0], screen[1]);
+  if (!direction.x && !direction.y) return null;
+  const times = options.large ? 10 : 1;
+  if (!options.resize) {
+    return resizeCrop(origin, "move", direction.x * times, direction.y * times,
+      options.sourceWidth, options.sourceHeight);
+  }
+  // the edge that sits on the screen's right (for Left and Right) or bottom (for Up and Down);
+  // a locked ratio moves the bottom-right corner instead, so the box can grow from the frame's top
+  const right = handleFor(sourceDirection(options.map, 1, 0));
+  const bottom = handleFor(sourceDirection(options.map, 0, 1));
+  const edge = screen[0] ? right : bottom;
+  const ratio = aspectParts(options.aspect, options.rotation);
+  const corner = [right, bottom].sort((a) => (a === "n" || a === "s" ? -1 : 1)).join("");
+  const handle = ratio ? corner : edge;
+  const horizontal = edge === "e" || edge === "w";
+  const unit = ratio ? 2 * (horizontal ? ratio.width : ratio.height) : 2;
+  const step = unit * times;
+  return resizeCrop(origin, handle, direction.x * step, direction.y * step,
+    options.sourceWidth, options.sourceHeight, options.aspect, options.rotation);
+}

@@ -67,6 +67,19 @@
   border-top: 1px solid rgba(255, 255, 255, 0.45);
   border-bottom: 1px solid rgba(255, 255, 255, 0.45);
 }
+/* the box takes arrow keys once focused; its ring sits outside the accent border, white between
+   two dark bands so it shows on bright and dark video alike */
+#crop-selection:focus {
+  outline: none;
+}
+:root[data-focus-rings] #crop-selection:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+  box-shadow:
+    0 0 0 2px rgba(0, 0, 0, 0.75),
+    0 0 0 6px rgba(0, 0, 0, 0.6),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.35);
+}
 .crop-handle {
   position: absolute;
   z-index: 2;
