@@ -7,7 +7,7 @@ export function motionEnabled(doc: Document = document): boolean {
 export const EASE_OUT = "cubic-bezier(0.22, 1, 0.36, 1)";
 
 /**
- * Sets a button's label. A new phrase, such as "Adding to queue…" after "Compress this video",
+ * Sets a button's label. A new phrase, such as "Adding to Exports…" after "Compress this video",
  * rises in over a short moment; a changing number inside the same phrase ("Exporting · 41%") just
  * updates, so a running export doesn't twitch on every poll.
  */

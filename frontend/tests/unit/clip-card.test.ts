@@ -241,12 +241,12 @@ test("a queued or exporting row says where it is and leaves its controls to the 
     name: "queued.mp4",
     queueItemId: "q1",
     queueState: "pending",
-    statusLabel: "Pending",
+    statusLabel: "Waiting",
     duration: "1:35",
   }, quiet);
   if (!(queued instanceof FakeElement)) throw new Error("expected FakeElement");
   const queuedLine = descendants(queued).find((element) => element.className === "c-line queued");
-  assert.equal(queuedLine?.children[0]?.textContent, "Queued");
+  assert.equal(queuedLine?.children[0]?.textContent, "Waiting");
   assert.equal(descendants(queued).find((element) => element.className === "c-dur")?.textContent, "1:35");
   assert.equal(action(queued, "cancel"), undefined);
   assert.equal(action(queued, "remove"), undefined);

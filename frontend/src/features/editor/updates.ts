@@ -197,21 +197,31 @@ async function installUpdate(api: BackendClient, restoreOffer: (() => void) | nu
   toast(`Update failed: ${installed.error.message || "Could not start the installer"}`, "err");
 }
 
-export async function checkUpdates(silent: boolean): Promise<void> {
-  if (!shouldShowUpdater(await fetchPlatformCapabilities())) return;
+// About says when Tuck last heard from the update server, so only a check that got an answer counts
+async function rememberCheck(api: BackendClient): Promise<string> {
+  const checkedAt = new Date().toISOString();
+  const saved = await api.saveSettings({ last_update_check: checkedAt });
+  return saved.ok ? checkedAt : "";
+}
+
+/** Checks for an update; resolves to the saved time of the check, or "" when there wasn't one. */
+export async function checkUpdates(silent: boolean): Promise<string> {
+  if (!shouldShowUpdater(await fetchPlatformCapabilities())) return "";
   const api = getBackendClient();
   const r = await legacyBackendResult(api.checkForUpdates());
   if (r.error) {
     if (!silent) toast(`Update check failed: ${r.error}`, "err");
-    return;
+    return "";
   }
+  const checkedAt = await rememberCheck(api);
   if (!r.available) {
-    if (!silent) toast("Running latest version.", "ok");
-    return;
+    if (!silent) toast("Tuck is up to date.", "ok");
+    return checkedAt;
   }
   showUpdateModal(r);
+  return checkedAt;
 }
 
-export async function checkUpdatesFromSettings(): Promise<void> {
-  await checkUpdates(false);
+export async function checkUpdatesFromSettings(): Promise<string> {
+  return checkUpdates(false);
 }

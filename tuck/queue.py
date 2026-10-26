@@ -125,7 +125,7 @@ class ProcessingQueue:
             plan=copy.deepcopy(plan),
             state=QueueState.PENDING,
             added_at=datetime.now(timezone.utc).isoformat(),
-            status_text="Pending",
+            status_text="Waiting",
             restored=restored,
         )
         if work is not None:

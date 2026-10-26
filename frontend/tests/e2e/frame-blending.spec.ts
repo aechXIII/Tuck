@@ -37,7 +37,7 @@ for (const size of [{width:1240,height:800}, {width:960,height:640}]) {
     await page.getByLabel("Blur amount").fill("1.23");
     await expect(page.getByRole("button", {name:"Compress this video", exact:true})).toBeEnabled();
     await page.getByLabel("Blur amount").fill("1");
-    await chooseSelect(page, page.getByLabel("Output frame rate", {exact:true}), "30");
+    await chooseSelect(page, page.getByLabel("Frame rate", {exact:true}), "30");
     await expect(page.locator("#blend-readout")).toHaveCount(0);
     await expect(page.locator("#blend-amount-help")).toHaveCount(0);
     await chooseSelect(page, page.getByLabel("Weighting", {exact:true}), "vegas");
@@ -55,7 +55,7 @@ for (const size of [{width:1240,height:800}, {width:960,height:640}]) {
     expect(Math.abs(preview.left)).toBeLessThan(1);
     expect(Math.abs(preview.right)).toBeLessThan(1);
     await chooseSelect(page, page.getByLabel("Weighting", {exact:true}), "equal");
-    await chooseSelect(page, page.getByLabel("Output frame rate", {exact:true}), "custom");
+    await chooseSelect(page, page.getByLabel("Frame rate", {exact:true}), "custom");
     await page.getByLabel("Target frame rate", {exact:true}).fill("29.97");
     const equalChart = await page.locator("#blend-chart").innerHTML();
     await chooseSelect(page, page.getByLabel("Weighting", {exact:true}), "gaussian");

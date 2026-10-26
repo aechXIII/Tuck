@@ -31,7 +31,7 @@ for (const width of [1240, 960]) {
     await page.screenshot({ path: testInfo.outputPath(`settings-${width}.png`) });
     await page.getByRole("button", { name: "Profiles", exact: true }).click();
     await page.getByRole("button", { name: "New profile", exact: true }).click();
-    for (const name of ["Use source resolution", "Use source frame rate", "Apply transform settings from this profile", "Keep source audio"]) {
+    for (const name of ["Use source resolution", "Use source frame rate", "Apply transform settings from this profile", "Copy when possible"]) {
       const control = page.getByRole("switch", { name, exact: true });
       await control.scrollIntoViewIfNeeded();
       await control.focus();

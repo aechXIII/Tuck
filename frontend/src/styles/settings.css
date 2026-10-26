@@ -773,8 +773,39 @@ body.settings-open .settings-dialog {
   border-radius: var(--r-card);
   background: var(--sink);
 }
-.set-accent-preview .set-btn {
-  cursor: default;
+.set-preview-export {
+  flex: none;
+  display: flex;
+  height: 32px;
+}
+.set-preview-export-main {
+  display: flex;
+  align-items: center;
+  padding: 0 calc(14px * var(--density-scale));
+  border-radius: 999px 0 0 999px;
+  background: var(--action);
+  color: var(--on-accent);
+  font: 650 calc(12px * var(--text-scale)) var(--font);
+  white-space: nowrap;
+}
+.set-preview-export-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  border-left: 1px solid rgb(255 255 255 / 0.22);
+  border-radius: 0 999px 999px 0;
+  background: var(--action);
+  color: var(--on-accent);
+}
+.set-preview-export-more svg {
+  width: 11px;
+  height: 11px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .set-preview-play {
   flex: none;
@@ -1004,16 +1035,28 @@ body.settings-open .settings-dialog {
 .kb-row {
   min-height: 48px;
 }
+/* labels are short, so three keys fit on one line before the row wraps */
 .kb-actions {
-  gap: 4px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 2px;
+  max-width: 82%;
+}
+/* one key and its remove button read as one chip */
+.kb-binding {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--r-ctl);
+}
+.kb-binding:hover {
+  background: #1d1d20;
 }
 .kb-change {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   min-height: 32px;
-  margin-right: -8px;
-  padding: 0 8px;
+  padding: 0 4px 0 8px;
   border: 0;
   border-radius: var(--r-ctl);
   background: transparent;
@@ -1056,13 +1099,62 @@ body.settings-open .settings-dialog {
   color: var(--muted);
   font-size: calc(12px * var(--text-scale));
 }
-.kb-row.capturing .kb-change {
-  margin-right: 0;
+.set-icon-btn.kb-remove {
+  width: 24px;
+  height: 32px;
+  color: var(--dim);
+}
+.set-icon-btn.kb-remove svg {
+  width: 13px;
+  height: 13px;
+}
+.kb-binding:hover .kb-remove {
+  color: var(--muted);
+}
+/* fifty rows of × would crowd the list; each row shows its own on hover or keyboard focus */
+.kb-row:not(:hover, :focus-within) .kb-remove {
+  opacity: 0;
+}
+.set-icon-btn.kb-remove:hover {
+  background: transparent;
+  color: var(--text);
+}
+/* the last button lines up with the card edge like the other rows' controls */
+.kb-add {
+  margin-right: -8px;
+}
+.set-icon-btn.kb-add:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+.set-icon-btn.kb-add:disabled:hover {
+  background: transparent;
+  color: var(--muted);
+}
+.kb-capturing + .kb-remove {
+  display: none;
+}
+.kb-actions > .kb-none {
+  margin-right: 4px;
+}
+.kb-row.capturing .kb-capturing {
+  display: inline-flex;
+  align-items: center;
+  width: auto;
+  min-height: 32px;
   padding: 0 12px;
   background: color-mix(in oklab, var(--accent) 12%, var(--sink));
   box-shadow: inset 0 0 0 1.5px var(--accent);
   color: var(--accent-light);
   font-size: calc(12.5px * var(--text-scale));
+}
+/* keys waiting on Use here or Cancel take their own width, so a long one wraps instead of
+   spilling out of the 32 px Add button */
+.set-icon-btn.kb-pending {
+  display: inline-flex;
+  width: auto;
+  margin-right: 0;
+  padding: 0 8px;
 }
 .kb-capture-hint {
   margin-left: 8px;

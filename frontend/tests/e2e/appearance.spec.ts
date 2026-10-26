@@ -92,7 +92,7 @@ test("layout density and text size change independently and keep Settings readab
 test("the segment sample follows both timeline styles and the current segment labels", async ({ page }) => {
   await start(page);
   const timeline = page.getByRole("radiogroup", { name: "Timeline", exact: true });
-  for (const [label, value] of [["Graphite", "graphite"], ["Violet", "violet"]] as const) {
+  for (const [label, value] of [["Gray", "graphite"], ["Accent", "violet"]] as const) {
     await timeline.getByRole("radio", { name: label, exact: true }).check();
     await expect(page.locator("html")).toHaveAttribute("data-timeline", value);
     const colors = await page.evaluate(() => {

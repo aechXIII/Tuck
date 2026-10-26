@@ -841,7 +841,7 @@ export function createLibrary(host: LibraryHost): LibraryApi {
       // handled below: without the queue's own order there is nothing reliable to show
     }
     if (!waitingIds) {
-      toast("Couldn’t reorder the queue. Exports may run in a different order than the Library shows.", "err");
+      toast("Couldn’t reorder exports. They may run in a different order than the Library shows.", "err");
       return;
     }
     const pathById = new Map<string, string>();
@@ -854,7 +854,7 @@ export function createLibrary(host: LibraryHost): LibraryApi {
     session.clipOrder = alignToQueueOrder(session.clipOrder, waitingPaths);
     renderClips();
     settleCards(before);
-    toast("The queue couldn’t follow that order, so the Library now shows the order exports will run in.", "info");
+    toast("Exports couldn’t follow that order, so the Library now shows the order they will run in.", "info");
   }
 
   function appendLibraryClip(container: HTMLElement, model: ClipCardModel): void {
@@ -916,7 +916,7 @@ export function createLibrary(host: LibraryHost): LibraryApi {
       const needsTool = !!clip.error && toolMissing && !clip._queueState;
       let statusLabel = clip._queueState === "failed" ? "" : clip._statusText || "";
       if (!statusLabel && clip._queueState === "completed") statusLabel = "Completed";
-      if (!statusLabel && clip._queueState === "pending") statusLabel = "Pending";
+      if (!statusLabel && clip._queueState === "pending") statusLabel = "Waiting";
       if (!statusLabel && clip._queueState === "running") statusLabel = "Encoding";
       if (!statusLabel && clip._queueState === "failed") statusLabel = "Export failed";
       if (!statusLabel && clip._queueState === "cancelled") statusLabel = "Canceled";
@@ -1213,7 +1213,7 @@ export function createLibrary(host: LibraryHost): LibraryApi {
     }
     const notes: string[] = [];
     if (edited) notes.push(edited === 1 ? "Edits to 1 video go with it." : `Edits to ${edited} videos go with them.`);
-    if (exporting) notes.push("Exports already in the queue keep going.");
+    if (exporting) notes.push("Exports already waiting or running keep going.");
     confirmToast(notes.join(" "), doRemoveAllClips, {
       title: keys.length === 1 ? "Remove the video?" : `Remove all ${keys.length} videos?`,
       confirmLabel: "Remove all",

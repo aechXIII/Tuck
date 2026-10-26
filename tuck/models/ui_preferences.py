@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 
 from .export_preferences import NAME_TAKEN_CHOICES
 
@@ -155,6 +156,27 @@ def normalize_choice(key: str, value: object) -> str:
     if not isinstance(value, str) or value not in choices:
         raise ValueError(f"{key} must be one of: {', '.join(choices)}")
     return value
+
+
+UPDATE_CHECK_MAX_LENGTH = 64
+
+
+def normalize_update_check(value: object) -> str:
+    """Return when updates were last checked, as a UTC ISO 8601 time.
+
+    Raises ValueError for anything that isn't a time with a time zone, so About
+    never shows a stored value it can't read.
+    """
+    if not isinstance(value, str) or len(value) > UPDATE_CHECK_MAX_LENGTH:
+        raise ValueError("last_update_check must be a time")
+    try:
+        # Python 3.10 reads only the "+00:00" form that JavaScript writes as "Z"
+        moment = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        raise ValueError("last_update_check must be a time") from None
+    if moment.tzinfo is None:
+        raise ValueError("last_update_check must include a time zone")
+    return moment.astimezone(timezone.utc).isoformat(timespec="seconds")
 
 
 # pinned and hidden profiles in the picker; ids only, so profiles.json keeps its format

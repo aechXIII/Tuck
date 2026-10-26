@@ -613,7 +613,7 @@ export function installPanels(host: PanelsHost): PanelsApi {
       const empty = doc.createElement("div");
       empty.className = "cd-empty";
       empty.textContent =
-        "This video has no audio tracks. Use Add audio in the timeline toolbar to add one.";
+        "This video has no audio tracks. Add one with the Add button above.";
       mixerHost.appendChild(empty);
       renderAudioClipRange();
       return;

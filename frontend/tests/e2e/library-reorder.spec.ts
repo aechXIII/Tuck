@@ -83,5 +83,5 @@ test("a reorder the queue rejects puts the Library back in the order exports wil
   await page.mouse.up();
 
   await expect(cards.locator(".c2")).toHaveText(["First.mp4", "Second.mp4", "Third.mp4"]);
-  await expect(page.locator(".toast")).toContainText("the Library now shows the order exports will run in");
+  await expect(page.locator(".toast")).toContainText("the Library now shows the order they will run in");
 });

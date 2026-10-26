@@ -79,6 +79,7 @@ from .models.ui_preferences import (
     normalize_shortcut_overrides,
     normalize_start_task,
     normalize_timeline_toggle,
+    normalize_update_check,
 )
 from .output_paths import sweep_stale_outputs_later
 from .planner import plan
@@ -954,6 +955,7 @@ class BridgeAPI:
             "ffprobe_path",
             "encoder_cache_days",
             "check_updates",
+            "last_update_check",
             "clear_completed_automatically",
             "open_output_folder_after_queue",
             "last_task",
@@ -984,6 +986,7 @@ class BridgeAPI:
             "output_location": normalize_output_location,
             "output_subfolder": normalize_output_subfolder,
             "last_session_files": normalize_session_files,
+            "last_update_check": normalize_update_check,
             **{key: partial(normalize_encode_suffix, key) for key in ENCODE_SUFFIXES},
             **{key: partial(normalize_timeline_toggle, key) for key in FLAG_PREFERENCES},
             **{key: partial(normalize_choice, key) for key in CHOICE_PREFERENCES},

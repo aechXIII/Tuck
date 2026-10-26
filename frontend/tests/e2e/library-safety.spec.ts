@@ -170,7 +170,7 @@ test("Add segment's tooltip follows its shortcut when the key changes", async ({
   await expect(page.locator("#btn-segment-add")).toHaveAttribute("data-tip", "Add segment (N)");
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByRole("button", { name: "Keyboard", exact: true }).click();
-  await page.getByRole("button", { name: "Change keys for Add segment" }).click();
+  await page.getByRole("button", { name: "Change N for Add segment" }).click();
   await expect(page.locator(".kb-row.capturing")).toHaveCount(1);
   await page.keyboard.press("j");
   await expect(page.locator("#kb-status")).toContainText("now uses J");

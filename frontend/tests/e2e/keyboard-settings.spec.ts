@@ -60,7 +60,7 @@ for (const width of [1240, 960]) {
     await opener.click();
     await guide.getByRole("button", { name: "Change shortcuts", exact: true }).click();
     await expect(guide).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Change keys for Split at playhead" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Change S for Split at playhead" })).toBeVisible();
     expect(await lastSaved(page)).toBeUndefined();
   });
 }
@@ -68,13 +68,13 @@ for (const width of [1240, 960]) {
 test("new keys apply straight away, are saved and update button hints", async ({page}) => {
   await start(page);
   await openKeyboardPage(page);
-  await page.getByRole("button", {name:"Change keys for Split at playhead"}).click();
+  await page.getByRole("button", {name:"Change S for Split at playhead"}).click();
   await expect(page.locator(".kb-row.capturing")).toHaveCount(1);
   await page.keyboard.press("x");
   await expect(page.locator("#kb-status")).toHaveText("Split at playhead now uses X.");
   expect(await lastSaved(page)).toEqual({shortcut_overrides:{"timeline.split":["X"]}});
   await expect(page.getByRole("button", {name:"Reset Split at playhead to its default keys"})).toBeVisible();
-  await expect(page.getByRole("button", {name:"Change keys for Split at playhead"})).toBeFocused();
+  await expect(page.getByRole("button", {name:"Change X for Split at playhead"})).toBeFocused();
   await expect(page.locator("#btn-seq-split")).toHaveAttribute("aria-keyshortcuts", "X");
   await expect(page.locator("#btn-seq-split")).toHaveAttribute("data-tip", "Split (X)");
   await page.keyboard.press("Escape");
@@ -84,7 +84,7 @@ test("new keys apply straight away, are saved and update button hints", async ({
 test("taking keys from another action asks first and leaves that action without them", async ({page}) => {
   await start(page);
   await openKeyboardPage(page);
-  await page.getByRole("button", {name:"Change keys for Add videos"}).click();
+  await page.getByRole("button", {name:"Change Ctrl+O for Add videos"}).click();
   await page.keyboard.press("Control+q");
   const conflict = page.locator(".kb-conflict");
   await expect(conflict).toContainText("Ctrl+Q is used by Exit Tuck.");
@@ -98,10 +98,90 @@ test("taking keys from another action asks first and leaves that action without 
   await expect(page.locator('[data-command="app.exit"]')).not.toContainText("No keys");
 });
 
+test("a command keeps its other keys: one can be changed, added or removed on its own", async ({page}) => {
+  await start(page);
+  await openKeyboardPage(page);
+  const redo = page.locator('[data-command="edit.redo"]');
+  await expect(redo.locator(".kb-change")).toHaveCount(2);
+
+  // changing one key leaves the other
+  await page.getByRole("button", {name:"Change Ctrl+Shift+Z for Redo"}).click();
+  await page.keyboard.press("Control+r");
+  await expect(page.locator("#kb-status")).toHaveText("Redo now uses Ctrl+R or Ctrl+Y.");
+  expect(await lastSaved(page)).toEqual({shortcut_overrides:{"edit.redo":["Ctrl+R", "Ctrl+Y"]}});
+  await expect(page.getByRole("button", {name:"Change Ctrl+R for Redo"})).toBeFocused();
+
+  // Add keys appends, up to the three a command can keep
+  await page.getByRole("button", {name:"Add keys for Redo"}).click();
+  await expect(redo).toHaveClass(/capturing/);
+  await page.keyboard.press("Control+Shift+Z");
+  await expect(page.locator("#kb-status")).toHaveText("Redo now uses Ctrl+R or Ctrl+Y or Ctrl+Shift+Z.");
+  expect(await lastSaved(page)).toEqual({shortcut_overrides:{"edit.redo":["Ctrl+R", "Ctrl+Y", "Ctrl+Shift+Z"]}});
+  await expect(page.getByRole("button", {name:"Add keys for Redo"})).toBeDisabled();
+
+  // removing one key keeps the rest, and focus stays in the row
+  await page.getByRole("button", {name:"Remove Ctrl+R from Redo"}).click();
+  await expect(page.locator("#kb-status")).toHaveText("Redo no longer uses Ctrl+R.");
+  expect(await lastSaved(page)).toEqual({shortcut_overrides:{"edit.redo":["Ctrl+Y", "Ctrl+Shift+Z"]}});
+  await expect(page.getByRole("button", {name:"Change Ctrl+Y for Redo"})).toBeFocused();
+  await expect(page.locator("#btn-redo")).toHaveAttribute("aria-keyshortcuts", "Control+Y Control+Shift+Z");
+
+  // a key the command already has is not added twice
+  await page.getByRole("button", {name:"Add keys for Redo"}).click();
+  await page.keyboard.press("Control+y");
+  await expect(page.locator("#kb-status")).toHaveText("Redo already uses Ctrl+Y.");
+  await expect(redo.locator(".kb-change")).toHaveCount(2);
+
+  // taking every key away leaves No keys and an Add keys button
+  const del = page.locator('[data-command="edit.delete-selection"]');
+  await page.getByRole("button", {name:"Remove Del from Delete selected item"}).click();
+  await expect(del.locator(".kb-change")).toHaveCount(1);
+  await page.getByRole("button", {name:"Remove Backspace from Delete selected item"}).click();
+  await expect(del).toContainText("No keys");
+  await expect(page.getByRole("button", {name:"Add keys for Delete selected item"})).toBeFocused();
+  expect(await lastSaved(page)).toEqual({shortcut_overrides:{"edit.redo":["Ctrl+Y", "Ctrl+Shift+Z"], "edit.delete-selection":[]}});
+});
+
+// how far a row's keys, down to each key cap, or the page reach past the right edge of the card
+const keysPastCard = (page: Page, id: string) => page.evaluate((command) => {
+  const row = document.querySelector<HTMLElement>(`#kb-list [data-command="${command}"]`)!;
+  const edge = row.closest<HTMLElement>(".set-card")!.getBoundingClientRect().right;
+  const parts = [...row.querySelectorAll<HTMLElement>(".kb-actions *"), ...document.querySelectorAll<HTMLElement>(".kb-conflict *")]
+    .filter(part => part.getClientRects().length);
+  const page = document.getElementById("settings-page")!;
+  return Math.max(0, page.scrollWidth - page.clientWidth, ...parts.map(part => Math.ceil(part.getBoundingClientRect().right - edge)));
+}, id);
+
+for (const width of [960, 1240]) {
+  test(`a command's keys wrap onto a new line instead of leaving the card at ${width}px`, async ({page}) => {
+    await page.setViewportSize({width, height: width === 960 ? 640 : 800});
+    await start(page, {shortcut_overrides:{"edit.redo":["Ctrl+Y", "Ctrl+Shift+Z", "Ctrl+Alt+Shift+F12"]}});
+    await page.addStyleTag({content: ':root { --font: Arial, "Liberation Sans"; }'});
+    await openKeyboardPage(page);
+    const redo = page.locator('[data-command="edit.redo"]');
+    await expect(redo.locator(".kb-change")).toHaveCount(3);
+    expect(await keysPastCard(page, "edit.redo")).toBe(0);
+
+    // a key being added, and the question when another action has it, stay inside too
+    await page.getByRole("button", {name:"Add keys for Add videos"}).click();
+    await page.keyboard.press("Control+Shift+Z");
+    await expect(page.locator(".kb-conflict")).toContainText("Ctrl+Shift+Z is used by Redo.");
+    expect(await keysPastCard(page, "file.add-videos")).toBe(0);
+  });
+}
+
+test("saved keys from older versions still load, including several keys for one command", async ({page}) => {
+  await start(page, {shortcut_overrides:{"edit.redo":["Ctrl+Y"], "edit.delete-selection":["Delete", "X", "Backspace"]}});
+  await openKeyboardPage(page);
+  await expect(page.locator('[data-command="edit.redo"] .kb-change')).toHaveCount(1);
+  await expect(page.locator('[data-command="edit.delete-selection"] .kb-change')).toHaveCount(3);
+  await expect(page.getByRole("button", {name:"Add keys for Delete selected item"})).toBeDisabled();
+});
+
 test("Esc cancels choosing keys and reserved keys are refused", async ({page}) => {
   await start(page);
   await openKeyboardPage(page);
-  await page.getByRole("button", {name:"Change keys for Undo"}).click();
+  await page.getByRole("button", {name:"Change Ctrl+Z for Undo"}).click();
   await page.keyboard.press("Tab");
   await expect(page.locator("#kb-status")).toContainText("cannot be used");
   await expect(page.locator(".kb-row.capturing")).toHaveCount(1);

@@ -37,7 +37,7 @@ test("a second Export press while the first is with the backend queues nothing m
   await exportButton.click();
   await exportButton.click({ force: true });
   // a slow request says what it's doing instead of looking ignored
-  await expect(exportButton).toHaveText("Adding to queue…");
+  await expect(exportButton).toHaveText("Adding to Exports…");
   await expect(exportButton).toBeDisabled();
   expect(await callCount(page, "enqueueWithOptions")).toBe(1);
 

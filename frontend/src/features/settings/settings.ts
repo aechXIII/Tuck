@@ -43,6 +43,8 @@ import {
 } from "../../platform/capabilities.ts";
 import { confirmToast, discardChangesIntent, toast } from "../editor/toast.ts";
 import { lutSettings } from "../export/lut-controls.ts";
+import { checkedAtText } from "../editor/time-format.ts";
+import { sizePresets as targetSizePresets } from "../panels/inspector-ui.ts";
 import { HIDEABLE_PARTS, hiddenParts, isTaskName, visibleTasks, type HideablePart, type TaskName } from "./visibility.ts";
 import {
   bindingFromEvent,
@@ -94,7 +96,8 @@ export interface SettingsDeps {
   // switches the editor to this profile; returns the control that now shows it, if it is showing
   useProfile: (profileId: string) => HTMLElement | null;
   copyDiagnostics: () => void | Promise<void>;
-  checkForUpdates: () => void | Promise<void>;
+  /** resolves to the time the check was saved, or "" when it didn't get an answer */
+  checkForUpdates: () => Promise<string>;
   showShortcutGuide: () => void;
 }
 
@@ -504,7 +507,10 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
           checked: option.value === accent,
         })));
     const preview = h("div", { class: "set-accent-preview", "aria-hidden": "true" },
-      h("span", { class: "set-btn primary" }, "Compress this video"),
+      // drawn like the bottom bar's export button and its menu arrow
+      h("span", { class: "set-preview-export" },
+        h("span", { class: "set-preview-export-main" }, "Compress selected"),
+        h("span", { class: "set-preview-export-more" }, icon("caret"))),
       h("span", { class: "set-preview-play" }, icon("play")),
       h("span", { class: "set-preview-switch" }),
       h("span", { class: "set-preview-slider" }, h("span")),
@@ -545,10 +551,11 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       row({
         setting: "timeline-style",
         label: "Timeline",
-        description: "Graphite keeps clips gray. Violet tints them with the accent color.",
+        description: "Gray keeps clips neutral. Accent tints them with the accent color.",
+        // the stored values keep their first names, from when the only accent was violet
         control: choiceGroup("set-timeline-style", "Timeline", [
-          { value: "graphite", label: "Graphite" },
-          { value: "violet", label: "Violet" },
+          { value: "graphite", label: "Gray" },
+          { value: "violet", label: "Accent" },
         ], str(s.timeline_style, "graphite"), { "data-settings-change": "save" }),
       }),
       switchRow({
@@ -689,18 +696,18 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         checked,
         attributes: { "data-settings-change": "save" },
       });
-    return [section("When the queue finishes", card(
+    return [section("When exports finish", card(
       flag("show-folder", "set-open-output-folder", "Show the last export in its folder", s.open_output_folder_after_queue === true),
-      flag("clear-finished", "set-auto-clear", "Clear finished jobs", s.clear_completed_automatically === true,
-        "Failed and canceled jobs stay so you can retry them."),
+      flag("clear-finished", "set-auto-clear", "Clear finished exports", s.clear_completed_automatically === true,
+        "Failed and canceled exports stay so you can retry them."),
       flag("remove-exported", "set-remove-exported", "Remove videos after they export", s.remove_after_export === true,
         "Finished videos leave the Library."),
       flag("notify", "set-notify", "Notify me", s.notify_when_done !== false,
         "Shows a notification when Tuck is in the background."),
     )), section("While exporting", card(
       flag("keep-awake", "set-keep-awake", "Keep the PC awake", s.keep_awake !== false,
-        "Sleep waits until the queue is done."),
-      flag("background", "set-background", "Run exports in the background", s.background_exports === true,
+        "Sleep waits until exports are done."),
+      flag("background", "set-background", "Give games priority", s.background_exports === true,
         "Keeps games smooth. Exports take a bit longer."),
     ))];
   }
@@ -784,17 +791,21 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     ))];
   }
 
+  function lastCheckedText(checked: string): string {
+    return checked ? `Last checked ${checked}` : "Not checked yet";
+  }
+
   function aboutPage(s: SettingsRecord, caps: PlatformCapabilities): Content {
     const version = str(s.version);
     const updater = shouldShowUpdater(caps);
-    const checked = str(s.last_update_check);
+    const checked = checkedAtText(s.last_update_check);
     const hero = h("div", { class: "set-row set-about", "data-setting": "updates" },
       h("span", { class: "set-row-text" },
         h("span", { class: "set-logo" }, icon("logo")),
         h("span", { class: "set-row-words" },
           h("span", { class: "set-label set-about-name" }, "Tuck ", h("span", { class: "mono" }, version)),
-          h("span", { class: "set-desc" },
-            updater ? (checked ? `Last checked ${checked}` : "Not checked yet") : "Updates aren’t available in this build."))),
+          h("span", { class: "set-desc", id: "set-update-checked" },
+            updater ? lastCheckedText(checked) : "Updates aren’t available in this build."))),
       h("span", { class: "set-row-control" },
         updater && button("Check for updates", { action: "check-updates", icon: "refresh" })));
     const updates = updater
@@ -1369,7 +1380,9 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     target.setAttribute("aria-disabled", "true");
     if (label) label.textContent = "Checking…";
     try {
-      await deps.checkForUpdates();
+      const checkedAt = await deps.checkForUpdates();
+      const note = byId("set-update-checked");
+      if (checkedAt && note) note.textContent = lastCheckedText(checkedAtText(checkedAt));
     } finally {
       delete target.dataset.pending;
       target.removeAttribute("aria-disabled");
@@ -1478,8 +1491,8 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       : p.resolution_mode === "short_side"
         ? num(p.short_side) === 2160 ? "4K" : `${num(p.short_side)}p`
         : "Source resolution";
-    const fps = p.fps_mode === "custom" ? `${num(p.custom_fps) || num(p.max_fps) || 30} FPS` : "Source FPS";
-    const audio = p.keep_audio ? "Keep audio" : `${num(p.audio_bitrate_kbps) || 128} kbps audio`;
+    const fps = p.fps_mode === "custom" ? `${num(p.custom_fps) || num(p.max_fps) || 30} fps` : "Source frame rate";
+    const audio = p.keep_audio ? "Copy audio" : `${num(p.audio_bitrate_kbps) || 128} kbps audio`;
     const transform = p.transform_intent as SettingsRecord | undefined;
     const transformSummary = transform
       ? ` · ${transform.crop_aspect === "free" ? "Free aspect" : String(transform.crop_aspect)} · ${String(transform.sizing_mode || "fit").replace(/^./, (v) => v.toUpperCase())}${
@@ -1634,7 +1647,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
 
   function deleteProfile(pid: string, name: string): void {
     const place = profileRowPlace(pid);
-    confirmToast(`Delete "${name}"?`, () => {
+    confirmToast(`Delete “${name}”?`, () => {
       void legacyBackendResult(client().deleteProfile(pid)).then(async (result) => {
         if (result.ok) {
           await deps.reloadEditorSettings();
@@ -1685,7 +1698,8 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
   }
 
   function profileEditorPage(): Content {
-    const sizePresets = [20, 50, 100, 500].map((size) => h("button", {
+    // the same presets as the Inspector, so a profile can save what the editor offers
+    const sizePresets = targetSizePresets().map((size) => h("button", {
       type: "button",
       class: "set-choice-btn mono",
       "data-settings-click": "profile-size",
@@ -1741,9 +1755,9 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       h("div", { id: "pe-transform-fields" },
         row({ setting: "pe-aspect", label: "Target aspect", labelFor: "pe-aspect", sub: true, control: selectControl("pe-aspect", [["free", "Free"], ["16:9", "16:9"], ["9:16", "9:16"], ["1:1", "1:1"], ["4:3", "4:3"]], "free") }),
         row({ setting: "pe-sizing", label: "Sizing", labelFor: "pe-sizing", sub: true, control: selectControl("pe-sizing", [["fit", "Fit"], ["fill", "Fill"], ["stretch", "Stretch"]], "fit") }),
-        row({ setting: "pe-rotation", label: "Rotation", labelFor: "pe-rotation", sub: true, control: selectControl("pe-rotation", [["0", "None"], ["90", "90° clockwise"], ["180", "180°"], ["270", "90° counterclockwise"]], "0") })),
+        row({ setting: "pe-rotation", label: "Rotation", labelFor: "pe-rotation", sub: true, control: selectControl("pe-rotation", [["0", "0°"], ["270", "90° left"], ["90", "90° right"], ["180", "180°"]], "0") })),
     )), section("Audio", card(
-      editorSwitch("pe-audio-source", "Keep source audio", "pe-audio-source"),
+      editorSwitch("pe-audio-source", "Copy when possible", "pe-audio-source"),
       row({
         setting: "pe-audio",
         label: "Audio bitrate",
@@ -1790,10 +1804,11 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         h("div", { id: "pe-rc-row" }, row({ setting: "pe-rc", label: "Quality method", labelFor: "pe-rc", sub: true, control: emptySelect("pe-rc", "profile-visibility") })),
         h("div", { id: "pe-quality-row", class: "set-row sub", "data-setting": "pe-quality" },
           h("span", { class: "set-row-text" }, h("span", { class: "set-row-words" },
-            h("label", { class: "set-label", id: "pe-quality-label", for: "pe-quality" }, "CQ"),
+            h("label", { class: "set-label", id: "pe-quality-label", for: "pe-quality" }, "CQ value"),
             h("span", { class: "set-desc" }, "Lower value means higher quality."))),
           h("span", { class: "set-row-control" },
-            textInput("pe-quality", "23", "Quality value", { mono: true, width: 88, attributes: { type: "number", min: "0", max: "51" } }))),
+            // the label above names it, and it changes with the quality method
+            textInput("pe-quality", "23", "", { mono: true, width: 88, attributes: { type: "number", min: "0", max: "51", "aria-label": undefined } }))),
         h("div", { id: "pe-bitrate-row" }, row({ setting: "pe-bitrate", label: "Bitrate", labelFor: "pe-bitrate", sub: true, control: textInput("pe-bitrate", "2000", "Bitrate in kbps", { mono: true, width: 112, unit: "kbps", attributes: { type: "number", min: "50", max: "50000" } }) })),
         h("div", { id: "pe-tune-row" }, row({ setting: "pe-tune", label: "Tune", labelFor: "pe-tune", sub: true, control: emptySelect("pe-tune") }))),
     ))];
@@ -1890,7 +1905,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     el("pe-bitrate-row").classList.toggle("hid", !(up && (rc === "CBR" || rc === "VBR")));
     el("pe-tune-row").classList.toggle("hid", !(up && cpu));
     el("pe-transform-fields").classList.toggle("hid", !input("pe-transform-enabled").checked);
-    el("pe-quality-label").textContent = rc === "CRF" ? "CRF" : "CQ";
+    el("pe-quality-label").textContent = rc === "CRF" ? "CRF value" : "CQ value";
     deps.syncSelects();
     updateEditorNote();
   }
@@ -2060,6 +2075,12 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
   // each action can take new keys; they apply and are saved straight away
   let stopCapture: () => void = () => {};
 
+  // Python keeps at most this many keys for one command
+  const KEYS_PER_COMMAND = 3;
+
+  /** Which key a capture changes: one of the command's keys, or a new one added to them. */
+  type KeyTarget = { readonly kind: "replace"; readonly index: number } | { readonly kind: "add" };
+
   function keycaps(bindings: readonly string[]): HTMLElement {
     const keys = document.createElement("span");
     keys.className = "kbs-bindings kb-keys";
@@ -2083,6 +2104,26 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
 
   function shortcutFilter(): string {
     return (byId<HTMLInputElement>("kb-search")?.value ?? "").trim().toLowerCase();
+  }
+
+  // one button per key changes that key; its × takes the key away and leaves the others
+  function bindingChip(command: EditableCommand, rowNode: HTMLElement, binding: string, index: number): HTMLElement {
+    const keys = displayShortcut([binding]);
+    const chip = document.createElement("span");
+    chip.className = "kb-binding";
+    const change = document.createElement("button");
+    change.type = "button";
+    change.className = "kb-change";
+    change.dataset.bindingIndex = String(index);
+    change.setAttribute("aria-label", `Change ${keys} for ${command.label}`);
+    change.title = "Change keys";
+    change.appendChild(keycaps([binding]));
+    change.addEventListener("click", () => captureShortcut(command, rowNode, change, { kind: "replace", index }));
+    const remove = iconButton("close", `Remove ${keys} from ${command.label}`, () => removeBinding(command, index));
+    remove.classList.add("kb-remove");
+    remove.title = "Remove";
+    chip.append(change, remove);
+    return chip;
   }
 
   function renderKeyboardList(): void {
@@ -2118,17 +2159,19 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         actions.className = "set-row-control kb-actions";
         if (command.changed) {
           const reset = iconButton("reset", `Reset ${command.label} to its default keys`, () =>
-            void saveShortcuts(withoutOverride(command.id), `${command.label} is back to its default keys.`, command.id));
+            void saveShortcuts(withoutOverride(command.id), `${command.label} is back to its default keys.`, { id: command.id, index: 0 }));
+          reset.classList.add("kb-reset");
           actions.appendChild(reset);
         }
-        const change = document.createElement("button");
-        change.type = "button";
-        change.className = "kb-change";
-        change.setAttribute("aria-label", `Change keys for ${command.label}`);
-        change.title = "Change keys";
-        change.appendChild(keycaps(command.bindings));
-        change.addEventListener("click", () => captureShortcut(command, rowNode, change));
-        actions.appendChild(change);
+        if (!command.bindings.length) actions.appendChild(elementWithText("span", "No keys", "kb-none"));
+        command.bindings.forEach((binding, index) => actions.appendChild(bindingChip(command, rowNode, binding, index)));
+        const full = command.bindings.length >= KEYS_PER_COMMAND;
+        const add = iconButton("plus", `Add keys for ${command.label}`, () =>
+          captureShortcut(command, rowNode, add, { kind: "add" }));
+        add.classList.add("kb-add");
+        add.title = full ? `${command.label} has the most keys it can have` : "Add keys";
+        add.disabled = full;
+        actions.appendChild(add);
         rowNode.appendChild(actions);
         group.appendChild(rowNode);
       }
@@ -2138,6 +2181,16 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     if (!byCategory.size) list.appendChild(elementWithText("p", "No shortcuts match.", "set-empty"));
     const resetAll = byId<HTMLButtonElement>("kb-reset-all");
     if (resetAll) resetAll.disabled = !Object.keys(shortcutOverrides()).length;
+  }
+
+  // the key button at `index`, or the next one along when it's gone, then Add keys
+  function focusKey(id: string, index: number | "add"): void {
+    const row = document.querySelector<HTMLElement>(`#kb-list [data-command="${CSS.escape(id)}"]`);
+    if (!row) return;
+    const keys = Array.from(row.querySelectorAll<HTMLButtonElement>(".kb-change"));
+    const add = row.querySelector<HTMLButtonElement>(".kb-add:not(:disabled)");
+    const target = index === "add" ? add ?? keys.at(-1) : keys[Math.min(index, keys.length - 1)] ?? add;
+    target?.focus();
   }
 
   function withoutOverride(id: string): Record<string, string[]> {
@@ -2151,12 +2204,15 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     if (status) status.textContent = message;
   }
 
-  function captureShortcut(command: EditableCommand, rowNode: HTMLElement, change: HTMLButtonElement): void {
+  function captureShortcut(command: EditableCommand, rowNode: HTMLElement, trigger: HTMLButtonElement, target: KeyTarget): void {
     stopCapture();
     rowNode.classList.add("capturing");
-    change.replaceChildren(elementWithText("span", "Press keys…", "kb-capture-label"), elementWithText("span", "Esc cancels", "kb-capture-hint"));
-    change.setAttribute("aria-pressed", "true");
-    announceShortcut(`Press the new keys for ${command.label}. Esc cancels.`);
+    trigger.classList.add("kb-capturing");
+    trigger.replaceChildren(elementWithText("span", "Press keys…", "kb-capture-label"), elementWithText("span", "Esc cancels", "kb-capture-hint"));
+    trigger.setAttribute("aria-pressed", "true");
+    announceShortcut(target.kind === "add"
+      ? `Press the keys to add to ${command.label}. Esc cancels.`
+      : `Press the new keys for ${command.label}. Esc cancels.`);
     const onKey = (event: KeyboardEvent): void => {
       // the page keeps these keys; nothing else in Tuck reacts while keys are being chosen
       event.preventDefault();
@@ -2164,7 +2220,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       if (event.key === "Escape") {
         renderKeyboardList();
         announceShortcut("Keys unchanged.");
-        document.querySelector<HTMLButtonElement>(`[data-command="${command.id}"] .kb-change`)?.focus();
+        focusKey(command.id, target.kind === "add" ? "add" : target.index);
         return;
       }
       const binding = bindingFromEvent(event);
@@ -2174,7 +2230,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         return;
       }
       stopCapture();
-      offerShortcut(command, binding, rowNode, change);
+      offerShortcut(command, binding, rowNode, trigger, target);
     };
     window.addEventListener("keydown", onKey, true);
     stopCapture = () => {
@@ -2183,38 +2239,69 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     };
   }
 
-  function offerShortcut(command: EditableCommand, binding: string, rowNode: HTMLElement, change: HTMLButtonElement): void {
+  // the command's keys once `binding` is put in place; a key it already has isn't listed twice
+  function keysWith(bindings: readonly string[], binding: string, target: KeyTarget): string[] {
+    const next = target.kind === "add"
+      ? [...bindings, binding]
+      : bindings.map((existing, index) => index === target.index ? binding : existing);
+    return next.filter((existing, index) => next.findIndex((other) => sameBinding(other, existing)) === index);
+  }
+
+  function offerShortcut(command: EditableCommand, binding: string, rowNode: HTMLElement, trigger: HTMLButtonElement, target: KeyTarget): void {
     const keys = displayShortcut([binding]);
+    const focusAt = target.kind === "add" ? command.bindings.length : target.index;
+    const unchanged = target.kind === "add"
+      ? command.bindings.some((existing) => sameBinding(existing, binding))
+      : sameBinding(command.bindings[target.index] ?? "", binding);
+    if (unchanged) {
+      renderKeyboardList();
+      announceShortcut(target.kind === "add" ? `${command.label} already uses ${keys}.` : "Keys unchanged.");
+      focusKey(command.id, target.kind === "add" ? "add" : target.index);
+      return;
+    }
     const next = shortcutOverrides();
     const taken = commandsUsing(binding, command.id);
     for (const other of taken) {
       next[other.id] = other.bindings.filter((existing) => !sameBinding(existing, binding));
     }
-    next[command.id] = [binding];
-    const done = `${command.label} now uses ${keys}.`;
+    const chosen = keysWith(command.bindings, binding, target);
+    next[command.id] = chosen;
+    const done = `${command.label} now uses ${displayShortcut(chosen)}.`;
+    const focus = { id: command.id, index: Math.min(focusAt, chosen.length - 1) };
     if (!taken.length) {
-      void saveShortcuts(next, done, command.id);
+      void saveShortcuts(next, done, focus);
       return;
     }
     // the keys already belong to something else; ask before moving them
-    change.replaceChildren(keycaps([binding]));
-    change.setAttribute("aria-pressed", "false");
+    trigger.classList.remove("kb-capturing");
+    // until Use here or Cancel the keys show as the key they would be, even in the round Add button
+    trigger.classList.add("kb-change", "kb-pending");
+    trigger.replaceChildren(keycaps([binding]));
+    trigger.setAttribute("aria-pressed", "false");
     const note = document.createElement("div");
     note.className = "kb-conflict";
     note.setAttribute("role", "alert");
     note.appendChild(icon("warn"));
     note.appendChild(elementWithText("span", `${keys} is used by ${taken.map((item) => item.label).join(", ")}.`));
-    const use = shortcutButton("Use here", () => void saveShortcuts(next, `${done} ${taken.map((item) => item.label).join(", ")} lost it.`, command.id));
+    const use = shortcutButton("Use here", () => void saveShortcuts(next, `${done} ${taken.map((item) => item.label).join(", ")} lost it.`, focus));
     const cancel = shortcutButton("Cancel", () => {
       renderKeyboardList();
       announceShortcut("Keys unchanged.");
+      focusKey(command.id, target.kind === "add" ? "add" : target.index);
     }, "quiet");
     note.append(use, cancel);
     rowNode.after(note);
     use.focus();
   }
 
-  async function saveShortcuts(next: Record<string, string[]>, message: string, focusId = ""): Promise<void> {
+  function removeBinding(command: EditableCommand, index: number): void {
+    const keys = displayShortcut([command.bindings[index] ?? ""]);
+    const next = shortcutOverrides();
+    next[command.id] = command.bindings.filter((_, position) => position !== index);
+    void saveShortcuts(next, `${command.label} no longer uses ${keys}.`, { id: command.id, index: next[command.id]!.length ? index : "add" });
+  }
+
+  async function saveShortcuts(next: Record<string, string[]>, message: string, focus?: { readonly id: string; readonly index: number | "add" }): Promise<void> {
     const previous = shortcutOverrides();
     // a choice that matches the defaults is simply the default again
     for (const command of editableCommands()) {
@@ -2234,7 +2321,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       toast(result.error ?? "Could not save the keyboard shortcuts.", "err");
     }
     renderKeyboardList();
-    if (focusId) document.querySelector<HTMLButtonElement>(`[data-command="${focusId}"] .kb-change`)?.focus();
+    if (focus) focusKey(focus.id, focus.index);
   }
 
   function resetAllShortcuts(): void {
@@ -2377,14 +2464,14 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
 
   async function installGenericShortcut(kind: SendToKind, name: string): Promise<void> {
     const result = await legacyBackendResult(client().installGenericSendto(kind));
-    if (result.ok) toast(`Added "${name}" to Send to.`, "ok");
-    else toast(result.error ?? `Could not add "${name}".`, "err");
+    if (result.ok) toast(`Added “${name}” to Send to.`, "ok");
+    else toast(result.error ?? `Could not add “${name}”.`, "err");
     void refreshShortcutList(`st-${kind}`);
   }
 
   async function installProfileShortcut(pid: string, name: string): Promise<void> {
     const result = await legacyBackendResult(client().installProfileSendto(pid, "start"));
-    if (result.ok) toast(`Added "${name}" to Explorer.`, "ok");
+    if (result.ok) toast(`Added “${name}” to Explorer.`, "ok");
     else toast(result.error ?? "Could not add the profile shortcut.", "err");
     void open("explorer");
   }
@@ -2395,7 +2482,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
 
   function removeShortcut(data: ShortcutRecord, name: string): void {
     const kind = genericKind(data);
-    confirmToast(`Remove "${name}" from Send to?`, () => {
+    confirmToast(`Remove “${name}” from Send to?`, () => {
       void legacyBackendResult(
         kind ? client().removeGenericSendto(kind) : client().removeProfileSendto(data.profile_id || data.name || ""),
       ).then((result) => {

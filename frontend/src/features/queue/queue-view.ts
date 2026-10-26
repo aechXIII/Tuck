@@ -14,7 +14,7 @@ export function isQueueActive(state: QueueItemState | "" | undefined): boolean {
 }
 
 /**
- * What a video in the queue says about its export: "Queued", "Exporting · 40%", or the step the
+ * What a video in the queue says about its export: "Waiting", "Exporting · 40%", or the step the
  * backend names, such as "Pass 1 of 2 · 12%" or "Second try · 4%".
  */
 export function queuedVideoLabel(
@@ -23,10 +23,10 @@ export function queuedVideoLabel(
   progress: number | undefined,
   indeterminate: boolean | undefined,
 ): string {
-  if (state === "pending") return "Queued";
+  if (state === "pending") return "Waiting";
   if (state === "paused") return "Paused";
   const phase = (statusText || "").split(" · ")[0] || "";
-  const label = phase && phase !== "Encoding" && phase !== "Pending" ? phase : "Exporting";
+  const label = phase && !["Encoding", "Waiting", "Pending"].includes(phase) ? phase : "Exporting";
   const percent = Math.round(Math.max(0, Math.min(100, progress || 0)));
   return indeterminate || !percent ? label : `${label} · ${percent}%`;
 }
@@ -348,7 +348,7 @@ export function formatQueueStatus(item: QueueItem | null | undefined, attempt = 
     }
     return parts.join(" · ");
   }
-  if (item.state === "pending") return "Pending";
+  if (item.state === "pending") return "Waiting";
   if (item.state === "running") return `Encoding · ${Math.round(item.progress ?? 0)}%`;
   if (item.state === "completed") return "Completed";
   if (item.state === "failed") return "Failed";

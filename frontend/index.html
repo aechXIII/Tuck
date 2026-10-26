@@ -847,7 +847,7 @@
                 <div class="adjust-panel-body export-video-body">
                   <div class="video-control-group">
                     <label for="export-res-select">Resolution</label>
-                    <select id="export-res-select" data-action-change="encoding-resolution-facade" aria-label="Output resolution"></select>
+                    <select id="export-res-select" data-action-change="encoding-resolution-facade"></select>
                     <div id="res-cust" class="video-dimensions" hidden>
                       <label for="res-w">Width<input type="number" id="res-w" min="2" step="1" value="1920" aria-label="Custom width" data-action-input="encoding-resolution" required /></label>
                       <span aria-hidden="true">×</span>
@@ -857,8 +857,8 @@
                   <div class="video-control-group">
                     <label for="export-fps-select">Frame rate</label>
                     <div class="video-fps-controls">
-                      <select id="export-fps-select" data-action-change="encoding-frame-rate-facade" aria-label="Output frame rate"></select>
-                      <label id="video-custom-fps" class="video-fps-value" hidden><input type="number" id="fps-slider" step="any" min="0.1" value="30" data-action-input="encoding-frame-rate" aria-label="Target frame rate" required /><span>FPS</span></label>
+                      <select id="export-fps-select" data-action-change="encoding-frame-rate-facade"></select>
+                      <label id="video-custom-fps" class="video-fps-value" hidden><input type="number" id="fps-slider" step="any" min="0.1" value="30" data-action-input="encoding-frame-rate" aria-label="Target frame rate" required /><span>fps</span></label>
                     </div>
                   </div>
                     <div id="scaler-row" class="video-control-group">
@@ -881,9 +881,9 @@
                 <div class="adjust-panel-body blend-body">
                   <label class="toggle-row export-toggle" for="blend-enabled"><span>Enable frame blending</span><input type="checkbox" role="switch" id="blend-enabled" /><span class="toggle-track" aria-hidden="true"></span></label>
                   <fieldset id="blend-options" aria-label="Frame blending settings" disabled>
-                    <div class="export-setting-line blend-fps-row"><label for="blend-fps-select">Output FPS</label><div class="video-fps-controls">
+                    <div class="export-setting-line blend-fps-row"><label for="blend-fps-select">Output frame rate</label><div class="video-fps-controls">
                       <select id="blend-fps-select" aria-label="Frame blending output frame rate"></select>
-                      <label id="blend-custom-fps" class="video-fps-value" hidden><input type="number" id="blend-fps-input" min="0.1" step="any" value="30" aria-label="Frame blending custom frame rate" data-shared-fps required /><span>FPS</span></label>
+                      <label id="blend-custom-fps" class="video-fps-value" hidden><input type="number" id="blend-fps-input" min="0.1" step="any" value="30" aria-label="Frame blending custom frame rate" data-shared-fps required /><span>fps</span></label>
                     </div></div>
                     <div class="export-setting-line"><label for="blend-amount">Blur amount</label><input type="number" id="blend-amount" min="0" max="4" step="0.01" value="1" required /></div>
                     <div class="export-setting-line"><label for="blend-curve">Weighting</label><select id="blend-curve"><option value="equal">Equal</option><option value="vegas">Vegas</option><option value="gaussian">Gaussian</option><option value="triangular">Triangular</option><option value="ascending">Ascending</option><option value="descending">Descending</option></select></div>
@@ -997,16 +997,16 @@
                     <option value="best">Best compression</option>
                   </select>
                 </div>
-                <div class="enc-field" id="two-pass-wrap">
-                  <label for="two-pass">Two-pass encoding</label
-                  ><select
-                    id="two-pass"
-                    data-action-change="encoding-two-pass"
-                    aria-label="Two-pass encoding"
+                <div class="info-row" id="two-pass-wrap">
+                  <label class="toggle-row export-toggle" for="two-pass"
+                    ><span>Two-pass encoding</span
+                    ><input
+                      type="checkbox" role="switch"
+                      id="two-pass"
+                      data-action-change="encoding-two-pass"
+                      checked
+                    /><span class="toggle-track" aria-hidden="true"></span></label
                   >
-                    <option value="on" selected>On</option>
-                    <option value="off">Off</option>
-                  </select>
                 </div>
                 <span class="setting-note hid" id="two-pass-note"
                   >Two-pass is available only for software compression.</span
@@ -1035,7 +1035,6 @@
                     ><select
                       id="rc-sel"
                       data-action-change="encoding-rate-control"
-                      aria-label="Rate control method"
                     ></select>
                   </div>
                   <div class="enc-field hid" id="quality-row">
@@ -1047,9 +1046,8 @@
                       min="0"
                       max="51"
                       data-action-change="encoding-preview-dirty"
-                      aria-label="Quality value"
                     />
-                    <div class="quality-help">Lower value = higher quality.</div>
+                    <div class="quality-help">Lower value means higher quality.</div>
                   </div>
                   <div class="enc-field hid" id="br-row">
                     <label for="br-val">Bitrate (kbps)</label
@@ -1060,7 +1058,6 @@
                       min="50"
                       max="50000"
                       data-action-change="encoding-preview-dirty"
-                      aria-label="Explicit bitrate"
                     />
                   </div>
                   <div class="enc-field hid" id="tune-row">
@@ -1184,7 +1181,8 @@
             aria-pressed="false"
             aria-label="Mute this segment's source audio"
             aria-keyshortcuts="M"
-            data-tip="Mute this segment's source audio"
+            data-shortcut-label="Mute this segment's source audio"
+            data-tip="Mute this segment's source audio (M)"
           >
             <svg viewBox="0 0 16 16" aria-hidden="true">
               <path d="M3 6.5v3h2.5L9 12.5v-9L5.5 6.5ZM11.5 6.5l3 3M14.5 6.5l-3 3" />
@@ -1513,9 +1511,9 @@
         </div>
       </div>
     </div>
-    <div id="exports-panel" role="dialog" aria-label="Exports" hidden>
+    <div id="exports-panel" role="dialog" aria-labelledby="exports-title" hidden>
       <div class="exports-head">
-        <strong>Exports</strong>
+        <strong id="exports-title" tabindex="-1">Exports</strong>
         <span id="exports-count"></span>
         <span class="exports-head-actions">
           <button type="button" class="exports-btn" id="btn-retry-all" data-action-click="queue-retry-all" hidden>Retry all</button>
@@ -1627,7 +1625,7 @@
               data-settings-value="queue"
             >
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5h11M4 12h11M4 17.5h7"></path><path d="m15.5 16.5 2 2 3.5-4"></path></svg>
-              <span>Queue</span>
+              <span>Exports</span>
               <span class="settings-nav-count" aria-hidden="true"></span>
             </button>
             <button

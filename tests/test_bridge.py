@@ -1511,6 +1511,26 @@ class TestBridgeWorkflowPropagation:
         assert not invalid["ok"]
         assert invalid["error"] == "open_output_folder_after_queue must be boolean"
 
+    def test_save_settings_remembers_when_updates_were_checked(self, tmp_path, monkeypatch):
+        import tuck.settings as settings_mod
+
+        monkeypatch.setattr(settings_mod, "_config_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
+        api = BridgeAPI()
+
+        # the time JavaScript's toISOString writes, kept in UTC
+        assert api.save_settings({"last_update_check": "2026-10-24T12:05:31.420Z"})["ok"]
+        assert api.get_settings()["last_update_check"] == "2026-10-24T12:05:31+00:00"
+        assert api.save_settings({"last_update_check": "2026-10-24T14:05:00+02:00"})["ok"]
+        assert api._settings.load().last_update_check == "2026-10-24T12:05:00+00:00"
+
+        for bad in ("yesterday", "2026-10-24T12:05:00", 1729771531, "<b>now</b>", "9" * 80):
+            result = api.save_settings({"last_update_check": bad})
+            assert not result["ok"]
+            assert "last_update_check" in result["error"]
+        assert api.get_settings()["last_update_check"] == "2026-10-24T12:05:00+00:00"
+
     def test_save_settings_remembers_cut_task(self, tmp_path, monkeypatch):
         import tuck.settings as settings_mod
 

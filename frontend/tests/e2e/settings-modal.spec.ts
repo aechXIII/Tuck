@@ -81,7 +81,7 @@ test("removing videos after they export is off by default, found by search, and 
   await openSettings(page);
   await page.getByRole("searchbox", { name: "Search settings" }).fill("remove videos");
   await page.locator(".set-result", { hasText: "Remove videos after they export" }).click();
-  await expect(page.getByRole("heading", { name: "Queue", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Exports", exact: true })).toBeVisible();
   const option = page.getByRole("switch", { name: "Remove videos after they export" });
   await expect(option).not.toBeChecked();
   await page.getByText("Remove videos after they export", { exact: true }).click();
@@ -136,7 +136,7 @@ test("the sidebar groups its pages under Workspace, Export, and System", async (
   await openSettings(page);
   for (const [group, pages] of [
     ["Workspace", ["General", "Appearance", "Tasks & tools", "Keyboard"]],
-    ["Export", ["Files & names", "Queue", "Profiles"]],
+    ["Export", ["Files & names", "Exports", "Profiles"]],
     ["System", ["File Explorer", "Media tools", "About"]],
   ] as const) {
     const section = page.getByRole("group", { name: group, exact: true });
@@ -156,7 +156,7 @@ test("search finds settings on every page and opens the one chosen", async ({ pa
   await expect(page.locator("#settings-nav-queue .settings-nav-count")).toHaveText("1");
   await expect(page.locator("#settings-nav-general")).toHaveClass(/dimmed/);
   await page.locator(".set-result", { hasText: "Show the last export in its folder" }).click();
-  await expect(page.getByRole("heading", { name: "Queue", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Exports", exact: true })).toBeVisible();
   await expect(page.getByRole("switch", { name: "Show the last export in its folder" })).toBeFocused();
   await expect(search).toHaveValue("");
 
@@ -166,7 +166,21 @@ test("search finds settings on every page and opens the one chosen", async ({ pa
   await search.press("Escape");
   await expect(search).toHaveValue("");
   await expect(page.getByRole("dialog", { name: "Settings" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Queue", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Exports", exact: true })).toBeVisible();
+});
+
+test("Give games priority is found by its old name and keeps its stored setting", async ({ page }) => {
+  await start(page);
+  await openSettings(page);
+  await page.getByRole("searchbox", { name: "Search settings" }).fill("background");
+  await page.locator(".set-result", { hasText: "Give games priority" }).click();
+  await expect(page.getByRole("heading", { name: "Exports", exact: true })).toBeVisible();
+  const option = page.getByRole("switch", { name: "Give games priority" });
+  await expect(option).toBeFocused();
+  await expect(page.locator('[data-setting="background"]')).toContainText("Keeps games smooth. Exports take a bit longer.");
+  await page.getByText("Give games priority", { exact: true }).click();
+  await savedWith(page, "background_exports", true);
+  await expect(page.getByText("Clear finished exports", { exact: true })).toBeVisible();
 });
 
 test("keyboard shortcuts can be found from settings search", async ({ page }) => {
@@ -175,7 +189,7 @@ test("keyboard shortcuts can be found from settings search", async ({ page }) =>
   await page.getByRole("searchbox", { name: "Search settings" }).fill("split");
   await page.locator(".set-result", { hasText: "Split at playhead" }).click();
   await expect(page.getByRole("heading", { name: "Keyboard shortcuts", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Change keys for Split at playhead" })).toBeFocused();
+  await expect(page.getByRole("button", { name: "Change S for Split at playhead" })).toBeFocused();
 });
 
 test("appearance applies at once and is saved", async ({ page }) => {
@@ -184,8 +198,16 @@ test("appearance applies at once and is saved", async ({ page }) => {
   await page.getByRole("radio", { name: "Teal" }).check();
   await savedWith(page, "accent_color", "teal");
   await expect(page.locator("html")).toHaveAttribute("data-accent", "teal");
-  const button = page.locator(".set-accent-preview .set-btn");
+  const button = page.locator(".set-accent-preview .set-preview-export-main");
   expect(await button.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe("rgb(9, 123, 119)");
+  // the sample is the bottom bar's export button: the same pill, height and lettering
+  const look = (element: Element) => {
+    const style = getComputedStyle(element);
+    return [style.borderTopLeftRadius, style.borderTopRightRadius, style.fontSize, style.fontWeight, style.paddingLeft];
+  };
+  const bar = await page.locator("#export-go > .btn1").evaluate(look);
+  expect(await button.evaluate(look)).toEqual(bar);
+  expect((await button.boundingBox())!.height).toBe(32);
 
   await page.getByText("Animations", { exact: true }).click();
   await savedWith(page, "animations", false);
@@ -397,7 +419,7 @@ test("a setting that could not be saved asks before leaving the section", async 
       ({ ok: false, error: { code: "BACKEND_REJECTED", message: "Settings could not be saved", details: {} } });
   });
   await openSettings(page, "queue");
-  await page.getByText("Clear finished jobs", { exact: true }).click();
+  await page.getByText("Clear finished exports", { exact: true }).click();
   await page.getByRole("button", { name: "Files & names" }).click();
   await expect(page.getByRole("button", { name: "Keep editing" })).toBeFocused();
   await page.keyboard.press("Tab");
@@ -438,7 +460,7 @@ test("discard confirmation text stays readable in normal and hover states", asyn
       ({ ok: false, error: { code: "BACKEND_REJECTED", message: "Settings could not be saved", details: {} } });
   });
   await openSettings(page, "queue");
-  await page.getByText("Clear finished jobs", { exact: true }).click();
+  await page.getByText("Clear finished exports", { exact: true }).click();
   await page.getByRole("button", { name: "Files & names" }).click();
   const discard = page.getByRole("button", { name: "Discard changes" });
   for (const hover of [false, true]) {
@@ -583,7 +605,7 @@ test("a change made while the previous one is still saving is saved too", async 
   await installFakeBackend(page, fixture);
   await page.goto("/");
   await openSettings(page, "queue");
-  await page.getByText("Clear finished jobs", { exact: true }).click();
+  await page.getByText("Clear finished exports", { exact: true }).click();
   await expect.poll(() => page.evaluate(() =>
     window.__tuckFakeBackendCalls?.filter((call) => call.method === "saveSettings").length)).toBe(1);
   // the first save is still on its way to disk
@@ -669,14 +691,14 @@ test("pinned profiles lead the picker and hidden ones leave it", async ({ page }
   await expect(page.locator("#prof-options .profile-option.pinned-last")).toHaveCount(1);
 });
 
-test("the timeline style is Graphite by default and Violet when chosen", async ({ page }) => {
+test("the timeline style is Gray by default and Accent when chosen", async ({ page }) => {
   await start(page);
   await expect(page.locator("html")).toHaveAttribute("data-timeline", "graphite");
   await openSettings(page, "appearance");
-  // the accent swatches have a Violet too, so look inside the Timeline row
   const timeline = page.locator('[data-setting="timeline-style"]');
-  await expect(timeline.getByRole("radio", { name: "Graphite" })).toBeChecked();
-  await timeline.getByRole("radio", { name: "Violet" }).check();
+  await expect(timeline.getByRole("radio", { name: "Gray" })).toBeChecked();
+  // the stored value keeps its old name, so saved settings still load
+  await timeline.getByRole("radio", { name: "Accent" }).check();
   await savedWith(page, "timeline_style", "violet");
   await expect(page.locator("html")).toHaveAttribute("data-timeline", "violet");
 });
@@ -714,7 +736,8 @@ test("paths, names, and versions from the backend show as text, never as markup"
 
   await page.locator("#settings-nav-about").click();
   await expect(settingsPage.locator(".set-about-name .mono")).toHaveText(hostile);
-  await expect(settingsPage.locator('[data-setting="updates"] .set-desc')).toHaveText(`Last checked ${hostile}`);
+  // a stored check time that isn't a time reads as never checked
+  await expect(settingsPage.locator('[data-setting="updates"] .set-desc')).toHaveText("Not checked yet");
   await expect(settingsPage.locator("img")).toHaveCount(0);
 
   await page.locator("#settings-nav-profiles").click();

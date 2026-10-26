@@ -274,7 +274,7 @@ function appendLine<T extends ClipCardElement>(
     text("c-status", queuedVideoLabel("running", model.statusLabel, exportProgress(model), model.progressIndeterminate));
   } else if (state === "pending") {
     line.className = "c-line queued";
-    text("c-status", "Queued");
+    text("c-status", "Waiting");
   } else if (state === "failed" || state === "cancelled" || model.probeError) {
     const attention = libraryGroup(model) === "attention";
     if (attention) line.className = "c-line attention";

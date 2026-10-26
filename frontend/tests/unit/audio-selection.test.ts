@@ -297,6 +297,7 @@ test("clicking video replaces the imported audio command target and selected sty
     fragmentMute.attributes["aria-label"],
     "Mute this segment's source audio",
   );
+  assert.equal(fragmentMute.dataset.tip, "Mute this segment's source audio (M)");
 });
 
 test("selecting imported audio deselects linked video and source segments together", () => {
@@ -323,7 +324,8 @@ test("selected imported audio fragments use the segment mute command independent
   AudioTimeline.selectClip(track.id, audioClip.id!);
 
   assert.equal(fragmentMute.classList.contains("hid"), false);
-  assert.equal(fragmentMute.attributes["aria-label"], "Mute selected audio fragment");
+  assert.equal(fragmentMute.attributes["aria-label"], "Mute selected audio clip");
+  assert.equal(fragmentMute.dataset.tip, "Mute selected audio clip (M)");
 
   AudioTimeline.toggleFragmentMute();
   AudioTimeline.paintMixer();
@@ -331,7 +333,7 @@ test("selected imported audio fragments use the segment mute command independent
   assert.equal(audioClip.muted, true);
   assert.equal(track.muted, false);
   assert.equal(fragmentMute.classList.contains("on"), true);
-  assert.equal(fragmentMute.attributes["aria-label"], "Unmute selected audio fragment");
+  assert.equal(fragmentMute.attributes["aria-label"], "Unmute selected audio clip");
 
   AudioTimeline.selectTrack(track.id);
   assert.equal(fragmentMute.classList.contains("hid"), true);

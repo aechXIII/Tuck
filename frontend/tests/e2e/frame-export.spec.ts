@@ -93,7 +93,7 @@ test("Save frame shortcuts can be changed in Keyboard settings and appear in the
   await expect(button).toHaveAttribute("aria-keyshortcuts", "Control+Shift+S");
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByRole("button", { name: "Keyboard", exact: true }).click();
-  await page.getByRole("button", { name: "Change keys for Save frame", exact: true }).click();
+  await page.getByRole("button", { name: "Change Ctrl+Shift+S for Save frame", exact: true }).click();
   await page.keyboard.press("Control+Shift+p");
   await expect(page.locator("#kb-status")).toHaveText("Save frame now uses Ctrl+Shift+P.");
   expect(await calls(page, "saveSettings")).toContainEqual([{ shortcut_overrides: { "playback.save-frame": ["Ctrl+Shift+P"] } }]);

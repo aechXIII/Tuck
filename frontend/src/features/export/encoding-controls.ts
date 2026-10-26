@@ -243,7 +243,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     input("two-pass").disabled = up;
     el("two-pass-wrap").classList.toggle("hid", up);
     if (up) {
-      select("two-pass").value = "off";
+      input("two-pass").checked = false;
       input("use-source-res").checked = false;
       if (input("res-mode").value === "source") input("res-mode").value = "custom";
     } else if (input("use-source-res").checked) {
@@ -345,7 +345,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     const selected = session.selPath ? session.clips[session.selPath] : null;
     const queued = !!selected && isQueueActive(selected._queueState);
     if (enqueueBusyShown) {
-      label = "Adding to queue…";
+      label = "Adding to Exports…";
       one.disabled = true;
       all.disabled = true;
     } else if (selected && queued) {
@@ -711,7 +711,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     input("keep-audio").checked = !!p.keep_audio;
     input("audio-br").value = String(Math.round((num(p.audio_bitrate) || 128000) / 1000));
     input("audio-br").disabled = !!p.keep_audio;
-    select("two-pass").value = p.two_pass ? "on" : "off";
+    input("two-pass").checked = !!p.two_pass;
     select("scaler-sel").value = InspectorUi.scalingChoice(p.scaler);
     const profileEncoder = typeof p.video_encoder === "string" ? p.video_encoder : "libx264";
     select("enc-sel").value = platformCapabilities
@@ -817,7 +817,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     if (!input("use-source-res").checked && (!input("res-w").validity.valid || !input("res-h").validity.valid)) {
       error = "Enter a width and height of at least 2 pixels.";
     } else if (!input("use-source-fps").checked && !input("fps-slider").validity.valid) {
-      error = `Enter an FPS from 0.1 to ${input("fps-slider").max || selectedSourceVideo().fps}.`;
+      error = `Enter a frame rate from 0.1 to ${input("fps-slider").max || selectedSourceVideo().fps}.`;
     }
     el("video-error").textContent = error;
     el("video-error").hidden = !error;
@@ -914,7 +914,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
   function onEncChange(): void {
     updatePresetOptions();
     if (select("enc-sel").value === "auto_compression") {
-      select("two-pass").value = "on";
+      input("two-pass").checked = true;
       select("preset-sel").value = "veryslow";
     }
     updateTuneOptions();
@@ -985,9 +985,9 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
 
   function gateTwoPass(): void {
     const can = twoPassEligible(workflowName(), select("enc-sel").value);
-    select("two-pass").disabled = !can;
+    input("two-pass").disabled = !can;
     el("two-pass-note").classList.toggle("hid", can || wf === 1);
-    if (!can) select("two-pass").value = "off";
+    if (!can) input("two-pass").checked = false;
   }
 
   function readForm(): ExportFormState {
@@ -1006,7 +1006,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
       lut: lut.read(),
       keepAudio: input("keep-audio").checked,
       audioBitrateKbps: parseInt(input("audio-br").value, 10) || 0,
-      twoPass: select("two-pass").value === "on",
+      twoPass: input("two-pass").checked,
       encoder: platformCapabilities
         ? encoderForPlatform(select("enc-sel").value, platformCapabilities)
         : select("enc-sel").value,
@@ -1256,11 +1256,11 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
         // the request may still have reached the queue, so it is checked before being called a failure
         await deps.pollQueue();
         if (!isQueueActive(clip._queueState)) {
-          toast(`Tuck didn’t hear back about “${clip.name}”, and it isn’t in the queue yet. Check Exports before exporting it again.`, "err");
+          toast(`Tuck didn’t hear back about “${clip.name}”, and it isn’t in Exports yet. Check Exports before exporting it again.`, "err");
         }
         return;
       }
-      if (!r.ok) toast(withReason(`Couldn’t add “${clip.name}” to the queue.`, r.error), "err");
+      if (!r.ok) toast(withReason(`Couldn’t add “${clip.name}” to Exports.`, r.error), "err");
       else if (copy) toast(`Added another copy of “${clip.name}”. It gets its own file name.`, "info");
     });
     void deps.pollQueue();
@@ -1318,7 +1318,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     const alreadyQueued = readiness.ready.filter((path) => isQueueActive(session.clips[path]?._queueState));
     const toQueue = readiness.ready.filter((path) => !alreadyQueued.includes(path));
     if (!toQueue.length) {
-      toast(alreadyQueued.length === 1 ? "That video is already in the queue." : "These videos are already in the queue.", "info");
+      toast(alreadyQueued.length === 1 ? "That video is already in Exports." : "These videos are already in Exports.", "info");
       return;
     }
     const requests = toQueue.map((path) => buildRequest(session.clips[path]!.path) as never);
@@ -1329,19 +1329,19 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
         await deps.pollQueue();
         const arrived = toQueue.filter((path) => isQueueActive(session.clips[path]?._queueState)).length;
         if (arrived < toQueue.length) {
-          toast(`Tuck didn’t hear back. ${arrived} of ${toQueue.length} videos are in the queue. Check Exports before exporting the rest again.`, "err");
+          toast(`Tuck didn’t hear back. ${arrived} of ${toQueue.length} videos are in Exports. Look there before exporting the rest again.`, "err");
         }
         return;
       }
       if (!r.ok) {
         toast(errors.length
-          ? `No videos were added to the queue. ${enqueueReasons(errors)}`
-          : withReason("Couldn’t add the videos to the queue.", r.error), "err");
+          ? `No videos were added to Exports. ${enqueueReasons(errors)}`
+          : withReason("Couldn’t add the videos to Exports.", r.error), "err");
       } else if (errors.length) {
-        toast(`${errors.length} of ${requests.length} videos weren’t added to the queue. ${enqueueReasons(errors)}`, "err");
+        toast(`${errors.length} of ${requests.length} videos weren’t added to Exports. ${enqueueReasons(errors)}`, "err");
       } else if (alreadyQueued.length) {
         const added = requests.length;
-        toast(`Added ${added} ${added === 1 ? "video" : "videos"}. ${alreadyQueued.length} ${alreadyQueued.length === 1 ? "was" : "were"} already in the queue.`, "info");
+        toast(`Added ${added} ${added === 1 ? "video" : "videos"}. ${alreadyQueued.length} ${alreadyQueued.length === 1 ? "was" : "were"} already in Exports.`, "info");
       }
     });
     void deps.pollQueue();
@@ -1488,7 +1488,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
       fps: checked("use-source-fps") ? "source" : value("fps-val"),
       ka: checked("keep-audio"),
       abr: value("audio-br"),
-      tp: value("two-pass"),
+      tp: checked("two-pass"),
       pre: value("preset-sel"),
       sc: value("scaler-sel"),
       enc: value("enc-sel"),

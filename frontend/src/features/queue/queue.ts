@@ -63,7 +63,8 @@ export interface QueueApi {
   retryAll: () => Promise<void>;
   resumeExports: () => Promise<void>;
   copyDiagnostics: (itemId?: string) => Promise<void>;
-  toggleExports: () => void;
+  /** `fromKeyboard` moves focus into the panel, since the export button sits between them */
+  toggleExports: (fromKeyboard?: boolean) => void;
   // opens Exports with focus on this export's row
   showExport: (itemId: string) => void;
   removeQueueItem: (itemId: string) => Promise<void>;
@@ -140,6 +141,8 @@ export function installQueue(deps: QueueDeps): QueueApi {
   function setExportsOpen(open: boolean, returnFocus = false): void {
     const panel = byId("exports-panel");
     const status = byId("qstatus");
+    // focus inside a closing panel would be lost with it, so it goes back to the status button
+    const focusInside = !!panel && panel.contains(panel.ownerDocument.activeElement);
     exportsOpen = open && lastItems.length > 0;
     // the panel's own opening motion covers its first paint, so its rows don't each animate too
     if (!exportsOpen) shownRowIds = null;
@@ -152,11 +155,12 @@ export function installQueue(deps: QueueDeps): QueueApi {
     }
     status?.setAttribute("aria-expanded", String(exportsOpen));
     if (exportsOpen) renderExports(lastItems);
-    if (!exportsOpen && returnFocus) status?.focus();
+    if (!exportsOpen && (returnFocus || focusInside)) status?.focus();
   }
 
-  function toggleExports(): void {
+  function toggleExports(fromKeyboard = false): void {
     setExportsOpen(!exportsOpen);
+    if (exportsOpen && fromKeyboard) byId("exports-title")?.focus();
   }
 
   // the batch toast's Show opens the list at the first failed export, ready to retry
@@ -699,13 +703,13 @@ export function installQueue(deps: QueueDeps): QueueApi {
   }
 
   function stopAfterCurrent(): void {
-    confirmToast("The export in progress finishes. Exports still waiting in the queue are canceled.", () => {
+    confirmToast("The export in progress finishes. Waiting exports are canceled.", () => {
       void (async (): Promise<void> => {
         const r = await legacyBackendResult(client().stopAfterCurrent());
         if (!r.ok) {
-          toast(withReason("Couldn’t stop the queue.", r.error), "err");
+          toast(withReason("Couldn’t stop after this export.", r.error), "err");
         } else {
-          toast("The queue stops after this export.", "ok");
+          toast("Exports stop after this one.", "ok");
           void pollQueue();
         }
       })();
@@ -713,7 +717,7 @@ export function installQueue(deps: QueueDeps): QueueApi {
   }
 
   function cancelAll(): void {
-    confirmToast("The export in progress stops and everything waiting in the queue is canceled. Finished exports are kept.", () => {
+    confirmToast("The export in progress stops and every waiting export is canceled. Finished exports are kept.", () => {
       void (async (): Promise<void> => {
         try {
           const r = await legacyBackendResult(client().cancelAllItems());
@@ -829,9 +833,7 @@ export function installQueue(deps: QueueDeps): QueueApi {
             ? `${value("res-short")}p`
             : "source",
       fps: checked("use-source-fps") ? "source" : number("fps-val"),
-      two_pass: byId<HTMLSelectElement>("two-pass")
-        ? byId<HTMLSelectElement>("two-pass")!.value === "on"
-        : undefined,
+      two_pass: checked("two-pass"),
       preset: byId("preset-sel") ? value("preset-sel") : undefined,
       scaler: byId("scaler-sel") ? value("scaler-sel") : undefined,
       keep_audio: checked("keep-audio"),

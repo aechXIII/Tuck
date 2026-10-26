@@ -449,7 +449,7 @@ const COMMANDS: CommandDefinition[] = [
     id: "audio.toggle-fragment-mute",
     category: "Timeline & segments",
     column: 1,
-    label: "Mute / unmute fragment",
+    label: "Mute / unmute segment",
     bindings: ["M"],
     context: "editor-no-text-entry",
   },
@@ -460,6 +460,17 @@ const COMMANDS: CommandDefinition[] = [
     label: "Delete selected item",
     bindings: ["Delete", "Backspace"],
     context: "editor-no-text-entry",
+  },
+  {
+    // a mouse gesture the timeline handles itself; listed so the guide teaches it
+    id: "timeline.slip-segment",
+    category: "Timeline & segments",
+    column: 1,
+    label: "Adjust a segment's source",
+    guideNote: "Keeps the segment in place and moves the footage inside it.",
+    bindings: ["Alt+Drag"],
+    local: true,
+    configurable: false,
   },
   {
     id: "timeline.set-selection-start",

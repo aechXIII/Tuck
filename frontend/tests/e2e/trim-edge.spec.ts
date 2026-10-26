@@ -65,3 +65,12 @@ test("Esc during a trim puts the edge back and records nothing", async ({ page }
   expect(await inPoint(page)).toBe(0);
   await expect(page.locator("#btn-undo")).toBeDisabled();
 });
+
+test("hovering a segment teaches drag and Alt+drag, and its edges say they trim", async ({ page }) => {
+  await open(page);
+  const segment = page.locator(".tl-segment").first();
+  await segment.hover({ position: { x: 60, y: 8 } });
+  await expect(page.locator("#transform-tooltip")).toHaveText("Drag to move · Alt+drag to adjust source");
+  await page.locator(".tl-segment .clip-edge.end").first().hover();
+  await expect(page.locator("#transform-tooltip")).toHaveText("Drag to trim");
+});

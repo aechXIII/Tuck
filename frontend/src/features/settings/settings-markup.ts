@@ -13,6 +13,8 @@ const ICONS = {
   folder: svg('<path d="M3 7.5V18a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9.5a2 2 0 0 0-2-2h-7l-2-2.5H5a2 2 0 0 0-2 2.5Z"></path>'),
   refresh: svg('<path d="M19 12a7 7 0 1 1-2.1-5"></path><path d="M19 4.5v4h-4"></path>'),
   plus: svg('<path d="M12 5.5v13M5.5 12h13"></path>'),
+  close: svg('<path d="m7 7 10 10M17 7 7 17"></path>'),
+  caret: svg('<path d="M2.5 4.5 6 8l3.5-3.5"></path>', "0 0 12 12", "set-icon set-caret"),
   reset: svg('<path d="M5 12a7 7 0 1 0 2.1-5"></path><path d="M5 4.5v4h4"></path>'),
   braces: svg('<path d="M9 4.5c-2 0-2.5 1-2.5 2.5v2.5c0 1.2-.8 2.5-2 2.5 1.2 0 2 1.3 2 2.5V17c0 1.5.5 2.5 2.5 2.5M15 4.5c2 0 2.5 1 2.5 2.5v2.5c0 1.2.8 2.5 2 2.5-1.2 0-2 1.3-2 2.5V17c0 1.5-.5 2.5-2.5 2.5"></path>'),
   warn: svg('<path d="M12 4 2.8 19.5h18.4Z"></path><path d="M12 10v4.5M12 17.3v.2"></path>'),

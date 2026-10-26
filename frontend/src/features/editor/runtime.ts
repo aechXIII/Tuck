@@ -744,7 +744,8 @@ export function installEditorRuntime(
         "queue-clear-finished": () => void queue.clearFinished(),
         "queue-retry-all": () => void queue.retryAll(),
         "queue-resume": () => void queue.resumeExports(),
-        "exports-toggle": () => queue.toggleExports(),
+        // a click with no pointer behind it came from Enter or Space
+        "exports-toggle": (_target, event) => queue.toggleExports((event as MouseEvent).detail === 0),
         "export-item-cancel": (target) => void queue.cancelQueueItem(target.dataset.itemId ?? ""),
         "export-item-retry": (target) => void queue.retryQueueItem(target.dataset.itemId ?? ""),
         "export-item-show": (target) => void queue.openResult(target.dataset.resultPath ?? ""),

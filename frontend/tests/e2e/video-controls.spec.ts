@@ -20,9 +20,9 @@ for (const width of [1240, 960]) {
     await page.locator("#btn-add").click();
     if (width === 960) await page.getByRole("button", {name:"Inspector",exact:true}).click();
     const panel = page.locator("#export-video-panel");
-    const resolution = page.getByLabel("Output resolution", {exact:true});
+    const resolution = page.getByLabel("Resolution", {exact:true});
     const fps = page.getByLabel("Target frame rate", {exact:true});
-    const fpsPreset = page.getByLabel("Output frame rate", {exact:true});
+    const fpsPreset = page.getByLabel("Frame rate", {exact:true});
     await expect(page.getByLabel("Custom width", {exact:true})).toBeHidden();
     await expect(page.getByLabel("Scaling", {exact:true})).toBeVisible();
     await expect(page.getByLabel("Scaling", {exact:true})).toHaveAccessibleDescription(/Sharp pixels keeps hard edges/);
@@ -45,7 +45,7 @@ for (const width of [1240, 960]) {
     await expect(fps).toBeFocused();
     await fps.fill("");
     await expect(page.getByRole("button", {name:"Compress this video",exact:true})).toBeDisabled();
-    await expect(page.locator("#video-error")).toContainText("FPS");
+    await expect(page.locator("#video-error")).toContainText("frame rate");
     await fps.fill("59.94");
     await page.getByLabel("Custom width", {exact:true}).fill("1");
     await expect(page.locator("#video-error")).toContainText("2 pixels");
@@ -72,3 +72,30 @@ for (const width of [1240, 960]) {
     expect(errors).toEqual([]);
   });
 }
+
+test("export controls are announced by the label people see", async ({page}) => {
+  const fixture = healthyBackendFixture();
+  fixture.responses.pickFiles = {ok:true,files:["C:\\media\\clip.mp4"]};
+  fixture.responses.probeFile = {ok:true,data:{width:1920,height:1080,fps:30,duration:12,has_audio:true}};
+  fixture.responses.getMediaUrl = {ok:true,url:"https://media.test/v",token:"t"};
+  fixture.responses.getThumbnail = {ok:true,thumbnail:""};
+  await installFakeBackend(page, fixture);
+  await page.goto("/");
+  await page.locator("#btn-add").click();
+  await page.locator("#wf-u").click();
+  await page.locator("#adv-toggle").evaluate(button => (button.closest("details") as HTMLDetailsElement).open = true);
+  await page.locator("#adv-toggle").click();
+  // the label text is read from the page, so a renamed label still has to match what is announced
+  const announcedAsShown = async (id: string) => {
+    const label = (await page.locator(`label[for="${id}"]`).textContent())!.trim();
+    expect(label).not.toBe("");
+    await expect(page.locator(`#${id}`)).toHaveAccessibleName(label);
+  };
+  for (const id of ["export-res-select-trigger", "export-fps-select-trigger", "scaler-sel-trigger", "rc-sel-trigger", "quality-val"]) {
+    await announcedAsShown(id);
+  }
+  await chooseSelect(page, page.locator("#rc-sel-trigger"), "CBR");
+  await announcedAsShown("br-val");
+  await page.locator("#wf-c").click();
+  await expect(page.getByRole("switch", {name:"Two-pass encoding",exact:true})).toBeVisible();
+});

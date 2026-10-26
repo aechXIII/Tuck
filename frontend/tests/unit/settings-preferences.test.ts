@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { accentColor, applyAppearance, createInterfaceSizer, interfaceSize, textSize } from "../../src/features/appearance/appearance.ts";
-import { formatClockTime, timeFormat } from "../../src/features/editor/time-format.ts";
+import { checkedAtText, formatClockTime, timeFormat } from "../../src/features/editor/time-format.ts";
 import { createSessionFiles, SESSION_FILES_MAX } from "../../src/features/library/session-files.ts";
 import { finishedNotification, type QueueItem } from "../../src/features/queue/queue-view.ts";
 import { nextPlaybackSpeed, PLAYBACK_SPEEDS } from "../../src/features/player/player.ts";
@@ -80,6 +80,22 @@ test("every searchable setting points at a page that exists", () => {
     assert.equal(settingsPage(entry.page), entry.page);
     assert.ok(!ids.has(entry.id), `duplicate id ${entry.id}`);
     ids.add(entry.id);
+  }
+});
+
+test("the last update check reads as today, yesterday, or a date in local time", () => {
+  const now = new Date(2026, 9, 24, 15, 0);
+  const at = (day: number, hour: number, minute: number, year = 2026): string =>
+    new Date(year, 9, day, hour, minute).toISOString();
+  // newer ICU puts a narrow no-break space before AM and PM
+  const text = (stored: string, locale: string): string => checkedAtText(stored, now, locale).replace(/\s/g, " ");
+  assert.equal(text(at(24, 14, 5), "en-GB"), "today at 14:05");
+  assert.equal(text(at(23, 9, 30), "en-US"), "yesterday at 9:30 AM");
+  assert.equal(text(at(3, 14, 5), "en-US"), "on Oct 3 at 2:05 PM");
+  assert.equal(text(at(3, 14, 5, 2025), "en-US"), "on Oct 3, 2025 at 2:05 PM");
+  // anything Python didn't save as a time reads as never checked
+  for (const stored of ["", "1", "yesterday", "<b>2026-10-24</b>", 1729771531, null]) {
+    assert.equal(checkedAtText(stored, now), "");
   }
 });
 

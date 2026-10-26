@@ -346,6 +346,15 @@
   color: var(--text);
   font: 600 calc(12.5px * var(--text-scale)) var(--font);
 }
+/* the heading takes focus when the panel opens from the keyboard */
+#exports-title:focus {
+  outline: none;
+}
+#exports-title:focus-visible {
+  outline: 2px solid var(--accent-light);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
 #exports-count {
   color: var(--dim);
   font: 500 calc(11px * var(--text-scale)) var(--font);

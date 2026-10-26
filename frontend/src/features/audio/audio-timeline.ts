@@ -9,6 +9,7 @@ import type {
 } from "../editor/types.ts";
 import { confirmToast, toast, type ConfirmIntent } from "../editor/toast.ts";
 import { recordedCommand } from "../history/history.ts";
+import { withShortcut } from "../shortcuts/shortcuts.ts";
 import * as SegmentEditing from "../timeline/segments.ts";
 import * as TimelineCore from "../timeline/timeline-core.ts";
 import * as core from "./audio-core.ts";
@@ -801,7 +802,7 @@ export function installAudioTimeline(host: AudioTimelineHost) {
           (audioClip.loop ? ", looping" : "") +
           (clipMuted ? ", muted" : ""),
       );
-      el.dataset.tip = "Drag to move · Alt-drag to choose another source fragment";
+      el.dataset.tip = "Drag to move · Alt+drag to choose another source segment";
       el.style.left = pct(audioClip.timelineStart, total);
       el.style.width = pct(audioClip.timelineDuration, total);
       el.style.setProperty(
@@ -946,15 +947,17 @@ export function installAudioTimeline(host: AudioTimelineHost) {
       let fragMuteLabel;
       if (selectedFragment) {
         fragMuteLabel = fragmentMuted
-          ? "Unmute selected audio fragment"
-          : "Mute selected audio fragment";
+          ? "Unmute selected audio clip"
+          : "Mute selected audio clip";
       } else {
         fragMuteLabel = fragmentMuted
           ? "Unmute this segment's source audio"
           : "Mute this segment's source audio";
       }
       fragMute.setAttribute("aria-label", fragMuteLabel);
-      fragMute.dataset.tip = fragMuteLabel;
+      // the tooltip teaches the key, the way the other timeline buttons do
+      fragMute.dataset.shortcutLabel = fragMuteLabel;
+      fragMute.dataset.tip = withShortcut(fragMuteLabel, "audio.toggle-fragment-mute");
     }
     if (typeof host.renderAudioMixerList === "function") host.renderAudioMixerList();
   }

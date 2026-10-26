@@ -696,6 +696,9 @@ function paintTrimChrome() {
           ? ". Click to seek; drag to move and adjust source; Alt+drag to adjust source"
           : ". Click to seek; drag to move; Alt+drag to adjust source"),
     );
+    range.dataset.tip = session.appSettings.timeline_preserve_source === false
+      ? "Drag to move and adjust source · Alt+drag to adjust source"
+      : "Drag to move · Alt+drag to adjust source";
     range.setAttribute(
       "aria-pressed",
       i === active && sourceGroupSelected ? "true" : "false",
@@ -746,6 +749,8 @@ function paintTrimChrome() {
     let edgeOut = documentRef.createElement("span");
     edgeOut.className = "clip-edge end";
     edgeOut.dataset.edge = "end";
+    // the edges sit inside the segment, so they say what they do instead of showing its tooltip
+    edgeIn.dataset.tip = edgeOut.dataset.tip = "Drag to trim";
     range.append(edgeIn, edgeOut);
     segmentsLayer?.appendChild(range);
   }

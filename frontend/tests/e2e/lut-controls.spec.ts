@@ -143,7 +143,7 @@ test("blending errors leave the LUT preview enabled and FPS controls stay synchr
   await expectLutShown(page);
   await expect(page.getByLabel("Apply LUT",{exact:true})).toBeChecked();
   const blendFps = page.getByLabel("Frame blending output frame rate",{exact:true});
-  const videoFps = page.getByLabel("Output frame rate",{exact:true});
+  const videoFps = page.getByLabel("Frame rate",{exact:true});
   await chooseSelect(page, blendFps, "60");
   await expect(page.locator("#export-fps-select")).toHaveValue("60");
   await chooseSelect(page, videoFps, "30");

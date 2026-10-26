@@ -78,6 +78,7 @@ test("production commands are the source of the existing shortcut guide", () => 
     "timeline.split": ["S"],
     "audio.toggle-fragment-mute": ["M"],
     "edit.delete-selection": ["Delete", "Backspace"],
+    "timeline.slip-segment": ["Alt+Drag"],
     "timeline.set-selection-start": ["I"],
     "timeline.set-selection-end": ["O"],
     "timeline.previous-keyframe": ["["],
@@ -155,8 +156,9 @@ test("production commands are the source of the existing shortcut guide", () => 
         items: [
           { label: "Add segment", bindings: "A" },
           { label: "Split at playhead", bindings: "S" },
-          { label: "Mute / unmute fragment", bindings: "M" },
+          { label: "Mute / unmute segment", bindings: "M" },
           { label: "Delete selected item", bindings: "Del or Backspace" },
+          { label: "Adjust a segment's source", bindings: "Alt + Drag" },
           { label: "Set selected start / end", bindings: "I or O" },
           { label: "Previous / next keyframe", bindings: "[ or ]" },
           {
@@ -818,7 +820,7 @@ test("the production guide renders every physical key with one base keycap style
     ),
   );
 
-  assert.equal(shortcuts.search(shortcuts.sections, "").total, 25);
+  assert.equal(shortcuts.search(shortcuts.sections, "").total, 26);
   assert.deepEqual(
     Array.from(shortcutIds).filter((id) => !renderedIds.has(id)),
     [],
@@ -826,6 +828,16 @@ test("the production guide renders every physical key with one base keycap style
   assert.match(markup, /class="kbs-key"[^>]*data-k="del"[^>]*>Del<\/div>/);
   assert.match(markup, /class="kbs-key"[^>]*>PgUp<\/div>/);
   assert.doesNotMatch(markup, /kbs-key-(?:util|live)/);
+});
+
+test("the guide teaches Alt+drag on a segment, which no key press can trigger", () => {
+  const result = shortcuts.search(shortcuts.sections, "alt");
+  assert.deepEqual(
+    result.sections.flatMap((section) => section.items.map((item) => item.label)),
+    ["Adjust a segment's source"],
+  );
+  const slip = { key: "Drag", altKey: true, preventDefault() {} };
+  assert.equal(shortcuts.dispatch(slip, {}), null);
 });
 
 test("keyframe navigation is searchable by bracket and highlights both bracket keys", () => {

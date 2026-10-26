@@ -41,3 +41,29 @@ export function formatClockTime(seconds: number, format: TimeFormat, fps?: numbe
   const centiseconds = Math.round(value * 100);
   return `${formatTime(Math.floor(centiseconds / 100))}.${String(centiseconds % 100).padStart(2, "0")}`;
 }
+
+function sameDay(a: Date, b: Date): boolean {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+/**
+ * When something last happened, in local time: "today at 14:05", "yesterday at 9:30", or
+ * "on Oct 3 at 14:05". Empty for a stored value that isn't a time, so callers can say "never".
+ */
+export function checkedAtText(value: unknown, now: Date = new Date(), locale?: string): string {
+  // Python saves an ISO time; Date would read loose text such as "1" as a year
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(value)) return "";
+  const moment = new Date(value);
+  if (Number.isNaN(moment.getTime())) return "";
+  const time = moment.toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" });
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (sameDay(moment, now)) return `today at ${time}`;
+  if (sameDay(moment, yesterday)) return `yesterday at ${time}`;
+  const date = moment.toLocaleDateString(locale, {
+    month: "short",
+    day: "numeric",
+    ...(moment.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }),
+  });
+  return `on ${date} at ${time}`;
+}

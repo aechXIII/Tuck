@@ -29,6 +29,13 @@ async function calledMethods(page: Page): Promise<string[]> {
   return page.evaluate(() => (window.__tuckFakeBackendCalls ?? []).map((call) => call.method));
 }
 
+async function savedCheckTimes(page: Page): Promise<string[]> {
+  return page.evaluate(() => (window.__tuckFakeBackendCalls ?? [])
+    .filter((call) => call.method === "saveSettings")
+    .map((call) => (call.args[0] as { last_update_check?: string }).last_update_check)
+    .filter((value): value is string => typeof value === "string"));
+}
+
 test("startup offers an available update when update checks are on", async ({ page }) => {
   await installFakeBackend(page, updateFixture(true));
   await page.goto("/");
@@ -58,13 +65,40 @@ test("a startup check stays quiet when Tuck is current or the check fails", asyn
 
   await expect.poll(async () => (await calledMethods(page)).includes("checkForUpdates")).toBe(true);
   await expect(page.locator("#update-version")).toHaveCount(0);
-  await expect(page.locator("#toast-ct")).not.toContainText("Running latest version.");
+  await expect(page.locator("#toast-ct")).not.toContainText("Tuck is up to date.");
+  // a check that got an answer is remembered for About
+  await expect.poll(async () => savedCheckTimes(page)).toHaveLength(1);
+  expect(Date.parse((await savedCheckTimes(page))[0]!)).toBeGreaterThan(Date.now() - 60_000);
 
   const failing = await page.context().newPage();
   await installFakeBackend(failing, updateFixture(true, { ok: true, available: false, error: "GitHub unreachable" }));
   await failing.goto("/");
   await expect.poll(async () => (await calledMethods(failing)).includes("checkForUpdates")).toBe(true);
   await expect(failing.locator("#toast-ct")).not.toContainText("Update check failed");
+  expect(await savedCheckTimes(failing)).toEqual([]);
+});
+
+test("About says when updates were last checked and Check for updates refreshes it", async ({ page }) => {
+  const fixture = updateFixture(false, { ok: true, available: false });
+  const earlier = new Date();
+  earlier.setDate(earlier.getDate() - 1);
+  earlier.setHours(9, 30, 0, 0);
+  fixture.responses.getSettings = {
+    ...(fixture.responses.getSettings as Record<string, unknown>),
+    last_update_check: earlier.toISOString(),
+  };
+  fixture.responses.saveSettings = { ok: true };
+  await installFakeBackend(page, fixture);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.locator("#settings-nav-about").click();
+
+  const note = page.locator("#set-update-checked");
+  await expect(note).toHaveText(/^Last checked yesterday at 9:30/);
+  await page.getByRole("button", { name: "Check for updates", exact: true }).click();
+  await expect(page.locator("#toast-ct")).toContainText("Tuck is up to date.");
+  await expect(note).toHaveText(/^Last checked today at \d{1,2}:\d{2}/);
+  expect(await savedCheckTimes(page)).toHaveLength(1);
 });
 
 test("Download & install starts the installer and closes Tuck without asking again", async ({ page }) => {

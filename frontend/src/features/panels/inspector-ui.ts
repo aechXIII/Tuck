@@ -187,8 +187,8 @@ export function resolutionDecision(value: string | null | undefined): Resolution
 export function frameRateChoices(sourceFps: number): ChoiceOption[] {
   const fps = Math.max(0.1, Math.round((Number(sourceFps) || 30) * 1000) / 1000);
   return [
-    { value: "source", label: `Source · ${fps} FPS` },
-    ...[24, 30, 60, 120].map(value => ({value: String(value), label: `${value} FPS`})),
+    { value: "source", label: `Source · ${fps} fps` },
+    ...[24, 30, 60, 120].map(value => ({value: String(value), label: `${value} fps`})),
     { value: "custom", label: "Custom…" },
   ];
 }
