@@ -90,6 +90,8 @@ test("the keyboard shortcuts dialog lists Paste videos with Ctrl+V", async ({ pa
   await dialog.getByRole("searchbox", { name: "Search keyboard shortcuts" }).fill("paste");
   const row = dialog.locator("#kbs-grid").getByText("Paste videos");
   await expect(row).toBeVisible();
-  await expect(dialog.locator("#kbs-match-count")).toContainText("1");
+  // Paste edits matches too, under Edit
+  await expect(dialog.locator("#kbs-grid").getByText("Paste edits")).toBeVisible();
+  await expect(dialog.locator("#kbs-match-count")).toContainText("2 results");
   expect(await calls(page, "readClipboardFiles")).toEqual([]);
 });

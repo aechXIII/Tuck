@@ -60,6 +60,8 @@ test("production commands are the source of the existing shortcut guide", () => 
     "ui.dismiss": ["Escape"],
     "edit.undo": ["Ctrl+Z"],
     "edit.redo": ["Ctrl+Shift+Z", "Ctrl+Y"],
+    "edit.copy-edits": ["Ctrl+Shift+C"],
+    "edit.paste-edits": ["Ctrl+Shift+V"],
     "playback.toggle": ["Space"],
     "playback.save-frame": ["Ctrl+Shift+S"],
     "playback.step-backward": ["ArrowLeft"],
@@ -122,6 +124,8 @@ test("production commands are the source of the existing shortcut guide", () => 
             label: "Redo",
             bindings: "Ctrl + Shift + Z or Ctrl + Y",
           },
+          { label: "Copy edits", bindings: "Ctrl + Shift + C" },
+          { label: "Paste edits", bindings: "Ctrl + Shift + V" },
         ],
       },
       {
@@ -820,7 +824,7 @@ test("the production guide renders every physical key with one base keycap style
     ),
   );
 
-  assert.equal(shortcuts.search(shortcuts.sections, "").total, 26);
+  assert.equal(shortcuts.search(shortcuts.sections, "").total, 28);
   assert.deepEqual(
     Array.from(shortcutIds).filter((id) => !renderedIds.has(id)),
     [],
@@ -894,9 +898,9 @@ test("Ctrl+V pastes videos in the editor, but a text field keeps its own paste",
   const result = shortcuts.search(shortcuts.sections, "paste");
   assert.deepEqual(
     result.sections.flatMap((section) => section.items.map((item) => item.label)),
-    ["Paste videos"],
+    ["Paste videos", "Paste edits"],
   );
-  assert.deepEqual(result.keyIds.slice().sort(), ["ctrl", "v"]);
+  assert.deepEqual(result.keyIds.slice().sort(), ["ctrl", "shift", "v"]);
 });
 
 test("removing the current video is in the guide and lights the keys that were searched", () => {

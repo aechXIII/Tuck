@@ -511,3 +511,90 @@
 .lib-join-note[hidden] {
   display: none;
 }
+
+/* a Library row's menu: Copy edits and Paste edits. It drops from the row or pointer, and the
+   row it acts on keeps its hover shade while it is open */
+.clip.menu-target {
+  background: var(--raised);
+}
+.clip.sel.menu-target {
+  background: var(--raised-2);
+}
+.row-menu {
+  position: fixed;
+  inset: auto;
+  z-index: 150;
+  margin: 0;
+  border: 0;
+  overflow: visible;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: calc(100vw - 16px);
+  padding: 6px;
+  border-radius: var(--r-surf);
+  background: var(--raised);
+  color: var(--text);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.25);
+  animation: surface-drop var(--dur-surface) var(--ease-out);
+}
+/* from the pointer it takes the room its words need; from the keyboard it sits under the row
+   at the row's width */
+.row-menu.at-pointer {
+  min-width: 232px;
+  max-width: min(320px, calc(100vw - 16px));
+}
+.row-menu:focus {
+  outline: none;
+}
+.row-menu.opens-up {
+  animation-name: surface-rise;
+}
+.row-menu[hidden] {
+  display: none;
+}
+/* one row is lit at a time: the pointer moves focus, so hover and keys share the same fill */
+.row-menu-item {
+  display: flex;
+  align-items: center;
+  gap: calc(12px * var(--density-scale));
+  box-sizing: border-box;
+  min-height: var(--control-height);
+  padding: calc(6px * var(--density-scale)) calc(10px * var(--density-scale));
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: 400 calc(12px * var(--text-scale))/1.4 var(--font);
+  text-align: left;
+  cursor: pointer;
+}
+.row-menu-item:focus {
+  background: var(--raised-2);
+  outline: none;
+}
+.row-menu-item[aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: default;
+}
+.row-menu-text {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+.row-menu-label,
+.row-menu-detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.row-menu-detail {
+  color: var(--muted);
+  font-size: calc(11px * var(--text-scale));
+}
+.row-menu-keys {
+  flex: none;
+  color: var(--muted);
+  font-size: calc(11px * var(--text-scale));
+}

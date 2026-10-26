@@ -21,6 +21,7 @@ import {
 import { installHistory, type HistoryApi } from "../history/history.ts";
 import * as ClipDetails from "../library/clip-details.ts";
 import { createLibrary, type LibraryApi } from "../library/library.ts";
+import { installRowMenu } from "../library/row-menu.ts";
 import { installJoin, type JoinApi } from "../library/join.ts";
 import { installPanels, type PanelsApi } from "../panels/panels.ts";
 import type { AudioClipRangeInfo } from "../panels/panels.ts";
@@ -506,6 +507,24 @@ export function installEditorRuntime(
     },
   });
   join.sync(library.selectedPaths());
+
+  // Copy edits and Paste edits, from a Library row's menu or the keyboard
+  installRowMenu({
+    document: windowRef.document,
+    window: windowRef,
+    clips: () => session.clips,
+    order: () => library.orderedClipKeys(),
+    selectedPath: () => session.selPath,
+    selectedPaths: () => library.selectedPaths(),
+    history,
+    shortcuts,
+    toast,
+    edited: (paths) => {
+      if (session.selPath && paths.includes(session.selPath)) refreshEditor();
+      else library.renderClips();
+      void encoding?.planLibrary();
+    },
+  });
 
   queue = installQueue({
     session,
