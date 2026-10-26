@@ -72,6 +72,14 @@ static void pcm_queue(void) {
     pcm_note_underrun(&q, 4);
     pcm_reset(&q, 10);
     CHECK(q.late_debt == 0);
+    /* a drop empties only its own generation and keeps the debt of a device that ran dry */
+    CHECK(pcm_write(&q, source, 30, 10) == 30);
+    CHECK(pcm_drop(&q, 9) == 0 && q.count == 30);
+    pcm_note_underrun(&q, 3);
+    CHECK(pcm_drop(&q, 10) == 30 && q.count == 0 && q.late_debt == 3);
+    CHECK(pcm_read(&q, result, 4) == 0);
+    CHECK(pcm_write(&q, source, 8, 10) == 8 && q.count == 5);
+    CHECK(pcm_read(&q, result, 5) == 5 && result[0] == source[6]);
 }
 
 static void capacities(void) {

@@ -24,6 +24,8 @@ typedef struct PcmQueue {
 void pcm_reset(PcmQueue *queue, uint64_t generation);
 size_t pcm_write(PcmQueue *queue, const float *samples, size_t frames, uint64_t generation);
 size_t pcm_read(PcmQueue *queue, float *samples, size_t frames);
+/* empties the queue of `generation`, keeping its late debt; the frames dropped */
+size_t pcm_drop(PcmQueue *queue, uint64_t generation);
 void pcm_note_underrun(PcmQueue *queue, size_t frames);
 
 /* source position = origin + device seconds played since the last reset */

@@ -64,6 +64,11 @@ struct AudioTrack {
     int running;
     /* where on the timeline the next queued sample plays */
     double cursor;
+    /* where on the timeline this generation started, and the frames of it handed to the device */
+    double generation_start;
+    uint64_t sent;
+    /* a mix has been taken; before the first one the track only queued silence */
+    int mixed;
     int finished;
     MixPiece *pieces;
     size_t piece_count;
@@ -85,10 +90,12 @@ static int interrupted(void *opaque) {
     return atomic_load(&((AudioTrack *)opaque)->closing);
 }
 
+/* the work at hand is cut short: a newer generation, or the track's first mix, which replaces the
+   silence queued so far instead of waiting behind it */
 static int superseded(AudioTrack *t) {
     if (atomic_load(&t->closing)) return 1;
     pthread_mutex_lock(&t->lock);
-    int newer = t->wanted_generation != t->generation;
+    int newer = t->wanted_generation != t->generation || (!t->mixed && t->mix_waiting);
     pthread_mutex_unlock(&t->lock);
     return newer;
 }
@@ -127,6 +134,7 @@ static int write_out(AudioTrack *t, const float *samples, size_t frames) {
         if (superseded(t)) return 0;
         follow_running(t);
         size_t written = audio_output_write(t->output, samples, frames, t->generation);
+        t->sent += written;
         samples += written * 2;
         frames -= written;
         if (!written && audio_output_failed(t->output)) return 0;
@@ -191,6 +199,8 @@ static int follow_generation(AudioTrack *t) {
         t->generation_rate = rate;
         pthread_mutex_unlock(&t->lock);
         t->cursor = seconds;
+        t->generation_start = seconds;
+        t->sent = 0;
         t->finished = 0;
         if (seconds >= t->duration) finish(t);
     }
@@ -224,6 +234,26 @@ static void free_voices(Voice *voices, size_t count) {
         free(voices[i].path);
     }
     free(voices);
+}
+
+/* Before its first mix a track queues silence, so the clock runs from the start. What of it the
+   device hasn't taken yet is dropped, and the mix goes out from the spot the device has reached;
+   left queued, it would hold back the start of the sound by up to the whole queue. The late debt
+   stays with the queue, so a device that ran dry meanwhile still lines up. */
+static void drop_silence(AudioTrack *t) {
+    t->sent -= audio_output_drop(t->output, t->generation);
+    pthread_mutex_lock(&t->lock);
+    double rate = t->generation_rate;
+    pthread_mutex_unlock(&t->lock);
+    /* the device plays sound frames; at another speed each holds that many timeline frames */
+    t->cursor = t->generation_start + (double)t->sent * (t->tempo ? rate : 1) / RATE;
+    t->finished = 0;
+    /* what the filter holds is silence too */
+    if (t->tempo) {
+        tempo_close(t->tempo);
+        t->tempo = tempo_open(rate);
+        if (!t->tempo) fail(t, "The sound could not change speed.");
+    }
 }
 
 /* a new mix replaces the old one between blocks; a sound in both keeps its open reader */
@@ -263,6 +293,10 @@ static void take_mix(AudioTrack *t) {
     t->unreadable_count = 0;
     t->pieces = pieces;
     t->piece_count = piece_count;
+    if (!t->mixed) {
+        t->mixed = 1;
+        drop_silence(t);
+    }
 }
 
 /* one block of the mix from the cursor; 0 when there is nothing to do until the clock asks */
@@ -290,7 +324,7 @@ static void *worker(void *opaque) {
         pthread_mutex_lock(&t->lock);
         int failed = t->failed;
         pthread_mutex_unlock(&t->lock);
-        if (failed || !follow_generation(t) || t->finished) {
+        if (failed || !follow_generation(t) || (t->finished && !superseded(t))) {
             wait_for_change(t, 0);
             continue;
         }
@@ -353,17 +387,9 @@ AudioTrack *audio_track_open(const char *path, double duration_seconds, char *er
     error[0] = 0;
     /* no sound at all is not an error: the video plays on the system clock */
     if (!sound_streams(path)) return NULL;
-    AudioTrack *t = audio_track_new(duration_seconds, error, error_size);
-    if (!t) return NULL;
-    /* until the page sends a mix, the video's first sound stream plays whole, at full level */
-    const int stream = 0;
-    MixPiece whole = {.voice = 0, .start = 0, .end = duration_seconds, .source_in = 0, .gain = 1};
-    if (!audio_track_set_mix(t, &path, &stream, 1, &whole, 1)) {
-        snprintf(error, error_size, "Out of memory while opening the sound.");
-        audio_track_close(t);
-        return NULL;
-    }
-    return t;
+    /* silent until the page sends the edit's mix, a moment after opening: the file's own sound
+       would be the wrong sound wherever the edit changed it */
+    return audio_track_new(duration_seconds, error, error_size);
 }
 
 AudioTrack *audio_track_new(double duration_seconds, char *error, size_t error_size) {

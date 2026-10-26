@@ -30,6 +30,9 @@ size_t audio_output_write(AudioOutput *output, const float *samples, size_t fram
 void audio_output_finish(AudioOutput *output, uint64_t generation);
 /* drops queued sound and starts `generation`, paused */
 void audio_output_reset(AudioOutput *output, uint64_t generation);
+/* drops what of `generation` the device hasn't taken yet, keeping what it played and its pause;
+   the frames dropped */
+size_t audio_output_drop(AudioOutput *output, uint64_t generation);
 void audio_output_pause(AudioOutput *output, int paused);
 void audio_output_volume(AudioOutput *output, float gain);
 /* the device stopped working; status says why */

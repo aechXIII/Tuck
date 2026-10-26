@@ -328,6 +328,13 @@ void audio_output_reset(AudioOutput *o, uint64_t generation) {
     apply(o);
 }
 
+size_t audio_output_drop(AudioOutput *o, uint64_t generation) {
+    EnterCriticalSection(&o->lock);
+    size_t dropped = pcm_drop(&o->pcm, generation);
+    LeaveCriticalSection(&o->lock);
+    return dropped;
+}
+
 void audio_output_pause(AudioOutput *o, int paused) {
     EnterCriticalSection(&o->lock);
     o->paused = paused != 0;

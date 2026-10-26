@@ -335,6 +335,13 @@ void audio_output_reset(AudioOutput *o, uint64_t generation) {
     pw.loop_unlock(o->loop);
 }
 
+size_t audio_output_drop(AudioOutput *o, uint64_t generation) {
+    pw.loop_lock(o->loop);
+    size_t dropped = pcm_drop(&o->pcm, generation);
+    pw.loop_unlock(o->loop);
+    return dropped;
+}
+
 void audio_output_pause(AudioOutput *o, int paused) {
     pw.loop_lock(o->loop);
     if (paused) {

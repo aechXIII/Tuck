@@ -39,6 +39,13 @@ size_t pcm_read(PcmQueue *queue, float *samples, size_t frames) {
     return frames;
 }
 
+size_t pcm_drop(PcmQueue *queue, uint64_t generation) {
+    if (generation != queue->generation) return 0;
+    size_t dropped = queue->count;
+    queue->count = 0;
+    return dropped;
+}
+
 void clock_reset(PlaybackClock *clock, double source, uint64_t generation) {
     clock->origin = source;
     clock->device = 0;
