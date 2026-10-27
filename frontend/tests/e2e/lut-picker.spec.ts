@@ -16,7 +16,11 @@ for (const width of [1240, 960]) {
     await page.route("http://127.0.0.1:4321/token/table", route => route.fulfill({body:Buffer.from(new Float32Array(24).buffer),headers:{"Access-Control-Allow-Origin":"*"}}));
     await installFakeBackend(page,fixture);
     await page.goto("/");
-    if (width === 960) await page.getByRole("button",{name:"Inspector",exact:true}).click();
+    if (width === 960) {
+      await page.getByRole("button",{name:"Inspector",exact:true}).click();
+      // the drawer slides in whatever the reduced motion setting, so the row is measured once it stops
+      await page.locator("#right").evaluate(async node => { await Promise.all(node.getAnimations().map(animation => animation.finished)); });
+    }
     await page.locator("#lut-panel > summary").click();
     const trigger = page.getByRole("button",{name:/^LUT /});
     await expect(trigger).toHaveAccessibleName("LUT No LUT selected");
