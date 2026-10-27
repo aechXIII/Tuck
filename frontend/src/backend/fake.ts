@@ -491,12 +491,20 @@ class DeterministicFakeBackend implements BackendClient {
     return this.#record("copyFile", [path], this.#responses.copyFile ?? notConfigured("File clipboard is not configured"));
   }
 
+  copyFiles(paths: readonly string[]) {
+    return this.#record("copyFiles", [[...paths]], this.#responses.copyFiles ?? notConfigured("File clipboard is not configured"));
+  }
+
   openExportFile(itemId: string) {
     return this.#record("openExportFile", [itemId], this.#responses.openExportFile ?? success({}));
   }
 
   startExportDrag(itemId: string) {
     return this.#record("startExportDrag", [itemId], this.#responses.startExportDrag ?? success({ started: true }));
+  }
+
+  startExportsDrag(itemIds: readonly string[]) {
+    return this.#record("startExportsDrag", [[...itemIds]], this.#responses.startExportsDrag ?? success({ started: true }));
   }
 
   installGenericSendto(kind: SendToKind) {

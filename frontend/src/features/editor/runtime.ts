@@ -538,6 +538,7 @@ export function installEditorRuntime(
     removeClip: (path) => library.removeClip(path),
     editCount: (path) => history.editCount(path),
     onSendto: (data) => handleSendto(data),
+    canDragOut: () => exportDragOut,
     previewReport: async () => {
       if (!hasTauriInvoke(windowRef)) return null;
       const report = await readPlayerReport();
@@ -783,6 +784,7 @@ export function installEditorRuntime(
         "export-item-retry": (target) => void queue.retryQueueItem(target.dataset.itemId ?? ""),
         "export-item-show": (target) => void queue.openResult(target.dataset.resultPath ?? ""),
         "export-item-copy-file": (target) => void queue.copyResult(target.dataset.itemId ?? ""),
+        "exports-copy-files": (target) => void queue.copyResults((target.dataset.itemIds ?? "").split(",").filter(Boolean)),
         "export-item-open": (target) => void queue.openExportFile(target.dataset.itemId ?? ""),
         "export-item-copy-details": (target) => void queue.copyDiagnostics(target.dataset.itemId ?? ""),
         "export-item-remove": (target) => void queue.removeQueueItem(target.dataset.itemId ?? ""),

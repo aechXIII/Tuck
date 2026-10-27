@@ -185,7 +185,7 @@ test("the size panel shows only the chosen target, never a fabricated estimate",
   await expect(page.locator("#sz-badge")).toHaveValue("50");
 });
 
-test("a running job drives the queue bar count, progress, eta, and controls", async ({ page }) => {
+test("a running job drives the queue bar title, progress, speed, time left, and controls", async ({ page }) => {
   const fixture = exportFixture();
   fixture.queueStateAfterEnqueue = {
     items: [
@@ -195,7 +195,7 @@ test("a running job drives the queue bar count, progress, eta, and controls", as
         source_path: VIDEO,
         state: "running",
         progress: 40,
-        progress_info: { eta_seconds: 12 },
+        progress_info: { stage: "encoding", fps: 146.4, eta_seconds: 12 },
         segment_count: 1,
         duration: 12,
       },
@@ -210,9 +210,12 @@ test("a running job drives the queue bar count, progress, eta, and controls", as
   await expect(page.locator("#qbar")).toBeVisible();
   await expect(page.locator("#qprog")).toHaveAttribute("value", "40");
   await expect(page.locator("#qfname")).toHaveText("Clip one.mp4");
-  await expect(page.locator("#qeta")).toHaveText("40% · 0:12 left");
-  // nothing is waiting or failed, so the bar does not say so
-  await expect(page.locator("#qcnt")).toHaveText("");
+  await expect(page.locator("#qpct")).toHaveText("40%");
+  await expect(page.locator("#qfps")).toHaveText("146 fps");
+  await expect(page.locator("#qleft")).toHaveText("0:12 left");
+  // one pass draws one track, and nothing is waiting, so the bar does not say so
+  await expect(page.locator("#qtrack .qseg")).toHaveCount(1);
+  await expect(page.locator("#qeta")).toBeEmpty();
   // the queue's controls live in the Exports panel the status opens
   await page.locator("#qstatus").click();
   await expect(page.locator("#exports-panel")).toBeVisible();

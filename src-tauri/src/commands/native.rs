@@ -200,8 +200,21 @@ pub async fn copy_file_to_clipboard(
     window: tauri::Window,
     path: String,
 ) -> Result<(), PublicBackendError> {
-    use crate::platform::file_clipboard::{copy_file, validate_file_path};
-    let path = tauri::async_runtime::spawn_blocking(move || validate_file_path(&path))
+    copy_files(window, vec![path]).await
+}
+
+/// Copies several files as one clipboard entry, so they paste together.
+#[tauri::command]
+pub async fn copy_files_to_clipboard(
+    window: tauri::Window,
+    paths: Vec<String>,
+) -> Result<(), PublicBackendError> {
+    copy_files(window, paths).await
+}
+
+async fn copy_files(window: tauri::Window, paths: Vec<String>) -> Result<(), PublicBackendError> {
+    use crate::platform::file_clipboard::validate_file_paths;
+    let paths = tauri::async_runtime::spawn_blocking(move || validate_file_paths(&paths))
         .await
         .map_err(|_| {
             PublicBackendError::new("INTERNAL_ERROR", "Could not check the file to copy.")
@@ -210,7 +223,7 @@ pub async fn copy_file_to_clipboard(
     let target = window.clone();
     window
         .run_on_main_thread(move || {
-            let _ = sender.send(copy_file(&target, &path));
+            let _ = sender.send(crate::platform::file_clipboard::copy_files(&target, &paths));
         })
         .map_err(|_| {
             PublicBackendError::new("INTERNAL_ERROR", "Could not access the clipboard.")
@@ -358,6 +371,40 @@ fn completed_export_path(queue: &Value, item_id: &str) -> Result<PathBuf, Public
     Ok(path)
 }
 
+fn check_export_count(item_ids: &[String]) -> Result<(), PublicBackendError> {
+    use crate::platform::file_clipboard::MAX_FILES;
+    if item_ids.is_empty() {
+        return Err(PublicBackendError::new(
+            "INVALID_REQUEST",
+            "Choose the exports to drag.",
+        ));
+    }
+    if item_ids.len() > MAX_FILES {
+        return Err(PublicBackendError::new(
+            "INVALID_REQUEST",
+            format!("Drag up to {MAX_FILES} exports at a time."),
+        ));
+    }
+    Ok(())
+}
+
+/// The files of several finished exports, each once and in the order given. One export that
+/// can't be used fails the whole list.
+fn completed_export_paths(
+    queue: &Value,
+    item_ids: &[String],
+) -> Result<Vec<PathBuf>, PublicBackendError> {
+    check_export_count(item_ids)?;
+    let mut paths: Vec<PathBuf> = Vec::with_capacity(item_ids.len());
+    for item_id in item_ids {
+        let path = completed_export_path(queue, item_id)?;
+        if !paths.contains(&path) {
+            paths.push(path);
+        }
+    }
+    Ok(paths)
+}
+
 async fn finished_export(
     state: &BackendState,
     item_id: String,
@@ -387,12 +434,38 @@ pub async fn start_export_drag(
     state: tauri::State<'_, BackendState>,
     item_id: String,
 ) -> Result<bool, PublicBackendError> {
-    let path = finished_export(&state, item_id).await?;
+    drag_exports(window, &state, vec![item_id]).await
+}
+
+/// Starts one drag carrying several finished exports, like `start_export_drag`.
+#[tauri::command]
+pub async fn start_exports_drag(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, BackendState>,
+    item_ids: Vec<String>,
+) -> Result<bool, PublicBackendError> {
+    drag_exports(window, &state, item_ids).await
+}
+
+async fn drag_exports(
+    window: tauri::WebviewWindow,
+    state: &BackendState,
+    item_ids: Vec<String>,
+) -> Result<bool, PublicBackendError> {
+    // a bad list fails before waiting on the backend's queue
+    check_export_count(&item_ids)?;
+    let queue = state.request(BackendCommand::GetQueueState).await?;
+    let paths =
+        tauri::async_runtime::spawn_blocking(move || completed_export_paths(&queue, &item_ids))
+            .await
+            .map_err(|_| {
+                PublicBackendError::new("INTERNAL_ERROR", "Could not find the export.")
+            })??;
     let (sender, receiver) = tokio::sync::oneshot::channel();
     let target = window.clone();
     window
         .with_webview(move |webview| {
-            let _ = sender.send(file_drag::start(&target, &webview, &path));
+            let _ = sender.send(file_drag::start(&target, &webview, &paths));
         })
         .map_err(|_| PublicBackendError::new("INTERNAL_ERROR", "Could not drag the export."))?;
     receiver
@@ -696,6 +769,101 @@ mod tests {
                 "INVALID_PATH"
             );
         }
+    }
+
+    fn ids(ids: &[&str]) -> Vec<String> {
+        ids.iter().map(|id| (*id).to_owned()).collect()
+    }
+
+    #[test]
+    fn several_finished_exports_resolve_once_each_in_order() {
+        let first = ExportFile::new("first take.mp4");
+        let second = ExportFile::new("Zażółć #2.mkv");
+        let third = ExportFile::new("third.mov");
+        let snapshot = queue(serde_json::json!([
+            { "id": "a", "state": "completed", "result_path": first.path() },
+            { "id": "b", "state": "completed", "result_path": second.path() },
+            { "id": "c", "state": "completed", "result_path": third.path() },
+            // two rows that name one file still drag it once
+            { "id": "c-again", "state": "completed", "result_path": third.path() },
+        ]));
+        assert_eq!(
+            completed_export_paths(&snapshot, &ids(&["c", "a", "c", "b", "c-again"])).unwrap(),
+            [third.0.clone(), first.0.clone(), second.0.clone()]
+        );
+        assert_eq!(
+            completed_export_paths(&snapshot, &ids(&["b"])).unwrap(),
+            std::slice::from_ref(&second.0)
+        );
+    }
+
+    #[test]
+    fn one_export_that_cant_be_dragged_fails_the_whole_drag() {
+        let done = ExportFile::new("done.mp4");
+        let missing = done.0.with_file_name("gone.mp4");
+        let snapshot = queue(serde_json::json!([
+            { "id": "done", "state": "completed", "result_path": done.path() },
+            { "id": "running", "state": "running", "result_path": done.path() },
+            { "id": "moved", "state": "completed", "result_path": missing },
+        ]));
+        for (other, code, message) in [
+            (
+                "running",
+                "INVALID_REQUEST",
+                "This export isn't finished yet.",
+            ),
+            (
+                "unknown",
+                "INVALID_REQUEST",
+                "This export is no longer in the list. Export the video again to open it.",
+            ),
+            ("", "INVALID_REQUEST", "Choose a finished export."),
+            (
+                "moved",
+                "INVALID_PATH",
+                "The export could not be found. It may have been moved or deleted.",
+            ),
+        ] {
+            for list in [ids(&["done", other]), ids(&[other, "done"])] {
+                let error = completed_export_paths(&snapshot, &list).unwrap_err();
+                assert_eq!(
+                    (error.code.as_str(), error.message.as_str()),
+                    (code, message),
+                    "{list:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn an_export_drag_takes_one_to_a_hundred_exports() {
+        let empty = check_export_count(&[]).unwrap_err();
+        assert_eq!(
+            (empty.code.as_str(), empty.message.as_str()),
+            ("INVALID_REQUEST", "Choose the exports to drag.")
+        );
+        assert!(check_export_count(&ids(&["one"])).is_ok());
+        assert!(check_export_count(&vec!["item".to_owned(); 100]).is_ok());
+        let too_many = check_export_count(&vec!["item".to_owned(); 101]).unwrap_err();
+        assert_eq!(
+            (too_many.code.as_str(), too_many.message.as_str()),
+            ("INVALID_REQUEST", "Drag up to 100 exports at a time.")
+        );
+        // resolving the exports keeps the same limit
+        let file = ExportFile::new("limit.mp4");
+        let snapshot = queue(serde_json::json!([
+            { "id": "item", "state": "completed", "result_path": file.path() },
+        ]));
+        assert_eq!(
+            completed_export_paths(&snapshot, &vec!["item".to_owned(); 101])
+                .unwrap_err()
+                .message,
+            "Drag up to 100 exports at a time."
+        );
+        assert_eq!(
+            completed_export_paths(&snapshot, &vec!["item".to_owned(); 100]).unwrap(),
+            std::slice::from_ref(&file.0)
+        );
     }
 
     #[test]

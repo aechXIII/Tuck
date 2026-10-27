@@ -659,6 +659,9 @@
 }
 #export-go > .btn1 {
   width: auto;
+  /* wide enough for its longest label ("Compress this video", "Reading keyframes…"), so the
+     button never changes width as its label does; ch follows the font a platform falls back to */
+  min-width: calc(17ch + 28px * var(--density-scale));
   height: 100%;
   padding: 0 calc(14px * var(--density-scale));
   border-radius: 999px 0 0 999px;
@@ -711,6 +714,24 @@
 #export-go:has(> .btn1:active:not(:disabled)) {
   transform: scale(0.98);
   transition-duration: 80ms;
+}
+/* while the selected video is in Exports the button only leads there, so it steps back from the
+   solid action color; the bar's export status says how far it is. It sits after the solid
+   button's hover and press, which it replaces */
+#export-go > .btn1[data-queued="true"],
+#export-go > .btn1[data-queued="true"] + .export-actions > summary {
+  border-left-color: var(--hair-2);
+  background: var(--raised);
+  color: var(--text);
+}
+#export-go > .btn1[data-queued="true"]:hover,
+#export-go > .btn1[data-queued="true"] + .export-actions > summary:hover,
+#export-go > .btn1[data-queued="true"] + .export-actions[open] > summary {
+  background: var(--raised-2);
+}
+#export-go > .btn1[data-queued="true"]:active,
+#export-go > .btn1[data-queued="true"] + .export-actions > summary:active {
+  background: color-mix(in srgb, var(--raised) 84%, #000);
 }
 .export-actions > summary svg {
   width: 11px;

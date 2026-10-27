@@ -35,6 +35,32 @@ test("file copy invokes the native file command and preserves native errors", as
   assert.equal((await createTauriBackendClient(async () => { throw new Error("Offline"); }).copyFile(path)).ok, false);
 });
 
+test("several files are copied in one native call, and its errors are kept", async () => {
+  const calls: unknown[] = [];
+  const client = createTauriBackendClient(async (command, args) => {
+    calls.push({ command, args });
+  });
+  const paths = ["C:\\out\\録画 #1_tucked.mp4", "C:\\out\\two_tucked.mp4"];
+  assert.deepEqual(await client.copyFiles(paths), { ok: true, value: {} });
+  assert.deepEqual(calls, [{ command: "copy_files_to_clipboard", args: { paths } }]);
+  const error = { code: "INVALID_REQUEST", message: "Could not access this file. Check that it still exists and try again.", details: {} };
+  assert.deepEqual(await createTauriBackendClient(async () => { throw error; }).copyFiles(paths), { ok: false, error });
+  assert.equal((await createTauriBackendClient(async () => { throw new Error("Offline"); }).copyFiles(paths)).ok, false);
+});
+
+test("several finished exports are dragged by queue id in one drag", async () => {
+  const calls: unknown[] = [];
+  const client = createTauriBackendClient(async (command, args) => {
+    calls.push({ command, args });
+    return true;
+  });
+  assert.deepEqual(await client.startExportsDrag(["job-1", "job-2"]), { ok: true, value: { started: true } });
+  assert.deepEqual(calls, [{ command: "start_exports_drag", args: { itemIds: ["job-1", "job-2"] } }]);
+  const error = { code: "UNSUPPORTED_OPERATION", message: "Dragging exports out isn't available on this system yet. Use Copy file instead.", details: {} };
+  assert.deepEqual(await createTauriBackendClient(async () => { throw error; }).startExportsDrag(["job-1"]), { ok: false, error });
+  assert.equal((await createTauriBackendClient(async () => "yes").startExportsDrag(["job-1"])).ok, false);
+});
+
 test("pasting reads the clipboard's files natively and rejects anything but a list of paths", async () => {
   const calls: unknown[] = [];
   const files = ["C:\\videos\\録画 #1.mp4", "D:\\clips\\two.mov"];

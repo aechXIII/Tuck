@@ -998,8 +998,6 @@ class FFmpegEngine:
             total_passes=total_passes,
             retry_number=retry_number,
             max_retries=max_retries,
-            # this FFmpeg run blends the frames itself, so its fps is the blending rate
-            report_fps=self._tmix is not None or self._stream_plan is not None,
         )
         tracker.set_pass(pass_num)
         _emit(on_progress, tracker.snapshot())

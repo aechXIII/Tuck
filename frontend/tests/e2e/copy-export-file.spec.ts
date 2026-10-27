@@ -68,10 +68,11 @@ for (const width of [1240, 960]) {
     await expect(page.locator('[data-export-id="no-path"] button', { hasText: "Copy file" })).toHaveCount(0);
     const actions = page.locator('[data-export-id="done"] .exports-actions');
     await expect(actions).toBeVisible();
-    expect(await actions.evaluate(el => {
+    // polling redraws the list while it is open, so measure the row that is there now
+    await expect.poll(() => page.evaluate(() => {
       const panel = document.getElementById("exports-panel")!.getBoundingClientRect();
-      const box = el.getBoundingClientRect();
-      return box.left >= panel.left && box.right <= panel.right;
+      const box = document.querySelector('[data-export-id="done"] .exports-actions')!.getBoundingClientRect();
+      return box.width > 0 && box.left >= panel.left && box.right <= panel.right;
     })).toBe(true);
     await page.keyboard.press("Escape");
     await expect(page.locator("#qstatus")).toBeFocused();

@@ -54,6 +54,27 @@ test("unexpected native exceptions leave copying retryable", async () => {
   assert.equal(await copier.copy("a", ""), "ignored");
 });
 
+test("several files are one copy, sharing the one clipboard with single files", async () => {
+  const single: string[] = [];
+  const batches: string[][] = [];
+  let finish!: (result: BackendResult<EmptyPayload>) => void;
+  const copier = createExportFileCopy(async path => { single.push(path); return { ok: true, value: {} }; }, () => {},
+    paths => { batches.push([...paths]); return new Promise(resolve => { finish = resolve; }); });
+  const files = ["C:\\out\\a.mp4", "C:\\out\\b.mp4"];
+  const pending = copier.copyMany("batch", files);
+  assert.equal(copier.state("batch", files.join("\n")).status, "copying");
+  // a single file waits while the batch holds the clipboard
+  assert.equal(await copier.copy("a", files[0]!), "ignored");
+  finish({ ok: true, value: {} });
+  assert.equal(await pending, "copied");
+  assert.deepEqual(batches, [files]);
+  assert.equal(copier.state("batch", files.join("\n")).status, "copied");
+  // a batch of one is the single-file copy
+  assert.equal(await copier.copyMany("one", ["C:\\out\\c.mp4"]), "copied");
+  assert.deepEqual(single, ["C:\\out\\c.mp4"]);
+  assert.equal(copier.state("batch", files.join("\n")).status, "idle");
+});
+
 test("a failed repeat copy clears its previous success label", async () => {
   let fails = false;
   const copier = createExportFileCopy(async () => fails

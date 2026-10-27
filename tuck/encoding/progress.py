@@ -49,13 +49,11 @@ class ProgressTracker:
         retry_number: int | None = None,
         max_retries: int | None = None,
         window: int = 8,
-        report_fps: bool = False,
     ) -> None:
         self.duration = max(0.0, float(duration))
         self.total_passes = max(1, int(total_passes))
         self.retry_number = retry_number
         self.max_retries = max_retries
-        self.report_fps = report_fps
         self.pass_number = 1
         self.stage = EncodeStage.ENCODING
         self._samples: deque[float] = deque(maxlen=max(3, window))
@@ -105,8 +103,10 @@ class ProgressTracker:
         self._note_fps(parse_ffmpeg_fps(line))
         return self.update(current, speed=self._last_speed)
 
+    # the export bar shows how fast every run goes; a run that blends frames itself reports its
+    # blending rate
     def _note_fps(self, fps: float | None) -> None:
-        if self.report_fps and fps is not None:
+        if fps is not None:
             self._last_fps = fps
 
     def update(self, current_time: float, speed: float | None = None) -> EncodeProgress:

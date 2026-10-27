@@ -1477,6 +1477,26 @@
         <span id="library-summary" aria-label="Library summary" hidden
           ><span id="library-summary-count">0 videos</span> · <span id="library-summary-size">0 B</span></span
         >
+        <!-- while there are exports they take this side: the one running, then the files it made -->
+        <div id="qbar" class="hid" role="region" aria-label="Exports">
+          <button
+            type="button"
+            id="qstatus"
+            data-action-click="exports-toggle"
+            aria-haspopup="dialog"
+            aria-expanded="false"
+            aria-controls="exports-panel"
+          >
+            <span id="qlead" aria-hidden="true"></span>
+            <span class="qtext">
+              <span class="qline"><span id="qfname"></span><span id="qpct"></span></span>
+              <span class="qline"><span id="qtrack" aria-hidden="true"></span><span id="qeta"></span></span>
+            </span>
+            <span id="qstats" aria-hidden="true"><span id="qfps"></span><span id="qleft"></span></span>
+            <progress id="qprog" value="0" max="100" aria-label="Export progress"></progress>
+          </button>
+          <span id="qactions"></span>
+        </div>
       </div>
       <div id="task-wf" role="group" aria-label="Task">
         <button
@@ -1520,24 +1540,6 @@
         </button>
       </div>
       <div class="task-bar-side end">
-        <div id="qbar" class="hid" role="region" aria-label="Exports">
-          <button
-            type="button"
-            id="qstatus"
-            data-action-click="exports-toggle"
-            aria-haspopup="dialog"
-            aria-expanded="false"
-            aria-controls="exports-panel"
-          >
-            <svg class="qstatus-done" viewBox="0 0 16 16" aria-hidden="true"><path d="m3.5 8.5 3 3 6-7"></path></svg>
-            <svg class="qstatus-warn" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5 14 13H2Z"></path><path d="M8 6.5v3M8 11.3v.2"></path></svg>
-            <span id="qfname"></span>
-            <span id="qeta"></span>
-            <span id="qcnt"></span>
-            <svg class="qstatus-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 7.5 6 4l3.5 3.5"></path></svg>
-            <progress id="qprog" value="0" max="100" aria-label="Export progress"></progress>
-          </button>
-        </div>
         <!-- the export button lives with the task switch so it is on screen on every tab and width -->
         <div id="export-go">
           <button class="btn1" id="btn-one" data-action-click="encoding-run-selected" disabled>

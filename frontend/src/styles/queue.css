@@ -1,9 +1,10 @@
-/* The status card: the Library total on the left, the task in the middle and exports on the
-   right. The task sits in the middle so switching it never moves, however much the sides say. */
+/* The status card: the Library total or the exports on the left, the task in the middle and the
+   export button on the right. The task sits in the middle so switching it never moves, however
+   much the sides say; only what the left side can't cut, such as a count, moves it aside. */
 #task-bar {
   flex: 0 0 var(--status-card-height);
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  grid-template-columns: minmax(min-content, 1fr) auto minmax(0, 1fr);
   align-items: center;
   gap: calc(16px * var(--density-scale));
   min-height: var(--status-card-height);
@@ -134,9 +135,16 @@
   outline-offset: -2px;
 }
 
-/* what is exporting: one button that opens every export, its bottom edge the progress */
+/* while there are exports they take the bar's left side, and the Library summary steps aside */
+.task-bar-side:has(> #qbar:not(.hid)) > #library-summary {
+  display: none;
+}
 #qbar {
+  /* the widest the two lines get; it also caps what they ask of the bar's left side */
+  --qtext-max: calc(280px * var(--text-scale));
   display: flex;
+  align-items: center;
+  gap: 6px;
   min-width: 0;
   max-width: 100%;
   /* runs each time the bar appears, so accepted exports visibly arrive where they'll be tracked */
@@ -145,168 +153,327 @@
 @keyframes qbar-enter {
   from { opacity: 0; transform: translateY(4px); }
 }
+/* one button that opens every export: a picture, two lines and, while one runs, how fast it goes */
 #qstatus {
   position: relative;
-  overflow: hidden;
-  height: 30px;
-  min-width: 0;
-  max-width: 470px;
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 0 10px;
+  gap: 10px;
+  min-width: 0;
+  height: calc(36px * var(--density-scale));
+  padding: 0 10px 0 9px;
   border: 0;
   border-radius: var(--r-ctl);
   background: transparent;
   color: var(--text);
   font: 600 calc(12px * var(--text-scale)) var(--font);
+  text-align: left;
   cursor: pointer;
 }
-#qstatus:hover {
+#qstatus:hover,
+#qstatus[aria-expanded="true"] {
   background: var(--raised);
 }
 #qstatus:focus-visible {
   outline: 2px solid var(--accent-light);
   outline-offset: 1px;
 }
-#qstatus[aria-expanded="true"] {
-  background: var(--raised);
+#qstatus:has(.qthumb, .qstack) {
+  padding-left: 4px;
 }
-#qstatus svg {
+#qlead {
+  position: relative;
   flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+}
+#qlead:empty {
+  display: none;
+}
+.qthumb {
+  position: relative;
+  display: block;
+  width: 48px;
+  height: 27px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--raised-2);
+}
+.qthumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.qthumb::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px var(--hair-2);
+}
+/* several results as a small stack of their own pictures, newest in front */
+.qstack {
+  position: relative;
+  width: 54px;
+  height: 31px;
+}
+.qstack .qthumb {
+  position: absolute;
+  width: 44px;
+  height: 25px;
+  box-shadow: 0 0 0 1.5px var(--panel);
+}
+/* a picture of the finished file is the handle that drags it out */
+[data-drag-out] {
+  cursor: grab;
+}
+.qbadge {
+  position: absolute;
+  right: -5px;
+  bottom: -5px;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--panel);
+}
+.qbadge svg,
+.qmark svg {
+  display: block;
   fill: none;
   stroke: currentColor;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-.qstatus-done {
-  display: none;
-  width: 14px;
-  height: 14px;
+.qbadge svg {
+  width: 12px;
+  height: 12px;
+  stroke-width: 1.8;
+}
+.qmark svg {
+  width: 16px;
+  height: 16px;
   stroke-width: 1.6;
+}
+/* with its picture shown, a result's mark rides on it instead */
+#qlead:has(.qthumb, .qstack) .qmark {
+  display: none;
+}
+.qbadge.good,
+.qmark.good {
   color: var(--good);
 }
-.qstatus-warn {
-  display: none;
-  flex: 0 0 auto;
-  width: 14px;
-  height: 14px;
-  fill: none;
-  stroke: var(--warn);
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+.qbadge.warn,
+.qmark.warn {
+  color: var(--warn);
 }
-/* a batch with a failure never shows the success check */
-#qbar.finished.has-failed .qstatus-done {
-  display: none;
-}
-#qbar.finished.has-failed .qstatus-warn {
-  display: block;
-}
-#qbar.finished .qstatus-done {
-  display: block;
+.qmark.quiet {
+  color: var(--dim);
 }
 /* a batch that finished cleanly draws its check once; polls and failed batches never replay it */
-#qbar.just-finished .qstatus-done path {
+#qbar.just-finished .good path {
   stroke-dasharray: 14;
   animation: qdone-draw 260ms var(--ease-out) both;
-}
-#qbar.just-finished #qfname {
-  animation: qdone-label var(--workspace-motion);
 }
 @keyframes qdone-draw {
   from { stroke-dashoffset: 14; }
   to { stroke-dashoffset: 0; }
 }
-@keyframes qdone-label {
-  from { opacity: 0; transform: translateY(2px); }
+.qtext {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: var(--qtext-max);
 }
-.qstatus-chevron {
-  width: 12px;
-  height: 12px;
-  stroke-width: 1.5;
-  color: var(--dim);
+/* a count keeps its whole width; the line under it still gives way */
+#qbar:has(#qfname.count) .qtext {
+  max-width: none;
+}
+#qfname.count {
+  flex: none;
+}
+/* a running export keeps one width, so the numbers changing on every poll move nothing */
+#qbar[data-kind="running"] .qtext {
+  flex: 0 1 calc(208px * var(--text-scale));
+  width: calc(208px * var(--text-scale));
+}
+.qline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 #qfname {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+#qpct {
+  flex: 0 0 auto;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+#qpct:empty,
+#qtrack:empty,
+#qeta:empty {
+  display: none;
+}
+/* two-pass exports fill one half after the other, the way their percent counts */
+#qtrack {
+  flex: 1 1 auto;
+  display: flex;
+  gap: 2px;
+  min-width: 0;
+  height: 4px;
+}
+.qseg {
+  flex: 1 1 0;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--raised-2);
+}
+.qfill {
+  display: block;
+  height: 100%;
+  background: var(--accent);
 }
 #qeta {
-  flex-shrink: 0;
-  color: var(--muted);
-  font: 500 calc(11px * var(--text-scale)) var(--mono);
-  white-space: nowrap;
-}
-#qeta:empty,
-#qcnt:empty {
-  display: none;
-}
-/* a finished or paused batch's count never gives way; the failures and savings after it do */
-#qbar.finished #qfname,
-#qbar.paused #qfname {
-  flex-shrink: 0;
-}
-#qcnt {
+  flex: 0 1 auto;
   min-width: 0;
+  max-width: var(--qtext-max);
   overflow: hidden;
   text-overflow: ellipsis;
-  color: var(--dim);
-  font: 500 calc(11px * var(--text-scale)) var(--font);
   white-space: nowrap;
+  color: var(--muted);
+  font: 500 calc(11px * var(--text-scale)) var(--font);
+  font-variant-numeric: tabular-nums;
 }
-/* finished: "2 exported · 1 failed" reads as one line, and so does "2 exports paused · 1 failed" */
-#qbar.finished #qcnt::before,
-#qbar.paused #qcnt::before {
-  content: "· ";
+#qtrack:empty + #qeta {
+  flex-grow: 1;
 }
-#qcnt .q-failed {
+#qeta.warn {
   color: color-mix(in srgb, var(--warn) 85%, var(--text));
 }
-#qprog {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  width: 100%;
-  height: 2px;
-  border: 0;
-  appearance: none;
-  background: var(--raised-2);
+/* fps over time left, right-aligned in one fixed column like a readout */
+#qstats {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+  width: calc(70px * var(--text-scale));
 }
-#qprog::-webkit-progress-bar {
-  background: var(--raised-2);
-}
-#qprog::-webkit-progress-value {
-  background: var(--accent-light);
-}
-/* a step with no measurable progress shows activity, never an amount: a short segment sweeps across */
-#qprog:indeterminate {
-  background:
-    linear-gradient(var(--accent-light), var(--accent-light)) -45% 0 / 30% 100% no-repeat,
-    var(--raised-2);
-  animation: progress-sweep 1.6s cubic-bezier(0.65, 0, 0.35, 1) infinite;
-}
-@keyframes progress-sweep {
-  from { background-position: -45% 0, 0 0; }
-  to { background-position: 145% 0, 0 0; }
-}
-/* with Animations off it is a still dashed track, which can't be mistaken for a percentage */
-:root[data-motion="off"] #qprog:indeterminate {
-  animation: none;
-  background: repeating-linear-gradient(90deg, var(--accent-light) 0 6px, transparent 6px 12px), var(--raised-2);
-}
-#qbar.finished #qprog,
-#qbar.paused #qprog {
+#qbar:not([data-kind="running"]) #qstats {
   display: none;
 }
+#qfps {
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+#qfps small,
+#qleft {
+  color: var(--muted);
+  font: 500 calc(11px * var(--text-scale)) var(--font);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* read by screen readers; the track and the numbers are what people see */
+#qprog {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+/* the result's own actions sit beside it */
+#qactions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+}
+#qactions:empty {
+  display: none;
+}
+.qicon {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-ctl);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+.qicon svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.qicon:hover {
+  background: var(--raised);
+}
+.qicon.done,
+.qicon.done:hover {
+  color: var(--good);
+}
+.qicon[aria-disabled="true"] {
+  cursor: default;
+}
+/* clearing the bar is not a file action, so it sits apart and quieter */
+.qicon.quiet {
+  margin-left: 4px;
+  color: var(--dim);
+}
+.qicon.quiet:hover {
+  color: var(--text);
+}
+.qicon.quiet svg {
+  width: 12px;
+  height: 12px;
+  stroke-width: 1.6;
+}
+.qaction {
+  flex: 0 0 auto;
+  height: 28px;
+  padding: 0 calc(10px * var(--density-scale));
+  border: 0;
+  border-radius: var(--r-ctl);
+  background: var(--raised);
+  color: var(--text);
+  font: 600 calc(12px * var(--text-scale)) var(--font);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.qaction:hover {
+  background: var(--raised-2);
+}
+.qicon:focus-visible,
+.qaction:focus-visible {
+  outline: 2px solid var(--accent-light);
+  outline-offset: 1px;
+}
 
-/* every export this session, above the bottom bar */
+/* every export this session, above the bar's export status that opens it */
 #exports-panel {
   position: fixed;
-  right: 10px;
+  left: 10px;
   bottom: calc(var(--task-bar-height) + 6px);
   z-index: var(--z-exports);
   width: min(400px, calc(100vw - 20px));
@@ -560,22 +727,16 @@
 }
 
 @media (max-width: 1365px) {
-  /* beside the export button only the percent fits while exporting, and "3 exported" or
-     "2 exports paused" otherwise; the file name, failures and savings are in the Exports panel */
-  #qbar:not(.finished, .paused) #qfname,
-  #qcnt {
-    display: none;
-  }
-  /* what is left never gives way: where a wide font or text size still doesn't fit, the switch
-     moves aside instead of cutting the count or running into it */
+  /* the export button never gives way: where a wide font or text size still doesn't fit, the
+     switch moves aside instead of cutting the button */
   #task-bar {
-    grid-template-columns: minmax(0, 1fr) auto minmax(max-content, 1fr);
+    grid-template-columns: minmax(min-content, 1fr) auto minmax(max-content, 1fr);
   }
   .task-tab {
     padding: 0 calc(10px * var(--density-scale));
   }
-  #qstatus {
-    gap: 6px;
+  #qbar {
+    --qtext-max: calc(200px * var(--text-scale));
   }
 }
 @media (max-width: 1100px) {
@@ -590,7 +751,26 @@
   .task-tab svg {
     display: none;
   }
-  #qstatus {
-    padding: 0 6px;
+  /* pictures give way to the result's mark, so the export side keeps its two lines */
+  #qlead .qthumb,
+  #qlead .qstack {
+    display: none;
+  }
+  #qlead:has(.qthumb, .qstack) .qmark {
+    display: block;
+  }
+  #qbar[data-kind="running"] #qlead {
+    display: none;
+  }
+  #qstatus,
+  #qstatus:has(.qthumb, .qstack) {
+    padding: 0 8px;
+  }
+  #qbar[data-kind="running"] .qtext {
+    flex-basis: calc(180px * var(--text-scale));
+    width: calc(180px * var(--text-scale));
+  }
+  #qbar {
+    --qtext-max: calc(150px * var(--text-scale));
   }
 }

@@ -1,7 +1,8 @@
 import type { BackendClient, BackendResult, JsonObject, QueuedIdsPayload } from "../../backend/types.ts";
 import { SegmentEditing } from "../timeline/segments.ts";
 import { legacyBackendResult } from "../editor/backend-compat.ts";
-import { formatBytes, formatTime, withReason } from "../editor/format.ts";
+import { formatBytes, formatTarget, formatTime, withReason } from "../editor/format.ts";
+import { exportBarView, passFills, type ExportBarView } from "./export-bar.ts";
 import { announce, confirmToast, toast } from "../editor/toast.ts";
 import { EASE_OUT, motionEnabled } from "../../ui/motion.ts";
 import { createExportFileCopy } from "./export-file-copy.ts";
@@ -41,6 +42,8 @@ export interface QueueDeps {
   removeClip: (path: string) => void;
   editCount: (path: string) => number;
   onSendto: (data: Record<string, unknown>) => void;
+  /** whether the desktop shell can drag a finished export out of the window as a file */
+  canDragOut?: () => boolean;
   /** the desktop shell's report on the preview, for the diagnostic report */
   previewReport?: () => Promise<JsonObject | null>;
 }
@@ -52,10 +55,13 @@ export interface QueueApi {
   retryQueueItem: (itemId: string) => Promise<void>;
   openResult: (path: string) => Promise<void>;
   copyResult: (itemId: string) => Promise<void>;
+  /** several finished exports' files as one copy, for the bar's Copy files */
+  copyResults: (itemIds: readonly string[]) => Promise<void>;
   // where copying this export's file stands, for the Library's Copy file button
   copyResultState: (itemId: string, path: string) => { disabled: boolean; label: string };
   openExportFile: (itemId: string) => Promise<void>;
   dragExportOut: (itemId: string) => Promise<void>;
+  dragExportsOut: (itemIds: readonly string[]) => Promise<void>;
   stopAfterCurrent: () => void;
   cancelAll: () => void;
   // completed and canceled exports leave the list; failed ones stay for Retry
@@ -85,38 +91,15 @@ export function installQueue(deps: QueueDeps): QueueApi {
     if (node) node.disabled = disabled;
   };
 
-  // "1 waiting · 2 paused · 1 failed · saved 1.1 GB", with the failures in warning colour
-  const paintQueueCounts = (waiting: number, paused: number, failed: number, saved: number): void => {
-    const counts = byId("qcnt");
-    if (!counts) return;
-    const doc = counts.ownerDocument;
-    const parts: Node[] = [];
-    const add = (text: string, className = ""): void => {
-      if (parts.length) {
-        const sep = doc.createElement("span");
-        sep.textContent = " · ";
-        if (className === "q-saved") sep.className = "q-saved-sep";
-        parts.push(sep);
-      }
-      const part = doc.createElement("span");
-      if (className) part.className = className;
-      part.textContent = text;
-      parts.push(part);
-    };
-    if (waiting) add(`${waiting} waiting`);
-    if (paused) add(`${paused} paused`);
-    if (failed) add(`${failed} failed`, "q-failed");
-    if (saved > 0) add(`saved ${formatBytes(saved)}`, "q-saved");
-    counts.replaceChildren(...parts);
-  };
-
   let exportsOpen = false;
   let lastItems: readonly QueueItem[] = [];
-  // the Exports panel and the Library both show where a copy stands
+  let barView: ExportBarView = { kind: "hidden" };
+  // the Exports panel, the Library and the bar all show where a copy stands
   const fileCopy = createExportFileCopy(path => client().copyFile(path), () => {
     renderExports(lastItems);
     deps.renderClips();
-  });
+    paintExportBar(barView);
+  }, paths => client().copyFiles(paths));
 
   let closeTicket = 0;
 
@@ -184,6 +167,285 @@ export function installQueue(deps: QueueDeps): QueueApi {
   function sourceSize(path: string): number {
     const clip = session.clips[path] ?? Object.values(session.clips).find((item) => item?.probeData?.path === path);
     return Number(clip?._fileSize) || 0;
+  }
+
+  function thumbnailFor(path: string): string {
+    const clip = session.clips[path] ?? Object.values(session.clips).find((item) => item?.probeData?.path === path);
+    return clip && !clip.error ? clip._thumbnail || "" : "";
+  }
+
+  const SVG = "http://www.w3.org/2000/svg";
+  const PATHS = {
+    check: ["m3.5 8.5 3 3 6-7"],
+    badge: ["m2.5 6.4 2.3 2.3 4.7-5.4"],
+    warn: ["M8 2.5 14 13H2Z", "M8 6.5v3M8 11.3v.2"],
+    pause: ["M6 4v8M10 4v8"],
+    stop: ["M4.5 4.5l7 7M11.5 4.5l-7 7"],
+    copy: [
+      "M7 5.5h5A1.5 1.5 0 0 1 13.5 7v5a1.5 1.5 0 0 1-1.5 1.5H7A1.5 1.5 0 0 1 5.5 12V7A1.5 1.5 0 0 1 7 5.5Z",
+      "M10.5 5.5V4A1.5 1.5 0 0 0 9 2.5H4A1.5 1.5 0 0 0 2.5 4v5A1.5 1.5 0 0 0 4 10.5h1.5",
+    ],
+    folder: ["M2 4.5A1.5 1.5 0 0 1 3.5 3h2.6l1.5 1.5h4.9A1.5 1.5 0 0 1 14 6v5.5a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 11.5Z"],
+    clear: ["M3 3l6 6M9 3l-6 6"],
+  } as const;
+
+  function icon(doc: Document, paths: readonly string[], viewBox = "0 0 16 16"): SVGSVGElement {
+    const svg = doc.createElementNS(SVG, "svg");
+    svg.setAttribute("viewBox", viewBox);
+    svg.setAttribute("aria-hidden", "true");
+    for (const d of paths) {
+      const path = doc.createElementNS(SVG, "path");
+      path.setAttribute("d", d);
+      svg.append(path);
+    }
+    return svg;
+  }
+
+  function element(doc: Document, tag: string, className: string): HTMLElement {
+    const node = doc.createElement(tag);
+    node.className = className;
+    return node;
+  }
+
+  // the video's own picture, or an empty frame of the same size so a running export keeps its shape
+  function thumbnail(doc: Document, path: string, keepEmpty: boolean): HTMLElement | null {
+    const url = thumbnailFor(path);
+    if (!url && !keepEmpty) return null;
+    const frame = element(doc, "span", "qthumb");
+    if (url) {
+      const image = doc.createElement("img");
+      image.alt = "";
+      // the picture drags the file, not the image itself
+      image.draggable = false;
+      image.src = url;
+      frame.append(image);
+    }
+    return frame;
+  }
+
+  function badge(doc: Document): HTMLElement {
+    const mark = element(doc, "span", "qbadge good");
+    mark.append(icon(doc, PATHS.badge, "0 0 12 12"));
+    return mark;
+  }
+
+  function mark(doc: Document, tone: "good" | "warn" | "quiet", paths: readonly string[]): HTMLElement {
+    const node = element(doc, "span", `qmark ${tone}`);
+    node.append(icon(doc, paths));
+    return node;
+  }
+
+  // the result's actions are icons named by their tooltip; Retry and Resume stay words
+  function iconButton(doc: Document, action: string, label: string, paths: readonly string[], data: Record<string, string> = {}, extra = ""): HTMLButtonElement {
+    const button = doc.createElement("button");
+    button.type = "button";
+    button.className = extra ? `qicon ${extra}` : "qicon";
+    button.dataset.actionClick = action;
+    button.dataset.tip = label;
+    button.setAttribute("aria-label", label);
+    Object.assign(button.dataset, data);
+    button.append(icon(doc, paths, action === "queue-clear-finished" ? "0 0 12 12" : "0 0 16 16"));
+    return button;
+  }
+
+  function wordButton(doc: Document, action: string, label: string): HTMLButtonElement {
+    const button = doc.createElement("button");
+    button.type = "button";
+    button.className = "qaction";
+    button.dataset.actionClick = action;
+    button.textContent = label;
+    return button;
+  }
+
+  function copyButton(doc: Document, key: string, path: string, idle: string, action: string, data: Record<string, string>): HTMLButtonElement {
+    const state = fileCopy.state(key, path);
+    const label = state.status === "idle" ? idle : state.label;
+    const button = iconButton(doc, action, label, state.status === "copied" ? PATHS.check : PATHS.copy, data, state.status === "copied" ? "done" : "");
+    // aria-disabled rather than disabled, so focus stays on the button while the clipboard is busy
+    if (state.disabled) button.setAttribute("aria-disabled", "true");
+    return button;
+  }
+
+  const batchKey = (itemIds: readonly string[]): string => `batch:${itemIds.join(",")}`;
+
+  // every poll repaints the bar; a part that came out the same stays, so a press on the picture or
+  // focus on a button lives through the poll, and a changed one keeps focus on the same action
+  function replaceIfChanged(shown: HTMLElement, next: HTMLElement): void {
+    if (shown.innerHTML === next.innerHTML) return;
+    const active = shown.ownerDocument.activeElement;
+    const focused = active instanceof HTMLElement && shown.contains(active) ? active.dataset.actionClick : undefined;
+    shown.replaceChildren(...next.childNodes);
+    if (focused) shown.querySelector<HTMLElement>(`[data-action-click="${focused}"]`)?.focus();
+  }
+
+  function paintExportBar(view: ExportBarView): void {
+    const bar = byId("qbar");
+    const status = byId("qstatus");
+    const shownLead = byId("qlead");
+    const name = byId("qfname");
+    const percent = byId("qpct");
+    const shownTrack = byId("qtrack");
+    const line = byId("qeta");
+    const shownFps = byId("qfps");
+    const left = byId("qleft");
+    const shownActions = byId("qactions");
+    const progress = byId<HTMLProgressElement>("qprog");
+    if (!bar || !status || !shownLead || !name || !percent || !shownTrack || !line || !shownFps || !left || !shownActions || !progress) return;
+    const doc = bar.ownerDocument;
+    bar.dataset.kind = view.kind;
+    const lead = doc.createElement("span");
+    const track = doc.createElement("span");
+    const actions = doc.createElement("span");
+    const fps = doc.createElement("span");
+    percent.textContent = "";
+    left.textContent = "";
+    line.className = "";
+    let title = "";
+    let second = "";
+    let label = "";
+    const clear = (): HTMLButtonElement => iconButton(doc, "queue-clear-finished", "Clear finished exports", PATHS.clear, {}, "quiet");
+    if (view.kind === "running") {
+      lead.append(thumbnail(doc, view.sourcePath, true)!);
+      title = view.title;
+      const waiting = [view.waiting ? `${view.waiting} waiting` : "", view.failed ? `${view.failed} failed` : ""].filter(Boolean).join(" · ");
+      if (view.percent !== null) {
+        percent.textContent = `${view.percent}%`;
+        for (const amount of passFills(view.percent, view.passes)) {
+          const fill = element(doc, "span", "qfill");
+          fill.style.width = `${amount}%`;
+          const segment = element(doc, "span", "qseg");
+          segment.append(fill);
+          track.append(segment);
+        }
+        second = view.attempt || waiting;
+        progress.value = view.percent;
+      } else {
+        second = view.attempt || [view.stage, waiting].filter(Boolean).join(" · ");
+        progress.removeAttribute("value");
+      }
+      if (view.fps !== null) {
+        const unit = doc.createElement("small");
+        unit.textContent = "fps";
+        fps.append(`${view.fps < 10 ? view.fps.toFixed(1) : Math.round(view.fps)} `, unit);
+      }
+      if (view.eta !== null) left.textContent = `${formatTime(view.eta)} left`;
+      label = [
+        `Exporting ${view.title}`,
+        view.percent !== null ? `${view.percent}%` : view.stage,
+        view.attempt,
+        view.fps !== null ? `${Math.round(view.fps)} frames a second` : "",
+        view.eta !== null ? `${formatTime(view.eta)} left` : "",
+        waiting,
+      ].filter(Boolean).join(", ");
+    } else if (view.kind === "one") {
+      const picture = thumbnail(doc, view.sourcePath, false);
+      if (picture) {
+        picture.append(badge(doc));
+        if (deps.canDragOut?.()) {
+          picture.dataset.dragOut = view.itemId;
+          picture.title = "Drag the file into a chat or a folder";
+        }
+        lead.append(picture);
+      }
+      lead.append(mark(doc, "good", PATHS.check));
+      title = view.title;
+      if (view.missedTarget) {
+        second = `${formatBytes(view.resultSize)}, over the ${formatTarget(view.missedTarget)} target`;
+        line.className = "warn";
+      } else if (view.resultSize && view.sourceSize) {
+        second = `${formatBytes(view.resultSize)} · was ${formatBytes(view.sourceSize)}`;
+      } else {
+        second = formatBytes(view.resultSize);
+      }
+      // a copy that failed stays said here after its toast goes
+      const copyError = fileCopy.state(view.itemId, view.resultPath).error;
+      if (copyError) {
+        second = copyError;
+        line.className = "warn";
+      }
+      actions.append(
+        copyButton(doc, view.itemId, view.resultPath, "Copy file", "export-item-copy-file", { itemId: view.itemId }),
+        iconButton(doc, "export-item-show", "Show in folder", PATHS.folder, { resultPath: view.resultPath }),
+        clear(),
+      );
+      label = `Exported ${view.title}${second ? `, ${second}` : ""}`;
+    } else if (view.kind === "many") {
+      const pictures = view.sourcePaths.map(thumbnailFor).filter(Boolean);
+      if (pictures.length) {
+        const stack = element(doc, "span", "qstack");
+        pictures.forEach((url, index) => {
+          const frame = element(doc, "span", "qthumb");
+          // newest in front and lowest, older ones peeking out above and to the right
+          frame.style.left = `${(pictures.length - 1 - index) * 5}px`;
+          frame.style.top = `${index * 3}px`;
+          frame.style.zIndex = String(index + 1);
+          const image = doc.createElement("img");
+          image.alt = "";
+          image.draggable = false;
+          image.src = url;
+          frame.append(image);
+          stack.append(frame);
+        });
+        stack.append(badge(doc));
+        if (deps.canDragOut?.()) {
+          stack.dataset.dragOut = view.itemIds.join(",");
+          stack.title = `Drag the ${view.count} files into a chat or a folder`;
+        }
+        lead.append(stack);
+      }
+      lead.append(mark(doc, "good", PATHS.check));
+      title = `${view.count} videos exported`;
+      if (view.missedTarget) {
+        second = view.missedTarget === 1 ? "1 is over its target size" : `${view.missedTarget} are over their target size`;
+        line.className = "warn";
+      } else {
+        second = view.saved > 0 ? `${formatBytes(view.saved)} smaller in total` : `${formatBytes(view.total)} in total`;
+      }
+      const copyError = fileCopy.state(batchKey(view.itemIds), view.resultPaths.join("\n")).error;
+      if (copyError) {
+        second = copyError;
+        line.className = "warn";
+      }
+      actions.append(
+        copyButton(doc, batchKey(view.itemIds), view.resultPaths.join("\n"), `Copy ${view.count} files`, "exports-copy-files", { itemIds: view.itemIds.join(",") }),
+        iconButton(doc, "export-item-show", "Show in folder", PATHS.folder, { resultPath: view.resultPath }),
+        clear(),
+      );
+      label = `${title}, ${second}`;
+    } else if (view.kind === "failed") {
+      lead.append(mark(doc, "warn", PATHS.warn));
+      title = view.finished ? `${view.failed} of ${view.failed + view.finished} failed` : view.title;
+      second = view.error;
+      line.className = "warn";
+      actions.append(wordButton(doc, "queue-retry-all", "Retry"));
+      label = view.finished ? `${title}. ${view.title}: ${view.error}` : `${view.title} failed: ${view.error}`;
+    } else if (view.kind === "canceled") {
+      lead.append(mark(doc, "quiet", PATHS.stop));
+      title = view.count === 1 ? "1 export canceled" : `${view.count} exports canceled`;
+      second = view.count === 1 ? "Retry starts it again" : "Retry starts them again";
+      actions.append(wordButton(doc, "queue-retry-all", "Retry"), clear());
+      label = title;
+    } else if (view.kind === "paused") {
+      lead.append(mark(doc, "quiet", PATHS.pause));
+      title = view.count === 1 ? "1 export paused" : `${view.count} exports paused`;
+      second = view.count === 1 ? "Resume starts it again" : "Resume starts them again";
+      actions.append(wordButton(doc, "queue-resume", "Resume"));
+      label = title;
+    }
+    replaceIfChanged(shownLead, lead);
+    replaceIfChanged(shownTrack, track);
+    replaceIfChanged(shownFps, fps);
+    replaceIfChanged(shownActions, actions);
+    name.textContent = title;
+    name.title = title;
+    // a count is never cut; a file name may be
+    name.classList.toggle("count", view.kind === "many" || view.kind === "paused" || view.kind === "canceled" || (view.kind === "failed" && view.finished > 0));
+    line.textContent = second;
+    line.title = second;
+    if (view.kind !== "running") progress.value = view.kind === "hidden" ? 0 : 100;
+    progress.setAttribute("aria-valuetext", label);
+    if (label) status.setAttribute("aria-label", `${label.replace(/[.!?]$/, "")}. Show Exports`);
+    else status.removeAttribute("aria-label");
   }
 
   function exportRowElement(doc: Document, row: ExportRow): HTMLElement {
@@ -578,24 +840,13 @@ export function installQueue(deps: QueueDeps): QueueApi {
       setDisabled("btn-cancel", queueView.cancelDisabled);
       setDisabled("btn-clear", queueView.clearDisabled);
       lastItems = items;
+      barView = exportBarView(items, queueView, sourceSize);
+      paintExportBar(barView);
       if (!items.length) {
         setExportsOpen(false);
         return;
       }
       if (exportsOpen) renderExports(items);
-      const saved = queueView.finished ? exportRows(items, sourceSize).saved : 0;
-      // with nothing running the bar's own label already counts the paused exports
-      paintQueueCounts(queueView.waiting, queueView.active ? queueView.paused : 0, queueView.failed, saved);
-      const progress = byId<HTMLProgressElement>("qprog");
-      if (progress) {
-        if (queueView.indeterminate) progress.removeAttribute("value");
-        else progress.value = queueView.progress;
-        progress.setAttribute("aria-valuetext", [queueView.fname, queueView.detail].filter(Boolean).join(" · "));
-      }
-      text("qeta", queueView.detail);
-      text("qfname", queueView.fname);
-      const filename = byId("qfname");
-      if (filename) filename.title = queueView.fname;
     } catch {
       /* polling errors are transient */
     } finally {
@@ -667,6 +918,17 @@ export function installQueue(deps: QueueDeps): QueueApi {
     else if (result === "error") toast(fileCopy.state(itemId, path).error, "err");
   }
 
+  async function copyResults(itemIds: readonly string[]): Promise<void> {
+    const finished = itemIds.filter((id) => finishedExport(id));
+    if (!finished.length) return;
+    if (finished.length === 1) return copyResult(finished[0]!);
+    const paths = finished.map((id) => queueItemsById[id]?.result_path ?? "");
+    const key = batchKey(finished);
+    const result = await fileCopy.copyMany(key, paths);
+    if (result === "copied") toast(`${paths.length} files copied to clipboard.`, "ok");
+    else if (result === "error") toast(fileCopy.state(key, paths.join("\n")).error, "err");
+  }
+
   function finishedExport(itemId: string): QueueItem | null {
     const item = queueItemsById[itemId];
     return item?.state === "completed" && item.result_path ? item : null;
@@ -690,6 +952,67 @@ export function installQueue(deps: QueueDeps): QueueApi {
     } catch {
       toast("Couldn’t drag the export. Use Copy file instead.", "err");
     }
+  }
+
+  async function dragExportsOut(itemIds: readonly string[]): Promise<void> {
+    const finished = itemIds.filter((id) => finishedExport(id));
+    if (finished.length < 2) {
+      if (finished[0]) await dragExportOut(finished[0]);
+      return;
+    }
+    try {
+      const result = await client().startExportsDrag(finished);
+      if (!result.ok) toast(withReason("Couldn’t drag the exports.", result.error.message, "Use Copy files instead."), "err");
+    } catch {
+      toast("Couldn’t drag the exports. Use Copy files instead.", "err");
+    }
+  }
+
+  // a press on a result's picture becomes a file drag once it moves as far as a Library drag would;
+  // the shell starts the drag while the button is still down
+  function installExportDrag(): void {
+    const bar = byId("qbar");
+    const view = bar?.ownerDocument.defaultView;
+    if (!bar || !view) return;
+    // the picture sits on the button that opens Exports; a drag that ends over it must not open it
+    let dragged = false;
+    bar.addEventListener("pointerdown", (event) => {
+      dragged = false;
+      if (event.button !== 0 || !deps.canDragOut?.()) return;
+      const handle = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-drag-out]") : null;
+      const ids = (handle?.dataset.dragOut ?? "").split(",").filter(Boolean);
+      if (!ids.length) return;
+      const startX = event.clientX;
+      const startY = event.clientY;
+      const stop = (): void => {
+        view.removeEventListener("pointermove", move, true);
+        view.removeEventListener("pointerup", stop, true);
+        view.removeEventListener("pointercancel", stop, true);
+      };
+      const move = (moved: PointerEvent): void => {
+        if ((moved.buttons & 1) === 0) {
+          stop();
+          return;
+        }
+        const dx = moved.clientX - startX;
+        const dy = moved.clientY - startY;
+        if (dx * dx + dy * dy < 16) return;
+        stop();
+        dragged = true;
+        void dragExportsOut(ids);
+      };
+      view.addEventListener("pointermove", move, true);
+      view.addEventListener("pointerup", stop, true);
+      view.addEventListener("pointercancel", stop, true);
+    });
+    view.addEventListener("click", (event) => {
+      if (!dragged) return;
+      dragged = false;
+      if (event.target instanceof Node && bar.contains(event.target)) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    }, true);
   }
 
   async function openResult(path: string): Promise<void> {
@@ -944,6 +1267,7 @@ export function installQueue(deps: QueueDeps): QueueApi {
   }
 
   installExportsDismissal();
+  installExportDrag();
 
   return {
     pollQueue,
@@ -952,12 +1276,14 @@ export function installQueue(deps: QueueDeps): QueueApi {
     retryQueueItem,
     openResult,
     copyResult,
+    copyResults,
     copyResultState: (itemId, path) => {
       const state = fileCopy.state(itemId, path);
       return { disabled: state.disabled, label: state.label };
     },
     openExportFile,
     dragExportOut,
+    dragExportsOut,
     stopAfterCurrent,
     cancelAll,
     clearFinished,

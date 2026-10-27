@@ -310,8 +310,9 @@ def test_full_encode_audio_duration_and_pixels(timestamped_source, two_pass, mon
     last_blending = progress.index(blending[-1])
     assert progress[last_blending + 1].stage.value in {"encoding", "pass_1"}
     assert all(event.stage.value != "preparing" for event in progress[last_blending + 1 :])
-    # encoding the blended video afterwards is not blending
-    assert all(event.fps is None for event in progress[last_blending + 1 :])
+    # encoding the blended video afterwards is not blending; any rate it reports is its own
+    after = progress[last_blending + 1 :]
+    assert not any(event.status_text().startswith("Blending frames") for event in after)
     assert progress[-1].percent == 100
     assert len(commands) >= 2
     assert len(set(commands)) == 1
@@ -1194,7 +1195,7 @@ def test_simple_blends_export_without_the_prepared_video(grid_source, monkeypatc
         assert container.streams.audio
 
 
-def test_ffmpeg_reports_fps_only_while_it_blends():
+def test_ffmpeg_reports_its_fps_with_and_without_blending():
     import sys
     from fractions import Fraction
 
@@ -1207,12 +1208,12 @@ def test_ffmpeg_reports_fps_only_while_it_blends():
         "sys.stderr.write('fps=143.21\\nout_time_us=500000\\nspeed=2.4x\\nprogress=end\\n')\n"
     )
     engine = FFmpegEngine()
-    for blend, fps in ((None, None), (TmixBlend(Fraction(60), ()), 143.21)):
+    for blend in (None, TmixBlend(Fraction(60), ())):
         engine._tmix = blend
         updates = []
         engine._run_pass([sys.executable, "-c", child], 1.0, updates.append, pass_num=1)
         assert updates[-1].percent == 50
-        assert updates[-1].fps == fps
+        assert updates[-1].fps == 143.21
 
 
 def _pictures(count, closed, fail_at=None):

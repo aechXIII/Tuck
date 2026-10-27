@@ -331,17 +331,15 @@ export function installCutControls(deps: CutControlsDeps) {
     element<HTMLInputElement>("cut-audio").checked = request?.include_audio === true;
     element<HTMLInputElement>("cut-audio").disabled = !clip?.probed || clip.probeData?.has_audio === false || busy;
     const one = element<HTMLButtonElement>("btn-one");
-    // a cut already in the queue shows its export, and the button opens it in Exports
+    // a cut already in the queue opens it in Exports; how far it is shows in the bar's export status
     const queued = !busy && !!clip && exporting(clip);
-    const label = busy ? "Exporting…"
-      : queued ? queuedVideoLabel(clip._queueState, clip._statusText, clip._progress, clip._progressIndeterminate)
-      : reading ? "Reading keyframes…" : "Export cut";
+    const label = busy ? "Exporting…" : queued ? "In Exports" : reading ? "Reading keyframes…" : "Export cut";
     swapLabel(one, label);
     one.disabled = queued ? false : !clip || !exportable(clip) || busy || waiting;
     if (queued) {
       one.dataset.queued = "true";
       one.dataset.tip = "Show in Exports";
-      one.setAttribute("aria-label", `${label}. Show in Exports`);
+      one.setAttribute("aria-label", `${queuedVideoLabel(clip._queueState, clip._statusText, clip._progress, clip._progressIndeterminate)}. Show in Exports`);
     } else if (one.dataset.queued === "true") {
       delete one.dataset.queued;
       delete one.dataset.tip;

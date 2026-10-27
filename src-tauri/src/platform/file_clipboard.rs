@@ -24,8 +24,61 @@ pub fn validate_file_path(path: &str) -> Result<PathBuf, PublicBackendError> {
     Ok(path)
 }
 
+/// The most files one copy or drag takes, which keeps a request from the page small.
+pub const MAX_FILES: usize = 100;
+
+/// Checks every path the way `validate_file_path` does and keeps each file once, in the order
+/// given. One path that can't be copied fails the whole list.
+pub fn validate_file_paths(paths: &[String]) -> Result<Vec<PathBuf>, PublicBackendError> {
+    if paths.is_empty() {
+        return Err(PublicBackendError::new(
+            "INVALID_REQUEST",
+            "Choose the files to copy.",
+        ));
+    }
+    if paths.len() > MAX_FILES {
+        return Err(PublicBackendError::new(
+            "INVALID_REQUEST",
+            format!("Copy up to {MAX_FILES} files at a time."),
+        ));
+    }
+    let mut files: Vec<PathBuf> = Vec::with_capacity(paths.len());
+    for path in paths {
+        // compared after canonicalizing, so two spellings of one file also count once
+        let file = validate_file_path(path)?;
+        if !files.contains(&file) {
+            files.push(file);
+        }
+    }
+    Ok(files)
+}
+
 fn clipboard_error() -> PublicBackendError {
     PublicBackendError::new("INTERNAL_ERROR", "Could not copy the file. Try again.")
+}
+
+/// The `file://` URI of every path, or `None` when one of them isn't valid UTF-8.
+#[cfg(any(test, target_os = "linux"))]
+pub(crate) fn file_uris<P: AsRef<Path>>(paths: &[P]) -> Option<Vec<String>> {
+    paths
+        .iter()
+        .map(|path| path.as_ref().to_str().map(file_uri))
+        .collect()
+}
+
+/// A `text/uri-list`, where every line ends in CRLF.
+#[cfg(any(test, target_os = "linux"))]
+fn uri_list(uris: &[String]) -> String {
+    uris.iter().map(|uri| format!("{uri}\r\n")).collect()
+}
+
+/// GNOME's `x-special/gnome-copied-files`: `copy`, then one URI per line.
+#[cfg(any(test, target_os = "linux"))]
+fn gnome_copied_files(uris: &[String]) -> String {
+    std::iter::once("copy")
+        .chain(uris.iter().map(String::as_str))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 #[cfg(any(test, target_os = "linux"))]
@@ -42,25 +95,35 @@ pub(crate) fn file_uri(path: &str) -> String {
     uri
 }
 
+// shell apps that read the file list don't all accept the \\?\ form canonicalize returns
 #[cfg(windows)]
-fn dropfiles_payload(path: &Path) -> Vec<u8> {
+fn shell_path(path: &Path) -> Vec<u16> {
     use std::os::windows::ffi::OsStrExt;
     let encoded: Vec<u16> = path.as_os_str().encode_wide().collect();
     let drive_prefix: Vec<u16> = r"\\?\".encode_utf16().collect();
     let unc_prefix: Vec<u16> = r"\\?\UNC\".encode_utf16().collect();
-    let shell_path = if let Some(rest) = encoded.strip_prefix(unc_prefix.as_slice()) {
+    if let Some(rest) = encoded.strip_prefix(unc_prefix.as_slice()) {
         [r"\\".encode_utf16().collect::<Vec<_>>(), rest.to_vec()].concat()
     } else {
         encoded
             .strip_prefix(drive_prefix.as_slice())
             .unwrap_or(&encoded)
             .to_vec()
-    };
-    // DROPFILES is a 20-byte header, followed by UTF-16 paths and a final empty path
+    }
+}
+
+#[cfg(windows)]
+fn dropfiles_payload<P: AsRef<Path>>(paths: &[P]) -> Vec<u8> {
+    // DROPFILES is a 20-byte header, followed by NUL-terminated UTF-16 paths and a final
+    // empty path
     let mut payload = vec![0; 20];
     payload[..4].copy_from_slice(&20_u32.to_le_bytes());
     payload[16..20].copy_from_slice(&1_u32.to_le_bytes());
-    for unit in shell_path.into_iter().chain([0, 0]) {
+    let units = paths
+        .iter()
+        .flat_map(|path| shell_path(path.as_ref()).into_iter().chain([0]))
+        .chain([0]);
+    for unit in units {
         payload.extend_from_slice(&unit.to_le_bytes());
     }
     payload
@@ -126,11 +189,14 @@ mod windows_clipboard {
         }
     }
 
-    pub(super) fn write(owner: HWND, path: &Path) -> Result<(), PublicBackendError> {
+    pub(super) fn write<P: AsRef<Path>>(
+        owner: HWND,
+        paths: &[P],
+    ) -> Result<(), PublicBackendError> {
         if owner.is_invalid() {
             return Err(clipboard_error());
         }
-        let files = GlobalMemory::new(&dropfiles_payload(path))?;
+        let files = GlobalMemory::new(&dropfiles_payload(paths))?;
         let effect = GlobalMemory::new(&1_u32.to_le_bytes())?;
         let effect_format =
             unsafe { RegisterClipboardFormatW(windows::core::w!("Preferred DropEffect")) };
@@ -150,34 +216,32 @@ mod windows_clipboard {
     }
 }
 
+/// Puts `paths` on the clipboard as one entry, the way a file manager copies a selection, so
+/// they paste together.
 #[cfg(windows)]
-pub fn copy_file(window: &tauri::Window, path: &Path) -> Result<(), PublicBackendError> {
+pub fn copy_files(window: &tauri::Window, paths: &[PathBuf]) -> Result<(), PublicBackendError> {
     let owner = window.hwnd().map_err(|_| clipboard_error())?;
-    windows_clipboard::write(owner, path)
+    windows_clipboard::write(owner, paths)
 }
 
 #[cfg(target_os = "linux")]
-pub fn copy_file(_window: &tauri::Window, path: &Path) -> Result<(), PublicBackendError> {
-    write_linux_file(path)
+pub fn copy_files(_window: &tauri::Window, paths: &[PathBuf]) -> Result<(), PublicBackendError> {
+    write_linux_files(paths)
 }
 
 #[cfg(target_os = "linux")]
-fn write_linux_file(path: &Path) -> Result<(), PublicBackendError> {
+fn write_linux_files(paths: &[PathBuf]) -> Result<(), PublicBackendError> {
     let display = gtk::gdk::Display::default().ok_or_else(clipboard_error)?;
     let clipboard = gtk::Clipboard::default(&display).ok_or_else(clipboard_error)?;
-    let path = path.to_str().ok_or_else(clipboard_error)?;
-    let uri = file_uri(path);
+    let uris = file_uris(paths).ok_or_else(clipboard_error)?;
+    let (uri_text, gnome_text) = (uri_list(&uris), gnome_copied_files(&uris));
     let targets = [
         gtk::TargetEntry::new("text/uri-list", gtk::TargetFlags::empty(), 0),
         gtk::TargetEntry::new("x-special/gnome-copied-files", gtk::TargetFlags::empty(), 1),
     ];
-    // GTK retains this callback and its URI until clipboard ownership changes
+    // GTK retains this callback and its lists until clipboard ownership changes
     if clipboard.set_with_data(&targets, move |_, selection, info| {
-        let data = if info == 1 {
-            format!("copy\n{uri}")
-        } else {
-            format!("{uri}\r\n")
-        };
+        let data = if info == 1 { &gnome_text } else { &uri_text };
         selection.set(&selection.target(), 8, data.as_bytes());
     }) {
         Ok(())
@@ -187,7 +251,7 @@ fn write_linux_file(path: &Path) -> Result<(), PublicBackendError> {
 }
 
 #[cfg(not(any(windows, target_os = "linux")))]
-pub fn copy_file(_window: &tauri::Window, _path: &Path) -> Result<(), PublicBackendError> {
+pub fn copy_files(_window: &tauri::Window, _paths: &[PathBuf]) -> Result<(), PublicBackendError> {
     Err(PublicBackendError::new(
         "UNSUPPORTED_OPERATION",
         "Copying files is not supported on this platform.",
@@ -423,6 +487,10 @@ mod tests {
         }
     }
 
+    fn text_of(path: &Path) -> String {
+        path.to_str().unwrap().to_owned()
+    }
+
     #[test]
     fn file_clipboard_accepts_an_existing_unicode_file_without_reading_or_changing_it() {
         let directory = TestDirectory::new();
@@ -453,11 +521,104 @@ mod tests {
     }
 
     #[test]
+    fn file_clipboard_lists_keep_each_file_once_in_order() {
+        let directory = TestDirectory::new();
+        let first = directory.0.join("Zażółć #100% [final].mp4");
+        let second = directory.0.join("second.mov");
+        std::fs::write(&first, b"export bytes").unwrap();
+        std::fs::write(&second, b"export bytes").unwrap();
+        let files = validate_file_paths(&[
+            text_of(&second),
+            text_of(&first),
+            text_of(&second),
+            text_of(&directory.0.join(".").join("second.mov")),
+        ])
+        .unwrap();
+        assert_eq!(
+            files,
+            vec![
+                validate_file_path(&text_of(&second)).unwrap(),
+                validate_file_path(&text_of(&first)).unwrap()
+            ]
+        );
+        assert_eq!(std::fs::read(first).unwrap(), b"export bytes");
+    }
+
+    #[test]
+    fn file_clipboard_lists_need_one_to_a_hundred_files_that_can_all_be_copied() {
+        let directory = TestDirectory::new();
+        let file = directory.0.join("export.mp4");
+        std::fs::write(&file, b"export bytes").unwrap();
+        let path = file.to_str().unwrap().to_owned();
+
+        let empty = validate_file_paths(&[]).unwrap_err();
+        assert_eq!(
+            (empty.code.as_str(), empty.message.as_str()),
+            ("INVALID_REQUEST", "Choose the files to copy.")
+        );
+        assert_eq!(
+            validate_file_paths(&vec![path.clone(); MAX_FILES])
+                .unwrap()
+                .len(),
+            1
+        );
+        let too_many = validate_file_paths(&vec![path.clone(); MAX_FILES + 1]).unwrap_err();
+        assert_eq!(
+            (too_many.code.as_str(), too_many.message.as_str()),
+            ("INVALID_REQUEST", "Copy up to 100 files at a time.")
+        );
+        // one path that can't be copied fails the whole list, wherever it is
+        for bad in [
+            String::new(),
+            "video.mp4".to_owned(),
+            text_of(&directory.0),
+            text_of(&directory.0.join("missing.mp4")),
+        ] {
+            for paths in [[path.clone(), bad.clone()], [bad.clone(), path.clone()]] {
+                assert_eq!(
+                    validate_file_paths(&paths).unwrap_err().code,
+                    "INVALID_REQUEST",
+                    "{paths:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn file_clipboard_uri_escapes_unicode_delimiters_and_newlines() {
         assert_eq!(
             file_uri("/tmp/Zażółć #100%?\n.mp4"),
             "file:///tmp/Za%C5%BC%C3%B3%C5%82%C4%87%20%23100%25%3F%0A.mp4"
         );
+    }
+
+    #[test]
+    fn file_clipboard_linux_lists_name_every_file_on_its_own_line() {
+        let uris = file_uris(&["/tmp/Zażółć #100%.mp4", "/tmp/second clip.mkv"]).unwrap();
+        let first = "file:///tmp/Za%C5%BC%C3%B3%C5%82%C4%87%20%23100%25.mp4";
+        let second = "file:///tmp/second%20clip.mkv";
+        assert_eq!(uris, [first, second]);
+        assert_eq!(uri_list(&uris), format!("{first}\r\n{second}\r\n"));
+        assert_eq!(
+            gnome_copied_files(&uris),
+            format!("copy\n{first}\n{second}")
+        );
+        // one file gets the same lists a single copy has always offered
+        assert_eq!(uri_list(&uris[..1]), format!("{first}\r\n"));
+        assert_eq!(gnome_copied_files(&uris[..1]), format!("copy\n{first}"));
+        // Tuck's own paste reads back every copied file
+        #[cfg(not(windows))]
+        {
+            let paths = vec![
+                PathBuf::from("/tmp/Zażółć #100%.mp4"),
+                PathBuf::from("/tmp/second clip.mkv"),
+            ];
+            assert_eq!(paths_from_uri_list(&uri_list(&uris)), paths);
+            assert_eq!(
+                paths_from_gnome_copied_files(&gnome_copied_files(&uris)),
+                paths
+            );
+        }
     }
 
     // a local file URI and the path it names on this platform
@@ -572,9 +733,13 @@ mod tests {
         };
         let directory = TestDirectory::new();
         let file = directory.0.join("Zażółć #100%?\n.mp4");
+        let second = directory.0.join("second.mp4");
         std::fs::write(&file, b"export bytes").unwrap();
-        write_linux_file(&file).unwrap();
+        std::fs::write(&second, b"export bytes").unwrap();
+        write_linux_files(std::slice::from_ref(&file)).unwrap();
         assert_eq!(read(), vec![file.clone()]);
+        write_linux_files(&[second.clone(), file.clone()]).unwrap();
+        assert_eq!(read(), vec![second, file.clone()]);
 
         let display = gtk::gdk::Display::default().unwrap();
         let clipboard = gtk::Clipboard::default(&display).unwrap();
@@ -591,33 +756,52 @@ mod tests {
     fn file_clipboard_linux_round_trip_retains_copy_targets_until_replaced() {
         gtk::init().unwrap();
         let directory = TestDirectory::new();
-        for filename in ["Zażółć #100%?\n.mp4", "replacement.mp4"] {
-            let file = directory.0.join(filename);
-            std::fs::write(&file, b"export bytes").unwrap();
-            let path = validate_file_path(file.to_str().unwrap()).unwrap();
-            write_linux_file(&path).unwrap();
+        for filenames in [
+            &["Zażółć #100%?\n.mp4"][..],
+            &["replacement.mp4"],
+            &["first of two.mp4", "second of two.mkv"],
+        ] {
+            let mut paths = Vec::new();
+            for filename in filenames {
+                let file = directory.0.join(filename);
+                std::fs::write(&file, b"export bytes").unwrap();
+                paths.push(file.to_str().unwrap().to_owned());
+            }
+            let paths = validate_file_paths(&paths).unwrap();
+            write_linux_files(&paths).unwrap();
             // reacquiring the clipboard after write returns exercises the retained callback
             let display = gtk::gdk::Display::default().unwrap();
             let clipboard = gtk::Clipboard::default(&display).unwrap();
-            let uri = file_uri(path.to_str().unwrap());
+            let uris: Vec<String> = paths
+                .iter()
+                .map(|path| file_uri(path.to_str().unwrap()))
+                .collect();
             for (target, expected) in [
-                ("text/uri-list", format!("{uri}\r\n")),
-                ("x-special/gnome-copied-files", format!("copy\n{uri}")),
+                (
+                    "text/uri-list",
+                    uris.iter()
+                        .map(|uri| format!("{uri}\r\n"))
+                        .collect::<String>(),
+                ),
+                (
+                    "x-special/gnome-copied-files",
+                    format!("copy\n{}", uris.join("\n")),
+                ),
             ] {
                 let selection = clipboard
                     .wait_for_contents(&gtk::gdk::Atom::intern(target))
                     .unwrap();
                 assert_eq!(selection.data(), expected.as_bytes());
             }
-            assert_eq!(std::fs::read(file).unwrap(), b"export bytes");
+            for path in paths {
+                assert_eq!(std::fs::read(path).unwrap(), b"export bytes");
+            }
         }
     }
 
+    // the paths in a DROPFILES payload, after checking its header and its double NUL ending
     #[cfg(windows)]
-    #[test]
-    fn file_clipboard_dropfiles_has_unicode_paths_and_double_nul_termination() {
-        let path = std::path::Path::new(r"C:\Videos\Zażółć #100% [final].mp4");
-        let payload = dropfiles_payload(path);
+    fn dropfiles_entries(payload: &[u8]) -> Vec<String> {
         assert_eq!(u32::from_le_bytes(payload[0..4].try_into().unwrap()), 20);
         assert_eq!(u32::from_le_bytes(payload[16..20].try_into().unwrap()), 1);
         let encoded: Vec<u16> = payload[20..]
@@ -627,48 +811,61 @@ mod tests {
             .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
             .collect();
         assert_eq!(&encoded[encoded.len() - 2..], &[0, 0]);
-        assert_eq!(
-            String::from_utf16(&encoded[..encoded.len() - 2]).unwrap(),
-            path.to_str().unwrap()
-        );
+        encoded[..encoded.len() - 2]
+            .split(|unit| *unit == 0)
+            .map(|entry| {
+                assert!(!entry.is_empty(), "an empty entry would end the list early");
+                String::from_utf16(entry).unwrap()
+            })
+            .collect()
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn file_clipboard_dropfiles_has_unicode_paths_and_double_nul_termination() {
+        let path = r"C:\Videos\Zażółć #100% [final].mp4";
+        assert_eq!(dropfiles_entries(&dropfiles_payload(&[path])), [path]);
+        let paths = [
+            path,
+            r"D:\Exports\日本語 clip, take 2.mkv",
+            r"\\server\share\Überschrift.mov",
+        ];
+        assert_eq!(dropfiles_entries(&dropfiles_payload(&paths)), paths);
     }
 
     #[cfg(windows)]
     #[test]
     fn file_clipboard_dropfiles_converts_extended_drive_and_unc_paths_for_shell_apps() {
-        for (input, expected) in [
+        let cases = [
             (r"\\?\C:\Videos\video.mp4", r"C:\Videos\video.mp4"),
             (
                 r"\\?\UNC\server\Videos\video.mp4",
                 r"\\server\Videos\video.mp4",
             ),
-        ] {
-            let payload = dropfiles_payload(std::path::Path::new(input));
-            let encoded: Vec<u16> = payload[20..]
-                .as_chunks::<2>()
-                .0
-                .iter()
-                .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
-                .collect();
-            assert_eq!(
-                String::from_utf16(&encoded[..encoded.len() - 2]).unwrap(),
-                expected
-            );
+            (r"\\?\D:\Exports\Zażółć.mkv", r"D:\Exports\Zażółć.mkv"),
+            (r"E:\Plain\clip.mp4", r"E:\Plain\clip.mp4"),
+        ];
+        for (input, expected) in cases {
+            assert_eq!(dropfiles_entries(&dropfiles_payload(&[input])), [expected]);
         }
+        // every entry of a longer list is converted on its own
+        assert_eq!(
+            dropfiles_entries(&dropfiles_payload(&cases.map(|(input, _)| input))),
+            cases.map(|(_, expected)| expected)
+        );
     }
 
     #[cfg(windows)]
     #[test]
     fn file_clipboard_rejects_an_invalid_owner_without_changing_the_clipboard() {
-        assert_eq!(
-            windows_clipboard::write(
-                windows::Win32::Foundation::HWND::default(),
-                Path::new(r"C:\video.mp4")
-            )
-            .unwrap_err()
-            .code,
-            "INTERNAL_ERROR"
-        );
+        for paths in [&[r"C:\video.mp4"][..], &[r"C:\one.mp4", r"C:\two.mp4"]] {
+            assert_eq!(
+                windows_clipboard::write(windows::Win32::Foundation::HWND::default(), paths)
+                    .unwrap_err()
+                    .code,
+                "INTERNAL_ERROR"
+            );
+        }
     }
 
     #[cfg(windows)]
@@ -735,10 +932,15 @@ mod tests {
         assert_eq!(previous_format, 0, "the clipboard must be empty before this opt-in test; existing clipboard data was left unchanged");
         let _cleanup = EmptyClipboardOnDrop(window.0);
         let directory = TestDirectory::new();
-        let file = directory.0.join("Zażółć #100% [final].mp4");
-        std::fs::write(&file, b"export bytes").unwrap();
-        let path = validate_file_path(file.to_str().unwrap()).unwrap();
-        windows_clipboard::write(window.0, &path).unwrap();
+        let files = [
+            directory.0.join("Zażółć #100% [final].mp4"),
+            directory.0.join("second take.mkv"),
+        ];
+        for file in &files {
+            std::fs::write(file, b"export bytes").unwrap();
+        }
+        let paths = validate_file_paths(&files.each_ref().map(|file| text_of(file))).unwrap();
+        windows_clipboard::write(window.0, &paths).unwrap();
 
         unsafe {
             OpenClipboard(Some(window.0)).unwrap();
@@ -753,19 +955,25 @@ mod tests {
         }
         {
             let _close = CloseClipboardOnDrop;
-            let files = unsafe { GetClipboardData(CF_HDROP.0 as u32) }.unwrap();
-            let drop = HDROP(files.0);
-            assert_eq!(unsafe { DragQueryFileW(drop, u32::MAX, None) }, 1);
-            let length = unsafe { DragQueryFileW(drop, 0, None) } as usize;
-            let mut name = vec![0; length + 1];
+            let list = unsafe { GetClipboardData(CF_HDROP.0 as u32) }.unwrap();
+            let drop = HDROP(list.0);
             assert_eq!(
-                unsafe { DragQueryFileW(drop, 0, Some(&mut name)) } as usize,
-                length
+                unsafe { DragQueryFileW(drop, u32::MAX, None) } as usize,
+                files.len()
             );
-            assert_eq!(
-                String::from_utf16(&name[..length]).unwrap(),
-                file.to_str().unwrap()
-            );
+            for (index, file) in files.iter().enumerate() {
+                let index = index as u32;
+                let length = unsafe { DragQueryFileW(drop, index, None) } as usize;
+                let mut name = vec![0; length + 1];
+                assert_eq!(
+                    unsafe { DragQueryFileW(drop, index, Some(&mut name)) } as usize,
+                    length
+                );
+                assert_eq!(
+                    String::from_utf16(&name[..length]).unwrap(),
+                    file.to_str().unwrap()
+                );
+            }
             let format =
                 unsafe { RegisterClipboardFormatW(windows::core::w!("Preferred DropEffect")) };
             let effect_handle = unsafe { GetClipboardData(format) }.unwrap();
@@ -777,6 +985,8 @@ mod tests {
             }
             assert_eq!(effect, 1);
         }
-        assert_eq!(std::fs::read(file).unwrap(), b"export bytes");
+        for file in files {
+            assert_eq!(std::fs::read(file).unwrap(), b"export bytes");
+        }
     }
 }

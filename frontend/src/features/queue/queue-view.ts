@@ -48,7 +48,12 @@ export interface QueueItem {
     readonly retry_number?: number | null;
   };
   readonly status_text?: string;
+  /** The file name the export writes, and its size once it finished. */
+  readonly output?: string;
   readonly result_path?: string;
+  readonly result_size?: number;
+  /** Two-pass exports count their first pass as 0 to 50% and the second as 50 to 100%. */
+  readonly two_pass?: boolean;
   readonly finished_at?: string;
   readonly segment_count?: number;
   readonly duration?: number;
@@ -144,7 +149,7 @@ export interface BatchSummary {
   readonly failedIds: readonly string[];
 }
 
-function itemName(item: QueueItem): string {
+export function itemName(item: QueueItem): string {
   return item.source ?? item.source_path?.split(/[\\/]/).pop() ?? "video";
 }
 
@@ -451,7 +456,7 @@ export function exportRows(
 }
 
 // whole numbers once it is fast enough that a tenth no longer matters
-function formatFps(fps: number): string {
+export function formatFps(fps: number): string {
   return `${fps < 10 ? fps.toFixed(1) : Math.round(fps)} fps`;
 }
 

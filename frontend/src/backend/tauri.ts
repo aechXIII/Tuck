@@ -788,6 +788,15 @@ class TauriTransport implements TauriBackendClient {
     }
   }
 
+  async copyFiles(paths: readonly string[]): Promise<BackendResult<EmptyPayload>> {
+    try {
+      await this.#invoke("copy_files_to_clipboard", { paths: [...paths] });
+      return { ok: true, value: {} };
+    } catch (error) {
+      return this.#finish(isBackendError(error) ? { ok: false, error } : backendFailure("TAURI_INVOKE_FAILED", errorMessage(error, "Could not copy the files. Try again."), { method: "copyFiles" }));
+    }
+  }
+
   async openOutputFolder(path: string): Promise<BackendResult<EmptyPayload>> {
     try {
       await this.#invoke("open_output_folder", { path });
@@ -815,6 +824,18 @@ class TauriTransport implements TauriBackendClient {
       return { ok: true, value: { started } };
     } catch (error) {
       return this.#finish(isBackendError(error) ? { ok: false, error } : backendFailure("TAURI_INVOKE_FAILED", errorMessage(error, "Could not drag the export"), { method: "startExportDrag" }));
+    }
+  }
+
+  async startExportsDrag(itemIds: readonly string[]): Promise<BackendResult<{ started: boolean }>> {
+    try {
+      const started = await this.#invoke("start_exports_drag", { itemIds: [...itemIds] });
+      if (typeof started !== "boolean") {
+        return this.#finish(backendFailure("MALFORMED_BACKEND_OUTPUT", "Could not drag the exports", { method: "startExportsDrag" }));
+      }
+      return { ok: true, value: { started } };
+    } catch (error) {
+      return this.#finish(isBackendError(error) ? { ok: false, error } : backendFailure("TAURI_INVOKE_FAILED", errorMessage(error, "Could not drag the exports"), { method: "startExportsDrag" }));
     }
   }
 

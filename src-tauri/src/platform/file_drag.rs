@@ -1,8 +1,8 @@
-//! Drags a finished export out of the window as a file, so it can be dropped into a chat, a
+//! Drags finished exports out of the window as files, so they can be dropped into a chat, a
 //! browser upload or a file manager. A web page can't start a drag the desktop sees as a file,
 //! so the desktop shell starts it on the page's behalf.
 
-use std::path::Path;
+use std::path::PathBuf;
 
 use crate::backend::protocol::PublicBackendError;
 
@@ -35,21 +35,20 @@ fn clear_drag_handlers(window: &gtk::ApplicationWindow) {
     });
 }
 
-/// Starts dragging `path` from the window. Must run on the main thread while the primary button
-/// is still held; returns `Ok(false)` without dragging once it has been let go.
+/// Starts one drag carrying every file in `paths`. Must run on the main thread while the primary
+/// button is still held; returns `Ok(false)` without dragging once it has been let go.
 #[cfg(target_os = "linux")]
 pub fn start(
     window: &tauri::WebviewWindow,
     webview: &tauri::webview::PlatformWebview,
-    path: &Path,
+    paths: &[PathBuf],
 ) -> Result<bool, PublicBackendError> {
     use gtk::gdk;
     use gtk::prelude::*;
 
     let window = window.gtk_window().map_err(|_| drag_error())?;
     let page = webview.inner();
-    let path = path.to_str().ok_or_else(drag_error)?;
-    let uri = crate::platform::file_clipboard::file_uri(path);
+    let uris = crate::platform::file_clipboard::file_uris(paths).ok_or_else(drag_error)?;
 
     // GTK finishes a drag on the button's release; started after it, the file would stay on the
     // pointer until the next click
@@ -69,7 +68,7 @@ pub fn start(
         return Ok(false);
     }
 
-    // a drag whose end never arrived must not hand its file to this one
+    // a drag whose end never arrived must not hand its files to this one
     clear_drag_handlers(&window);
     let targets = gtk::TargetList::new(&[gtk::TargetEntry::new(
         "text/uri-list",
@@ -77,7 +76,8 @@ pub fn start(
         0,
     )]);
     let data = window.connect_drag_data_get(move |_, _, selection, _, _| {
-        selection.set_uris(&[uri.as_str()]);
+        let uris: Vec<&str> = uris.iter().map(String::as_str).collect();
+        selection.set_uris(&uris);
     });
     let end = window.connect_drag_end(move |window, _| {
         clear_drag_handlers(window);
@@ -161,7 +161,7 @@ fn button_event(
 pub fn start(
     _window: &tauri::WebviewWindow,
     _webview: &tauri::webview::PlatformWebview,
-    _path: &Path,
+    _paths: &[PathBuf],
 ) -> Result<bool, PublicBackendError> {
     Err(PublicBackendError::new(
         "UNSUPPORTED_OPERATION",

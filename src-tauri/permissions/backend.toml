@@ -6,7 +6,7 @@ commands.allow = ["backend_request"]
 [[permission]]
 identifier = "allow-native-commands"
 description = "Allows native desktop commands for dialogs, clipboard, folders, finished exports, and window."
-commands.allow = ["platform_capabilities", "pick_video_files", "pick_lut_file", "pick_audio_files", "pick_folder", "pick_ffmpeg_file", "pick_ffprobe_file", "pick_import_file", "pick_save_file", "copy_text", "copy_file_to_clipboard", "read_clipboard_files", "open_output_folder", "open_export_file", "start_export_drag", "open_local_document", "open_logs_folder", "open_config_folder", "close_window", "check_for_updates", "download_update", "install_update", "get_download_progress", "get_startup_files"]
+commands.allow = ["platform_capabilities", "pick_video_files", "pick_lut_file", "pick_audio_files", "pick_folder", "pick_ffmpeg_file", "pick_ffprobe_file", "pick_import_file", "pick_save_file", "copy_text", "copy_file_to_clipboard", "copy_files_to_clipboard", "read_clipboard_files", "open_output_folder", "open_export_file", "start_export_drag", "start_exports_drag", "open_local_document", "open_logs_folder", "open_config_folder", "close_window", "check_for_updates", "download_update", "install_update", "get_download_progress", "get_startup_files"]
 
 [[permission]]
 identifier = "allow-window-chrome"

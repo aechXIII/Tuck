@@ -104,15 +104,19 @@ const running = (progress: number) => ({
   items: [{ id: "a", source: "Alpha.mp4", source_path: VIDEO, state: "running", progress }],
 });
 
-test("the export button shows a queued video's export and opens it, and a copy is one step away", async ({ page }) => {
+test("the export button leads to a queued video's export and opens it, and a copy is one step away", async ({ page }) => {
   const fixture = fixtureWith([VIDEO]);
   fixture.queueStateAfterEnqueue = running(40);
   await open(page, fixture);
   const exportButton = page.locator("#btn-one");
+  const width = (await exportButton.boundingBox())?.width;
 
   await exportButton.click();
-  await expect(exportButton).toHaveText("Exporting · 40%");
+  // the bar's export status shows how far it is; the button keeps one label and one width
+  await expect(exportButton).toHaveText("In Exports");
   await expect(exportButton).toHaveAttribute("aria-label", "Exporting · 40%. Show in Exports");
+  await expect(page.locator("#qpct")).toHaveText("40%");
+  expect((await exportButton.boundingBox())?.width).toBe(width);
   await exportButton.click();
   await expect(page.locator("#exports-panel")).toBeVisible();
   expect(await callCount(page, "enqueueWithOptions")).toBe(1);
@@ -135,8 +139,11 @@ test("a batch with a failure shows a warning, never the success check", async ({
   };
   await open(page, fixture);
   await expect(page.locator("#qbar")).toHaveClass(/has-failed/);
-  await expect(page.locator("#qbar .qstatus-warn")).toBeVisible();
-  await expect(page.locator("#qbar .qstatus-done")).toBeHidden();
+  await expect(page.locator("#qlead .qmark.warn")).toBeVisible();
+  await expect(page.locator("#qbar .good")).toHaveCount(0);
+  await expect(page.locator("#qfname")).toHaveText("1 of 2 failed");
+  await expect(page.locator("#qeta")).toHaveText("FFmpeg stopped");
+  await expect(page.locator("#qactions").getByRole("button", { name: "Retry" })).toBeVisible();
 });
 
 test("starting an export is announced through a status region that was there before it", async ({ page }) => {
@@ -158,21 +165,26 @@ test("an export request that times out is checked against the queue before it is
   await open(page, fixture);
 
   await page.locator("#btn-one").click();
-  await expect(page.locator("#btn-one")).toHaveText("Exporting · 5%");
+  await expect(page.locator("#btn-one")).toHaveText("In Exports");
+  await expect(page.locator("#qpct")).toHaveText("5%");
   await expect(page.locator(".toast.err")).toHaveCount(0);
 });
 
-test("a step with no percentage sweeps, and with Animations off shows a still dashed track", async ({ page }) => {
+test("a step with no percentage is named in the bar, and the card's sweep stills with Animations off", async ({ page }) => {
   const fixture = fixtureWith([VIDEO]);
   fixture.queueStateAfterEnqueue = {
     items: [{ id: "a", source: "Alpha.mp4", source_path: VIDEO, state: "running", progress: 0, status_text: "Saving file", progress_info: { stage: "saving", indeterminate: true } }],
   };
   await open(page, fixture);
   await page.locator("#btn-one").click();
-  await expect(page.locator("#btn-one")).toHaveText("Saving file");
+  await expect(page.locator("#btn-one")).toHaveText("In Exports");
+  // the bar names the step and draws no amount for it; assistive tech hears an indeterminate progress
+  await expect(page.locator("#qeta")).toHaveText("Saving file");
+  await expect(page.locator("#qpct")).toBeEmpty();
+  await expect(page.locator("#qtrack .qseg")).toHaveCount(0);
+  await expect(page.locator("#qprog")).not.toHaveAttribute("value");
   const fill = page.locator(".clip .c-progress.is-indeterminate .c-progress-fill");
   await expect(fill).toHaveCSS("animation-name", "card-progress-sweep");
-  await expect(page.locator("#qprog")).toHaveCSS("animation-name", "progress-sweep");
 
   await page.evaluate(() => { document.documentElement.dataset.motion = "off"; });
   await expect(fill).toHaveCSS("animation-name", "none");

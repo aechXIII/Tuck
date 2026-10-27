@@ -116,7 +116,7 @@ test("clearing finished exports keeps their videos and edits in the Library", as
   await expect(page.locator(".clip", { hasText: "Alpha.mp4" }).getByRole("button", { name: "Show" })).toBeVisible();
   await page.locator(".toast", { hasText: "Exported “Alpha.mp4”." }).getByRole("button", { name: "Dismiss notification" }).click();
   await page.locator("#qstatus").click();
-  await page.getByRole("button", { name: "Clear finished" }).click();
+  await page.getByRole("button", { name: "Clear finished", exact: true }).click();
   await expect(page.locator(".toast", { hasText: "Cleared 1 finished export." })).toBeVisible();
   await expect(page.locator(".clip")).toHaveCount(2);
   await expect(page.locator(".clip", { hasText: "Alpha.mp4" }).getByRole("button", { name: "Show" })).toHaveCount(0);
@@ -217,7 +217,7 @@ test("Clear finished takes completed and canceled exports and leaves failed ones
   await page.locator(".toast", { hasText: "1 of 3 exports failed." }).getByRole("button", { name: "Dismiss notification" }).click();
   await expect(page.locator(".clip", { hasText: "Bravo.mp4" })).toHaveAttribute("data-queue-state", "cancelled");
   await page.locator("#qstatus").click();
-  const clear = page.getByRole("button", { name: "Clear finished" });
+  const clear = page.getByRole("button", { name: "Clear finished", exact: true });
   await clear.focus();
   await page.keyboard.press("Enter");
 
@@ -244,7 +244,8 @@ test("exports from before Tuck closed come back paused with one Resume and no di
   ]);
   await expect(page.locator("#qfname")).toHaveText("2 exports paused");
   await expect(page.locator("#qbar")).not.toHaveClass(/finished/);
-  await expect(page.locator(".qstatus-done")).toBeHidden();
+  await expect(page.locator("#qbar .good")).toHaveCount(0);
+  await expect(page.locator("#qactions").getByRole("button", { name: "Resume" })).toBeVisible();
   await expect(page.locator("[role=dialog]:visible")).toHaveCount(0);
   await expect(page.locator(".toast")).toHaveCount(0);
   await expect(page.locator(".clip", { hasText: "Alpha.mp4" })).toHaveAttribute("data-queue-state", "ready");

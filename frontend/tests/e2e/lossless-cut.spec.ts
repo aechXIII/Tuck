@@ -103,8 +103,9 @@ test("a cut waiting or running in the queue shows its export instead of queuing 
   await expect.poll(() => page.evaluate(() => window.__tuckFakeBackendCalls?.some(call => call.method === "enqueueWithOptions"))).toBe(true);
   const afterEnqueue = await polls();
   await expect.poll(polls).toBeGreaterThan(afterEnqueue + 1);
-  // the queue reports "running"; the button shows that export after every poll and opens it
-  await expect(page.locator("#btn-one")).toHaveText("Exporting · 10%");
+  // the queue reports "running"; the button leads to that export after every poll and opens it
+  await expect(page.locator("#btn-one")).toHaveText("In Exports");
+  await expect(page.locator("#btn-one")).toHaveAttribute("aria-label", "Exporting · 10%. Show in Exports");
   await expect(page.locator("#btn-one")).toBeEnabled();
   await page.locator("#btn-one").click();
   await expect(page.locator("#exports-panel")).toBeVisible();

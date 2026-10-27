@@ -123,24 +123,23 @@ def test_progress_records_ignore_missing_and_invalid_timestamps():
     assert progress.percent == 0
 
 
-def test_fps_is_reported_when_asked_and_once_ffmpeg_has_measured_it():
-    for report_fps, fps in ((True, 143.21), (False, None)):
-        tracker = ProgressTracker(20, report_fps=report_fps)
-        tracker.update_from_line("fps=0.00")
-        tracker.update_from_line("out_time_us=1000000")
-        progress = tracker.update_from_line("progress=continue")
-        assert progress is not None and progress.fps is None
-        tracker.update_from_line("fps=143.21")
-        tracker.update_from_line("out_time_us=2000000")
-        progress = tracker.update_from_line("progress=continue")
-        assert progress is not None and progress.fps == fps
-        assert tracker.snapshot().fps == fps
+def test_fps_is_reported_for_every_run_once_ffmpeg_has_measured_it():
+    tracker = ProgressTracker(20, total_passes=2)
+    tracker.update_from_line("fps=0.00")
+    tracker.update_from_line("out_time_us=1000000")
+    progress = tracker.update_from_line("progress=continue")
+    assert progress is not None and progress.fps is None
+    tracker.update_from_line("fps=143.21")
+    tracker.update_from_line("out_time_us=2000000")
+    progress = tracker.update_from_line("progress=continue")
+    assert progress is not None and progress.fps == 143.21
+    assert tracker.snapshot().fps == 143.21
     assert EncodeProgress(fps=143.21).to_dict()["fps"] == 143.2
     assert EncodeProgress().to_dict()["fps"] is None
 
 
 def test_fps_is_read_from_ffmpeg_stats_lines():
-    tracker = ProgressTracker(20, report_fps=True)
+    tracker = ProgressTracker(20)
     progress = tracker.update_from_line("frame=  300 fps= 95 q=28.0 time=00:00:05.00 speed=2.0x")
     assert progress is not None and progress.fps == 95
 

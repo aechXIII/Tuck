@@ -74,12 +74,15 @@ test("running queue snapshots update progress and ETA throughout an export", asy
     await page.evaluate((percent) => {
       (window as Window & { __tuckReleaseHeld?: (method: string, value: unknown) => void }).__tuckReleaseHeld?.("getQueueState", {
         ok: true,
-        items: [{ id: "running", source: "clip.mp4", source_path: "C:\\media\\clip.mp4", state: "running", progress: percent, status_text: "Pass 1 of 2", progress_info: { speed: 1.2, eta_seconds: 100 - percent } }],
+        items: [{ id: "running", source: "clip.mp4", source_path: "C:\\media\\clip.mp4", state: "running", progress: percent, two_pass: true, status_text: percent < 50 ? "Pass 1 of 2" : "Pass 2 of 2", progress_info: { stage: percent < 50 ? "pass_1" : "pass_2", speed: 1.2, eta_seconds: 100 - percent } }],
       });
     }, progress);
     await expect(page.locator("#qprog")).toHaveAttribute("value", String(progress));
+    await expect(page.locator("#qpct")).toHaveText(`${progress}%`);
   }
-  await expect(page.locator("#qeta")).toHaveText("Pass 1 of 2 · 95% · 0:05 left");
+  await expect(page.locator("#qleft")).toHaveText("0:05 left");
+  // the first pass fills the first half of the track, the second pass the other
+  expect(await page.locator("#qtrack .qfill").evaluateAll((fills) => fills.map((fill) => (fill as HTMLElement).style.width))).toEqual(["100%", "90%"]);
   await page.screenshot({ path: "build/queue-progress.png" });
 });
 
@@ -91,9 +94,12 @@ test("blending preparation shows its progress in the queue and Library", async (
       items: [{ id: "blending", source: "clip.mp4", source_path: "/mnt/exchange/clip.mp4", state: "running", progress: 0, status_text: "Blending frames (37%)", progress_info: { fps: 84.6 } }],
     });
   });
-  await expect(page.locator("#qeta")).toHaveText("Blending frames (37%) · 85 fps");
+  // the step is named with its own percent, and the whole export's track stays empty
+  await expect(page.locator("#qeta")).toHaveText("Blending frames (37%)");
+  await expect(page.locator("#qfps")).toHaveText("85 fps");
+  await expect(page.locator("#qtrack .qseg")).toHaveCount(0);
   await expect(page.locator("#clips")).toContainText("Blending frames (37%)");
-  await expect(page.locator("#qprog")).toHaveAttribute("value", "0");
+  await expect(page.locator("#qprog")).not.toHaveAttribute("value");
 });
 
 test("Library matches queue items to the resolved probe path", async ({ page }) => {

@@ -1197,13 +1197,15 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     updateDirty();
   }
 
+  // the bar's export status already shows how far it is; the button only says where it went, so it
+  // keeps one label and one width however the export moves on
   function showQueuedState(button: HTMLButtonElement, clip: EditorClip): string {
-    const label = queuedVideoLabel(clip._queueState, clip._statusText, clip._progress, clip._progressIndeterminate);
+    const status = queuedVideoLabel(clip._queueState, clip._statusText, clip._progress, clip._progressIndeterminate);
     button.disabled = false;
     button.dataset.queued = "true";
     button.dataset.tip = "Show in Exports";
-    button.setAttribute("aria-label", `${label}. Show in Exports`);
-    return label;
+    button.setAttribute("aria-label", `${status}. Show in Exports`);
+    return "In Exports";
   }
 
   function clearQueuedState(button: HTMLButtonElement): void {

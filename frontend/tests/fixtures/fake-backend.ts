@@ -153,6 +153,7 @@ export async function installFakeBackend(
       };
       const api = {
         copyFile: (path: string) => respond("copyFile", [path]),
+        copyFiles: (paths: readonly string[]) => respond("copyFiles", [[...paths]]),
         probeFile: (path: string) => respond("probeFile", [path]),
         probeAudioFile: (path: string) => respond("probeAudioFile", [path]),
         getWaveform: (path: string, track?: number) =>
@@ -220,6 +221,7 @@ export async function installFakeBackend(
         openOutputFolder: (path: string) => respond("openOutputFolder", [path]),
         openExportFile: (itemId: string) => respond("openExportFile", [itemId]),
         startExportDrag: (itemId: string) => respond("startExportDrag", [itemId]),
+        startExportsDrag: (itemIds: readonly string[]) => respond("startExportsDrag", [[...itemIds]]),
         installGenericSendto: (kind: string) => respond("installGenericSendto", [kind]),
         removeGenericSendto: (kind: string) => respond("removeGenericSendto", [kind]),
         repairGenericSendto: (kind: string) => respond("repairGenericSendto", [kind]),

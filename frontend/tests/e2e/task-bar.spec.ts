@@ -128,10 +128,13 @@ test("the export status opens every export this session with its own action", as
     { id: "old", source: "Earlier.mp4", source_path: "C:\\videos\\Earlier.mp4", state: "completed", result_path: "C:\\videos\\Earlier_compressed.mp4", result_size: 9_700_000 },
   ] });
   const status = page.locator("#qstatus");
-  await expect(status).toContainText("Morning ride.mp4");
-  await expect(page.locator("#qeta")).toHaveText("42% · 1:23 left");
-  await expect(page.locator("#qcnt")).toHaveText("1 waiting · 1 failed");
+  await expect(page.locator("#qfname")).toHaveText("Morning ride.mp4");
+  await expect(page.locator("#qpct")).toHaveText("42%");
+  await expect(page.locator("#qleft")).toHaveText("1:23 left");
+  // a failure shows while the rest of the batch runs, not only once it ends
+  await expect(page.locator("#qeta")).toHaveText("1 waiting · 1 failed");
   await expect(page.locator("#qprog")).toHaveAttribute("value", "42");
+  await expect(status).toHaveAttribute("aria-label", "Exporting Morning ride.mp4, 42%, 1:23 left, 1 waiting · 1 failed. Show Exports");
 
   await status.click();
   const panel = page.getByRole("dialog", { name: "Exports" });
@@ -162,14 +165,17 @@ test("the export status opens every export this session with its own action", as
   await expect(panel).toBeHidden();
 });
 
-test("a finished queue says what exported and what failed, with the saving", async ({ page }) => {
+test("a finished queue with a failure leads with it and its Retry, and the panel keeps the saving", async ({ page }) => {
   await open(page, { queue: [
     { id: "a", source: "Morning ride.mp4", source_path: MORNING, state: "completed", result_path: "C:\\videos\\a.mp4", result_size: 5_000_000 },
     { id: "b", source: "Trail run.mp4", source_path: TRAIL, state: "failed", error: "Out of disk space" },
   ] });
   await expect(page.locator("#qbar")).toHaveClass(/finished/);
-  await expect(page.locator("#qfname")).toHaveText("1 exported");
-  await expect(page.locator("#qcnt")).toHaveText("1 failed · saved 9.5 MB");
+  await expect(page.locator("#qfname")).toHaveText("1 of 2 failed");
+  await expect(page.locator("#qeta")).toHaveText("Out of disk space");
+  await expect(page.locator("#qstatus")).toHaveAttribute("aria-label", "1 of 2 failed. Trail run.mp4: Out of disk space. Show Exports");
+  await page.locator("#qactions").getByRole("button", { name: "Retry" }).click();
+  await expect.poll(() => calls(page, "retryAllItems")).toHaveLength(1);
   await page.locator("#qstatus").click();
   await expect(page.locator(".exports-row.completed .exports-detail")).toHaveText("14.3 MB → 4.8 MB · saved 67%");
   await expect(page.locator("#exports-saved")).toHaveText("Saved 9.5 MB so far");
@@ -188,15 +194,16 @@ async function measureBar(page: Page) {
     return {
       cut: name.scrollWidth > name.clientWidth,
       centre: box("task-wf").left + box("task-wf").width / 2 - window.innerWidth / 2,
-      tabsEnd: box("task-wf").right,
-      status: box("qbar").left,
       statusEnd: box("qbar").right,
+      tabs: box("task-wf").left,
+      tabsEnd: box("task-wf").right,
       exportStart: box("export-go").left,
+      exportWidth: box("btn-one").width,
     };
   });
 }
 
-for (const [kind, queue, count] of [["finished", exported(12), "12 exported"], ["paused", paused(12), "12 exports paused"]] as const) for (const width of [960, 1180]) {
+for (const [kind, queue, count] of [["finished", exported(12), "12 videos exported"], ["paused", paused(12), "12 exports paused"]] as const) for (const width of [960, 1180]) {
   test(`at ${width} wide a ${kind} batch says "${count}" in full, beside a centred task switch`, async ({ page }) => {
     await open(page, { width, queue });
     // Arial and Liberation Sans have the same widths and are on every test machine; the Linux
@@ -208,20 +215,57 @@ for (const [kind, queue, count] of [["finished", exported(12), "12 exported"], [
     const bar = await measureBar(page);
     expect(bar.cut).toBe(false);
     expect(Math.abs(bar.centre)).toBeLessThanOrEqual(1);
-    expect(bar.tabsEnd).toBeLessThanOrEqual(bar.status);
-    expect(bar.statusEnd).toBeLessThanOrEqual(bar.exportStart);
+    expect(bar.statusEnd).toBeLessThanOrEqual(bar.tabs);
+    expect(bar.tabsEnd).toBeLessThanOrEqual(bar.exportStart);
   });
 }
 
 test("a status too wide for its half moves the task switch aside instead of cutting the count", async ({ page }) => {
   await open(page, { width: 960, queue: exported(12) });
+  const before = await measureBar(page);
   await page.addStyleTag({ content: "#qfname { letter-spacing: 6px; }" });
-  await expect(page.locator("#qfname")).toHaveText("12 exported");
+  await expect(page.locator("#qfname")).toHaveText("12 videos exported");
   const bar = await measureBar(page);
   expect(bar.cut).toBe(false);
-  expect(bar.centre).toBeLessThan(-1);
-  expect(bar.tabsEnd).toBeLessThanOrEqual(bar.status);
-  expect(bar.statusEnd).toBeLessThanOrEqual(bar.exportStart);
+  expect(bar.centre).toBeGreaterThan(1);
+  expect(bar.statusEnd).toBeLessThanOrEqual(bar.tabs);
+  expect(bar.tabsEnd).toBeLessThanOrEqual(bar.exportStart);
+  // the export button keeps its size whatever the left side needs
+  expect(bar.exportWidth).toBe(before.exportWidth);
+});
+
+test("a running export keeps the task switch and its own size while its numbers change", async ({ page }) => {
+  const running = (progress: number, fps: number, eta: number) => [
+    { id: "run", source: "Morning ride.mp4", source_path: MORNING, state: "running", progress, two_pass: true, status_text: "Pass 2 of 2",
+      progress_info: { stage: progress < 50 ? "pass_1" : "pass_2", fps, eta_seconds: eta } },
+    { id: "wait", source: "Kitchen.mov", source_path: KITCHEN, state: "pending", progress: 0 },
+  ];
+  for (const width of [960, 1440]) {
+    await open(page, { width, queue: running(8, 9.4, 3_725) });
+    await page.addStyleTag({ content: ':root { --font: Arial, "Liberation Sans", sans-serif; }' });
+    // later polls answer whatever the test sets, the way the backend reports its own progress
+    await page.evaluate(() => {
+      const client = window.tuckBackendClient!;
+      const answer = client.getQueueState.bind(client);
+      const live = window as unknown as { __queue?: unknown[] };
+      client.getQueueState = (async () => live.__queue ? { ok: true, value: { items: live.__queue } } : answer()) as typeof client.getQueueState;
+    });
+    await expect(page.locator("#qfps")).toHaveText("9.4 fps");
+    await expect(page.locator("#qleft")).toHaveText("1:02:05 left");
+    // the first pass fills the first half of the track
+    await expect(page.locator("#qtrack .qseg")).toHaveCount(2);
+    const first = await measureBar(page);
+    const size = await page.locator("#qstatus").boundingBox();
+    expect(Math.abs(first.centre)).toBeLessThanOrEqual(1);
+
+    await page.evaluate((items) => { (window as unknown as { __queue?: unknown[] }).__queue = items; }, running(78, 146.4, 11));
+    await expect(page.locator("#qfps")).toHaveText("146 fps");
+    await expect(page.locator("#qleft")).toHaveText("0:11 left");
+    await expect(page.locator("#qpct")).toHaveText("78%");
+    expect(await page.locator("#qtrack .qfill").evaluateAll((fills) => fills.map((fill) => (fill as HTMLElement).style.width))).toEqual(["100%", "56%"]);
+    expect(await page.locator("#qstatus").boundingBox()).toEqual(size);
+    expect((await measureBar(page)).tabs).toBe(first.tabs);
+  }
 });
 
 test("at 960 wide the drawers stop above the bottom bar, which stays usable", async ({ page }) => {
