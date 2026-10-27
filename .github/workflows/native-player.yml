@@ -1,0 +1,37 @@
+name: Native player library
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build the native player (${{ matrix.target }})
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        # the Windows library is cross-compiled here with MinGW, like the Windows FFmpeg
+        target: [windows, linux]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the build tools
+        # the system Python 3.10 runs the recipes, as on the Ubuntu 22.04 machines that verified them
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake nasm pkg-config meson ninja-build patch \
+            gcc-mingw-w64-x86-64-posix g++-mingw-w64-x86-64-posix
+      - name: Cache verified source downloads
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/player-work/cache
+          key: player-sources-${{ matrix.target }}-${{ hashFiles('packaging/player-sources.lock.json', 'packaging/ffmpeg-sources.lock.json', 'packaging/ffmpeg-linux-sources.lock.json') }}
+      - name: Build the player library from locked sources
+        run: python3 scripts/player_library.py ${{ matrix.target }} --work "$RUNNER_TEMP/player-work"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-player-${{ matrix.target }}
+          path: build/player-library/${{ matrix.target }}/
+          if-no-files-found: error
+          retention-days: 7

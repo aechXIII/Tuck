@@ -49,9 +49,14 @@ jobs:
     needs: release-version
     uses: ./.github/workflows/windows-ffmpeg.yml
 
+  # the packages refuse to build without the native player, which only Ubuntu 22.04 builds
+  native-player:
+    needs: release-version
+    uses: ./.github/workflows/native-player.yml
+
   build-windows:
     name: Build Windows (native)
-    needs: [release-version, windows-ffmpeg]
+    needs: [release-version, windows-ffmpeg, native-player]
     runs-on: windows-latest
     # only a version tag signs, and signing needs the key kept in the protected environment
     environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'release' || '' }}
@@ -110,6 +115,12 @@ jobs:
         with:
           name: windows-ffmpeg-source-build
           path: build/windows-ffmpeg
+
+      - name: Download the native player library
+        uses: actions/download-artifact@v4
+        with:
+          name: native-player-windows
+          path: build/player-library/windows
 
       - name: Build the Python sidecar and bundled media tools
         run: python scripts/build_sidecar.py --python python
@@ -178,7 +189,7 @@ jobs:
 
   build-linux:
     name: Build Linux (frozen Ubuntu 22.04 baseline)
-    needs: release-version
+    needs: [release-version, native-player]
     runs-on: ubuntu-22.04
     # only a version tag signs, and signing needs the key kept in the protected environment
     environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'release' || '' }}
@@ -238,6 +249,12 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+
+      - name: Download the native player library
+        uses: actions/download-artifact@v4
+        with:
+          name: native-player-linux
+          path: build/player-library/linux
 
       - name: Build the AppImage
         # The key reaches a build only for a version tag, from the release environment;

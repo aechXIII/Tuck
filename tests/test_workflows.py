@@ -16,6 +16,7 @@ WORKFLOWS = Path(".github/workflows")
 TESTS_YML = WORKFLOWS / "tests.yml"
 RELEASE_YML = WORKFLOWS / "release.yml"
 ITCH_YML = WORKFLOWS / "itch.yml"
+NATIVE_PLAYER_YML = WORKFLOWS / "native-player.yml"
 
 
 def _read(path: Path) -> str:
@@ -179,6 +180,27 @@ def test_release_build_jobs_inspect_and_smoke_before_upload() -> None:
         assert verify < upload and smoke < upload, (
             f"{name} must verify and smoke-test the package before uploading it"
         )
+
+
+def test_release_builds_get_the_native_player_built_from_locked_sources() -> None:
+    # the packages refuse to build without the player library, and only this job makes it
+    jobs = _jobs(_read(RELEASE_YML))
+    assert "uses: ./.github/workflows/native-player.yml" in jobs["native-player"]
+    for name, target, build in (
+        ("build-windows", "windows", "scripts/build_sidecar.py"),
+        ("build-linux", "linux", "./scripts/build-linux.sh"),
+    ):
+        body = jobs[name]
+        assert re.search(r"^    needs: .*native-player", body, re.MULTILINE), name
+        download = body.index(f"name: native-player-{target}")
+        assert f"path: build/player-library/{target}" in body[download:]
+        assert download < body.index(build), f"{name} must have the player before it builds"
+    player = _read(NATIVE_PLAYER_YML)
+    assert "runs-on: ubuntu-22.04" in player
+    assert "target: [windows, linux]" in player
+    assert "scripts/player_library.py ${{ matrix.target }}" in player
+    assert "name: native-player-${{ matrix.target }}" in player
+    assert "path: build/player-library/${{ matrix.target }}/" in player
 
 
 def test_release_workflow_uses_locked_dependency_installs() -> None:
@@ -354,5 +376,5 @@ def test_jobs_that_read_the_signing_key_run_in_the_protected_environment() -> No
 def test_a_mismatched_tag_stops_the_release_before_any_build() -> None:
     jobs = _jobs(_read(RELEASE_YML))
     assert 'build_metadata.py check-ref --ref "$GITHUB_REF"' in jobs["release-version"]
-    for name in ("windows-ffmpeg", "build-windows", "build-linux"):
+    for name in ("windows-ffmpeg", "native-player", "build-windows", "build-linux"):
         assert re.search(r"^    needs: .*release-version", jobs[name], re.MULTILINE), name
