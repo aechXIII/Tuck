@@ -7,6 +7,7 @@ from tuck.encoding.target_size import (
     decide_retry,
     is_content_limited,
     left_bitrate_unused,
+    source_bitrate_ceiling,
 )
 
 
@@ -77,6 +78,38 @@ class TestTargetSizePlanning:
         assert copied_audio.video_bitrate < no_audio.video_bitrate
         assert copied_audio.estimated_size <= target
 
+    def test_a_source_under_the_target_keeps_its_own_bitrate(self):
+        target = 20 * 1024 * 1024
+        filled = calculate_target_size_bitrates(target, 12.0, 128_000)
+        capped = calculate_target_size_bitrates(target, 12.0, 128_000, max_video_bitrate=2_300_000)
+        assert filled.video_bitrate > 10_000_000
+        assert capped.video_bitrate == 2_300_000
+        # the estimate is the export's own size, not the target's
+        assert capped.estimated_size < 4 * 1024 * 1024
+
+    def test_a_ceiling_above_the_budget_changes_nothing(self):
+        target = 10 * 1024 * 1024
+        plain = calculate_target_size_bitrates(target, 60.0, 128_000)
+        roomy = calculate_target_size_bitrates(target, 60.0, 128_000, max_video_bitrate=50_000_000)
+        assert roomy == plain
+
+
+class TestSourceCeiling:
+    def test_an_h264_source_gets_its_own_bitrate(self):
+        assert source_bitrate_ceiling(2_300_000, "h264", 1280 * 720, 1280 * 720) == 2_300_000
+
+    def test_more_efficient_codecs_get_more_room(self):
+        assert source_bitrate_ceiling(1_000_000, "hevc", 100, 100) == 1_500_000
+        assert source_bitrate_ceiling(1_000_000, "AV1", 100, 100) == 2_000_000
+
+    def test_a_larger_picture_gets_room_for_its_pixels(self):
+        assert source_bitrate_ceiling(1_000_000, "h264", 1280 * 720, 2560 * 1440) == 4_000_000
+        # a smaller or cropped picture still gets the whole source bitrate as its most
+        assert source_bitrate_ceiling(1_000_000, "h264", 1280 * 720, 640 * 360) == 1_000_000
+
+    def test_an_unknown_bitrate_sets_no_ceiling(self):
+        assert source_bitrate_ceiling(0, "h264", 100, 100) == 0
+
 
 class TestRetryPolicy:
     def test_overshoot_retries(self):
@@ -96,6 +129,22 @@ class TestRetryPolicy:
         d = decide_retry(4_000_000, 10_000_000, 1_000_000, attempt=0, max_attempts=3)
         assert d.should_retry
         assert d.new_video_bitrate > 1_000_000
+
+    def test_undershoot_never_retries_past_the_ceiling(self):
+        # a small source encoded at its own bitrate lands far under the target; more bitrate
+        # would only grow the file
+        target = 20 * 1024 * 1024
+        d = decide_retry(
+            3_700_000, target, 2_300_000, attempt=0, max_attempts=3, max_video_bitrate=2_300_000
+        )
+        assert not d.should_retry
+
+    def test_undershoot_below_the_ceiling_retries_up_to_it(self):
+        d = decide_retry(
+            4_000_000, 10_000_000, 1_000_000, attempt=0, max_attempts=3, max_video_bitrate=1_500_000
+        )
+        assert d.should_retry
+        assert d.new_video_bitrate == 1_500_000
 
     def test_undershoot_stays_within_hard_limit_on_next_attempt(self):
         d = decide_retry(4_000_000, 10_000_000, 1_000_000, attempt=0, max_attempts=3)

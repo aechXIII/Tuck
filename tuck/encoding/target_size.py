@@ -26,6 +26,28 @@ CONTENT_LIMITED_GROWTH = 1.05
 # content, not the budget, so a little more bitrate encodes the same file again
 UNUSED_BITRATE_SHARE = 0.9
 
+# how much more bitrate than the source's own a re-encode may need for the same picture: these
+# codecs hold more per bit than the H.264 most exports are written in
+SOURCE_CODEC_ROOM = {"hevc": 1.5, "vp9": 1.5, "av1": 2.0}
+# what an MP4 adds around its video and audio, for the estimate of a capped export
+CONTAINER_OVERHEAD = 0.01
+
+
+def source_bitrate_ceiling(
+    source_bitrate: int, source_codec: str, source_pixels: int, output_pixels: int
+) -> int:
+    """The most video bitrate worth spending on a source, or 0 when its bitrate is unknown.
+
+    More than the source's own bitrate buys nothing it doesn't already hold, so a video that is
+    already under the target stays about its own size instead of growing to fill the target.
+    """
+    if source_bitrate <= 0:
+        return 0
+    room = SOURCE_CODEC_ROOM.get(source_codec.lower(), 1.0)
+    if source_pixels > 0 and output_pixels > source_pixels:
+        room *= output_pixels / source_pixels
+    return int(source_bitrate * room)
+
 
 def left_bitrate_unused(video_bytes: int, duration_s: float, video_bitrate: int) -> bool:
     """The encoded video used clearly less than the bitrate it was given."""
@@ -102,11 +124,13 @@ def calculate_target_size_bitrates(
     min_video_bitrate: int = MIN_VIDEO_BITRATE,
     overhead_factor: float = AUDIO_OVERHEAD_FACTOR,
     audio_tracks: int = 1,
+    max_video_bitrate: int = 0,
 ) -> TargetSizePlan:
     """audio_bitrate, in and out, is per track; the audio budget covers all of them
 
-    Raises TargetSizeTooSmall when the target can't hold the video, with the smallest
-    whole-number size that can.
+    max_video_bitrate, when set, is the most the video gets however large the target is
+    (see `source_bitrate_ceiling`). Raises TargetSizeTooSmall when the target can't hold the
+    video, with the smallest whole-number size that can.
     """
     if duration_s <= 0:
         raise ValueError(f"Invalid encode duration for target size: {duration_s:.3f}s")
@@ -120,6 +144,7 @@ def calculate_target_size_bitrates(
             min_video_bitrate=min_video_bitrate,
             overhead_factor=overhead_factor,
             audio_tracks=audio_tracks,
+            max_video_bitrate=max_video_bitrate,
         )
 
     plan = plan_for(target_size)
@@ -147,6 +172,7 @@ def _plan_bitrates(
     min_video_bitrate: int,
     overhead_factor: float,
     audio_tracks: int,
+    max_video_bitrate: int = 0,
 ) -> TargetSizePlan | None:
     """The bitrates for this target, or None when it is too small to hold the video."""
     if target_size < 1024:
@@ -178,7 +204,13 @@ def _plan_bitrates(
             return None
         video_br = min_video_bitrate
 
-    estimated = int((video_br / 8.0) * duration_s + audio_size + target_size * safety)
+    if 0 < max_video_bitrate < video_br:
+        # the target has room to spare, so the estimate is the export's own size, not the target's
+        video_br = max(max_video_bitrate, min_video_bitrate)
+        streams = (video_br / 8.0) * duration_s + audio_size
+        estimated = int(streams * (1.0 + CONTAINER_OVERHEAD))
+    else:
+        estimated = int((video_br / 8.0) * duration_s + audio_size + target_size * safety)
     return TargetSizePlan(
         video_bitrate=video_br,
         audio_bitrate=audio_br,
@@ -198,6 +230,7 @@ def decide_retry(
     *,
     hardware_encoder: bool = False,
     non_video_size: int = 0,
+    max_video_bitrate: int = 0,
 ) -> RetryDecision:
     if attempt >= max_attempts - 1:
         return RetryDecision(False, current_video_bitrate, "retry limit reached")
@@ -221,6 +254,9 @@ def decide_retry(
 
     # a short or unusually compressible first output must not cause an unbounded jump
     new_br = min(corrected, int(current_video_bitrate * MAX_REFINEMENT_FACTOR))
+    # an export under the target because the source is small stays that way
+    if max_video_bitrate > 0:
+        new_br = min(new_br, max_video_bitrate)
     if new_br > current_video_bitrate:
         return RetryDecision(True, new_br, "output substantially under target")
     return RetryDecision(False, current_video_bitrate, "no room to increase video bitrate")

@@ -1117,6 +1117,9 @@ class EncodePlan:
     frame_blending: FrameBlending = field(default_factory=FrameBlending)
     video_bitrate: int = 0
     original_video_bitrate: int = 0
+    # the most video bitrate worth spending on this source (its own, with room for its codec
+    # and a larger picture), so a size retry never grows it past that; 0 sets no limit
+    max_video_bitrate: int = 0
     resolution_mode: str = RES_MODE_SOURCE
     fps_mode: str = FPS_MODE_SOURCE
     rate_control: str = RC_TARGET_SIZE

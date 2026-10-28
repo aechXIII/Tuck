@@ -294,6 +294,52 @@ class TestPlan:
         assert result.audio_bitrate < info.audio_bitrate
         assert result.estimated_size <= result.target_size
 
+    @staticmethod
+    def _source(tmp_path, monkeypatch, **fields) -> Path:
+        source = tmp_path / "source.mp4"
+        source.write_bytes(b"source")
+        info = VideoInfo(
+            path=str(source),
+            duration=12.0,
+            width=1280,
+            height=720,
+            fps=30.0,
+            audio_codec="aac",
+            audio_channels=2,
+            audio_sample_rate=48_000,
+            audio_bitrate=131_000,
+            has_audio=True,
+            **fields,
+        )
+        monkeypatch.setattr("tuck.probe.probe", lambda _: info)
+        return source
+
+    def test_a_video_under_the_target_keeps_about_its_own_size(self, tmp_path, monkeypatch):
+        # a 3.5 MB clip was encoded up to 19.4 MB for the 20 MB Discord target
+        source = self._source(tmp_path, monkeypatch, video_codec="h264", bitrate=2_298_938)
+        profile = find_profile_by_id(DEFAULT_PROFILES, PROFILE_ID_DISCORD_FREE)
+
+        result = plan(source, profile)
+
+        assert result.video_bitrate == 2_298_938
+        assert result.max_video_bitrate == 2_298_938
+        assert result.estimated_size < 4 * 1024 * 1024
+
+    def test_a_more_efficient_source_codec_gets_more_room(self, tmp_path, monkeypatch):
+        source = self._source(tmp_path, monkeypatch, video_codec="hevc", bitrate=1_000_000)
+        profile = find_profile_by_id(DEFAULT_PROFILES, PROFILE_ID_DISCORD_FREE)
+
+        assert plan(source, profile).video_bitrate == 1_500_000
+
+    def test_a_video_over_the_target_still_uses_the_whole_target(self, tmp_path, monkeypatch):
+        source = self._source(tmp_path, monkeypatch, video_codec="h264", bitrate=40_000_000)
+        profile = find_profile_by_id(DEFAULT_PROFILES, PROFILE_ID_DISCORD_FREE)
+
+        result = plan(source, profile)
+
+        assert result.video_bitrate < 40_000_000
+        assert result.estimated_size > result.target_size * 0.85
+
     def test_plan_output_collision(self, skip_if_no_ffprobe, sample_video_path, tmp_path):
         profile = find_profile_by_id(DEFAULT_PROFILES, PROFILE_ID_DISCORD_FREE)
         out_dir = tmp_path / "collision"

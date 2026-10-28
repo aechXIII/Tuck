@@ -10,6 +10,7 @@ from .encoding.target_size import (
     MAX_AUDIO_BITRATE,
     MIN_VIDEO_BITRATE,
     calculate_target_size_bitrates,
+    source_bitrate_ceiling,
 )
 from .formatting import format_size
 from .models import (
@@ -365,6 +366,7 @@ def plan(
         )
 
     is_upscale = workflow == WORKFLOW_UPSCALE
+    max_video_br = 0
 
     if is_upscale:
         if rate_ctrl == RC_EXPLICIT_BITRATE:
@@ -398,6 +400,11 @@ def plan(
         hardware = video_encoder in NVENC_ENCODERS | AMF_ENCODERS | VAAPI_ENCODERS
         if video_encoder in (ENCODER_AUTO, ENCODER_AUTO_FAST):
             hardware = True
+        # a video already under the target keeps about its own bitrate, so compressing never
+        # makes it bigger than it was
+        max_video_br = source_bitrate_ceiling(
+            info.bitrate, info.video_codec, info.width * info.height, target_w * target_h
+        )
         ts_plan = calculate_target_size_bitrates(
             target_size,
             effective_duration,
@@ -405,6 +412,7 @@ def plan(
             hardware_encoder=hardware,
             min_video_bitrate=MIN_VIDEO_BITRATE,
             audio_tracks=source_audio_tracks,
+            max_video_bitrate=max_video_br,
         )
         video_br = ts_plan.video_bitrate
         audio_br = ts_plan.audio_bitrate
@@ -423,6 +431,7 @@ def plan(
         frame_blending=blending,
         video_bitrate=video_br,
         original_video_bitrate=video_br,
+        max_video_bitrate=max_video_br,
         resolution_mode=res_mode,
         fps_mode=fps_mode,
         rate_control=rate_ctrl,

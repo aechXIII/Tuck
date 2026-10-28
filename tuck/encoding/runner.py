@@ -495,6 +495,7 @@ class FFmpegEngine:
             max_attempts=max_attempts,
             hardware_encoder=is_hardware_encoder(plan.video_encoder),
             non_video_size=non_video_size,
+            max_video_bitrate=plan.max_video_bitrate,
         )
         if not decision.should_retry:
             return False
