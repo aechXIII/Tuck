@@ -254,6 +254,8 @@ test("a running export keeps the task switch and its own size while its numbers 
     await expect(page.locator("#qleft")).toHaveText("1:02:05 left");
     // the first pass fills the first half of the track
     await expect(page.locator("#qtrack .qseg")).toHaveCount(2);
+    // the bar slides in when it appears, so measure it once it has settled
+    await page.locator("#qbar").evaluate(async (bar) => { await Promise.all(bar.getAnimations().map((animation) => animation.finished)); });
     const first = await measureBar(page);
     const size = await page.locator("#qstatus").boundingBox();
     expect(Math.abs(first.centre)).toBeLessThanOrEqual(1);
