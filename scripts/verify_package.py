@@ -52,7 +52,7 @@ STAGING_APP = ROOT / "packaging" / "staging" / "app"
 MANIFEST = ROOT / "packaging" / "staging" / "manifest.json"
 LOCK = ROOT / "packaging" / "ffmpeg-sources.lock.json"
 WEBVIEW2_LOCK = ROOT / "packaging" / "webview2-bootstrapper.lock.json"
-EXPECTED_VERSION = "0.6.2"
+EXPECTED_VERSION = "0.7.0"
 _LINUX_SOURCE_LICENSES = {
     "ffmpeg": "GPL-2.0-or-later",
     "x264": "GPL-2.0-or-later",

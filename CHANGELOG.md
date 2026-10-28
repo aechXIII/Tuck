@@ -1,5 +1,60 @@
 # Changelog
 
+## [0.7.0] - 2026-10-28
+
+### Hardware playback
+
+The preview now plays on your graphics card. Big and high frame rate videos play smoothly, and some files the old preview couldn't show now play too. If one doesn't play right, turn off Hardware playback in Settings > General and restart Tuck.
+
+### Added
+
+- Join several Library videos into one new video
+- Copy and paste edits between Library videos
+- Compare the video with and without its LUT in a split preview
+- Export audio as one mixed track or as separate tracks
+- Even out loudness when exporting
+- Mute part of the audio by marking it with `Shift+I` and `Shift+O`
+- Hold Alt and drag a timeline clip to change which part of the video it shows
+- Encode with your graphics card on Linux: Intel, AMD, or NVIDIA (VAAPI and NVENC)
+- Copy and open finished exports, and drag them out on Linux
+- Retry all failed and canceled exports
+- Paste videos and audio files with `Ctrl+V`
+- Search in the profile menu, which now shows profiles for every task
+- Switch to a profile straight from Settings with its Use button
+- Crop with exact numbers or the arrow keys
+- Up to three keys for each keyboard shortcut
+- Warning when a Discord profile makes a file Discord can't play
+
+### Changed
+
+- Exports mix all audio tracks into one by default, including from the command line and Send To
+- Export button moved to the bottom bar
+- Export progress shows speed and time left
+- Unfinished exports come back paused when Tuck opens again
+- Resolution presets like 1080p now work for portrait videos too
+- Smooth scaling by default, with Sharp pixels for pixel art
+- Clearer error messages, and a note under Target size when the video can't fit
+- Lossless cut shows what it will make before you export
+- Moving a timeline clip takes its footage with it, instead of showing another part of the video
+- Deeper timeline zoom that follows the pointer
+- Clearer start screen, task switch and rotate buttons
+- Variable frame rate videos show their average frame rate
+- More accurate target sizes
+- Dropped files that aren't videos or audio are skipped
+- Tuck remembers its window size and position
+
+### Fixed
+
+- Memory use growing during playback on Linux
+- Crash when entering fullscreen on Linux
+- Tuck not reopening after a restart or update on Linux
+- Show in folder failing for videos sent from Send To
+- Retry showing the same export twice in Exports
+- Videos already under the target size growing to fill it
+- File dialogs opening behind Tuck or on another screen
+- Player buttons covering cut points
+- Page slightly cut off at the smallest window size on Windows
+
 ## [0.6.2] - 2026-10-16
 
 ### Added

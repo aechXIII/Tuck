@@ -1,152 +1,82 @@
 <div>
 <h1 align="center">
-  <a href="https://github.com/aechXIII/Tuck"><img width="196" alt="Tuck logo" src="assets/tuck_logo_no_bg.svg"></a>
+  <a href="https://tuck.video"><img width="196" alt="Tuck logo" src="assets/tuck_logo_no_bg.svg"></a>
   <br>
   Tuck
 </h1>
 
-<p align="center"><strong>Trim, compress, and upscale videos on Windows and Linux.</strong></p>
+<p align="center"><strong>Trim, compress, and upscale videos.</strong></p>
 
 <p align="center">
-    <a href="https://github.com/aechXIII/Tuck/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/aechXIII/Tuck?style=flat-square&label=Release&color=7C3AED"></a>
-    <a href="https://github.com/aechXIII/Tuck/releases"><img alt="Total downloads" src="https://img.shields.io/github/downloads/aechXIII/Tuck/total?style=flat-square&label=Downloads&color=7C3AED"></a>
-    <img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-7C3AED?style=flat-square&logo=windows&logoColor=white">
-    <img alt="Linux x86-64 AppImage" src="https://img.shields.io/badge/Linux-x86--64%20AppImage-7C3AED?style=flat-square&logo=linux&logoColor=white">
-    <a href="LICENSE"><img alt="GPL v3 license" src="https://img.shields.io/badge/License-GPL%20v3-7C3AED?style=flat-square"></a>
-  <a href="https://x.com/aechxiii">
-  <img alt="Follow @aechxiii on X" src="https://img.shields.io/badge/Follow-%40aechxiii-7C3AED?style=flat-square&logo=x&logoColor=white">
-</a>
-  </p>
+  <a href="https://github.com/aechXIII/Tuck/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/aechXIII/Tuck?style=flat-square&label=Release&color=7C3AED"></a>
+  <a href="https://github.com/aechXIII/Tuck/releases"><img alt="Total downloads" src="https://img.shields.io/github/downloads/aechXIII/Tuck/total?style=flat-square&label=Downloads&color=7C3AED"></a>
+  <a href="LICENSE"><img alt="GPL v3 license" src="https://img.shields.io/badge/License-GPL%20v3-7C3AED?style=flat-square"></a>
+</p>
+
+<p align="center">
+  <a href="https://tuck.video">Website</a>
+  &nbsp;&nbsp;&nbsp;
+  <a href="https://tuck.video/download/">Download</a>
+  &nbsp;&nbsp;&nbsp;
+  <a href="https://tuck.video/guide/">Guide</a>
+  &nbsp;&nbsp;&nbsp;
+  <a href="https://tuck.video/#try">Try the editor</a>
+</p>
 </div>
 
 ---
 
-Tuck is a simple video editor for Windows and Linux, built around FFmpeg.
-Trim clips or cut them without re-encoding, edit audio, crop or resize videos,
-and export to a file size or resolution you choose.
+Tuck is a free and open-source video editor for Windows and Linux, built on FFmpeg. Use it to cut out the parts you don't want, edit the audio, crop a video for a phone screen, or get it under an upload limit.
 
-<img src="docs/screenshots/Tuck_GUI.png" alt="Tuck editor">
+<img src="docs/screenshots/editor.png" alt="The Tuck editor with the Export tab open: a 20 MB target, frame blending from 300 to 60 fps, and a timeline with the middle part removed and music added">
 
 ## Download
 
-Tuck supports Windows 10 and 11 and x86-64 Linux. Both packages include FFmpeg and
-ffprobe and support signed updates from inside the app.
+Download Tuck from [tuck.video](https://tuck.video/download/) or the [Releases page](https://github.com/aechXIII/Tuck/releases/latest). It runs on Windows 10 and 11 and on x86-64 Linux. FFmpeg is included, and Tuck updates itself.
 
-Linux uses software encoding. Hardware encoding, File Explorer's **Send To** menu,
-and the command-line tools are available on Windows only.
+Windows may say "Windows protected your PC" when you run the installer. That's because it isn't code signed yet. Click More info, then Run anyway. If you'd like to be sure first, compare the file with its [checksum](https://tuck.video/download/#checksums).
 
-### Windows
-
-Download the Windows installer from the [Releases page](https://github.com/aechXIII/Tuck/releases/latest), run it, and open Tuck. FFmpeg and ffprobe are included; no separate installation is needed. Setup installs the WebView2 Runtime if it is missing, which requires an internet connection.
-
-To use your own FFmpeg tools, select them in **Settings > Media tools**.
-
-### Linux AppImage
-
-Install Tuck and add it to the application menu with this command. It requires
-`curl`, `python3`, and `sha256sum`. No `sudo` needed. Run it again to update:
+On Linux, this command installs Tuck and adds it to your app menu:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/aechXIII/Tuck/main/scripts/install-linux.sh | sh
+curl -fsSL https://tuck.video/install.sh | sh
 ```
 
-Or run the x86-64 AppImage directly after making it executable:
+If anything goes wrong, see the [install guide](https://tuck.video/guide/#install).
 
-```bash
-chmod +x Tuck-*-x86_64.AppImage
-./Tuck-*-x86_64.AppImage
-```
+## What it does
 
-When the AppImage file is writable the app updates in place. When it is not, it
-shows the release notes with a download link.
+- Cut out what you don't want. The timeline shows thumbnails to help you find the right spot, and playback skips what you cut, so you see the result before you export.
+- If your recording has separate game and mic audio, each one gets its own row and volume. You can add music, even out the loudness, and export everything as one track or keep the tracks separate.
+- Crop by dragging on the video, or pick a ratio like 9:16 for TikTok or YouTube Shorts. You can also rotate, flip, and resize.
+- Tell Tuck a size, like 20 or 50 MB, and it picks the quality so the video fits under an upload limit.
+- **Lossless cut** doesn't re-encode, so you keep the original quality and the export is much faster. Each part has to start on a keyframe, so it may begin a moment after your cut. Switch to **Exact** when that matters.
+- Join several videos into one, or copy one video's edits onto others.
+- Upscale to 1440p, 4K, or any size you like.
+- Turn a 240 fps recording into smooth 60 fps video with motion blur.
+- Add a LUT (a `.cube` file) to change the look, and split the preview to see before and after.
+- Save any frame as a full-resolution PNG.
+- Queue up several exports and retry any that fail. Exports you didn't finish come back the next time you open Tuck.
+- Copy finished files and paste them into a chat or a folder. On Linux you can drag them out of Tuck, too.
+- Your graphics card plays the preview and can speed up exports: NVIDIA or AMD on Windows, and NVIDIA, Intel, or AMD on Linux. Tuck only offers what works on your computer.
+- Save your usual settings as a profile. On Windows, add it to File Explorer's **Send To** menu and send videos to it with a right-click.
+- On Windows, you can also compress from a terminal with `tuck compress clip.mp4 --size 25`. The [command line guide](https://tuck.video/guide/#command-line) shows the rest.
 
-The AppImage needs a Linux desktop session. It includes WebKitGTK, Python,
-FFmpeg/ffprobe, and the plugins used for video previews.
+<img src="docs/screenshots/crop.png" alt="A 9:16 crop frame with its handles over a 16:9 gameplay video">
 
-- If the AppImage reports that FUSE is missing, run
-  it with `./Tuck-*-x86_64.AppImage --appimage-extract-and-run` (or
-  `tuck --appimage-extract-and-run` after using the installer script).
-- Tuck uses the GPU for smoother previews. In a virtual machine, or after a
-  crash, it switches to software drawing.
-- If the window stays blank, launch with
-  `WEBKIT_DISABLE_COMPOSITING_MODE=1 ./Tuck-*-x86_64.AppImage` to draw without
-  the GPU.
-- If only video previews stay blank, try launching with
-  `TUCK_WEBKIT_COMPOSITING=1 ./Tuck-*-x86_64.AppImage`.
-- To always use the GPU, launch with
-  `TUCK_WEBKIT_ACCELERATED=1 ./Tuck-*-x86_64.AppImage`.
+## Help
 
-## Features
+There are step-by-step [guides on tuck.video](https://tuck.video/guide/). In Tuck, press <kbd>?</kbd> to see every keyboard shortcut.
 
-- **Timeline editing:** See video frames on the track, split videos into segments, trim or remove parts, and mute source audio or individual fragments.
-- **Audio editing:** Each audio track of a video, like separate game and mic tracks, gets its own row with mute and volume. Add new audio files and position them on the timeline. Imported audio can be moved, trimmed, split, muted, or given its own volume level.
-- **Crop and resize:** Crop directly in the preview, rotate in 90-degree steps, flip the
-  picture horizontally or vertically, and choose **Fit**, **Fill**, or **Stretch** for the
-  output frame.
-- **Save frames:** Save a video frame as a full-resolution PNG.
-- **Lossless cut:** Remove parts of a video and join the rest without re-encoding. See [Lossless cut](#lossless-cut).
-- **Compression and upscaling:** Compress to a chosen file-size limit, or upscale to 1440p, 4K, or a custom resolution. Choose a target-size preset of 20, 50, 200, or 500 MB, or enter your own limit.
-- **Encoding queue:** Queue multiple videos, reorder pending exports, cancel a pending or running export, and retry failed or cancelled exports. Use software encoding on either platform or supported NVIDIA and AMD hardware on Windows.
-- **Settings:** Change keyboard shortcuts, the accent color, layout density and text size, choose where exports are saved and what happens when a file name is taken, and hide parts of Tuck you don't use.
-- **Profiles and Windows integration:** Save reusable profiles, import or export profiles, drag videos into Tuck, and add Tuck or a specific profile to File Explorer's **Send To** menu.
+If a video doesn't play right in the preview, turn off **Hardware playback** in **Settings > General** and restart Tuck.
 
-## Use
-
-1. Add one or more videos and select the clip you want to edit.
-2. Make any timeline, audio, crop, or sizing changes.
-3. Choose **Compress**, **Upscale**, or **Lossless cut** at the bottom of the window. For Compress
-   and Upscale, pick a profile in the Export Inspector. Then start the export.
-
-Press `?` to see every keyboard shortcut. You can change them in **Settings > Keyboard**.
-
-## Lossless cut
-
-Lossless cut keeps the parts you choose and joins them without re-encoding, so the video keeps its
-full quality. It works with MP4, MOV, MKV, WebM, MPEG-TS and AVI, and keeps audio tracks, subtitles
-and chapters.
-
-- **On keyframes** copies the video as it is. Each part has to start on a keyframe, so it can start
-  a little later than you set. The Inspector tells you when that happens.
-- **Exact (Beta)** keeps the exact frames you chose by re-encoding a few frames at each cut.
-- Press `[` and `]` to jump between keyframes.
-- To cut every video in the Library at once, use **Export all cuts**.
-
-Every cut is checked before it's saved. If Tuck can't check something, the cut is still saved and
-marked **Not checked**.
-
-## Command line (Windows)
-
-The installer adds `tuck` to `PATH`. Open a new terminal after installing Tuck.
-
-```powershell
-tuck profiles list
-tuck probe clip.mp4
-tuck compress clip.mp4 --profile discord-50mb
-tuck compress clip.mp4 --profile discord-free
-tuck compress clip.mp4 --size 25
-tuck upscale clip.mp4 --to 1440p
-tuck upscale clip.mp4 --resolution 2560x1440
-```
-
-Run `tuck --help` for the complete command list.
-
-The `discord-free` profile targets 20 MB. The old `discord-10mb` ID is still accepted.
-An existing custom `discord-free` profile keeps its settings and receives an unused ID.
-
-## Support
-
-If an export fails, open **Settings > About**, choose **Copy** next to **Diagnostic report**, and
-include the report in a [GitHub issue](https://github.com/aechXIII/Tuck/issues). Tuck removes local file paths from the report.
+If an export fails, open **Settings > About**, click **Copy** next to **Diagnostic report**, and paste it into a [GitHub issue](https://github.com/aechXIII/Tuck/issues). The report leaves out your file paths.
 
 ## Build from source
 
-Development needs Python 3.10 or newer, Node.js 20.19+ on the 20.x line or 22.12
-and newer, Rust, and FFmpeg/ffprobe. Windows also needs the MSVC build tools and
-WebView2; Linux needs the Tauri/WebKitGTK 4.1 development dependencies.
+You'll need Python 3.10 or newer, Node.js 20.19+ or 22.12+, Rust, and FFmpeg. On Windows you also need the MSVC build tools and WebView2. On Linux you need the development packages for Tauri and WebKitGTK 4.1.
 
-### Windows
-
-Set up Python, install frontend dependencies, and start the editor:
+To run Tuck from source on Windows:
 
 ```powershell
 .\scripts\setup.ps1
@@ -154,16 +84,7 @@ npm ci
 .\scripts\run.ps1
 ```
 
-First [build the Windows media tools](packaging/windows-ffmpeg.md) from pinned
-sources using Ubuntu 22.04 or WSL. Then build the Windows installer:
-
-```powershell
-.\scripts\build.ps1
-```
-
-### Linux
-
-Set up Python and frontend dependencies, then start the editor:
+On Linux:
 
 ```bash
 python3 -m venv .venv
@@ -172,27 +93,11 @@ npm ci
 npm run tauri dev
 ```
 
-Build the x86-64 AppImage on Ubuntu 22.04. In addition to the development
-dependencies, install CMake, NASM, pkg-config, a C/C++ compiler, Xvfb, squashfs-tools,
-the GStreamer tools and base/good/bad/libav plugins, and the GStreamer development
-files (`libgstreamer1.0-dev`, `libgstreamer-plugins-base1.0-dev`). The build script checks
-for required tools and runs the packaged smoke test.
-
-```bash
-./scripts/build-linux.sh
-```
-
-The Linux build compiles FFmpeg, x264, and x265 from pinned sources and includes
-the source archives and build recipe in the AppImage under `ffmpeg/source`.
-Windows releases provide a separate FFmpeg source archive alongside the installer.
+If you skip the [native player library](docs/building.md#native-player-library), previews use the built-in player. [docs/building.md](docs/building.md) explains how to build the library, the Windows installer, and the Linux AppImage.
 
 ## License
 
-Tuck is available under the [GNU General Public License v3.0 only](LICENSE).
-
-Third-party notices are available for [Windows](packaging/THIRD_PARTY_NOTICES.md) and [Linux](packaging/THIRD_PARTY_NOTICES_LINUX.md).
-
-The license and third-party notices are also available offline in **Settings > About**.
+Tuck is licensed under the [GNU General Public License v3.0 only](LICENSE). You can read the third-party notices for [Windows](packaging/THIRD_PARTY_NOTICES.md) and [Linux](packaging/THIRD_PARTY_NOTICES_LINUX.md) here, or in **Settings > About** inside Tuck.
 
 ## Acknowledgments
 

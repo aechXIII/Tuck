@@ -10,13 +10,13 @@ below.
 FFmpeg 7.1.1, x264 (snapshot 20191217-2245-stable) and x265 3.6, all
 GPL-2.0-or-later, zimg 3.0.6 (WTFPL) and dav1d 1.5.1 (BSD-2-Clause). x264,
 x265, zimg and dav1d are linked statically. libva 2.24.1 and libdrm 2.4.124
-(both MIT) are also linked statically for optional VAAPI hardware decoding
-on AMD and Intel GPUs. GPU drivers are provided by the host and are not bundled.
+(both MIT) are also linked statically for optional VAAPI hardware decoding and
+encoding on AMD and Intel GPUs. GPU drivers are provided by the host and are not bundled.
 The lock file is
 `packaging/ffmpeg-linux-sources.lock.json`.
 
-NVIDIA codec headers 12.2.72.0 (MIT) enable optional hardware decoding.
-The NVIDIA driver is loaded when that decoder is used; it is not bundled.
+NVIDIA codec headers 12.2.72.0 (MIT) enable optional hardware decoding and
+encoding. The NVIDIA driver is loaded when they are used; it is not bundled.
 
 The AppImage includes `ffmpeg/source/ffmpeg-source.tar.xz` with the eight
 source archives, the mixing patch, the build recipe and the license files. If it is missing,
