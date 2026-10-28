@@ -1,8 +1,14 @@
-//! The preview surface on Linux. The runtime builds the webview into the window's default box and
-//! expects that box to stay the window's child, so the box stays where it is: an overlay takes the
-//! webview's place inside it, the native picture is the overlay's base layer and the webview is
-//! the layer above, with a transparent background. Wry accepts any container as the webview's
-//! parent; only a fixed-position parent changes its behavior, and an overlay is not one.
+//! The preview surface on Linux. The runtime builds the webview into the window's default box. An
+//! overlay takes that box's place as the window's child: the native picture is the overlay's base
+//! layer and the webview is the layer above, with a transparent background. Wry accepts any
+//! container as the webview's parent; only a fixed-position parent changes its behavior, and an
+//! overlay is not one.
+//!
+//! The webview must stay exactly two levels under the window. On every left press the runtime's
+//! resize handler takes the webview's parent's parent and unwraps it as the window, so an overlay
+//! nested inside the box aborts Tuck on the first click. The runtime only uses the box again to add
+//! menus, more webviews or a moved webview, and Tuck does none of those; tao keeps its own
+//! reference to the box, so the detached box stays alive.
 //!
 //! The base layer is a test picture, or a GL area the native player library draws into. GTK draws
 //! on its main thread only, so the area's frame clock asks the player whether a new frame is due
@@ -68,11 +74,14 @@ pub fn open(
     let container = parent
         .downcast::<gtk::Box>()
         .map_err(|_| "The webview is not in the window's default box.")?;
-    let slot = container
-        .children()
-        .iter()
-        .position(|child| child == webview.upcast_ref::<gtk::Widget>())
-        .ok_or("The webview is not in the window's default box.")?;
+    let window = container
+        .parent()
+        .and_then(|parent| parent.downcast::<gtk::Window>().ok())
+        .ok_or("The window's default box is not in a window.")?;
+    // anything else in the box, such as a menu bar, would be lost with it
+    if container.children().len() != 1 {
+        return Err("The window's default box holds more than the webview.");
+    }
 
     let picture = Rc::new(RefCell::new(None));
     let area: gtk::Widget = match player {
@@ -85,10 +94,14 @@ pub fn open(
     // the local reference keeps the webview alive while it has no parent
     let webview = webview.clone();
     container.remove(&webview);
+    window.remove(&container);
     overlay.add_overlay(&webview);
     overlay.set_overlay_pass_through(&webview, false);
-    container.pack_start(&overlay, true, true, 0);
-    container.reorder_child(&overlay, slot as i32);
+    window.add(&overlay);
+    debug_assert!(webview
+        .parent()
+        .and_then(|parent| parent.parent())
+        .is_some_and(|ancestor| ancestor.is::<gtk::Window>()));
     webview.set_background_color(&gtk::gdk::RGBA::new(0.0, 0.0, 0.0, 0.0));
     overlay.show_all();
     webview.grab_focus();
@@ -270,4 +283,37 @@ fn paint_test_picture(context: &cairo::Context, (x, y, width, height): Picture) 
         let _ = context.show_text(&label);
     }
     context.restore().ok();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[ignore = "requires an isolated graphical display, such as xvfb-run"]
+    fn surface_linux_open_keeps_the_webview_two_levels_under_the_window() {
+        gtk::init().unwrap();
+        // the window, its default box and the webview as the runtime builds them
+        let window = gtk::Window::new(gtk::WindowType::Toplevel);
+        let container = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        window.add(&container);
+        let webview = webkit2gtk::WebView::new();
+        container.pack_start(&webview, true, true, 0);
+
+        // a box that holds more than the webview is left as it is
+        let menu = gtk::MenuBar::new();
+        container.pack_start(&menu, false, false, 0);
+        assert!(open(&webview, None).is_err());
+        assert_eq!(
+            webview.parent(),
+            Some(container.clone().upcast::<gtk::Widget>())
+        );
+        container.remove(&menu);
+
+        open(&webview, None).unwrap();
+        let overlay = webview.parent().unwrap();
+        assert!(overlay.is::<gtk::Overlay>());
+        // the runtime's resize handler unwraps this as the window on every left press
+        assert_eq!(overlay.parent(), Some(window.upcast::<gtk::Widget>()));
+    }
 }
