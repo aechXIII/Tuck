@@ -249,6 +249,31 @@ test("a video without a preview link still plays in the native player, placed by
   await expect.poll(async () => (await engineCalls(page)).some((call) => call.kind === "play")).toBe(true);
 });
 
+test("a video being opened shows its picture until the engine's first frame takes over", async ({ page }) => {
+  await serveMedia(page);
+  const fixture = healthyBackendFixture();
+  fixture.startup.files = ["C:\\videos\\Video.mp4", "C:\\videos\\Second.mp4"];
+  fixture.responses.probeFile = { ok: true, data: { duration: DURATION, width: 64, height: 64, fps: 10, has_audio: true } };
+  fixture.responses.getMediaUrl = { ok: true, url: "https://engine.test/media", token: "" };
+  fixture.responses.getThumbnail = { ok: true, thumbnail: "data:image/gif;base64,R0lGODlhAQABAAAAACw=" };
+  await page.setViewportSize({ width: 1240, height: 800 });
+  await installFakeBackend(page, fixture);
+  // the engine takes a while to show a newly opened video, as a large file does
+  await page.addInitScript({ content: fixtureEngineScript({ nativePreview: "engine", frameDelayMs: 1500 }) });
+  await page.goto("/");
+  await expect(page.locator(".clip")).toHaveCount(2);
+  await expect.poll(() => page.evaluate(() =>
+    (window.__tuckFakeBackendCalls ?? []).filter((call) => call.method === "getThumbnail").length)).toBeGreaterThanOrEqual(2);
+  await expect(page.locator("#thumb")).toHaveCount(0, { timeout: 10_000 });
+
+  // the old picture leaves at once; without its own picture the new video would show black
+  await page.locator(".clip", { hasText: "Second.mp4" }).click();
+  await expect(page.locator("#thumb")).toBeVisible();
+  await expect.poll(async () => (await engineCalls(page)).filter((call) => call.command === "player_open").at(-1)?.path)
+    .toBe("C:\\videos\\Second.mp4");
+  await expect(page.locator("#thumb")).toHaveCount(0, { timeout: 5_000 });
+});
+
 interface Placement {
   viewport: { x: number; y: number; width: number; height: number };
   view: { x: number; y: number; width: number; height: number; quarterTurns: number; flipHorizontal: boolean; flipVertical: boolean; stretch: boolean };

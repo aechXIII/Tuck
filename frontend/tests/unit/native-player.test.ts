@@ -525,6 +525,47 @@ test("an edit to a moved clip goes to the engine as a new timeline", async () =>
   }
 });
 
+// replays the calls the engine got, keeping its timeline and clock, and says after which calls
+// from `from` on its clock was where the timeline has no footage, which the engine draws black
+function gapsShown(calls: ReadonlyArray<{ command: string; args: Record<string, unknown> }>, from: number): number[] {
+  let segments: Array<{ start: number; end: number }> = [];
+  let position = 0;
+  const shown: number[] = [];
+  calls.forEach((call, index) => {
+    if (call.command === "player_edits") segments = (call.args.edits as { segments: typeof segments }).segments;
+    const command = call.args.command as SentCommand | undefined;
+    if (call.command === "player_command" && command?.kind === "seek") position = command.seconds ?? position;
+    if (call.command === "player_open") position = 0;
+    const gap = segments.length > 0 && !segments.some((segment) => position >= segment.start && position < segment.end);
+    if (index >= from && gap) shown.push(index);
+  });
+  return shown;
+}
+
+test("dragging a moved clip never leaves the engine's clock in a gap, where it would draw black", async () => {
+  const ranges: SegmentRange[] = [{ start: 1, end: 4, sourceStart: 0 }];
+  const run = setup({ duration: 6, segments: ranges });
+  try {
+    await run.load();
+    run.player.seekPreview(1);
+    run.frame();
+    await settle();
+    const from = run.fixture.calls.length;
+    // a drag shows the clip's first frame at each step: right, then back left
+    for (const start of [1.05, 1.1, 1.15, 1.2, 1.15, 1.1, 1.05, 1]) {
+      ranges[0] = { start, end: start + 3, sourceStart: 0 };
+      run.player.seekPreview(start);
+      run.frame();
+      await settle();
+    }
+    assert.deepEqual(gapsShown(run.fixture.calls, from), []);
+    assert.deepEqual(run.fixture.edits.at(-1)?.segments, [{ start: 1, end: 4, sourceStart: 0 }]);
+    assert.equal(run.player.timelineTime(), 1, "the playhead ends on the clip's start");
+  } finally {
+    run.player.dispose();
+  }
+});
+
 test("clips moved flush against each other reach the engine in order", async () => {
   // a move lands one rounding error past the next clip's start, as `(start - length) + length` can
   const end = 0.1 + 0.2;

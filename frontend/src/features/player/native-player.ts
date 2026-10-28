@@ -54,6 +54,11 @@ const LINK_FAILURES = new Set([
   "MALFORMED_BRIDGE_RESULT",
 ]);
 
+// whether the engine's timeline has no footage at `time`; without moved clips it is the file itself
+function inGap(edits: NativeEdits, time: number): boolean {
+  return edits.segments.length > 0 && !edits.segments.some((segment) => time >= segment.start && time < segment.end);
+}
+
 // the engine's reason, such as "No speaker is playing the sound.", in a calm sentence
 function soundProblemText(reason: string): string {
   const why = reason.trim();
@@ -184,18 +189,26 @@ export function installNativePlayer(
     return { duration: Math.max(host.videoDuration(), ranges.at(-1)?.end ?? 0), segments };
   }
 
-  // an edit, a slip or an undo changes the timeline; the engine shows the new footage at once
-  function syncEdits(): void {
-    if (disposed || !opened) return;
+  // an edit, a slip or an undo changes the timeline; the engine shows the new footage at once.
+  // `next` is where a seek right after the edit goes; true when that seek was sent here instead
+  function syncEdits(next?: number): boolean {
+    if (disposed || !opened) return false;
     const ranges = segments();
-    if (lastRanges && sameRanges(ranges, lastRanges)) return;
+    if (lastRanges && sameRanges(ranges, lastRanges)) return false;
     // a new timeline gets its own retry
     if (lastRanges) editsRetried = false;
+    const previous = lastRanges ? editsFor(lastRanges) : null;
     lastRanges = copyRanges(ranges);
     const edits = editsFor(ranges);
-    if (!(edits.duration > 0)) return;
+    if (!(edits.duration > 0)) return false;
+    // the engine draws black the moment its clock is in a gap. A clip dragged right leaves the
+    // spot the last seek put the clock on, so while the old timeline still has footage at the new
+    // spot the seek goes first
+    const seekFirst = next != null && previous != null && inGap(edits, position()) && !inGap(previous, next);
+    if (seekFirst) seekTo(next);
     enqueue({ kind: "edits", edits });
     requestMix();
+    return seekFirst;
   }
 
   // the sound the engine plays is compiled by Python from the same request an export sends
@@ -679,13 +692,15 @@ export function installNativePlayer(
   function seekPreview(sec: number): void {
     const full = host.videoDuration();
     if (disposed || !full || !Number.isFinite(full) || !Number.isFinite(sec)) return;
-    syncEdits();
     const clamped = Math.max(0, Math.min(full, sec));
+    const seeked = syncEdits(wantPlaying ? undefined : clamped);
     host.setPlayheadUI(clamped, full);
     if (placed()) setGap(sourceTimeAt(segments(), clamped) == null);
     if (wantPlaying) pause();
     target = clamped;
-    seekWanted = clamped;
+    // a seek sent with the edit needs no second one
+    seekWanted = seeked ? null : clamped;
+    if (seeked) return;
     if (!seekFrame) {
       seekFrame = clock.requestAnimationFrame(() => {
         seekFrame = 0;
