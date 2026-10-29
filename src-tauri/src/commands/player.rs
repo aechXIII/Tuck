@@ -260,6 +260,7 @@ pub struct LibraryReport {
     loaded: bool,
     /// the interface version this Tuck expects
     interface: i32,
+    /// why the native player isn't used: its library, or a page it can't be drawn under
     error: String,
 }
 
@@ -283,9 +284,12 @@ pub struct PlayerReport {
 /// made, and it works with the native preview off.
 #[tauri::command]
 pub fn player_report(state: tauri::State<'_, PlayerState>) -> PlayerReport {
+    let requested = requested_mode();
     build_report(
         preview_choice(),
-        requested_mode(),
+        requested,
+        // only a run that asked for the native player loads its library
+        requested == PreviewMode::Player && library::check().is_ok(),
         preference::hardware_playback_at_start(),
         state.inner(),
     )
@@ -294,11 +298,12 @@ pub fn player_report(state: tauri::State<'_, PlayerState>) -> PlayerReport {
 fn build_report(
     choice: &PreviewChoice,
     requested: PreviewMode,
+    library_loaded: bool,
     hardware_playback: bool,
     state: &PlayerState,
 ) -> PlayerReport {
     let library = (requested == PreviewMode::Player).then(|| LibraryReport {
-        loaded: choice.fallback.is_empty(),
+        loaded: library_loaded,
         interface: library::ABI,
         error: choice.fallback.clone(),
     });
@@ -468,6 +473,7 @@ mod tests {
             &choice(PreviewMode::Off, ""),
             PreviewMode::Off,
             false,
+            false,
             &state,
         );
         assert_eq!(
@@ -480,6 +486,7 @@ mod tests {
         let missing = build_report(
             &choice(PreviewMode::Off, "The native player library is missing."),
             PreviewMode::Player,
+            false,
             true,
             &state,
         );
@@ -494,9 +501,29 @@ mod tests {
         assert_eq!(library.error, "The native player library is missing.");
         assert!(missing.status.is_none(), "no video is open yet");
 
+        // the library loads, but the page can't be drawn over the player
+        let renderer = build_report(
+            &choice(
+                PreviewMode::Off,
+                "WebKit draws the page without its DMA-BUF renderer.",
+            ),
+            PreviewMode::Player,
+            true,
+            true,
+            &state,
+        );
+        assert_eq!(renderer.mode, "off");
+        let library = renderer.library.expect("the player reports its library");
+        assert!(library.loaded);
+        assert_eq!(
+            library.error,
+            "WebKit draws the page without its DMA-BUF renderer."
+        );
+
         let loaded = build_report(
             &choice(PreviewMode::Player, ""),
             PreviewMode::Player,
+            true,
             true,
             &state,
         );
@@ -506,6 +533,7 @@ mod tests {
         let open = build_report(
             &choice(PreviewMode::Engine, ""),
             PreviewMode::Engine,
+            false,
             true,
             &state,
         );
@@ -519,6 +547,7 @@ mod tests {
         let report = build_report(
             &choice(PreviewMode::Player, ""),
             PreviewMode::Player,
+            true,
             true,
             &state,
         );

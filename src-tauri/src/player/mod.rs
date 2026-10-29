@@ -72,16 +72,43 @@ fn requested(switch: Option<&str>, hardware_playback: impl FnOnce() -> bool) -> 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PreviewChoice {
     pub mode: PreviewMode,
-    /// why the native player library could not be used; empty when it was not asked for or loaded
+    /// why the native player could not be used; empty when it was not asked for or can be used
     pub fallback: String,
 }
 
-/// Decided once, after the packaged resource folder is known: the native player only when its
-/// library loads, so a missing or mismatched library leaves the built-in player instead of a
-/// preview that can't open anything.
+/// Decided once, after the packaged resource folder is known and WebKit's renderer is picked: the
+/// native player only when its library loads and the page can be drawn over it, so a missing or
+/// mismatched library, or a renderer that can't draw the page over it, leaves the built-in player
+/// instead of a preview that shows nothing.
 pub fn preview_choice() -> &'static PreviewChoice {
     static CHOICE: OnceLock<PreviewChoice> = OnceLock::new();
-    CHOICE.get_or_init(|| choose(requested_mode(), library::check))
+    CHOICE.get_or_init(|| {
+        choose(requested_mode(), || {
+            library::check().and_then(|()| page_check())
+        })
+    })
+}
+
+/// Whether this run asks for the native player and its library loads, before WebKit's renderer is
+/// picked: the renderer depends on it, and the full choice on the renderer.
+pub fn player_library_loads() -> bool {
+    requested_mode() == PreviewMode::Player && library::check().is_ok()
+}
+
+/// Whether the page can be drawn over the player's picture. On Linux only WebKit's DMA-BUF
+/// renderer does it; the others leave the page's old pixels wherever it turns transparent.
+#[cfg(target_os = "linux")]
+fn page_check() -> Result<(), String> {
+    if crate::platform::page_draws_over_gl_area() {
+        Ok(())
+    } else {
+        Err("WebKit draws the page without its DMA-BUF renderer here, which the native preview needs.".to_string())
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn page_check() -> Result<(), String> {
+    Ok(())
 }
 
 fn choose(

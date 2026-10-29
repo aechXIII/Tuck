@@ -14,6 +14,10 @@ use super::APP_IDENTIFIER;
 enum Renderer {
     /// GPU compositing and the DMABUF renderer
     Full,
+    /// the DMABUF renderer handing its frames to the window in shared memory instead of DMA-BUF
+    /// buffers, for NVIDIA's own driver while the native player is on: the page can only be drawn
+    /// over the player by the DMABUF renderer, and DMA-BUF buffers leave that driver blank
+    Shared,
     /// GPU compositing without the DMABUF renderer, which leaves NVIDIA's own driver
     /// with a blank window
     Compositing,
@@ -73,6 +77,10 @@ const RENDERER_FAILURE_FILE: &str = "gpu-renderer-failed";
 ///   editor that never reacts to imports. The renderer is picked from the
 ///   machine's display drivers, and a GPU crash is remembered for this version
 ///   so later launches draw in software (see [`watch_gpu_renderer`]).
+/// - `WEBKIT_DMABUF_RENDERER_FORCE_SHM`: with the native player on, NVIDIA's driver
+///   keeps the DMABUF renderer and gets its frames in shared memory instead (see
+///   [`Renderer::Shared`]). Without that renderer WebKit doesn't clear the parts of
+///   the page that turn transparent, so the player under them never shows.
 /// - `GIO_MODULE_DIR`: an AppImage built on the oldest supported distribution
 ///   ships an older GLib than newer hosts. The host's GIO modules under
 ///   `/usr/lib` then fail to load with `undefined symbol` errors and can take
@@ -102,17 +110,17 @@ const RENDERER_FAILURE_FILE: &str = "gpu-renderer-failed";
 ///   renderer.
 pub fn prepare_runtime_environment() {
     let _ = LAUNCH_ENVIRONMENT.set(std::env::vars_os().collect());
-    let choice = renderer_choice();
-    let _ = RENDERER.set(choice);
-    eprintln!("WebKit renderer: {:?}", choice.renderer);
-    for (key, value) in webkit_env_defaults(choice.renderer) {
-        set_default_env(key, value);
-    }
     let appdir = std::env::var_os("APPDIR").map(PathBuf::from);
     match &appdir {
         // the same folder Tauri gives later, known now so the library is checked before GTK starts
         Some(appdir) => crate::player::library::use_resource_dir(appdir.join(TUCK_RESOURCE_DIR)),
         None => warn_about_missing_gstreamer_plugins(),
+    }
+    let choice = renderer_choice(crate::player::player_library_loads());
+    let _ = RENDERER.set(choice);
+    eprintln!("WebKit renderer: {:?}", choice.renderer);
+    for (key, value) in webkit_env_defaults(choice.renderer) {
+        set_default_env(key, value);
     }
     if let Some(modules) = bundled_gio_module_dir(appdir.clone()) {
         set_default_env("GIO_MODULE_DIR", modules);
@@ -135,12 +143,25 @@ pub fn prepare_runtime_environment() {
         }
     }
     set_default_env("GTK_THEME", "Adwaita:dark");
-    // a library that can't be used leaves the built-in player on the launcher's backend
+    // a library or renderer that can't be used leaves the built-in player on the launcher's backend
     let player = crate::player::preview_mode() == crate::player::PreviewMode::Player;
     if let Some(backend) = gdk_backend(player, std::env::var_os("WAYLAND_DISPLAY").as_deref()) {
         // replaced, not defaulted: the AppImage's launcher has already set it to x11
         std::env::set_var("GDK_BACKEND", backend);
     }
+}
+
+/// Whether WebKit draws the page over the native player's GL area in this run. Only its DMA-BUF
+/// renderer does, also with its frames in shared memory. Without it the page's picture stops
+/// updating once a GL area is in the window, and over any other layer WebKit leaves the page's old
+/// pixels wherever it turns transparent, so the player under them never shows.
+pub fn page_draws_over_gl_area() -> bool {
+    dmabuf_renderer(|name| std::env::var_os(name).is_some())
+}
+
+// WebKit takes any value of these as "disable", whether Tuck or the user set it
+fn dmabuf_renderer(is_set: impl Fn(&str) -> bool) -> bool {
+    !is_set("WEBKIT_DISABLE_DMABUF_RENDERER") && !is_set("WEBKIT_DISABLE_COMPOSITING_MODE")
 }
 
 /// The GTK backend Tuck asks for, or `None` to keep what the launcher chose.
@@ -288,7 +309,8 @@ fn point_link(folder: &Path, name: &str, target: &Path) -> io::Result<PathBuf> {
     Ok(link)
 }
 
-fn renderer_choice() -> RendererChoice {
+/// `native_player` is whether the native player will draw under the page in this run.
+fn renderer_choice(native_player: bool) -> RendererChoice {
     let forced = if env_flag_is_set("TUCK_WEBKIT_ACCELERATED") {
         Some(Renderer::Full)
     } else if env_flag_is_set("TUCK_WEBKIT_COMPOSITING") {
@@ -304,9 +326,104 @@ fn renderer_choice() -> RendererChoice {
     }
     let failed_before = renderer_failure_path().is_some_and(|path| gpu_renderer_failed(&path));
     let gpus = probe_gpus(Path::new("/sys/class/drm"), Path::new("/dev/dri"));
+    // only an X server can say which GPU runs the screen without starting the display first
+    let screen_on_nvidia = (gpus.drivers.iter().any(|driver| driver == "nvidia")
+        && x11_session(|name| std::env::var_os(name)))
+    .then(x11_screen_vendor)
+    .flatten()
+    .map(|vendor| vendor.contains("NVIDIA"));
     RendererChoice {
-        renderer: choose_renderer(failed_before, &gpus),
+        renderer: choose_renderer(failed_before, &gpus, screen_on_nvidia, native_player),
         automatic: true,
+    }
+}
+
+/// An X11 session, not X11 apps on a Wayland desktop, whose X server may run on another GPU.
+fn x11_session(var: impl Fn(&str) -> Option<OsString>) -> bool {
+    let set = |name: &str| var(name).is_some_and(|value| !value.is_empty());
+    set("DISPLAY") && !set("WAYLAND_DISPLAY")
+}
+
+/// The X server's GLX vendor: "NVIDIA Corporation" when NVIDIA's driver runs the screen, and
+/// Mesa's "SGI" when Intel's or AMD's does, also on hybrid laptops that only render on NVIDIA's.
+/// Asked through XCB, which leaves Xlib untouched until GTK opens the display. `None` when there
+/// is no X server, no GLX or no XCB to ask with.
+fn x11_screen_vendor() -> Option<String> {
+    use std::ffi::{c_char, c_int, c_uint, c_void, CStr};
+
+    #[repr(C)]
+    struct Cookie {
+        sequence: c_uint,
+    }
+    // GLX_VENDOR for glXQueryServerString
+    const VENDOR: u32 = 1;
+    type Connect = unsafe extern "C" fn(*const c_char, *mut c_int) -> *mut c_void;
+    type HasError = unsafe extern "C" fn(*mut c_void) -> c_int;
+    type Disconnect = unsafe extern "C" fn(*mut c_void);
+    type Query = unsafe extern "C" fn(*mut c_void, u32, u32) -> Cookie;
+    type Reply = unsafe extern "C" fn(*mut c_void, Cookie, *mut *mut c_void) -> *mut c_void;
+    type ReplyText = unsafe extern "C" fn(*const c_void) -> *const c_char;
+    type ReplyLength = unsafe extern "C" fn(*const c_void) -> c_int;
+
+    let open = |name: &CStr| unsafe {
+        let loaded = libc::dlopen(name.as_ptr(), libc::RTLD_NOW | libc::RTLD_LOCAL);
+        (!loaded.is_null()).then_some(loaded)
+    };
+    let xcb = open(c"libxcb.so.1")?;
+    let glx = open(c"libxcb-glx.so.0")?;
+    let find = |module: *mut c_void, name: &CStr| unsafe {
+        let symbol = libc::dlsym(module, name.as_ptr());
+        (!symbol.is_null()).then_some(symbol)
+    };
+    unsafe {
+        let connect = std::mem::transmute::<*mut c_void, Connect>(find(xcb, c"xcb_connect")?);
+        let has_error =
+            std::mem::transmute::<*mut c_void, HasError>(find(xcb, c"xcb_connection_has_error")?);
+        let disconnect =
+            std::mem::transmute::<*mut c_void, Disconnect>(find(xcb, c"xcb_disconnect")?);
+        let query =
+            std::mem::transmute::<*mut c_void, Query>(find(glx, c"xcb_glx_query_server_string")?);
+        let reply = std::mem::transmute::<*mut c_void, Reply>(find(
+            glx,
+            c"xcb_glx_query_server_string_reply",
+        )?);
+        let string = std::mem::transmute::<*mut c_void, ReplyText>(find(
+            glx,
+            c"xcb_glx_query_server_string_string",
+        )?);
+        let length = std::mem::transmute::<*mut c_void, ReplyLength>(find(
+            glx,
+            c"xcb_glx_query_server_string_string_length",
+        )?);
+
+        let mut screen = 0;
+        let connection = connect(std::ptr::null(), &mut screen);
+        if connection.is_null() {
+            return None;
+        }
+        let vendor = (has_error(connection) == 0)
+            .then(|| {
+                let mut error = std::ptr::null_mut();
+                let answer = reply(
+                    connection,
+                    query(connection, screen as u32, VENDOR),
+                    &mut error,
+                );
+                libc::free(error);
+                if answer.is_null() {
+                    return None;
+                }
+                let size = usize::try_from(length(answer)).unwrap_or(0);
+                let text = std::slice::from_raw_parts(string(answer).cast::<u8>(), size);
+                let vendor = String::from_utf8_lossy(text)
+                    .trim_end_matches('\0')
+                    .to_string();
+                libc::free(answer);
+                Some(vendor)
+            })
+            .flatten();
+        disconnect(connection);
+        vendor
     }
 }
 
@@ -348,7 +465,14 @@ fn probe_gpus(drm_class: &Path, dri_dev: &Path) -> GpuInfo {
     }
 }
 
-fn choose_renderer(failed_before: bool, gpus: &GpuInfo) -> Renderer {
+/// `screen_on_nvidia` is whether NVIDIA's driver runs the screen, when the X server could say, and
+/// `native_player` whether the native player draws under the page.
+fn choose_renderer(
+    failed_before: bool,
+    gpus: &GpuInfo,
+    screen_on_nvidia: Option<bool>,
+    native_player: bool,
+) -> Renderer {
     let mut real_gpus = gpus
         .drivers
         .iter()
@@ -357,17 +481,21 @@ fn choose_renderer(failed_before: bool, gpus: &GpuInfo) -> Renderer {
     if failed_before || !gpus.render_node || real_gpus.peek().is_none() {
         return Renderer::Portable;
     }
-    // hybrid laptops can render on either GPU, so any NVIDIA driver decides
-    if real_gpus.any(|driver| driver == "nvidia") {
-        Renderer::Compositing
-    } else {
-        Renderer::Full
+    // WebKit renders on the GPU that runs the screen. A hybrid laptop's X server on Intel or AMD
+    // keeps NVIDIA's driver out of it; anywhere else any NVIDIA driver may be the one
+    let nvidia = real_gpus.any(|driver| driver == "nvidia") && screen_on_nvidia != Some(false);
+    match (nvidia, native_player) {
+        (false, _) => Renderer::Full,
+        (true, true) => Renderer::Shared,
+        // what the built-in player has always had there
+        (true, false) => Renderer::Compositing,
     }
 }
 
 fn webkit_env_defaults(renderer: Renderer) -> Vec<(&'static str, &'static str)> {
     match renderer {
         Renderer::Full => Vec::new(),
+        Renderer::Shared => vec![("WEBKIT_DMABUF_RENDERER_FORCE_SHM", "1")],
         Renderer::Compositing => vec![("WEBKIT_DISABLE_DMABUF_RENDERER", "1")],
         Renderer::Portable => vec![
             ("WEBKIT_DISABLE_DMABUF_RENDERER", "1"),
@@ -719,60 +847,149 @@ mod tests {
 
     #[test]
     fn real_gpus_get_the_gpu_renderer() {
+        for native_player in [false, true] {
+            for drivers in [&["amdgpu"][..], &["i915"], &["simple-framebuffer", "xe"]] {
+                assert_eq!(
+                    choose_renderer(false, &gpus(drivers, true), None, native_player),
+                    Renderer::Full
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn nvidia_driver_keeps_compositing_without_dmabuf_for_the_built_in_player() {
         assert_eq!(
-            choose_renderer(false, &gpus(&["amdgpu"], true)),
-            Renderer::Full
+            choose_renderer(false, &gpus(&["nvidia"], true), None, false),
+            Renderer::Compositing
         );
         assert_eq!(
-            choose_renderer(false, &gpus(&["i915"], true)),
-            Renderer::Full
+            choose_renderer(false, &gpus(&["i915", "nvidia"], true), None, false),
+            Renderer::Compositing
         );
         assert_eq!(
-            choose_renderer(false, &gpus(&["simple-framebuffer", "xe"], true)),
+            choose_renderer(false, &gpus(&["nouveau"], true), None, false),
             Renderer::Full
         );
     }
 
     #[test]
-    fn nvidia_driver_keeps_compositing_without_dmabuf() {
+    fn nvidia_driver_keeps_dmabuf_in_shared_memory_under_the_native_player() {
         assert_eq!(
-            choose_renderer(false, &gpus(&["nvidia"], true)),
+            choose_renderer(false, &gpus(&["nvidia"], true), None, true),
+            Renderer::Shared
+        );
+        assert_eq!(
+            choose_renderer(false, &gpus(&["amdgpu", "nvidia"], true), Some(true), true),
+            Renderer::Shared
+        );
+        // a past crash still draws in software, which the native player then leaves to the built-in one
+        assert_eq!(
+            choose_renderer(true, &gpus(&["nvidia"], true), None, true),
+            Renderer::Portable
+        );
+    }
+
+    #[test]
+    fn a_hybrid_laptop_whose_screen_runs_on_amd_or_intel_gets_the_gpu_renderer() {
+        let hybrid = gpus(&["amdgpu", "nvidia"], true);
+        for native_player in [false, true] {
+            assert_eq!(
+                choose_renderer(false, &hybrid, Some(false), native_player),
+                Renderer::Full
+            );
+        }
+        // the X server on NVIDIA, as with optimus-manager's NVIDIA mode
+        assert_eq!(
+            choose_renderer(false, &hybrid, Some(true), false),
             Renderer::Compositing
         );
         assert_eq!(
-            choose_renderer(false, &gpus(&["i915", "nvidia"], true)),
+            choose_renderer(false, &gpus(&["nvidia"], true), Some(true), false),
             Renderer::Compositing
         );
         assert_eq!(
-            choose_renderer(false, &gpus(&["nouveau"], true)),
-            Renderer::Full
+            choose_renderer(true, &hybrid, Some(false), false),
+            Renderer::Portable
         );
+    }
+
+    #[test]
+    fn only_an_x11_session_asks_its_x_server() {
+        let session = |display: Option<&str>, wayland: Option<&str>| {
+            x11_session(|name| match name {
+                "DISPLAY" => display.map(OsString::from),
+                "WAYLAND_DISPLAY" => wayland.map(OsString::from),
+                _ => None,
+            })
+        };
+        assert!(session(Some(":0"), None));
+        assert!(session(Some(":0"), Some("")));
+        assert!(
+            !session(Some(":0"), Some("wayland-0")),
+            "X11 apps on Wayland"
+        );
+        assert!(!session(None, None));
+        assert!(!session(Some(""), None));
+    }
+
+    #[test]
+    fn only_the_dmabuf_renderer_draws_the_page_over_the_native_player() {
+        let with = |set: &'static [&'static str]| dmabuf_renderer(|name| set.contains(&name));
+        assert!(with(&[]));
+        assert!(with(&["WEBKIT_DMABUF_RENDERER_FORCE_SHM"]));
+        assert!(!with(&["WEBKIT_DISABLE_DMABUF_RENDERER"]));
+        assert!(!with(&["WEBKIT_DISABLE_COMPOSITING_MODE"]));
+        assert!(!with(&[
+            "WEBKIT_DISABLE_DMABUF_RENDERER",
+            "WEBKIT_DISABLE_COMPOSITING_MODE"
+        ]));
+        // every renderer Tuck picks agrees with what its switches tell WebKit
+        for (renderer, over) in [
+            (Renderer::Full, true),
+            (Renderer::Shared, true),
+            (Renderer::Compositing, false),
+            (Renderer::Portable, false),
+        ] {
+            let set = webkit_env_defaults(renderer);
+            assert_eq!(
+                dmabuf_renderer(|name| set.iter().any(|(key, _)| *key == name)),
+                over,
+                "{renderer:?}"
+            );
+        }
     }
 
     #[test]
     fn virtual_or_missing_gpus_and_past_crashes_draw_in_software() {
-        assert_eq!(
-            choose_renderer(false, &gpus(&["virtio_gpu"], true)),
-            Renderer::Portable
-        );
-        assert_eq!(
-            choose_renderer(false, &gpus(&["vmwgfx", "simple-framebuffer"], true)),
-            Renderer::Portable
-        );
-        assert_eq!(choose_renderer(false, &gpus(&[], true)), Renderer::Portable);
-        assert_eq!(
-            choose_renderer(false, &gpus(&["amdgpu"], false)),
-            Renderer::Portable
-        );
-        assert_eq!(
-            choose_renderer(true, &gpus(&["amdgpu"], true)),
-            Renderer::Portable
-        );
+        for native_player in [false, true] {
+            for (failed_before, drivers, render_node) in [
+                (false, &["virtio_gpu"][..], true),
+                (false, &["vmwgfx", "simple-framebuffer"], true),
+                (false, &[], true),
+                (false, &["amdgpu"], false),
+                (true, &["amdgpu"], true),
+            ] {
+                assert_eq!(
+                    choose_renderer(
+                        failed_before,
+                        &gpus(drivers, render_node),
+                        None,
+                        native_player
+                    ),
+                    Renderer::Portable
+                );
+            }
+        }
     }
 
     #[test]
     fn each_renderer_sets_only_its_webkit_switches() {
         assert!(webkit_env_defaults(Renderer::Full).is_empty());
+        assert_eq!(
+            webkit_env_defaults(Renderer::Shared),
+            vec![("WEBKIT_DMABUF_RENDERER_FORCE_SHM", "1")]
+        );
         assert_eq!(
             webkit_env_defaults(Renderer::Compositing),
             vec![("WEBKIT_DISABLE_DMABUF_RENDERER", "1")]
