@@ -20,6 +20,7 @@
         "minHeight": 640,
         "resizable": true,
         "visible": false,
+        "backgroundColor": "#111113",
         "dragDropEnabled": true,
         "devtools": false,
         "zoomHotkeysEnabled": false
