@@ -90,7 +90,13 @@ from .models.ui_preferences import (
 from .output_paths import sweep_stale_outputs_later
 from .planner import plan
 from .planner_options import CutOutputOptions, OutputOptions, output_options
-from .probe import FFprobeMissing, describe_probe_failure, is_ffprobe_available, probe_audio
+from .probe import (
+    FFprobeMissing,
+    MissingStream,
+    describe_probe_failure,
+    is_ffprobe_available,
+    probe_audio,
+)
 from .probe import probe as probe_video
 from .probe_cache import ProbeCache
 from .profile_service import ProfileService
@@ -395,7 +401,13 @@ class BridgeAPI:
             if isinstance(track, bool) or not isinstance(track, int) or track < 0:
                 raise ValueError("track must be a whole number >= 0")
             if track == 0:
-                self._probe_audio_once(path)
+                # the video's own probe already says whether it has sound, and reading the file
+                # again would hold back its waveform; a music file has no video probe
+                video = self._probe_cache.cached(path)
+                if video is None:
+                    self._probe_audio_once(path)
+                elif not video.audio_stream_count:
+                    raise MissingStream("audio", Path(path))
             elif track >= self._probe_once(path).audio_stream_count:
                 raise ValueError(f"This video has no audio track {track + 1}")
             waveform = self._media_server.generate_waveform(path, track=track)

@@ -1,12 +1,16 @@
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
+from fractions import Fraction
+from itertools import count
 from pathlib import Path
 from types import SimpleNamespace
 
 import av
 import numpy as np
 import pytest
+from av.video.frame import VideoFrame
 
+from tuck import timeline_frames
 from tuck.media_server import MediaServer
 from tuck.media_tools import find_ffmpeg
 from tuck.request_work import RequestWork
@@ -335,3 +339,90 @@ def test_unknown_duration_clips_decoded_eof_and_preserves_vfr_holds(
     pixels = picture(sampled.path)
     assert pixels.shape == (84, 2850, 3)
     assert np.array_equal(pixels[:, :150], pixels[:, 450:600])
+
+
+@pytest.fixture
+def keyframes(tmp_path):
+    """Four seconds with a keyframe every half second, and B-frames, which hold pictures back."""
+    ffmpeg = find_ffmpeg()
+    if not ffmpeg:
+        pytest.skip("FFmpeg is required for timeline media fixtures")
+    path = tmp_path / "keyframes.mp4"
+    subprocess.run(
+        [
+            ffmpeg,
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=160x90:rate=20:duration=4",
+            "-c:v",
+            "libx264",
+            "-g",
+            "10",
+            "-keyint_min",
+            "10",
+            "-sc_threshold",
+            "0",
+            "-bf",
+            "2",
+            "-y",
+            str(path),
+        ],
+        check=True,
+    )
+    return path
+
+
+def test_threads_draw_the_same_pictures_as_one_thread(server, keyframes, tmp_path, monkeypatch):
+    requests = [
+        {"start": 0.1, "step": 0.25, "count": 16},
+        {"start": 0.0, "step": 0.6, "count": 6, "exact": True},
+        {"start": 0.3, "step": 0.1, "count": 12, "exact": True},
+    ]
+    monkeypatch.setattr(timeline_frames, "_DECODE_THREADS", 4)
+    monkeypatch.setattr(timeline_frames, "_DECODERS", 4)
+    threaded = [generate(server, keyframes, **request) for request in requests]
+    monkeypatch.setattr(timeline_frames, "_DECODE_THREADS", 1)
+    monkeypatch.setattr(timeline_frames, "_DECODERS", 1)
+    alone = MediaServer()
+    alone.set_thumbnail_cache_dir(tmp_path / "alone")
+    for request, sprite in zip(requests, threaded, strict=True):
+        single = generate(alone, keyframes, **request)
+        assert sprite and single and sprite.count == single.count == request["count"]
+        assert np.array_equal(picture(sprite.path), picture(single.path))
+
+
+def test_a_keyframe_picture_is_the_keyframe_itself(server, keyframes):
+    # B-frames make the decoder hold a keyframe back, so it is flushed out on its own; it must
+    # still be the picture an exact request shows at that keyframe
+    key = generate(server, keyframes, step=0.5, count=8)
+    exact = generate(server, keyframes, step=0.5, count=8, exact=True)
+    assert key and exact and key.count == exact.count == 8
+    assert np.array_equal(picture(key.path), picture(exact.path))
+    assert not np.array_equal(picture(key.path)[:, :150], picture(key.path)[:, 150:300])
+
+
+def test_one_failing_thread_fails_the_whole_request(server, keyframes, monkeypatch):
+    monkeypatch.setattr(timeline_frames, "_DECODERS", 4)
+    draw = timeline_frames._TileDrawer.draw
+    drawn = count()
+
+    def fail_once(drawer, frame):
+        if next(drawn) == 5:
+            raise ValueError("Could not draw timeline picture")
+        return draw(drawer, frame)
+
+    monkeypatch.setattr(timeline_frames._TileDrawer, "draw", fail_once)
+    assert generate(server, keyframes, count=16) is None
+    assert not list((keyframes.parent / "cache").glob("timeline_*.png"))
+
+
+def test_a_picture_of_another_shape_gets_its_own_drawing():
+    wide = VideoFrame.from_ndarray(np.full((90, 160, 3), (200, 30, 30), np.uint8), format="rgb24")
+    tall = VideoFrame.from_ndarray(np.full((160, 90, 3), (30, 200, 30), np.uint8), format="rgb24")
+    shared = timeline_frames._TileDrawer("whole", Fraction(1))
+    for frame in (wide, tall, wide):
+        alone = timeline_frames._TileDrawer("whole", Fraction(1))
+        assert np.array_equal(shared.draw(frame), alone.draw(frame))

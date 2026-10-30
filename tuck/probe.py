@@ -5,6 +5,7 @@ import logging
 import math
 import os
 import subprocess
+from collections.abc import Callable
 from fractions import Fraction
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -99,19 +100,34 @@ _COLOR_SPACES = {
 
 
 def first_video_frame(
-    container: InputContainer, stream: VideoStream, max_packets: int
+    container: InputContainer,
+    stream: VideoStream,
+    max_packets: int,
+    on_packet: Callable[[], None] | None = None,
 ) -> VideoFrame | None:
     """Decode the first picture from the container's current position.
 
-    `max_packets` stops a file that never yields a picture from being read to the end.
+    `max_packets` stops a file that never yields a picture from being read to the end, and
+    `on_packet` runs for each packet read, so a caller can stop the read by raising. The decoder
+    is left flushed when the picture came from the keyframe it started on.
     """
     load_media_libraries()
     from av.video.frame import VideoFrame
 
+    codec = stream.codec_context
     for count, packet in enumerate(container.demux(stream)):
         if count >= max_packets:
             return None
-        for frame in packet.decode():
+        if on_packet is not None:
+            on_packet()
+        if count == 0 and packet.is_keyframe:
+            # with B-frames the decoder holds a picture back until it has seen two more, so the
+            # keyframe is flushed out on its own instead of decoding pictures nobody sees
+            frames = [*packet.decode(), *codec.decode(None)]
+            codec.flush_buffers()
+        else:
+            frames = packet.decode()
+        for frame in frames:
             if isinstance(frame, VideoFrame):
                 return frame
     return None

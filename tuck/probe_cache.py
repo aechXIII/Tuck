@@ -14,9 +14,15 @@ class ProbeCache(Generic[T]):
         self._entries: dict[str, tuple[int, int, T]] = {}
         self._lock = Lock()
 
+    def cached(self, path: str) -> T | None:
+        """What an earlier probe found, if the file hasn't changed since; never probes."""
+        signature = _signature(path)
+        with self._lock:
+            cached = self._entries.get(path)
+        return cached[2] if cached is not None and cached[:2] == signature else None
+
     def get(self, path: str) -> T:
-        stat = Path(path).stat()
-        signature = (stat.st_size, stat.st_mtime_ns)
+        signature = _signature(path)
 
         with self._lock:
             cached = self._entries.get(path)
@@ -34,3 +40,8 @@ class ProbeCache(Generic[T]):
                 return cached[2]
             self._entries[path] = (signature[0], signature[1], info)
             return info
+
+
+def _signature(path: str) -> tuple[int, int]:
+    stat = Path(path).stat()
+    return stat.st_size, stat.st_mtime_ns

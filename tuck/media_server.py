@@ -16,7 +16,6 @@ from fractions import Fraction
 from functools import lru_cache
 from pathlib import Path
 from socketserver import ThreadingTCPServer
-from typing import NamedTuple
 
 from .media_filters import UPRIGHT_FILTERS
 from .media_libraries import load_media_libraries, media_libraries_loading
@@ -24,6 +23,7 @@ from .media_tools import find_ffmpeg, find_ffprobe, media_tool_environment
 from .probe import first_video_frame
 from .request_work import RequestWork
 from .timeline_frames import TimelineFrames, TimelineSprite
+from .waveform import WAVEFORM_HEIGHT, WaveformLevels, draw_waveform, waveform_levels
 
 logger = logging.getLogger(__name__)
 
@@ -80,24 +80,9 @@ _THUMBNAIL_SCALE = (
     "force_original_aspect_ratio=decrease"
 )
 _THUMBNAIL_MAX_PACKETS = 1000
-# long files get more columns so they don't turn into stair steps when zoomed in. The cap stays
-# within the GPU texture limit, past which browsers quietly shrink the mask image
-_WAVEFORM_MIN_WIDTH = 8192
-_WAVEFORM_MAX_WIDTH = 16384
-_WAVEFORM_COLUMNS_PER_SECOND = 96
-# tall enough to stay sharp in the tallest timeline rows
-_WAVEFORM_HEIGHT = 192
 _WAVEFORM_TIMEOUT = 60
 _WAVEFORM_CACHE_VERSION = 11
 _AUDIO_PREVIEW_CACHE_VERSION = 2
-_WAVEFORM_TARGET_PEAK_DB = -1.0
-_WAVEFORM_MAX_GAIN_DB = 60.0
-# audio this dense (peak close to its average, like mastered music) fills the whole row when its
-# peaks are drawn, so it is drawn from its average level instead, raised to a set loudness, which
-# shows the beat and leaves room above it. Sparser audio such as game sound or speech keeps the
-# square-root peak drawing, which keeps its quiet parts visible
-_WAVEFORM_DENSE_CREST_DB = 16.0
-_WAVEFORM_DENSE_TARGET_MEAN_DB = -8.0
 _TOKEN_BYTES = 32  # bytes for each token
 # serve_forever only sees a stop request between polls, and closing Tuck waits for it; the
 # default half second showed as a pause on every close
@@ -659,18 +644,10 @@ class MediaServer:
             cached = _cached_file_or_none(waveform_path)
             if cached:
                 return cached
-
-            ffmpeg = find_ffmpeg()
-            if not ffmpeg:
-                logger.warning("Cannot generate waveform: ffmpeg not found")
-                return None
-
             try:
                 return _publish_generated_media(
                     waveform_path,
-                    lambda partial: _run_waveform_ffmpeg(
-                        ffmpeg, file_path, partial, timeout, track
-                    ),
+                    lambda partial: _write_waveform(file_path, partial, timeout, track),
                 )
             except (OSError, subprocess.TimeoutExpired) as exc:
                 logger.warning("Waveform generation failed for %s: %s", file_path.name, exc)
@@ -756,11 +733,18 @@ def _run_audio_preview_ffmpeg(
     return True
 
 
-class _WaveformLevels(NamedTuple):
-    gain_db: float
-    scale: str
-    filter: str
-    width: int
+def _write_waveform(file_path: Path, output: Path, timeout: float, track: int) -> bool:
+    started = time.monotonic()
+    # PyAV draws the same picture without starting FFmpeg twice. FFmpeg still draws what PyAV
+    # turns down, and everything while PyAV is still loading after a cold start
+    if not media_libraries_loading() and draw_waveform(file_path, output, track, timeout):
+        return True
+    ffmpeg = find_ffmpeg()
+    if not ffmpeg:
+        logger.warning("Cannot generate waveform: ffmpeg not found")
+        return False
+    remaining = max(0.1, timeout - (time.monotonic() - started))
+    return _run_waveform_ffmpeg(ffmpeg, file_path, output, remaining, track)
 
 
 def _run_waveform_ffmpeg(
@@ -783,7 +767,7 @@ def _run_waveform_ffmpeg(
             f"[0:a:{track}]aformat=channel_layouts=mono,"
             f"{gain_filter}"
             # a solid white shape on transparency; the timeline uses it as a mask and colours it
-            f"showwavespic=s={levels.width}x{_WAVEFORM_HEIGHT}:"
+            f"showwavespic=s={levels.width}x{WAVEFORM_HEIGHT}:"
             f"colors=0xffffff:scale={levels.scale}:filter={levels.filter}:draw=full"
         ),
         "-frames:v",
@@ -812,11 +796,8 @@ def _run_waveform_ffmpeg(
 
 def _waveform_levels(
     ffmpeg: str, file_path: Path, timeout: float, track: int = 0
-) -> _WaveformLevels:
-    """Measures the audio once to pick how its waveform is drawn and how wide it is.
-
-    A failed measurement falls back to the square-root peak drawing at the smallest width.
-    """
+) -> WaveformLevels:
+    """Measures the audio once to pick how its waveform is drawn and how wide it is."""
     command = [
         ffmpeg,
         "-nostdin",
@@ -843,18 +824,11 @@ def _waveform_levels(
         creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
     )
     if result.returncode != 0:
-        return _WaveformLevels(0.0, "sqrt", "peak", _WAVEFORM_MIN_WIDTH)
-    width = _waveform_width(_input_duration(result.stderr))
-    peak_db = _detected_db(rb"max_volume", result.stderr)
-    mean_db = _detected_db(rb"mean_volume", result.stderr)
-    if peak_db is None:
-        return _WaveformLevels(0.0, "sqrt", "peak", width)
-    if mean_db is not None and peak_db - mean_db <= _WAVEFORM_DENSE_CREST_DB:
-        return _WaveformLevels(
-            _clamped_gain_db(_WAVEFORM_DENSE_TARGET_MEAN_DB - mean_db), "lin", "average", width
-        )
-    return _WaveformLevels(
-        _clamped_gain_db(_WAVEFORM_TARGET_PEAK_DB - peak_db), "sqrt", "peak", width
+        return waveform_levels(None, None, None)
+    return waveform_levels(
+        _detected_db(rb"max_volume", result.stderr),
+        _detected_db(rb"mean_volume", result.stderr),
+        _input_duration(result.stderr),
     )
 
 
@@ -869,17 +843,6 @@ def _input_duration(stderr: bytes) -> float | None:
         return None
     hours, minutes, seconds = match.groups()
     return int(hours) * 3600 + int(minutes) * 60 + float(seconds)
-
-
-def _clamped_gain_db(gain_db: float) -> float:
-    return max(0.0, min(_WAVEFORM_MAX_GAIN_DB, gain_db))
-
-
-def _waveform_width(duration: float | None) -> int:
-    if duration is None:
-        return _WAVEFORM_MIN_WIDTH
-    columns = round(duration * _WAVEFORM_COLUMNS_PER_SECOND)
-    return max(_WAVEFORM_MIN_WIDTH, min(_WAVEFORM_MAX_WIDTH, columns))
 
 
 @lru_cache(maxsize=1)

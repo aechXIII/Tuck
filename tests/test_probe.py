@@ -5,6 +5,8 @@ import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
+import av
+import numpy as np
 import pytest
 
 from tuck.media_tools import find_ffmpeg, find_ffprobe
@@ -22,6 +24,7 @@ from tuck.probe import (
     _run_ffprobe_json,
     _video_info,
     describe_probe_failure,
+    first_video_frame,
     parse_display_rotation,
     probe,
     probe_audio,
@@ -205,6 +208,35 @@ def test_probe_reads_the_same_details_as_ffprobe_without_starting_it(
     monkeypatch.setattr("tuck.probe._run_ffprobe_json", no_ffprobe)
 
     assert probe(source) == expected
+
+
+def test_the_first_picture_is_decoded_from_the_first_packet_alone(tmp_path) -> None:
+    # with B-frames the decoder holds the first picture back until it has seen two more packets,
+    # which the probe, the Library thumbnail and frame blending would decode only to throw away
+    ffmpeg = find_ffmpeg()
+    if not ffmpeg:
+        pytest.skip("ffmpeg unavailable")
+    source = tmp_path / "b_frames.mp4"
+    assert _ffmpeg(ffmpeg, [*_VIDEO, *_X264, "-bf", "2", "-g", "10", str(source)])
+    with av.open(str(source)) as container:
+        held_back = 0
+        for packet in container.demux(video=0):
+            held_back += 1
+            if packet.decode():
+                break
+        assert held_back > 1
+    with av.open(str(source)) as container:
+        expected = next(container.decode(video=0))
+
+    read = []
+    with av.open(str(source)) as container:
+        frame = first_video_frame(
+            container, container.streams.video[0], 1000, lambda: read.append(None)
+        )
+        assert frame is not None
+        assert len(read) == 1
+        assert frame.pts == expected.pts
+        assert np.array_equal(frame.to_ndarray(), expected.to_ndarray())
 
 
 def test_probe_falls_back_to_ffprobe_when_pyav_cannot_read(tmp_path, monkeypatch) -> None:

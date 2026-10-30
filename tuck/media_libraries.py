@@ -6,8 +6,8 @@ modules import each other while they load, so two threads importing it at the sa
 one with a half-loaded module ("cannot import name FFmpegError"). Every function that imports
 either of them calls load_media_libraries() first, which loads them once, under one lock.
 
-While the background load runs, probes and thumbnails use FFprobe and FFmpeg instead of waiting:
-a cold FFprobe answers in about 0.2 s, where loading PyAV can take 1.5 s.
+While the background load runs, probes, thumbnails and waveforms use FFprobe and FFmpeg instead
+of waiting: a cold FFprobe answers in about 0.2 s, where loading PyAV can take 1.5 s.
 """
 
 from __future__ import annotations

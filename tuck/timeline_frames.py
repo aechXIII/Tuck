@@ -9,6 +9,7 @@ import struct
 import tempfile
 import threading
 from collections.abc import Callable, Iterator
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from fractions import Fraction
 from pathlib import Path
@@ -17,12 +18,16 @@ from typing import TYPE_CHECKING
 
 from .media_filters import UPRIGHT_FILTERS
 from .media_libraries import load_media_libraries
+from .probe import first_video_frame
 from .request_work import RequestWork
 
 # imported inside functions after load_media_libraries(), so the backend starts without them
 if TYPE_CHECKING:
     import numpy as np
+    from av.container import InputContainer
+    from av.filter import Graph
     from av.video.frame import VideoFrame
+    from av.video.stream import VideoStream
     from numpy.typing import NDArray
 
 TILE_WIDTH = 150
@@ -32,6 +37,14 @@ _CACHE_BYTES = 128 * 1024 * 1024
 _MAX_SECONDS = 20.0
 _MAX_PACKETS = 20000
 _MAX_FRAMES = 6000
+# a request's pictures are decoded on up to this many threads; the timeline keeps two requests
+# going at once, so between them they use about all the cores
+_DECODE_THREADS = max(1, min(8, (os.cpu_count() or 1) // 2))
+# each decoder has its own file handle. A keyframe picture is one decoded frame, so more than
+# four of them only add opening and setup; exact pictures give their spare threads to frames
+_DECODERS = min(4, _DECODE_THREADS)
+# exact pictures this close are decoded on from the one before instead of seeking again
+_DECODE_ON_SECONDS = 0.5
 
 
 @dataclass(frozen=True)
@@ -189,17 +202,13 @@ class TimelineFrames:
     ) -> list[NDArray[np.uint8]]:
         load_media_libraries()
         import av
-        from av.video.frame import VideoFrame
 
-        tiles: list[NDArray[np.uint8]] = []
         with av.open(str(source), timeout=_MAX_SECONDS) as container:
             if not container.streams.video:
-                return tiles
+                return []
             stream = container.streams.video[0]
-            stream.codec_context.thread_count = 1
             if stream.time_base is None:
-                return tiles
-            origin = float((stream.start_time or 0) * stream.time_base)
+                return []
             duration = (
                 float(stream.duration * stream.time_base)
                 if stream.duration
@@ -207,92 +216,235 @@ class TimelineFrames:
                 if container.duration
                 else None
             )
-            packets = 0
-            frames = 0
+        targets: list[float] = []
+        for index in range(count):
+            target = start + index * step
+            if not math.isfinite(target) or (duration is not None and target >= duration):
+                break
+            targets.append(target)
+        if not targets:
+            return []
+        limits = _RequestLimits(check)
+        if exact and step <= _DECODE_ON_SECONDS:
+            # one run decoded on from a single seek, so its decoder gets the threads instead
+            return _decode_targets(source, targets, mode, exact, _DECODE_THREADS, limits)[0]
+        size = math.ceil(len(targets) / _DECODERS)
+        groups = [targets[first : first + size] for first in range(0, len(targets), size)]
+        # an exact picture far from the one before decodes a run of frames from its own keyframe,
+        # so it gets frame threads as well
+        threads = _DECODE_THREADS // len(groups) if exact else 1
+        if len(groups) == 1:
+            return _decode_targets(source, targets, mode, exact, threads, limits)[0]
 
-            def decoded_frames() -> Iterator[VideoFrame]:
-                nonlocal packets, frames
-                for packet in container.demux(stream):
-                    packets += 1
-                    check()
-                    if packets > _MAX_PACKETS:
-                        raise TimeoutError("Timeline picture packet limit reached")
-                    for frame in packet.decode():
-                        if not isinstance(frame, VideoFrame):
-                            continue
-                        frames += 1
-                        check()
-                        if frames > _MAX_FRAMES:
-                            raise TimeoutError("Timeline picture decode limit reached")
-                        yield frame
+        def decode(group: list[float]) -> tuple[list[NDArray[np.uint8]], bool]:
+            try:
+                return _decode_targets(source, group, mode, exact, threads, limits)
+            except BaseException:
+                limits.failed.set()
+                raise
 
-            iterator: Iterator[VideoFrame] | None = None
-            previous_frame: VideoFrame | None = None
-            next_frame: VideoFrame | None = None
-            decoder_exhausted = False
-            previous_target = -math.inf
-            for index in range(count):
-                check()
-                target = start + index * step
-                if not math.isfinite(target) or (duration is not None and target >= duration):
-                    break
-                if iterator is None or not exact or target - previous_target > 0.5:
-                    container.seek(
-                        int((target + origin) / float(stream.time_base)),
-                        stream=stream,
-                        backward=True,
-                    )
-                    iterator = decoded_frames()
-                    previous_frame = None
-                    next_frame = None
-                    decoder_exhausted = False
-                chosen = previous_frame if exact else None
-                if (
-                    next_frame is not None
-                    and next_frame.time is not None
-                    and next_frame.time - origin <= target
-                ):
-                    chosen = next_frame
-                    next_frame = None
-                if next_frame is None and not decoder_exhausted:
-                    for frame in iterator:
-                        if exact and frame.time is not None and frame.time - origin > target:
-                            # keep the next picture so VFR holds and sub-frame samples stay aligned
-                            next_frame = frame
-                            if chosen is None:
-                                chosen = frame
-                            break
-                        chosen = frame
-                        if not exact:
-                            break
-                    else:
-                        decoder_exhausted = True
-                if chosen is None:
-                    break
-                if exact and decoder_exhausted and chosen.time is not None:
-                    last_time = chosen.time - origin
-                    if chosen.duration > 0 and chosen.time_base is not None:
-                        if target >= last_time + float(chosen.duration * chosen.time_base):
-                            break
-                    elif target > last_time:
-                        # without a final duration, only its recorded timestamp is certain
-                        break
-                if chosen is previous_frame and tiles:
-                    tiles.append(tiles[-1])
-                else:
-                    tiles.append(
-                        _render_tile(chosen, mode, stream.sample_aspect_ratio or Fraction(1))
-                    )
-                previous_frame = chosen
-                previous_target = target
+        with ThreadPoolExecutor(len(groups), thread_name_prefix="tuck-timeline") as pool:
+            futures = [pool.submit(decode, group) for group in groups]
+        tiles: list[NDArray[np.uint8]] = []
+        for future in futures:
+            error = future.exception()
+            if isinstance(error, _OtherThreadFailed):
+                error = next(
+                    (
+                        found
+                        for found in (later.exception() for later in futures)
+                        if found is not None and not isinstance(found, _OtherThreadFailed)
+                    ),
+                    error,
+                )
+            if error is not None:
+                raise error
+            group_tiles, complete = future.result()
+            tiles.extend(group_tiles)
+            # one pass through the pictures in order would have stopped here too
+            if not complete:
+                break
         return tiles
 
 
-def _render_tile(frame: VideoFrame, mode: str, aspect: Fraction) -> NDArray[np.uint8]:
+class _OtherThreadFailed(Exception):
+    """Stops a thread once another thread working on the same request has failed."""
+
+
+class _RequestLimits:
+    """The time, packet and frame limits of one request, shared by the threads decoding it."""
+
+    def __init__(self, check: Callable[[], None]) -> None:
+        self._check = check
+        self._lock = threading.Lock()
+        self._packets = 0
+        self._frames = 0
+        self.failed = threading.Event()
+
+    def check(self) -> None:
+        if self.failed.is_set():
+            raise _OtherThreadFailed
+        self._check()
+
+    def count_packet(self) -> None:
+        with self._lock:
+            self._packets += 1
+            over = self._packets > _MAX_PACKETS
+        self.check()
+        if over:
+            raise TimeoutError("Timeline picture packet limit reached")
+
+    def count_frame(self) -> None:
+        with self._lock:
+            self._frames += 1
+            over = self._frames > _MAX_FRAMES
+        self.check()
+        if over:
+            raise TimeoutError("Timeline picture decode limit reached")
+
+
+def _decode_targets(
+    source: Path,
+    targets: list[float],
+    mode: str,
+    exact: bool,
+    threads: int,
+    limits: _RequestLimits,
+) -> tuple[list[NDArray[np.uint8]], bool]:
+    """Draws the pictures at these times with one file handle and decoder.
+
+    The flag is False when the video ran out before the last of them.
+    """
     load_media_libraries()
-    import numpy as np
-    from av.filter import Graph
+    import av
     from av.video.frame import VideoFrame
+
+    tiles: list[NDArray[np.uint8]] = []
+    with av.open(str(source), timeout=_MAX_SECONDS) as container:
+        stream = container.streams.video[0]
+        stream.codec_context.thread_count = threads
+        if threads > 1:
+            stream.codec_context.thread_type = "FRAME"
+        if stream.time_base is None:
+            return tiles, False
+        origin = float((stream.start_time or 0) * stream.time_base)
+        drawer = _TileDrawer(mode, stream.sample_aspect_ratio or Fraction(1))
+
+        def decoded_frames() -> Iterator[VideoFrame]:
+            for packet in container.demux(stream):
+                limits.count_packet()
+                for frame in packet.decode():
+                    if not isinstance(frame, VideoFrame):
+                        continue
+                    limits.count_frame()
+                    yield frame
+
+        iterator: Iterator[VideoFrame] | None = None
+        previous_frame: VideoFrame | None = None
+        next_frame: VideoFrame | None = None
+        decoder_exhausted = False
+        previous_target = -math.inf
+        for target in targets:
+            limits.check()
+            if not exact:
+                picture = _keyframe_picture(container, stream, target + origin, limits)
+                if picture is None:
+                    return tiles, False
+                tiles.append(drawer.draw(picture))
+                continue
+            if iterator is None or target - previous_target > _DECODE_ON_SECONDS:
+                container.seek(
+                    int((target + origin) / float(stream.time_base)),
+                    stream=stream,
+                    backward=True,
+                )
+                iterator = decoded_frames()
+                previous_frame = None
+                next_frame = None
+                decoder_exhausted = False
+            chosen = previous_frame
+            if (
+                next_frame is not None
+                and next_frame.time is not None
+                and next_frame.time - origin <= target
+            ):
+                chosen = next_frame
+                next_frame = None
+            if next_frame is None and not decoder_exhausted:
+                for frame in iterator:
+                    if frame.time is not None and frame.time - origin > target:
+                        # keep the next picture so VFR holds and sub-frame samples stay aligned
+                        next_frame = frame
+                        if chosen is None:
+                            chosen = frame
+                        break
+                    chosen = frame
+                else:
+                    decoder_exhausted = True
+            if chosen is None:
+                return tiles, False
+            if decoder_exhausted and chosen.time is not None:
+                last_time = chosen.time - origin
+                if chosen.duration > 0 and chosen.time_base is not None:
+                    if target >= last_time + float(chosen.duration * chosen.time_base):
+                        return tiles, False
+                elif target > last_time:
+                    # without a final duration, only its recorded timestamp is certain
+                    return tiles, False
+            if chosen is previous_frame and tiles:
+                tiles.append(tiles[-1])
+            else:
+                tiles.append(drawer.draw(chosen))
+            previous_frame = chosen
+            previous_target = target
+    return tiles, True
+
+
+def _keyframe_picture(
+    container: InputContainer, stream: VideoStream, at: float, limits: _RequestLimits
+) -> VideoFrame | None:
+    """The first picture from the keyframe at or before this time, in the stream's own clock."""
+    if stream.time_base is None:
+        return None
+    container.seek(int(at / float(stream.time_base)), stream=stream, backward=True)
+    # no cap of its own: the request's packet limit raises before it is reached
+    picture = first_video_frame(container, stream, _MAX_PACKETS + 1, limits.count_packet)
+    if picture is not None:
+        limits.count_frame()
+    return picture
+
+
+class _TileDrawer:
+    """Draws timeline pictures through one filter graph for as long as the frames keep their shape.
+
+    Building the graph takes about ten times as long as running a picture through it.
+    """
+
+    def __init__(self, mode: str, aspect: Fraction) -> None:
+        self._mode = mode
+        self._aspect = aspect
+        self._shape: tuple[object, ...] | None = None
+        self._graph: Graph | None = None
+
+    def draw(self, frame: VideoFrame) -> NDArray[np.uint8]:
+        load_media_libraries()
+        import numpy as np
+        from av.video.frame import VideoFrame
+
+        shape = (frame.width, frame.height, frame.format.name, frame.rotation, frame.time_base)
+        if self._graph is None or shape != self._shape:
+            self._graph = _tile_graph(frame, self._mode, self._aspect)
+            self._shape = shape
+        self._graph.push(frame)
+        result = self._graph.pull()
+        if not isinstance(result, VideoFrame):
+            raise ValueError("Could not draw timeline picture")
+        return result.to_ndarray(format="rgb24").astype(np.uint8, copy=False)
+
+
+def _tile_graph(frame: VideoFrame, mode: str, aspect: Fraction) -> Graph:
+    load_media_libraries()
+    from av.filter import Graph
 
     graph = Graph()
     nodes = [
@@ -322,8 +474,4 @@ def _render_tile(frame: VideoFrame, mode: str, aspect: Fraction) -> NDArray[np.u
     nodes.append(graph.add("format", "rgb24"))
     nodes.append(graph.add("buffersink"))
     graph.link_nodes(*nodes).configure()
-    graph.push(frame)
-    result = graph.pull()
-    if not isinstance(result, VideoFrame):
-        raise ValueError("Could not draw timeline picture")
-    return result.to_ndarray(format="rgb24").astype(np.uint8, copy=False)
+    return graph

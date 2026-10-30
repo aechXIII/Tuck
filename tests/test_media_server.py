@@ -1269,3 +1269,45 @@ class TestWaveformTracks:
         assert api.get_waveform(str(video), -1)["ok"] is False
         assert api.get_waveform(str(video), 1)["ok"] is False
         assert asked == [1]
+
+    def test_a_probed_videos_waveform_does_not_read_the_file_again_first(
+        self, tmp_path, monkeypatch
+    ):
+        import tuck.settings as settings_mod
+
+        monkeypatch.setattr(settings_mod, "_config_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
+        monkeypatch.setattr("tuck.bridge.get_media_server", MediaServer)
+
+        from tuck.bridge import BridgeAPI
+        from tuck.models import AudioInfo, VideoInfo
+        from tuck.probe_cache import ProbeCache
+
+        api = BridgeAPI()
+        files = {name: tmp_path / name for name in ("recording.mkv", "silent.mkv", "music.m4a")}
+        for path in files.values():
+            path.write_bytes(path.name.encode())
+        sound = {"audio_codec": "aac", "has_audio": True, "audio_stream_count": 1}
+        videos = {
+            "recording.mkv": VideoInfo("", 1.0, 320, 240, 25.0, "h264", **sound),
+            "silent.mkv": VideoInfo("", 1.0, 320, 240, 25.0, "h264"),
+        }
+        audio_probes = []
+        api._probe_cache = ProbeCache(lambda path: videos[Path(path).name])
+        api._audio_probe_cache = ProbeCache(
+            lambda path: audio_probes.append(Path(path).name) or AudioInfo(path, 1.0, "aac")
+        )
+        picture = tmp_path / "waveform.png"
+        picture.write_bytes(b"png")
+        monkeypatch.setattr(api._media_server, "generate_waveform", lambda *_a, **_k: str(picture))
+
+        for name in videos:
+            assert api.probe_file(str(files[name]))["ok"]
+        assert api.get_waveform(str(files["recording.mkv"]))["ok"]
+        silent = api.get_waveform(str(files["silent.mkv"]))
+        assert silent["ok"] is False
+        assert "No audio stream" in str(silent["error"])
+        # a music file on an audio track has no video probe, so its sound is checked on its own
+        assert api.get_waveform(str(files["music.m4a"]))["ok"]
+        assert audio_probes == ["music.m4a"]
