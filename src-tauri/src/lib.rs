@@ -87,6 +87,21 @@ fn packaged_resource_paths(
     }
 }
 
+/// Starts the backend in the background so the page can draw its own starting screen; requests
+/// made meanwhile wait for it to be ready.
+fn start_backend(app: &tauri::AppHandle) {
+    let (state, starter) = BackendState::starting();
+    app.manage(state);
+    let config = resolve_backend_config(app);
+    tauri::async_runtime::spawn(async move {
+        let result = match config {
+            Ok(config) => backend::BackendProcess::launch(config).await,
+            Err(error) => Err(error),
+        };
+        starter.finish(result);
+    });
+}
+
 #[cfg(windows)]
 fn notify_window_resized(window: &tauri::Window) {
     use tauri::Emitter;
@@ -115,6 +130,17 @@ pub fn run() {
                 eprintln!("could not handle second Tuck instance: {error}");
             }
         }))
+        // plugins start before the main window is built and the app's setup only after it, so
+        // the backend starts here and launches while the webview does. It comes after the
+        // single-instance plugin, which ends a second Tuck before it gets this far
+        .plugin(
+            tauri::plugin::Builder::<_, ()>::new("backend-start")
+                .setup(|app, _api| {
+                    start_backend(app);
+                    Ok(())
+                })
+                .build(),
+        )
         .plugin(
             tauri::plugin::Builder::<_, ()>::new("navigation-policy")
                 .on_navigation(|_, url| allows_app_navigation(url))
@@ -161,18 +187,6 @@ pub fn run() {
                     player::library::use_resource_dir(dir);
                 }
             }
-            // the backend starts in the background so the page can draw its own
-            // starting screen; requests made meanwhile wait for it to be ready
-            let (state, starter) = BackendState::starting();
-            app.manage(state);
-            let config = resolve_backend_config(&app.handle().clone());
-            tauri::async_runtime::spawn(async move {
-                let result = match config {
-                    Ok(config) => backend::BackendProcess::launch(config).await,
-                    Err(error) => Err(error),
-                };
-                starter.finish(result);
-            });
             Ok(())
         });
 

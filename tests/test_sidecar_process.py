@@ -732,3 +732,39 @@ def test_server_keeps_answering_control_requests_while_media_work_is_busy() -> N
     # the queue answer comes before any media work finishes, since it never waits behind it
     assert ids[1] == "queue-1"
     assert sorted(ids[2:]) == sorted(str(frame["id"]) for frame in media)
+
+
+def test_starting_the_backend_checks_encoders_without_waiting_for_them(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import logging
+
+    import tuck.settings as settings_mod
+    from tuck.sidecar import lifecycle as lifecycle_mod
+
+    monkeypatch.setattr(settings_mod, "_settings_manager", None)
+    monkeypatch.setattr(settings_mod, "_storage_root", None)
+    monkeypatch.setattr("tuck.queue._queue", None)
+    monkeypatch.setenv("TUCK_SIDECAR_DATA_ROOT", str(tmp_path))
+    started, finished, release = threading.Event(), threading.Event(), threading.Event()
+
+    def check() -> frozenset[str]:
+        started.set()
+        release.wait(timeout=10)
+        finished.set()
+        return frozenset({"libx264"})
+
+    monkeypatch.setattr(lifecycle_mod, "get_available_encoders", check)
+    lifecycle = lifecycle_mod.BackendLifecycle()
+    try:
+        lifecycle.start()
+        assert started.wait(timeout=5)
+        assert not finished.is_set()
+    finally:
+        release.set()
+        lifecycle.shutdown()
+        root = logging.getLogger()
+        for handler in [h for h in root.handlers if isinstance(h, logging.FileHandler)]:
+            if Path(handler.baseFilename).is_relative_to(tmp_path):
+                root.removeHandler(handler)
+                handler.close()

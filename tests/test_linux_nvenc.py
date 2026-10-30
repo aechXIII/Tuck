@@ -37,9 +37,9 @@ def test_linux_nvenc_discovery_requires_actual_encode(monkeypatch):
 
     def probe(_ffmpeg, encoder):
         probes.append(encoder)
-        return encoder == "h264_nvenc"
+        return None if encoder == "h264_nvenc" else "Could not open encoder"
 
-    monkeypatch.setattr(capabilities, "_hardware_encoder_works", probe)
+    monkeypatch.setattr(capabilities, "_hardware_encoder_failure", probe)
     monkeypatch.setattr(capabilities, "choose_encode_device", lambda *_: None)
     assert capabilities._detect_usable_encoders("ffmpeg") == frozenset({"libx264", "h264_nvenc"})
     assert set(probes) == {"h264_nvenc", "hevc_nvenc"}
@@ -61,7 +61,8 @@ def test_linux_nvenc_without_driver_is_not_available(monkeypatch):
 
     monkeypatch.setattr(capabilities.subprocess, "run", run)
     assert capabilities._detect_usable_encoders("ffmpeg") == frozenset({"libx264"})
-    assert len(probes) == 2
+    # without the driver hevc_nvenc can't start either, so it isn't tried
+    assert len(probes) == 1
     assert all("color=c=black:s=1280x720:d=0.1" in cmd and "-frames:v" in cmd for cmd in probes)
 
 
@@ -277,9 +278,9 @@ def test_linux_nvenc_cache_reprobes_after_runtime_change(monkeypatch, tmp_path, 
 
     def probe(_ffmpeg, encoder):
         probes.append(encoder)
-        return works[0]
+        return None if works[0] else "Could not open encoder"
 
-    monkeypatch.setattr(capabilities, "_hardware_encoder_works", probe)
+    monkeypatch.setattr(capabilities, "_hardware_encoder_failure", probe)
     assert capabilities.get_available_encoders() == frozenset({"libx264"})
     assert capabilities.get_available_encoders() == frozenset({"libx264"})
     assert len(probes) == 1

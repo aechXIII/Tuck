@@ -2,6 +2,7 @@ import hashlib
 import socket
 import subprocess
 import threading
+import time
 from array import array
 from dataclasses import replace
 from itertools import pairwise
@@ -252,6 +253,15 @@ class TestMediaServer:
             server.stop()
             assert not server._running
             assert server._server is None
+
+    def test_stopping_does_not_wait_for_a_slow_poll(self):
+        # closing Tuck waits for this stop
+        server = MediaServer()
+        for _ in range(5):
+            server.start()
+            started = time.monotonic()
+            server.stop()
+            assert time.monotonic() - started < 0.25
 
     def test_server_serves_file(self, tmp_path):
         f = tmp_path / "serve_test.mp4"

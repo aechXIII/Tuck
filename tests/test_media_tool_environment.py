@@ -187,7 +187,7 @@ def test_media_launches_pass_restored_environment(monkeypatch, tmp_path, operati
     if operation == "encoders":
         capabilities._detect_available_encoders("ffmpeg")
     elif operation == "nvenc":
-        assert capabilities._hardware_encoder_works("ffmpeg", "h264_nvenc")
+        assert capabilities._hardware_encoder_failure("ffmpeg", "h264_nvenc") is None
     elif operation == "filters":
         monkeypatch.setattr(capabilities, "find_ffmpeg", lambda: "ffmpeg")
         monkeypatch.setattr(capabilities, "_filter_cache", {})

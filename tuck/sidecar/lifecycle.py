@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
 from .. import __version__
 from ..bridge import BridgeAPI
+from ..encoding.capabilities import get_available_encoders
 from .protocol import Event
 
 logger = logging.getLogger(__name__)
@@ -27,6 +29,11 @@ class BackendLifecycle:
             self._api = BridgeAPI()
             self._configure_file_logging(self._api.log_dir / "tuck.log")
             self._api.start_background_services()
+            # the page waits for the encoder list before it shows any video, so the check
+            # starts now, while the window is still loading, instead of when the page asks
+            threading.Thread(
+                target=get_available_encoders, name="tuck-encoder-check", daemon=True
+            ).start()
         return self._api
 
     def ready_event(self) -> Event:

@@ -8,7 +8,9 @@ import re
 import subprocess
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 
 from ..desktop_platform import is_linux_desktop
@@ -61,6 +63,16 @@ _HW_DEVICE_MARKERS = (
     "no va display found",
     "failed to create a vaapi device",
     "failed to upload frame",
+)
+# these mean the family's driver, runtime or GPU isn't there at all, not that one encoder failed
+_HW_MISSING_MARKERS = (
+    "no nvenc capable devices found",
+    "cannot load nvcuda",
+    "cannot load libcuda",
+    "cannot load libnvidia-encode",
+    "cannot load nvencodeapi",
+    "no cuda-capable device",
+    "dll amfrt",
 )
 # FFmpeg prints these for any encoder that refuses to open, including one that rejects an
 # option or a frame size, so on their own they don't prove the GPU is missing
@@ -136,7 +148,8 @@ def _detect_available_encoders(ffmpeg_path: str) -> frozenset[str]:
         return frozenset()
 
 
-def _hardware_encoder_works(ffmpeg_path: str, encoder: str) -> bool:
+def _hardware_encoder_failure(ffmpeg_path: str, encoder: str) -> str | None:
+    """What went wrong when a one-frame test encode failed, or None when it worked."""
     null_output = "NUL" if os.name == "nt" else "/dev/null"
     try:
         result = subprocess.run(
@@ -168,36 +181,55 @@ def _hardware_encoder_works(ffmpeg_path: str, encoder: str) -> bool:
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         )
         if result.returncode == 0:
-            return True
+            return None
         logger.info("Hardware encoder %s is unavailable: %s", encoder, result.stderr.strip())
+        return result.stderr or f"FFmpeg exited with {result.returncode}"
     except Exception:
         logger.info("Hardware encoder %s could not be initialized", encoder, exc_info=True)
-    return False
+        return "The test encode could not run."
+
+
+def _working_encoders(ffmpeg_path: str, encoders: frozenset[str]) -> frozenset[str]:
+    """The encoders of one GPU family that can encode here.
+
+    They are tried one at a time: a GPU allows only a few encode sessions at once, and the user
+    may be recording with one. A missing driver or runtime fails every encoder of the family the
+    same way, so the rest aren't tried after it.
+    """
+    working: set[str] = set()
+    for encoder in sorted(encoders):
+        failure = _hardware_encoder_failure(ffmpeg_path, encoder)
+        if failure is None:
+            working.add(encoder)
+        elif any(marker in failure.lower() for marker in _HW_MISSING_MARKERS):
+            break
+    return frozenset(working)
+
+
+def _vaapi_encoders(ffmpeg_path: str, encoders: frozenset[str]) -> frozenset[str]:
+    return frozenset(
+        encoder for encoder in encoders if choose_encode_device(ffmpeg_path, encoder) is not None
+    )
 
 
 def _detect_usable_encoders(ffmpeg_path: str) -> frozenset[str]:
     compiled = _detect_available_encoders(ffmpeg_path)
     if is_linux_desktop():
-        return frozenset(
-            compiled & CPU_ENCODERS
-            | {
-                encoder
-                for encoder in compiled & NVENC_ENCODERS
-                if _hardware_encoder_works(ffmpeg_path, encoder)
-            }
-            | {
-                encoder
-                for encoder in compiled & VAAPI_ENCODERS
-                if choose_encode_device(ffmpeg_path, encoder) is not None
-            }
+        usable = compiled & CPU_ENCODERS
+        checks = (
+            partial(_working_encoders, ffmpeg_path, compiled & NVENC_ENCODERS),
+            partial(_vaapi_encoders, ffmpeg_path, compiled & VAAPI_ENCODERS),
         )
-    usable = set(compiled - (NVENC_ENCODERS | AMF_ENCODERS | VAAPI_ENCODERS))
-    usable.update(
-        encoder
-        for encoder in compiled & (NVENC_ENCODERS | AMF_ENCODERS)
-        if _hardware_encoder_works(ffmpeg_path, encoder)
-    )
-    return frozenset(usable)
+    else:
+        usable = compiled - (NVENC_ENCODERS | AMF_ENCODERS | VAAPI_ENCODERS)
+        checks = (
+            partial(_working_encoders, ffmpeg_path, compiled & NVENC_ENCODERS),
+            partial(_working_encoders, ffmpeg_path, compiled & AMF_ENCODERS),
+        )
+    # each family runs on its own GPU and driver, so the families are checked at the same time
+    with ThreadPoolExecutor(len(checks), thread_name_prefix="tuck-encoder-check") as pool:
+        found = [future.result() for future in [pool.submit(check) for check in checks]]
+    return usable.union(*found)
 
 
 def _encoder_cache_path() -> Path:

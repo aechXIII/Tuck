@@ -105,6 +105,9 @@ _WAVEFORM_MAX_GAIN_DB = 60.0
 _WAVEFORM_DENSE_CREST_DB = 16.0
 _WAVEFORM_DENSE_TARGET_MEAN_DB = -8.0
 _TOKEN_BYTES = 32  # bytes for each token
+# serve_forever only sees a stop request between polls, and closing Tuck waits for it; the
+# default half second showed as a pause on every close
+_STOP_POLL_SECONDS = 0.05
 # the preview, the audio timeline and the Library can each hold a URL for the same file, so a
 # path keeps several live tokens; the oldest goes once this many are live
 _TOKENS_PER_PATH = 16
@@ -531,7 +534,11 @@ class MediaServer:
         self._server = _MediaTCPServer((self._host, self._port), Handler)
         self._port = self._server.server_address[1]
         self._running = True
-        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+        self._thread = threading.Thread(
+            target=self._server.serve_forever,
+            kwargs={"poll_interval": _STOP_POLL_SECONDS},
+            daemon=True,
+        )
         self._thread.start()
         logger.info("Media server started on %s:%d", self._host, self._port)
 

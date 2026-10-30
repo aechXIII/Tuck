@@ -1,5 +1,7 @@
 import json
 import os
+import threading
+import time
 
 import pytest
 
@@ -80,9 +82,9 @@ class TestUsableHardwareDetection:
 
         def unavailable(_ffmpeg, encoder):
             probes.append(encoder)
-            return False
+            return "Could not open encoder"
 
-        monkeypatch.setattr("tuck.encoding.capabilities._hardware_encoder_works", unavailable)
+        monkeypatch.setattr("tuck.encoding.capabilities._hardware_encoder_failure", unavailable)
 
         assert _detect_usable_encoders("ffmpeg") == frozenset({"libx264", "libx265"})
         assert probes == ["h264_nvenc"]
@@ -105,8 +107,8 @@ class TestUsableHardwareDetection:
             lambda _ffmpeg: frozenset({"libx264", "h264_nvenc", "h264_amf"}),
         )
         monkeypatch.setattr(
-            "tuck.encoding.capabilities._hardware_encoder_works",
-            lambda _ffmpeg, encoder: encoder == "h264_amf",
+            "tuck.encoding.capabilities._hardware_encoder_failure",
+            lambda _ffmpeg, encoder: None if encoder == "h264_amf" else "Could not open encoder",
         )
         assert _detect_usable_encoders("ffmpeg") == frozenset({"libx264", "h264_amf"})
 
@@ -122,9 +124,9 @@ class TestUsableHardwareDetection:
             return Result()
 
         monkeypatch.setattr("tuck.encoding.capabilities.subprocess.run", run)
-        from tuck.encoding.capabilities import _hardware_encoder_works
+        from tuck.encoding.capabilities import _hardware_encoder_failure
 
-        assert _hardware_encoder_works("ffmpeg", "h264_nvenc")
+        assert _hardware_encoder_failure("ffmpeg", "h264_nvenc") is None
         assert "color=c=black:s=1280x720:d=0.1" in captured["command"]
 
     def test_excludes_all_unavailable_hardware(self, monkeypatch):
@@ -133,9 +135,69 @@ class TestUsableHardwareDetection:
             lambda _ffmpeg: frozenset({"libx264", "h264_nvenc", "h264_amf"}),
         )
         monkeypatch.setattr(
-            "tuck.encoding.capabilities._hardware_encoder_works", lambda *_args: False
+            "tuck.encoding.capabilities._hardware_encoder_failure",
+            lambda *_args: "Could not open encoder",
         )
         assert _detect_usable_encoders("ffmpeg") == frozenset({"libx264"})
+
+    def test_checks_nvidia_and_amd_at_the_same_time(self, monkeypatch):
+        monkeypatch.setattr(
+            "tuck.encoding.capabilities._detect_available_encoders",
+            lambda _ffmpeg: frozenset({"libx264", "h264_nvenc", "h264_amf"}),
+        )
+        # each family's first test waits for the other's, which only passes when they overlap
+        both_started = threading.Barrier(2, timeout=5)
+
+        def probe(_ffmpeg, _encoder):
+            both_started.wait()
+            return None
+
+        monkeypatch.setattr("tuck.encoding.capabilities._hardware_encoder_failure", probe)
+        assert _detect_usable_encoders("ffmpeg") == frozenset({"libx264", "h264_nvenc", "h264_amf"})
+
+    def test_tries_one_encoder_of_a_family_at_a_time(self, monkeypatch):
+        monkeypatch.setattr(
+            "tuck.encoding.capabilities._detect_available_encoders",
+            lambda _ffmpeg: frozenset({"libx264", "h264_nvenc", "hevc_nvenc"}),
+        )
+        running = []
+        overlapped = []
+
+        def probe(_ffmpeg, encoder):
+            overlapped.append(bool(running))
+            running.append(encoder)
+            time.sleep(0.05)
+            running.remove(encoder)
+            return None
+
+        monkeypatch.setattr("tuck.encoding.capabilities._hardware_encoder_failure", probe)
+        assert _detect_usable_encoders("ffmpeg") == frozenset(
+            {"libx264", "h264_nvenc", "hevc_nvenc"}
+        )
+        assert overlapped == [False, False]
+
+    @pytest.mark.parametrize(
+        ("failure", "tried"),
+        [
+            ("[h264_amf @ 0] DLL amfrt64.dll failed to open", ["h264_amf"]),
+            # a GPU that has AMF can still refuse one codec, so the next one is tried
+            ("[h264_amf @ 0] Could not open encoder", ["h264_amf", "hevc_amf"]),
+        ],
+    )
+    def test_a_missing_driver_skips_the_rest_of_its_family(self, monkeypatch, failure, tried):
+        monkeypatch.setattr(
+            "tuck.encoding.capabilities._detect_available_encoders",
+            lambda _ffmpeg: frozenset({"libx264", "h264_amf", "hevc_amf"}),
+        )
+        probes = []
+
+        def probe(_ffmpeg, encoder):
+            probes.append(encoder)
+            return failure
+
+        monkeypatch.setattr("tuck.encoding.capabilities._hardware_encoder_failure", probe)
+        assert _detect_usable_encoders("ffmpeg") == frozenset({"libx264"})
+        assert probes == tried
 
 
 class TestPersistentEncoderCache:
