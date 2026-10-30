@@ -217,11 +217,9 @@ def test_source_change_with_preserved_size_and_time_refuses_publication(
 
 
 def test_disk_failure_during_copy_cleans_up(media_tools, tmp_path, monkeypatch):
-    from tuck.cutting import runner as module
-
     source = create_source(media_tools, tmp_path / "source.mp4", duration=4)
     _, plan = make_plan(media_tools, source, [(0, 2)], tmp_path / "result.mp4")
-    original = module.av.open
+    original = av.open
 
     def fail_write(file, mode="r", **kwargs):
         if mode == "w":
@@ -229,7 +227,7 @@ def test_disk_failure_during_copy_cleans_up(media_tools, tmp_path, monkeypatch):
             raise OSError("No space left on device")
         return original(file, mode, **kwargs)
 
-    monkeypatch.setattr(module.av, "open", fail_write)
+    monkeypatch.setattr(av, "open", fail_write)
     with pytest.raises(CutAnalysisError, match="could not be saved") as error:
         runner(media_tools).run(plan)
     # the system text, which can name private paths, stays in the details
@@ -484,18 +482,16 @@ def test_save_errors_name_the_real_problem(failure, says):
 def test_a_failed_cut_explains_itself_and_cleans_up(
     media_tools, tmp_path, monkeypatch, failure, says
 ):
-    from tuck.cutting import runner as module
-
     source = create_source(media_tools, tmp_path / "source.mp4", duration=4)
     _, plan = make_plan(media_tools, source, [(0, 2)], tmp_path / "result.mp4")
-    original = module.av.open
+    original = av.open
 
     def fail_write(file, mode="r", **kwargs):
         if mode == "w":
             raise failure
         return original(file, mode, **kwargs)
 
-    monkeypatch.setattr(module.av, "open", fail_write)
+    monkeypatch.setattr(av, "open", fail_write)
     with pytest.raises(CutAnalysisError, match=says):
         runner(media_tools).run(plan)
     assert not Path(plan.output_path).exists()

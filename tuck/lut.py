@@ -10,16 +10,21 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-import numpy as np
-from numpy.typing import NDArray
-
+from .media_libraries import load_media_libraries
 from .models import VideoInfo
 from .models.lut import LutSettings
 from .settings import ProcessLock
 
+# imported inside functions after load_media_libraries(), so the backend starts without them
+if TYPE_CHECKING:
+    import numpy as np
+    from numpy.typing import NDArray
+
+    FloatTable = NDArray[np.float32]
+
 MAX_IMPORT_BYTES = 16 * 1024 * 1024
-FloatTable = NDArray[np.float32]
 _LIBRARY_LOCK = threading.RLock()
 _MAX_LIBRARY_BYTES = 1024 * 1024
 _MAX_LIBRARY_ENTRIES = 4096
@@ -34,6 +39,9 @@ class ImportedLut:
 
 
 def identity_table(size: int) -> FloatTable:
+    load_media_libraries()
+    import numpy as np
+
     b, g, r = np.meshgrid(*(np.linspace(0, 1, size, dtype=np.float32),) * 3, indexing="ij")
     return np.stack((r, g, b), axis=-1).reshape(-1, 3)
 
@@ -78,6 +86,9 @@ def parse_cube(path: Path) -> FloatTable:
 
 
 def _parse_cube_data(data: bytes, path: Path) -> FloatTable:
+    load_media_libraries()
+    import numpy as np
+
     if len(data) > MAX_IMPORT_BYTES:
         raise ValueError("LUT files must be no larger than 16 MiB")
     try:
@@ -215,6 +226,9 @@ def _canonical_table(path: Path, data: bytes) -> FloatTable:
 
 @lru_cache(maxsize=4)
 def _strength_snapshot(path: Path, data: bytes, strength: float) -> Path:
+    load_media_libraries()
+    import numpy as np
+
     table = _canonical_table(path, data)
     size = round(len(table) ** (1 / 3))
     mixed = identity_table(size) * (1 - strength) + table * strength
@@ -338,6 +352,9 @@ def _save_library(directory: Path, library: _LutLibrary) -> None:
 
 
 def _legacy_successor(data: bytes) -> str | None:
+    load_media_libraries()
+    import numpy as np
+
     header, _, body = data.partition(b"\n")
     if not header.startswith(b"LUT_3D_SIZE "):
         return None

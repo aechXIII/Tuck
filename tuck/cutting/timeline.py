@@ -7,14 +7,17 @@ from dataclasses import dataclass
 from fractions import Fraction
 from itertools import pairwise
 from threading import Event
+from typing import TYPE_CHECKING
 
-import av
-from av.container import InputContainer
-from av.error import FFmpegError
-from av.stream import Disposition, Stream
-from av.video.stream import VideoStream
-
+from ..media_libraries import load_media_libraries
 from .bitstream import nal_length_size, nal_units
+
+# imported inside functions after load_media_libraries(), so the backend starts without them
+if TYPE_CHECKING:
+    import av
+    from av.container import InputContainer
+    from av.stream import Stream
+    from av.video.stream import VideoStream
 
 MAX_PACKETS = 500_000
 MAX_PACKET_BYTES = 32 * 1024 * 1024
@@ -337,6 +340,9 @@ def _chapters(
 
 
 def _main_video(container: InputContainer) -> VideoStream | None:
+    load_media_libraries()
+    from av.stream import Disposition
+
     # cover art is stored as a one-frame video stream
     return next(
         (
@@ -357,6 +363,10 @@ def read_timeline(
     check_cancel: Callable[[Event], None] = _check,
 ) -> MediaTimeline:
     """Read every packet once, keeping only timing and entry-point facts."""
+    load_media_libraries()
+    import av
+    from av.error import FFmpegError
+
     try:
         with av.open(path) as container:
             video = _main_video(container)
@@ -440,6 +450,9 @@ def sweep_keyframes(
     This runs beside the checked analysis, so the timeline fills in sooner.
     Times use the same base as read_timeline's progress. Nothing here is trusted to plan a cut.
     """
+    load_media_libraries()
+    import av
+
     with av.open(path) as container:
         video = _main_video(container)
         if video is None:
@@ -476,6 +489,10 @@ def _walk_keyframes(
     This reads one packet per keyframe instead of the whole file. Returns the keyframes and
     where the video ends, or None when a jump does not land where it should.
     """
+    load_media_libraries()
+    import av
+    from av.error import FFmpegError
+
     if video.time_base is None:
         return None
     base = Fraction(video.time_base)

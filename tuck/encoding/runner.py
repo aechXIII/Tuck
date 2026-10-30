@@ -15,12 +15,10 @@ from io import TextIOWrapper
 from pathlib import Path
 from typing import Any
 
-import av
-from av.error import FFmpegError
-
 from ..cutting.analysis import CutAnalysisError
 from ..cutting.runner import CutRunner
 from ..formatting import format_size
+from ..media_libraries import load_media_libraries
 from ..media_tools import find_ffmpeg, media_tool_environment
 from ..models import (
     AUDIO_OVERHEAD_FACTOR,
@@ -733,6 +731,10 @@ class FFmpegEngine:
                 self._cleanup_output(attempt_output)
 
     def _measure_video_size(self, result: Path) -> tuple[int, float] | None:
+        load_media_libraries()
+        import av
+        from av.error import FFmpegError
+
         if self._cancel_event.is_set():
             raise EncodeCancelled("Encoding cancelled by user")
         try:

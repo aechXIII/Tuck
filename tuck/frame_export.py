@@ -9,12 +9,11 @@ from fractions import Fraction
 from pathlib import Path
 from time import monotonic
 
-import av
-
 from .bridge_contract import JsonValue
 from .bridge_validation import validate_path
 from .encoding.filters import build_plan_video_filters, join_video_filters
 from .lut import snapshot_lut
+from .media_libraries import load_media_libraries
 from .media_tools import find_ffmpeg, media_tool_environment
 from .models import EncodePlan, TransformGeometry, VideoTransform
 from .models.lut import LutSettings
@@ -83,6 +82,9 @@ def _check_work(work: RequestWork) -> None:
 def _select_frame(
     source: Path, time: float, duration: float, work: RequestWork
 ) -> tuple[float, float]:
+    load_media_libraries()
+    import av
+
     with av.open(str(source), timeout=max(0.1, work.deadline - monotonic())) as container:
         if not container.streams.video:
             raise ValueError("The source does not contain a video")
@@ -143,6 +145,9 @@ def _run_ffmpeg(command: list[str], work: RequestWork) -> None:
 
 
 def _verify_png(path: Path) -> tuple[int, int]:
+    load_media_libraries()
+    import av
+
     if not path.is_file():
         raise RuntimeError("The source frame could not be saved")
     with path.open("rb") as data:

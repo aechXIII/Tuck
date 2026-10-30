@@ -9,6 +9,7 @@ from pathlib import Path
 from .. import __version__
 from ..bridge import BridgeAPI
 from ..encoding.capabilities import get_available_encoders
+from ..media_libraries import load_media_libraries
 from .protocol import Event
 
 logger = logging.getLogger(__name__)
@@ -33,6 +34,10 @@ class BackendLifecycle:
             # starts now, while the window is still loading, instead of when the page asks
             threading.Thread(
                 target=get_available_encoders, name="tuck-encoder-check", daemon=True
+            ).start()
+            # the first probe or picture needs PyAV, so it loads now, while the page starts
+            threading.Thread(
+                target=load_media_libraries, name="tuck-media-libraries", daemon=True
             ).start()
         return self._api
 

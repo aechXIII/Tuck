@@ -7,15 +7,19 @@ from fractions import Fraction
 from itertools import pairwise
 from pathlib import Path
 from threading import Event
+from typing import TYPE_CHECKING
 
-import av
-from av.container import InputContainer
-
+from ..media_libraries import load_media_libraries
 from ..models.cutting import CutAnalysis, CutPlan, CutRequest
 from .analysis import CutAnalysisError, analyze_source, check_cancel, source_identity
 from .output_timing import decode_times, output_frame_times, round_div, ticks_from, to_ticks
 from .planner import OUTPUT_FORMATS, CutPlanChanged, plan_cut
 from .timeline import MAX_PACKET_BYTES, MAX_PACKETS
+
+# imported inside functions after load_media_libraries(), so the backend starts without them
+if TYPE_CHECKING:
+    import av
+    from av.container import InputContainer
 
 
 def check_cut_cancel(cancel: Event) -> None:
@@ -160,6 +164,9 @@ def selected_packets(
     kind: str | None = None,
 ) -> Iterator[av.Packet]:
     """Stream the planned packets with their joined output timestamps, without encoding."""
+    load_media_libraries()
+    import av
+
     origin = analysis.origin.seconds
     segments = [s for s in plan.segments if s.start_kind != "collapsed"]
     offsets = []

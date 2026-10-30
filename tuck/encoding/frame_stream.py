@@ -7,9 +7,7 @@ from contextlib import closing, suppress
 from fractions import Fraction
 from typing import BinaryIO
 
-import av
-from av.video.stream import VideoStream
-
+from ..media_libraries import load_media_libraries
 from ..models import ENCODER_AUTO_COMPRESSION, EncodePlan
 from ..models.encoding_policy import QUALITY_RC_METHODS, WORKFLOW_UPSCALE
 from .frame_blending import blended_frames
@@ -86,6 +84,10 @@ class FrameStream:
         self._thread.start()
 
     def _write(self, pipe: BinaryIO) -> None:
+        load_media_libraries()
+        import av
+        from av.video.stream import VideoStream
+
         try:
             info = self._plan.source_info
             assert info is not None

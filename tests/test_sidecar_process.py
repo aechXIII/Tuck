@@ -734,7 +734,7 @@ def test_server_keeps_answering_control_requests_while_media_work_is_busy() -> N
     assert sorted(ids[2:]) == sorted(str(frame["id"]) for frame in media)
 
 
-def test_starting_the_backend_checks_encoders_without_waiting_for_them(
+def test_starting_the_backend_checks_encoders_and_loads_libraries_without_waiting(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     import logging
@@ -746,20 +746,22 @@ def test_starting_the_backend_checks_encoders_without_waiting_for_them(
     monkeypatch.setattr(settings_mod, "_storage_root", None)
     monkeypatch.setattr("tuck.queue._queue", None)
     monkeypatch.setenv("TUCK_SIDECAR_DATA_ROOT", str(tmp_path))
-    started, finished, release = threading.Event(), threading.Event(), threading.Event()
+    release = threading.Event()
+    started = {"encoders": threading.Event(), "libraries": threading.Event()}
+    finished = {"encoders": threading.Event(), "libraries": threading.Event()}
 
-    def check() -> frozenset[str]:
-        started.set()
+    def job(name: str) -> None:
+        started[name].set()
         release.wait(timeout=10)
-        finished.set()
-        return frozenset({"libx264"})
+        finished[name].set()
 
-    monkeypatch.setattr(lifecycle_mod, "get_available_encoders", check)
+    monkeypatch.setattr(lifecycle_mod, "get_available_encoders", lambda: job("encoders"))
+    monkeypatch.setattr(lifecycle_mod, "load_media_libraries", lambda: job("libraries"))
     lifecycle = lifecycle_mod.BackendLifecycle()
     try:
         lifecycle.start()
-        assert started.wait(timeout=5)
-        assert not finished.is_set()
+        assert all(event.wait(timeout=5) for event in started.values())
+        assert not any(event.is_set() for event in finished.values())
     finally:
         release.set()
         lifecycle.shutdown()
@@ -768,3 +770,33 @@ def test_starting_the_backend_checks_encoders_without_waiting_for_them(
             if Path(handler.baseFilename).is_relative_to(tmp_path):
                 root.removeHandler(handler)
                 handler.close()
+
+
+_STARTS_WITHOUT_MEDIA_LIBRARIES = """
+import sys
+
+from tuck.sidecar import lifecycle, server  # noqa: F401
+
+lifecycle.get_available_encoders = lambda: frozenset()
+lifecycle.load_media_libraries = lambda: None
+backend = lifecycle.BackendLifecycle()
+backend.start()
+loaded = sorted({"av", "numpy"} & set(sys.modules))
+backend.shutdown()
+print(loaded)
+"""
+
+
+def test_the_backend_starts_without_pyav_or_numpy(tmp_path: Path) -> None:
+    # reading and scanning their libraries is most of a cold start on Windows, so they load
+    # in the background once the backend is ready
+    result = subprocess.run(
+        [sys.executable, "-c", _STARTS_WITHOUT_MEDIA_LIBRARIES],
+        capture_output=True,
+        text=True,
+        cwd=_ROOT,
+        env={**os.environ, "TUCK_SIDECAR_DATA_ROOT": str(tmp_path)},
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stderr[-2000:]
+    assert result.stdout.strip().splitlines()[-1] == "[]"

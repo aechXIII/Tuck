@@ -8,9 +8,14 @@ import sys
 from collections.abc import Sequence
 from functools import lru_cache
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-import numpy as np
-from numpy.typing import NDArray
+from ..media_libraries import load_media_libraries
+
+# imported inside functions after load_media_libraries(), so the backend starts without them
+if TYPE_CHECKING:
+    import numpy as np
+    from numpy.typing import NDArray
 
 logger = logging.getLogger(__name__)
 _BYTE_POINTER = ctypes.POINTER(ctypes.c_uint8)
@@ -76,6 +81,9 @@ def _load_library() -> ctypes.CDLL | None:
 
 
 def finish_linear_numpy(values: NDArray[np.float32], transfer: str) -> NDArray[np.uint8]:
+    load_media_libraries()
+    import numpy as np
+
     # this frame owns the accumulator; reuse it without changing float32 rounding
     np.clip(values, 0, 1, out=values)
     if transfer in {"gamma22", "gamma28"}:
@@ -96,6 +104,9 @@ def finish_linear_numpy(values: NDArray[np.float32], transfer: str) -> NDArray[n
 
 @lru_cache(maxsize=6)
 def _linear_finish_table(transfer: str) -> NDArray[np.uint64] | None:
+    load_media_libraries()
+    import numpy as np
+
     if transfer not in _FINISH_TRANSFERS:
         return None
     starts = np.arange((_ONE_BITS >> 16) + 1, dtype=np.uint32) << 16
@@ -134,6 +145,9 @@ def _linear_finish_table(transfer: str) -> NDArray[np.uint64] | None:
 
 def finish_linear(values: NDArray[np.float32], transfer: str) -> NDArray[np.uint8] | None:
     """Quantize the owned accumulator in place, or return None for the NumPy fallback."""
+    load_media_libraries()
+    import numpy as np
+
     if not isinstance(values, np.ndarray) or values.dtype != np.float32:
         raise TypeError("Linear finishing requires float32 values")
     if not values.flags.c_contiguous or not values.flags.writeable:
@@ -162,6 +176,9 @@ def finish_linear(values: NDArray[np.float32], transfer: str) -> NDArray[np.uint
 
 
 def _validate_pictures(pictures: Sequence[NDArray[np.uint8]], count: int) -> None:
+    load_media_libraries()
+    import numpy as np
+
     if not 1 <= len(pictures) <= 256 or len(pictures) != count:
         raise ValueError("Frame blending requires 1 to 256 pictures and one weight per picture")
     if not isinstance(pictures[0], np.ndarray):
@@ -184,6 +201,9 @@ def _validate_pictures(pictures: Sequence[NDArray[np.uint8]], count: int) -> Non
 def blend_encoded(
     pictures: Sequence[NDArray[np.uint8]], weights: Sequence[int]
 ) -> NDArray[np.uint8] | None:
+    load_media_libraries()
+    import numpy as np
+
     _validate_pictures(pictures, len(weights))
     if any(not isinstance(weight, int) or isinstance(weight, bool) for weight in weights):
         raise TypeError("Encoded blending weights must be integers")
@@ -215,6 +235,9 @@ def accumulate_linear(
     weights: Sequence[np.float32],
     lookup: NDArray[np.float32],
 ) -> NDArray[np.float32] | None:
+    load_media_libraries()
+    import numpy as np
+
     _validate_pictures(pictures, len(weights))
     if any(type(weight) is not np.float32 for weight in weights):
         raise TypeError("Linear blending weights must be float32 values")

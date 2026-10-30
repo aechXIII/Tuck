@@ -15,12 +15,11 @@ from collections import deque
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
 from fractions import Fraction
+from functools import cache
 from pathlib import Path
 from threading import Event
 
-import av
-from av.error import FFmpegError
-
+from ..media_libraries import load_media_libraries
 from ..media_tools import find_ffprobe, media_tool_environment
 from ..models.cutting import (
     AnalysisProgress,
@@ -43,9 +42,6 @@ from .timeline import (
     sweep_keyframes,
 )
 
-ANALYSIS_VERSION = (
-    "cut-prefix-1/pyav-" + av.__version__ + "/" + repr(sorted(av.library_versions.items()))
-)
 MAX_METADATA_BYTES = 4 * 1024 * 1024
 HASH_PIECE_BYTES = 2 * 1024 * 1024
 HASH_THREADS = 4
@@ -83,12 +79,20 @@ def check_cancel(
         raise CutAnalysisError(code, message)
 
 
+@cache
+def _reader_version() -> str:
+    load_media_libraries()
+    import av
+
+    return "cut-prefix-1/pyav-" + av.__version__ + "/" + repr(sorted(av.library_versions.items()))
+
+
 def analysis_version(ffprobe: str | None = None) -> str:
     binary = ffprobe or find_ffprobe()
     if not binary:
         raise CutAnalysisError("analysis_failed", "FFprobe is not available.")
     tool = Path(binary).stat()
-    return f"{ANALYSIS_VERSION}/probe-{Path(binary).resolve()}-{tool.st_size}-{tool.st_mtime_ns}"
+    return f"{_reader_version()}/probe-{Path(binary).resolve()}-{tool.st_size}-{tool.st_mtime_ns}"
 
 
 def source_identity(path: Path, cancel: Event) -> SourceIdentity:
@@ -334,6 +338,10 @@ def analyze_source(
 def _scan(
     identity: SourceIdentity, cancel: Event, on_progress: ProgressCallback, max_packets: int
 ) -> tuple[MediaTimeline | None, tuple[CutIssue, ...], tuple[CutIssue, ...]]:
+    load_media_libraries()
+    import av
+    from av.error import FFmpegError
+
     on_progress(AnalysisProgress(None, MediaTime(0)))
     timeline: MediaTimeline | None = None
     unverified: tuple[CutIssue, ...] = ()
@@ -377,6 +385,9 @@ def preview_keyframes(
     Display only: it reports no progress, and a file it cannot read is left for the checked
     scan to report.
     """
+    load_media_libraries()
+    from av.error import FFmpegError
+
     try:
         sweep_keyframes(str(path), stopped, _progress_reporter(on_progress, Fraction(0)))
     except (FFmpegError, OSError) as exc:

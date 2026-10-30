@@ -10,16 +10,9 @@ from dataclasses import dataclass
 from fractions import Fraction
 from pathlib import Path
 from threading import Event
-from typing import BinaryIO
+from typing import TYPE_CHECKING, BinaryIO
 
-import av
-from av.codec import Codec
-from av.codec.context import Flags
-from av.error import FFmpegError
-from av.video.codeccontext import VideoCodecContext
-from av.video.frame import PictureType
-from av.video.stream import VideoStream
-
+from ..media_libraries import load_media_libraries
 from ..models.cutting import CutAnalysis, CutPlan
 from .analysis import CutAnalysisError
 from .bitstream import (
@@ -44,6 +37,12 @@ from .bitstream import (
 )
 from .output_timing import decode_times, output_frame_times, to_ticks
 from .timeline import MAX_PACKET_BYTES
+
+# imported inside functions after load_media_libraries(), so the backend starts without them
+if TYPE_CHECKING:
+    import av
+    from av.video.codeccontext import VideoCodecContext
+    from av.video.stream import VideoStream
 
 # MP4, MOV and Matroska keep one decoder configuration that lists every parameter set
 _CONTAINERS = {"mov", "matroska"}
@@ -94,6 +93,10 @@ def _video_codec(analysis: CutAnalysis) -> str:
 @functools.cache
 def encoder_supports(name: str, pixel_format: str) -> bool:
     """Whether this build's `name` encoder takes `pixel_format` pictures."""
+    load_media_libraries()
+    from av.codec import Codec
+    from av.error import FFmpegError
+
     try:
         codec = Codec(name, "w")
     except (ValueError, FFmpegError):
@@ -228,6 +231,12 @@ def _encoder_options(name: str, properties: dict[str, str], parameter_id: int) -
 def _open_encoder(
     name: str, analysis: CutAnalysis, picture: _Picture, parameter_id: int
 ) -> VideoCodecContext:
+    load_media_libraries()
+    import av
+    from av.codec.context import Flags
+    from av.error import FFmpegError
+    from av.video.codeccontext import VideoCodecContext
+
     context = av.CodecContext.create(name, "w")
     if not isinstance(context, VideoCodecContext):
         raise _failed(f"the {name} encoder is not a video encoder.")
@@ -274,6 +283,10 @@ def _source_frames(
     source: Path, analysis: CutAnalysis, start: Fraction, end: Fraction, cancel: Event
 ) -> Iterator[av.VideoFrame]:
     """Decoded source frames whose exact timestamps fall in [start, end)."""
+    load_media_libraries()
+    import av
+    from av.video.stream import VideoStream
+
     frames = analysis.frames
     wanted = frames[bisect_left(frames, start) : bisect_left(frames, end)]
     keys = [key.seconds for key in analysis.keyframes if key.seconds <= start]
@@ -371,6 +384,12 @@ def encode_edges(
     *,
     on_frame: Callable[[], None] = lambda: None,
 ) -> ExactEdges:
+    load_media_libraries()
+    import av
+    from av.error import FFmpegError
+    from av.video.frame import PictureType
+    from av.video.stream import VideoStream
+
     source = Path(plan.identity.path)
     codec = _video_codec(analysis)
     encoders = _edge_encoders(analysis)
@@ -483,6 +502,9 @@ def exact_packets(
     Every video packet gets one rebuilt decode timeline, so encoded and copied pictures
     interleave with increasing DTS and PTS never before DTS.
     """
+    load_media_libraries()
+    import av
+
     base = video_stream.time_base
     if base is None:
         raise _failed("the video has no time base.")
@@ -589,6 +611,9 @@ def exact_packets(
 
 def _with_entry_header(packet: av.Packet, header: bytes) -> av.Packet:
     """An AV1 key frame after an edge must bring back the source's sequence header."""
+    load_media_libraries()
+    import av
+
     try:
         if any(kind == AV1_SEQUENCE_HEADER for kind, _ in av1_obus(bytes(packet))):
             return packet

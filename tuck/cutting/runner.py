@@ -6,13 +6,9 @@ from fractions import Fraction
 from math import gcd
 from pathlib import Path
 from threading import Event
+from typing import TYPE_CHECKING
 
-import av
-from av.container import InputContainer, OutputContainer
-from av.error import FFmpegError
-from av.stream import Stream
-from av.video.stream import VideoStream
-
+from ..media_libraries import load_media_libraries
 from ..models.cutting import Chapter, CutAnalysis, CutPlan, MediaTime
 from ..models.progress import EncodeProgress, EncodeStage
 from ..output_paths import copy_file_dates
@@ -23,6 +19,13 @@ from .output_timing import output_frame_count
 from .packets import check_cut_cancel, prepare_cut, selected_packets
 from .planner import OUTPUT_FORMATS
 from .verification import is_generated_tag, verify_cut_output, without_bitrate_box
+
+# imported inside functions after load_media_libraries(), so the backend starts without them
+if TYPE_CHECKING:
+    from av.container import InputContainer, OutputContainer
+    from av.error import FFmpegError
+    from av.stream import Stream
+    from av.video.stream import VideoStream
 
 _MP4_FAMILY = {"mp4", "mov", "3gp"}
 _UNMEASURED_STAGES = {
@@ -62,6 +65,9 @@ def _keep_container_video_facts(source: VideoStream, target: VideoStream) -> Non
 
 
 def _video_stream(container: InputContainer, index: int) -> VideoStream:
+    load_media_libraries()
+    from av.video.stream import VideoStream
+
     stream = container.streams[index]
     if not isinstance(stream, VideoStream):
         raise CutAnalysisError("cut_failed", "The video track could not be read.")
@@ -95,6 +101,9 @@ def _add_streams(
     edges: ExactEdges | None,
 ) -> dict[int, Stream]:
     """Output streams for the video and every kept track, keyed by source index."""
+    load_media_libraries()
+    from av.video.stream import VideoStream
+
     streams: dict[int, Stream] = {}
     kept = {analysis.video_index} | {t.index for t in plan.tracks if t.keep}
     for stream in incoming.streams:
@@ -211,6 +220,9 @@ class CutRunner:
         plan: CutPlan,
         on_progress: Callable[[EncodeProgress], None] | None = None,
     ) -> Path:
+        load_media_libraries()
+        from av.error import FFmpegError
+
         duration = float(plan.exported_duration.seconds)
 
         def report(stage: EncodeStage, message: str, current: float = 0) -> None:
@@ -279,6 +291,9 @@ class CutRunner:
         report: Callable[[EncodeStage, str, float], None],
     ) -> None:
         """Write the kept packets, and any encoded edges, into one file."""
+        load_media_libraries()
+        import av
+
         duration = float(plan.exported_duration.seconds)
         with (
             av.open(plan.identity.path) as incoming,

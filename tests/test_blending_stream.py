@@ -228,8 +228,9 @@ def test_muxer_shutdown_cannot_hide_an_earlier_source_error(tmp_path, monkeypatc
             pass
 
     monkeypatch.setattr(frame_stream, "blended_frames", pictures)
-    monkeypatch.setattr(frame_stream.av, "open", lambda *args, **kwargs: Output())
-    monkeypatch.setattr(frame_stream, "VideoStream", FakeStream)
+    # the writer imports these when it runs, so they're replaced where it finds them
+    monkeypatch.setattr(av, "open", lambda *args, **kwargs: Output())
+    monkeypatch.setattr("av.video.stream.VideoStream", FakeStream)
     stream = frame_stream.FrameStream(blend_plan(tmp_path), lambda: None, aborted.set)
     stream.start(Pipe())
     stream.join()

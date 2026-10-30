@@ -168,7 +168,7 @@ def test_cancellation_during_packet_measurement_closes_the_container(engine, mon
             yield SimpleNamespace(size=100)
 
     container = Container()
-    monkeypatch.setattr("tuck.encoding.runner.av.open", lambda _path: container)
+    monkeypatch.setattr(av, "open", lambda _path: container)
     with pytest.raises(EncodeCancelled):
         engine._measure_video_size(Path("output.mp4"))
     assert container.closed
@@ -189,5 +189,5 @@ def test_unknown_output_duration_uses_fallback_correction(engine, monkeypatch, d
 
     container = Container()
     container.duration = duration
-    monkeypatch.setattr("tuck.encoding.runner.av.open", lambda _path: container)
+    monkeypatch.setattr(av, "open", lambda _path: container)
     assert engine._measure_video_size(Path("output.mp4")) is None

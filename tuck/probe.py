@@ -7,16 +7,17 @@ import os
 import subprocess
 from fractions import Fraction
 from pathlib import Path
-from typing import Any
-
-import av
-from av.container import InputContainer
-from av.error import FFmpegError
-from av.video.frame import VideoFrame
-from av.video.stream import VideoStream
+from typing import TYPE_CHECKING, Any
 
 from . import media_tools
+from .media_libraries import load_media_libraries
 from .models import AudioInfo, VideoInfo
+
+# imported inside functions after load_media_libraries(), so the backend starts without them
+if TYPE_CHECKING:
+    from av.container import InputContainer
+    from av.video.frame import VideoFrame
+    from av.video.stream import VideoStream
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +105,9 @@ def first_video_frame(
 
     `max_packets` stops a file that never yields a picture from being read to the end.
     """
+    load_media_libraries()
+    from av.video.frame import VideoFrame
+
     for count, packet in enumerate(container.demux(stream)):
         if count >= max_packets:
             return None
@@ -124,6 +128,10 @@ def _read_with_pyav(source: Path) -> dict:
     Both readers then go through the same parsing, so a video is described the same way
     whichever one read it.
     """
+    load_media_libraries()
+    import av
+    from av.video.stream import VideoStream
+
     with av.open(str(source), timeout=_PROBE_TIMEOUT) as container:
         streams: list[dict] = []
         for stream in container.streams:
@@ -309,6 +317,9 @@ def _audio_fields(audio_stream: dict | None) -> tuple[bool, str, int, int, int]:
 
 
 def probe(source: str | Path) -> VideoInfo:
+    load_media_libraries()
+    from av.error import FFmpegError
+
     ffprobe_path = media_tools.find_ffprobe()
     if not ffprobe_path:
         raise FFprobeMissing(
@@ -410,6 +421,9 @@ def _stream_int(stream: dict, name: str) -> int:
 
 
 def probe_audio(source: str | Path) -> AudioInfo:
+    load_media_libraries()
+    from av.error import FFmpegError
+
     ffprobe_path = media_tools.find_ffprobe()
     if not ffprobe_path:
         raise FFprobeMissing(

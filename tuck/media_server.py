@@ -18,14 +18,8 @@ from pathlib import Path
 from socketserver import ThreadingTCPServer
 from typing import NamedTuple
 
-import av
-from av.codec.context import CodecContext
-from av.error import FFmpegError
-from av.filter import Graph
-from av.video.codeccontext import VideoCodecContext
-from av.video.frame import VideoFrame
-
 from .media_filters import UPRIGHT_FILTERS
+from .media_libraries import load_media_libraries
 from .media_tools import find_ffmpeg, find_ffprobe, media_tool_environment
 from .probe import first_video_frame
 from .request_work import RequestWork
@@ -343,6 +337,13 @@ def _write_thumbnail_in_process(file_path: Path, thumb_path: Path, timeout: floa
     Starting ffmpeg takes far longer than decoding one picture. Returns False when no picture
     is found near the middle.
     """
+    load_media_libraries()
+    import av
+    from av.codec.context import CodecContext
+    from av.filter import Graph
+    from av.video.codeccontext import VideoCodecContext
+    from av.video.frame import VideoFrame
+
     with av.open(str(file_path), timeout=timeout) as container:
         if not container.streams.video:
             return False
@@ -565,6 +566,8 @@ class MediaServer:
     def generate_thumbnail(
         self, file_path: str | Path, timeout: float = _THUMBNAIL_TIMEOUT
     ) -> str | None:
+        load_media_libraries()
+        from av.error import FFmpegError
 
         file_path = Path(file_path).resolve()
         if not file_path.is_file():

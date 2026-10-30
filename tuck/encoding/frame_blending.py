@@ -10,20 +10,22 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from fractions import Fraction
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-import av
-import numpy as np
-from av.error import FFmpegError
-from av.video.stream import VideoStream
-from numpy.typing import NDArray
-
+from ..media_libraries import load_media_libraries
 from ..models import EncodePlan, Segment, VideoInfo, positioned_frame_ranges
 from ..models.frame_blending import FrameBlending, interval_weight, vegas_weights
 from ..probe import first_video_frame
 from . import native_blending
 
-PixelArray = NDArray[np.uint8]
-FloatArray = NDArray[np.float32]
+# imported inside functions after load_media_libraries(), so the backend starts without them
+if TYPE_CHECKING:
+    import numpy as np
+    from numpy.typing import NDArray
+
+    PixelArray = NDArray[np.uint8]
+    FloatArray = NDArray[np.float32]
+
 MAX_BUFFER_BYTES = 256 * 1024 * 1024
 MAX_WINDOW_FRAMES = 256
 MAX_PIXELS = 4096 * 2160
@@ -105,6 +107,9 @@ def validate_blending_source(settings: FrameBlending, info: VideoInfo, fps: floa
 
 
 def to_linear(values: FloatArray, transfer: str) -> FloatArray:
+    load_media_libraries()
+    import numpy as np
+
     if transfer == "linear":
         return values
     if transfer == "iec61966-2-1":
@@ -115,6 +120,9 @@ def to_linear(values: FloatArray, transfer: str) -> FloatArray:
 
 
 def from_linear(values: FloatArray, transfer: str) -> FloatArray:
+    load_media_libraries()
+    import numpy as np
+
     if transfer == "linear":
         return values
     if transfer == "iec61966-2-1":
@@ -136,6 +144,10 @@ def _source_frames(
     start: float = 0.0,
 ) -> Generator[tuple[float, PixelArray], None, None]:
     """Source frames from the last keyframe at or before `start` onward."""
+    load_media_libraries()
+    import av
+    import numpy as np
+
     with av.open(str(source)) as container:
         stream = container.streams.video[0]
         stream.thread_type = "AUTO"
@@ -265,6 +277,9 @@ def _blend(
     weighted: list[tuple[PixelArray, float]], linear: FloatArray | None, transfer: str
 ) -> PixelArray:
     """One output picture from its weighted source pictures."""
+    load_media_libraries()
+    import numpy as np
+
     if linear is not None:
         total = sum(weight for _, weight in weighted)
         weights = [np.float32(weight / total) for _, weight in weighted]
@@ -297,6 +312,9 @@ _buffers = threading.local()
 
 def _sums(shape: tuple[int, ...]) -> tuple[NDArray[np.uint32], NDArray[np.uint32]]:
     """This thread's running-sum buffers, kept between pictures instead of reallocated."""
+    load_media_libraries()
+    import numpy as np
+
     kept = getattr(_buffers, "sums", None)
     if kept is None or kept[0].shape != shape:
         kept = (np.empty(shape, dtype=np.uint32), np.empty(shape, dtype=np.uint32))
@@ -313,6 +331,9 @@ def blended_frames(
     plan: EncodePlan,
     check_cancel: Callable[[], None],
 ) -> Generator[PixelArray, None, None]:
+    load_media_libraries()
+    import numpy as np
+
     info = plan.source_info
     if info is None:
         raise ValueError("Frame blending requires source metadata")
@@ -507,6 +528,9 @@ def _frame_grid(
 def _frame_grid_samples(
     source: Path, segments: list[Segment], margin: Fraction, progressive_only: bool = False
 ) -> tuple[list[Fraction], Fraction] | None:
+    load_media_libraries()
+    import av
+
     times: set[Fraction] = set()
     with av.open(str(source)) as container:
         stream = container.streams.video[0]
@@ -549,6 +573,9 @@ def _frame_grid_samples(
 
 def weighted_yuv_blend(plan: EncodePlan) -> TmixBlend | None:
     """Direct weighted YUV windows for complete, evenly spaced BT.709 SDR clips."""
+    load_media_libraries()
+    from av.error import FFmpegError
+
     from .filters import build_plan_video_filters
 
     info = plan.source_info
@@ -717,6 +744,9 @@ def tmix_blend(plan: EncodePlan) -> TmixBlend | None:
     output rate, like 180 to 60 FPS. Pictures match the frame-by-frame path except where the
     blur window reaches past a cut, which is only the first and last frames of each segment.
     """
+    load_media_libraries()
+    from av.error import FFmpegError
+
     info = plan.source_info
     settings = plan.frame_blending
     if info is None or not settings.enabled:
@@ -799,6 +829,10 @@ def prepare_blended_video(
     progress: Callable[[float, float | None], None],
 ) -> None:
     """Write the blended video, reporting the fraction done and blended pictures a second."""
+    load_media_libraries()
+    import av
+    from av.video.stream import VideoStream
+
     info = plan.source_info
     if info is None:
         raise ValueError("Frame blending requires source metadata")

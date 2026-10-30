@@ -9,8 +9,6 @@ from functools import partial
 from pathlib import Path
 from typing import Any
 
-from av.error import FFmpegError
-
 from . import __version__
 from .audio_mix import (
     compile_cut_preview_mix,
@@ -53,6 +51,7 @@ from .engine import get_available_encoders as _engine_available_encoders
 from .frame_export import export_frame
 from .joining.plan import JoinError
 from .joining.service import JoinService
+from .media_libraries import load_media_libraries
 from .media_server import get_media_server
 from .media_tools import find_ffmpeg, find_ffprobe
 from .models import (
@@ -301,6 +300,9 @@ class BridgeAPI:
         return {"ok": False, "error": "Could not generate thumbnail"}
 
     def export_frame(self, request: object, *, work: RequestWork | None = None) -> BridgeResult:
+        load_media_libraries()
+        from av.error import FFmpegError
+
         try:
             return export_frame(request, work=work)
         except subprocess.CalledProcessError:
@@ -357,6 +359,9 @@ class BridgeAPI:
         *,
         work: RequestWork | None = None,
     ) -> BridgeResult:
+        load_media_libraries()
+        from av.error import FFmpegError
+
         try:
             if not isinstance(path, str):
                 raise ValueError("Choose a source video")

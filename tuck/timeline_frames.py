@@ -13,18 +13,17 @@ from dataclasses import dataclass
 from fractions import Fraction
 from pathlib import Path
 from time import monotonic
-
-import av
-import numpy as np
-from av.codec.context import CodecContext
-from av.error import FFmpegError
-from av.filter import Graph
-from av.video.codeccontext import VideoCodecContext
-from av.video.frame import VideoFrame
-from numpy.typing import NDArray
+from typing import TYPE_CHECKING
 
 from .media_filters import UPRIGHT_FILTERS
+from .media_libraries import load_media_libraries
 from .request_work import RequestWork
+
+# imported inside functions after load_media_libraries(), so the backend starts without them
+if TYPE_CHECKING:
+    import numpy as np
+    from av.video.frame import VideoFrame
+    from numpy.typing import NDArray
 
 TILE_WIDTH = 150
 TILE_HEIGHT = 84
@@ -81,6 +80,13 @@ class TimelineFrames:
         exact: bool,
         work: RequestWork | None = None,
     ) -> TimelineSprite | None:
+        load_media_libraries()
+        import numpy as np
+        from av.codec.context import CodecContext
+        from av.error import FFmpegError
+        from av.video.codeccontext import VideoCodecContext
+        from av.video.frame import VideoFrame
+
         validate_timeline_request(start, step, count, mode, exact)
         source = source.resolve()
         if not source.is_file():
@@ -168,6 +174,10 @@ class TimelineFrames:
         exact: bool,
         check: Callable[[], None],
     ) -> list[NDArray[np.uint8]]:
+        load_media_libraries()
+        import av
+        from av.video.frame import VideoFrame
+
         tiles: list[NDArray[np.uint8]] = []
         with av.open(str(source), timeout=_MAX_SECONDS) as container:
             if not container.streams.video:
@@ -266,6 +276,11 @@ class TimelineFrames:
 
 
 def _render_tile(frame: VideoFrame, mode: str, aspect: Fraction) -> NDArray[np.uint8]:
+    load_media_libraries()
+    import numpy as np
+    from av.filter import Graph
+    from av.video.frame import VideoFrame
+
     graph = Graph()
     nodes = [
         graph.add_buffer(

@@ -8,14 +8,9 @@ from dataclasses import dataclass
 from fractions import Fraction
 from pathlib import Path
 from threading import Event
+from typing import TYPE_CHECKING
 
-import av
-import numpy as np
-from av import logging as av_logging
-from av.container import InputContainer
-from av.error import FFmpegError
-from av.video.stream import VideoStream
-
+from ..media_libraries import load_media_libraries
 from ..media_tools import find_ffprobe
 from ..models.cutting import CutAnalysis, CutPlan
 from .analysis import CutAnalysisError, read_inventory
@@ -29,6 +24,12 @@ from .packets import (
     validate_cut_source,
 )
 from .timeline import MAX_PACKET_BYTES, MAX_PACKETS
+
+# imported inside functions after load_media_libraries(), so the backend starts without them
+if TYPE_CHECKING:
+    import av
+    import numpy as np
+    from av.container import InputContainer
 
 MAX_BOUNDARY_FRAMES = 24_000
 MAX_BOUNDARY_SECONDS = 120
@@ -119,6 +120,9 @@ def _verify_streams(
     ffprobe: str,
     video_extradata: bytes | None = None,
 ) -> None:
+    load_media_libraries()
+    import av
+
     actual, _ = read_inventory(output, cancel, ffprobe, limits=False)
     order = kept_indices(plan, analysis)
     by_index = {s.index: s for s in analysis.streams}
@@ -248,6 +252,9 @@ def _verify_packets(
 
     Returns packet counts per kind and the constant start delay the muxer added.
     """
+    load_media_libraries()
+    import av
+
     order = kept_indices(plan, analysis)
     expected: dict[int, list[tuple]] = {i: [] for i in order}
     counts: dict[str, int] = {}
@@ -384,6 +391,11 @@ def _decode_window(
     slack: Fraction,
 ) -> tuple[list[tuple[Fraction, bytes]], bool]:
     """Frames in [start, end), and whether decoding began after `start`."""
+    load_media_libraries()
+    import av
+    from av import logging as av_logging
+    from av.error import FFmpegError
+
     frames = []
     first_seen: Fraction | None = None
     with av.open(str(path)) as container:
@@ -442,6 +454,10 @@ def _decode_window(
 
 
 def _verify_audio_edges(plan: CutPlan, output: Path, cancel: Event, budget: _DecodeBudget) -> None:
+    load_media_libraries()
+    import av
+    from av import logging as av_logging
+
     for segment in plan.segments:
         if segment.audio_output is None:
             continue
@@ -493,6 +509,9 @@ def _verify_audio_edges(plan: CutPlan, output: Path, cancel: Event, budget: _Dec
 def _verify_boundaries(
     plan: CutPlan, output: Path, analysis: CutAnalysis, cancel: Event, shift: Fraction
 ) -> int:
+    load_media_libraries()
+    import av
+
     keys = [key.seconds for key in analysis.keyframes]
     frames = list(analysis.frames)
     budget = _DecodeBudget(MAX_BOUNDARY_FRAMES, time.monotonic() + MAX_BOUNDARY_SECONDS)
@@ -553,6 +572,9 @@ def verify_cut_output(
     ffprobe: str | None = None,
     edges: ExactEdges | None = None,
 ) -> CutVerification:
+    load_media_libraries()
+    from av.error import FFmpegError
+
     check_cut_cancel(cancel)
     binary = ffprobe or find_ffprobe()
     if not binary:
@@ -603,6 +625,11 @@ def _exact_window(
     deadline: float,
     cancel: Event,
 ) -> Iterator[tuple[Fraction, np.ndarray]]:
+    load_media_libraries()
+    import av
+    import numpy as np
+    from av.video.stream import VideoStream
+
     with av.open(str(path)) as container:
         stream = container.streams.video[0] if index is None else container.streams[index]
         if not isinstance(stream, VideoStream) or stream.time_base is None:
@@ -643,6 +670,9 @@ def verify_exact_frames(plan: CutPlan, output: Path, analysis: CutAnalysis, canc
     towards a visibly different neighbour, which catches a shifted, missing or repeated frame
     while tolerating repeated frames in the source.
     """
+    load_media_libraries()
+    import numpy as np
+
     frames = analysis.frames
     ends = (*frames[1:], analysis.duration.seconds)
     presented = output_frame_times(plan, analysis)
