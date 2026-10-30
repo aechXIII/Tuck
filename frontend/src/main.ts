@@ -32,7 +32,12 @@ import {
   mergeLaunches,
   type StartupLaunch,
 } from "./platform/second-instance.ts";
-import { hideStatusScreens, showStatusScreen, type StatusAction } from "./platform/status-screen.ts";
+import {
+  hideStatusScreens,
+  showStatusScreen,
+  showStatusScreenWhenSlow,
+  type StatusAction,
+} from "./platform/status-screen.ts";
 import { installNativeSurface } from "./platform/native-surface.ts";
 import { installWindowChrome } from "./platform/window-chrome.ts";
 import "./styles/index.ts";
@@ -47,9 +52,11 @@ let tauriStartupStarted = false;
 let editorRuntime: EditorRuntime | undefined;
 let backendAttached = false;
 
+// the editor can't be used before its backend is attached, so it is out of reach at once, but the
+// screen itself only shows when the start is slow
 function showBackendLoading(): void {
   if (document.getElementById("backend-connecting")) return;
-  showStatusScreen(document, {
+  showStatusScreenWhenSlow(document, {
     id: "backend-connecting",
     tone: "status",
     title: "Starting Tuck…",

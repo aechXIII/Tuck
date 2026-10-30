@@ -15,6 +15,9 @@ export interface StatusAction {
 }
 
 const SCREEN_CLASS = "backend-unavailable";
+// a wait shorter than this needs no screen: one shown that briefly only flickers, which makes
+// Tuck look slower than it is
+const SLOW_WAIT_MS = 500;
 let blockedElements: HTMLElement[] = [];
 
 /** Replaces any status screen with this one and keeps the editor behind it out of reach. */
@@ -59,6 +62,19 @@ export function showStatusScreen(doc: Document, screen: StatusScreen): HTMLEleme
     element.inert = true;
   });
   section.querySelector<HTMLButtonElement>(".btn1")?.focus();
+  return section;
+}
+
+/**
+ * Like showStatusScreen, but the screen only appears once the wait has lasted a moment. The editor
+ * behind it is out of reach from the start either way.
+ */
+export function showStatusScreenWhenSlow(doc: Document, screen: StatusScreen): HTMLElement {
+  const section = showStatusScreen(doc, screen);
+  section.hidden = true;
+  setTimeout(() => {
+    section.hidden = false;
+  }, SLOW_WAIT_MS);
   return section;
 }
 

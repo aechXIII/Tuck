@@ -9,6 +9,10 @@
   color: var(--text);
 }
 
+.backend-unavailable[hidden] {
+  display: none;
+}
+
 .backend-unavailable__content {
   width: min(520px, 100%);
   padding: 24px;

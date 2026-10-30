@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
-import { hideStatusScreens, showStatusScreen } from "./status-screen.ts";
+import { hideStatusScreens, showStatusScreen, showStatusScreenWhenSlow } from "./status-screen.ts";
 
 export type ExitPurpose = "close" | "update" | "restart";
 
@@ -30,11 +30,18 @@ export function exitScreenCopy(count: number | null, purpose: ExitPurpose): { ti
   return { title: "Closing Tuck…", detail: "This only takes a moment." };
 }
 
+/** A plain close is over in about a tenth of a second, too soon for its screen to show. */
+export function closesQuickly(count: number | null, purpose: ExitPurpose): boolean {
+  return purpose === "close" && count === 0;
+}
+
 /** Covers the window while Tuck stops its work, so the wait is visible and nothing new starts. */
 export function showExitScreen(doc: Document, count: number | null, purpose: ExitPurpose): void {
   exiting = true;
-  const copy = exitScreenCopy(count, purpose);
-  showStatusScreen(doc, { id: "app-closing", tone: "status", ...copy });
+  const screen = { id: "app-closing", tone: "status", ...exitScreenCopy(count, purpose) } as const;
+  // stopping exports, an update or a restart takes long enough to show its screen at once
+  if (closesQuickly(count, purpose)) showStatusScreenWhenSlow(doc, screen);
+  else showStatusScreen(doc, screen);
 }
 
 /** The exit did not happen after all (for example the installer could not start). */

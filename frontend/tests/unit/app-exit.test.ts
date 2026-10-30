@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   activeExportCount,
   closeRequestFrom,
+  closesQuickly,
   exitScreenCopy,
   installCloseGuard,
   stopExportsQuestion,
@@ -67,6 +68,14 @@ test("the closing screen says exports are stopping when there may be some", () =
   assert.equal(exitScreenCopy(0, "update").title, "Installing the update…");
   assert.equal(exitScreenCopy(0, "restart").title, "Restarting Tuck…");
   assert.match(exitScreenCopy(1, "restart").detail, /restarts once the exports have stopped/);
+});
+
+test("only a plain close holds its screen back, since stopping exports takes a while", () => {
+  assert.equal(closesQuickly(0, "close"), true);
+  assert.equal(closesQuickly(2, "close"), false);
+  assert.equal(closesQuickly(null, "close"), false);
+  assert.equal(closesQuickly(0, "restart"), false);
+  assert.equal(closesQuickly(0, "update"), false);
 });
 
 function fakeShell(activeExports: number | null) {
