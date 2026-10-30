@@ -229,6 +229,39 @@ def test_probe_falls_back_to_ffprobe_when_pyav_cannot_read(tmp_path, monkeypatch
     assert (info.width, info.height, info.duration, info.video_codec) == (1280, 720, 8.0, "h264")
 
 
+def test_a_probe_while_pyav_loads_asks_ffprobe_instead_of_waiting(tmp_path, monkeypatch) -> None:
+    # right after a cold start PyAV loads in the background; the first video shouldn't wait for it
+    source = tmp_path / "clip.mp4"
+    source.write_bytes(b"video")
+    monkeypatch.setattr("tuck.media_tools.find_ffprobe", lambda: "ffprobe")
+    monkeypatch.setattr("tuck.probe.media_libraries_loading", lambda: True)
+
+    def no_wait() -> None:
+        raise AssertionError("the probe waited for PyAV")
+
+    monkeypatch.setattr("tuck.probe.load_media_libraries", no_wait)
+    monkeypatch.setattr(
+        "tuck.probe._run_ffprobe_json",
+        lambda *_args: {
+            "format": {"duration": "8.0"},
+            "streams": [
+                {
+                    "codec_type": "video",
+                    "codec_name": "h264",
+                    "width": 1280,
+                    "height": 720,
+                    "r_frame_rate": "30/1",
+                    "avg_frame_rate": "30/1",
+                }
+            ],
+        },
+    )
+
+    info = probe(source)
+
+    assert (info.width, info.height, info.duration) == (1280, 720, 8.0)
+
+
 def test_video_info_keeps_average_rate_track_count_and_hdr(tmp_path) -> None:
     source = tmp_path / "clip.mp4"
     data = {

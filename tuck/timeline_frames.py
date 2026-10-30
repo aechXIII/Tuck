@@ -80,13 +80,6 @@ class TimelineFrames:
         exact: bool,
         work: RequestWork | None = None,
     ) -> TimelineSprite | None:
-        load_media_libraries()
-        import numpy as np
-        from av.codec.context import CodecContext
-        from av.error import FFmpegError
-        from av.video.codeccontext import VideoCodecContext
-        from av.video.frame import VideoFrame
-
         validate_timeline_request(start, step, count, mode, exact)
         source = source.resolve()
         if not source.is_file():
@@ -97,6 +90,18 @@ class TimelineFrames:
             f"{start:.17g}:{step:.17g}:{count}:{mode}:{exact}".encode()
         ).hexdigest()
         output = cache / f"timeline_{key}.png"
+        # a saved strip needs no decoding, so it doesn't wait for PyAV to load
+        with self._cache_lock:
+            saved = self._saved_sprite(output, start, step)
+        if saved is not None:
+            return saved
+        load_media_libraries()
+        import numpy as np
+        from av.codec.context import CodecContext
+        from av.error import FFmpegError
+        from av.video.codeccontext import VideoCodecContext
+        from av.video.frame import VideoFrame
+
         deadline = min(monotonic() + _MAX_SECONDS, work.deadline if work else math.inf)
 
         def check() -> None:
@@ -109,14 +114,9 @@ class TimelineFrames:
         try:
             check()
             with self._cache_lock:
-                if output.is_file():
-                    with output.open("rb") as cached:
-                        header = cached.read(24)
-                    if len(header) == 24 and header[:8] == b"\x89PNG\r\n\x1a\n":
-                        width, height = struct.unpack(">II", header[16:24])
-                        if height == TILE_HEIGHT and width % TILE_WIDTH == 0 and 0 < width <= 4800:
-                            output.touch()
-                            return TimelineSprite(str(output), start, step, width // TILE_WIDTH)
+                saved = self._saved_sprite(output, start, step)
+                if saved is not None:
+                    return saved
             if not self._workers.acquire(timeout=max(0, deadline - monotonic())):
                 raise TimeoutError("Timeline pictures took too long to read")
             try:
@@ -151,6 +151,19 @@ class TimelineFrames:
                 self._workers.release()
         finally:
             lock.release()
+
+    @staticmethod
+    def _saved_sprite(output: Path, start: float, step: float) -> TimelineSprite | None:
+        if not output.is_file():
+            return None
+        with output.open("rb") as cached:
+            header = cached.read(24)
+        if len(header) == 24 and header[:8] == b"\x89PNG\r\n\x1a\n":
+            width, height = struct.unpack(">II", header[16:24])
+            if height == TILE_HEIGHT and width % TILE_WIDTH == 0 and 0 < width <= 4800:
+                output.touch()
+                return TimelineSprite(str(output), start, step, width // TILE_WIDTH)
+        return None
 
     @staticmethod
     def _trim_cache(cache: Path, current: Path) -> None:

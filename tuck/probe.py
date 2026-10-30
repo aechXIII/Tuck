@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from . import media_tools
-from .media_libraries import load_media_libraries
+from .media_libraries import load_media_libraries, media_libraries_loading
 from .models import AudioInfo, VideoInfo
 
 # imported inside functions after load_media_libraries(), so the backend starts without them
@@ -317,9 +317,6 @@ def _audio_fields(audio_stream: dict | None) -> tuple[bool, str, int, int, int]:
 
 
 def probe(source: str | Path) -> VideoInfo:
-    load_media_libraries()
-    from av.error import FFmpegError
-
     ffprobe_path = media_tools.find_ffprobe()
     if not ffprobe_path:
         raise FFprobeMissing(
@@ -332,6 +329,12 @@ def probe(source: str | Path) -> VideoInfo:
         raise FileNotFoundError(f"Source file not found: {source}")
 
     file_size = source.stat().st_size
+    # right after a cold start PyAV is still loading; FFprobe describes the video the same way
+    if media_libraries_loading():
+        return _video_info(source, file_size, _run_ffprobe_json(ffprobe_path, source, "probing"))
+    load_media_libraries()
+    from av.error import FFmpegError
+
     try:
         return _video_info(source, file_size, _read_with_pyav(source))
     except (FFmpegError, OSError, ValueError) as e:
@@ -421,9 +424,6 @@ def _stream_int(stream: dict, name: str) -> int:
 
 
 def probe_audio(source: str | Path) -> AudioInfo:
-    load_media_libraries()
-    from av.error import FFmpegError
-
     ffprobe_path = media_tools.find_ffprobe()
     if not ffprobe_path:
         raise FFprobeMissing(
@@ -434,6 +434,11 @@ def probe_audio(source: str | Path) -> AudioInfo:
     source = Path(source)
     if not source.is_file():
         raise FileNotFoundError(f"Audio source file not found: {source}")
+
+    if media_libraries_loading():
+        return _audio_info(source, _run_ffprobe_json(ffprobe_path, source, "probing audio"))
+    load_media_libraries()
+    from av.error import FFmpegError
 
     try:
         return _audio_info(source, _read_with_pyav(source))

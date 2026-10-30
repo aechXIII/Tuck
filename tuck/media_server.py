@@ -19,7 +19,7 @@ from socketserver import ThreadingTCPServer
 from typing import NamedTuple
 
 from .media_filters import UPRIGHT_FILTERS
-from .media_libraries import load_media_libraries
+from .media_libraries import load_media_libraries, media_libraries_loading
 from .media_tools import find_ffmpeg, find_ffprobe, media_tool_environment
 from .probe import first_video_frame
 from .request_work import RequestWork
@@ -397,6 +397,18 @@ def _write_thumbnail_in_process(file_path: Path, thumb_path: Path, timeout: floa
     return True
 
 
+def _thumbnail_with_pyav(file_path: Path, thumb_path: Path, timeout: float) -> bool:
+    """The PyAV thumbnail, or False when PyAV can't make one and FFmpeg should try instead."""
+    load_media_libraries()
+    from av.error import FFmpegError
+
+    try:
+        return _write_thumbnail_in_process(file_path, thumb_path, timeout)
+    except (FFmpegError, OSError, ValueError) as e:
+        logger.debug("PyAV thumbnail failed for %s: %s", file_path.name, e)
+        return False
+
+
 def _thumbnail_seek_time(file_path: Path) -> str:
     candidate = find_ffprobe()
     if not candidate:
@@ -566,9 +578,6 @@ class MediaServer:
     def generate_thumbnail(
         self, file_path: str | Path, timeout: float = _THUMBNAIL_TIMEOUT
     ) -> str | None:
-        load_media_libraries()
-        from av.error import FFmpegError
-
         file_path = Path(file_path).resolve()
         if not file_path.is_file():
             return None
@@ -591,11 +600,11 @@ class MediaServer:
             if cached:
                 return cached
 
-            try:
-                if _write_thumbnail_in_process(file_path, thumb_path, timeout):
-                    return _cached_file_or_none(thumb_path)
-            except (FFmpegError, OSError, ValueError) as e:
-                logger.debug("PyAV thumbnail failed for %s: %s", file_path.name, e)
+            # PyAV is the quick way once it's loaded; while it still loads after a cold start,
+            # FFmpeg makes the picture sooner than waiting for it would
+            loading = media_libraries_loading()
+            if not loading and _thumbnail_with_pyav(file_path, thumb_path, timeout):
+                return _cached_file_or_none(thumb_path)
 
             ffmpeg = find_ffmpeg()
             if not ffmpeg:

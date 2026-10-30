@@ -76,6 +76,19 @@ def test_sprite_clips_at_eof_and_keeps_the_source_grid(server, source):
     assert generate(server, source, start=3) is None
 
 
+def test_a_saved_strip_comes_back_without_loading_pyav(server, source, monkeypatch):
+    first = generate(server, source)
+    assert first is not None
+
+    def no_wait() -> None:
+        raise AssertionError("the saved strip waited for PyAV")
+
+    monkeypatch.setattr("tuck.timeline_frames.load_media_libraries", no_wait)
+    again = generate(server, source)
+    assert again is not None
+    assert (again.path, again.count) == (first.path, first.count)
+
+
 def test_exact_frames_refine_keyframes_and_cache_separates_requests(server, source):
     key = generate(server, source, count=4)
     exact = generate(server, source, count=4, exact=True)

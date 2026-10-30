@@ -700,6 +700,32 @@ class TestMediaServer:
         assert result is not None and Path(result).read_bytes() == b"jpg"
         assert [command[0] for command in calls] == ["ffmpeg"]
 
+    def test_a_thumbnail_while_pyav_loads_comes_from_ffmpeg_instead_of_waiting(
+        self, tmp_path, monkeypatch
+    ):
+        source = tmp_path / "clip.mp4"
+        source.write_bytes(b"video")
+        server = MediaServer()
+        server.set_thumbnail_cache_dir(tmp_path / "thumbs")
+        monkeypatch.setattr("tuck.media_server.media_libraries_loading", lambda: True)
+
+        def no_wait(*_args):
+            raise AssertionError("the thumbnail waited for PyAV")
+
+        monkeypatch.setattr("tuck.media_server._thumbnail_with_pyav", no_wait)
+        monkeypatch.setattr("tuck.media_server.find_ffmpeg", lambda: "ffmpeg")
+        monkeypatch.setattr("tuck.media_server.find_ffprobe", lambda: None)
+
+        def fake_run(command, **_kwargs):
+            Path(command[-1]).write_bytes(b"jpg")
+            return SimpleNamespace(returncode=0, stderr=b"")
+
+        monkeypatch.setattr("tuck.media_server.subprocess.run", fake_run)
+
+        result = server.generate_thumbnail(source)
+
+        assert result is not None and Path(result).read_bytes() == b"jpg"
+
     def test_generate_thumbnail_runs_ffmpeg_once_for_requests_at_the_same_time(
         self, tmp_path, monkeypatch
     ):
