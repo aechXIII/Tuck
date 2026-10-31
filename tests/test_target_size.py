@@ -35,6 +35,20 @@ class TestTargetSizePlanning:
         hard = calculate_target_size_bitrates(10 * 1024 * 1024, 30.0, 96_000, hardware_encoder=True)
         assert hard.safety_margin > soft.safety_margin
 
+    def test_two_pass_software_aims_where_a_retry_would(self):
+        # two-pass x264 lands about 2% over its bitrate, so the first try ends near 97% of the
+        # target instead of the 93.5-94.5% that used to make nearly every export encode twice
+        target = 20 * 1024 * 1024
+        one_pass = calculate_target_size_bitrates(target, 10.0, 128_000)
+        two_pass = calculate_target_size_bitrates(target, 10.0, 128_000, two_pass=True)
+        assert two_pass.safety_margin == 0.05
+        assert two_pass.video_bitrate > one_pass.video_bitrate
+        # hardware encoders keep their wider margin whatever they were asked for
+        hardware = calculate_target_size_bitrates(
+            target, 10.0, 128_000, hardware_encoder=True, two_pass=True
+        )
+        assert hardware.safety_margin > one_pass.safety_margin
+
     def test_very_small_target_raises(self):
         with pytest.raises(ValueError):
             calculate_target_size_bitrates(500, 10.0, 128_000)
@@ -225,9 +239,13 @@ class TestMeasuredRetryPolicy:
         decision = decide_retry(12_000_000, 10_000_000, 2_000_000, 0, 3, non_video_size=fixed)
         assert decision.new_video_bitrate == 1_616_666
 
-    @pytest.mark.parametrize("size", [9_500_000, 9_700_000, 10_000_000])
+    # a retry is a whole second encode for a few percent: 92% and up is kept
+    @pytest.mark.parametrize("size", [9_200_000, 9_400_000, 9_500_000, 9_700_000, 10_000_000])
     def test_near_limit_results_do_not_spend_another_encode(self, size):
         assert not decide_retry(size, 10_000_000, 2_000_000, 0, 3).should_retry
+
+    def test_a_result_under_the_accept_line_is_refined(self):
+        assert decide_retry(9_100_000, 10_000_000, 2_000_000, 0, 3).should_retry
 
     def test_fixed_bytes_that_exhaust_the_budget_stop_at_the_minimum(self):
         decision = decide_retry(12_000_000, 10_000_000, 2_000_000, 0, 3, non_video_size=10_000_000)

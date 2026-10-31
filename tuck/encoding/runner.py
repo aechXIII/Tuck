@@ -436,12 +436,26 @@ class FFmpegEngine:
         on_progress: ProgressCallback | None,
         attempt: int,
         max_attempts: int,
+        pass_log: Path | None = None,
+        reuse_pass_log: bool = False,
     ) -> Path:
         retry_number = attempt + 1 if attempt > 0 else None
         max_retries = max_attempts if attempt > 0 else None
-        encode = self._encode_two_pass if plan.two_pass else self._encode_single_pass
         try:
-            return encode(
+            if plan.two_pass:
+                return self._encode_two_pass(
+                    ffmpeg,
+                    plan,
+                    source,
+                    output,
+                    total_duration,
+                    on_progress,
+                    retry_number=retry_number,
+                    max_retries=max_retries,
+                    pass_log=pass_log,
+                    reuse_pass_log=reuse_pass_log,
+                )
+            return self._encode_single_pass(
                 ffmpeg,
                 plan,
                 source,
@@ -474,7 +488,15 @@ class FFmpegEngine:
             )
             # restart both passes so their statistics use the same decoded pictures
             return self._run_one_attempt(
-                ffmpeg, plan, source, output, total_duration, on_progress, attempt, max_attempts
+                ffmpeg,
+                plan,
+                source,
+                output,
+                total_duration,
+                on_progress,
+                attempt,
+                max_attempts,
+                pass_log=pass_log,
             )
 
     def _apply_retry_decision(
@@ -586,6 +608,10 @@ class FFmpegEngine:
         best_size = 0
         best_bitrate = plan.video_bitrate
         best_estimated_size = plan.estimated_size
+        # a retry of a two-pass encode runs pass 2 alone on the first attempt's statistics: they
+        # describe the same pictures, and x264 and x265 spend any new bitrate from them
+        pass_log: Path | None = None
+        first_pass_done = False
 
         def accept(result: Path) -> Path:
             if self._cancel_event.is_set():
@@ -621,6 +647,8 @@ class FFmpegEngine:
                 attempt_outputs.append(attempt_output)
                 # FFmpeg refuses an existing output, including the empty reservation
                 attempt_output.unlink()
+                if plan.two_pass and pass_log is None:
+                    pass_log = attempt_output.with_suffix(".log")
                 try:
                     result = self._run_one_attempt(
                         ffmpeg,
@@ -631,7 +659,10 @@ class FFmpegEngine:
                         on_progress,
                         attempt,
                         max_attempts,
+                        pass_log=pass_log,
+                        reuse_pass_log=first_pass_done,
                     )
+                    first_pass_done = plan.two_pass
                 except OSError as exc:
                     if self._cancel_event.is_set():
                         raise EncodeCancelled("Encoding cancelled by user") from exc
@@ -729,6 +760,8 @@ class FFmpegEngine:
         finally:
             for attempt_output in attempt_outputs:
                 self._cleanup_output(attempt_output)
+            if pass_log is not None:
+                self._cleanup_pass_logs(pass_log)
 
     def _measure_video_size(self, result: Path) -> tuple[int, float] | None:
         load_media_libraries()
@@ -815,44 +848,51 @@ class FFmpegEngine:
         on_progress: ProgressCallback | None,
         retry_number: int | None = None,
         max_retries: int | None = None,
+        pass_log: Path | None = None,
+        reuse_pass_log: bool = False,
     ) -> Path:
-        log_file = output.with_suffix(".log")
+        """Encodes in two passes; with `reuse_pass_log`, pass 2 alone on `pass_log`'s statistics.
+
+        A `pass_log` given by the caller is the caller's to remove.
+        """
+        log_file = pass_log or output.with_suffix(".log")
         null_output = "NUL" if os.name == "nt" else "/dev/null"
 
         try:
-            pass1_cmd = [
-                *build_base_cmd(
-                    ffmpeg,
-                    plan,
-                    source,
-                    include_audio=False,
-                    prepared_video=self._prepared_video,
-                    blend=self._tmix,
-                    hardware_decode=self._hardware_decode,
-                    vaapi_device=self._vaapi_device,
-                ),
-                "-pass",
-                "1",
-                "-passlogfile",
-                str(log_file),
-                "-f",
-                "null",
-                null_output,
-            ]
+            if not reuse_pass_log:
+                pass1_cmd = [
+                    *build_base_cmd(
+                        ffmpeg,
+                        plan,
+                        source,
+                        include_audio=False,
+                        prepared_video=self._prepared_video,
+                        blend=self._tmix,
+                        hardware_decode=self._hardware_decode,
+                        vaapi_device=self._vaapi_device,
+                    ),
+                    "-pass",
+                    "1",
+                    "-passlogfile",
+                    str(log_file),
+                    "-f",
+                    "null",
+                    null_output,
+                ]
 
-            logger.info("Pass 1: %s", " ".join(pass1_cmd))
-            self._run_pass(
-                pass1_cmd,
-                total_duration,
-                on_progress,
-                pass_num=1,
-                total_passes=2,
-                retry_number=retry_number,
-                max_retries=max_retries,
-            )
+                logger.info("Pass 1: %s", " ".join(pass1_cmd))
+                self._run_pass(
+                    pass1_cmd,
+                    total_duration,
+                    on_progress,
+                    pass_num=1,
+                    total_passes=2,
+                    retry_number=retry_number,
+                    max_retries=max_retries,
+                )
 
-            if self._cancel_event.is_set():
-                raise EncodeCancelled("Encoding cancelled by user")
+                if self._cancel_event.is_set():
+                    raise EncodeCancelled("Encoding cancelled by user")
 
             pass2_cmd = [
                 *build_base_cmd(
@@ -871,13 +911,17 @@ class FFmpegEngine:
                 str(output),
             ]
 
-            logger.info("Pass 2: %s", " ".join(pass2_cmd))
+            if reuse_pass_log:
+                logger.info("Pass 2 on the first pass's statistics: %s", " ".join(pass2_cmd))
+            else:
+                logger.info("Pass 2: %s", " ".join(pass2_cmd))
+            # on reused statistics this is the attempt's only pass, so its progress runs 0 to 100
             self._run_pass(
                 pass2_cmd,
                 total_duration,
                 on_progress,
-                pass_num=2,
-                total_passes=2,
+                pass_num=1 if reuse_pass_log else 2,
+                total_passes=1 if reuse_pass_log else 2,
                 retry_number=retry_number,
                 max_retries=max_retries,
             )
@@ -886,7 +930,8 @@ class FFmpegEngine:
                 raise EncodeCancelled("Encoding cancelled by user")
 
         finally:
-            self._cleanup_pass_logs(log_file)
+            if pass_log is None:
+                self._cleanup_pass_logs(log_file)
 
         return output
 

@@ -410,6 +410,7 @@ def plan(
             effective_duration,
             audio_br,
             hardware_encoder=hardware,
+            two_pass=two_pass,
             min_video_bitrate=MIN_VIDEO_BITRATE,
             audio_tracks=source_audio_tracks,
             max_video_bitrate=max_video_br,

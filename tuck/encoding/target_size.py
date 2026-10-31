@@ -11,11 +11,16 @@ _MB = 1024 * 1024
 MIN_VIDEO_BITRATE = 50_000
 MAX_AUDIO_BITRATE = 320_000
 DEFAULT_MAX_RETRIES = 2
-UNDERSHOOT_RATIO = 0.95
+# an output this full is kept: another encode takes as long as the first and adds a few
+# percent at most, and NVENC often comes back the same size
+UNDERSHOOT_RATIO = 0.92
 MAX_REFINEMENT_FACTOR = 2.0
 SOFTWARE_TARGET_RATIO = 0.97
 HARDWARE_TARGET_RATIO = 0.95
 HARDWARE_SAFETY_EXTRA = 0.02
+# two-pass x264 and x265 spend about 2% more than the bitrate they're given, so holding this much
+# back puts the first try near SOFTWARE_TARGET_RATIO, where a retry would aim
+TWO_PASS_MARGIN = 0.05
 # growth below this between a retry and the one before it means more bitrate is
 # not producing more bytes: the source is content-limited and further retries
 # only cost a full re-encode each
@@ -121,6 +126,7 @@ def calculate_target_size_bitrates(
     audio_bitrate: int,
     *,
     hardware_encoder: bool = False,
+    two_pass: bool = False,
     min_video_bitrate: int = MIN_VIDEO_BITRATE,
     overhead_factor: float = AUDIO_OVERHEAD_FACTOR,
     audio_tracks: int = 1,
@@ -141,6 +147,7 @@ def calculate_target_size_bitrates(
             duration_s,
             audio_bitrate,
             hardware_encoder=hardware_encoder,
+            two_pass=two_pass,
             min_video_bitrate=min_video_bitrate,
             overhead_factor=overhead_factor,
             audio_tracks=audio_tracks,
@@ -169,6 +176,7 @@ def _plan_bitrates(
     audio_bitrate: int,
     *,
     hardware_encoder: bool,
+    two_pass: bool,
     min_video_bitrate: int,
     overhead_factor: float,
     audio_tracks: int,
@@ -178,7 +186,10 @@ def _plan_bitrates(
     if target_size < 1024:
         return None
 
-    safety = overhead_factor + (HARDWARE_SAFETY_EXTRA if hardware_encoder else 0.0)
+    if two_pass and not hardware_encoder:
+        safety = TWO_PASS_MARGIN
+    else:
+        safety = overhead_factor + (HARDWARE_SAFETY_EXTRA if hardware_encoder else 0.0)
     safety = min(max(safety, 0.02), 0.25)
     effective_target = int(target_size * (1.0 - safety))
     if effective_target < 1024:

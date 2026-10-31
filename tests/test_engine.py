@@ -1724,6 +1724,35 @@ class TestTargetSizeRetries:
 
         assert seen == [crop, crop], "the crop must survive the retry"
 
+    def test_a_two_pass_retry_runs_pass_two_alone_on_the_first_pass(self, engine, tmp_path):
+        work = tmp_path / "work"
+        work.mkdir()
+        output = work / "output.mp4"
+        plan = _small_plan(tmp_path / "in.mp4", output, two_pass=True, target_size=10_000_000)
+        sizes = iter([8_000_000, 9_600_000])
+        passes = []
+
+        def run_pass(cmd, _duration, _progress, pass_num, total_passes, **_kwargs):
+            log = Path(cmd[cmd.index("-passlogfile") + 1])
+            passes.append((cmd[cmd.index("-pass") + 1], log, int(cmd[cmd.index("-b:v") + 1])))
+            if cmd[cmd.index("-pass") + 1] == "1":
+                Path(f"{log}-0.log").write_text("statistics")
+            else:
+                assert Path(f"{log}-0.log").is_file(), "pass 2 needs the first pass's statistics"
+                Path(cmd[-1]).write_bytes(b"x" * next(sizes))
+            # a pass 2 on reused statistics is the attempt's only pass for its progress
+            assert total_passes == (2 if len(passes) < 3 else 1)
+
+        engine._run_pass = run_pass
+        engine._measure_video_size = lambda *_args: None
+        engine._encode_with_retry("ffmpeg", plan, Path(plan.source), output, 10.0, None)
+
+        assert [kind for kind, _log, _bitrate in passes] == ["1", "2", "2"]
+        assert len({log for _kind, log, _bitrate in passes}) == 1
+        assert passes[2][2] > passes[1][2], "the retry spends more of the target"
+        assert output.stat().st_size == 9_600_000
+        assert sorted(path.name for path in work.iterdir()) == ["output.mp4"]
+
 
 def test_two_pass_uses_identical_crop_filter_in_both_passes(
     engine, real_video_path, tmp_path, monkeypatch
