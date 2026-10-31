@@ -1088,7 +1088,13 @@ export function installEditorRuntime(
     if (started) {
       const files = launch.files?.filter((file): file is string => typeof file === "string") ?? [];
       if (launch.task) encoding.openTask(launch.task, false);
-      if (files.length) library.addFiles(files);
+      if (files.length) {
+        library.addFiles(files);
+        // videos sent to an open Tuck (Send To, Open with) were asked for by name, so the first
+        // one is shown; a drop adds to the Library and keeps the current video
+        const sent = files.find((file) => session.clips[file]);
+        if (sent && sent !== session.selPath) library.selectClip(sent);
+      }
       if (launch.sendto !== undefined && launch.sendto !== null) handleSendto(launch.sendto);
       return;
     }

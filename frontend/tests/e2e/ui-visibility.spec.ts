@@ -94,6 +94,18 @@ test("a shortcut cannot open a hidden task", async ({page}) => {
   await expect(page.locator("#wf-l")).toBeHidden();
 });
 
+test("a video sent to an open Tuck is the one shown", async ({page}) => {
+  await start(page);
+  const first = page.locator(`[data-clip-path="${source}"]`);
+  await expect(first).toHaveAttribute("aria-selected", "true");
+  const second = "C:/videos/Second.mp4";
+  await page.evaluate(path => window.initApp?.({files:[path]}), second);
+  await expect(page.locator(`[data-clip-path="${second}"]`)).toHaveAttribute("aria-selected", "true");
+  // sending a video that is already in the Library shows it again
+  await page.evaluate(path => window.initApp?.({files:[path]}), source);
+  await expect(first).toHaveAttribute("aria-selected", "true");
+});
+
 test("timeline switches start as they were left and are remembered", async ({page}) => {
   await start(page, {timeline_snap:false, timeline_keyframes:true});
   const snap = page.locator("#btn-snap-toggle");
