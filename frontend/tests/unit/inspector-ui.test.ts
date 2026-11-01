@@ -3,7 +3,7 @@ import test from "node:test";
 
 import * as inspectorUi from "../../src/features/panels/inspector-ui.ts";
 
-test("export summary presents the current output decision in one compact line", () => {
+test("export summary presents the current output decision in one compact line before a plan", () => {
   assert.deepEqual(
     inspectorUi.exportSummary({
       workflow: "compression",
@@ -17,9 +17,25 @@ test("export summary presents the current output decision in one compact line", 
     }),
     {
       title: "50 MB",
-      detail: "2560×1440 · 60 fps · H.264 · AAC 128k",
+      detail: "2560×1440 · 60 fps",
     },
   );
+});
+
+test("compress summary ends with the bitrate a size works out to, and nothing for quality", () => {
+  const state = {
+    workflow: "compression",
+    targetSizeMb: 10,
+    width: 2560,
+    height: 1440,
+    fps: 60,
+    videoEncoder: "libx264",
+    audioBitrateKbps: 128,
+    videoBitrateKbps: 1_120,
+  };
+  assert.equal(inspectorUi.exportSummary({ ...state, goal: "size" }).detail, "2560×1440 · 60 fps · 1.1 Mbps");
+  assert.equal(inspectorUi.exportSummary({ ...state, videoBitrateKbps: 850 }).detail, "2560×1440 · 60 fps · 850 kbps");
+  assert.equal(inspectorUi.exportSummary({ ...state, goal: "quality" }).detail, "2560×1440 · 60 fps");
 });
 
 test("export summaries describe copy, disabled audio, and encoder speed honestly", () => {

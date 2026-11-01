@@ -99,6 +99,11 @@ pub enum BackendCommand {
     CreatePlan {
         request: Value,
     },
+    /// encodes a few short pieces of a Quality export to estimate its size; a newer one stops it
+    EstimateSize {
+        request: Value,
+    },
+    CancelSizeEstimate,
     /// the native player's preview mix for an export request
     CompilePreviewMix {
         request: Value,
@@ -294,6 +299,8 @@ impl BackendCommand {
             Self::GetJoin { work_id } => ("get_join", json!({ "work_id": work_id })),
             Self::CancelJoin { work_id } => ("cancel_join", json!({ "work_id": work_id })),
             Self::CreatePlan { request } => ("create_plan", json!({ "request": request })),
+            Self::EstimateSize { request } => ("estimate_size", json!({ "request": request })),
+            Self::CancelSizeEstimate => ("cancel_size_estimate", json!({})),
             Self::CompilePreviewMix { request } => {
                 ("compile_preview_mix", json!({ "request": request }))
             }
@@ -418,6 +425,23 @@ fn reject_unsupported_backend_command(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn size_estimates_reach_the_sidecar_and_cancel_takes_no_payload() {
+        let request = json!({ "source": "clip.mp4", "rate_control_method": "crf", "crf": 23 });
+        let estimate: BackendCommand = serde_json::from_value(
+            json!({ "command": "estimate_size", "payload": { "request": request } }),
+        )
+        .expect("estimate is allowlisted");
+        let envelope = estimate.to_sidecar_request("estimate-1").unwrap();
+        assert_eq!(envelope["method"], "estimate_size");
+        assert_eq!(envelope["params"]["request"], request);
+        let cancel: BackendCommand =
+            serde_json::from_value(json!({ "command": "cancel_size_estimate" })).unwrap();
+        let envelope = cancel.to_sidecar_request("estimate-2").unwrap();
+        assert_eq!(envelope["method"], "cancel_size_estimate");
+        assert_eq!(envelope["params"], json!({}));
+    }
 
     #[test]
     fn whole_queue_actions_take_no_payload() {

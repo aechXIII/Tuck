@@ -42,6 +42,15 @@ from .encoding_policy import (
     NVENC_ENCODERS as NVENC_ENCODERS,
 )
 from .encoding_policy import (
+    QUALITY_RC_METHODS,
+    native_preset_for_encoder,
+    normalize_legacy_rc_matrix,
+    stored_rate_control_method,
+    validate_preset_for_encoder,
+    validate_rc_method_for_encoder,
+    validate_tune_for_encoder,
+)
+from .encoding_policy import (
     RC_EXPLICIT_BITRATE as RC_EXPLICIT_BITRATE,
 )
 from .encoding_policy import (
@@ -124,13 +133,6 @@ from .encoding_policy import (
 )
 from .encoding_policy import (
     X265_TUNES as X265_TUNES,
-)
-from .encoding_policy import (
-    native_preset_for_encoder,
-    normalize_legacy_rc_matrix,
-    validate_preset_for_encoder,
-    validate_rc_method_for_encoder,
-    validate_tune_for_encoder,
 )
 from .encoding_policy import (
     normalize_scaler as normalize_scaler,
@@ -221,9 +223,6 @@ BUILTIN_PROFILE_IDS: frozenset[str] = frozenset(
     }
 )
 # the profiles made for sending to Discord, which shares its own plays-everywhere advice
-DISCORD_PROFILE_IDS: frozenset[str] = frozenset(
-    {PROFILE_ID_DISCORD_FREE, PROFILE_ID_DISCORD_NITRO_BASIC, PROFILE_ID_DISCORD_NITRO}
-)
 
 DISCORD_FREE_LIMIT = 20 * 1024 * 1024
 DISCORD_NITRO_BASIC_LIMIT = 50 * 1024 * 1024
@@ -1198,6 +1197,15 @@ class EncodePlan:
         return len(self.effective_segments)
 
     @property
+    def aims_for_size(self) -> bool:
+        """Whether the encode works to target_size: Compress with the Size goal."""
+        return (
+            self.workflow == WORKFLOW_COMPRESSION
+            and self.rate_control_method not in QUALITY_RC_METHODS
+            and self.target_size > 0
+        )
+
+    @property
     def has_trim(self) -> bool:
         segments = self.effective_segments
         if len(segments) != 1:
@@ -1475,6 +1483,11 @@ class Profile:
             merged["crf"] = 18
             merged["two_pass"] = False
         source_schema_version = merged.get("schema_version", 1)
+        merged["rate_control_method"] = stored_rate_control_method(
+            merged.get("workflow", WORKFLOW_COMPRESSION),
+            merged.get("rate_control_method", RCM_CBR),
+            source_schema_version,
+        )
         if source_schema_version < 4 or (
             merged.get("workflow", WORKFLOW_COMPRESSION) == WORKFLOW_COMPRESSION
             and merged.get("rate_control") == RC_EXPLICIT_BITRATE

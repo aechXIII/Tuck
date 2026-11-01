@@ -34,6 +34,8 @@ from ..models import (
 )
 from ..models.cutting import CutPlan
 from ..models.encoding_policy import (
+    BITRATE_RC_METHODS,
+    QUALITY_RC_METHODS,
     VAAPI_ENCODERS,
     native_preset_for_encoder,
     validate_encoder_supported_on_desktop,
@@ -84,7 +86,8 @@ def _execution_plan(requested_plan: EncodePlan, encoder: str, auto: bool) -> Enc
     if requested_plan.video_encoder == ENCODER_AUTO_COMPRESSION and not is_hardware_encoder(
         encoder
     ):
-        plan.two_pass = True
+        # two passes only help a size goal; a quality level is met in one
+        plan.two_pass = plan.rate_control_method in BITRATE_RC_METHODS
         plan.preset = "veryslow"
     if is_hardware_encoder(encoder):
         plan.two_pass = False
@@ -598,8 +601,10 @@ class FFmpegEngine:
     ) -> Path:
         is_explicit = plan.rate_control == RC_EXPLICIT_BITRATE
         is_upscale = plan.workflow == WORKFLOW_UPSCALE
+        # Compress's Quality goal has no size to meet, so its one encode is the export
+        by_quality = plan.rate_control_method in QUALITY_RC_METHODS
 
-        max_attempts = 1 if is_upscale or is_explicit else DEFAULT_MAX_RETRIES + 1
+        max_attempts = 1 if is_upscale or is_explicit or by_quality else DEFAULT_MAX_RETRIES + 1
         attempt = 0
         previous_size: int | None = None
         previous_bitrate = plan.video_bitrate
@@ -682,8 +687,8 @@ class FFmpegEngine:
                     attempt += 1
                     continue
 
-                if is_upscale:
-                    logger.info("Upscale encode complete: %s", format_size(result.stat().st_size))
+                if is_upscale or by_quality:
+                    logger.info("Encode complete: %s", format_size(result.stat().st_size))
                     return accept(result)
 
                 self._emit_verifying_progress(on_progress, total_duration, attempt, max_attempts)

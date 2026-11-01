@@ -70,9 +70,9 @@ test("a hidden task's profiles are left out, and an empty other task has no grou
 
 test("search matches the name or the details, ignoring case and outer spaces", () => {
   assert.equal(profileMatches("1440p Upscale", "2560 × 1440", ""), true);
-  assert.equal(profileMatches("Discord", "Target 20 MB", "  disc "), true);
+  assert.equal(profileMatches("Discord", "20 MB", "  disc "), true);
   assert.equal(profileMatches("Upscale", "2560 × 1440 · source frame rate", "1440"), true);
-  assert.equal(profileMatches("Discord", "Target 20 MB", "tiktok"), false);
+  assert.equal(profileMatches("Discord", "20 MB", "tiktok"), false);
 });
 
 test("match ranges cover every match without overlapping", () => {

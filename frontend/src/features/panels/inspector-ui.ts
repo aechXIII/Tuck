@@ -1,3 +1,5 @@
+import { bitrateText } from "../export/goal.ts";
+
 export interface InspectorAudioState {
   audioEnabled?: boolean;
   keepAudio?: boolean;
@@ -12,6 +14,10 @@ export interface InspectorEncoderState {
 export interface InspectorExportState extends InspectorAudioState, InspectorEncoderState {
   workflow?: string;
   targetSizeMb?: number;
+  /** Compress's goal; with Size the detail line ends with the bitrate the size works out to */
+  goal?: "size" | "quality";
+  /** the video bitrate from the selected video's plan; 0 until there is one */
+  videoBitrateKbps?: number;
   width?: number;
   height?: number;
   fps?: number;
@@ -97,21 +103,16 @@ export function exportSummary(state: InspectorExportState): {
   const width = Math.max(0, Math.round(Number(state.width) || 0));
   const height = Math.max(0, Math.round(Number(state.height) || 0));
   const fps = Math.max(0, Number(Number(state.fps || 0).toFixed(3)));
+  const upscale = state.workflow === "upscale";
+  const picture = width + "×" + height + " · " + fps + " fps";
+  const bitrate = state.goal === "quality" ? "" : bitrateText(Number(state.videoBitrateKbps) || 0);
   return {
-    title:
-      state.workflow === "upscale"
-        ? "Upscale output"
-        : Math.max(0, Math.round(Number(state.targetSizeMb) || 0)) + " MB",
-    detail:
-      width +
-      "×" +
-      height +
-      " · " +
-      fps +
-      " fps · " +
-      videoCodec(state.videoEncoder) +
-      " · " +
-      audioSummary(state),
+    title: upscale ? "Upscale output" : Math.max(0, Math.round(Number(state.targetSizeMb) || 0)) + " MB",
+    // Compress's card says what its goal gives instead of the audio, which Adjust names; its
+    // encoder chips name the codec
+    detail: upscale
+      ? picture + " · " + videoCodec(state.videoEncoder) + " · " + audioSummary(state)
+      : bitrate ? picture + " · " + bitrate : picture,
   };
 }
 

@@ -865,34 +865,57 @@
                     <button type="button" class="profile-menu-cmd" data-action-click="settings-open-profiles">Manage profiles…</button>
                   </div>
                 </div>
-                <div class="gr" id="sz-grp">
-                  <div class="sz-head">
-                    <span class="sz-cap">Target size</span>
+                <div class="gr" id="sz-grp" data-goal="size">
+                  <!-- Size or Quality: the chosen goal holds the number, the other one switches to it -->
+                  <div class="goal-pair" role="radiogroup" aria-label="Export goal">
+                    <div class="goal-col held" data-goal-col="size" data-goal="size" data-action-click="encoding-goal">
+                      <button type="button" class="goal-cap" role="radio" aria-checked="true" tabindex="0">Size</button>
+                      <span class="goal-val goal-held-val">
+                        <input id="sz-badge" type="text" inputmode="decimal" value="10" autocomplete="off" spellcheck="false"
+                          data-action-change="encoding-badge-size"
+                          aria-label="Size in megabytes" />
+                        <span id="sz-unit" class="goal-unit">MB</span>
+                      </span>
+                      <span class="goal-val goal-auto" aria-hidden="true">Auto</span>
+                      <span id="sz-est-status" class="sr-only" role="status"></span>
+                    </div>
+                    <div class="goal-col" data-goal-col="quality" data-goal="quality" data-action-click="encoding-goal">
+                      <button type="button" class="goal-cap" role="radio" aria-checked="false" tabindex="-1">Quality</button>
+                      <span class="goal-val goal-held-val">
+                        <span id="q-method" class="goal-unit">CRF</span>
+                        <input id="q-badge" type="text" inputmode="decimal" value="23" autocomplete="off" spellcheck="false"
+                          data-action-change="encoding-badge-quality"
+                          aria-label="CRF level" />
+                      </span>
+                      <span class="goal-val goal-auto" aria-hidden="true">Auto</span>
+                    </div>
                   </div>
-                  <div class="sz-fig">
-                    <span class="sz-est">
-                      <input id="sz-badge" type="number" min="2" step="1" value="10"
-                        data-action-change="encoding-badge-size"
-                        aria-label="Target size in megabytes" />
-                      <span id="sz-unit">MB</span>
-                    </span>
+                  <div class="goal-ctl">
+                    <input
+                      type="range"
+                      id="sz-slider"
+                      min="2"
+                      max="500"
+                      value="10"
+                      data-action-input="encoding-target-size"
+                      aria-label="Size in megabytes"
+                      aria-valuenow="10"
+                      aria-valuemin="2"
+                      aria-valuemax="500"
+                    />
+                    <input type="range" id="q-slider" min="10" max="45" value="32" hidden
+                      data-action-input="encoding-quality"
+                      aria-label="Quality" aria-valuetext="CRF 23" />
                     <div class="pset" id="sz-presets"></div>
                   </div>
-                  <input
-                    type="range"
-                    id="sz-slider"
-                    min="2"
-                    max="500"
-                    value="10"
-                    data-action-input="encoding-target-size"
-                    aria-label="Target size in megabytes"
-                    aria-valuenow="10"
-                    aria-valuemin="2"
-                    aria-valuemax="500"
-                  />
                   <p id="sz-error" class="sz-error" role="status" hidden></p>
-                  <div id="export-summary-detail" class="sz-detail">
-                    1920&times;1080 &middot; 30 fps &middot; H.264 &middot; AAC 128k
+                  <div class="goal-foot">
+                    <div id="export-summary-detail" class="sz-detail">1920&times;1080 &middot; 30 fps</div>
+                    <!-- the encoder at a glance: each chip flips one half of it; Adjust > Encoder has every choice -->
+                    <div class="enc-chips" role="group" aria-label="Encoder">
+                      <button type="button" id="enc-codec" class="enc-chip" data-action-click="encoding-chip" data-chip="codec">H.264</button>
+                      <button type="button" id="enc-place" class="enc-chip" data-action-click="encoding-chip" data-chip="place">CPU</button>
+                    </div>
                   </div>
                 </div>
                 <ul id="export-plan-warnings" class="plan-warnings" aria-label="Export notes" hidden></ul>

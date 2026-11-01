@@ -74,7 +74,7 @@ test("Ctrl+V in a text field pastes text there instead of adding videos", async 
   await expect(page.locator(".clip")).toHaveCount(1);
 
   await page.evaluate(() => navigator.clipboard.writeText("256"));
-  const size = page.getByRole("spinbutton", { name: "Target size in megabytes" });
+  const size = page.getByRole("textbox", { name: "Size in megabytes" });
   await size.fill("");
   await size.press("Control+v");
   await expect(size).toHaveValue("256");

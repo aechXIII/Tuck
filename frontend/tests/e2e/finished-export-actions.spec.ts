@@ -169,6 +169,8 @@ test("reordering by the handle still works on a finished row and never drags the
   await open(page);
   const done = row(page, "Ranked match clutch.mp4");
   const ready = row(page, "Cat vs laser pointer.mp4");
+  // the rows are drawn again once the queue state arrives; measure the finished one
+  await expect(done).toHaveAttribute("data-queue-state", "completed");
   await done.hover();
   const handle = (await done.locator(".c-drag").boundingBox())!;
   const target = (await ready.boundingBox())!;

@@ -816,6 +816,7 @@ impl BackendCommand {
             | Self::CancelCutWork { .. }
             | Self::GetJoin { .. }
             | Self::CancelJoin { .. }
+            | Self::CancelSizeEstimate
             | Self::ListLuts
             | Self::ClearLutHistory
             | Self::GetQueueState
@@ -860,6 +861,7 @@ impl BackendCommand {
             | Self::GetMediaUrl { .. }
             | Self::ReleaseMediaToken { .. }
             | Self::CreatePlan { .. }
+            | Self::EstimateSize { .. }
             | Self::JoinVideos { .. }
             | Self::CompilePreviewMix { .. }
             | Self::EnqueueWithOptions { .. }
@@ -949,6 +951,18 @@ mod launch_config_tests {
         ] {
             assert_eq!(command.timeout(), LIGHT_REQUEST_TIMEOUT);
         }
+    }
+
+    #[test]
+    fn size_estimates_get_time_to_encode_and_cancel_answers_quickly() {
+        let estimate = BackendCommand::EstimateSize {
+            request: serde_json::json!({}),
+        };
+        assert_eq!(estimate.timeout(), MEDIA_REQUEST_TIMEOUT);
+        assert_eq!(
+            BackendCommand::CancelSizeEstimate.timeout(),
+            LIGHT_REQUEST_TIMEOUT
+        );
     }
 
     #[test]

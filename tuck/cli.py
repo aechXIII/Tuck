@@ -116,7 +116,9 @@ def _build_parser() -> argparse.ArgumentParser:
     p_probe.add_argument("file", help="Video file to probe")
     p_probe.add_argument("--json", action="store_true", help="Output as JSON")
 
-    p_compress = sub.add_parser("compress", help="Compress video files to a size limit")
+    p_compress = sub.add_parser(
+        "compress", help="Compress video files to a size or a quality level"
+    )
     p_compress.add_argument("files", nargs="+", help="Video files to compress")
     p_compress.add_argument(
         "--profile",
@@ -124,7 +126,16 @@ def _build_parser() -> argparse.ArgumentParser:
         default=PROFILE_ID_DISCORD_FREE,
         help="Compression profile (default: discord-free; discord-10mb is also accepted)",
     )
-    p_compress.add_argument("--size", type=float, help="Target file size in MB (overrides profile)")
+    compress_goal = p_compress.add_mutually_exclusive_group()
+    compress_goal.add_argument(
+        "--size", type=float, help="Target file size in MB (overrides profile)"
+    )
+    compress_goal.add_argument(
+        "--quality",
+        type=int,
+        metavar="LEVEL",
+        help="Quality level instead of a size: CRF, or CQ on a GPU encoder; lower looks better",
+    )
     p_compress.add_argument("--output", "-o", help="Output path (single file mode only)")
     p_compress.add_argument(
         "--review", action="store_true", help="Show plan and confirm before processing"
@@ -288,6 +299,12 @@ def _resolve_profile(args, profiles):
             print("Error: --size must be greater than zero.", file=sys.stderr)
             return None
         profile = _profile_with_target_size(profile, args.size)
+    quality = getattr(args, "quality", None)
+    if args.command == "compress" and quality is not None:
+        if not 0 <= quality <= 51:
+            print("Error: --quality must be from 0 to 51.", file=sys.stderr)
+            return None
+        profile = _profile_with_quality(profile, quality)
 
     return profile
 
@@ -388,11 +405,10 @@ def _encode_and_report(plan) -> Path | None:
     preferences = get_settings_manager().load()
     engine = FFmpegEngine()
     engine.set_low_priority(preferences.background_exports)
-    target = (
-        f"{plan.target_size / (1024 * 1024):.1f} MB"
-        if plan.workflow == "compression"
-        else f"{plan.target_width}x{plan.target_height}"
-    )
+    if plan.workflow != "compression":
+        target = f"{plan.target_width}x{plan.target_height}"
+    else:
+        target = _quality_text(plan) or f"{plan.target_size / (1024 * 1024):.1f} MB"
     console.print(
         Panel(
             f"[bold]{Path(plan.source).name}[/bold]\n"
@@ -570,18 +586,55 @@ def _print_plan(p) -> None:
     table.add_row("Video bitrate", f"{p.video_bitrate // 1000} kbps")
     table.add_row("Audio bitrate", f"{p.audio_bitrate // 1000} kbps")
     table.add_row("Two-pass", "yes" if p.two_pass else "no")
-    table.add_row("Estimated size", f"{p.estimated_size / (1024 * 1024):.1f} MB")
-    if workflow == "compression":
+    quality = _quality_text(p) if workflow == "compression" else ""
+    if quality:
+        table.add_row("Quality", quality)
+    else:
+        table.add_row("Estimated size", f"{p.estimated_size / (1024 * 1024):.1f} MB")
+    if workflow == "compression" and not quality:
         table.add_row("Size limit", f"{p.target_size / (1024 * 1024):.1f} MB")
     console.print(table)
+
+
+def _quality_text(settings) -> str:
+    """ "CRF 23" or "CQ 24" for a Compress plan or profile with the Quality goal, else "" """
+    from .models.encoding_policy import RCM_CQ, RCM_CQP, RCM_CRF
+
+    method = settings.rate_control_method
+    if method == RCM_CRF:
+        return f"CRF {settings.crf}"
+    if method == RCM_CQP:
+        return f"CQ {settings.qp}"
+    if method == RCM_CQ:
+        return f"CQ {settings.cq}"
+    return ""
 
 
 def _profile_with_target_size(profile, target_size_mb):
 
     import copy
 
+    from .models.encoding_policy import CPU_ENCODERS, QUALITY_RC_METHODS, RCM_CBR
+
     p = copy.copy(profile)
     p.target_size_bytes = int(target_size_mb * 1024 * 1024)
+    # a size on a Quality profile switches it to the Size goal
+    if p.rate_control_method in QUALITY_RC_METHODS:
+        p.rate_control_method = RCM_CBR
+        p.two_pass = p.video_encoder in CPU_ENCODERS
+    return p
+
+
+def _profile_with_quality(profile, level):
+
+    import copy
+
+    from .models.encoding_policy import quality_method_for_encoder
+
+    p = copy.copy(profile)
+    p.rate_control_method = quality_method_for_encoder(p.video_encoder)
+    p.crf = p.cq = p.qp = level
+    p.two_pass = False
     return p
 
 
@@ -620,7 +673,7 @@ def _cmd_profiles(args) -> int:
         table.add_column("Target", justify="right")
         for p in mgr.get_profiles():
             if p.workflow != "upscale":
-                target = f"{p.target_size_bytes / (1024 * 1024):.0f} MB"
+                target = _quality_text(p) or f"{p.target_size_bytes / (1024 * 1024):.0f} MB"
             elif p.resolution_mode == RES_MODE_SHORT_SIDE:
                 target = short_side_name(p.short_side)
             else:

@@ -6,6 +6,8 @@ import { isFrameExportResult } from "./frame-types.ts";
 import { isJoinCancellation, isJoinStatus } from "./join-types.ts";
 import type { JoinCancellation, JoinStatus } from "./join-types.ts";
 import { isPreviewMixPayload } from "./preview-mix-types.ts";
+import { isSizeEstimateCancellation, isSizeEstimatePayload } from "./size-estimate-types.ts";
+import type { SizeEstimateCancellation, SizeEstimatePayload } from "./size-estimate-types.ts";
 import type { PreviewMixPayload } from "./preview-mix-types.ts";
 import type { FrameExportRequest, FrameExportResult } from "./frame-types.ts";
 import { isTimelineFramesPayload } from "./timeline-frame-types.ts";
@@ -81,6 +83,8 @@ type TauriBackendCommand =
   | { command: "get_join"; payload: { work_id: string } }
   | { command: "cancel_join"; payload: { work_id: string } }
   | { command: "create_plan"; payload: { request: PlanRequest } }
+  | { command: "estimate_size"; payload: { request: PlanRequest } }
+  | { command: "cancel_size_estimate" }
   | { command: "compile_preview_mix"; payload: { request: PlanRequest } }
   | { command: "enqueue_with_options"; payload: { request: PlanRequest } }
   | { command: "enqueue_batch"; payload: { requests: readonly PlanRequest[] } }
@@ -519,6 +523,22 @@ class TauriTransport implements TauriBackendClient {
       "createPlan",
       { command: "create_plan", payload: { request } },
       request.operation === "cut" ? isCutPlanPayload : isPlanPreviewPayload,
+    );
+  }
+
+  estimateSize(request: PlanRequest): Promise<BackendResult<SizeEstimatePayload>> {
+    return this.#request(
+      "estimateSize",
+      { command: "estimate_size", payload: { request } },
+      isSizeEstimatePayload,
+    );
+  }
+
+  cancelSizeEstimate(): Promise<BackendResult<SizeEstimateCancellation>> {
+    return this.#request(
+      "cancelSizeEstimate",
+      { command: "cancel_size_estimate" },
+      isSizeEstimateCancellation,
     );
   }
 

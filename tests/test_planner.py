@@ -243,6 +243,26 @@ class TestPlan:
         p = plan(str(sample_video_path), profile, output_dir=str(out_dir))
         assert Path(p.output).parent == out_dir
 
+    def test_compression_quality_goal_names_the_level_and_skips_the_size(
+        self, skip_if_no_ffprobe, sample_video_path, tmp_path
+    ):
+        profile = find_profile_by_id(DEFAULT_PROFILES, PROFILE_ID_DISCORD_FREE)
+        request = PlanRequest(rate_control_method="crf", crf=21, two_pass=False)
+        p = plan(str(sample_video_path), profile, output_dir=str(tmp_path), request=request)
+        assert Path(p.output).name == f"{Path(sample_video_path).stem}_tucked_CRF21.mp4"
+        assert (p.rate_control_method, p.crf, p.video_bitrate) == ("crf", 21, 0)
+        assert p.estimated_size == 0
+
+    def test_compression_cq_goal_is_named_by_its_level(
+        self, skip_if_no_ffprobe, sample_video_path, tmp_path
+    ):
+        profile = find_profile_by_id(DEFAULT_PROFILES, PROFILE_ID_DISCORD_FREE)
+        request = PlanRequest(
+            video_encoder="h264_nvenc", preset="p5", rate_control_method="cq", cq=27, two_pass=False
+        )
+        p = plan(str(sample_video_path), profile, output_dir=str(tmp_path), request=request)
+        assert Path(p.output).stem.endswith("_tucked_CQ27")
+
     def test_plan_output_differs_from_source(self, skip_if_no_ffprobe, sample_video_path):
         profile = find_profile_by_id(DEFAULT_PROFILES, PROFILE_ID_DISCORD_FREE)
         p = plan(str(sample_video_path), profile)

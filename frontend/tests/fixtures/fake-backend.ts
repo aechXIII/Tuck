@@ -51,6 +51,8 @@ export function healthyBackendFixture(): FakeBackendFixture {
       getQueueState: { items: [] },
       // the native player's mix; the fixture engine records it and plays nothing
       compilePreviewMix: { data: { duration: 1, voices: [] } },
+      estimateSize: { size_bytes: 0, video_bytes: 0, audio_bytes: 0, sampled_seconds: 0, encoder: "libx264" },
+      cancelSizeEstimate: { cancelled: false },
     },
     startup: { files: [], sendto: null },
   };
@@ -173,6 +175,8 @@ export async function installFakeBackend(
         releaseMediaToken: (token: string) => respond("releaseMediaToken", [token]),
         createPlan: (request: unknown) => respond("createPlan", [request]),
         compilePreviewMix: (request: unknown) => respond("compilePreviewMix", [request]),
+        estimateSize: (request: unknown) => respond("estimateSize", [request]),
+        cancelSizeEstimate: () => respond("cancelSizeEstimate", []),
         exportFrame: (request: unknown) => respond("exportFrame", [request]),
         analyzeCut: (path: string, workId: string, background?: boolean) =>
           respond("analyzeCut", background ? [path, workId, true] : [path, workId]),

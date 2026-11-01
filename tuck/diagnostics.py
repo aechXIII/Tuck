@@ -282,6 +282,8 @@ def build_diagnostics(
             lines.append(f"preset: {plan.preset}")
             lines.append(f"scaler: {plan.scaler}")
             lines.append(f"rate control: {plan.rate_control} / {plan.rate_control_method}")
+            if plan.rate_control_method in ("crf", "cq", "cqp"):
+                lines.append(f"quality level: crf {plan.crf}, cq {plan.cq}, qp {plan.qp}")
             if plan.tone_map_hdr:
                 lines.append("hdr: tone-mapped to SDR")
             lines.extend(f"plan warning: {warning}" for warning in plan.warnings)
@@ -310,8 +312,12 @@ def build_diagnostics(
         elif extra:
             if extra.get("source_name"):
                 lines.append(f"source: {sanitize_path(extra['source_name'])}")
+            if extra.get("goal"):
+                lines.append(f"goal: {extra['goal']}")
             if extra.get("target_size_mb") is not None:
                 lines.append(f"target size: {extra['target_size_mb']} MB")
+            if extra.get("goal") == "quality" and extra.get("quality_level") is not None:
+                lines.append(f"quality level: {extra['quality_level']}")
             if extra.get("resolution"):
                 lines.append(f"resolution: {extra['resolution']}")
             if extra.get("fps") is not None:

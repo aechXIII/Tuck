@@ -1495,6 +1495,25 @@ class TestBridgeWorkflowPropagation:
         assert resp["inspector_start_panel"] == "export"
         assert resp["last_inspector_panel"] == "export"
 
+    def test_settings_and_encoder_refresh_name_what_auto_starts_with(self, tmp_path, monkeypatch):
+        import tuck.settings as settings_mod
+
+        monkeypatch.setattr(settings_mod, "_config_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path)
+        monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path)
+        monkeypatch.setenv("TUCK_DESKTOP_PLATFORM", "linux")
+        laptop = frozenset({"libx264", "libx265", "h264_vaapi", "hevc_vaapi"})
+        monkeypatch.setattr("tuck.bridge._engine_available_encoders", lambda: laptop)
+        monkeypatch.setattr("tuck.bridge.get_available_encoders", lambda **_: laptop)
+        monkeypatch.setattr("tuck.encoding.capabilities.get_available_encoders", lambda **_: laptop)
+        monkeypatch.setattr("tuck.bridge.clear_encoder_cache", lambda **_: None)
+
+        api = BridgeAPI()
+        api._settings.load()
+        expected = {"auto": "h264_vaapi", "auto_fast": "h264_vaapi", "auto_compression": "libx264"}
+        assert api.get_settings()["auto_encoders"] == expected
+        assert api.refresh_encoders()["auto_encoders"] == expected
+
     def test_save_settings_validates_open_output_folder_after_queue(self, tmp_path, monkeypatch):
         import tuck.settings as settings_mod
 
@@ -2014,42 +2033,63 @@ class TestBridgeRateControlMatrixValidation:
         api._settings.load()
         return api
 
-    def test_create_profile_rejects_compression_with_crf(self, tmp_path, monkeypatch):
-        """Compression workflow + CRF rate-control method is rejected."""
+    def test_create_profile_keeps_compression_quality(self, tmp_path, monkeypatch):
+        """A Compress profile with CRF is the Quality goal and keeps its level."""
         api = self._setup_api(tmp_path, monkeypatch)
         payload = {
-            "name": "Bad Compression CRF",
+            "name": "Compression CRF",
             "target_size_bytes": 50 * 1024 * 1024,
             "resolution_mode": "source",
             "fps_mode": "source",
             "rate_control": "target_size",
             "workflow": "compression",
             "rate_control_method": "crf",
+            "crf": 20,
             "two_pass": False,
         }
 
         resp = api.create_profile(payload)
-        assert not resp["ok"]
-        assert "bitrate-driven" in resp["error"] or "quality method" in resp["error"]
+        assert resp["ok"], resp
+        saved = find_profile_by_id(api._settings.get_profiles(), resp["profile_id"])
+        assert saved is not None
+        assert (saved.rate_control_method, saved.crf) == ("crf", 20)
 
-    def test_create_profile_rejects_compression_with_cqp(self, tmp_path, monkeypatch):
-        """Compression workflow + CQP rate-control method is rejected."""
+    def test_create_profile_rejects_compression_quality_with_two_pass(self, tmp_path, monkeypatch):
+        """Two passes only serve a size, so Quality with two-pass is refused."""
         api = self._setup_api(tmp_path, monkeypatch)
         payload = {
-            "name": "Bad Compression CQP",
+            "name": "Compression CRF two-pass",
             "target_size_bytes": 50 * 1024 * 1024,
             "resolution_mode": "source",
             "fps_mode": "source",
             "rate_control": "target_size",
             "workflow": "compression",
-            "rate_control_method": "cqp",
+            "rate_control_method": "crf",
+            "two_pass": True,
+        }
+
+        resp = api.create_profile(payload)
+        assert not resp["ok"]
+        assert "bitrate-driven" in resp["error"]
+
+    def test_create_profile_rejects_crf_on_hardware(self, tmp_path, monkeypatch):
+        """NVIDIA's quality level is CQ; CRF belongs to the software encoders."""
+        api = self._setup_api(tmp_path, monkeypatch)
+        payload = {
+            "name": "Compression NVENC CRF",
+            "target_size_bytes": 50 * 1024 * 1024,
+            "resolution_mode": "source",
+            "fps_mode": "source",
+            "rate_control": "target_size",
+            "workflow": "compression",
+            "rate_control_method": "crf",
             "video_encoder": "h264_nvenc",
             "two_pass": False,
         }
 
         resp = api.create_profile(payload)
         assert not resp["ok"]
-        assert "bitrate-driven" in resp["error"] or "quality method" in resp["error"]
+        assert "not supported for h264_nvenc" in resp["error"]
 
     def test_create_profile_rejects_two_pass_with_gpu(self, tmp_path, monkeypatch):
         """Two-pass encoding with GPU encoder is rejected."""
@@ -2146,10 +2186,10 @@ class TestBridgeRateControlMatrixValidation:
         profiles.append(custom)
         api._settings.set_profiles(profiles)
 
-        payload = {"rate_control_method": "crf", "two_pass": False}
+        payload = {"rate_control_method": "crf", "two_pass": True}
         resp = api.update_profile("rc-matrix-test", payload)
         assert not resp["ok"]
-        assert "bitrate-driven" in resp["error"] or "quality method" in resp["error"]
+        assert "bitrate-driven" in resp["error"]
 
     def test_update_profile_accepts_valid_rc_matrix_change(self, tmp_path, monkeypatch):
         """Updating a profile to a valid rate-control matrix is accepted."""

@@ -31,6 +31,8 @@ MEDIA_METHODS = frozenset(
         "get_thumbnail",
         "export_frame",
         "get_timeline_frames",
+        # encodes a few seconds of video, which takes up to about 20 s on a laptop CPU
+        "estimate_size",
     }
 )
 _CONTROL_WORKERS = 4

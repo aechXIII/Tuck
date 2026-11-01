@@ -155,3 +155,56 @@ export function encoderDisplaySummary(encoders: readonly string[]): string {
   if (encoders.some((x) => x.indexOf("libx") === 0)) labels.push("CPU");
   return labels.join(" · ") || "None detected";
 }
+
+export type EncoderCodec = "H.264" | "H.265";
+export type EncoderPlace = "CPU" | "GPU";
+export type EncoderChip = "codec" | "place";
+
+const GPU_FAMILIES: readonly (readonly [string, string])[] = [
+  ["h264_nvenc", "hevc_nvenc"],
+  ["h264_amf", "hevc_amf"],
+  ["h264_vaapi", "hevc_vaapi"],
+];
+
+/** The encoder an Auto choice starts with, as the backend reports it; libx264 when it hasn't said. */
+export function resolvedEncoder(encoder: string, autoEncoders: Readonly<Record<string, string>>): string {
+  return isAutoEncoder(encoder) ? autoEncoders[encoder] || "libx264" : encoder;
+}
+
+export function encoderCodec(encoder: string): EncoderCodec {
+  return encoder === "libx265" || encoder.startsWith("hevc_") ? "H.265" : "H.264";
+}
+
+export function encoderPlace(encoder: string): EncoderPlace {
+  return isSoftwareEncoder(encoder) ? "CPU" : "GPU";
+}
+
+/**
+ * The encoder a chip switches to: the other codec in the same place, or the same codec in the
+ * other place. A GPU keeps its maker when it has that codec. Null when nothing available fits.
+ */
+export function chipEncoder(
+  current: string,
+  chip: EncoderChip,
+  available: readonly string[],
+  autoEncoders: Readonly<Record<string, string>>,
+): string | null {
+  const now = resolvedEncoder(current, autoEncoders);
+  const hevc = (chip === "codec") !== (encoderCodec(now) === "H.265");
+  const gpu = (chip === "place") !== (encoderPlace(now) === "GPU");
+  if (!gpu) {
+    const cpu = hevc ? "libx265" : "libx264";
+    return available.includes(cpu) ? cpu : null;
+  }
+  const own = GPU_FAMILIES.filter(pair => pair.includes(now));
+  const order = [...own, ...GPU_FAMILIES.filter(pair => !own.includes(pair))];
+  return order.map(pair => pair[hevc ? 1 : 0]!).find(id => available.includes(id)) ?? null;
+}
+
+/** The backend's `auto_encoders`: which encoder each Auto choice starts with. */
+export function autoEncoderChoices(value: unknown): Record<string, string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+  );
+}

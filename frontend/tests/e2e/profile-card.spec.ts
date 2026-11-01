@@ -277,7 +277,7 @@ test("the card says what the profile does and its menu switches profile", async 
   await expect(options).toHaveCount(2);
   await expect(options.nth(0)).toHaveAttribute("aria-selected", "true");
   await expect(options.nth(1)).toHaveAccessibleName("Email");
-  await expect(options.nth(1)).toHaveAttribute("title", "Email: Target 20 MB · source size and frame rate");
+  await expect(options.nth(1)).toHaveAttribute("title", "Email: 20 MB · source size and frame rate");
   await options.nth(1).click();
   await expect(page.locator("#prof-menu")).toBeHidden();
   await expect(page.locator("#prof-name")).toHaveText("Email");
@@ -298,7 +298,7 @@ test("a video whose size and frame rate differ from the defaults leaves the prof
 test("a changed setting keeps its details and Discard puts the profile back", async ({ page }) => {
   await open(page);
   await setSize(page, "25");
-  await expect(page.locator("#prof-sub")).toHaveAttribute("title", "Target 25 MB, was 10 MB");
+  await expect(page.locator("#prof-sub")).toHaveAttribute("title", "25 MB, was 10 MB");
   await expect(page.locator("#prof-changed")).toBeVisible();
   await page.getByRole("button", { name: "Discard", exact: true }).focus();
   await page.keyboard.press("Enter");
@@ -330,7 +330,7 @@ for (const width of [1240, 960]) {
     const savedTargetTop = (await page.locator("#sz-grp").boundingBox())!.y;
     await setSize(page, "25");
     await expect(card.getByText("Unsaved changes", { exact: true })).toBeVisible();
-    await expect(page.locator("#prof-sub")).toHaveAttribute("title", "Target 25 MB, was 10 MB");
+    await expect(page.locator("#prof-sub")).toHaveAttribute("title", "25 MB, was 10 MB");
     await expect(card.getByRole("button", { name: "Discard", exact: true })).toBeVisible();
     await expect(card.getByRole("button", { name: "Save to profile", exact: true })).toBeVisible();
     const changedBounds = (await card.boundingBox())!;
@@ -371,7 +371,7 @@ test("a failed profile save keeps the unsaved settings and its actions available
   await save.click();
   await expect(page.locator(".toast")).toContainText("Could not write the profile.");
   await expect(page.locator("#sz-badge")).toHaveValue("25");
-  await expect(page.locator("#prof-sub")).toHaveAttribute("title", "Target 25 MB, was 10 MB");
+  await expect(page.locator("#prof-sub")).toHaveAttribute("title", "25 MB, was 10 MB");
   await expect(page.locator("#prof-changed")).toBeVisible();
   await expect(save).toBeEnabled();
   await expect(save).toBeFocused();
@@ -391,7 +391,7 @@ test("switching away from unsaved changes can be undone", async ({ page }) => {
   await expect(page.locator("#prof-name")).toHaveText("Discord");
   await expect(page.locator("#prof-sel")).toHaveValue("discord");
   await expect(page.locator("#sz-badge")).toHaveValue("25");
-  await expect(page.locator("#prof-sub")).toHaveAttribute("title", "Target 25 MB, was 10 MB");
+  await expect(page.locator("#prof-sub")).toHaveAttribute("title", "25 MB, was 10 MB");
   await expect(page.locator("#prof-changed")).toBeVisible();
 });
 

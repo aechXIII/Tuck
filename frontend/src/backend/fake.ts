@@ -203,6 +203,18 @@ class DeterministicFakeBackend implements BackendClient {
     );
   }
 
+  estimateSize(request: PlanRequest) {
+    return this.#record(
+      "estimateSize",
+      [request],
+      this.#responses.estimateSize ?? notConfigured("No size estimate is configured."),
+    );
+  }
+
+  cancelSizeEstimate() {
+    return this.#record("cancelSizeEstimate", [], this.#responses.cancelSizeEstimate ?? success({ cancelled: false }));
+  }
+
   compilePreviewMix(request: PlanRequest) {
     return this.#record(
       "compilePreviewMix",

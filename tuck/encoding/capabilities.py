@@ -469,6 +469,17 @@ def auto_encoder_candidates(
     return candidates or ("libx264",)
 
 
+def auto_encoder_choices(available: frozenset[str] | None = None) -> dict[str, str]:
+    """The encoder each Auto choice starts with, for showing it; the runner still falls back."""
+    detected = available if available is not None else get_available_encoders()
+    fastest = auto_encoder_candidates(available=detected)[0]
+    return {
+        ENCODER_AUTO: fastest,
+        ENCODER_AUTO_FAST: fastest,
+        ENCODER_AUTO_COMPRESSION: auto_encoder_candidates(available=detected, fastest=False)[0],
+    }
+
+
 def select_auto_encoder(
     preferred_codec: str = "h264",
     available: frozenset[str] | None = None,

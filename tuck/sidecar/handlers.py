@@ -240,6 +240,15 @@ def _create_plan(api: BridgeAPI, params: dict[str, object]) -> object:
     return api.create_plan(_object(params, "request"))
 
 
+def _estimate_size(api: BridgeAPI, params: dict[str, object]) -> object:
+    return api.estimate_size(_object(params, "request"))
+
+
+def _cancel_size_estimate(api: BridgeAPI, params: dict[str, object]) -> object:
+    _empty(params)
+    return api.cancel_size_estimate()
+
+
 def _compile_preview_mix(api: BridgeAPI, params: dict[str, object]) -> object:
     return api.compile_preview_mix(_object(params, "request"))
 
@@ -560,6 +569,8 @@ _HANDLERS: dict[str, Handler] = {
     "get_media_url": _get_media_url,
     "release_media_token": _release_media_token,
     "create_plan": _create_plan,
+    "estimate_size": _estimate_size,
+    "cancel_size_estimate": _cancel_size_estimate,
     "compile_preview_mix": _compile_preview_mix,
     "cancel_item": _cancel_item,
     "remove_item": _remove_item,

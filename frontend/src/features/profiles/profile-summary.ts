@@ -13,6 +13,10 @@ export interface ProfileFields {
   readonly custom_fps?: unknown;
   readonly max_fps?: unknown;
   readonly rate_control?: unknown;
+  readonly rate_control_method?: unknown;
+  readonly crf?: unknown;
+  readonly cq?: unknown;
+  readonly qp?: unknown;
   readonly explicit_bitrate?: unknown;
   readonly explicit_bitrate_kbps?: unknown;
 }
@@ -48,12 +52,24 @@ function fpsLabel(profile: ProfileFields): string {
   return profile.fps_mode === "limit" ? `up to ${trimmed(fps)} fps` : `${trimmed(fps)} fps`;
 }
 
-// e.g. "Target 10 MB · source size and frame rate", "Target 16 MB · 720p · 30 fps"
+// a Compress profile with the Quality goal, as the card names its level: "CRF 20", "CQ 26"
+function qualityLevel(profile: ProfileFields): string {
+  if (profile.workflow === "upscale") return "";
+  if (profile.rate_control_method === "crf") return `CRF ${num(profile.crf)}`;
+  if (profile.rate_control_method === "cq") return `CQ ${num(profile.cq)}`;
+  if (profile.rate_control_method === "cqp") return `CQ ${num(profile.qp)}`;
+  return "";
+}
+
+// e.g. "10 MB · source size and frame rate", "CRF 20 · 720p · 30 fps"
 export function profileSummary(profile: ProfileFields, { includeTargetSize = true } = {}): string {
   const parts: string[] = [];
   const upscale = profile.workflow === "upscale";
-  if (includeTargetSize && !upscale && num(profile.target_size_bytes) > 0) {
-    parts.push(`Target ${trimmed(num(profile.target_size_bytes) / MB)} MB`);
+  const quality = qualityLevel(profile);
+  if (quality) {
+    if (includeTargetSize) parts.push(quality);
+  } else if (includeTargetSize && !upscale && num(profile.target_size_bytes) > 0) {
+    parts.push(`${trimmed(num(profile.target_size_bytes) / MB)} MB`);
   } else if (upscale && profile.rate_control === "explicit_bitrate") {
     const kbps = num(profile.explicit_bitrate_kbps) || num(profile.explicit_bitrate) / 1000;
     if (kbps) parts.push(`${trimmed(kbps / 1000)} Mbps`);
@@ -70,7 +86,9 @@ export function profileSummary(profile: ProfileFields, { includeTargetSize = tru
 
 // the settings a change can touch, in the words the card uses for them
 const CHANGE_NAMES: Record<string, string> = {
-  size: "target size",
+  goal: "goal",
+  size: "size",
+  level: "quality level",
   rm: "resolution",
   rw: "resolution",
   rh: "resolution",
@@ -94,20 +112,27 @@ const CHANGE_NAMES: Record<string, string> = {
 };
 
 /**
- * Says what differs from the saved profile. A lone target size change reads
- * "Target 20 MB, was 10 MB"; anything else names up to two settings.
+ * Says what differs from the saved profile. A lone size change reads
+ * "20 MB, was 10 MB", a lone quality level "CQ 28, was CQ 24"; anything else names up to
+ * two settings. Only the chosen goal's value counts: the other one isn't saved with it.
  */
 export function profileChangeSummary(
   saved: Readonly<Record<string, unknown>>,
   current: Readonly<Record<string, unknown>>,
 ): string {
   const names: string[] = [];
+  const goalChanged = saved.goal !== current.goal;
   for (const [key, name] of Object.entries(CHANGE_NAMES)) {
+    if (key === "size" && (goalChanged || current.goal === "quality")) continue;
+    if (key === "level" && (goalChanged || current.goal !== "quality")) continue;
     if (saved[key] !== current[key] && !names.includes(name)) names.push(name);
   }
   if (!names.length) return "";
-  if (names.length === 1 && names[0] === "target size") {
-    return `Target ${String(current.size)} MB, was ${String(saved.size)} MB`;
+  if (names.length === 1 && names[0] === "size") {
+    return `${String(current.size)} MB, was ${String(saved.size)} MB`;
+  }
+  if (names.length === 1 && names[0] === "quality level") {
+    return `${String(current.lm)} ${String(current.level)}, was ${String(saved.lm)} ${String(saved.level)}`;
   }
   if (names.length === 1) return `Changed ${names[0]}`;
   if (names.length === 2) return `Changed ${names[0]} and ${names[1]}`;

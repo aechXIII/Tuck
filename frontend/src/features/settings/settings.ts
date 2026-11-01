@@ -10,6 +10,7 @@ import {
 import { bindDelegatedEvents } from "../../ui/delegated-events.ts";
 import { settingsSnapshot } from "../../state/settings-state.ts";
 import {
+  autoEncoderChoices,
   encoderDisplaySummary,
   encoderLabel,
   isCpuEncoder,
@@ -18,6 +19,7 @@ import {
   twoPassEligible,
   type Workflow,
 } from "../export/encoder-options.ts";
+import { clampQuality, defaultQualityLevel, qualityMethod, qualityPicks } from "../export/goal.ts";
 import {
   populateEncoderSelect,
   populatePresetSelect,
@@ -92,7 +94,7 @@ export interface SettingsDeps {
   byId: <T extends HTMLElement = HTMLElement>(id: string) => T | null;
   getBackendClient: () => BackendClient;
   reloadEditorSettings: (preserveExportSettings?: boolean) => Promise<void>;
-  setAvailableEncoders: (encoders: string[]) => void;
+  setAvailableEncoders: (encoders: string[], autoEncoders?: Readonly<Record<string, string>>) => void;
   // switches the editor to this profile; returns the control that now shows it, if it is showing
   useProfile: (profileId: string) => HTMLElement | null;
   copyDiagnostics: () => void | Promise<void>;
@@ -1399,7 +1401,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     }
     const result = await legacyBackendResult(client().refreshEncoders());
     if (result.ok) {
-      deps.setAvailableEncoders(toStringArray(result.available_encoders));
+      deps.setAvailableEncoders(toStringArray(result.available_encoders), autoEncoderChoices(result.auto_encoders));
       toast("Encoder detection refreshed.", "ok");
       void open("media");
     } else {
@@ -1706,6 +1708,18 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       "data-settings-value": String(size),
       "aria-label": `${size} MB`,
     }, String(size)));
+    const levelPicks = qualityPicks("libx264").map((level) => h("button", {
+      type: "button",
+      class: "set-choice-btn mono",
+      "data-settings-click": "profile-level",
+      "data-settings-value": String(level),
+    }, String(level)));
+    const goalButton = (id: string, value: string, label: string) =>
+      h("button", { type: "button", id, class: "set-choice-btn", "aria-pressed": String(value === "size"), "data-settings-click": "profile-goal", "data-settings-value": value }, label);
+    const goal = h("span", { class: "set-choice", role: "group", "aria-label": "Goal" },
+      goalButton("pe-gs", "size", "Size"),
+      goalButton("pe-gq", "quality", "Quality"));
+    goal.firstElementChild?.classList.add("on");
     const taskButton = (id: string, value: Workflow, label: string) =>
       h("button", { type: "button", id, class: "set-choice-btn", "data-settings-click": "profile-task", "data-settings-value": value }, label);
     const task = h("span", { class: "set-choice", role: "group", "aria-label": "Task" },
@@ -1714,16 +1728,27 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     return [section("Profile", card(
       row({ setting: "pe-name", label: "Profile name", labelFor: "pe-name", control: textInput("pe-name", "", "Profile name", { width: 280, attributes: { "data-settings-input": "editor-name" } }) }),
       row({ setting: "pe-task", label: "Task", control: task }),
-    )), h("div", { id: "pe-size-sec" }, section("Size", card(
-      row({
+    )), h("div", { id: "pe-size-sec" }, section("Size and quality", card(
+      row({ setting: "pe-goal", label: "Goal", control: goal }),
+      h("div", { id: "pe-size-row" }, row({
         setting: "pe-size",
-        label: "Target size",
+        label: "Size",
         labelFor: "pe-size",
         control: [
           h("span", { class: "set-choice", role: "group", "aria-label": "Size presets" }, sizePresets),
-          textInput("pe-size", "50", "Target size in MB", { mono: true, width: 96, unit: "MB", attributes: { type: "number", min: "2", "data-settings-input": "profile-size" } }),
+          textInput("pe-size", "50", "Size in MB", { mono: true, width: 96, unit: "MB", attributes: { type: "number", min: "2", "data-settings-input": "profile-size" } }),
         ],
-      }),
+      })),
+      h("div", { id: "pe-level-row", class: "hid" }, row({
+        setting: "pe-level",
+        label: "Quality",
+        labelFor: "pe-level",
+        control: [
+          // the picks follow the encoder chosen below, as on the Export card
+          h("span", { class: "set-choice", role: "group", "aria-label": "Quality presets" }, levelPicks),
+          textInput("pe-level", "23", "CRF level", { mono: true, width: 96, unit: "CRF", attributes: { type: "number", min: "0", max: "51", "data-settings-input": "profile-level" } }),
+        ],
+      })),
     ))), section("Video", card(
       h("div", { id: "pe-source-res-row" }, editorSwitch("pe-source-res", "Use source resolution", "pe-source-res")),
       h("div", { id: "pe-res-row" }, row({
@@ -1843,6 +1868,48 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     updateEditorNote();
   }
 
+  // Compress aims for the target size or holds a quality level, as the Export card does
+  function peGoal(): "size" | "quality" {
+    return el("pe-gq").classList.contains("on") ? "quality" : "size";
+  }
+
+  function peSetGoal(goal: "size" | "quality"): void {
+    for (const [id, value] of [["pe-gs", "size"], ["pe-gq", "quality"]] as const) {
+      el(id).classList.toggle("on", goal === value);
+      el(id).setAttribute("aria-pressed", String(goal === value));
+    }
+    peVisibility();
+  }
+
+  function peSetLevel(value: string | number, fromField = false): void {
+    const parsed = parseInt(String(value), 10);
+    if (!Number.isFinite(parsed)) return;
+    const level = clampQuality(parsed);
+    if (!fromField) input("pe-level").value = String(level);
+    peLevelPicks();
+    updateEditorNote();
+  }
+
+  // the unit and picks follow the encoder: CRF in software, CQ on a GPU, higher picks for H.265
+  function peLevelPicks(): void {
+    const encoder = select("pe-enc").value;
+    const method = qualityMethod(encoder);
+    const level = parseInt(input("pe-level").value, 10);
+    const unit = input("pe-level").parentElement?.querySelector(".set-input-unit");
+    if (unit) unit.textContent = method;
+    input("pe-level").setAttribute("aria-label", `${method} level`);
+    const picks = qualityPicks(encoder);
+    const buttons = document.querySelectorAll<HTMLElement>('#settings-page [data-settings-click="profile-level"]');
+    buttons.forEach((button, index) => {
+      const pick = picks[index] ?? 0;
+      button.textContent = String(pick);
+      button.dataset.settingsValue = String(pick);
+      button.setAttribute("aria-label", `${method} ${pick}`);
+      button.classList.toggle("on", pick === level);
+      button.setAttribute("aria-pressed", String(pick === level));
+    });
+  }
+
   function peSetFps(value: string | number): void {
     const n = Math.max(0.1, Math.min(240, parseFloat(String(value)) || 30));
     input("pe-fps").value = String(n);
@@ -1868,6 +1935,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     }
     peTunes();
     peRateControls();
+    peLevelPicks();
     peVisibility();
   }
 
@@ -1890,15 +1958,21 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     const cpu = !["auto", "auto_compression", "auto_fast"].includes(select("pe-enc").value) && isCpuEncoder(select("pe-enc").value);
     const twoPass = twoPassEligible(peTask(), select("pe-enc").value);
     const quality = up && (rc === "CRF" || rc === "CQ");
-    el("pe-res-row").classList.toggle("hid", source);
+    const byQuality = !up && peGoal() === "quality";
+    el("pe-size-row").classList.toggle("hid", byQuality);
+    el("pe-level-row").classList.toggle("hid", !byQuality);
     el("pe-dim").classList.toggle("hid", source || select("pe-res").value !== "custom");
     el("pe-scaler-row").classList.toggle("hid", source);
     el("pe-fps-row").classList.toggle("hid", sourceFps);
     input("pe-audio").disabled = keep;
     el("pe-audio").closest(".set-row")?.classList.toggle("hid", keep);
     el("pe-two-pass-row").classList.toggle("hid", up);
-    el("pe-two-pass-note").classList.toggle("hid", !(!up && !twoPass));
-    input("pe-two-pass").disabled = !twoPass;
+    // a quality level is met in one pass; the switch keeps its state for Size
+    el("pe-two-pass-note").textContent = byQuality
+      ? "Two-pass is used only with Size."
+      : "Two-pass is available only for software compression.";
+    el("pe-two-pass-note").classList.toggle("hid", !(!up && (!twoPass || byQuality)));
+    input("pe-two-pass").disabled = !twoPass || byQuality;
     if (!twoPass) input("pe-two-pass").checked = false;
     el("pe-rc-row").classList.toggle("hid", !up);
     el("pe-quality-row").classList.toggle("hid", !quality);
@@ -1930,14 +2004,15 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
   function pePayload(): SettingsRecord {
     const original = editorOriginal;
     const task = peTask();
-    const rcDisplay = select("pe-rc").value;
-    const rcMap: Record<string, string> = { CRF: "crf", CQ: "cq", CBR: "cbr", VBR: "vbr" };
-    let rc = rcMap[rcDisplay] ?? "crf";
-    let quality = parseInt(input("pe-quality").value, 10);
-    if (!Number.isFinite(quality)) quality = 23;
-    if (original.rate_control_method === "cqp" && rcDisplay === "CQ") rc = "cqp";
     const selectedEncoder = select("pe-enc").value;
     const encoder = editorCapabilities ? encoderForPlatform(selectedEncoder, editorCapabilities) : selectedEncoder;
+    const byQuality = task === "compression" && peGoal() === "quality";
+    const rcDisplay = byQuality ? qualityMethod(encoder) : select("pe-rc").value;
+    const rcMap: Record<string, string> = { CRF: "crf", CQ: "cq", CBR: "cbr", VBR: "vbr" };
+    let rc = rcMap[rcDisplay] ?? "crf";
+    let quality = parseInt(input(byQuality ? "pe-level" : "pe-quality").value, 10);
+    if (!Number.isFinite(quality)) quality = 23;
+    if (original.rate_control_method === "cqp" && rcDisplay === "CQ") rc = "cqp";
     const resolution = select("pe-res").value;
     const data: SettingsRecord = {
       name: input("pe-name").value.trim() || "Profile",
@@ -1953,7 +2028,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       max_fps: peFloat("pe-fps", 30),
       audio_bitrate_kbps: peInt("pe-audio", 0),
       keep_audio: input("pe-audio-source").checked,
-      two_pass: twoPassEligible(task, encoder) && input("pe-two-pass").checked,
+      two_pass: !byQuality && twoPassEligible(task, encoder) && input("pe-two-pass").checked,
       preset: select("pe-preset").value,
       scaler: select("pe-scaler").value,
       video_encoder: encoder,
@@ -2027,6 +2102,15 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     );
     input("pe-bitrate").value = String(p ? valueOr(num(p.explicit_bitrate_kbps), 2000) : 2000);
     peSetTask(p && p.workflow === "upscale" ? "upscale" : "compression");
+    const method = String(p ? p.rate_control_method : "cbr");
+    const byQuality = !!p && p.workflow !== "upscale" && (method === "crf" || method === "cq" || method === "cqp");
+    input("pe-level").value = String(p && byQuality
+      ? clampQuality(method === "crf" ? num(p.crf) : method === "cqp" ? num(p.qp) : num(p.cq))
+      : defaultQualityLevel(select("pe-enc").value));
+    // a Quality profile is saved with two-pass off; Size gets the encoder's usual two passes back
+    if (byQuality) input("pe-two-pass").checked = twoPassEligible("compression", select("pe-enc").value);
+    peLevelPicks();
+    peSetGoal(byQuality ? "quality" : "size");
     const rcMap: Record<string, string> = { crf: "CRF", cq: "CQ", cqp: "CQ", cbr: "CBR", vbr: "VBR" };
     const rateControl = rcMap[String(p ? p.rate_control_method : "cbr")] ?? "CRF";
     if (Array.from(select("pe-rc").options).some((option) => option.value === rateControl)) select("pe-rc").value = rateControl;
@@ -2531,6 +2615,11 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
           updateEditorNote();
         },
         "profile-size": (target) => peSetSize(target.dataset.settingsValue ?? "50"),
+        "profile-goal": (target) => {
+          peSetGoal(target.dataset.settingsValue === "quality" ? "quality" : "size");
+          updateEditorNote();
+        },
+        "profile-level": (target) => peSetLevel(target.dataset.settingsValue ?? "23"),
         "toggle-advanced": () => peToggleAdvanced(),
         "browse-output": () => void browseOutput(),
         "insert-token": (target) =>
@@ -2552,6 +2641,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       input: {
         search: (target) => onSearchInput(target as HTMLInputElement),
         "profile-size": (target) => peSetSize((target as HTMLInputElement).value, true),
+        "profile-level": (target) => peSetLevel((target as HTMLInputElement).value, true),
         "profile-fps": () => updateEditorNote(),
         "editor-name": () => updateEditorNote(),
         "preview-output": (target) => updateExampleOutput(target as HTMLInputElement),

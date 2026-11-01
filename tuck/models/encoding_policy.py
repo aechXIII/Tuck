@@ -98,6 +98,8 @@ X265_TUNES: frozenset[str] = frozenset(
 ALL_TUNES: frozenset[str] = X264_TUNES | X265_TUNES
 
 QUALITY_RC_METHODS: frozenset[str] = frozenset({RCM_CRF, RCM_CQ, RCM_CQP})
+# the first profile schema that can hold Compress's Quality goal
+SCHEMA_COMPRESSION_QUALITY = 7
 BITRATE_RC_METHODS: frozenset[str] = frozenset({RCM_CBR, RCM_VBR})
 
 X26X_PRESETS = frozenset(
@@ -161,13 +163,9 @@ def validate_rate_control_matrix(
     is_auto = video_encoder in AUTO_ENCODERS
     is_cpu = video_encoder in CPU_ENCODERS or is_auto
 
-    if is_compression:
-        if rate_control != RC_TARGET_SIZE:
-            raise ValueError("Compression workflow requires rate_control 'target_size'.")
-        if is_quality_method:
-            raise ValueError(
-                "Compression requires a bitrate-driven method; quality method is not supported."
-            )
+    # a quality method is Compress's Quality goal; the bitrate methods are its Size goal
+    if is_compression and rate_control != RC_TARGET_SIZE:
+        raise ValueError("Compression workflow requires rate_control 'target_size'.")
 
     if is_upscale:
         if is_bitrate_method and rate_control != RC_EXPLICIT_BITRATE:
@@ -206,6 +204,33 @@ def validate_rate_control_matrix(
             )
 
 
+def quality_method_for_encoder(video_encoder: str) -> str:
+    """The quality level an encoder takes: CRF in software, CQ on a GPU.
+
+    Auto choices that try the GPU first take CQ; the runner turns it into CRF when they fall back
+    to the CPU, and back the other way.
+    """
+    if video_encoder in CPU_ENCODERS or video_encoder == ENCODER_AUTO_COMPRESSION:
+        return RCM_CRF
+    return RCM_CQ
+
+
+def stored_rate_control_method(workflow: str, rate_control_method: str, schema_version: int) -> str:
+    """The method a stored profile means, given the version that saved it.
+
+    Before schema 7 a compression profile's CRF or CQP still meant its target size, and Tuck
+    read it as CBR. Only Tuck 0.7.1 and later save a quality method for compression, as the
+    Quality goal, and they write schema 7 or newer.
+    """
+    if (
+        workflow == WORKFLOW_COMPRESSION
+        and rate_control_method in QUALITY_RC_METHODS
+        and schema_version < SCHEMA_COMPRESSION_QUALITY
+    ):
+        return RCM_CBR
+    return rate_control_method
+
+
 def normalize_legacy_rc_matrix(
     workflow: str,
     rate_control: str,
@@ -221,7 +246,7 @@ def normalize_legacy_rc_matrix(
     new_rcm = rate_control_method
     new_two_pass = two_pass
 
-    if is_compression:
+    if is_compression and not is_quality_method:
         new_rcm = RCM_CBR
         new_two_pass = new_two_pass and is_cpu
 

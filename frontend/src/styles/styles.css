@@ -1305,11 +1305,6 @@ select {
   font-size: calc(14px * var(--text-scale));
   font-family: var(--mono);
 }
-#sz-badge::-webkit-inner-spin-button,
-#sz-badge::-webkit-outer-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
-}
 .pset button:hover {
   background: var(--raised-2);
   color: var(--text);

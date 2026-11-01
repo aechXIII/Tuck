@@ -621,7 +621,7 @@ export function installEditorRuntime(
       library.noticeMissingTools();
       library.renderClips();
     },
-    setAvailableEncoders: (encoders) => encoding.setAvailableEncoders(encoders),
+    setAvailableEncoders: (encoders, autoEncoders) => encoding.setAvailableEncoders(encoders, autoEncoders),
     useProfile: (profileId) => encoding.useProfile(profileId),
     copyDiagnostics: () => queue.copyDiagnostics(),
     checkForUpdates: () => checkUpdatesFromSettings(),
@@ -773,6 +773,8 @@ export function installEditorRuntime(
           timeline.resetTimelineHeight(event as MouseEvent),
         "timeline-fit": () => timeline.fitTimeline(),
         "timeline-nudge-zoom": (target) => timeline.nudgeTimelineZoom(numericValue(target)),
+        "encoding-goal": (target) => encoding.chooseGoal(target.dataset.goal ?? ""),
+        "encoding-chip": (target) => encoding.onEncoderChip(target.dataset.chip ?? ""),
         "queue-stop-after-current": () => queue.stopAfterCurrent(),
         "queue-cancel-all": () => queue.cancelAll(),
         "queue-clear-finished": () => void queue.clearFinished(),
@@ -797,6 +799,8 @@ export function installEditorRuntime(
         "player-volume": (target) => player.setVol((target as HTMLInputElement).value),
         "encoding-target-size": (target) =>
           encoding.onSize((target as HTMLInputElement).value),
+        "encoding-quality": (target) =>
+          encoding.onQuality((target as HTMLInputElement).value),
         "encoding-frame-rate": (target) =>
           encoding.onFpsSlider((target as HTMLInputElement).value),
         "timeline-zoom": (target) =>
@@ -806,6 +810,8 @@ export function installEditorRuntime(
         "encoding-profile": () => encoding.onProfileChange(),
         "encoding-badge-size": (target) =>
           encoding.onBadgeSize((target as HTMLInputElement).value),
+        "encoding-badge-quality": (target) =>
+          encoding.onBadgeQuality((target as HTMLInputElement).value),
         "encoding-resolution-facade": (target) =>
           encoding.onExportResolutionChoice((target as HTMLSelectElement).value),
         "encoding-preview-dirty": () => encoding.reqPreviewAndDirty(),

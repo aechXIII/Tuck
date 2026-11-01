@@ -196,3 +196,12 @@ def test_queued_export_says_what_size_it_aimed_for() -> None:
     assert queue_item_dict(QueueItem(plan=plan))["target_size"] == 10 * 1024 * 1024
     no_target = EncodePlan(source="a.mp4", output="b.mp4")
     assert queue_item_dict(QueueItem(plan=no_target))["target_size"] == 0
+    # a quality level or an upscale keeps the profile's size but never aims for it
+    quality = EncodePlan(
+        source="a.mp4", output="b.mp4", target_size=10 * 1024 * 1024, rate_control_method="crf"
+    )
+    assert queue_item_dict(QueueItem(plan=quality))["target_size"] == 0
+    upscale = EncodePlan(
+        source="a.mp4", output="b.mp4", target_size=10 * 1024 * 1024, workflow="upscale"
+    )
+    assert queue_item_dict(QueueItem(plan=upscale))["target_size"] == 0

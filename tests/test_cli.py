@@ -840,3 +840,66 @@ def test_compress_without_size_keeps_the_profile_size():
     resolved = _resolve_profile(args, list(DEFAULT_PROFILES))
     assert resolved is not None
     assert resolved.target_size_bytes == profile.target_size_bytes
+
+
+def test_compress_quality_sets_the_level_for_the_encoder():
+    import argparse
+    from dataclasses import replace
+
+    from tuck.cli import _resolve_profile
+    from tuck.models import DEFAULT_PROFILES
+
+    software = DEFAULT_PROFILES[0]
+    args = argparse.Namespace(
+        command="compress", profile=software.profile_id, size=None, quality=20
+    )
+    resolved = _resolve_profile(args, list(DEFAULT_PROFILES))
+    assert resolved is not None
+    assert (resolved.rate_control_method, resolved.crf, resolved.two_pass) == ("crf", 20, False)
+    # the saved profile is left as it was
+    assert software.rate_control_method == "cbr"
+
+    nvidia = replace(software, profile_id="nvidia", video_encoder="h264_nvenc", preset="p5")
+    args = argparse.Namespace(command="compress", profile="nvidia", size=None, quality=26)
+    resolved = _resolve_profile(args, [nvidia])
+    assert resolved is not None
+    assert (resolved.rate_control_method, resolved.cq) == ("cq", 26)
+
+
+def test_compress_size_turns_a_quality_profile_back_to_a_size():
+    import argparse
+    from dataclasses import replace
+
+    from tuck.cli import _resolve_profile
+    from tuck.models import DEFAULT_PROFILES
+
+    quality = replace(
+        DEFAULT_PROFILES[0], profile_id="q", rate_control_method="crf", crf=22, two_pass=False
+    )
+    args = argparse.Namespace(command="compress", profile="q", size=25.0, quality=None)
+    resolved = _resolve_profile(args, [quality])
+    assert resolved is not None
+    assert resolved.rate_control_method == "cbr"
+    assert resolved.target_size_bytes == 25 * 1024 * 1024
+
+
+@pytest.mark.parametrize("level", [-1, 52])
+def test_compress_refuses_a_quality_outside_0_to_51(level, capsys):
+    import argparse
+
+    from tuck.cli import _resolve_profile
+    from tuck.models import DEFAULT_PROFILES
+
+    args = argparse.Namespace(
+        command="compress", profile=DEFAULT_PROFILES[0].profile_id, size=None, quality=level
+    )
+    assert _resolve_profile(args, list(DEFAULT_PROFILES)) is None
+    assert "--quality must be from 0 to 51" in capsys.readouterr().err
+
+
+def test_compress_takes_size_or_quality_not_both(capsys):
+    from tuck.cli import _build_parser
+
+    with pytest.raises(SystemExit):
+        _build_parser().parse_args(["compress", "clip.mp4", "--size", "10", "--quality", "23"])
+    assert "not allowed with argument" in capsys.readouterr().err

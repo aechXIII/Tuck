@@ -13,12 +13,16 @@ import {
   type Workflow,
 } from "./encoder-options.ts";
 import { encoderForPlatform, type PlatformCapabilities } from "../../platform/capabilities.ts";
+import { qualityMethod, type ExportGoal } from "./goal.ts";
 
 /** Snapshot of every export-form control value, read once from the DOM. */
 export interface ExportFormState {
   workflow: Workflow;
   profileId: string;
+  /** Compress aims for targetSizeMb or holds qualityLevel; Upscale uses neither */
+  goal: ExportGoal;
   targetSizeMb: number;
+  qualityLevel: number;
   /** "short_side" sizes the shorter side to shortSide, so each video keeps its orientation. */
   resolutionMode: "source" | "custom" | "short_side";
   customWidth: number;
@@ -130,6 +134,13 @@ export function buildPlanRequest(
     req.rate_control = "explicit_bitrate";
     req.explicit_bitrate = toInt(form.bitrateKbps) * 1000;
   }
+  if (!up && form.goal === "quality") {
+    // a quality level is met in one pass, so the size and two-pass switch wait for Size
+    const crf = qualityMethod(encoder) === "CRF";
+    req.rate_control_method = crf ? "crf" : "cq";
+    req[crf ? "crf" : "cq"] = toInt(form.qualityLevel);
+    req.two_pass = false;
+  }
   if (up && (encoder === "libx264" || encoder === "libx265") && form.tune !== "none") {
     req.tune = form.tune;
   }
@@ -156,14 +167,17 @@ export function buildProfilePayload(
   const rateControl = encoderChanged
     ? defaultRateControl(form.workflow, encoder)
     : form.rateControl;
+  const byQuality = !up && form.goal === "quality";
   let rc = up
     ? (RC_TO_METHOD[rateControl] ?? "crf")
-    : isCpuEncoder(encoder)
-      ? "cbr"
-      : "vbr";
+    : byQuality
+      ? qualityMethod(encoder) === "CRF" ? "crf" : "cq"
+      : isCpuEncoder(encoder)
+        ? "cbr"
+        : "vbr";
   const isBr = rc === "cbr" || rc === "vbr";
   if (current.rate_control_method === "cqp" && rc === "cq") rc = "cqp";
-  const quality = toInt(form.qualityValue);
+  const quality = toInt(byQuality ? form.qualityLevel : form.qualityValue);
   const data: Record<string, unknown> = {
     name: ctx.name,
     target_size_mb: toInt(form.targetSizeMb),
@@ -179,7 +193,7 @@ export function buildProfilePayload(
     rate_control: up && isBr ? "explicit_bitrate" : "target_size",
     audio_bitrate_kbps: toInt(form.audioBitrateKbps),
     keep_audio: form.keepAudio,
-    two_pass: !up && form.twoPass,
+    two_pass: !up && !byQuality && form.twoPass,
     preset: encoderChanged ? nativePresetForSpeed("balanced", encoder) : form.preset,
     scaler: form.scaler.toLowerCase(),
     video_encoder: encoder,

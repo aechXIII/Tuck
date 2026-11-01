@@ -12,7 +12,9 @@ function form(overrides: Partial<ExportFormState> = {}): ExportFormState {
   return {
     workflow: "compression",
     profileId: "profile-1",
+    goal: "size",
     targetSizeMb: 25,
+    qualityLevel: 23,
     resolutionMode: "source",
     customWidth: 1920,
     customHeight: 1080,
@@ -268,4 +270,49 @@ test("a short side goes to the planner, which sizes each video by it", () => {
   assert.equal(saved.short_side, 1440);
   assert.equal(saved.scaler, "lanczos");
   assert.ok(!("short_side" in buildProfilePayload(form(), { name: "Box", currentProfile: null, clip: null })));
+});
+
+test("compress with the Quality goal sends the level the encoder takes, in one pass", () => {
+  const software = buildPlanRequest(form({ goal: "quality", qualityLevel: 20 }), { source: "s" });
+  assert.equal(software.rate_control_method, "crf");
+  assert.equal(software.crf, 20);
+  assert.equal(software.two_pass, false);
+  // the size is still sent; the planner leaves it unused
+  assert.equal(software.target_size_bytes, 25 * 1024 * 1024);
+
+  const nvidia = buildPlanRequest(
+    form({ goal: "quality", qualityLevel: 26, encoder: "hevc_nvenc", preset: "p5", rateControl: "VBR" }),
+    { source: "s" },
+  );
+  assert.equal(nvidia.rate_control_method, "cq");
+  assert.equal(nvidia.cq, 26);
+  assert.equal(nvidia.crf, undefined);
+
+  const best = buildPlanRequest(form({ goal: "quality", encoder: "auto_compression" }), { source: "s" });
+  assert.equal(best.rate_control_method, "crf");
+  const fastest = buildPlanRequest(form({ goal: "quality", encoder: "auto" }), { source: "s" });
+  assert.equal(fastest.rate_control_method, "cq");
+});
+
+test("the Size goal still sends a bitrate method and keeps its two passes", () => {
+  const req = buildPlanRequest(form({ qualityLevel: 30 }), { source: "s" });
+  assert.equal(req.rate_control_method, "cbr");
+  assert.equal(req.two_pass, true);
+  assert.equal(req.crf, undefined);
+});
+
+test("a Compress profile saves its Quality goal and level, with two passes off", () => {
+  const saved = buildProfilePayload(form({ goal: "quality", qualityLevel: 21 }), { name: "Q", currentProfile: null, clip: null });
+  assert.equal(saved.rate_control_method, "crf");
+  assert.equal(saved.crf, 21);
+  assert.equal(saved.two_pass, false);
+  assert.equal(saved.target_size_mb, 25);
+
+  const nvidia = buildProfilePayload(
+    form({ goal: "quality", qualityLevel: 27, encoder: "h264_nvenc", preset: "p5" }),
+    { name: "Q", currentProfile: { rate_control_method: "cqp", qp: 30 }, clip: null },
+  );
+  // a profile that used constant QP keeps it, with the new level
+  assert.equal(nvidia.rate_control_method, "cqp");
+  assert.equal(nvidia.qp, 27);
 });

@@ -262,7 +262,7 @@ def queue_item_dict(item: QueueItem) -> dict[str, Any]:
         # from an earlier run of Tuck, so no Library video stands for it
         "restored": item.restored,
         # the size this export aimed for, in bytes; 0 when it had no target
-        "target_size": int(plan.target_size) if plan is not None and plan.target_size else 0,
+        "target_size": int(plan.target_size) if plan is not None and plan.aims_for_size else 0,
     }
 
 

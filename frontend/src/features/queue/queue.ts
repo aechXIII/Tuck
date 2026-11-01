@@ -1149,6 +1149,8 @@ export function installQueue(deps: QueueDeps): QueueApi {
       selected_encoder: value("enc-sel"),
       profile_name: profileSelect?.selectedOptions[0]?.textContent ?? "",
       target_size_mb: number("sz-slider"),
+      goal: byId("sz-grp")?.dataset.goal,
+      quality_level: number("q-badge"),
       resolution:
         byId<HTMLInputElement>("res-mode")?.value === "custom"
           ? `${value("res-w")}x${value("res-h")}`

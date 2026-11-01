@@ -14,7 +14,6 @@ from .encoding.target_size import (
 )
 from .formatting import format_size
 from .models import (
-    DISCORD_PROFILE_IDS,
     ENCODER_AUTO,
     ENCODER_AUTO_FAST,
     FPS_MODE_CUSTOM,
@@ -52,7 +51,11 @@ from .models import (
 from .models.encoding_policy import (
     AMF_ENCODERS,
     NVENC_ENCODERS,
+    QUALITY_RC_METHODS,
+    RCM_CQP,
+    RCM_CRF,
     VAAPI_ENCODERS,
+    WORKFLOW_COMPRESSION,
     short_side_name,
 )
 from .output_paths import export_directory, resolve_output_collision
@@ -108,6 +111,8 @@ def plan(
 
     if not math.isfinite(info.duration) or info.duration <= 0:
         raise ValueError(f"Duration is zero or negative: {info.duration:.2f}s")
+    # Compress's Quality goal: the encoder spends what each picture needs, as Upscale does
+    by_quality = workflow == WORKFLOW_COMPRESSION and rc_method in QUALITY_RC_METHODS
 
     if request is not None and request.segments is not None:
         segments = list(request.segments)
@@ -248,6 +253,9 @@ def plan(
         suffix_template = upscale_suffix if workflow == WORKFLOW_UPSCALE else compression_suffix
         size_mb = int(target_size / (1024 * 1024))
         size_str = f"{size_mb}MB" if size_mb else ""
+        if by_quality:
+            # the size isn't known until the encode ends, so the name gives the level
+            size_str = quality_level_name(rc_method, crf, cq_val, qp_val)
         # the name gives the size the export really has, not the size that was asked for
         name_suffix = (
             suffix_template.replace("{size}", size_str)
@@ -357,7 +365,6 @@ def plan(
 
     tone_map_hdr, warnings = plan_colors(info)
     warnings += subtitle_warnings(info, len(segments))
-    warnings += discord_warnings(profile, video_encoder)
     if workflow == WORKFLOW_UPSCALE:
         warnings += upscale_size_warnings(
             (target_w, target_h),
@@ -368,7 +375,10 @@ def plan(
     is_upscale = workflow == WORKFLOW_UPSCALE
     max_video_br = 0
 
-    if is_upscale:
+    if by_quality:
+        video_br = 0
+        estimated_total = 0
+    elif is_upscale:
         if rate_ctrl == RC_EXPLICIT_BITRATE:
             if explicit_br < MIN_VIDEO_BITRATE:
                 raise ValueError(
@@ -500,27 +510,11 @@ def plan(
     return enc_plan
 
 
-# H.264 plays in Discord's chat on every device; H.265 (HEVC) plays only where the viewer's
-# device can decode it, and everyone else gets a file to download
-HEVC_ENCODERS = frozenset({"libx265", "hevc_nvenc", "hevc_amf", "hevc_vaapi"})
-DISCORD_HEVC_WARNING = (
-    "Discord doesn't play H.265 in the chat on every device, so some friends would have to "
-    "download it. H.264 plays everywhere."
-)
-
-
-def discord_warnings(profile: Profile, video_encoder: str) -> list[str]:
-    """Advice when a Discord profile's encoder makes a file the chat may not play.
-
-    Every export is 8-bit and Tuck has no AV1 encoder, so H.265 is the only case today. Auto
-    tries H.264 first, so it doesn't warn.
-    """
-    meant_for_discord = (
-        profile.profile_id in DISCORD_PROFILE_IDS or "discord" in profile.name.casefold()
-    )
-    if meant_for_discord and video_encoder in HEVC_ENCODERS:
-        return [DISCORD_HEVC_WARNING]
-    return []
+def quality_level_name(rc_method: str, crf: int, cq: int, qp: int) -> str:
+    """How a file name gives a quality level, such as CRF23 or CQ24."""
+    if rc_method == RCM_CRF:
+        return f"CRF{crf}"
+    return f"CQ{qp if rc_method == RCM_CQP else cq}"
 
 
 def resolve_target_size(profile: Profile, request: PlanRequest | None) -> int:

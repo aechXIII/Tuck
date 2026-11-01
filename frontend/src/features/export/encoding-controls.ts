@@ -31,6 +31,24 @@ import { isQueueActive, queuedVideoLabel } from "../queue/queue-view.ts";
 import { swapLabel } from "../../ui/motion.ts";
 import type { EditorSession } from "../editor/session.ts";
 import {
+  clampQuality,
+  defaultQualityLevel,
+  parseTypedGoal,
+  qualityFromSlider,
+  qualityMethod,
+  qualityPicks,
+  qualitySliderValue,
+  qualityText,
+  sizeForBitrate,
+  type ExportGoal,
+} from "./goal.ts";
+import {
+  createSizeEstimates,
+  estimateLabel,
+  estimateNumber,
+  estimateTip,
+} from "./size-estimate.ts";
+import {
   buildPlanRequest,
   buildProfilePayload,
   buildCutRequest,
@@ -38,8 +56,13 @@ import {
   type ExportFormState,
 } from "./plan-request.ts";
 import {
+  autoEncoderChoices,
+  chipEncoder,
+  encoderCodec,
+  encoderPlace,
   isCpuEncoder,
   nativePresetForSpeed,
+  resolvedEncoder,
   speedForNativePreset,
   twoPassEligible,
   type RateControlDisplay,
@@ -110,7 +133,7 @@ export interface EncodingControlsApi {
   syncResolutionToClip: (force?: boolean) => void;
   updateSizePresets: (value: number) => void;
   updateEncoderOptions: () => void;
-  setAvailableEncoders: (encoders: string[]) => void;
+  setAvailableEncoders: (encoders: string[], autoEncoders?: Readonly<Record<string, string>>) => void;
   snapProf: () => void;
   updateDirty: () => void;
   resetToProfile: () => void;
@@ -122,6 +145,10 @@ export interface EncodingControlsApi {
   saveProfileAs: () => Promise<void>;
   onSize: (value: string) => void;
   onBadgeSize: (value: string) => void;
+  chooseGoal: (goal: string) => void;
+  onQuality: (value: string) => void;
+  onBadgeQuality: (value: string) => void;
+  onEncoderChip: (chip: string) => void;
   onFpsSlider: (value: string) => void;
   onResolutionGeometryChanged: () => void;
   onExportResolutionChoice: (value: string) => void;
@@ -157,6 +184,18 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
   let previewSettingsKey = "";
   let profileSnapshot = "";
   let platformCapabilities: PlatformCapabilities | null = null;
+  // Compress's goal; each encoder keeps its own level, since CRF 23 and CQ 23 differ
+  let goal: ExportGoal = "size";
+  // which encoder each Auto choice starts with, so the chips can name it
+  let autoEncoders: Record<string, string> = {};
+  // the selected video's latest request, which a Quality estimate encodes pieces of
+  let estimateRequest: { path: string; request: PlanRequest } | null = null;
+  const estimates = createSizeEstimates({
+    estimate: (request) => client().estimateSize(request),
+    cancel: () => void client().cancelSizeEstimate(),
+    paint: () => paintEstimate(),
+  });
+  const qualityLevels = new Map<string, number>();
 
   const client = (): BackendClient => getBackendClient();
   const el = <T extends HTMLElement = HTMLElement>(id: string): T => {
@@ -315,6 +354,8 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
 
   function updateActionButtons(): void {
     deps.syncFrameExport?.();
+    // an export starting or finishing holds or frees the estimate
+    refreshEstimate();
     // another video, or none, is selected now; its own plan brings its own notes
     if (warningsPath && warningsPath !== session.selPath) paintPlanWarnings(null);
     if (wf === 2) {
@@ -378,6 +419,8 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     const summary = InspectorUi.exportSummary({
       workflow: workflowName(),
       targetSizeMb: Number(input("sz-slider").value),
+      goal,
+      videoBitrateKbps: plan ? num(plan.video_bitrate_kbps) : 0,
       width: planned ? num(plan.target_width) : Number(input("res-w").value),
       height: planned ? num(plan.target_height) : Number(input("res-h").value),
       fps: Number(input("fps-val").value),
@@ -391,6 +434,8 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
       input("sz-badge").value = input("sz-slider").value;
       resizeSizeInput();
     }
+    paintGoal();
+    paintEncoderChips();
     el("export-summary-detail").textContent = summary.detail;
     el("export-audio-summary").textContent = InspectorUi.audioSummary({
       audioEnabled: keepAudio || Number(audioBitrateKbps) > 0,
@@ -526,6 +571,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
       session.availEncoders.length,
        ...encodersForPlatform(toStringArray(s.available_encoders), platformCapabilities),
     );
+    autoEncoders = autoEncoderChoices(s.auto_encoders);
     session.allProfiles.splice(0, session.allProfiles.length, ...toArray(s.profiles));
     const def = typeof s.default_profile_id === "string" ? s.default_profile_id : "";
     if (!lastComp)
@@ -684,7 +730,6 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     const sizeMb = Math.round((num(p.target_size_bytes) || 0) / (1024 * 1024));
     input("sz-slider").value = String(sizeMb);
     input("sz-badge").value = String(sizeMb);
-    updateSizePresets(sizeMb);
     el("export-res-select").dataset.explicitCustom = "";
     const resolutionMode =
       p.resolution_mode === "custom" || p.resolution_mode === "short_side" ? p.resolution_mode : "source";
@@ -711,13 +756,24 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     input("keep-audio").checked = !!p.keep_audio;
     input("audio-br").value = String(Math.round((num(p.audio_bitrate) || 128000) / 1000));
     input("audio-br").disabled = !!p.keep_audio;
-    input("two-pass").checked = !!p.two_pass;
     select("scaler-sel").value = InspectorUi.scalingChoice(p.scaler);
     const profileEncoder = typeof p.video_encoder === "string" ? p.video_encoder : "libx264";
     select("enc-sel").value = platformCapabilities
       ? encoderForPlatform(profileEncoder, platformCapabilities)
       : profileEncoder;
     if (!select("enc-sel").value) select("enc-sel").selectedIndex = 0;
+    // a quality method on a Compress profile is its Quality goal, kept for that encoder
+    const method = String(p.rate_control_method);
+    const quality = wf === 0 && (method === "crf" || method === "cq" || method === "cqp");
+    goal = quality ? "quality" : "size";
+    if (quality) {
+      qualityLevels.set(
+        select("enc-sel").value,
+        clampQuality(method === "crf" ? num(p.crf) : method === "cqp" ? num(p.qp) : num(p.cq)),
+      );
+    }
+    // a Quality profile saves two-pass off; Size gets the encoder's usual two passes back
+    input("two-pass").checked = quality ? twoPassEligible("compression", select("enc-sel").value) : !!p.two_pass;
     updateTuneOptions();
     const tune = typeof p.tune === "string" ? p.tune : "none";
     const tuneSelect = select("tune-sel");
@@ -761,6 +817,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
       }
     }
     updateRcVis();
+    paintGoal();
     deps.syncTransformControls();
     deps.paintCropOverlay();
     snapProf();
@@ -786,7 +843,8 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
   }
 
   function onBadgeSize(value: string): void {
-    const size = parseInt(value, 10);
+    if (takeTypedGoal(value, "size")) return;
+    const size = Math.round(parseTypedGoal(value).value);
     if (!size || size < 2) {
       input("sz-badge").value = input("sz-slider").value;
       resizeSizeInput();
@@ -795,20 +853,197 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     onSize(String(size));
   }
 
+  function qualityLevel(): number {
+    const encoder = select("enc-sel").value;
+    return qualityLevels.get(encoder) ?? defaultQualityLevel(encoder);
+  }
+
+  function chooseGoal(next: string): void {
+    if ((next !== "size" && next !== "quality") || next === goal) return;
+    const estimate = estimates.view();
+    goal = next;
+    // the estimate's own column was clicked, so its number becomes the size
+    if (next === "size" && estimate.state === "done") {
+      const size = Math.max(2, Math.round(estimate.sizeMb));
+      input("sz-badge").value = String(size);
+      input("sz-slider").max = String(Math.max(500, size));
+      input("sz-slider").value = String(size);
+      input("sz-slider").setAttribute("aria-valuenow", String(size));
+      input("sz-slider").setAttribute("aria-valuemax", input("sz-slider").max);
+      resizeSizeInput();
+    }
+    paintGoal();
+    void reqPreview();
+    updateDirty();
+  }
+
+  function setQuality(level: number): void {
+    qualityLevels.set(select("enc-sel").value, clampQuality(level));
+    paintGoal();
+    clearTimeout(sizePreviewTimer);
+    sizePreviewTimer = setTimeout(() => void reqPreview(), SIZE_PREVIEW_DELAY_MS);
+    updateDirty();
+  }
+
+  function onQuality(value: string): void {
+    setQuality(qualityFromSlider(Number(value)));
+  }
+
+  function onBadgeQuality(value: string): void {
+    if (takeTypedGoal(value, "quality")) return;
+    const level = parseTypedGoal(value).value;
+    if (!Number.isFinite(level)) {
+      paintGoal(true);
+      return;
+    }
+    setQuality(level);
+  }
+
+  // a unit typed into either number picks its goal: "crf 20", "25mb", or "8 mbps" for the size
+  // that gives that bitrate; returns false when the text names the field's own goal or none
+  function takeTypedGoal(text: string, field: ExportGoal): boolean {
+    const typed = parseTypedGoal(text);
+    if (!typed.goal || typed.goal === field || !Number.isFinite(typed.value)) return false;
+    if (typed.goal === "quality") {
+      goal = "quality";
+      setQuality(typed.value);
+      return true;
+    }
+    let size = Math.round(typed.value);
+    if (typed.goal === "bitrate") {
+      const plan = session.selPath ? session.clips[session.selPath]?.planData : null;
+      const converted = plan
+        ? sizeForBitrate(typed.value, {
+          targetSizeMb: num(plan.target_size_mb),
+          videoKbps: num(plan.video_bitrate_kbps),
+          audioKbps: num(plan.audio_bitrate_kbps),
+          durationS: num(plan.selected_duration),
+        })
+        : null;
+      // without a plan there's no duration to turn a bitrate into a size
+      if (converted === null) {
+        paintGoal(true);
+        return true;
+      }
+      size = converted;
+    }
+    if (size < 2) {
+      paintGoal(true);
+      return true;
+    }
+    goal = "size";
+    onSize(String(size));
+    paintGoal(true);
+    return true;
+  }
+
+  // the chosen goal holds the number, slider and picks; the other column reads Auto
+  function paintGoal(resetInputs = false): void {
+    const grp = el("sz-grp");
+    grp.dataset.goal = goal;
+    for (const column of grp.querySelectorAll<HTMLElement>("[data-goal-col]")) {
+      const held = column.dataset.goalCol === goal;
+      column.classList.toggle("held", held);
+      const cap = column.querySelector<HTMLElement>(".goal-cap");
+      cap?.setAttribute("aria-checked", String(held));
+      cap?.setAttribute("tabindex", held ? "0" : "-1");
+      // the column's own name says what a click does; the held one is just its name
+      if (cap) cap.title = held ? "" : goal === "size" ? "Use a quality level instead" : "Use a size instead";
+    }
+    const quality = goal === "quality";
+    input("sz-slider").hidden = quality;
+    input("q-slider").hidden = !quality;
+    const encoder = select("enc-sel").value;
+    const level = qualityLevel();
+    const method = qualityMethod(encoder);
+    el("q-method").textContent = method;
+    input("q-badge").setAttribute("aria-label", `${method} level`);
+    if (resetInputs || document.activeElement !== input("q-badge")) {
+      input("q-badge").value = String(level);
+      resizeQualityInput();
+    }
+    if (resetInputs && document.activeElement !== input("sz-badge")) {
+      input("sz-badge").value = input("sz-slider").value;
+      resizeSizeInput();
+    }
+    input("q-slider").value = String(qualitySliderValue(level));
+    input("q-slider").setAttribute("aria-valuetext", qualityText(encoder, level));
+    updateSizePresets(Number(input("sz-slider").value));
+    gateTwoPass();
+    paintEstimate();
+  }
+
+  function exportsRunning(): boolean {
+    return Object.values(session.clips).some((clip) => isQueueActive(clip?._queueState));
+  }
+
+  function refreshEstimate(): void {
+    const wanted =
+      goal === "quality" && workflowName() === "compression" && wf !== 2 &&
+      estimateRequest !== null && estimateRequest.path === session.selPath;
+    estimates.update(wanted ? estimateRequest!.request : null, exportsRunning());
+  }
+
+  function paintEstimate(): void {
+    const column = el("sz-grp").querySelector<HTMLElement>('[data-goal-col="size"]');
+    const slot = column?.querySelector<HTMLElement>(".goal-auto");
+    if (!column || !slot) return;
+    const view = goal === "quality" ? estimates.view() : { state: "idle" as const, sizeMb: 0, reason: "" };
+    slot.dataset.estimate = view.state;
+    if (view.state === "done") {
+      const about = document.createElement("span");
+      about.className = "goal-about";
+      about.textContent = "About";
+      const number = document.createElement("span");
+      number.className = "goal-est-num";
+      number.textContent = estimateNumber(view.sizeMb);
+      const unit = document.createElement("span");
+      unit.className = "goal-unit";
+      unit.textContent = "MB";
+      slot.replaceChildren(about, number, unit);
+    } else {
+      slot.textContent = estimateLabel(view);
+    }
+    const cap = column.querySelector<HTMLElement>(".goal-cap");
+    if (cap && goal === "quality") {
+      cap.title = estimateTip(view);
+      cap.setAttribute("aria-description", estimateLabel(view));
+    } else cap?.removeAttribute("aria-description");
+    // the stage is announced once it has a result, not while it is still working
+    const status = el("sz-est-status");
+    const said = view.state === "done" || view.state === "failed" || view.state === "waiting" ? estimateLabel(view) : "";
+    if (status.textContent !== said) status.textContent = said;
+  }
+
   function updateSizePresets(value: number): void {
+    const quality = goal === "quality";
+    const encoder = select("enc-sel").value;
+    const picks = quality ? qualityPicks(encoder) : InspectorUi.sizePresets();
+    const current = quality ? qualityLevel() : value;
     const container = el("sz-presets");
-    container.replaceChildren();
-    for (const mb of InspectorUi.sizePresets()) {
-      const button = document.createElement("button");
-      button.textContent = String(mb);
-      button.setAttribute("aria-label", `${mb} MB`);
-      button.setAttribute("aria-pressed", String(mb === value));
-      if (mb === value) button.classList.add("on");
-      button.addEventListener("click", () => {
-        input("sz-slider").value = String(mb);
-        onSize(String(mb));
-      });
-      container.appendChild(button);
+    const buttons = [...container.querySelectorAll<HTMLButtonElement>("button")];
+    // the same picks are only marked again, so a pressed pick keeps its focus
+    const same = buttons.length === picks.length && buttons.every((button, index) => button.dataset.pick === String(picks[index]) && button.dataset.goal === goal);
+    if (!same) {
+      container.replaceChildren(...picks.map((pick) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = String(pick);
+        button.dataset.pick = String(pick);
+        button.dataset.goal = goal;
+        button.addEventListener("click", () => {
+          if (button.dataset.goal === "quality") setQuality(pick);
+          else onSize(String(pick));
+        });
+        return button;
+      }));
+    }
+    for (const button of container.querySelectorAll<HTMLButtonElement>("button")) {
+      const pick = Number(button.dataset.pick);
+      const on = pick === current;
+      button.setAttribute("aria-label", quality ? `${qualityMethod(encoder)} ${pick}` : `${pick} MB`);
+      button.setAttribute("aria-pressed", String(on));
+      button.classList.toggle("on", on);
     }
   }
 
@@ -911,6 +1146,38 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     el("adv-toggle").setAttribute("aria-expanded", String(open));
   }
 
+  function chipChoices(): string[] {
+    return platformCapabilities ? encodersForPlatform(availEncoders(), platformCapabilities) : availEncoders();
+  }
+
+  function paintEncoderChips(): void {
+    const current = select("enc-sel").value;
+    const now = resolvedEncoder(current, autoEncoders);
+    const codec = encoderCodec(now);
+    const place = encoderPlace(now);
+    const otherCodec = codec === "H.264" ? "H.265" : "H.264";
+    const otherPlace = place === "CPU" ? "GPU" : "CPU";
+    const paint = (id: string, chip: "codec" | "place", label: string, use: string, missing: string) => {
+      const button = el<HTMLButtonElement>(id);
+      const target = chipEncoder(current, chip, chipChoices(), autoEncoders);
+      button.textContent = label;
+      button.disabled = !target;
+      button.title = target ? use : missing;
+      button.setAttribute("aria-label", `${chip === "codec" ? "Codec" : "Runs on the"} ${label}. ${target ? use : missing}`);
+    };
+    paint("enc-codec", "codec", codec, `Use ${otherCodec}`, `No ${otherCodec} encoder for the ${place} was found`);
+    paint("enc-place", "place", place, `Use the ${otherPlace}`, `No ${codec} encoder for the ${otherPlace} was found`);
+  }
+
+  function onEncoderChip(chip: string): void {
+    if (chip !== "codec" && chip !== "place") return;
+    const target = chipEncoder(select("enc-sel").value, chip, chipChoices(), autoEncoders);
+    if (!target) return;
+    select("enc-sel").value = target;
+    // the select's own change path repaints its trigger and runs onEncChange
+    select("enc-sel").dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
   function onEncChange(): void {
     updatePresetOptions();
     if (select("enc-sel").value === "auto_compression") {
@@ -919,7 +1186,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     }
     updateTuneOptions();
     updateRcOpts();
-    gateTwoPass();
+    paintGoal(true);
     void reqPreview();
     updateDirty();
   }
@@ -985,8 +1252,12 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
 
   function gateTwoPass(): void {
     const can = twoPassEligible(workflowName(), select("enc-sel").value);
-    input("two-pass").disabled = !can;
-    el("two-pass-note").classList.toggle("hid", can || wf === 1);
+    const quality = wf === 0 && goal === "quality";
+    input("two-pass").disabled = !can || quality;
+    el("two-pass-note").textContent = quality
+      ? "Two-pass is used only with Size."
+      : "Two-pass is available only for software compression.";
+    el("two-pass-note").classList.toggle("hid", (can && !quality) || wf === 1);
     if (!can) input("two-pass").checked = false;
   }
 
@@ -994,7 +1265,9 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     return {
       workflow: workflowName(),
       profileId: select("prof-sel").value,
+      goal,
       targetSizeMb: parseInt(input("sz-slider").value, 10) || 0,
+      qualityLevel: qualityLevel(),
       resolutionMode: resolutionMode(),
       customWidth: parseInt(input("res-w").value, 10) || 0,
       customHeight: parseInt(input("res-h").value, 10) || 0,
@@ -1090,10 +1363,14 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     paintPlanWarnings(null);
     if (!clip || !clip.probed) {
       setSizeProblem(null, "");
+      estimateRequest = null;
+      refreshEstimate();
       return;
     }
     if (!videoSettingsValid() || !lut.valid()) {
       setSizeProblem(null, "");
+      estimateRequest = null;
+      refreshEstimate();
       clip.planData = null;
       // settings that can't be planned have no estimate, so no placeholder waits for one
       clip._hadEstimate = false;
@@ -1116,6 +1393,8 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     clip.planData = null;
     deps.paintCropOverlay();
     const req = buildRequest(path as string, requestId);
+    estimateRequest = { path: path as string, request: req as PlanRequest };
+    refreshEstimate();
     try {
       const r = await legacyBackendResult(client().createPlan(req as never));
       const data = r.data as Record<string, unknown> | undefined;
@@ -1131,6 +1410,9 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
         if (!r.ok) {
           clip._hadEstimate = false;
           deps.renderClips?.();
+          // settings the planner turns down can't be encoded either
+          estimateRequest = null;
+          refreshEstimate();
         }
       }
       if (
@@ -1482,7 +1764,10 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
       pid: value("prof-sel"),
       blending: JSON.stringify(blending.read()),
       lut: JSON.stringify(lut.read()),
+      goal: wf === 0 ? goal : "",
       size: value("sz-slider"),
+      level: wf === 0 ? String(qualityLevel()) : "",
+      lm: qualityMethod(select("enc-sel").value),
       rm: value("res-mode"),
       rw: customSize ? value("res-w") : "",
       rh: customSize ? value("res-h") : "",
@@ -1968,8 +2253,36 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
   }
 
   function resizeSizeInput(): void {
-    input("sz-badge").style.width = `${Math.max(2, input("sz-badge").value.length)}ch`;
+    input("sz-badge").style.width = `${Math.max(1, input("sz-badge").value.length)}ch`;
   }
+
+  function resizeQualityInput(): void {
+    input("q-badge").style.width = `${Math.max(1, input("q-badge").value.length)}ch`;
+  }
+
+  const qualityInput = input("q-badge");
+  qualityInput.addEventListener("focus", () => qualityInput.select());
+  qualityInput.addEventListener("input", resizeQualityInput);
+  qualityInput.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      qualityInput.value = String(qualityLevel());
+      resizeQualityInput();
+      qualityInput.blur();
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      qualityInput.blur();
+    }
+  });
+
+  // the two goals are one radio group: the arrows move between them and choose
+  el("sz-grp").addEventListener("keydown", (event) => {
+    const cap = (event.target as HTMLElement).closest(".goal-cap");
+    if (!cap || !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
+    event.preventDefault();
+    chooseGoal(goal === "size" ? "quality" : "size");
+    el("sz-grp").querySelector<HTMLElement>(".goal-col.held .goal-cap")?.focus();
+  });
 
   const sizeInput = input("sz-badge");
   sizeInput.addEventListener("focus", () => sizeInput.select());
@@ -2012,13 +2325,15 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     syncResolutionToClip,
     updateSizePresets,
     updateEncoderOptions,
-    setAvailableEncoders: (encoders) => {
+    setAvailableEncoders: (encoders, autos) => {
+      if (autos) autoEncoders = { ...autos };
       session.availEncoders.splice(
         0,
         session.availEncoders.length,
         ...(platformCapabilities ? encodersForPlatform(encoders, platformCapabilities) : encoders),
       );
       updateEncoderOptions();
+      paintEncoderChips();
     },
     snapProf,
     updateDirty,
@@ -2030,6 +2345,10 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     saveProfileAs,
     onSize,
     onBadgeSize,
+    chooseGoal,
+    onQuality,
+    onBadgeQuality,
+    onEncoderChip,
     onFpsSlider,
     onResolutionGeometryChanged,
     onExportResolutionChoice,

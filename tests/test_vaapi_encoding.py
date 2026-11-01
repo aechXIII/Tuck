@@ -6,7 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from tuck.encoding.capabilities import auto_encoder_candidates, get_encoder_capabilities
+from tuck.encoding.capabilities import (
+    auto_encoder_candidates,
+    auto_encoder_choices,
+    get_encoder_capabilities,
+)
 from tuck.encoding.command import build_base_cmd
 from tuck.encoding.frame_blending import TmixBlend, TmixPiece
 from tuck.models import (
@@ -55,6 +59,17 @@ def test_linux_auto_fast_uses_vaapi_and_best_compression_uses_cpu(monkeypatch):
     caps = get_encoder_capabilities(available).to_dict()
     assert caps["has_vaapi"] is True
     assert "h264_amf" not in caps["available"]
+
+
+def test_auto_choices_name_the_encoder_each_auto_starts_with(monkeypatch):
+    monkeypatch.setenv("TUCK_DESKTOP_PLATFORM", "linux")
+    available = frozenset({"libx264", "libx265", "h264_vaapi", "hevc_vaapi"})
+    assert auto_encoder_choices(available) == {
+        "auto": "h264_vaapi",
+        "auto_fast": "h264_vaapi",
+        "auto_compression": "libx264",
+    }
+    assert auto_encoder_choices(frozenset({"libx264"}))["auto_fast"] == "libx264"
 
 
 def _plan(**kwargs) -> EncodePlan:

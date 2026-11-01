@@ -13,7 +13,7 @@ from tuck.encoding.capabilities import can_tone_map_hdr
 from tuck.encoding.command import build_base_cmd, nvenc_preset, scaler_to_ffmpeg_flag
 from tuck.encoding.failures import DISK_FULL_MESSAGE
 from tuck.encoding.filters import build_video_filters
-from tuck.encoding.runner import describe_encoder_fallback
+from tuck.encoding.runner import _execution_plan, describe_encoder_fallback
 from tuck.engine import EncodeCancelled, EncodeError, FFmpegEngine, is_ffmpeg_available
 from tuck.media_tools import find_ffmpeg, find_ffprobe
 from tuck.models import (
@@ -1676,6 +1676,33 @@ class TestTargetSizeRetries:
         assert calls == 1
         assert plan.video_bitrate == 5_000_000
 
+    def test_quality_goal_encodes_once_whatever_the_size(self, engine, tmp_path):
+        output = tmp_path / "output.mp4"
+        plan = EncodePlan(
+            source="source.mp4",
+            output=str(output),
+            workflow="compression",
+            video_bitrate=0,
+            audio_bitrate=0,
+            two_pass=False,
+            target_size=10_000,
+            rate_control_method=RCM_CRF,
+            crf=23,
+        )
+        calls = 0
+
+        def encode_once(_ffmpeg, _plan, _source, destination, *_args, **_kwargs):
+            nonlocal calls
+            calls += 1
+            # far over the profile's size, which a Quality export doesn't aim for
+            destination.write_bytes(b"q" * 50_000)
+            return destination
+
+        engine._encode_single_pass = encode_once
+        result = engine._encode_with_retry("ffmpeg", plan, Path(plan.source), output, 10.0, None)
+        assert result.read_bytes() == b"q" * 50_000
+        assert calls == 1
+
     def test_undershoot_uses_every_retry_while_the_output_keeps_growing(self, engine, tmp_path):
         output = tmp_path / "output.mp4"
         plan = EncodePlan(
@@ -2961,3 +2988,31 @@ class TestRealExports:
         output_info = probe(FFmpegEngine().encode(encode_plan))
         assert output_info.color_transfer == "bt709"
         assert not output_info.is_hdr
+
+
+def test_auto_best_compression_keeps_one_pass_for_a_quality_level():
+    plan = EncodePlan(
+        source="source.mp4",
+        output="out.mp4",
+        workflow="compression",
+        video_encoder="auto_compression",
+        rate_control_method=RCM_CRF,
+        crf=20,
+        two_pass=False,
+    )
+    software = _execution_plan(plan, "libx264", auto=True)
+    assert (software.two_pass, software.rate_control_method, software.crf) == (False, "crf", 20)
+    nvidia = _execution_plan(plan, "h264_nvenc", auto=True)
+    assert (nvidia.rate_control_method, nvidia.cq) == ("cq", 20)
+
+
+def test_auto_best_compression_still_uses_two_passes_for_a_size():
+    plan = EncodePlan(
+        source="source.mp4",
+        output="out.mp4",
+        workflow="compression",
+        video_encoder="auto_compression",
+        rate_control_method="vbr",
+        two_pass=False,
+    )
+    assert _execution_plan(plan, "libx264", auto=True).two_pass is True

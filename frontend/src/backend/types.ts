@@ -2,6 +2,7 @@ import type { CutAnalysisPayload, CutCancellation, CutPlanPayload, CutPlanReques
 import type { FrameExportRequest, FrameExportResult } from "./frame-types.ts";
 import type { JoinCancellation, JoinStatus } from "./join-types.ts";
 import type { PreviewMixPayload } from "./preview-mix-types.ts";
+import type { SizeEstimateCancellation, SizeEstimatePayload } from "./size-estimate-types.ts";
 import type { TimelineFramesPayload } from "./timeline-frame-types.ts";
 export type { FrameExportRequest, FrameExportResult, VideoTransformJSON, LutSettingsJSON } from "./frame-types.ts";
 
@@ -209,6 +210,9 @@ export interface DomainBackendClient {
   createPlan(request: CutPlanRequest): Promise<BackendResult<CutPlanPayload>>;
   createPlan(request: PlanRequest): Promise<BackendResult<DataPayload>>;
   /** the native player's mix for the edit an export of `request` would make */
+  /** encodes a few short pieces of a Quality export; a newer estimate or a cancel stops it */
+  estimateSize(request: PlanRequest): Promise<BackendResult<SizeEstimatePayload>>;
+  cancelSizeEstimate(): Promise<BackendResult<SizeEstimateCancellation>>;
   compilePreviewMix(request: PlanRequest): Promise<BackendResult<PreviewMixPayload>>;
   enqueueWithOptions(request: PlanRequest): Promise<BackendResult<JsonObject>>;
   enqueueBatch(requests: readonly PlanRequest[]): Promise<BackendResult<JsonObject>>;

@@ -1047,8 +1047,8 @@ class TestMergeImportedProfiles:
 
 
 class TestNormalizeLegacyRCMatrix:
-    def test_compression_crf_normalized_to_cbr(self):
-        """Legacy compression+CRF is normalized to compression+CBR."""
+    def test_compression_crf_is_the_quality_goal(self):
+        """Compress with CRF keeps it: that is the Quality goal, and it has no second pass."""
         from tuck.models.encoding_policy import normalize_legacy_rc_matrix
 
         new_rcm, new_two_pass = normalize_legacy_rc_matrix(
@@ -1058,22 +1058,22 @@ class TestNormalizeLegacyRCMatrix:
             video_encoder="libx264",
             two_pass=True,
         )
-        assert new_rcm == "cbr"
-        assert new_two_pass is True
+        assert new_rcm == "crf"
+        assert new_two_pass is False
 
-    def test_compression_cqp_normalized_to_cbr(self):
-        """Legacy compression+CQP is normalized to compression+CBR."""
+    def test_compression_vbr_on_cpu_becomes_cbr(self):
+        """A Size goal on the CPU is stored as CBR, as before."""
         from tuck.models.encoding_policy import normalize_legacy_rc_matrix
 
         new_rcm, new_two_pass = normalize_legacy_rc_matrix(
             workflow="compression",
             rate_control="target_size",
-            rate_control_method="cqp",
-            video_encoder="h264_nvenc",
-            two_pass=False,
+            rate_control_method="vbr",
+            video_encoder="libx264",
+            two_pass=True,
         )
         assert new_rcm == "cbr"
-        assert new_two_pass is False  # GPU + two_pass disabled
+        assert new_two_pass is True
 
     def test_upscale_crf_preserved(self):
         """Upscale+CRF is preserved as-is."""
@@ -1110,7 +1110,7 @@ class TestNormalizeLegacyRCMatrix:
         new_rcm, new_two_pass = normalize_legacy_rc_matrix(
             workflow="compression",
             rate_control="target_size",
-            rate_control_method="crf",
+            rate_control_method="vbr",
             video_encoder="h264_nvenc",
             two_pass=True,
         )
@@ -1138,12 +1138,12 @@ class TestNormalizeLegacyRCMatrix:
         new_rcm, new_two_pass = normalize_legacy_rc_matrix(
             workflow="compression",
             rate_control="target_size",
-            rate_control_method="crf",
-            video_encoder="libx264",
+            rate_control_method="cq",
+            video_encoder="h264_nvenc",
             two_pass=True,
         )
-        assert new_rcm == "cbr"
-        assert new_two_pass is True  # CPU + CBR keeps two_pass
+        assert new_rcm == "cq"
+        assert new_two_pass is False
 
 
 class TestLegacyProfileNormalization:
@@ -1203,6 +1203,28 @@ class TestLegacyProfileNormalization:
         p = Profile.from_dict(data)
         assert p.rate_control_method == "cbr"
         assert p.two_pass is False
+
+    def test_compression_quality_profile_kept_from_schema_7(self):
+        """From schema 7 a compression CRF or CQ is the Quality goal and keeps its level."""
+        from tuck.models import Profile
+
+        data = {
+            "profile_id": "quality-goal",
+            "name": "Quality",
+            "target_size_bytes": 50 * 1024 * 1024,
+            "resolution_mode": "source",
+            "fps_mode": "source",
+            "rate_control": "target_size",
+            "two_pass": False,
+            "schema_version": 7,
+            "workflow": "compression",
+            "rate_control_method": "cq",
+            "cq": 26,
+            "video_encoder": "hevc_nvenc",
+            "preset": "p5",
+        }
+        p = Profile.from_dict(data)
+        assert (p.rate_control_method, p.cq) == ("cq", 26)
 
     def test_upscale_crf_profile_preserved_on_load(self):
         """Profile.from_dict preserves upscale+CRF as-is."""

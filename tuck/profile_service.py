@@ -11,6 +11,7 @@ from .bridge_validation import normalize_profile_ui_payload
 from .desktop_platform import is_linux_desktop
 from .models import (
     PROFILE_ID_DISCORD_FREE,
+    PROFILE_SCHEMA_VERSION,
     SCALER_LANCZOS,
     Profile,
     export_profiles_json,
@@ -79,6 +80,8 @@ class ProfileService:
 
         data.pop("profile_id", None)
         data["profile_id"] = uuid.uuid4().hex[:12]
+        # the editor sends today's fields, so none of the old-format migrations apply
+        data["schema_version"] = PROFILE_SCHEMA_VERSION
         if "scaler" not in data:
             data["scaler"] = self._settings.get_setting("default_scaler", SCALER_LANCZOS)
 

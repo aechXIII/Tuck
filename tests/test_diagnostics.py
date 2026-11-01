@@ -97,6 +97,15 @@ class TestBuildDiagnostics:
         assert "Alice" not in text
         assert "<path>" in text
 
+    def test_a_quality_export_reports_its_goal_and_level(self):
+        text = build_diagnostics(
+            extra={"goal": "quality", "target_size_mb": 10, "quality_level": 23}
+        )
+        assert "goal: quality" in text
+        assert "quality level: 23" in text
+        plan = EncodePlan(source="a.mp4", output="b.mp4", rate_control_method="crf", crf=21)
+        assert "quality level: crf 21" in build_diagnostics(plan=plan)
+
     def test_includes_plan_and_trim(self):
         plan = EncodePlan(
             source=r"C:\Users\Bob\clip.mp4",

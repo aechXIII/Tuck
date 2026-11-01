@@ -42,10 +42,12 @@ from .cutting.service import CutAnalysisService
 from .desktop_platform import is_linux_desktop
 from .diagnostics import build_diagnostics, preview_report
 from .encoding.capabilities import (
+    auto_encoder_choices,
     clear_encoder_cache,
     get_available_encoders,
     get_encoder_capabilities,
 )
+from .encoding.runner import EncodeCancelled
 from .engine import cleanup_cache, is_ffmpeg_available
 from .engine import get_available_encoders as _engine_available_encoders
 from .frame_export import export_frame
@@ -64,7 +66,12 @@ from .models import (
     VideoInfo,
     find_profile_by_id,
 )
-from .models.encoding_policy import SCALER_LANCZOS, normalize_scaler
+from .models.encoding_policy import (
+    QUALITY_RC_METHODS,
+    SCALER_LANCZOS,
+    WORKFLOW_COMPRESSION,
+    normalize_scaler,
+)
 from .models.export_preferences import (
     OUTPUT_LOCATION_FOLDER,
     normalize_output_location,
@@ -105,6 +112,7 @@ from .queue_store import STORE_NAME, UnfinishedExportStore
 from .request_work import RequestWork
 from .settings import get_settings_manager
 from .settings_backup import SettingsBackupService
+from .size_estimate import SizeEstimator
 from .timeline_frames import TILE_HEIGHT, TILE_WIDTH, validate_timeline_request
 
 logger = logging.getLogger(__name__)
@@ -122,6 +130,7 @@ class BridgeAPI:
         self._ipc_metadata: dict[str, str] = {}
 
         self._probe_cache = ProbeCache(lambda path: probe_video(path))
+        self._size_estimates = SizeEstimator(lambda: self._settings.cache_dir)
         self._audio_probe_cache = ProbeCache(lambda path: probe_audio(path))
         self._cut_analysis = CutAnalysisService()
         self._joins = JoinService()
@@ -165,6 +174,7 @@ class BridgeAPI:
 
     def stop_background_services(self) -> None:
         """Stop process-owned services using the GUI cleanup order."""
+        self._size_estimates.cancel()
         self._cut_analysis.close()
         self._joins.close()
         self._queue.stop()
@@ -554,6 +564,52 @@ class BridgeAPI:
         except Exception as e:
             return {"ok": False, "error": str(e), "_request_id": req_id}
 
+    def estimate_size(self, request: object) -> BridgeResult:
+        """Encodes a few short pieces of a Quality export to say about how big it will be."""
+        if not isinstance(request, dict):
+            return {"ok": False, "error": "Expected request object"}
+        req_id = request.get("_request_id", 0)
+        _, current, pending = self._queue.snapshot()
+        if current is not None or pending:
+            # the estimate would slow the export and be slowed by it
+            return {
+                "ok": False,
+                "code": "export_running",
+                "error": "Tuck estimates the size once the exports finish.",
+                "_request_id": req_id,
+            }
+        try:
+            req = self._parse_plan_request(request)
+            profile = self._resolve_profile(req.profile_id)
+            if profile is None:
+                raise ValueError(f"Profile not found: {req.profile_id}")
+            p = self._build_plan(req, profile)
+            if (
+                p.workflow != WORKFLOW_COMPRESSION
+                or p.rate_control_method not in QUALITY_RC_METHODS
+            ):
+                raise ValueError("Only a Quality export needs a size estimate.")
+            estimate = self._size_estimates.estimate(p)
+        except EncodeCancelled:
+            return {"ok": False, "code": "cancelled", "error": "Stopped", "_request_id": req_id}
+        except PlanValidationError as e:
+            return {"ok": False, "error": str(e), "field": e.field, "_request_id": req_id}
+        except Exception as e:
+            logger.warning("Size estimate failed", exc_info=True)
+            return {"ok": False, "code": "failed", "error": str(e), "_request_id": req_id}
+        return {
+            "ok": True,
+            "_request_id": req_id,
+            "size_bytes": estimate.size_bytes,
+            "video_bytes": estimate.video_bytes,
+            "audio_bytes": estimate.audio_bytes,
+            "sampled_seconds": estimate.sampled_seconds,
+            "encoder": estimate.encoder,
+        }
+
+    def cancel_size_estimate(self) -> BridgeResult:
+        return {"ok": True, "cancelled": self._size_estimates.cancel()}
+
     def enqueue_with_options(
         self, request: object, *, work: RequestWork | None = None
     ) -> BridgeResult:
@@ -772,7 +828,9 @@ class BridgeAPI:
 
         extra: dict[str, Any] = {}
         for key in (
+            "goal",
             "target_size_mb",
+            "quality_level",
             "resolution",
             "fps",
             "two_pass",
@@ -988,6 +1046,7 @@ class BridgeAPI:
             "ffmpeg_available": is_ffmpeg_available(),
             "ffprobe_available": is_ffprobe_available(),
             "available_encoders": sorted(_engine_available_encoders()),
+            "auto_encoders": auto_encoder_choices(),
             "encoder_capabilities": get_encoder_capabilities().to_dict(),
             "profiles": [profile_ui_dict(profile) for profile in profiles],
         }
@@ -1174,7 +1233,11 @@ class BridgeAPI:
     def refresh_encoders(self) -> BridgeResult:
         clear_encoder_cache(delete_disk=True)
         encoders = get_available_encoders(refresh=True)
-        return {"ok": True, "available_encoders": sorted(encoders)}
+        return {
+            "ok": True,
+            "available_encoders": sorted(encoders),
+            "auto_encoders": auto_encoder_choices(encoders),
+        }
 
     def get_profiles_json(self) -> BridgeResult:
         return self._profile_service.list_profiles()
