@@ -507,6 +507,10 @@ export function installEditorRuntime(
       library.addFiles([path]);
       library.selectClip(path);
     },
+    exportChosen: (paths) => void encoding?.exportChosen(paths),
+    chosenExport: (paths) => encoding?.chosenExport(paths) ?? { label: "Compress", disabled: true },
+    // the clear button goes away with the choice, so focus moves to the video on the stage
+    clearChoice: () => library.clearChoice(true),
   });
   join.sync(library.selectedPaths());
 
@@ -582,6 +586,7 @@ export function installEditorRuntime(
     cropTransformForRequest: (clip) => transform.cropTransformForRequest(clip),
     restoreTimelineHeight: (value) => timeline.restoreTimelineHeight(value),
     orderedClipKeys: () => library.orderedClipKeys(),
+    actionButtonsChanged: () => join?.refresh(),
     audioRequestPayload: (clip) =>
       audio.requestPayload(clip) as Record<string, unknown>,
     selectCutSegment: (index, time) => {

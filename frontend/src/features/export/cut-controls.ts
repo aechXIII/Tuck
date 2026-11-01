@@ -16,6 +16,8 @@ interface CutControlsDeps {
   moveStarts: (clip: EditorClip, plan: CutPlanPreview) => boolean;
   pollQueue: () => void | Promise<void>;
   paintTimeline: () => void;
+  // the export buttons were redrawn, so anything that mirrors them follows
+  rendered?: () => void;
 }
 
 export function installCutControls(deps: CutControlsDeps) {
@@ -360,6 +362,7 @@ export function installCutControls(deps: CutControlsDeps) {
     note.hidden = !note.textContent;
     deps.paintTimeline();
     readAheadSoon();
+    deps.rendered?.();
   }
 
   function notReady(clip: EditorClip): NotReadyReason | null {
@@ -379,7 +382,8 @@ export function installCutControls(deps: CutControlsDeps) {
     if (row && row.getClientRects().length) row.focus();
   }
 
-  async function exportCuts(all: boolean): Promise<void> {
+  // the selected video's cuts, or every given video's (Export all cuts, or the chosen videos)
+  async function exportCuts(paths?: readonly string[]): Promise<void> {
     if (busy || waiting) return;
     waiting = true;
     try {
@@ -389,7 +393,7 @@ export function installCutControls(deps: CutControlsDeps) {
     }
     if (busy) return;
     stopReadAhead();
-    const clips = all ? session.clipOrder.map(path => session.clips[path]).filter((clip): clip is EditorClip => !!clip) : selected() ? [selected()!] : [];
+    const clips = paths ? paths.map(path => session.clips[path]).filter((clip): clip is EditorClip => !!clip) : selected() ? [selected()!] : [];
     if (!clips.length || clips.some(clip => !ready(clip) || exporting(clip))) return;
     const reviewed = clips.map(clip => ({clip,fingerprint:state(clip).plan!.fingerprint,requestKey:state(clip).requestKey}));
     busy = true; const exportTicket = ++ticket; clearTimeout(timer); render();
@@ -458,5 +462,10 @@ export function installCutControls(deps: CutControlsDeps) {
   element("cut-reread").addEventListener("click",() => {
     const clip = selected(); if (clip) { clip.cutState = reduceCutState(state(clip),{type:"retry"}); refresh(); }
   });
-  return {setActive,refresh,render,exportCuts,focusRow};
+  function canExport(paths: readonly string[]): boolean {
+    const clips = paths.map(path => session.clips[path]).filter((clip): clip is EditorClip => !!clip);
+    return clips.length > 0 && !busy && !waiting && clips.every(exportable);
+  }
+
+  return {setActive,refresh,render,exportCuts,canExport,focusRow};
 }

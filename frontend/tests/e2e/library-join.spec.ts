@@ -35,7 +35,7 @@ test("Join appears only with two or more videos chosen, by pointer or keyboard",
   const join = page.getByRole("button", { name: /^Join/ });
   await expect(join).toBeHidden();
   await row(page, THIRD).click({ modifiers: ["Control"] });
-  await expect(page.locator("#lib-join-text")).toHaveText("2 selected");
+  await expect(page.locator("#lib-join-text")).toHaveText("2 chosen");
   await expect(join).toBeVisible();
   await expect(row(page, THIRD)).toHaveAttribute("aria-selected", "true");
   await expect(row(page, SECOND)).toHaveAttribute("aria-selected", "false");
@@ -47,16 +47,16 @@ test("Join appears only with two or more videos chosen, by pointer or keyboard",
   await row(page, SECOND).focus();
   await page.keyboard.press("Shift+ArrowDown");
   await expect(row(page, THIRD)).toBeFocused();
-  await expect(page.locator("#lib-join-text")).toHaveText("2 selected");
+  await expect(page.locator("#lib-join-text")).toHaveText("2 chosen");
   await page.keyboard.press("Shift+ArrowUp");
   await page.keyboard.press("Shift+ArrowUp");
-  await expect(page.locator("#lib-join-text")).toHaveText("2 selected");
+  await expect(page.locator("#lib-join-text")).toHaveText("2 chosen");
   await expect(row(page, FIRST)).toHaveAttribute("aria-selected", "true");
   await expect(row(page, THIRD)).toHaveAttribute("aria-selected", "false");
   // Ctrl+Space adds the focused row
   await row(page, THIRD).focus();
   await page.keyboard.press("Control+Space");
-  await expect(page.locator("#lib-join-text")).toHaveText("3 selected");
+  await expect(page.locator("#lib-join-text")).toHaveText("3 chosen");
 });
 
 test("joining adds the new video to the Library in Library order and opens it", async ({ page }) => {
@@ -66,7 +66,7 @@ test("joining adds the new video to the Library in Library order and opens it", 
   ]);
   await row(page, THIRD).click();
   await row(page, FIRST).click({ modifiers: ["Shift"] });
-  await expect(page.locator("#lib-join-text")).toHaveText("3 selected");
+  await expect(page.locator("#lib-join-text")).toHaveText("3 chosen");
   await page.getByRole("button", { name: "Join 3 videos into one" }).click();
   await expect(row(page, JOINED)).toBeVisible();
   await expect(row(page, JOINED)).toHaveAttribute("aria-selected", "true");
@@ -97,7 +97,7 @@ test("a join shows its measured stage and can be canceled", async ({ page }) => 
   await expect.poll(() => page.evaluate(() => window.__tuckFakeBackendCalls?.some((call) => call.method === "cancelJoin"))).toBe(true);
   await expect.poll(() => polls(page)).toBe(2);
   await page.evaluate(() => window.__tuckReleaseHeld?.("getJoin"));
-  await expect(page.locator("#lib-join-text")).toHaveText("2 selected");
+  await expect(page.locator("#lib-join-text")).toHaveText("2 chosen");
   await expect(page.locator("#lib-join-status")).toHaveText("Join canceled. Nothing was saved.");
   await expect(page.locator(".clip[data-clip-path]")).toHaveCount(3);
 });
@@ -123,4 +123,38 @@ test("a refused join request is shown the same way", async ({ page }) => {
   await row(page, SECOND).click({ modifiers: ["Control"] });
   await page.getByRole("button", { name: "Join 2 videos into one" }).click();
   await expect(page.locator("#lib-join-note")).toHaveText("Another join is still running. Wait for it or cancel it.");
+});
+
+test("the chosen videos go to Exports together, in Library order, and the choice can be cleared", async ({ page }) => {
+  await open(page);
+  await row(page, THIRD).click({ modifiers: ["Control"] });
+  await expect(page.locator("#lib-join-text")).toHaveText("2 chosen");
+  // the old note under the bar is gone; Join says the order in its tooltip
+  await expect(page.locator("#lib-join-note")).toBeHidden();
+  await expect(page.locator("#btn-join")).toHaveAttribute("data-tip", "Join in Library order");
+  const compress = page.getByRole("button", { name: "Compress 2 videos" });
+  await expect(compress).toHaveText("Compress");
+  await expect(compress).toBeEnabled();
+  await compress.click();
+  await expect.poll(() => page.evaluate(() =>
+    (window.__tuckFakeBackendCalls?.find((call) => call.method === "enqueueBatch")?.args[0] as Array<{ source: string }> | undefined)
+      ?.map((request) => request.source))).toEqual([FIRST, THIRD]);
+
+  await page.getByRole("button", { name: "Clear the choice" }).click();
+  await expect(page.locator("#lib-join")).toBeHidden();
+  await expect(row(page, THIRD)).toHaveAttribute("aria-selected", "false");
+  await expect(row(page, FIRST)).toHaveAttribute("aria-selected", "true");
+  await expect(row(page, FIRST)).toBeFocused();
+});
+
+test("the chosen videos' export button follows the task", async ({ page }) => {
+  await open(page);
+  await row(page, SECOND).click({ modifiers: ["Control"] });
+  const exportChosen = page.locator("#btn-chosen-export");
+  await expect(exportChosen).toHaveText("Compress");
+  await page.locator("#wf-u").click();
+  await expect(exportChosen).toHaveText("Upscale");
+  await expect(exportChosen).toHaveAccessibleName("Upscale 2 videos");
+  await page.locator("#wf-l").click();
+  await expect(exportChosen).toHaveText("Export cuts");
 });

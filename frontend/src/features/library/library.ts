@@ -114,6 +114,8 @@ export interface LibraryApi {
   reloadPreview(): void;
   // the chosen videos in Library order, the one on the stage included
   selectedPaths(): string[];
+  // only the video on the stage stays chosen; its row takes focus when asked
+  clearChoice(focus?: boolean): void;
   renderClips(): void;
   browse(): Promise<void>;
   retryProbeClip(path: string): Promise<void>;
@@ -1072,6 +1074,13 @@ export function createLibrary(host: LibraryHost): LibraryApi {
     renderClips();
   }
 
+  function clearChoice(focus = false): void {
+    if (!picked.size) return;
+    picked = new Set();
+    renderClips();
+    if (focus && session.selPath) focusCard(session.selPath);
+  }
+
   function extendSelection(path: string, delta: number): void {
     const order = shownOrder();
     const next = order[order.indexOf(path) + delta];
@@ -1384,6 +1393,7 @@ export function createLibrary(host: LibraryHost): LibraryApi {
       if (session.selPath) preview.select(session.selPath);
     },
     selectedPaths,
+    clearChoice,
     renderClips,
     browse,
     retryProbeClip,

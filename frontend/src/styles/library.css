@@ -541,6 +541,42 @@
 .lib-join-action[hidden] {
   display: none;
 }
+.lib-join-btn:disabled {
+  color: var(--dim);
+  cursor: default;
+}
+.lib-join-btn:disabled:hover {
+  background: var(--raised);
+}
+.lib-join-clear {
+  width: calc(28px * var(--density-scale));
+  padding: 0;
+  display: grid;
+  place-items: center;
+}
+.lib-join-clear svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+/* the Library is narrow, so the chosen videos' actions take a row of their own at equal widths */
+.lib-chosen-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: calc(6px * var(--density-scale));
+}
+.lib-chosen-actions[hidden] {
+  display: none;
+}
+.lib-chosen-actions > .lib-join-btn {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .lib-join progress {
   width: 100%;
   height: 3px;

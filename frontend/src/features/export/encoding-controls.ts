@@ -100,6 +100,8 @@ export interface EncodingControlsDeps {
   selectCutSegment: (index: number, time: number) => void;
   moveCutStarts: (clip: EditorClip, plan: CutPlanPreview) => boolean;
   paintCutTimeline: () => void;
+  // the action buttons were brought up to date, so anything that mirrors them follows
+  actionButtonsChanged?: () => void;
 }
 
 export interface EncodingControlsApi {
@@ -139,6 +141,9 @@ export interface EncodingControlsApi {
   resetToProfile: () => void;
   compressOne: () => Promise<void>;
   compressAll: () => Promise<void>;
+  // the chosen videos, exported the way Compress all exports every video
+  exportChosen: (paths: readonly string[]) => Promise<void>;
+  chosenExport: (paths: readonly string[]) => { label: string; disabled: boolean };
   // queues the selected video again even though an export of it is already waiting or running
   compressCopy: () => Promise<void>;
   saveProfileChanges: () => Promise<void>;
@@ -228,6 +233,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     selectSegment: deps.selectCutSegment,moveStarts: deps.moveCutStarts,
     pollQueue: deps.pollQueue,
     paintTimeline: deps.paintCutTimeline,
+    rendered: () => deps.actionButtonsChanged?.(),
   });
 
   function cutRequest(clip: EditorClip) {
@@ -330,8 +336,8 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
   let enqueueBusyShown = false;
   const ENQUEUE_BUSY_DELAY_MS = 250;
 
-  function exportReadiness() {
-    return probeSummary(deps.orderedClipKeys(), (path) => session.clips[path]);
+  function exportReadiness(paths: readonly string[] = deps.orderedClipKeys()) {
+    return probeSummary([...paths], (path) => session.clips[path]);
   }
 
   // “a.mp4”, or “a.mp4” and 2 others
@@ -403,6 +409,17 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     note.textContent = count > 1 ? allNote(readiness) : "";
     note.hidden = !note.textContent;
     syncExportSummary();
+    deps.actionButtonsChanged?.();
+  }
+
+  function chosenExport(paths: readonly string[]): { label: string; disabled: boolean } {
+    if (wf === 2) return { label: "Export cuts", disabled: !cutting.canExport(paths) };
+    const readiness = exportReadiness(paths);
+    const ready = readiness.ready.length > 0 && !readiness.loading.length;
+    return {
+      label: wf === 1 ? "Upscale" : "Compress",
+      disabled: !ready || enqueueBusyShown || !blending.valid() || !lut.valid() || !videoSettingsValid(),
+    };
   }
 
   function syncExportSummary(): void {
@@ -1507,7 +1524,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
       deps.showExport?.(selected._queueItemId ?? "");
       return;
     }
-    if (wf === 2) { await cutting.exportCuts(false); return; }
+    if (wf === 2) { await cutting.exportCuts(); return; }
     await enqueueSelected(false);
   }
 
@@ -1581,10 +1598,20 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
 
   async function compressAll(): Promise<void> {
     closeExportMenu();
-    if (wf === 2) { await cutting.exportCuts(true); return; }
+    await exportVideos(deps.orderedClipKeys());
+  }
+
+  async function exportChosen(paths: readonly string[]): Promise<void> {
+    await exportVideos(paths);
+  }
+
+  // every video given, in Library order, the way Compress all sends them: unreadable ones are
+  // skipped and named, and ones already in Exports aren't queued twice
+  async function exportVideos(paths: readonly string[]): Promise<void> {
+    if (wf === 2) { await cutting.exportCuts(paths); return; }
     if (enqueueing) return;
     if (!lut.valid() || !blending.reportValidity() || !videoSettingsValid()) return;
-    const readiness = exportReadiness();
+    const readiness = exportReadiness(paths);
     if (!readiness.ready.length && !readiness.loading.length && !readiness.failed.length) {
       toast("Add videos first.", "err");
       return;
@@ -2340,6 +2367,8 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     resetToProfile,
     compressOne,
     compressAll,
+    exportChosen,
+    chosenExport,
     compressCopy,
     saveProfileChanges,
     saveProfileAs,

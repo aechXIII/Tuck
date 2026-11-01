@@ -213,7 +213,22 @@
               <span id="lib-join-text" class="lib-join-text"></span>
               <button type="button" class="lib-join-action" id="lib-join-dismiss" hidden>Dismiss</button>
               <button type="button" class="lib-join-action" id="lib-join-cancel" hidden>Cancel</button>
-              <button type="button" class="lib-join-btn" id="btn-join" data-tip="Make one new video from these, in Library order" hidden>Join</button>
+              <button
+                type="button"
+                class="lib-join-action lib-join-clear"
+                id="lib-join-clear"
+                aria-label="Clear the choice"
+                data-tip="Clear the choice"
+                hidden
+              >
+                <svg viewBox="0 0 12 12" aria-hidden="true"><path d="m3 3 6 6M9 3 3 9"></path></svg>
+              </button>
+            </div>
+            <!-- what can be done with the chosen videos: export them the way the task's export all
+                 does, or join them into one -->
+            <div class="lib-chosen-actions" id="lib-chosen-actions" hidden>
+              <button type="button" class="lib-join-btn" id="btn-chosen-export">Compress</button>
+              <button type="button" class="lib-join-btn" id="btn-join" data-tip="Join in Library order">Join</button>
             </div>
             <progress id="lib-join-bar" max="100" aria-label="Joining videos" hidden></progress>
             <p id="lib-join-note" class="lib-join-note" hidden></p>

@@ -6,6 +6,13 @@ export interface JoinDeps {
   client: () => BackendClient;
   // the joined video goes into the Library and onto the stage like any added video
   addVideo: (path: string) => void;
+  // the chosen videos go to Exports the way the task's export all sends them
+  exportChosen: (paths: readonly string[]) => void;
+  // the export button's name for the task ("Compress", "Upscale", "Export cuts"), and whether
+  // these videos can go now
+  chosenExport: (paths: readonly string[]) => { label: string; disabled: boolean };
+  // only the video on the stage stays chosen
+  clearChoice: () => void;
   documentRef?: Document;
   pollMs?: number;
 }
@@ -13,6 +20,8 @@ export interface JoinDeps {
 export interface JoinApi {
   // the Library's chosen videos, in Library order; called on every Library render
   sync(paths: readonly string[]): void;
+  // the export settings or the videos' readiness changed, so the chosen export button may too
+  refresh(): void;
   canJoin(): boolean;
   join(): Promise<void>;
 }
@@ -65,6 +74,9 @@ export function installJoin(deps: JoinDeps): JoinApi {
   const note = element("lib-join-note");
   const bar = element<HTMLProgressElement>("lib-join-bar");
   const joinButton = element<HTMLButtonElement>("btn-join");
+  const exportButton = element<HTMLButtonElement>("btn-chosen-export");
+  const actions = element("lib-chosen-actions");
+  const clearButton = element<HTMLButtonElement>("lib-join-clear");
   const cancelButton = element<HTMLButtonElement>("lib-join-cancel");
   const dismissButton = element<HTMLButtonElement>("lib-join-dismiss");
   const announcer = element("lib-join-status");
@@ -82,7 +94,8 @@ export function installJoin(deps: JoinDeps): JoinApi {
     const choosing = view.kind === "idle" && selection.length > 1;
     panel.hidden = !running && !failed && !choosing;
     panel.dataset.state = view.kind;
-    joinButton.hidden = !choosing;
+    actions.hidden = !choosing;
+    clearButton.hidden = !choosing;
     cancelButton.hidden = !running;
     dismissButton.hidden = !failed;
     if (view.kind === "running") {
@@ -98,9 +111,15 @@ export function installJoin(deps: JoinDeps): JoinApi {
       note.textContent = view.message;
       bar.hidden = true;
     } else {
-      text.textContent = `${selection.length} selected`;
-      note.textContent = "Joined in the order shown. Drag rows to change it.";
+      text.textContent = `${selection.length} chosen`;
+      note.textContent = "";
       joinButton.setAttribute("aria-label", `Join ${selection.length} videos into one`);
+      if (choosing) {
+        const chosen = deps.chosenExport(selection);
+        if (exportButton.textContent !== chosen.label) exportButton.textContent = chosen.label;
+        exportButton.disabled = chosen.disabled;
+        exportButton.setAttribute("aria-label", `${chosen.label} ${selection.length} videos`);
+      }
       bar.hidden = true;
     }
     note.hidden = !note.textContent;
@@ -112,7 +131,7 @@ export function installJoin(deps: JoinDeps): JoinApi {
     render();
     // the button that had focus may have gone; focus stays in the Library's header
     if (!focusWasInside) return;
-    const target = [dismissButton, joinButton].find((button) => !button.hidden);
+    const target = [dismissButton, joinButton].find((button) => !button.hidden && !button.closest("[hidden]"));
     if (target) target.focus();
   }
 
@@ -164,6 +183,10 @@ export function installJoin(deps: JoinDeps): JoinApi {
   }
 
   joinButton.addEventListener("click", () => void join());
+  exportButton.addEventListener("click", () => {
+    if (view.kind === "idle" && selection.length > 1 && !exportButton.disabled) deps.exportChosen([...selection]);
+  });
+  clearButton.addEventListener("click", () => deps.clearChoice());
   cancelButton.addEventListener("click", () => {
     if (view.kind !== "running" || view.cancelling) return;
     view = { ...view, cancelling: true };
@@ -179,6 +202,7 @@ export function installJoin(deps: JoinDeps): JoinApi {
       selection = [...paths];
       render();
     },
+    refresh: render,
     canJoin,
     join,
   };
