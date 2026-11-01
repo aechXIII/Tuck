@@ -631,6 +631,14 @@ class DeterministicFakeBackend implements BackendClient {
     );
   }
 
+  listFolderVideos(paths: readonly string[]) {
+    return this.#record(
+      "listFolderVideos",
+      [paths],
+      this.#responses.listFolderVideos ?? success({ folders: [], videos: [], truncated: false }),
+    );
+  }
+
   pickFfmpegFile() {
     return this.#record(
       "pickFfmpegFile",

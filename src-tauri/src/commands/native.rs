@@ -10,6 +10,7 @@ use crate::backend::{protocol::PublicBackendError, BackendState};
 use crate::commands::backend::BackendCommand;
 use crate::platform::capabilities::{current_capabilities, PlatformCapabilities};
 use crate::platform::file_drag;
+use crate::platform::folder_videos::{folder_videos, FolderVideos};
 use crate::platform::local_documents::{open_document_file, open_document_with, LocalDocument};
 use crate::platform::opener::{
     launch_export, open_app_folder_with_validation, open_with_validation, SystemOpener,
@@ -79,6 +80,17 @@ pub async fn pick_lut_file(window: tauri::Window) -> Result<String, PublicBacken
 pub async fn pick_folder(window: tauri::Window) -> Result<String, PublicBackendError> {
     let folder = file_dialog(&window).blocking_pick_folder();
     Ok(path_opt_to_string(folder))
+}
+
+/// The videos in the folders among `paths`, which come from a drop or from Add a folder. Paths
+/// that aren't folders are left out, so the page can tell a dropped folder from a dropped file.
+#[tauri::command]
+pub async fn list_folder_videos(paths: Vec<String>) -> Result<FolderVideos, PublicBackendError> {
+    tauri::async_runtime::spawn_blocking(move || folder_videos(&paths, VIDEO_EXTENSIONS))
+        .await
+        .map_err(|_| {
+            PublicBackendError::new("INTERNAL_ERROR", "Could not read the folder. Try again.")
+        })
 }
 
 #[tauri::command]

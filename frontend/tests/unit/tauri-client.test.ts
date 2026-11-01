@@ -80,6 +80,23 @@ test("pasting reads the clipboard's files natively and rejects anything but a li
   assert.deepEqual(await createTauriBackendClient(async () => { throw error; }).readClipboardFiles(), { ok: false, error });
 });
 
+test("folder videos are listed by the shell and a malformed answer is an error", async () => {
+  const calls: unknown[] = [];
+  const listing = { folders: ["C:\\Replays"], videos: ["C:\\Replays\\one.mp4"], truncated: false };
+  const client = createTauriBackendClient(async (command, args) => {
+    calls.push({ command, args });
+    return listing;
+  });
+  assert.deepEqual(await client.listFolderVideos(["C:\\Replays", "C:\\notes.txt"]), { ok: true, value: listing });
+  assert.deepEqual(calls, [{ command: "list_folder_videos", args: { paths: ["C:\\Replays", "C:\\notes.txt"] } }]);
+  for (const malformed of [null, [], { folders: [], videos: [1], truncated: false }, { folders: [], videos: [] }]) {
+    const result = await createTauriBackendClient(async () => malformed).listFolderVideos(["C:\\Replays"]);
+    assert.equal(result.ok, false, JSON.stringify(malformed));
+  }
+  const error = { code: "INTERNAL_ERROR", message: "Could not read the folder. Try again.", details: {} };
+  assert.deepEqual(await createTauriBackendClient(async () => { throw error; }).listFolderVideos([]), { ok: false, error });
+});
+
 test("finished exports are opened and dragged by queue id, and native errors are kept", async () => {
   const calls: unknown[] = [];
   const client = createTauriBackendClient(async (command, args) => {

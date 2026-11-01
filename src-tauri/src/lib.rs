@@ -13,11 +13,11 @@ use commands::lifecycle::{
     CloseState,
 };
 use commands::native::{
-    close_window, copy_file_to_clipboard, copy_files_to_clipboard, copy_text, open_config_folder,
-    open_export_file, open_local_document, open_logs_folder, open_output_folder, pick_audio_files,
-    pick_ffmpeg_file, pick_ffprobe_file, pick_folder, pick_import_file, pick_lut_file,
-    pick_save_file, pick_video_files, platform_capabilities, read_clipboard_files,
-    start_export_drag, start_exports_drag,
+    close_window, copy_file_to_clipboard, copy_files_to_clipboard, copy_text, list_folder_videos,
+    open_config_folder, open_export_file, open_local_document, open_logs_folder,
+    open_output_folder, pick_audio_files, pick_ffmpeg_file, pick_ffprobe_file, pick_folder,
+    pick_import_file, pick_lut_file, pick_save_file, pick_video_files, platform_capabilities,
+    read_clipboard_files, start_export_drag, start_exports_drag,
 };
 use commands::player::{
     hardware_playback, player_command, player_edits, player_lut, player_mix, player_open,
@@ -197,6 +197,7 @@ pub fn run() {
         pick_lut_file,
         pick_audio_files,
         pick_folder,
+        list_folder_videos,
         pick_ffmpeg_file,
         pick_ffprobe_file,
         pick_import_file,

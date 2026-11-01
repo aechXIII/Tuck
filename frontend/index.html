@@ -167,7 +167,32 @@
         </div>
         <div id="left-hdr">
           <div id="lib-add-row-media" class="lib-add-row">
-            <button id="btn-add" data-action-click="browse-videos">Add videos</button
+            <!-- Add videos and its arrow are one control; the menu hangs from both at their width -->
+            <div class="add-split">
+              <button id="btn-add" data-action-click="browse-videos">Add videos</button
+              ><button
+                type="button"
+                id="btn-add-more"
+                aria-label="More ways to add"
+                data-tip="More ways to add"
+                aria-haspopup="menu"
+                aria-expanded="false"
+                aria-controls="add-menu"
+              >
+                <svg viewBox="0 0 12 12" aria-hidden="true"><path d="m3 4.5 3 3 3-3"></path></svg>
+              </button>
+            </div>
+            <div id="add-menu" class="row-menu add-menu" role="menu" aria-label="Add" popover="manual" tabindex="-1" hidden>
+              <button type="button" class="row-menu-item" role="menuitem" tabindex="-1" data-add-menu="files" data-shortcut-command="file.add-videos">
+                <span class="row-menu-text"><span class="row-menu-label">Add videos…</span></span><span class="row-menu-keys"></span>
+              </button>
+              <button type="button" class="row-menu-item" role="menuitem" tabindex="-1" data-add-menu="folder">
+                <span class="row-menu-text"><span class="row-menu-label">Add a folder…</span></span>
+              </button>
+              <button type="button" class="row-menu-item" role="menuitem" tabindex="-1" data-add-menu="paste" data-shortcut-command="file.paste-videos">
+                <span class="row-menu-text"><span class="row-menu-label">Paste videos</span></span><span class="row-menu-keys"></span>
+              </button>
+            </div
             ><button
               id="btn-rmall"
               data-action-click="remove-all-clips"

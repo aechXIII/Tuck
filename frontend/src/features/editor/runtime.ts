@@ -21,6 +21,8 @@ import {
 import { installHistory, type HistoryApi } from "../history/history.ts";
 import * as ClipDetails from "../library/clip-details.ts";
 import { createLibrary, type LibraryApi } from "../library/library.ts";
+import { installAddMenu } from "../library/add-menu.ts";
+import { addFolderVideos, FOLDER_READ_ERROR, importPaths, type ImportDeps } from "../library/folder-import.ts";
 import { installRowMenu } from "../library/row-menu.ts";
 import { installJoin, type JoinApi } from "../library/join.ts";
 import { installPanels, type PanelsApi } from "../panels/panels.ts";
@@ -48,7 +50,6 @@ import { segmentsAtExportedStarts } from "../timeline/cut-starts.ts";
 import { installQueue, type QueueApi } from "../queue/queue.ts";
 import { installSettings, type SettingsApi } from "../settings/settings.ts";
 import { checkUpdates, checkUpdatesFromSettings } from "./updates.ts";
-import { routeDroppedPaths, skippedDropMessage } from "./drop-routing.ts";
 import { fetchPlatformCapabilities, shouldShowUpdater, supportsFileDragOut, usesElementFullscreen } from "../../platform/capabilities.ts";
 import { errorSummary, formatBytes, formatTime, withReason } from "./format.ts";
 import {
@@ -527,6 +528,16 @@ export function installEditorRuntime(
     },
   });
 
+  installAddMenu({
+    document: windowRef.document,
+    window: windowRef,
+    run: (action) => {
+      if (action === "files") void library.browse();
+      else if (action === "folder") void addFolder();
+      else if (hasBackendClient()) void pasteFiles();
+    },
+  });
+
   queue = installQueue({
     session,
     byId,
@@ -828,14 +839,33 @@ export function installEditorRuntime(
     bindDelegatedEvents(windowRef.document.body, handlers);
   }
 
-  // dropped and pasted files go to the same places: audio to the audio panel, videos to the
-  // Library, and anything else is left out with a word about it (the clipboard is filtered already)
+  const importDeps: ImportDeps = {
+    listFolders: (paths) => getBackendClient().listFolderVideos(paths),
+    addVideos: (paths) => library.addFiles([...paths]),
+    addAudio: (paths) => audio.addAudioFiles([...paths], []),
+    confirm: confirmToast,
+    toast,
+  };
+
+  // dropped and pasted files go to the same places (the clipboard is filtered already)
   function importFiles(paths: readonly string[]): void {
-    const { videoPaths, audioPaths, skippedPaths } = routeDroppedPaths(paths);
-    if (videoPaths.length) library.addFiles(videoPaths);
-    if (audioPaths.length) audio.addAudioFiles(audioPaths, []);
-    const skipped = skippedDropMessage(skippedPaths);
-    if (skipped) toast(skipped);
+    void importPaths(paths, importDeps);
+  }
+
+  async function addFolder(): Promise<void> {
+    if (!hasBackendClient()) return;
+    const picked = await getBackendClient().pickFolder();
+    if (!picked.ok) {
+      toast(withReason("Couldn’t add the folder.", picked.error.message), "err");
+      return;
+    }
+    if (!picked.value.path) return;
+    const listed = await getBackendClient().listFolderVideos([picked.value.path]);
+    if (!listed.ok) {
+      toast(FOLDER_READ_ERROR, "err");
+      return;
+    }
+    addFolderVideos(listed.value, importDeps);
   }
 
   // a clipboard without files adds nothing and says nothing, like pasting into an empty field

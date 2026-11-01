@@ -911,7 +911,9 @@ export function createLibrary(host: LibraryHost): LibraryApi {
     const el = byId("drop-z");
     if (!cdiv || !el) return;
     const removeAll = byId("btn-rmall");
-    if (removeAll) removeAll.style.display = keys.length ? "block" : "none";
+    // greyed out rather than hidden, so the Add videos arrow beside it never moves into the spot
+    // where Remove all appears once there are videos
+    if (removeAll instanceof HTMLButtonElement) removeAll.disabled = !keys.length;
     if (!keys.length) {
       renderedClipModels = null;
       cdiv.replaceChildren(el);

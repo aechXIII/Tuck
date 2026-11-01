@@ -122,6 +122,15 @@ export interface FileSelection extends JsonObject {
   readonly files: readonly string[];
 }
 
+/** The videos in the folders among some dropped or chosen paths. */
+export interface FolderVideos extends JsonObject {
+  /** the paths that are folders */
+  readonly folders: readonly string[];
+  readonly videos: readonly string[];
+  /** the shell stopped looking early, so there are more videos than listed */
+  readonly truncated: boolean;
+}
+
 export interface PathSelection extends JsonObject {
   readonly path: string;
 }
@@ -283,6 +292,7 @@ export interface NativeBackendClient {
   readClipboardFiles(): Promise<BackendResult<FileSelection>>;
   pickAudioFiles(): Promise<BackendResult<FileSelection>>;
   pickFolder(): Promise<BackendResult<PathSelection>>;
+  listFolderVideos(paths: readonly string[]): Promise<BackendResult<FolderVideos>>;
   pickFfmpegFile(): Promise<BackendResult<PathSelection>>;
   pickFfprobeFile(): Promise<BackendResult<PathSelection>>;
   pickImportFile(): Promise<BackendResult<PathSelection>>;

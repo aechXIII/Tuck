@@ -24,6 +24,7 @@ fn main() {
             "pick_video_files",
             "pick_audio_files",
             "pick_folder",
+            "list_folder_videos",
             "pick_ffmpeg_file",
             "pick_ffprobe_file",
             "pick_import_file",

@@ -24,6 +24,7 @@ import type {
   EmptyPayload,
   EncoderPayload,
   FileSelection,
+  FolderVideos,
   HardwarePlayback,
   InterfaceSize,
   TaskbarProgressState,
@@ -120,6 +121,15 @@ type TauriBackendCommand =
   | { command: "remove_profile_sendto"; payload: { profile_id: string } }
   | { command: "repair_profile_sendto"; payload: { profile_id: string; action?: string } }
   | { command: "list_sendto_shortcuts" };
+
+function isStringArray(value: unknown): value is readonly string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+}
+
+function isFolderVideos(value: unknown): value is FolderVideos {
+  if (!isJsonObject(value)) return false;
+  return isStringArray(value.folders) && isStringArray(value.videos) && typeof value.truncated === "boolean";
+}
 
 function isSettingsImport(value: unknown): value is SettingsImport {
   return isJsonObject(value) && (value.skipped === undefined
@@ -985,6 +995,19 @@ class TauriTransport implements TauriBackendClient {
     } catch (error) {
       if (isBackendError(error)) return { ok: false, error };
       return backendFailure("TAURI_INVOKE_FAILED", errorMessage(error, "Could not pick folder"), { method: "pickFolder" });
+    }
+  }
+
+  async listFolderVideos(paths: readonly string[]): Promise<BackendResult<FolderVideos>> {
+    try {
+      const value: unknown = await this.#invoke("list_folder_videos", { paths: [...paths] });
+      if (!isFolderVideos(value)) {
+        return backendFailure("TAURI_INVOKE_FAILED", "Could not read the folder. Try again.", { method: "listFolderVideos" });
+      }
+      return { ok: true, value };
+    } catch (error) {
+      if (isBackendError(error)) return { ok: false, error };
+      return backendFailure("TAURI_INVOKE_FAILED", errorMessage(error, "Could not read the folder. Try again."), { method: "listFolderVideos" });
     }
   }
 

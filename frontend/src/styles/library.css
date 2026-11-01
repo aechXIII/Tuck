@@ -48,6 +48,63 @@
   font-weight: 600;
   cursor: pointer;
 }
+/* Add videos and its arrow are one control: they press together, and while the menu is open
+   their lower corners square off so the menu hangs from them */
+.add-split {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 1px;
+  transition: transform 120ms var(--ease-out);
+}
+.add-split:has(> #btn-add:active) {
+  transform: scale(0.98);
+  transition-duration: 80ms;
+}
+.add-split > #btn-add {
+  min-width: 0;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+#btn-add-more {
+  flex: none;
+  width: calc(30px * var(--density-scale));
+  min-height: calc(30px * var(--density-scale));
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 0 6px 6px 0;
+  background: var(--raised);
+  color: var(--text);
+  cursor: pointer;
+  transition: background-color 120ms var(--ease-out);
+}
+#btn-add-more svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+#btn-add-more:hover,
+#btn-add-more[aria-expanded="true"] {
+  background: var(--raised-2);
+}
+#btn-add-more:active {
+  background: color-mix(in srgb, var(--raised) 84%, #000);
+  transition-duration: 0s;
+}
+#btn-add-more:focus-visible {
+  outline: 2px solid var(--accent-light);
+  outline-offset: 1px;
+}
+.add-split:has(> #btn-add-more[aria-expanded="true"]) > button {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
 #btn-rmall {
   grid-column: 3;
   width: calc(30px * var(--density-scale));
@@ -592,6 +649,13 @@
 .row-menu-detail {
   color: var(--muted);
   font-size: calc(11px * var(--text-scale));
+}
+/* the Add menu opens joined to Add videos and its arrow, so it is revealed from their lower edge
+   rather than dropping in, and closes at once */
+.row-menu.add-menu {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  animation: joined-reveal-down var(--dur-surface) var(--ease-out);
 }
 .row-menu-keys {
   flex: none;

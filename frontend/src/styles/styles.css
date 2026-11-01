@@ -508,7 +508,11 @@ body.custom-titlebar:has(.mod-overlay.open) .tb-editor > * {
   stroke-linejoin: round;
   stroke-width: 1.5;
 }
-#btn-rmall:hover {
+#btn-rmall:disabled {
+  color: var(--dim);
+  cursor: default;
+}
+#btn-rmall:hover:not(:disabled) {
   color: var(--danger);
   background: color-mix(in srgb, var(--danger) 18%, var(--sink));
 }
@@ -1383,8 +1387,7 @@ select {
   background: color-mix(in srgb, var(--raised) 84%, #000);
   transition-duration: 0s, 0s, 80ms;
 }
-.btn1:active:not(:disabled),
-#btn-add:active {
+.btn1:active:not(:disabled) {
   transform: scale(0.98);
 }
 .setting-note {
