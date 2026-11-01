@@ -321,18 +321,15 @@ function appendLine<T extends ClipCardElement>(
     if (model.resultPath) {
       const actions = createElement(documentRef, "span", "c-icons");
       const copied = model.copyLabel === "Copied";
-      const copy = createIconButton(
-        documentRef,
-        "copy-result",
-        "Copy file",
-        model.copyLabel || "Copy file",
-        copied ? ICONS.copied : ICONS.copy,
-      );
+      // these act on the export, while the row's right-click menu copies and shows the original,
+      // so the names say export
+      const copyTip = model.copyLabel && model.copyLabel !== "Copy file" ? model.copyLabel : "Copy export";
+      const copy = createIconButton(documentRef, "copy-result", "Copy export", copyTip, copied ? ICONS.copied : ICONS.copy);
       if (copied) copy.className += " done";
       // aria-disabled rather than disabled, so focus stays on the button while the copy runs
       if (model.copyPending) copy.setAttribute("aria-disabled", "true");
       actions.appendChild(copy);
-      actions.appendChild(createIconButton(documentRef, "open-result", "Show in folder", "Show in folder", ICONS.folder));
+      actions.appendChild(createIconButton(documentRef, "open-result", "Show export in folder", "Show export in folder", ICONS.folder));
       line.appendChild(actions);
     }
     if (model.resultNote) {

@@ -339,7 +339,7 @@ pub fn open_with_validation(path_str: &str, opener: &dyn Opener) -> Result<(), P
     if !path.exists() {
         return Err(PublicBackendError::new(
             "INVALID_PATH",
-            "The export could not be found. It may have been moved or deleted.",
+            "The file could not be found. It may have been moved or deleted.",
         ));
     }
     let result = if path.is_dir() {
@@ -350,7 +350,7 @@ pub fn open_with_validation(path_str: &str, opener: &dyn Opener) -> Result<(), P
     result.map_err(|_| {
         PublicBackendError::new(
             "UNSUPPORTED_OPERATION",
-            "Could not show the export in its folder.",
+            "Could not show the file in its folder.",
         )
     })
 }

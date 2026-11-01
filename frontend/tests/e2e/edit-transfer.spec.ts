@@ -61,7 +61,7 @@ test("a Library row's menu copies one video's edits onto another, as one undo st
   await editLong(page);
 
   await row(page, "Harbour walk.mp4").click({ button: "right" });
-  const menu = page.getByRole("menu", { name: "Edits for Harbour walk.mp4" });
+  const menu = page.getByRole("menu", { name: "Harbour walk.mp4", exact: true });
   await expect(menu).toBeVisible();
   await expect(menu).toBeFocused();
   await page.keyboard.press("ArrowDown");
@@ -73,7 +73,7 @@ test("a Library row's menu copies one video's edits onto another, as one undo st
   await expect(page.locator(".toast")).toContainText("Copied edits from Harbour walk.mp4.");
 
   await row(page, "Sunset bridge.mp4").click({ button: "right" });
-  const target = page.getByRole("menu", { name: "Edits for Sunset bridge.mp4" });
+  const target = page.getByRole("menu", { name: "Sunset bridge.mp4", exact: true });
   const paste = target.getByRole("menuitem", { name: "Paste edits", exact: true });
   await expect(paste).toContainText("From Harbour walk.mp4");
   await expect(paste).toHaveAttribute("aria-keyshortcuts", "Control+Shift+V");
@@ -104,7 +104,7 @@ test("the row menu works from the keyboard and Ctrl+Shift+C and Ctrl+Shift+V cop
   const long = row(page, "Harbour walk.mp4");
   await long.focus();
   await page.keyboard.press("Shift+F10");
-  const menu = page.getByRole("menu", { name: "Edits for Harbour walk.mp4" });
+  const menu = page.getByRole("menu", { name: "Harbour walk.mp4", exact: true });
   await expect(menu.getByRole("menuitem", { name: "Copy edits" })).toBeFocused();
   await page.keyboard.press("ArrowDown");
   await expect(menu.getByRole("menuitem", { name: "Paste edits", exact: true })).toBeFocused();
@@ -155,4 +155,46 @@ test("with several videos selected, Paste edits goes to each of them", async ({ 
   await page.locator("body").click({ position: { x: 5, y: 5 } });
   await page.keyboard.press("Control+Shift+V");
   await expect(page.locator(".toast").filter({ hasText: "Pasted edits to 2 videos." })).toBeVisible();
+});
+
+test("a Library row's menu shows the video in its folder and copies its file", async ({ page }) => {
+  await open(page, [LONG, SHORT, THIRD]);
+  const calls = (method: string) => page.evaluate(
+    (name) => (window.__tuckFakeBackendCalls ?? []).filter((call) => call.method === name).map((call) => call.args),
+    method,
+  );
+
+  await row(page, "Sunset bridge.mp4").click({ button: "right" });
+  const menu = page.getByRole("menu", { name: "Sunset bridge.mp4", exact: true });
+  await expect(menu.getByRole("separator")).toHaveCount(1);
+  await menu.getByRole("menuitem", { name: "Show in folder" }).click();
+  await expect(menu).toBeHidden();
+  expect(await calls("openOutputFolder")).toEqual([[SHORT]]);
+
+  await row(page, "Sunset bridge.mp4").click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Copy file", exact: true }).click();
+  expect(await calls("copyFile")).toEqual([[SHORT]]);
+  await expect(page.locator(".toast").filter({ hasText: "File copied to clipboard." })).toBeVisible();
+
+  // with several videos chosen, the copy takes all of their files, in Library order
+  await select(page, "Night market.mp4");
+  await row(page, "Harbour walk.mp4").click({ modifiers: ["Control"] });
+  await row(page, "Night market.mp4").click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Copy 2 files" }).click();
+  expect(await calls("copyFiles")).toEqual([[[LONG, THIRD]]]);
+  await expect(page.locator(".toast").filter({ hasText: "2 files copied to clipboard." })).toBeVisible();
+});
+
+test("a file that can't be shown says why", async ({ page }) => {
+  await open(page);
+  await page.evaluate(() => {
+    const client = Reflect.get(window, "tuckBackendClient") as { openOutputFolder: (path: string) => Promise<unknown> };
+    client.openOutputFolder = async () => ({
+      ok: false,
+      error: { code: "INVALID_PATH", message: "The file could not be found. It may have been moved or deleted.", details: {} },
+    });
+  });
+  await row(page, "Harbour walk.mp4").click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Show in folder" }).click();
+  await expect(page.locator(".toast").filter({ hasText: "The file could not be found. It may have been moved or deleted." })).toBeVisible();
 });

@@ -663,6 +663,11 @@
   text-align: left;
   cursor: pointer;
 }
+.row-menu-sep {
+  height: 1px;
+  margin: calc(4px * var(--density-scale)) calc(4px * var(--density-scale));
+  background: var(--hair-2);
+}
 .row-menu-item:focus {
   background: var(--raised-2);
   outline: none;

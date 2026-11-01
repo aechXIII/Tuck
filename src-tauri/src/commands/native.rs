@@ -321,7 +321,7 @@ pub async fn open_output_folder(path: String) -> Result<(), PublicBackendError> 
     tauri::async_runtime::spawn_blocking(move || open_with_validation(&path, &SystemOpener))
         .await
         .map_err(|_| {
-            PublicBackendError::new("INTERNAL_ERROR", "Could not show the export in its folder.")
+            PublicBackendError::new("INTERNAL_ERROR", "Could not show the file in its folder.")
         })?
 }
 

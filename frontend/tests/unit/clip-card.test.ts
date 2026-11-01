@@ -112,7 +112,7 @@ test("clip cards keep backend data inert and delegate exact action values", () =
   assert.equal(card.attributes["aria-description"], model.detail);
   const open = action(card, "open-result");
   assert.ok(open);
-  assert.equal(open.attributes["aria-label"], "Show in folder");
+  assert.equal(open.attributes["aria-label"], "Show export in folder");
   assert.equal(open.attributes.onclick, undefined);
   const click = card.listeners.click?.[0];
   assert.ok(click);
@@ -292,7 +292,7 @@ test("a ready row says what the task makes of the video, and warns when it runs 
   assert.equal(overLine?.attributes.title, "The estimate is over the target size");
 });
 
-test("a copy in progress or done shows on the row's Copy file button", () => {
+test("a copy in progress or done shows on the row's Copy export button", () => {
   const copies: string[] = [];
   const finished = {
     path: "harbour.mp4",
@@ -309,7 +309,7 @@ test("a copy in progress or done shows on the row's Copy file button", () => {
   const waiting = action(pending, "copy-result");
   assert.equal(waiting?.attributes["aria-disabled"], "true");
   assert.equal(waiting?.dataset.tip, "Copying...");
-  assert.equal(waiting?.attributes["aria-label"], "Copy file");
+  assert.equal(waiting?.attributes["aria-label"], "Copy export");
   pending.listeners.click?.[0]?.({ target: waiting, stopPropagation() {} });
   assert.deepEqual(copies, []);
   // Enter on the button is left to the button, so it isn't swallowed by the row's own Enter
@@ -415,8 +415,8 @@ test("a finished row shows the size against its target and keeps the export's no
   assert.deepEqual(
     buttons.map((button) => [button.className, button.attributes["aria-label"], button.dataset.tip, button.attributes.title, button.type]),
     [
-      ["c-icon", "Copy file", "Copy file", "", "button"],
-      ["c-icon", "Show in folder", "Show in folder", "", "button"],
+      ["c-icon", "Copy export", "Copy export", "", "button"],
+      ["c-icon", "Show export in folder", "Show export in folder", "", "button"],
     ],
   );
   const note = descendants(done).find((element) => element.className === "c-note");

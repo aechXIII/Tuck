@@ -530,6 +530,20 @@ export function installEditorRuntime(
       else library.renderClips();
       void encoding?.planLibrary();
     },
+    showInFolder: (path) => {
+      if (!hasBackendClient()) return;
+      void getBackendClient().openOutputFolder(path).then((result) => {
+        if (!result.ok) toast(result.error.message, "err");
+      });
+    },
+    copyFiles: (paths) => {
+      if (!hasBackendClient() || !paths.length) return;
+      const client = getBackendClient();
+      void (paths.length === 1 ? client.copyFile(paths[0]!) : client.copyFiles(paths)).then((result) => {
+        if (!result.ok) toast(result.error.message, "err");
+        else toast(paths.length === 1 ? "File copied to clipboard." : `${paths.length} files copied to clipboard.`, "ok");
+      });
+    },
   });
 
   installAddMenu({

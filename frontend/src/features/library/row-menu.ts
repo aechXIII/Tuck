@@ -27,6 +27,10 @@ export interface RowMenuHost {
   toast: (message: string, kind?: string) => void;
   // these videos' edits changed, so their rows and, when one is on screen, the editor redraw
   edited: (paths: readonly string[]) => void;
+  // the video's own file, shown in the system's file manager
+  showInFolder: (path: string) => void;
+  // the videos' own files on the clipboard, ready to paste
+  copyFiles: (paths: readonly string[]) => void;
 }
 
 export interface RowMenuApi {
@@ -37,7 +41,7 @@ export interface RowMenuApi {
   close: (returnFocus?: boolean) => void;
 }
 
-type MenuAction = "copy" | "paste" | "paste-all";
+type MenuAction = "copy" | "paste" | "paste-all" | "show-in-folder" | "copy-file";
 
 interface MenuItem {
   action: MenuAction;
@@ -46,6 +50,8 @@ interface MenuItem {
   keys?: string;
   ariaKeys?: string;
   disabled: boolean;
+  // a line above it starts a new group
+  separated?: boolean;
 }
 
 function videos(count: number): string {
@@ -134,7 +140,7 @@ export function installRowMenu(host: RowMenuHost): RowMenuApi {
     return null;
   }
 
-  // with several videos selected, a paste onto one of them goes to all of them
+  // with several videos chosen, a paste or copy on one of them takes all of them
   function pasteTargets(path: string): readonly string[] {
     const selected = host.selectedPaths();
     return selected.length > 1 && selected.includes(path) ? selected : [path];
@@ -164,6 +170,11 @@ export function installRowMenu(host: RowMenuHost): RowMenuApi {
         disabled: !clipboard || !host.order().some((other) => ready(other)),
       });
     }
+    // the files themselves, rather than their edits
+    list.push(
+      { action: "show-in-folder", label: "Show in folder", disabled: false, separated: true },
+      { action: "copy-file", label: targets.length > 1 ? `Copy ${targets.length} files` : "Copy file", disabled: false },
+    );
     return list;
   }
 
@@ -202,7 +213,9 @@ export function installRowMenu(host: RowMenuHost): RowMenuApi {
   function run(action: MenuAction, path: string): void {
     if (action === "copy") copy(path);
     else if (action === "paste") paste(pasteTargets(path));
-    else paste(host.order());
+    else if (action === "paste-all") paste(host.order());
+    else if (action === "show-in-folder") host.showInFolder(path);
+    else host.copyFiles(pasteTargets(path));
   }
 
   function ensureMenu(): HTMLElement {
@@ -275,8 +288,14 @@ export function installRowMenu(host: RowMenuHost): RowMenuApi {
     if (isOpen() && menuPath === path && !at) return;
     close(false);
     const element = ensureMenu();
-    element.setAttribute("aria-label", `Edits for ${clip.name}`);
+    element.setAttribute("aria-label", clip.name);
     for (const item of items(path)) {
+      if (item.separated) {
+        const line = doc.createElement("div");
+        line.className = "row-menu-sep";
+        line.setAttribute("role", "separator");
+        element.append(line);
+      }
       const button = doc.createElement("button");
       button.type = "button";
       button.className = "row-menu-item";

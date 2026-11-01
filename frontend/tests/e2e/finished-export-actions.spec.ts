@@ -29,13 +29,13 @@ const calls = (page: Page, method: string) =>
   page.evaluate((name) => (window.__tuckFakeBackendCalls ?? []).filter((call) => call.method === name).map((call) => call.args), method);
 
 for (const width of [1240, 960]) {
-  test(`a finished row keeps its size readable beside Copy file and Show in folder at ${width}px`, async ({ page }) => {
+  test(`a finished row keeps its size readable beside Copy export and Show export in folder at ${width}px`, async ({ page }) => {
     await open(page, width);
     const done = row(page, "Ranked match clutch.mp4");
-    const copy = done.getByRole("button", { name: "Copy file", exact: true });
-    const show = done.getByRole("button", { name: "Show in folder", exact: true });
-    await expect(copy).toHaveAttribute("data-tip", "Copy file");
-    await expect(show).toHaveAttribute("data-tip", "Show in folder");
+    const copy = done.getByRole("button", { name: "Copy export", exact: true });
+    const show = done.getByRole("button", { name: "Show export in folder", exact: true });
+    await expect(copy).toHaveAttribute("data-tip", "Copy export");
+    await expect(show).toHaveAttribute("data-tip", "Show export in folder");
     await expect(done.locator(".c-status")).toHaveText("9.0 MB");
     // the target gives way to the buttons but still reaches the tooltip and screen readers
     await expect(done.locator(".c-status")).toHaveAttribute("data-tip", "Fits the 10 MB target");
@@ -57,12 +57,12 @@ for (const width of [1240, 960]) {
   });
 }
 
-test("Copy file and Show in folder hand the export's own file to the desktop", async ({ page }) => {
+test("Copy export and Show export in folder hand the export's own file to the desktop", async ({ page }) => {
   await open(page, 1240, (fixture) => {
     fixture.holdMethods = ["copyFile"];
   });
   const done = row(page, "Ranked match clutch.mp4");
-  const copy = done.getByRole("button", { name: "Copy file", exact: true });
+  const copy = done.getByRole("button", { name: "Copy export", exact: true });
   await copy.focus();
   await page.keyboard.press("Enter");
   await expect(copy).toHaveAttribute("aria-disabled", "true");
@@ -80,7 +80,7 @@ test("Copy file and Show in folder hand the export's own file to the desktop", a
   await page.locator("#qstatus").click();
   await expect(page.getByRole("button", { name: "Copy file for Ranked match clutch.mp4" })).toHaveText("Copied");
   await page.keyboard.press("Escape");
-  await done.getByRole("button", { name: "Show in folder", exact: true }).click();
+  await done.getByRole("button", { name: "Show export in folder", exact: true }).click();
   expect(await calls(page, "openOutputFolder")).toEqual([[RESULT]]);
   // neither button selected the row or started playback
   await expect(page.locator(".toast", { hasText: /couldn/i })).toHaveCount(0);
