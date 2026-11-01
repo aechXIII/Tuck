@@ -1025,6 +1025,7 @@ class BridgeAPI:
             "output_subfolder": s.output_subfolder,
             "keep_file_dates": s.keep_file_dates,
             "notify_when_done": s.notify_when_done,
+            "copy_finished_export": s.copy_finished_export,
             "keep_awake": s.keep_awake,
             "background_exports": s.background_exports,
             "remove_after_export": s.remove_after_export,

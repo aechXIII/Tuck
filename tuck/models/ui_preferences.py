@@ -116,6 +116,7 @@ FLAG_PREFERENCES: tuple[str, ...] = (
     "reopen_last_videos",
     "keep_file_dates",
     "notify_when_done",
+    "copy_finished_export",
     "keep_awake",
     "background_exports",
     "loop_playback",

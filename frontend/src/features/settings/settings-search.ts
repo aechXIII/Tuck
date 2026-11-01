@@ -85,6 +85,7 @@ export const SETTINGS_INDEX: readonly SettingsEntry[] = [
   { id: "suffix-upscale", page: "files", label: "Upscale file names", keywords: "suffix naming width height" },
   { id: "suffix-cut", page: "files", label: "Lossless cut file names", keywords: "suffix naming" },
   { id: "name-taken", page: "files", label: "If the name is taken", keywords: "overwrite replace exists collision number duplicate" },
+  { id: "copy-export", page: "queue", label: "Copy the exported video", keywords: "clipboard paste discord chat finished done single file" },
   { id: "show-folder", page: "queue", label: "Show the last export in its folder", keywords: "open explorer reveal finished done queue" },
   { id: "clear-finished", page: "queue", label: "Clear finished exports", keywords: "completed done jobs automatically remove queue" },
   { id: "remove-exported", page: "queue", label: "Remove videos after they export", keywords: "library finished done completed automatically clear queue" },

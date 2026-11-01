@@ -699,6 +699,8 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         attributes: { "data-settings-change": "save" },
       });
     return [section("When exports finish", card(
+      flag("copy-export", "set-copy-export", "Copy the exported video", s.copy_finished_export === true,
+        "Only when you export one video. Ready to paste into a chat."),
       flag("show-folder", "set-open-output-folder", "Show the last export in its folder", s.open_output_folder_after_queue === true),
       flag("clear-finished", "set-auto-clear", "Clear finished exports", s.clear_completed_automatically === true,
         "Failed and canceled exports stay so you can retry them."),
@@ -959,6 +961,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       }
       case "queue":
         return {
+          copy_finished_export: checked("set-copy-export"),
           open_output_folder_after_queue: checked("set-open-output-folder"),
           clear_completed_automatically: checked("set-auto-clear"),
           remove_after_export: checked("set-remove-exported"),

@@ -209,6 +209,7 @@ class TestSettingsFile:
         assert settings["reopen_last_videos"] is False
         assert settings["last_session_files"] == []
         assert settings["remove_after_export"] is False
+        assert settings["copy_finished_export"] is False
 
     def test_a_chosen_folder_from_before_the_location_choice_stays_in_use(self, tmp_path):
         out = tmp_path / "exports"
@@ -246,6 +247,12 @@ class TestSettingsFile:
     def test_removing_videos_after_export_stays_off_unless_turned_on(self, tmp_path, stored):
         _write_settings(tmp_path, stored)
         assert BridgeAPI().get_settings()["remove_after_export"] is False
+
+    def test_copying_the_finished_export_is_kept_once_turned_on(self, tmp_path):
+        api = BridgeAPI()
+        assert api.save_settings({"copy_finished_export": True})["ok"] is True
+        assert BridgeAPI().get_settings()["copy_finished_export"] is True
+        assert api.save_settings({"copy_finished_export": "yes"})["ok"] is False
 
     def test_removing_videos_after_export_reads_back_from_the_file(self, tmp_path):
         _write_settings(tmp_path, {"version": 1, "remove_after_export": True})

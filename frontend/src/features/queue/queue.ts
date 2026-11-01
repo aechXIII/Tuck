@@ -23,6 +23,7 @@ import {
   TASKBAR_IDLE,
   videosToRemoveAfterExport,
   watchExports,
+  singleExportsDone,
   type ExportRow,
   type QueueItem,
   type QueueViewState,
@@ -74,6 +75,8 @@ export interface QueueApi {
   // opens Exports with focus on this export's row
   showExport: (itemId: string) => void;
   removeQueueItem: (itemId: string) => Promise<void>;
+  // an export started on its own; with the setting on, its file is copied when it finishes
+  watchSingleExport: (itemId: string) => void;
 }
 
 export function installQueue(deps: QueueDeps): QueueApi {
@@ -679,6 +682,9 @@ export function installQueue(deps: QueueDeps): QueueApi {
   let headerRequest: "" | "retry-all" | "resume" = "";
   let queueView: QueueViewState = emptyQueueView();
   let watchedExports: Record<string, WatchedExport> = {};
+  // exports started on their own, which Copy the exported video copies when they finish
+  // (true once a snapshot has listed it, so a poll answered before it was queued doesn't drop it)
+  const singleExports = new Map<string, boolean>();
   // failures already told to screen reader users while the rest of their batch kept going
   const announcedFailures = new Set<string>();
   let pollingQueue = false;
@@ -787,6 +793,12 @@ export function installQueue(deps: QueueDeps): QueueApi {
       queueView = reduceQueueSnapshot(previous, { items }, formatTime);
       mapQueueItems(items, queueView);
       watchedExports = watchExports(items, watchedExports, libraryPath, deps.editCount);
+      const singles = singleExportsDone(singleExports, items);
+      for (const id of singles.forget) singleExports.delete(id);
+      for (const id of singles.seen) singleExports.set(id, true);
+      // the clipboard holds one copy, so when two finish together the later one is kept
+      const toCopy = singles.copy.at(-1);
+      if (toCopy && session.appSettings.copy_finished_export === true) void copyResult(toCopy);
       if (!deps.isReordering()) deps.renderClips();
 
       for (const item of items) if (item.state === "running" && item.id) queueActiveItemIds[item.id] = true;
@@ -1272,6 +1284,9 @@ export function installQueue(deps: QueueDeps): QueueApi {
   installExportDrag();
 
   return {
+    watchSingleExport: (itemId) => {
+      if (itemId && !singleExports.has(itemId)) singleExports.set(itemId, false);
+    },
     pollQueue,
     pollIpc,
     cancelQueueItem,

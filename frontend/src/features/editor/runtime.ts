@@ -601,6 +601,7 @@ export function installEditorRuntime(
     restoreTimelineHeight: (value) => timeline.restoreTimelineHeight(value),
     orderedClipKeys: () => library.orderedClipKeys(),
     actionButtonsChanged: () => join?.refresh(),
+    singleExportQueued: (itemId) => queue?.watchSingleExport(itemId),
     audioRequestPayload: (clip) =>
       audio.requestPayload(clip) as Record<string, unknown>,
     selectCutSegment: (index, time) => {

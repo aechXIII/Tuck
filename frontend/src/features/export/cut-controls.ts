@@ -18,6 +18,8 @@ interface CutControlsDeps {
   paintTimeline: () => void;
   // the export buttons were redrawn, so anything that mirrors them follows
   rendered?: () => void;
+  // the selected video's cut went to Exports on its own, not with Export all cuts
+  singleExportQueued?: (itemId: string) => void;
 }
 
 export function installCutControls(deps: CutControlsDeps) {
@@ -422,7 +424,10 @@ export function installCutControls(deps: CutControlsDeps) {
           toast(`${clip.name}: ${response.error.message}`,"err"); break;
         }
         clip._queueState = "pending";
-        if (typeof response.value.item_id === "string") clip._queueItemId = response.value.item_id;
+        if (typeof response.value.item_id === "string") {
+          clip._queueItemId = response.value.item_id;
+          if (!paths) deps.singleExportQueued?.(response.value.item_id);
+        }
         await deps.pollQueue();
       }
     } finally {

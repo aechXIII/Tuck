@@ -1605,6 +1605,8 @@ class AppSettings:
     output_subfolder: str = DEFAULT_OUTPUT_SUBFOLDER
     keep_file_dates: bool = False
     notify_when_done: bool = True
+    # a finished export started on its own (not Compress all) goes on the clipboard, off by default
+    copy_finished_export: bool = False
     keep_awake: bool = True
     background_exports: bool = False
     reopen_last_videos: bool = False

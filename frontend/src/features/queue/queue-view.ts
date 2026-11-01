@@ -301,6 +301,33 @@ export function videosToRemoveAfterExport(
  * Waiting videos keep the places they hold in the Library and only swap among themselves;
  * everything else stays where the person left it.
  */
+/**
+ * Which exports started on their own (not with Compress all or the chosen videos) just finished
+ * and go on the clipboard, and which ones Tuck can stop watching. `watched` holds whether a snapshot
+ * has listed each one yet: a poll answered before the export was queued doesn't list it, so only
+ * one that was seen and then left the list is let go. A failed one is kept, since Retry finishes
+ * the same export later.
+ */
+export function singleExportsDone(
+  watched: ReadonlyMap<string, boolean>,
+  items: readonly QueueItem[],
+): { copy: string[]; forget: string[]; seen: string[] } {
+  const copy: string[] = [];
+  const forget: string[] = [];
+  const seen: string[] = [];
+  for (const [id, listed] of watched) {
+    const item = items.find((entry) => entry.id === id);
+    if (!item) {
+      if (listed) forget.push(id);
+    } else if (item.state === "cancelled") forget.push(id);
+    else if (item.state === "completed") {
+      forget.push(id);
+      if (item.result_path) copy.push(id);
+    } else if (!listed) seen.push(id);
+  }
+  return { copy, forget, seen };
+}
+
 export function alignToQueueOrder(order: readonly string[], waitingInQueueOrder: readonly string[]): string[] {
   const waiting = new Set(waitingInQueueOrder);
   const queued = waitingInQueueOrder.filter((path) => order.includes(path));

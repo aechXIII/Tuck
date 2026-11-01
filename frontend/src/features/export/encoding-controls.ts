@@ -102,6 +102,8 @@ export interface EncodingControlsDeps {
   paintCutTimeline: () => void;
   // the action buttons were brought up to date, so anything that mirrors them follows
   actionButtonsChanged?: () => void;
+  // an export of one video started from its own button, which Copy the exported video copies
+  singleExportQueued?: (itemId: string) => void;
 }
 
 export interface EncodingControlsApi {
@@ -234,6 +236,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     pollQueue: deps.pollQueue,
     paintTimeline: deps.paintCutTimeline,
     rendered: () => deps.actionButtonsChanged?.(),
+    singleExportQueued: (itemId) => deps.singleExportQueued?.(itemId),
   });
 
   function cutRequest(clip: EditorClip) {
@@ -1561,6 +1564,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
         }
         return;
       }
+      if (r.ok && typeof r.item_id === "string") deps.singleExportQueued?.(r.item_id);
       if (!r.ok) toast(withReason(`Couldn’t add “${clip.name}” to Exports.`, r.error), "err");
       else if (copy) toast(`Added another copy of “${clip.name}”. It gets its own file name.`, "info");
     });

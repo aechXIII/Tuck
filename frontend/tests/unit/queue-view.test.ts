@@ -11,6 +11,7 @@ import {
   reduceQueueSnapshot,
   resultNote,
   resultNoteDetail,
+  singleExportsDone,
   targetFit,
   taskbarProgress,
   TASKBAR_IDLE,
@@ -517,4 +518,20 @@ test("a restored export is never tied to a Library video, even one with the same
     () => 1,
   );
   assert.deepEqual(watched, { new: { path: "C:/a.mp4", edits: 1 } });
+});
+
+test("a single export is copied when it finishes, and one not listed yet isn't dropped", () => {
+  const items = (entries: Array<[string, QueueItem["state"], string?]>): QueueItem[] =>
+    entries.map(([id, state, result_path]) => ({ id, state, ...(result_path ? { result_path } : {}) }) as QueueItem);
+  // queued but answered by a poll from before it went in
+  assert.deepEqual(singleExportsDone(new Map([["one", false]]), []), { copy: [], forget: [], seen: [] });
+  assert.deepEqual(singleExportsDone(new Map([["one", false]]), items([["one", "running"]])), { copy: [], forget: [], seen: ["one"] });
+  assert.deepEqual(
+    singleExportsDone(new Map([["one", true]]), items([["one", "completed", "C:/out.mp4"]])),
+    { copy: ["one"], forget: ["one"], seen: [] },
+  );
+  // a failed one waits for Retry; a canceled or cleared one is let go
+  assert.deepEqual(singleExportsDone(new Map([["one", true]]), items([["one", "failed"]])), { copy: [], forget: [], seen: [] });
+  assert.deepEqual(singleExportsDone(new Map([["one", true]]), items([["one", "cancelled"]])), { copy: [], forget: ["one"], seen: [] });
+  assert.deepEqual(singleExportsDone(new Map([["one", true]]), []), { copy: [], forget: ["one"], seen: [] });
 });
