@@ -112,7 +112,7 @@ test("a chosen stretch is muted as one undo step and shows as a quiet gap", asyn
   // choosing a stretch is not an edit
   await expect(page.locator("#btn-undo")).toBeDisabled();
 
-  await page.keyboard.press("m");
+  await page.keyboard.press("Shift+M");
   const stretch = page.locator("#source-audio-lane .audio-mute-range");
   await expect(stretch).toHaveCount(1);
   await expect(page.locator("#source-audio-lane .audio-range-selection")).toHaveCount(0);
@@ -156,7 +156,7 @@ test("a stretch is marked from the keyboard with Shift+I and Shift+O and muted w
   await expect(page.locator("#btn-undo")).toBeDisabled();
   await seek(0.5);
   await page.keyboard.press("Shift+O");
-  await page.keyboard.press("m");
+  await page.keyboard.press("Shift+M");
   await expect(band).toHaveCount(0);
   await expect(page.locator("#source-audio-lane .audio-mute-range")).toHaveCount(1);
   await expect(page.locator("#btn-undo")).toHaveAttribute("aria-label", "Undo mute range");

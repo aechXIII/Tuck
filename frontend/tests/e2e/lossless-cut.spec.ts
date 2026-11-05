@@ -278,7 +278,7 @@ test("re-encoding edits and audio mutes stay on the clip and out of the cut", as
   await expect(page.locator("#source-audio-label")).toHaveAttribute("aria-pressed","false");
   const segment = page.locator('.tl-segment[data-segment-index="0"]');
   await segment.click();
-  await page.keyboard.press("m");
+  await page.keyboard.press("Shift+M");
   await expect(segment).not.toHaveAttribute("aria-label",/muted/);
   await page.locator("#btn-one").click();
   await expect.poll(() => page.evaluate(() => window.__tuckFakeBackendCalls?.some(call => call.method === "enqueueWithOptions"))).toBe(true);

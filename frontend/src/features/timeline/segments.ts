@@ -478,10 +478,11 @@ export function cutPointNear(
   time: number,
   direction: number,
   duration: number,
+  markers: readonly number[] = [],
 ): number | null {
   // a playhead already on a cut point moves on to the next one
   const tolerance = 0.01;
-  const points = [0, duration, ...segments.flatMap((segment) => [segment.start, segment.end])]
+  const points = [0, duration, ...segments.flatMap((segment) => [segment.start, segment.end]), ...markers]
     .filter((point) => Number.isFinite(point) && point >= 0 && point <= duration)
     .sort((a, b) => a - b);
   if (direction < 0) return points.filter((point) => point < time - tolerance).at(-1) ?? null;

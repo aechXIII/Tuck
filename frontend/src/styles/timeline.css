@@ -257,6 +257,71 @@ body.library-empty #timeline-row > * {
   pointer-events: none;
   z-index: 8;
 }
+/* markers sit under the playhead and over the segments; only the flags take the pointer */
+#seq-marker-layer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--timeline-head-width) + 8px + var(--tl-inset));
+  width: calc(var(--tl-width, 100%) - var(--timeline-head-width) - 8px - 2 * var(--tl-inset));
+  pointer-events: none;
+  z-index: 7;
+}
+.seq-marker {
+  position: absolute;
+  top: 0;
+  bottom: 4px;
+  left: 0;
+  width: 0;
+}
+/* the line starts under the ruler, so the flag sits on the ruler like the playhead's cap */
+.seq-marker::after {
+  content: "";
+  position: absolute;
+  top: 27px;
+  bottom: 0;
+  left: -0.5px;
+  width: 1px;
+  background: var(--timeline-marker);
+}
+.seq-marker-flag {
+  position: absolute;
+  top: 0;
+  left: -7px;
+  width: 15px;
+  height: 16px;
+  padding: 1px 2px 2px;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  cursor: grab;
+  pointer-events: auto;
+}
+.seq-marker-flag svg {
+  display: block;
+  width: 11px;
+  height: 13px;
+}
+.seq-marker-flag path {
+  fill: var(--timeline-marker);
+}
+/* a picked flag turns white, so it reads apart from the others by lightness, not hue */
+.seq-marker-flag:hover path {
+  fill: color-mix(in srgb, var(--timeline-marker) 70%, var(--text));
+}
+:root[data-focus-rings] .seq-marker-flag:focus-visible path,
+.seq-marker-flag.menu-target path,
+.seq-marker-flag.dragging path {
+  fill: var(--text);
+}
+.seq-marker-flag:focus-visible {
+  outline: 2px solid var(--accent-light);
+  outline-offset: 0;
+}
+body.marker-dragging,
+body.marker-dragging * {
+  cursor: grabbing !important;
+}
 #sequence-ruler.scrubbing,
 body.timeline-scrubbing,
 body.timeline-scrubbing * {
@@ -1222,6 +1287,17 @@ body.task-cut #timeline-audio-tools {
   }
 
   #btn-segments-reset .timeline-command-label {
+    display: none;
+  }
+
+  /* Lossless cut adds its readout and the Keyframes switch, so Marker gives up its word there too */
+  body.task-cut #btn-marker {
+    width: 28px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  body.task-cut #btn-marker .timeline-command-label {
     display: none;
   }
 }

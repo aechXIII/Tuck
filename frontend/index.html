@@ -1260,6 +1260,23 @@
           </button>
           <button
             type="button"
+            id="btn-marker"
+            data-shortcut-commands="timeline.add-marker"
+            data-shortcut-label="Add marker"
+            class="dock-text-btn timeline-primary-btn"
+            data-action-click="timeline-add-marker"
+            data-tip="Add marker (M)"
+            aria-label="Add marker at playhead"
+            aria-keyshortcuts="M"
+            disabled
+          >
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M4.5 14V2.5h7l-2 3 2 3h-7" />
+            </svg>
+            <span class="timeline-command-label">Marker</span>
+          </button>
+          <button
+            type="button"
             id="btn-segment-remove"
             data-shortcut-commands="edit.delete-selection"
             class="dock-text-btn"
@@ -1527,6 +1544,7 @@
             data-tip="Segment end"
           ></div>
         </div>
+        <div id="seq-marker-layer" class="hid" role="group" aria-label="Markers"></div>
         <div id="seq-playhead-layer" class="hid" aria-hidden="true">
           <div id="seq-snap-guide" hidden></div>
           <div id="seq-playhead">

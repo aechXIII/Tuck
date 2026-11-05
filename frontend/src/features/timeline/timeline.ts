@@ -13,6 +13,7 @@ import * as SegmentEditing from "./segments.ts";
 import * as TimelineCore from "./timeline-core.ts";
 import { withShortcut } from "../shortcuts/shortcuts.ts";
 import { frameLayout, FrameStripStore, type FrameSprite } from "./frames.ts";
+import { installMarkers, splitAtMarkers as splitSegmentsAtMarkers, type MarkerApi } from "./markers.ts";
 
 export interface TimelineHost {
   session: EditorSession;
@@ -130,6 +131,8 @@ export function installTimeline(host: TimelineHost) {
     return isVideoElement(candidate) ? candidate : null;
   };
   let _previewSecLocal: number | null = null;
+  // made once the timeline's own functions exist; painting before that has no markers to show
+  let markerApi: MarkerApi | null = null;
 let snapOn = true;
   let keyframesOn = true;
   // the keyframe a dragged start copies from, lit while the drag lasts, and where the drag is
@@ -602,7 +605,8 @@ function paintTrimChrome() {
   for (const id of ["tl-in", "tl-out", "seq-playhead-layer"]) {
     byId(id)?.classList.toggle("hid", !ready);
   }
-  for (const id of ["btn-seq-split", "btn-snap-toggle", "audio-add", "tl-zoom-slider"]) {
+  markerApi?.paint();
+  for (const id of ["btn-seq-split", "btn-marker", "btn-snap-toggle", "audio-add", "tl-zoom-slider"]) {
     const control = byId(id);
     if (isDisableableElement(control)) control.disabled = !ready;
   }
@@ -996,6 +1000,36 @@ function splitAtPlayhead() {
   if (host.AudioTimeline) host.AudioTimeline.render();
 }
 
+// every marker inside a segment cuts it; the playhead's segment is the one left selected
+function splitAtAllMarkers() {
+  const c = selectedClip(session);
+  const full = videoDuration();
+  if (!c || !(full > 0) || !markerApi) return;
+  const segments = splitSegmentsAtMarkers(clipSegments(c, full), markerApi.times(), full);
+  if (!segments) return;
+  const time = host.getPreviewSec?.() ?? 0;
+  const active = Math.max(0, segments.findIndex((segment) => time >= segment.start && time < segment.end));
+  setClipSegments(c, segments, active);
+  paintTrimChrome();
+  host.renderClips?.();
+  host.reqPreview?.();
+  if (host.AudioTimeline) host.AudioTimeline.render();
+}
+
+function canSplitAtMarkers() {
+  const c = selectedClip(session);
+  const full = videoDuration();
+  return !!c && full > 0 && !!markerApi && !!splitSegmentsAtMarkers(clipSegments(c, full), markerApi.times(), full);
+}
+
+// a dragged marker snaps to the video's ends, segment edges and the playhead, like a trim does
+function markerSnapTime(time: number) {
+  const full = videoDuration();
+  const points = [0, full, ...clipSegments(selectedClip(session), full).flatMap((segment) => [segment.start, segment.end])];
+  const playhead = host.getPreviewSec?.();
+  if (playhead != null) points.push(playhead);
+  return snapCandidateTime(time, points, timelinePxPerSecond());
+}
 
 let _tlMoveRaf = 0;
 let _tlMoveEvent: PointerEvent | null = null;
@@ -1016,7 +1050,7 @@ function segmentSnapCandidates(
   full: number,
   near: readonly number[] = [],
 ) {
-  let points = [0, full, ...keyframesNear(near)];
+  let points = [0, full, ...keyframesNear(near), ...(markerApi?.times() ?? [])];
   let v = currentVideo();
   if (v) points.push(host.getPreviewSec?.() ?? v.currentTime);
   for (const [i, segment] of segments.entries()) {
@@ -1947,6 +1981,34 @@ function initTimelineResizer() {
   const recorded = <A extends unknown[], R>(label: string, run: (...args: A) => R) =>
     recordedCommand(history, () => session.selPath, run, label);
   const addSegmentStep = recorded("add segment", addSegment);
+  const splitAtMarkersStep = recorded("split at markers", splitAtAllMarkers);
+  markerApi = installMarkers({
+    document: documentRef,
+    window: windowRef,
+    clip: () => selectedClip(session),
+    duration: () => {
+      const clip = selectedClip(session);
+      return clip && probeStatus(clip) === "ready" ? videoDuration() : 0;
+    },
+    playhead: () => {
+      const video = currentVideo();
+      return host.getPreviewSec?.() ?? (video && Number.isFinite(video.currentTime) ? video.currentTime : 0);
+    },
+    seek: (time) => host.seekPreview?.(time),
+    formatTime: formatTimelineTime,
+    snap: markerSnapTime,
+    history: host.History ?? null,
+    canSplit: canSplitAtMarkers,
+    splitAtMarkers: splitAtMarkersStep,
+    timeline: () => byId("timeline"),
+  });
+  markerApi.paint();
+  const markers = markerApi;
+
+  host.TuckShortcuts?.registerAction("timeline.add-marker", {
+    enabled: markers.canAdd,
+    execute: markers.add,
+  });
 
   host.TuckShortcuts?.registerAction("timeline.add-segment", {
     // a full timeline still takes the key, so adding says why it can't
@@ -1996,6 +2058,8 @@ function initTimelineResizer() {
   let api = {
     isDragging: function () { return !!_tlDrag; },
     addSegment: addSegmentStep,
+    addMarker: markers.add,
+    markerTimes: markers.times,
     applyTimelineZoom: applyTimelineZoom,
     canTrimActiveSegmentToPlayhead: canTrimActiveSegmentToPlayhead,
     canRemoveActiveSegment: canRemoveActiveSegment,

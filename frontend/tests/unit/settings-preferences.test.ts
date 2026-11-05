@@ -300,6 +300,9 @@ test("cut points are segment edges and the video's own start and end", () => {
   assert.equal(cutPointNear(segments, 6, 1, 10), 8);
   assert.equal(cutPointNear(segments, 8, 1, 10), 10);
   assert.equal(cutPointNear(segments, 10, 1, 10), null);
+  // markers are stops too
+  assert.equal(cutPointNear(segments, 4, 1, 10, [5]), 5);
+  assert.equal(cutPointNear(segments, 6, -1, 10, [5]), 5);
   assert.equal(cutPointNear(segments, 0, -1, 10), null);
   assert.equal(cutPointNear([], 3, -1, 10), 0);
 });

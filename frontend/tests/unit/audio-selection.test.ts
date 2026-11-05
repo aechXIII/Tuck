@@ -308,7 +308,7 @@ test("clicking video replaces the imported audio command target and selected sty
     fragmentMute.attributes["aria-label"],
     "Mute this segment's source audio",
   );
-  assert.equal(fragmentMute.dataset.tip, "Mute this segment's source audio (M)");
+  assert.equal(fragmentMute.dataset.tip, "Mute this segment's source audio (Shift+M)");
 });
 
 test("selecting imported audio deselects linked video and source segments together", () => {
@@ -336,7 +336,7 @@ test("selected imported audio fragments use the segment mute command independent
 
   assert.equal(fragmentMute.classList.contains("hid"), false);
   assert.equal(fragmentMute.attributes["aria-label"], "Mute selected audio clip");
-  assert.equal(fragmentMute.dataset.tip, "Mute selected audio clip (M)");
+  assert.equal(fragmentMute.dataset.tip, "Mute selected audio clip (Shift+M)");
 
   AudioTimeline.toggleFragmentMute();
   AudioTimeline.paintMixer();
@@ -350,16 +350,16 @@ test("selected imported audio fragments use the segment mute command independent
   assert.equal(fragmentMute.classList.contains("hid"), true);
 });
 
-test("M toggles the selected imported audio fragment", () => {
+test("Shift+M toggles the selected imported audio fragment", () => {
   const audioClip = session.clips["video.mp4"]!.audioTimeline!.tracks[0]!.clips[0]!;
   audioClip.muted = false;
   AudioTimeline.selectClip("music-track", "music-clip");
 
   shortcuts.dispatch(
     {
-      key: "m",
+      key: "M",
       ctrlKey: false,
-      shiftKey: false,
+      shiftKey: true,
       altKey: false,
       metaKey: false,
       preventDefault() {},
@@ -375,7 +375,7 @@ test("M toggles the selected imported audio fragment", () => {
   assert.equal(audioClip.muted, true);
 });
 
-test("M toggles source audio for the active video segment", () => {
+test("Shift+M toggles source audio for the active video segment", () => {
   const clip = session.clips["video.mp4"]!;
   clip.segments = [{ start: 0, end: 12, muted: false }];
   setClipSegmentsCalls.length = 0;
@@ -383,9 +383,9 @@ test("M toggles source audio for the active video segment", () => {
 
   shortcuts.dispatch(
     {
-      key: "m",
+      key: "M",
       ctrlKey: false,
-      shiftKey: false,
+      shiftKey: true,
       altKey: false,
       metaKey: false,
       preventDefault() {},
@@ -553,7 +553,7 @@ test("keyboard delete removes the active video segment when audio is not selecte
   assert.equal(removeCalls, 1);
 });
 
-test("M and the mute commands leave every mute alone in Lossless cut", () => {
+test("Shift+M and the mute commands leave every mute alone in Lossless cut", () => {
   const clip = session.clips["video.mp4"]!;
   const track = clip.audioTimeline!.tracks[0]!;
   const audioClip = track.clips[0]!;
@@ -566,9 +566,9 @@ test("M and the mute commands leave every mute alone in Lossless cut", () => {
       select();
       shortcuts.dispatch(
         {
-          key: "m",
+          key: "M",
           ctrlKey: false,
-          shiftKey: false,
+          shiftKey: true,
           altKey: false,
           metaKey: false,
           preventDefault() {},

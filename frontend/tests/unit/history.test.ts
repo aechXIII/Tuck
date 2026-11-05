@@ -162,6 +162,21 @@ test("setting a video segment boundary can be undone and redone", () => {
   History.forgetClip(selectedPath!);
 });
 
+test("markers follow undo and redo with the video's other edits", () => {
+  const clip = resetClip();
+  History.action(clip.path, () => { clip.markers = [3]; }, "add marker");
+  History.action(clip.path, () => { clip.markers = [3, 7]; }, "add marker");
+  assert.equal(buttonLabels.undo, "add marker");
+
+  History.undo();
+  assert.deepEqual(clip.markers, [3]);
+  History.undo();
+  assert.deepEqual(clip.markers, []);
+  History.redo();
+  assert.deepEqual(clip.markers, [3]);
+  History.forgetClip(selectedPath!);
+});
+
 test("setting an audio fragment boundary can be undone", () => {
   const clip = resetClip();
   clip.audioTimeline = null;

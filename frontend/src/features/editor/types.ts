@@ -115,6 +115,8 @@ export interface EditorClip {
   transformOverride: boolean;
   transformIntentTouched: boolean;
   audioTimeline: AudioTimelineState | null;
+  // moments marked on the timeline, in seconds and in order; kept while Tuck runs, like the edits
+  markers?: number[];
   _statusText?: string;
   // the backend queue's state for this video, or "" when it has no queue item
   _queueState?: QueueItemState | "";

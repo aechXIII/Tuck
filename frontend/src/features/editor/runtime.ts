@@ -796,6 +796,7 @@ export function installEditorRuntime(
           timeline.trimActiveSegmentToPlayhead(target.dataset.actionValue === "end" ? "end" : "start"),
         "cut-go-point": (target) => timeline.goToCutPoint(target.dataset.actionValue === "end" ? "end" : "start"),
         "timeline-split": () => timeline.splitAtPlayhead(),
+        "timeline-add-marker": () => timeline.addMarker(),
         "timeline-remove-segment": () => timeline.removeActiveSegment(),
         "timeline-reset-segments": () => timeline.resetSegments(),
         "timeline-toggle-snap": () => rememberTimelineToggle({timeline_snap:timeline.toggleSnap()}),
@@ -981,7 +982,7 @@ export function installEditorRuntime(
           const video = byId<HTMLVideoElement>("vid");
           const duration = timeline.videoDuration() ?? 0;
           if (!video || !duration) return;
-          const point = cutPointNear(timeline.playbackSegments(), player.timelineTime(), direction, duration);
+          const point = cutPointNear(timeline.playbackSegments(), player.timelineTime(), direction, duration, timeline.markerTimes());
           if (point != null) player.seekPreview(point);
         },
       });

@@ -43,6 +43,7 @@
   --timeline-ruler-tick-major: #45464c;
   --timeline-ruler-label: #a7a6ac;
   --timeline-playhead: var(--accent-light);
+  --timeline-marker: var(--warn);
   --danger: #e78aa0;
   --danger-action: #a63c56;
   --danger-action-hover: #b34460;

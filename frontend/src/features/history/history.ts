@@ -70,6 +70,7 @@ interface ClipSnapshot {
   segments: Segment[] | null;
   activeSegment: number;
   audioTimeline: AudioTimelineState | null;
+  markers: number[];
 }
 
 export interface HistoryEntry {
@@ -122,6 +123,7 @@ function snapshot(clip: EditorClip | null | undefined): ClipSnapshot | null {
     segments: (cloneSegments(clip.segments) as Segment[] | null) ?? null,
     activeSegment: clip.activeSegment,
     audioTimeline: cloneAudioTimeline(clip.audioTimeline),
+    markers: [...(clip.markers ?? [])],
   };
 }
 
@@ -137,6 +139,7 @@ function apply(clip: EditorClip, snap: ClipSnapshot): void {
   clip.segments = (cloneSegments(snap.segments) as Segment[] | null) ?? null;
   clip.activeSegment = snap.activeSegment;
   clip.audioTimeline = cloneAudioTimeline(snap.audioTimeline);
+  clip.markers = [...snap.markers];
   clip.planData = null;
 }
 
