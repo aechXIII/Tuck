@@ -24,6 +24,7 @@ import { createLibrary, type LibraryApi } from "../library/library.ts";
 import { installAddMenu } from "../library/add-menu.ts";
 import { addFolderVideos, FOLDER_READ_ERROR, importPaths, type ImportDeps } from "../library/folder-import.ts";
 import { installRowMenu } from "../library/row-menu.ts";
+import { installHoverPreview } from "../library/hover-preview.ts";
 import { installJoin, type JoinApi } from "../library/join.ts";
 import { installPanels, type PanelsApi } from "../panels/panels.ts";
 import type { AudioClipRangeInfo } from "../panels/panels.ts";
@@ -544,6 +545,24 @@ export function installEditorRuntime(
         else toast(paths.length === 1 ? "File copied to clipboard." : `${paths.length} files copied to clipboard.`, "ok");
       });
     },
+  });
+
+  // resting the pointer on a Library row shows its video beside it
+  installHoverPreview({
+    document: windowRef.document,
+    window: windowRef,
+    clip: (path) => session.clips[path],
+    selectedPath: () => session.selPath,
+    busy: () => !!windowRef.document.querySelector("#clips .clip.dragging, #library-menu:not([hidden]), #add-menu:not([hidden])"),
+    frames: async (path, start, step, count) => {
+      if (!hasBackendClient()) return null;
+      const result = await getBackendClient().getTimelineFrames(path, start, step, count, "whole", false);
+      return result.ok ? result.value : null;
+    },
+    release: (token) => {
+      if (hasBackendClient()) void getBackendClient().releaseMediaToken(token).catch(() => {});
+    },
+    formatTime,
   });
 
   installAddMenu({

@@ -703,3 +703,57 @@
   color: var(--muted);
   font-size: calc(11px * var(--text-scale));
 }
+
+/* a bigger picture of a Library video beside its row; it only shows, so it takes no pointer */
+.hover-preview {
+  position: fixed;
+  z-index: 60;
+  padding: 6px;
+  border-radius: var(--r-surf);
+  background: var(--raised);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.25);
+  pointer-events: none;
+}
+.hover-preview[hidden] {
+  display: none;
+}
+.hover-preview.showing {
+  animation: hover-preview-in var(--dur-surface) var(--ease-out);
+}
+@keyframes hover-preview-in {
+  from { opacity: 0; transform: translateX(-6px); }
+}
+.hover-preview-picture {
+  width: 150px;
+  height: 84px;
+  border-radius: 4px;
+  background-color: #000;
+  background-repeat: no-repeat;
+}
+.hover-preview-track {
+  position: relative;
+  height: 2px;
+  margin: 6px 2px 0;
+  border-radius: 1px;
+  background: var(--hair-2);
+}
+.hover-preview-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: 1px;
+  background: var(--text);
+}
+.hover-preview-time {
+  display: flex;
+  justify-content: space-between;
+  margin: 5px 2px 1px;
+  color: var(--muted);
+  font: 500 calc(11px * var(--text-scale)) / 1 var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+.hover-preview-now {
+  color: var(--text);
+  font-weight: 600;
+}
