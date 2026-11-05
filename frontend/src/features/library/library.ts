@@ -374,8 +374,19 @@ export function createLibrary(host: LibraryHost): LibraryApi {
         if (nativePicture()) {
           video.onloadeddata = null;
           video.onerror = null;
+          video.onresize = null;
           return;
         }
+        // WebKitGTK can report the data, and even canplaythrough, before the picture's size,
+        // which a resize brings a few milliseconds later; seen on the first video of a busy
+        // Library load. A player that can't decode the picture never sends that size
+        let sizeLate = false;
+        video.onresize = () => {
+          if (!sizeLate || shown !== stageMedia || !video.videoWidth) return;
+          sizeLate = false;
+          video.style.display = "block";
+          revealVideo();
+        };
         // the loading picture stays on top until this video has a frame to show
         video.onloadeddata = () => {
           if (shown !== stageMedia) return;
@@ -383,11 +394,14 @@ export function createLibrary(host: LibraryHost): LibraryApi {
             revealVideo();
             return;
           }
+          sizeLate = true;
           const path = session.selPath;
           if (!path) return;
           const codec = session.clips[path]?.probeData?.video_codec;
           void fetchPlatformCapabilities().then((caps) => {
-            if (shown === stageMedia) void loadThumb(path, missingPictureMessage(codec, caps.platform));
+            if (shown === stageMedia && !video.videoWidth) {
+              void loadThumb(path, missingPictureMessage(codec, caps.platform), () => shown === stageMedia && !video.videoWidth);
+            }
           });
         };
         video.onerror = () => {
@@ -1166,12 +1180,13 @@ export function createLibrary(host: LibraryHost): LibraryApi {
   }
 
   // a preview that failed to play falls back to the video's picture and says so
-  async function loadThumb(path: string, reason = ""): Promise<void> {
+  // stillMissing: the picture can turn up while the still loads, and then no message is shown
+  async function loadThumb(path: string, reason = "", stillMissing: () => boolean = () => true): Promise<void> {
     if (!hasBackendClient() || session.selPath !== path) return;
     let shown = false;
     try {
       const response = await legacyBackendResult(getBackendClient().getThumbnail(path));
-      if (session.selPath !== path) return;
+      if (session.selPath !== path || !stillMissing()) return;
       if (response.ok && typeof response.thumbnail === "string" && response.thumbnail) {
         showThumbnail(response.thumbnail);
         shown = true;

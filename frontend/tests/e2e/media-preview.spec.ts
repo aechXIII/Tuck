@@ -136,6 +136,64 @@ test("a preview that plays sound but no picture keeps the picture and says why",
   await expect(page.locator("#media-viewport #thumb")).toHaveAttribute("src", PICTURE);
 });
 
+// WebKitGTK can report a video's data, and even canplaythrough, before its picture's size, which a
+// resize brings a few milliseconds later; the picture then shows and no message stays
+test("a picture size that arrives late still shows the video, and no message stays", async ({ page }) => {
+  test.skip(nativePreview, WEBVIEW_FALLBACK);
+  const fixture = previewFixture();
+  fixture.responses.probeFile = {
+    ok: true,
+    data: { duration: 2, width: 1280, height: 720, fps: 30, has_audio: true, video_codec: "h264" },
+  };
+  fixture.responses.getMediaUrl = { ok: true, url: "https://media.test/harbour", token: "token-harbour" };
+  fixture.responses.getThumbnail = { ok: true, thumbnail: PICTURE };
+  await page.route("https://media.test/**", (route) =>
+    route.fulfill({ status: 200, contentType: "audio/wav", body: silentWav(2) }));
+  await installFakeBackend(page, fixture);
+  await page.goto("/");
+  await addVideo(page);
+  const lateSize = () => page.evaluate(() => {
+    const video = document.getElementById("vid") as HTMLVideoElement;
+    Object.defineProperty(video, "videoWidth", { configurable: true, get: () => 1280 });
+    Object.defineProperty(video, "videoHeight", { configurable: true, get: () => 720 });
+    video.dispatchEvent(new Event("resize"));
+  });
+
+  // the size after the message: the message goes and the video shows
+  await expect(page.locator("#preview-status")).toContainText("can’t be shown here");
+  await lateSize();
+  await expect(page.locator("#preview-status")).toBeHidden();
+  await expect(page.locator("#media-viewport #thumb")).toHaveCount(0);
+  await expect(page.locator("#vid")).toBeVisible();
+});
+
+test("a picture size that arrives while the still loads leaves no message", async ({ page }) => {
+  test.skip(nativePreview, WEBVIEW_FALLBACK);
+  const fixture = previewFixture();
+  fixture.responses.probeFile = {
+    ok: true,
+    data: { duration: 2, width: 1280, height: 720, fps: 30, has_audio: true, video_codec: "h264" },
+  };
+  fixture.responses.getMediaUrl = { ok: true, url: "https://media.test/harbour", token: "token-harbour" };
+  fixture.responses.getThumbnail = { ok: true, thumbnail: PICTURE };
+  fixture.holdMethods = ["getThumbnail"];
+  await page.route("https://media.test/**", (route) =>
+    route.fulfill({ status: 200, contentType: "audio/wav", body: silentWav(2) }));
+  await installFakeBackend(page, fixture);
+  await page.goto("/");
+  await addVideo(page);
+  // the message's still is on its way when the size comes
+  await expect.poll(() => page.evaluate(() => (window.__tuckFakeBackendCalls ?? []).filter((call) => call.method === "getThumbnail").length)).toBeGreaterThan(1);
+  await page.evaluate(() => {
+    const video = document.getElementById("vid") as HTMLVideoElement;
+    Object.defineProperty(video, "videoWidth", { configurable: true, get: () => 1280 });
+    video.dispatchEvent(new Event("resize"));
+    for (let i = 0; i < 4; i += 1) window.__tuckReleaseHeld?.("getThumbnail", { ok: true, thumbnail: "data:image/gif;base64,R0lGODlhAQABAAAAACw=" });
+  });
+  await expect(page.locator("#vid")).toBeVisible();
+  await expect(page.locator("#preview-status")).toBeHidden();
+});
+
 test("switching videos shows the new video's own picture while its preview loads, never the last video", async ({ page }) => {
   const fixture = previewFixture();
   fixture.startup.files = [VIDEO, "C:\\media\\Sunset.mp4"];
