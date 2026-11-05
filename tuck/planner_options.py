@@ -14,13 +14,16 @@ from .models import (
     SourceTrackSetting,
 )
 from .models.encoding_policy import (
+    QUALITY_RC_METHODS,
     native_preset_for_encoder,
     normalize_legacy_rc_matrix,
     normalize_scaler,
     size_target_rate_control_method,
+    validate_bitrate_cap_for_encoder,
     validate_encoder_supported_on_desktop,
     validate_rate_control_matrix,
     validate_rc_method_for_encoder,
+    validate_ten_bit_for_encoder,
     validate_tune_for_encoder,
 )
 from .models.export_preferences import NAME_TAKEN_REPLACE, output_targets
@@ -86,6 +89,9 @@ class PlanOptions:
     tune: str
     two_pass: bool
     preset: str
+    bitrate_cap: int
+    ten_bit: bool
+    keyframe_seconds: float
 
 
 def resolve_plan_options(profile: Profile, request: PlanRequest | None) -> PlanOptions:
@@ -115,6 +121,9 @@ def resolve_plan_options(profile: Profile, request: PlanRequest | None) -> PlanO
     tune = profile.tune
     two_pass = profile.two_pass
     preset = profile.preset
+    max_bitrate = profile.max_bitrate
+    ten_bit = profile.ten_bit
+    keyframe_seconds = profile.keyframe_seconds
 
     if request is not None:
         request.validate()
@@ -168,6 +177,12 @@ def resolve_plan_options(profile: Profile, request: PlanRequest | None) -> PlanO
             cq = request.cq
         if request.qp is not None:
             qp = request.qp
+        if request.max_bitrate is not None:
+            max_bitrate = request.max_bitrate
+        if request.ten_bit is not None:
+            ten_bit = request.ten_bit
+        if request.keyframe_seconds is not None:
+            keyframe_seconds = request.keyframe_seconds
 
     validate_encoder_supported_on_desktop(video_encoder)
     scaler = normalize_scaler(scaler)
@@ -190,6 +205,10 @@ def resolve_plan_options(profile: Profile, request: PlanRequest | None) -> PlanO
         two_pass,
     )
     rate_control_method = size_target_rate_control_method(workflow, rate_control_method)
+    # a size or bitrate goal sets the bitrate itself, so the cap only reaches quality levels
+    bitrate_cap = int(max_bitrate) if rate_control_method in QUALITY_RC_METHODS else 0
+    validate_bitrate_cap_for_encoder(bitrate_cap, video_encoder)
+    validate_ten_bit_for_encoder(ten_bit, video_encoder)
 
     return PlanOptions(
         resolution_mode=resolution_mode,
@@ -217,4 +236,7 @@ def resolve_plan_options(profile: Profile, request: PlanRequest | None) -> PlanO
         tune=tune,
         two_pass=two_pass,
         preset=preset,
+        bitrate_cap=bitrate_cap,
+        ten_bit=ten_bit,
+        keyframe_seconds=float(keyframe_seconds),
     )

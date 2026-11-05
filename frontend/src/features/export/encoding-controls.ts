@@ -15,6 +15,7 @@ import { legacyBackendResult } from "../editor/backend-compat.ts";
 import { closeMod, showMod, toast } from "../editor/toast.ts";
 import { reasonSentence, withReason } from "../editor/format.ts";
 import { profileChangeSummary, profileSummary } from "../profiles/profile-summary.ts";
+import { formatMbps, keyframeLabel, maxBitrateRow, parseMaxBitrate, tenBitRow } from "./encoding-extras.ts";
 import { pickerProfiles } from "../profiles/profile-list.ts";
 import {
   matchParts,
@@ -164,6 +165,8 @@ export interface EncodingControlsApi {
   onEncChange: () => void;
   onSpeedChange: () => void;
   onTwoPassChange: () => void;
+  onMaxBitrate: () => void;
+  onTenBit: () => void;
   onNativePresetChange: () => void;
   onRcChange: () => void;
   toggleAdvanced: () => void;
@@ -195,6 +198,12 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
   let goal: ExportGoal = "size";
   // which encoder each Auto choice starts with, so the chips can name it
   let autoEncoders: Record<string, string> = {};
+  // the typed cap and the 10-bit choice wait out a goal or encoder that can't use them
+  let maxBitrateMbps = 0;
+  let tenBitWanted = false;
+  // what each encoder answered when asked for 10-bit, asked the first time it's needed
+  const tenBitSupport = new Map<string, boolean>();
+  const tenBitAsked = new Set<string>();
   // the selected video's latest request, which a Quality estimate encodes pieces of
   let estimateRequest: { path: string; request: PlanRequest } | null = null;
   const estimates = createSizeEstimates({
@@ -449,6 +458,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
       audioEnabled: keepAudio || Number(audioBitrateKbps) > 0,
       keepAudio,
       speed,
+      maxBitrateMbps: maxBitrateUsed(),
     });
     if (document.activeElement !== input("sz-badge")) {
       input("sz-badge").value = input("sz-slider").value;
@@ -465,7 +475,9 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     el("export-encoder-summary").textContent = InspectorUi.encoderPanelSummary({
       videoEncoder,
       speed,
+      tenBit: tenBitUsed(),
     });
+    paintEncodingExtras();
     syncExportVideoFacades();
     deps.syncSelects();
   }
@@ -837,10 +849,23 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
       }
     }
     updateRcVis();
+    maxBitrateMbps = num(p.max_bitrate_mbps) > 0 ? num(p.max_bitrate_mbps) : 0;
+    tenBitWanted = p.ten_bit === true;
+    setKeyframeChoice(num(p.keyframe_seconds));
     paintGoal();
     deps.syncTransformControls();
     deps.paintCropOverlay();
     snapProf();
+  }
+
+  // a profile from the command line may hold a spacing the list doesn't offer
+  function setKeyframeChoice(seconds: number): void {
+    const keyframes = select("keyframe-sel");
+    const value = String(seconds > 0 ? seconds : 0);
+    if (![...keyframes.options].some((option) => option.value === value)) {
+      keyframes.add(new Option(keyframeLabel(seconds), value));
+    }
+    keyframes.value = value;
   }
 
   const SIZE_PREVIEW_DELAY_MS = 120;
@@ -1270,6 +1295,79 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     el("tune-row").classList.toggle("hid", !(up && isCpuEncoder(select("enc-sel").value)));
   }
 
+  function chosenEncoder(): string {
+    return platformCapabilities
+      ? encoderForPlatform(select("enc-sel").value, platformCapabilities)
+      : select("enc-sel").value;
+  }
+
+  function maxBitrateState() {
+    return maxBitrateRow({
+      workflow: workflowName(),
+      goal,
+      rateControl: (select("rc-sel").value as RateControlDisplay) || "CBR",
+      encoder: chosenEncoder(),
+    });
+  }
+
+  function maxBitrateUsed(): number {
+    return maxBitrateState().enabled ? maxBitrateMbps : 0;
+  }
+
+  function tenBitUsed(): boolean {
+    const encoder = chosenEncoder();
+    return tenBitWanted && tenBitRow(encoder, tenBitSupport.get(encoder)).enabled;
+  }
+
+  function paintNote(id: string, text: string): void {
+    el(id).textContent = text;
+    el(id).classList.toggle("hid", !text);
+  }
+
+  function paintEncodingExtras(): void {
+    const cap = maxBitrateState();
+    const field = input("max-bitrate");
+    field.disabled = !cap.enabled;
+    field.placeholder = cap.placeholder;
+    if (document.activeElement !== field) field.value = cap.enabled ? formatMbps(maxBitrateMbps) : "";
+    paintNote("max-bitrate-note", cap.note);
+    const encoder = chosenEncoder();
+    const tenBit = tenBitRow(encoder, tenBitSupport.get(encoder));
+    input("ten-bit").disabled = !tenBit.enabled;
+    input("ten-bit").checked = tenBit.enabled && tenBitWanted;
+    paintNote("ten-bit-note", tenBit.note);
+    if (tenBit.enabled && tenBitWanted) void askTenBit(encoder);
+  }
+
+  // the switch stays on while the encoder is asked; a no turns it off and says why
+  async function askTenBit(encoder: string): Promise<void> {
+    if (tenBitAsked.has(encoder)) return;
+    tenBitAsked.add(encoder);
+    const result = await client().checkTenBit(encoder);
+    // a failed request isn't a no, and the plan still refuses what the encoder can't do
+    if (!result.ok) return;
+    tenBitSupport.set(encoder, result.value.ten_bit);
+    if (result.value.ten_bit) return;
+    syncExportSummary();
+    void reqPreview();
+    updateDirty();
+  }
+
+  function onMaxBitrate(): void {
+    maxBitrateMbps = parseMaxBitrate(input("max-bitrate").value);
+    input("max-bitrate").value = formatMbps(maxBitrateMbps);
+    syncExportSummary();
+    void reqPreview();
+    updateDirty();
+  }
+
+  function onTenBit(): void {
+    tenBitWanted = input("ten-bit").checked;
+    syncExportSummary();
+    void reqPreview();
+    updateDirty();
+  }
+
   function gateTwoPass(): void {
     const can = twoPassEligible(workflowName(), select("enc-sel").value);
     const quality = wf === 0 && goal === "quality";
@@ -1308,6 +1406,9 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
       qualityValue: parseInt(input("quality-val").value, 10) || 0,
       bitrateKbps: parseInt(input("br-val").value, 10) || 0,
       tune: select("tune-sel").value,
+      maxBitrateMbps: maxBitrateUsed(),
+      tenBit: tenBitUsed(),
+      keyframeSeconds: Number(select("keyframe-sel").value) || 0,
     };
   }
 
@@ -1814,6 +1915,9 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
       q: value("quality-val"),
       br: value("br-val"),
       tu: value("tune-sel"),
+      mb: maxBitrateUsed(),
+      tb: tenBitUsed(),
+      kf: value("keyframe-sel"),
       aspect: clip?.cropAspect ?? "off",
       rotation: clip?.rotation ?? 0,
       sizing: clip?.sizingMode ?? "fit",
@@ -2390,6 +2494,8 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     onEncChange,
     onSpeedChange,
     onTwoPassChange,
+    onMaxBitrate,
+    onTenBit,
     onNativePresetChange,
     onRcChange,
     toggleAdvanced,

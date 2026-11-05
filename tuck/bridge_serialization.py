@@ -97,6 +97,9 @@ def profile_ui_dict(
         "rate_control_method": profile.rate_control_method,
         "cq": profile.cq,
         "qp": profile.qp,
+        "max_bitrate_mbps": profile.max_bitrate / 1_000_000,
+        "ten_bit": profile.ten_bit,
+        "keyframe_seconds": profile.keyframe_seconds,
         "transform_intent": (
             profile.transform_intent.to_dict() if profile.transform_intent is not None else None
         ),

@@ -484,6 +484,9 @@ def plan(
         keep_file_dates=keep_file_dates,
         replace_existing=replace_existing,
         tone_map_hdr=tone_map_hdr,
+        bitrate_cap=options.bitrate_cap,
+        ten_bit=options.ten_bit,
+        keyframe_seconds=options.keyframe_seconds,
         warnings=warnings,
     )
 

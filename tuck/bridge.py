@@ -44,6 +44,7 @@ from .diagnostics import build_diagnostics, preview_report
 from .encoding.capabilities import (
     auto_encoder_choices,
     clear_encoder_cache,
+    encoder_makes_ten_bit,
     get_available_encoders,
     get_encoder_capabilities,
 )
@@ -67,6 +68,7 @@ from .models import (
     find_profile_by_id,
 )
 from .models.encoding_policy import (
+    HEVC_ENCODERS,
     QUALITY_RC_METHODS,
     SCALER_LANCZOS,
     WORKFLOW_COMPRESSION,
@@ -1239,6 +1241,12 @@ class BridgeAPI:
             "available_encoders": sorted(encoders),
             "auto_encoders": auto_encoder_choices(encoders),
         }
+
+    def check_ten_bit(self, encoder: str) -> BridgeResult:
+        """Whether the encoder makes 10-bit video on this system; tested once, then remembered."""
+        if encoder not in HEVC_ENCODERS:
+            return {"ok": False, "error": "10-bit color needs an H.265 encoder."}
+        return {"ok": True, "ten_bit": encoder_makes_ten_bit(encoder)}
 
     def get_profiles_json(self) -> BridgeResult:
         return self._profile_service.list_profiles()

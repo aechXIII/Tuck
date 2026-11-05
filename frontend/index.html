@@ -1188,6 +1188,48 @@
                       aria-label="Encoder tune"
                     ></select>
                   </div>
+                  <div class="enc-field" id="max-bitrate-row">
+                    <label for="max-bitrate">Max bitrate</label
+                    ><div class="max-bitrate-value"
+                      ><input
+                        type="text"
+                        id="max-bitrate"
+                        inputmode="decimal"
+                        autocomplete="off"
+                        spellcheck="false"
+                        placeholder="No limit"
+                        aria-describedby="max-bitrate-unit"
+                        data-action-change="encoding-max-bitrate"
+                      /><span id="max-bitrate-unit">Mbps</span></div
+                    >
+                  </div>
+                  <span class="setting-note hid" id="max-bitrate-note"></span>
+                  <div class="info-row" id="ten-bit-wrap">
+                    <label class="toggle-row export-toggle" for="ten-bit"
+                      ><span>10-bit color</span
+                      ><input
+                        type="checkbox" role="switch"
+                        id="ten-bit"
+                        aria-describedby="ten-bit-note"
+                        data-action-change="encoding-ten-bit"
+                      /><span class="toggle-track" aria-hidden="true"></span></label
+                    >
+                  </div>
+                  <span class="setting-note hid" id="ten-bit-note"></span>
+                  <div class="enc-field">
+                    <label for="keyframe-sel">Keyframe every</label
+                    ><select
+                      id="keyframe-sel"
+                      data-action-change="encoding-preview-dirty"
+                      aria-label="Keyframe every"
+                    >
+                      <option value="0" selected>Auto</option>
+                      <option value="1">1 second</option>
+                      <option value="2">2 seconds</option>
+                      <option value="5">5 seconds</option>
+                      <option value="10">10 seconds</option>
+                    </select>
+                  </div>
                 </div>
               </div>
                 </div>

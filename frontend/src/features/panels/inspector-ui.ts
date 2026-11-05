@@ -9,6 +9,7 @@ export interface InspectorAudioState {
 export interface InspectorEncoderState {
   videoEncoder?: string;
   speed?: string;
+  tenBit?: boolean;
 }
 
 export interface InspectorExportState extends InspectorAudioState, InspectorEncoderState {
@@ -21,6 +22,8 @@ export interface InspectorExportState extends InspectorAudioState, InspectorEnco
   width?: number;
   height?: number;
   fps?: number;
+  /** a Quality export's cap in Mbps, named on the detail line so it shows without opening Advanced */
+  maxBitrateMbps?: number;
 }
 
 export interface ChoiceOption {
@@ -93,7 +96,7 @@ export function encoderPanelSummary(state: InspectorEncoderState): string {
     balanced: "Balanced",
     best: "Best compression",
   };
-  return family + " · " + (speeds[state.speed ?? ""] || "Balanced");
+  return family + " · " + (speeds[state.speed ?? ""] || "Balanced") + (state.tenBit ? " · 10-bit" : "");
 }
 
 export function exportSummary(state: InspectorExportState): {
@@ -105,7 +108,10 @@ export function exportSummary(state: InspectorExportState): {
   const fps = Math.max(0, Number(Number(state.fps || 0).toFixed(3)));
   const upscale = state.workflow === "upscale";
   const picture = width + "×" + height + " · " + fps + " fps";
-  const bitrate = state.goal === "quality" ? "" : bitrateText(Number(state.videoBitrateKbps) || 0);
+  const cap = Number(state.maxBitrateMbps) || 0;
+  const bitrate = state.goal === "quality"
+    ? cap > 0 ? "max " + Math.round(cap * 10) / 10 + " Mbps" : ""
+    : bitrateText(Number(state.videoBitrateKbps) || 0);
   return {
     title: upscale ? "Upscale output" : Math.max(0, Math.round(Number(state.targetSizeMb) || 0)) + " MB",
     // Compress's card says what its goal gives instead of the audio, which Adjust names; its

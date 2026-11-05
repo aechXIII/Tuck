@@ -42,6 +42,11 @@ export interface ExportFormState {
   qualityValue: number;
   bitrateKbps: number;
   tune: string;
+  /** the cap a Quality export keeps under, in Mbps; 0 when there's none or it doesn't apply */
+  maxBitrateMbps?: number;
+  tenBit?: boolean;
+  /** 0 keeps the encoder's own spacing */
+  keyframeSeconds?: number;
 }
 
 export interface PlanSegment {
@@ -144,6 +149,10 @@ export function buildPlanRequest(
   if (up && (encoder === "libx264" || encoder === "libx265") && form.tune !== "none") {
     req.tune = form.tune;
   }
+  // always sent, so a setting turned off here also turns it off for a profile that has it
+  req.max_bitrate = Math.round((form.maxBitrateMbps ?? 0) * 1_000_000);
+  req.ten_bit = !!form.tenBit;
+  req.keyframe_seconds = form.keyframeSeconds ?? 0;
   const segments = ctx.segments ?? null;
   if (segments && segments.length) {
     req.segments = segments.map((segment) => ({ ...segment }));
@@ -215,6 +224,9 @@ export function buildProfilePayload(
   }
   if (up && isBr) data.explicit_bitrate_kbps = toInt(form.bitrateKbps);
   if (up && isCpuEncoder(encoder)) data.tune = form.tune === "none" ? "" : form.tune;
+  data.max_bitrate_mbps = form.maxBitrateMbps ?? 0;
+  data.ten_bit = !!form.tenBit;
+  data.keyframe_seconds = form.keyframeSeconds ?? 0;
   return data;
 }
 

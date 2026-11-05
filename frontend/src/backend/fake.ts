@@ -383,6 +383,14 @@ class DeterministicFakeBackend implements BackendClient {
     );
   }
 
+  checkTenBit(encoder: string) {
+    return this.#record(
+      "checkTenBit",
+      [encoder],
+      this.#responses.checkTenBit ?? success({ ten_bit: true }),
+    );
+  }
+
   getProfilesJson() {
     return this.#record(
       "getProfilesJson",

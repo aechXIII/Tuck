@@ -27,6 +27,7 @@ export interface FakeBackendFixture {
 export function healthyBackendFixture(): FakeBackendFixture {
   return {
     responses: {
+      checkTenBit: { ok: true, ten_bit: true },
       getSettings: {
         available_encoders: [],
         check_updates: false,
@@ -207,6 +208,7 @@ export async function installFakeBackend(
         getSettings: () => respond("getSettings", []),
         saveSettings: (settings: unknown) => respond("saveSettings", [settings]),
         refreshEncoders: () => respond("refreshEncoders", []),
+        checkTenBit: (encoder: string) => respond("checkTenBit", [encoder]),
         getProfilesJson: () => respond("getProfilesJson", []),
         createProfile: (profile: unknown) => respond("createProfile", [profile]),
         updateProfile: (profileId: string, profile: unknown) =>

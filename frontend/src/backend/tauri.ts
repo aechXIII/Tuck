@@ -23,6 +23,7 @@ import type {
   DownloadProgress,
   EmptyPayload,
   EncoderPayload,
+  TenBitPayload,
   FileSelection,
   FolderVideos,
   HardwarePlayback,
@@ -104,6 +105,7 @@ type TauriBackendCommand =
   | { command: "get_settings" }
   | { command: "save_settings"; payload: { settings: SettingsPatch } }
   | { command: "refresh_encoders" }
+  | { command: "check_ten_bit"; payload: { encoder: string } }
   | { command: "get_profiles_json" }
   | { command: "create_profile"; payload: { profile: ProfileInput } }
   | { command: "update_profile"; payload: { profile_id: string; profile: ProfileInput } }
@@ -256,6 +258,10 @@ function isDownloadProgress(value: unknown): value is DownloadProgress {
 
 function isEncoderPayload(value: unknown): value is EncoderPayload {
   return isJsonObject(value) && Array.isArray(value.available_encoders);
+}
+
+function isTenBitPayload(value: unknown): value is TenBitPayload {
+  return isJsonObject(value) && typeof value.ten_bit === "boolean";
 }
 
 const SEND_TO_KINDS: readonly SendToKind[] = ["open", "compress", "upscale", "cut"];
@@ -689,6 +695,10 @@ class TauriTransport implements TauriBackendClient {
 
   refreshEncoders(): Promise<BackendResult<EncoderPayload>> {
     return this.#request("refreshEncoders", { command: "refresh_encoders" }, isEncoderPayload);
+  }
+
+  checkTenBit(encoder: string): Promise<BackendResult<TenBitPayload>> {
+    return this.#request("checkTenBit", { command: "check_ten_bit", payload: { encoder } }, isTenBitPayload);
   }
 
   getProfilesJson(): Promise<BackendResult<readonly Profile[]>> {

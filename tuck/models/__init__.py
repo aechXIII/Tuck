@@ -231,6 +231,10 @@ MIN_TARGET_SIZE_BYTES = 2 * 1024 * 1024
 MIN_SEGMENT_DURATION = 0.05
 
 PROFILE_SCHEMA_VERSION = 7
+# a Quality export's peak bitrate, in bits per second; 0 means no limit
+MAX_BITRATE_MIN = 100_000
+MAX_BITRATE_MAX = 1_000_000_000
+KEYFRAME_SECONDS_MAX = 60
 # version 7 sizes the built-in Upscale profiles by their short side and makes the built-in
 # profiles scale smoothly
 SCHEMA_SMOOTH_SHORT_SIDE = 7
@@ -937,6 +941,9 @@ class PlanRequest:
     workflow: str | None = None
     rate_control_method: str | None = None
     qp: int | None = None
+    max_bitrate: int | None = None
+    ten_bit: bool | None = None
+    keyframe_seconds: float | None = None
 
     trim_start: float | None = None
     trim_end: float | None = None
@@ -999,6 +1006,10 @@ class PlanRequest:
 
         if self.crf is not None and (self.crf < 0 or self.crf > 51):
             raise ValueError("crf must be between 0 and 51")
+        if self.max_bitrate is not None:
+            validate_max_bitrate(self.max_bitrate)
+        if self.keyframe_seconds is not None:
+            validate_keyframe_seconds(self.keyframe_seconds)
 
         if self.cq is not None and (self.cq < 0 or self.cq > 51):
             raise ValueError("cq must be between 0 and 51")
@@ -1163,6 +1174,12 @@ class EncodePlan:
     transform: VideoTransform = field(default_factory=VideoTransform)
     keep_file_dates: bool = False
     replace_existing: bool = False
+    # the most a Quality export may spend at any moment, in bits per second; 0 sets no cap.
+    # A size or bitrate goal already sets its own, so the planner leaves this 0 for those
+    bitrate_cap: int = 0
+    ten_bit: bool = False
+    # 0 keeps the encoder's own keyframe spacing
+    keyframe_seconds: float = 0.0
     # the planner only sets this when FFmpeg has the filters to do it
     tone_map_hdr: bool = False
     # plain sentences about what this export will change or leave out
@@ -1389,6 +1406,10 @@ class Profile:
     rate_control_method: str = RCM_CBR
     cq: int = 23
     qp: int = 23
+    max_bitrate: int = 0
+    ten_bit: bool = False
+    # 0 keeps the encoder's own keyframe spacing
+    keyframe_seconds: float = 0.0
 
     transform_intent: ProfileTransformIntent | None = None
 
@@ -1451,6 +1472,14 @@ class Profile:
             "qp": self.qp,
             "schema_version": self.schema_version,
         }
+        # written only when set, so a profile that doesn't use them still loads in Tuck 0.7.1,
+        # which refuses fields it doesn't know
+        if self.max_bitrate:
+            data["max_bitrate"] = self.max_bitrate
+        if self.ten_bit:
+            data["ten_bit"] = True
+        if self.keyframe_seconds:
+            data["keyframe_seconds"] = self.keyframe_seconds
         if self.transform_intent is not None:
             data["transform_intent"] = self.transform_intent.to_dict()
         return data
@@ -1529,6 +1558,9 @@ class Profile:
             rate_control_method=merged.get("rate_control_method", RCM_CBR),
             cq=merged.get("cq", merged.get("qp", 23)),
             qp=merged.get("qp", 23),
+            max_bitrate=int(merged.get("max_bitrate", 0)),
+            ten_bit=merged.get("ten_bit", False),
+            keyframe_seconds=float(merged.get("keyframe_seconds", 0)),
             transform_intent=(
                 ProfileTransformIntent.from_dict(transform_data)
                 if transform_data is not None
@@ -1833,6 +1865,9 @@ _PROFILE_KNOWN = frozenset(
         "rate_control_method",
         "cq",
         "qp",
+        "max_bitrate",
+        "ten_bit",
+        "keyframe_seconds",
         "transform_intent",
     }
 )
@@ -1944,6 +1979,20 @@ def _migrate_builtin_profile_defaults(
     return migrated
 
 
+def validate_max_bitrate(value: object) -> None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        raise ValueError("max_bitrate must be a number")
+    if value != 0 and not MAX_BITRATE_MIN <= value <= MAX_BITRATE_MAX:
+        raise ValueError("max_bitrate must be 0 or from 0.1 to 1000 Mbps")
+
+
+def validate_keyframe_seconds(value: object) -> None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        raise ValueError("keyframe_seconds must be a number")
+    if not 0 <= value <= KEYFRAME_SECONDS_MAX:
+        raise ValueError(f"keyframe_seconds must be from 0 to {KEYFRAME_SECONDS_MAX}")
+
+
 def _validate_profile_dict(data: dict[str, Any]) -> None:
     if not isinstance(data, dict):
         raise ValueError("Profile must be a JSON object")
@@ -2037,6 +2086,11 @@ def _validate_profile_dict(data: dict[str, Any]) -> None:
 
     if "keep_audio" in data and not isinstance(data["keep_audio"], bool):
         raise ValueError("keep_audio must be a boolean")
+
+    validate_max_bitrate(data.get("max_bitrate", 0))
+    if not isinstance(data.get("ten_bit", False), bool):
+        raise ValueError("ten_bit must be a boolean")
+    validate_keyframe_seconds(data.get("keyframe_seconds", 0))
 
     resolution_mode = data.get("resolution_mode", RES_MODE_SOURCE)
     if resolution_mode not in VALID_RES_MODES:

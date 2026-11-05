@@ -862,6 +862,7 @@ impl BackendCommand {
             | Self::ReleaseMediaToken { .. }
             | Self::CreatePlan { .. }
             | Self::EstimateSize { .. }
+            | Self::CheckTenBit { .. }
             | Self::JoinVideos { .. }
             | Self::CompilePreviewMix { .. }
             | Self::EnqueueWithOptions { .. }
@@ -963,6 +964,15 @@ mod launch_config_tests {
             BackendCommand::CancelSizeEstimate.timeout(),
             LIGHT_REQUEST_TIMEOUT
         );
+    }
+
+    #[test]
+    fn ten_bit_check_waits_for_a_gpu_driver() {
+        // a first test frame can wait on the driver starting, like the other media work
+        let check = BackendCommand::CheckTenBit {
+            encoder: "hevc_nvenc".into(),
+        };
+        assert_eq!(check.timeout(), MEDIA_REQUEST_TIMEOUT);
     }
 
     #[test]

@@ -643,6 +643,10 @@ body.settings-open .settings-dialog {
 .settings-dialog .set-input.mono input {
   font: 400 calc(12px * var(--text-scale)) var(--mono);
 }
+/* a placeholder is words ("No limit", "Set by Size"), not a value */
+.settings-dialog .set-input.mono input::placeholder {
+  font: 400 calc(13px * var(--text-scale)) var(--font);
+}
 .settings-dialog .set-input input::-webkit-inner-spin-button,
 .settings-dialog .set-input input::-webkit-outer-spin-button,
 .settings-dialog .set-input input::-webkit-search-cancel-button {

@@ -17,9 +17,18 @@ import {
   nativePresetForSpeed,
   speedForNativePreset,
   twoPassEligible,
+  type RateControlDisplay,
   type Workflow,
 } from "../export/encoder-options.ts";
 import { clampQuality, defaultQualityLevel, qualityMethod, qualityPicks } from "../export/goal.ts";
+import {
+  KEYFRAME_CHOICES,
+  formatMbps,
+  keyframeLabel,
+  maxBitrateRow,
+  parseMaxBitrate,
+  tenBitRow,
+} from "../export/encoding-extras.ts";
 import {
   populateEncoderSelect,
   populatePresetSelect,
@@ -117,6 +126,9 @@ const DEFAULT_COMPRESSION_SUFFIX = "_tucked_{size}";
 const DEFAULT_UPSCALE_SUFFIX = "_upscaled_{width}x{height}";
 const DEFAULT_CUT_SUFFIX = "_cut";
 const EXAMPLE_NAME = "Morning ride";
+// a lone field in a row takes a select's width (`.set-row-control .custom-select`), so a card's
+// controls share one left edge and a field's placeholder fits
+const FIELD_WIDTH = 200;
 
 // the page heading can say more than the short name in the sidebar
 const HEADINGS: Partial<Record<SettingsPage, string>> = { keyboard: "Keyboard shortcuts" };
@@ -651,7 +663,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         sub: true,
         hidden: location !== "subfolder",
         control: [textInput("set-subfolder", str(s.output_subfolder, "Tucked"), "Folder name", {
-          width: 200,
+          width: FIELD_WIDTH,
           attributes: { "data-settings-change": "save" },
         }), fieldError("set-subfolder")],
       }),
@@ -1775,7 +1787,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         label: "Frame rate",
         labelFor: "pe-fps",
         sub: true,
-        control: textInput("pe-fps", "30", "Custom frame rate", { mono: true, width: 96, unit: "fps", attributes: { type: "number", step: "any", min: "0.1", max: "240", "data-settings-input": "profile-fps" } }),
+        control: textInput("pe-fps", "30", "Custom frame rate", { mono: true, width: FIELD_WIDTH, unit: "fps", attributes: { type: "number", step: "any", min: "0.1", max: "240", "data-settings-input": "profile-fps" } }),
       })),
     )), section("Transform", card(
       editorSwitch("pe-transform-enabled", "Apply transform settings from this profile", "pe-transform", "profile-visibility",
@@ -1791,7 +1803,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         label: "Audio bitrate",
         labelFor: "pe-audio",
         sub: true,
-        control: textInput("pe-audio", "128", "Audio bitrate in kbps", { mono: true, width: 104, unit: "kbps", attributes: { type: "number", min: "0", max: "320" } }),
+        control: textInput("pe-audio", "128", "Audio bitrate in kbps", { mono: true, width: FIELD_WIDTH, unit: "kbps", attributes: { type: "number", min: "0", max: "320" } }),
       }),
     )), section("Encoding", card(
       row({
@@ -1825,7 +1837,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       },
       h("span", { class: "set-row-text" }, h("span", { class: "set-row-words" },
         h("span", { class: "set-label" }, "Advanced encoding"),
-        h("span", { class: "set-desc" }, "Preset, quality method, bitrate, and tune"))),
+        h("span", { class: "set-desc" }, "Preset, quality method, bitrate, 10-bit and keyframes"))),
       h("span", { class: "set-row-control" }, icon("chevron"))),
       h("div", { id: "pe-advanced", class: "hid" },
         row({ setting: "pe-preset", label: "Native FFmpeg preset", labelFor: "pe-preset", sub: true, control: emptySelect("pe-preset", "profile-preset") }),
@@ -1836,13 +1848,111 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
             h("span", { class: "set-desc" }, "Lower value means higher quality."))),
           h("span", { class: "set-row-control" },
             // the label above names it, and it changes with the quality method
-            textInput("pe-quality", "23", "", { mono: true, width: 88, attributes: { type: "number", min: "0", max: "51", "aria-label": undefined } }))),
-        h("div", { id: "pe-bitrate-row" }, row({ setting: "pe-bitrate", label: "Bitrate", labelFor: "pe-bitrate", sub: true, control: textInput("pe-bitrate", "2000", "Bitrate in kbps", { mono: true, width: 112, unit: "kbps", attributes: { type: "number", min: "50", max: "50000" } }) })),
-        h("div", { id: "pe-tune-row" }, row({ setting: "pe-tune", label: "Tune", labelFor: "pe-tune", sub: true, control: emptySelect("pe-tune") }))),
+            textInput("pe-quality", "23", "", { mono: true, width: FIELD_WIDTH, attributes: { type: "number", min: "0", max: "51", "aria-label": undefined } }))),
+        h("div", { id: "pe-bitrate-row" }, row({ setting: "pe-bitrate", label: "Bitrate", labelFor: "pe-bitrate", sub: true, control: textInput("pe-bitrate", "2000", "Bitrate in kbps", { mono: true, width: FIELD_WIDTH, unit: "kbps", attributes: { type: "number", min: "50", max: "50000" } }) })),
+        h("div", { id: "pe-tune-row" }, row({ setting: "pe-tune", label: "Tune", labelFor: "pe-tune", sub: true, control: emptySelect("pe-tune") })),
+        row({
+          setting: "pe-max-bitrate",
+          label: "Max bitrate",
+          labelFor: "pe-max-bitrate",
+          sub: true,
+          // shown only when the encoder can't use it; peVisibility fills it in
+          description: "Needs software or NVIDIA.",
+          control: textInput("pe-max-bitrate", "", "Max bitrate in Mbps", { mono: true, width: FIELD_WIDTH, unit: "Mbps", attributes: { inputmode: "decimal", placeholder: "No limit", "data-settings-change": "profile-max-bitrate" } }),
+        }),
+        switchRow({
+          setting: "pe-ten-bit",
+          id: "pe-ten-bit",
+          label: "10-bit color",
+          description: "10-bit needs H.265.",
+          descriptionId: "pe-ten-bit-note",
+          checked: false,
+          sub: true,
+          attributes: { "data-settings-change": "profile-ten-bit" },
+        }),
+        row({
+          setting: "pe-keyframe",
+          label: "Keyframe every",
+          labelFor: "pe-keyframe",
+          sub: true,
+          control: selectControl("pe-keyframe", KEYFRAME_CHOICES.map((seconds) => [String(seconds), keyframeLabel(seconds)]), "0", { "data-settings-change": "profile-visibility" }),
+        })),
     ))];
   }
 
   let editorCapabilities: PlatformCapabilities | null = null;
+  // as in the Export panel: the typed cap and the 10-bit choice wait out rows that can't use them
+  let peMaxBitrate = 0;
+  let peTenBitWanted = false;
+  const peTenBitSupport = new Map<string, boolean>();
+  const peTenBitAsked = new Set<string>();
+
+  function peEncoder(): string {
+    const selected = select("pe-enc").value;
+    return editorCapabilities ? encoderForPlatform(selected, editorCapabilities) : selected;
+  }
+
+  function peMaxBitrateState() {
+    return maxBitrateRow({
+      workflow: peTask(),
+      goal: peGoal(),
+      rateControl: (select("pe-rc").value as RateControlDisplay) || "CBR",
+      encoder: peEncoder(),
+    });
+  }
+
+  function peTenBitUsed(): boolean {
+    const encoder = peEncoder();
+    return peTenBitWanted && tenBitRow(encoder, peTenBitSupport.get(encoder)).enabled;
+  }
+
+  function pePaintExtras(): void {
+    const cap = peMaxBitrateState();
+    const field = input("pe-max-bitrate");
+    field.disabled = !cap.enabled;
+    field.placeholder = cap.placeholder;
+    if (document.activeElement !== field) field.value = cap.enabled ? formatMbps(peMaxBitrate) : "";
+    const capNote = el("set-row-pe-max-bitrate-desc");
+    capNote.textContent = cap.note;
+    capNote.classList.toggle("hid", !cap.note);
+    const encoder = peEncoder();
+    const tenBit = tenBitRow(encoder, peTenBitSupport.get(encoder));
+    input("pe-ten-bit").disabled = !tenBit.enabled;
+    input("pe-ten-bit").checked = tenBit.enabled && peTenBitWanted;
+    el("pe-ten-bit-note").textContent = tenBit.note;
+    el("pe-ten-bit-note").classList.toggle("hid", !tenBit.note);
+    if (tenBit.enabled && peTenBitWanted) void peAskTenBit(encoder);
+  }
+
+  async function peAskTenBit(encoder: string): Promise<void> {
+    if (peTenBitAsked.has(encoder)) return;
+    peTenBitAsked.add(encoder);
+    const result = await client().checkTenBit(encoder);
+    if (!result.ok) return;
+    peTenBitSupport.set(encoder, result.value.ten_bit);
+    if (!result.value.ten_bit) peVisibility();
+  }
+
+  function peMaxBitrateChanged(): void {
+    peMaxBitrate = parseMaxBitrate(input("pe-max-bitrate").value);
+    input("pe-max-bitrate").value = formatMbps(peMaxBitrate);
+    peVisibility();
+  }
+
+  function peTenBitChanged(): void {
+    peTenBitWanted = input("pe-ten-bit").checked;
+    peVisibility();
+  }
+
+  // a profile from the command line may hold a spacing the list doesn't offer
+  function peSetKeyframe(seconds: number): void {
+    const keyframes = select("pe-keyframe");
+    const value = String(seconds > 0 ? seconds : 0);
+    if (![...keyframes.options].some((option) => option.value === value)) {
+      keyframes.add(new Option(keyframeLabel(seconds), value));
+    }
+    keyframes.value = value;
+  }
 
   function peTask(): Workflow {
     return el("pe-u").classList.contains("on") ? "upscale" : "compression";
@@ -1983,6 +2093,7 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     el("pe-tune-row").classList.toggle("hid", !(up && cpu));
     el("pe-transform-fields").classList.toggle("hid", !input("pe-transform-enabled").checked);
     el("pe-quality-label").textContent = rc === "CRF" ? "CRF value" : "CQ value";
+    pePaintExtras();
     deps.syncSelects();
     updateEditorNote();
   }
@@ -2042,6 +2153,10 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       cq: rc === "cq" ? quality : valueOr(original.cq as number, 23),
       qp: rc === "cqp" ? quality : valueOr(original.qp as number, 23),
       tune: task === "upscale" && isCpuEncoder(encoder) && select("pe-tune").value !== "none" ? select("pe-tune").value : "",
+      // what the rows show is what's saved, so Send To never plans a setting the encoder refuses
+      max_bitrate_mbps: peMaxBitrateState().enabled ? peMaxBitrate : 0,
+      ten_bit: peTenBitUsed(),
+      keyframe_seconds: Number(select("pe-keyframe").value) || 0,
       transform_intent: input("pe-transform-enabled").checked
         ? {
           crop_aspect: select("pe-aspect").value,
@@ -2104,6 +2219,9 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
         : 23,
     );
     input("pe-bitrate").value = String(p ? valueOr(num(p.explicit_bitrate_kbps), 2000) : 2000);
+    peMaxBitrate = p && num(p.max_bitrate_mbps) > 0 ? num(p.max_bitrate_mbps) : 0;
+    peTenBitWanted = !!p && p.ten_bit === true;
+    peSetKeyframe(p ? num(p.keyframe_seconds) : 0);
     peSetTask(p && p.workflow === "upscale" ? "upscale" : "compression");
     const method = String(p ? p.rate_control_method : "cbr");
     const byQuality = !!p && p.workflow !== "upscale" && (method === "crf" || method === "cq" || method === "cqp");
@@ -2652,6 +2770,8 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
       },
       change: {
         "profile-visibility": () => peVisibility(),
+        "profile-max-bitrate": () => peMaxBitrateChanged(),
+        "profile-ten-bit": () => peTenBitChanged(),
         "profile-encoder": () => peEncoderChanged(),
         "profile-speed": () => peSpeedChanged(),
         "profile-preset": () => pePresetChanged(),

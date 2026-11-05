@@ -144,6 +144,10 @@ export interface EncoderPayload extends JsonObject {
   readonly available_encoders: readonly JsonValue[];
 }
 
+export interface TenBitPayload extends JsonObject {
+  readonly ten_bit: boolean;
+}
+
 export interface DownloadProgress extends JsonObject {
   readonly done?: boolean;
   readonly downloading: boolean;
@@ -247,6 +251,8 @@ export interface DomainBackendClient {
   getSettings(): Promise<BackendResult<Settings>>;
   saveSettings(settings: SettingsPatch): Promise<BackendResult<EmptyPayload>>;
   refreshEncoders(): Promise<BackendResult<EncoderPayload>>;
+  // one test frame the first time, then remembered by the backend
+  checkTenBit(encoder: string): Promise<BackendResult<TenBitPayload>>;
   getProfilesJson(): Promise<BackendResult<readonly Profile[]>>;
   createProfile(profile: ProfileInput): Promise<BackendResult<JsonObject>>;
   updateProfile(profileId: string, profile: ProfileInput): Promise<BackendResult<JsonObject>>;

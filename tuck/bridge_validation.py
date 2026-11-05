@@ -16,6 +16,8 @@ from .models import (
     SourceTrackSetting,
     VideoTransform,
     parse_mute_ranges,
+    validate_keyframe_seconds,
+    validate_max_bitrate,
 )
 from .models.encoding_policy import (
     RC_TARGET_SIZE,
@@ -256,6 +258,9 @@ def parse_plan_request(
         workflow=_opt_str(raw, "workflow"),
         rate_control_method=_opt_str(raw, "rate_control_method"),
         qp=_opt_int(raw, "qp"),
+        max_bitrate=_opt_int(raw, "max_bitrate"),
+        ten_bit=_opt_bool(raw, "ten_bit"),
+        keyframe_seconds=_opt_float(raw, "keyframe_seconds"),
         trim_start=_opt_float(raw, "trim_start"),
         trim_end=_opt_float(raw, "trim_end"),
         segments=_parse_segments(raw),
@@ -296,6 +301,19 @@ def normalize_profile_ui_payload(data: dict[str, Any]) -> dict[str, Any]:
                     data["explicit_bitrate"] = int(raw) * 1000
             except (ValueError, TypeError) as e:
                 raise ValueError(str(e)) from e
+
+    if "max_bitrate_mbps" in data and "max_bitrate" not in data:
+        raw = data.pop("max_bitrate_mbps")
+        if isinstance(raw, bool) or not isinstance(raw, (int, float)) or not math.isfinite(raw):
+            raise ValueError("max_bitrate_mbps must be a finite number")
+        # caps are quoted in Mbps and may have a fraction, like 2.5
+        data["max_bitrate"] = round(float(raw) * 1_000_000)
+    if "max_bitrate" in data:
+        validate_max_bitrate(data["max_bitrate"])
+    if "ten_bit" in data and not isinstance(data["ten_bit"], bool):
+        raise ValueError(f"ten_bit must be a boolean, not {type(data['ten_bit']).__name__}")
+    if "keyframe_seconds" in data:
+        validate_keyframe_seconds(data["keyframe_seconds"])
 
     if "two_pass" in data and not isinstance(data["two_pass"], bool):
         raise ValueError(f"two_pass must be a boolean, not {type(data['two_pass']).__name__}")

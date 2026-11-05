@@ -346,6 +346,10 @@ def _refresh_encoders(api: BridgeAPI, params: dict[str, object]) -> object:
     return api.refresh_encoders()
 
 
+def _check_ten_bit(api: BridgeAPI, params: dict[str, object]) -> object:
+    return api.check_ten_bit(_string(params, "encoder"))
+
+
 def _export_settings_to_file(api: BridgeAPI, params: dict[str, object]) -> object:
     return api.export_settings_to_file(_string(params, "path"))
 
@@ -587,6 +591,7 @@ _HANDLERS: dict[str, Handler] = {
     "get_storage_paths": _get_storage_paths,
     "save_settings": _save_settings,
     "refresh_encoders": _refresh_encoders,
+    "check_ten_bit": _check_ten_bit,
     "export_settings_to_file": _export_settings_to_file,
     "import_settings_from_file": _import_settings_from_file,
     "reset_settings": _reset_settings,

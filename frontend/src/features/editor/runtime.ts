@@ -872,6 +872,8 @@ export function installEditorRuntime(
         "encoding-encoder": () => encoding.onEncChange(),
         "encoding-speed": () => encoding.onSpeedChange(),
         "encoding-two-pass": () => encoding.onTwoPassChange(),
+        "encoding-max-bitrate": () => encoding.onMaxBitrate(),
+        "encoding-ten-bit": () => encoding.onTenBit(),
         "encoding-native-preset": () => encoding.onNativePresetChange(),
         "encoding-rate-control": () => encoding.onRcChange(),
       },

@@ -33,6 +33,8 @@ MEDIA_METHODS = frozenset(
         "get_timeline_frames",
         # encodes a few seconds of video, which takes up to about 20 s on a laptop CPU
         "estimate_size",
+        # one test frame, which can wait on a GPU driver starting
+        "check_ten_bit",
     }
 )
 _CONTROL_WORKERS = 4

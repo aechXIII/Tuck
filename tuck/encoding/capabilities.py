@@ -6,6 +6,7 @@ import logging
 import os
 import re
 import subprocess
+import tempfile
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -14,7 +15,7 @@ from functools import partial
 from pathlib import Path
 
 from ..desktop_platform import is_linux_desktop
-from ..media_tools import find_ffmpeg, media_tool_environment
+from ..media_tools import find_ffmpeg, find_ffprobe, media_tool_environment
 from ..models import (
     ENCODER_AUTO,
     ENCODER_AUTO_COMPRESSION,
@@ -23,6 +24,7 @@ from ..models import (
 from ..models.encoding_policy import (
     AMF_ENCODERS,
     CPU_ENCODERS,
+    HEVC_ENCODERS,
     NVENC_ENCODERS,
     VAAPI_ENCODERS,
     VALID_VIDEO_ENCODERS,
@@ -569,3 +571,75 @@ def get_available_filters() -> frozenset[str]:
 
 def can_tone_map_hdr() -> bool:
     return TONE_MAP_FILTERS.issubset(get_available_filters())
+
+
+_ten_bit_cache: dict[tuple[str, str], bool] = {}
+_ten_bit_lock = threading.Lock()
+
+
+def encoder_makes_ten_bit(encoder: str) -> bool:
+    """Whether this FFmpeg and driver make 10-bit H.265 with the encoder, from one test frame.
+
+    Asked when someone first turns 10-bit on rather than at start, where every encoder check
+    adds to the wait before Tuck shows a video.
+    """
+    if encoder not in HEVC_ENCODERS:
+        return False
+    ffmpeg = find_ffmpeg()
+    ffprobe = find_ffprobe()
+    if not ffmpeg or not ffprobe:
+        return False
+    key = (environment_fingerprint(ffmpeg) if is_linux_desktop() else ffmpeg, encoder)
+    with _ten_bit_lock:
+        if key not in _ten_bit_cache:
+            _ten_bit_cache[key] = _test_ten_bit(ffmpeg, ffprobe, encoder)
+        return _ten_bit_cache[key]
+
+
+def _test_ten_bit(ffmpeg: str, ffprobe: str, encoder: str) -> bool:
+    command = [ffmpeg, "-hide_banner", "-loglevel", "error"]
+    if encoder in VAAPI_ENCODERS:
+        device = choose_encode_device(ffmpeg, encoder)
+        if device is None:
+            return False
+        command += device.init_args
+    command += ["-f", "lavfi", "-i", "color=c=black:s=1280x720:d=0.1", "-frames:v", "1", "-an"]
+    if encoder in VAAPI_ENCODERS:
+        command += ["-vf", "format=p010,hwupload", "-c:v", encoder, "-profile:v", "main10"]
+        command += ["-rc_mode", "CQP", "-qp", "23"]
+    elif encoder in CPU_ENCODERS:
+        command += ["-c:v", encoder, "-pix_fmt", "yuv420p10le"]
+    else:
+        command += ["-c:v", encoder, "-pix_fmt", "p010le", "-profile:v", "main10"]
+    run = partial(
+        subprocess.run,
+        env=media_tool_environment(),
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=15,
+        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+    )
+    try:
+        with tempfile.TemporaryDirectory(prefix="tuck-10bit-") as folder:
+            output = str(Path(folder) / "frame.mkv")
+            encoded = run([*command, output])
+            if encoded.returncode != 0:
+                logger.info("%s can't make 10-bit: %s", encoder, encoded.stderr.strip())
+                return False
+            # an 8-bit build quietly falls back to 8-bit and still succeeds, so read the result
+            probed = run(
+                [
+                    *(ffprobe, "-v", "error", "-select_streams", "v:0"),
+                    *("-show_entries", "stream=pix_fmt", "-of", "csv=p=0", output),
+                ]
+            )
+    except (OSError, subprocess.SubprocessError):
+        logger.info("Could not test 10-bit with %s", encoder, exc_info=True)
+        return False
+    pixel_format = probed.stdout.strip()
+    if "10" not in pixel_format:
+        logger.info("%s made %s instead of 10-bit", encoder, pixel_format or "nothing")
+        return False
+    return True

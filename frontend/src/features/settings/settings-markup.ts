@@ -131,6 +131,8 @@ export interface SwitchOptions {
   /** an id the description must keep because other code shows or hides it */
   readonly descriptionId?: string;
   readonly attributes?: Attributes;
+  /** indented under a disclosure, like row's sub */
+  readonly sub?: boolean;
 }
 
 /** A whole row that toggles a switch; the label names it and the description describes it. */
@@ -140,7 +142,7 @@ export function switchRow(options: SwitchOptions): HTMLElement {
   const described = options.description ? descriptionId : undefined;
   return h(
     "label",
-    { class: `set-row toggle-row${options.icon ? " has-icon" : ""}`, "data-setting": options.setting },
+    { class: `set-row toggle-row${options.sub ? " sub" : ""}${options.icon ? " has-icon" : ""}`, "data-setting": options.setting },
     rowText(id, options.label, undefined, options.description ?? "", null, false, options.icon, descriptionId),
     h("input", {
       type: "checkbox",

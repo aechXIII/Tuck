@@ -690,8 +690,10 @@
 .video-dimensions input { width: 100%; box-sizing: border-box; }
 .video-dimensions > span { align-self: end; line-height: calc(30px * var(--text-scale)); color: var(--muted); text-align: center; }
 .video-fps-controls { display: grid; gap: calc(8px * var(--density-scale)); min-width: 0; }
-.video-fps-value { display: flex; align-items: center; min-width: 0; background: var(--raised); border-radius: var(--r-ctl); padding-right: 8px; color: var(--muted); font-size: calc(10px * var(--text-scale)); }
-.video-fps-value input { width: 100%; }
+.video-fps-value, .max-bitrate-value { display: flex; align-items: center; min-width: 0; background: var(--raised); border-radius: var(--r-ctl); padding-right: 8px; color: var(--muted); font-size: calc(10px * var(--text-scale)); }
+.video-fps-value input, .max-bitrate-value input { width: 100%; }
+.max-bitrate-value:has(input:disabled) { color: var(--dim); }
+#max-bitrate-note { display: block; margin-left: 114px; }
 .export-video-body input[type="number"] { height: var(--control-height); min-width: 0; }
 .export-video-body :is(input, select, summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .export-video-body [hidden] { display: none; }

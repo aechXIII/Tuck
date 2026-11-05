@@ -34,7 +34,9 @@ from ..models import (
 )
 from ..models.encoding_policy import (
     AMF_ENCODERS,
+    CAPPABLE_QUALITY_ENCODERS,
     CPU_ENCODERS,
+    HEVC_ENCODERS,
     NVENC_ENCODERS,
     VAAPI_ENCODERS,
     native_preset_for_encoder,
@@ -498,11 +500,21 @@ def vbr_limits(bitrate: int) -> tuple[int, int]:
     return maxrate, int(maxrate * VBR_BUFSIZE_FACTOR)
 
 
+def _cap_args(plan: EncodePlan) -> list[str]:
+    """A quality level's peak: a buffer as large as the cap keeps each second near it, where a
+    buffer twice the cap let single seconds reach 1.6 times it (x264, 5 Nov)."""
+    if not plan.bitrate_cap:
+        return []
+    return ["-maxrate", str(plan.bitrate_cap), "-bufsize", str(plan.bitrate_cap)]
+
+
 def _rate_control_args(plan: EncodePlan) -> list[str]:
     encoder = plan.video_encoder
     rc_method = plan.rate_control_method
     bitrate = plan.video_bitrate if plan.video_bitrate > 0 else _FALLBACK_BITRATE
     maxrate, bufsize = vbr_limits(bitrate)
+    if plan.bitrate_cap and encoder not in CAPPABLE_QUALITY_ENCODERS:
+        raise ValueError(f"{encoder} can't cap a quality level's bitrate")
     if encoder in VAAPI_ENCODERS:
         preset = native_preset_for_encoder(plan.preset, encoder)
         # FFmpeg clamps this speed/quality choice to the driver's supported range
@@ -545,7 +557,7 @@ def _rate_control_args(plan: EncodePlan) -> list[str]:
         if plan.tune:
             args += ["-tune", plan.tune]
         if rc_method == RCM_CRF:
-            return [*args, "-crf", str(plan.crf)]
+            return [*args, "-crf", str(plan.crf), *_cap_args(plan)]
         if rc_method == RCM_CBR:
             return [
                 *args,
@@ -564,10 +576,15 @@ def _rate_control_args(plan: EncodePlan) -> list[str]:
         args = ["-preset", nvenc_preset(plan.preset)]
         if rc_method == RCM_CQ:
             args += ["-rc", "vbr", "-cq", str(plan.cq)]
+            if plan.bitrate_cap:
+                return [*args, *_cap_args(plan)]
             if plan.video_bitrate > 0:
                 args += ["-b:v", str(plan.video_bitrate), "-maxrate", str(plan.video_bitrate * 2)]
             return args
         if rc_method == RCM_CQP:
+            if plan.bitrate_cap:
+                # constant QP has no peak; NVENC's quality-targeted VBR keeps the level and the cap
+                return [*args, "-rc", "vbr", "-cq", str(plan.qp), *_cap_args(plan)]
             return [*args, "-rc", "constqp", "-qp", str(plan.qp)]
         if rc_method == RCM_CBR:
             return [*args, "-rc", "cbr", "-b:v", str(bitrate)]
@@ -597,6 +614,43 @@ def _rate_control_args(plan: EncodePlan) -> list[str]:
             ]
         return args
     return []
+
+
+def vaapi_upload_format(plan: EncodePlan) -> str:
+    return "p010" if plan.ten_bit else "nv12"
+
+
+def keyframe_interval(plan: EncodePlan) -> int:
+    """Frames between keyframes at the export's frame rate, or 0 for the encoder's own."""
+    if plan.keyframe_seconds <= 0:
+        return 0
+    fps = plan.target_fps or (plan.source_info.fps if plan.source_info is not None else 0.0)
+    if fps <= 0:
+        return 0
+    return max(1, round(plan.keyframe_seconds * fps))
+
+
+def _picture_args(plan: EncodePlan) -> list[str]:
+    encoder = plan.video_encoder
+    if plan.ten_bit and encoder not in HEVC_ENCODERS:
+        raise ValueError("10-bit color needs an H.265 encoder")
+    args: list[str] = []
+    if encoder not in VAAPI_ENCODERS:
+        # VAAPI takes its format from the upload, the others from here
+        if not plan.ten_bit:
+            pixel_format = "yuv420p"
+        elif encoder in CPU_ENCODERS:
+            pixel_format = "yuv420p10le"
+        else:
+            pixel_format = "p010le"
+        args += ["-pix_fmt", pixel_format]
+    if plan.ten_bit and encoder not in CPU_ENCODERS:
+        # x265 picks Main 10 from the pixel format; the hardware encoders need telling
+        args += ["-profile:v", "main10"]
+    interval = keyframe_interval(plan)
+    if interval:
+        args += ["-g", str(interval)]
+    return args
 
 
 def build_base_cmd(
@@ -927,7 +981,7 @@ def build_base_cmd(
         if vaapi:
             # upload only after all software filters, including the blend's final colour tags
             graph_parts = [part.replace("[vout]", "[vsoftware]") for part in graph_parts]
-            graph_parts.append("[vsoftware]format=nv12,hwupload[vout]")
+            graph_parts.append(f"[vsoftware]format={vaapi_upload_format(plan)},hwupload[vout]")
         cmd += ["-filter_complex", ";".join(graph_parts), "-map", "[vout]"]
         if filtered_audio:
             cmd += ["-map", "[aout]"]
@@ -944,7 +998,7 @@ def build_base_cmd(
             for track in kept_tracks:
                 cmd += ["-map", f"{_source_audio(track.index)}?"]
         if vaapi:
-            video_filters += ["format=nv12", "hwupload"]
+            video_filters += [f"format={vaapi_upload_format(plan)}", "hwupload"]
         if video_filters:
             cmd += ["-vf", join_video_filters(video_filters)]
     if subtitle_map:
@@ -952,10 +1006,7 @@ def build_base_cmd(
         # only subtitle format MP4 holds as text
         cmd += ["-map", subtitle_map, "-c:s", "mov_text"]
 
-    cmd += ["-c:v", plan.video_encoder, *_rate_control_args(plan)]
-
-    if not vaapi:
-        cmd += ["-pix_fmt", "yuv420p"]
+    cmd += ["-c:v", plan.video_encoder, *_rate_control_args(plan), *_picture_args(plan)]
     if plan.tone_map_hdr:
         # the tone-mapped picture is BT.709 SDR, so say so instead of keeping the HDR tags
         cmd += ["-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709"]

@@ -145,6 +145,9 @@ pub enum BackendCommand {
         settings: Value,
     },
     RefreshEncoders,
+    CheckTenBit {
+        encoder: String,
+    },
     ExportSettingsToFile {
         path: String,
     },
@@ -333,6 +336,7 @@ impl BackendCommand {
             Self::GetSettings => ("get_settings", json!({})),
             Self::SaveSettings { settings } => ("save_settings", json!({ "settings": settings })),
             Self::RefreshEncoders => ("refresh_encoders", json!({})),
+            Self::CheckTenBit { encoder } => ("check_ten_bit", json!({ "encoder": encoder })),
             Self::ExportSettingsToFile { path } => {
                 ("export_settings_to_file", json!({ "path": path }))
             }
@@ -441,6 +445,21 @@ mod tests {
         let envelope = cancel.to_sidecar_request("estimate-2").unwrap();
         assert_eq!(envelope["method"], "cancel_size_estimate");
         assert_eq!(envelope["params"], json!({}));
+    }
+
+    #[test]
+    fn ten_bit_check_names_its_encoder() {
+        let check: BackendCommand = serde_json::from_value(
+            json!({ "command": "check_ten_bit", "payload": { "encoder": "hevc_vaapi" } }),
+        )
+        .expect("10-bit check is allowlisted");
+        let envelope = check.to_sidecar_request("ten-bit").unwrap();
+        assert_eq!(envelope["method"], "check_ten_bit");
+        assert_eq!(envelope["params"], json!({ "encoder": "hevc_vaapi" }));
+        assert!(
+            serde_json::from_value::<BackendCommand>(json!({ "command": "check_ten_bit" }))
+                .is_err()
+        );
     }
 
     #[test]

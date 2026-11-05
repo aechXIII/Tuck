@@ -77,6 +77,27 @@ CPU_ENCODERS: frozenset[str] = frozenset({"libx264", "libx265"})
 NVENC_ENCODERS: frozenset[str] = frozenset({"h264_nvenc", "hevc_nvenc"})
 AMF_ENCODERS: frozenset[str] = frozenset({"h264_amf", "hevc_amf"})
 VAAPI_ENCODERS: frozenset[str] = frozenset({"h264_vaapi", "hevc_vaapi"})
+HEVC_ENCODERS: frozenset[str] = frozenset({"libx265", "hevc_nvenc", "hevc_amf", "hevc_vaapi"})
+
+
+def validate_ten_bit_for_encoder(ten_bit: bool, video_encoder: str) -> None:
+    # almost nothing plays 10-bit H.264, and Auto always starts on H.264
+    if ten_bit and video_encoder not in HEVC_ENCODERS:
+        raise ValueError("10-bit color needs an H.265 encoder.")
+
+
+# AMF and VAAPI keep a quality level with constant QP, which has no peak. Intel's capped modes
+# drop the quality level instead: QVBR spends the whole cap (20 Mbps where QP 30 needs 7.7) and
+# ICQ ignores the cap (measured 5 Nov on the laptop's Arrow Lake)
+CAPPABLE_QUALITY_ENCODERS: frozenset[str] = CPU_ENCODERS | NVENC_ENCODERS
+
+
+def validate_bitrate_cap_for_encoder(bitrate_cap: int, video_encoder: str) -> None:
+    if bitrate_cap and video_encoder in AMF_ENCODERS | VAAPI_ENCODERS:
+        raise ValueError(
+            "Only software and NVIDIA encoders can cap a Quality export's bitrate. "
+            "Choose one of them or clear Max bitrate."
+        )
 
 
 def validate_encoder_supported_on_desktop(video_encoder: str) -> None:
