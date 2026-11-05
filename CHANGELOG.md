@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.7.1] - 2026-11-05
+
+### Size or Quality
+
+Compress can now aim for a quality level instead of a size. The Export card shows Size and Quality side by side, and with Quality picked, Tuck estimates how big the file will be.
+
+- Works in profiles, Send To and the command line (`--quality`)
+- Files are named by their level, like `clip_tucked_CRF23.mp4`
+
+### Added
+
+- Add a whole folder of videos
+- Compress only the videos you chose in the Library
+- Codec and CPU or GPU buttons on the Export card
+- Show in folder and Copy file in the Library's right-click menu
+- Option to copy a video when its export finishes
+
+### Changed
+
+- Target size is now called Size
+- Faster opening and closing, especially after a reboot or update
+- Timeline frames and waveforms appear sooner
+- Faster exports to a size limit, usually one encode instead of two
+- Videos sent to an open Tuck are shown right away
+- Starting and closing screens only appear when Tuck is slow
+
+### Fixed
+
+- Black window with hardware playback on NVIDIA on Linux
+- White flash when Tuck opens
+
 ## [0.7.0] - 2026-10-28
 
 ### Hardware playback

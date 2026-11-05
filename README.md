@@ -28,7 +28,7 @@
 
 Tuck is a free and open-source video editor for Windows and Linux, built on FFmpeg. Use it to cut out the parts you don't want, edit the audio, crop a video for a phone screen, or get it under an upload limit.
 
-<img src="docs/screenshots/editor.png" alt="The Tuck editor with the Export tab open: a 20 MB target, frame blending from 300 to 60 fps, and a timeline with the middle part removed and music added">
+<img src="docs/screenshots/editor.png" alt="The Tuck editor with the Export tab open: a size of 20 MB, frame blending from 300 to 60 fps, and a timeline with the middle part removed and music added">
 
 ## Download
 
@@ -49,18 +49,19 @@ If anything goes wrong, see the [install guide](https://tuck.video/guide/#instal
 - Cut out what you don't want. The timeline shows thumbnails to help you find the right spot, and playback skips what you cut, so you see the result before you export.
 - If your recording has separate game and mic audio, each one gets its own row and volume. You can add music, even out the loudness, and export everything as one track or keep the tracks separate.
 - Crop by dragging on the video, or pick a ratio like 9:16 for TikTok or YouTube Shorts. You can also rotate, flip, and resize.
-- Tell Tuck a size, like 20 or 50 MB, and it picks the quality so the video fits under an upload limit.
+- Tell Tuck a size, like 20 or 50 MB, and it picks the quality so the video fits under an upload limit. Or pick a quality level, and Tuck shows about how big the file will be.
 - **Lossless cut** doesn't re-encode, so you keep the original quality and the export is much faster. Each part has to start on a keyframe, so it may begin a moment after your cut. Switch to **Exact** when that matters.
 - Join several videos into one, or copy one video's edits onto others.
 - Upscale to 1440p, 4K, or any size you like.
 - Turn a 240 fps recording into smooth 60 fps video with motion blur.
 - Add a LUT (a `.cube` file) to change the look, and split the preview to see before and after.
 - Save any frame as a full-resolution PNG.
+- Add a whole folder of videos at once, then compress all of them or just the ones you pick.
 - Queue up several exports and retry any that fail. Exports you didn't finish come back the next time you open Tuck.
-- Copy finished files and paste them into a chat or a folder. On Linux you can drag them out of Tuck, too.
+- Copy finished files and paste them into a chat or a folder, or have Tuck copy a video as soon as it's exported. On Linux you can drag them out of Tuck, too.
 - Your graphics card plays the preview and can speed up exports: NVIDIA or AMD on Windows, and NVIDIA, Intel, or AMD on Linux. Tuck only offers what works on your computer.
 - Save your usual settings as a profile. On Windows, add it to File Explorer's **Send To** menu and send videos to it with a right-click.
-- On Windows, you can also compress from a terminal with `tuck compress clip.mp4 --size 25`. The [command line guide](https://tuck.video/guide/#command-line) shows the rest.
+- On Windows, you can also compress from a terminal with `tuck compress clip.mp4 --size 25` or `--quality 23`. The [command line guide](https://tuck.video/guide/#command-line) shows the rest.
 
 <img src="docs/screenshots/crop.png" alt="A 9:16 crop frame with its handles over a 16:9 gameplay video">
 
