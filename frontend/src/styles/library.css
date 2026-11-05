@@ -120,6 +120,112 @@
   font-family: var(--font);
   cursor: pointer;
 }
+/* Find and Sort, under Add videos: Sort takes the row and its menu its width; the search icon
+   grows into a field across the row, over Sort, while Find is open */
+.lib-find-row {
+  display: flex;
+  gap: calc(4px * var(--density-scale));
+  min-height: calc(30px * var(--density-scale));
+}
+.lib-find-row[hidden] {
+  display: none;
+}
+.lib-find-open {
+  flex: none;
+  width: calc(30px * var(--density-scale));
+  height: calc(30px * var(--density-scale));
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: var(--raised);
+  color: var(--muted);
+  cursor: pointer;
+}
+.lib-find-open:hover {
+  color: var(--text);
+}
+.lib-find-open[hidden],
+.lib-sort[hidden] {
+  display: none;
+}
+.lib-find-open svg,
+.lib-find-field > svg,
+.lib-find-close svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+.lib-sort {
+  flex: 1;
+  min-width: 0;
+}
+.lib-sort .custom-select,
+.lib-sort .select-trigger {
+  width: 100%;
+  height: calc(30px * var(--density-scale));
+}
+.lib-find-field {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 3px 0 9px;
+  border-radius: 6px;
+  background: var(--raised);
+  color: var(--dim);
+}
+.lib-find-field[hidden] {
+  display: none;
+}
+.lib-find-field:focus-within {
+  box-shadow: inset 0 0 0 1px var(--accent-light);
+}
+.lib-find-field input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: 500 calc(12px * var(--text-scale)) var(--font);
+  outline: none;
+}
+.lib-find-count {
+  flex: none;
+  color: var(--dim);
+  font-size: calc(11px * var(--text-scale));
+  font-variant-numeric: tabular-nums;
+}
+.lib-find-close {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.lib-find-close:hover {
+  background: var(--sel);
+  color: var(--text);
+}
+.c2 .find-match {
+  text-decoration: underline;
+  text-decoration-color: var(--accent-light);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
 #clips {
   flex: 1;
   overflow-y: auto;

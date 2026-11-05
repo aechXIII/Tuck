@@ -17,6 +17,8 @@ export interface ProbeData {
   readonly format?: string;
   readonly video_codec?: string;
   readonly audio_codec?: string;
+  /** the file's last change, in seconds since 1970, for sorting the Library by date */
+  readonly modified?: number;
   readonly [key: string]: unknown;
 }
 

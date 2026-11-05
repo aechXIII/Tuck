@@ -36,6 +36,8 @@ export interface ClipCardEvent {
 export interface ClipCardModel {
   path: string;
   name?: string;
+  // where Find matched the name, underlined in the row
+  match?: [number, number] | undefined;
   selected?: boolean | undefined;
   queueItemId?: string | undefined;
   queueState?: QueueItemState | "" | undefined;
@@ -449,7 +451,16 @@ export function createClipCard<T extends ClipCardElement>(
 
   appendThumbnail(documentRef, card, model);
   const main = createElement(documentRef, "div", "c1");
-  main.appendChild(createElement(documentRef, "div", "c2", name));
+  const nameElement = createElement(documentRef, "div", "c2");
+  const match = model.match;
+  if (match && typeof name === "string") {
+    nameElement.appendChild(createElement(documentRef, "span", undefined, name.slice(0, match[0])));
+    nameElement.appendChild(createElement(documentRef, "span", "find-match", name.slice(match[0], match[1])));
+    nameElement.appendChild(createElement(documentRef, "span", undefined, name.slice(match[1])));
+  } else {
+    nameElement.textContent = String(name);
+  }
+  main.appendChild(nameElement);
   appendLine(documentRef, main, model);
   card.appendChild(main);
 

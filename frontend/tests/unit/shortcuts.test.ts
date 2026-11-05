@@ -51,6 +51,7 @@ test("production commands are the source of the existing shortcut guide", () => 
   assert.deepEqual(defaultBindings, {
     "file.add-videos": ["Ctrl+O"],
     "file.paste-videos": ["Ctrl+V"],
+    "library.find": ["Ctrl+F"],
     "media.remove-current": ["Ctrl+Delete", "Ctrl+Backspace"],
     "settings.open": ["Ctrl+,"],
     "app.exit": ["Ctrl+Q"],
@@ -110,6 +111,7 @@ test("production commands are the source of the existing shortcut guide", () => 
         column: 0,
         items: [
           { label: "Add videos", bindings: "Ctrl + O" },
+          { label: "Find a video", bindings: "Ctrl + F" },
           { label: "Paste videos", bindings: "Ctrl + V" },
           { label: "Remove video", bindings: "Ctrl + Del or Ctrl + Backspace" },
           { label: "Open settings", bindings: "Ctrl + ," },
@@ -829,7 +831,7 @@ test("the production guide renders every physical key with one base keycap style
     ),
   );
 
-  assert.equal(shortcuts.search(shortcuts.sections, "").total, 30);
+  assert.equal(shortcuts.search(shortcuts.sections, "").total, 31);
   assert.deepEqual(
     Array.from(shortcutIds).filter((id) => !renderedIds.has(id)),
     [],

@@ -199,3 +199,20 @@ class TestUnreadableFilesInPlainWords:
         result = api.probe_file(str(tmp_path / "gone.mp4"))
 
         assert result == {"ok": False, "error": FILE_MISSING_MESSAGE, "code": "invalid_path"}
+
+
+def test_a_probe_gives_the_files_date_for_sorting(tmp_path, monkeypatch, sample_video_path):
+    import os
+
+    import tuck.settings as settings_mod
+
+    monkeypatch.setattr(settings_mod, "_config_dir", lambda: tmp_path / "config")
+    monkeypatch.setattr(settings_mod, "_data_dir", lambda: tmp_path / "data")
+    monkeypatch.setattr(settings_mod, "_cache_dir", lambda: tmp_path / "cache")
+    os.utime(sample_video_path, (1_761_000_000, 1_761_000_000))
+    api = BridgeAPI()
+    first = api.probe_file(str(sample_video_path))
+    assert first["ok"] and first["data"]["modified"] == 1_761_000_000
+    # a probe served from the cache still reads the date as it is now
+    os.utime(sample_video_path, (1_762_000_000, 1_762_000_000))
+    assert api.probe_file(str(sample_video_path))["data"]["modified"] == 1_762_000_000

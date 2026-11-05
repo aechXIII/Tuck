@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import logging
 import subprocess
 import threading
@@ -344,8 +345,11 @@ class BridgeAPI:
             return self._probe_failed(path, e)
         try:
             info = self._probe_once(path)
-
-            return {"ok": True, "data": video_info_dict(info)}
+            data = video_info_dict(info)
+            # the Library sorts by it; a probe served from the cache still reads the file's date now
+            with contextlib.suppress(OSError):
+                data["modified"] = Path(path).stat().st_mtime
+            return {"ok": True, "data": data}
         except Exception as e:
             return self._probe_failed(path, e)
 

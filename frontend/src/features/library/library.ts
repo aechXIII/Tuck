@@ -38,6 +38,7 @@ import {
 } from "./clip-card.ts";
 import { createClipLoader } from "./clip-loader.ts";
 import { createProbeCoordinator, type ProbeCoordinator } from "./probe-coordinator.ts";
+import { FIND_SHOWS_AFTER, findMatch, isLibraryOrder, sortedPaths, type LibraryOrder } from "./library-order.ts";
 
 export interface LibraryEncodingHooks {
   applyProfile?: (force?: boolean) => void;
@@ -73,6 +74,8 @@ export interface LibraryEncodingHooks {
   openMediaSettings?: () => void;
   // the editor picks the player for a video before its preview loads
   choosePlayer?: (path: string) => void;
+  // Tuck's own dropdowns redraw their button after a value set in code, such as Sort's
+  syncSelects?: () => void;
   // the file itself: renamed in a dialog, or moved to the Trash
   renameVideo?: (path: string) => void;
   moveVideosToTrash?: (paths: readonly string[]) => void;
@@ -122,6 +125,10 @@ export interface LibraryApi {
   // the file was renamed: the video keeps its place, edits and undo steps under the new path
   renameClip(from: string, to: string): void;
   focusRow(path: string): void;
+  // Sort's choice: the Library takes that order and keeps it as videos come in
+  setLibraryOrder(order: string): void;
+  openFind(): void;
+  closeFind(returnFocus?: boolean): void;
   selectClip(path: string): void;
   // loads the selected video's preview again, as Retry does, such as for another player
   reloadPreview(): void;
@@ -166,6 +173,10 @@ export function createLibrary(host: LibraryHost): LibraryApi {
   // videos chosen with the one on the stage, with Ctrl or Shift; the Library order, not the
   // order they were chosen in, is the order anything done with them uses
   let picked = new Set<string>();
+  // a chosen order holds as videos are added and read, until a row is dragged
+  let libraryOrder: LibraryOrder = "yours";
+  let findOpen = false;
+  let findQuery = "";
 
   const clipReorder: ClipReorderState = {
     active: false,
@@ -443,6 +454,8 @@ export function createLibrary(host: LibraryHost): LibraryApi {
         );
         host.audio?.onProbe?.(clip);
         host.applySelectedProfileTransform?.(clip, false);
+        // its date, size and length are known now, so it takes its place in a chosen order
+        applyLibraryOrder();
       }
       renderClips();
       if (session.selPath === path) {
@@ -752,6 +765,7 @@ export function createLibrary(host: LibraryHost): LibraryApi {
     order.splice(insertion, 0, fromPath);
     const before = cardTops();
     session.clipOrder = order;
+    showLibraryOrder("yours");
     clipReorder.moved = false;
     renderClips();
     settleCards(before);
@@ -923,6 +937,111 @@ export function createLibrary(host: LibraryHost): LibraryApi {
 
   let renderedClipModels: string | null = null;
 
+  // a chosen order puts the Library in place; true when a row moved
+  function applyLibraryOrder(): boolean {
+    if (libraryOrder === "yours") return false;
+    const current = orderedClipKeys();
+    const next = sortedPaths(current, session.clips, libraryOrder);
+    if (next.every((path, index) => path === current[index])) return false;
+    session.clipOrder = next;
+    void syncPendingQueueToClipOrder();
+    return true;
+  }
+
+  function showLibraryOrder(next: LibraryOrder): void {
+    libraryOrder = next;
+    const sort = byId("lib-sort");
+    if (sort instanceof HTMLSelectElement && sort.value !== next) {
+      sort.value = next;
+      host.syncSelects?.();
+    }
+  }
+
+  function setLibraryOrder(value: string): void {
+    if (!isLibraryOrder(value)) return;
+    showLibraryOrder(value);
+    const before = cardTops();
+    if (applyLibraryOrder()) {
+      renderClips();
+      settleCards(before);
+    }
+  }
+
+  // shown once the Library is long, while Find is open, or once an order was chosen
+  function paintFind(total: number, shown: number): void {
+    const row = byId("lib-find-row");
+    if (!row) return;
+    row.hidden = !(total > FIND_SHOWS_AFTER || findOpen || libraryOrder !== "yours");
+    const count = byId("lib-find-count");
+    if (count) count.textContent = findOpen && findQuery.trim() ? `${shown} of ${total}` : "";
+  }
+
+  function findInput(): HTMLInputElement | null {
+    const input = byId("lib-find-input");
+    return input instanceof HTMLInputElement ? input : null;
+  }
+
+  function openFind(): void {
+    findOpen = true;
+    byId("lib-find-field")?.removeAttribute("hidden");
+    const opener = byId("lib-find-open");
+    if (opener) {
+      opener.hidden = true;
+      opener.setAttribute("aria-expanded", "true");
+    }
+    const sort = byId("lib-sort")?.closest<HTMLElement>(".lib-sort");
+    if (sort) sort.hidden = true;
+    paintFind(orderedClipKeys().length, 0);
+    const input = findInput();
+    input?.focus();
+    input?.select();
+    renderClips();
+  }
+
+  function closeFind(returnFocus = false): void {
+    if (!findOpen) return;
+    findOpen = false;
+    findQuery = "";
+    const input = findInput();
+    if (input) input.value = "";
+    byId("lib-find-field")?.setAttribute("hidden", "");
+    const opener = byId("lib-find-open");
+    if (opener) {
+      opener.hidden = false;
+      opener.setAttribute("aria-expanded", "false");
+    }
+    const sort = byId("lib-sort")?.closest<HTMLElement>(".lib-sort");
+    if (sort) sort.hidden = false;
+    renderClips();
+    if (returnFocus) opener?.focus();
+  }
+
+  {
+    const input = findInput();
+    input?.addEventListener("input", () => {
+      findQuery = input.value;
+      renderClips();
+    });
+    input?.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        // Find closes first; the next Escape is the editor's again
+        event.preventDefault();
+        event.stopPropagation();
+        closeFind(true);
+      } else if (event.key === "Enter" || event.key === "ArrowDown") {
+        const first = shownOrder()[0];
+        if (!first) return;
+        event.preventDefault();
+        selectClip(first);
+        focusCard(first);
+      }
+    });
+    // leaving the field empty puts the icon back
+    input?.addEventListener("blur", () => {
+      if (!input.value.trim()) closeFind(false);
+    });
+  }
+
   function renderClips(): void {
     if (clipReorder.active) return;
     const keys = orderedClipKeys();
@@ -935,6 +1054,7 @@ export function createLibrary(host: LibraryHost): LibraryApi {
     // greyed out rather than hidden, so the Add videos arrow beside it never moves into the spot
     // where Remove all appears once there are videos
     if (removeAll instanceof HTMLButtonElement) removeAll.disabled = !keys.length;
+    paintFind(keys.length, 0);
     if (!keys.length) {
       renderedClipModels = null;
       cdiv.replaceChildren(el);
@@ -996,7 +1116,15 @@ export function createLibrary(host: LibraryHost): LibraryApi {
         canDragOut: finished && dragOut,
       };
     });
-    const nextModels = JSON.stringify(models);
+    // Find leaves the matching rows, each with its match underlined
+    const shownModels = findOpen && findQuery.trim()
+      ? models.flatMap((model) => {
+        const match = findMatch(model.name ?? "", findQuery);
+        return match ? [{ ...model, match }] : [];
+      })
+      : models;
+    paintFind(keys.length, shownModels.length);
+    const nextModels = JSON.stringify(shownModels);
     // keep hover transitions and keyboard focus intact when polling changes nothing
     if (nextModels === renderedClipModels) {
       host.updateActionButtons?.();
@@ -1009,7 +1137,7 @@ export function createLibrary(host: LibraryHost): LibraryApi {
       ? { path: active.closest<HTMLElement>("[data-clip-path]")?.dataset.clipPath ?? "", action: active.dataset.clipAction ?? "" }
       : null;
     cdiv.replaceChildren(el);
-    const groups = groupClipModels(models);
+    const groups = groupClipModels(shownModels);
     for (const group of groups) {
       const section = documentRef.createElement("section");
       section.className = `lib-group lib-group-${group.key}`;
@@ -1061,8 +1189,9 @@ export function createLibrary(host: LibraryHost): LibraryApi {
 
   // the order rows are shown in, which keys and Shift-clicks move through
   function shownOrder(): string[] {
+    const filtering = findOpen && !!findQuery.trim();
     return groupedClipPaths(
-      orderedClipKeys().map((path) => ({
+      orderedClipKeys().filter((path) => !filtering || !!findMatch(session.clips[path]?.name ?? "", findQuery)).map((path) => ({
         path,
         name: session.clips[path]?.name || path,
         queueState: session.clips[path]?._queueState || "",
@@ -1377,6 +1506,7 @@ export function createLibrary(host: LibraryHost): LibraryApi {
       if (!firstAdded) firstAdded = path;
       added += 1;
     }
+    applyLibraryOrder();
     renderClips();
     const order = orderedClipKeys();
     thumbnails.add(order.filter((path) => session.clips[path]?._thumbnail === undefined));
@@ -1460,6 +1590,9 @@ export function createLibrary(host: LibraryHost): LibraryApi {
     releaseFiles,
     renameClip,
     focusRow: focusCard,
+    setLibraryOrder,
+    openFind,
+    closeFind,
     removeAllClips,
     selectClip,
     reloadPreview: () => {

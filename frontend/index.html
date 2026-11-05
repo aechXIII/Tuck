@@ -207,6 +207,49 @@
               </svg>
             </button>
           </div>
+          <!-- Find and Sort: shows once the Library is long; the search icon grows into a field across
+               the row, over Sort, while Find is open -->
+          <div id="lib-find-row" class="lib-find-row" hidden>
+            <button
+              type="button"
+              id="lib-find-open"
+              class="lib-find-open"
+              aria-label="Find a video"
+              data-tip="Find a video"
+              data-shortcut-commands="library.find"
+              data-shortcut-label="Find a video"
+              aria-expanded="false"
+              aria-controls="lib-find-field"
+              data-action-click="library-find-open"
+            >
+              <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M8 5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm-.5 2.5L11 11"></path></svg>
+            </button>
+            <div id="lib-find-field" class="lib-find-field" role="search" hidden>
+              <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M8 5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm-.5 2.5L11 11"></path></svg>
+              <input
+                type="text"
+                id="lib-find-input"
+                placeholder="Find a video"
+                aria-label="Find a video"
+                aria-describedby="lib-find-count"
+                autocomplete="off"
+                spellcheck="false"
+              /><span id="lib-find-count" class="lib-find-count" aria-live="polite"></span
+              ><button type="button" id="lib-find-close" class="lib-find-close" aria-label="Close Find" data-action-click="library-find-close">
+                <svg viewBox="0 0 12 12" aria-hidden="true"><path d="m3 3 6 6M9 3l-6 6"></path></svg>
+              </button>
+            </div>
+            <div class="lib-sort">
+              <select id="lib-sort" aria-label="Library order" data-action-change="library-sort">
+                <option value="yours" selected>Your order</option>
+                <option value="newest">Newest first</option>
+                <option value="oldest">Oldest first</option>
+                <option value="name">Name</option>
+                <option value="largest">Largest first</option>
+                <option value="longest">Longest first</option>
+              </select>
+            </div>
+          </div>
           <!-- shows with two or more videos chosen, and while they are joined into one -->
           <div id="lib-join" class="lib-join" hidden>
             <div class="lib-join-row">

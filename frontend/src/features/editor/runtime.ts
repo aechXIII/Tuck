@@ -465,6 +465,7 @@ export function installEditorRuntime(
     choosePlayer,
     renameVideo: (path) => fileActions?.rename(path),
     moveVideosToTrash: (paths) => fileActions?.moveToTrash(paths),
+    syncSelects: () => selects.sync(windowRef.document),
     windowRef,
     audio,
     history,
@@ -823,6 +824,8 @@ export function installEditorRuntime(
         "settings-open-profiles": () => void settings.open("profiles"),
         "inspector-tab": (target) => panels.setInspectorTab(target.dataset.actionValue ?? ""),
         "browse-videos": () => void library.browse(),
+        "library-find-open": () => library.openFind(),
+        "library-find-close": () => library.closeFind(true),
         "remove-all-clips": () => library.removeAllClips(),
         "browse-audio": () => void audio.browse(),
         "player-step-frame": (target) => player.stepFrame(numericValue(target)),
@@ -905,6 +908,7 @@ export function installEditorRuntime(
           timeline.setTimelineZoomFromSlider((target as HTMLInputElement).value),
       },
       change: {
+        "library-sort": (target) => library.setLibraryOrder((target as HTMLSelectElement).value),
         "encoding-profile": () => encoding.onProfileChange(),
         "encoding-badge-size": (target) =>
           encoding.onBadgeSize((target as HTMLInputElement).value),
@@ -970,6 +974,14 @@ export function installEditorRuntime(
   function installEditorShortcuts(): void {
     shortcuts.registerAction("file.add-videos", () => {
       void library.browse();
+    });
+    shortcuts.registerAction("library.find", {
+      enabled: () => library.orderedClipKeys().length > 0,
+      execute: () => {
+        // at 960 the Library is a drawer, so it opens first
+        if (!windowRef.document.body.classList.contains("library-panel-open")) panels.toggleWorkspacePanel("library");
+        library.openFind();
+      },
     });
     shortcuts.registerAction("file.paste-videos", {
       enabled: () => hasBackendClient(),
