@@ -35,7 +35,6 @@ from ..models import (
 from ..models.cutting import CutPlan
 from ..models.encoding_policy import (
     BITRATE_RC_METHODS,
-    CAPPABLE_QUALITY_ENCODERS,
     QUALITY_RC_METHODS,
     VAAPI_ENCODERS,
     native_preset_for_encoder,
@@ -47,6 +46,7 @@ from ..output_transaction import OutputTransaction
 from .capabilities import (
     HW_FAILURE_SETTINGS,
     auto_encoder_candidates,
+    capped_candidates,
     get_available_encoders,
     hardware_failure_kind,
     is_hardware_encoder,
@@ -207,9 +207,7 @@ class FFmpegEngine:
         )
         if was_auto and plan.bitrate_cap:
             # only some encoders can cap a quality level, so Auto moves on to one that can
-            candidates = tuple(c for c in candidates if c in CAPPABLE_QUALITY_ENCODERS) or (
-                "libx264",
-            )
+            candidates = capped_candidates(candidates)
         if not was_auto and requested not in available and available:
             if is_hardware_encoder(requested):
                 raise EncodeError(

@@ -103,7 +103,11 @@ export interface SettingsDeps {
   byId: <T extends HTMLElement = HTMLElement>(id: string) => T | null;
   getBackendClient: () => BackendClient;
   reloadEditorSettings: (preserveExportSettings?: boolean) => Promise<void>;
-  setAvailableEncoders: (encoders: string[], autoEncoders?: Readonly<Record<string, string>>) => void;
+  setAvailableEncoders: (
+    encoders: string[],
+    autoEncoders?: Readonly<Record<string, string>>,
+    autoEncodersCapped?: Readonly<Record<string, string>>,
+  ) => void;
   // switches the editor to this profile; returns the control that now shows it, if it is showing
   useProfile: (profileId: string) => HTMLElement | null;
   copyDiagnostics: () => void | Promise<void>;
@@ -1416,7 +1420,11 @@ export function installSettings(deps: SettingsDeps): SettingsApi {
     }
     const result = await legacyBackendResult(client().refreshEncoders());
     if (result.ok) {
-      deps.setAvailableEncoders(toStringArray(result.available_encoders), autoEncoderChoices(result.auto_encoders));
+      deps.setAvailableEncoders(
+        toStringArray(result.available_encoders),
+        autoEncoderChoices(result.auto_encoders),
+        autoEncoderChoices(result.auto_encoders_capped),
+      );
       toast("Encoder detection refreshed.", "ok");
       void open("media");
     } else {

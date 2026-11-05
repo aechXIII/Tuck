@@ -469,3 +469,13 @@ def test_real_encode_makes_ten_bit_where_the_encoder_can(busy_source, tmp_path):
         check=True,
     )
     assert result.stdout.strip() == "Main 10,yuv420p10le"
+
+
+def test_auto_says_where_it_starts_once_a_cap_is_set(monkeypatch):
+    monkeypatch.setenv("TUCK_DESKTOP_PLATFORM", "linux")
+    intel = frozenset({"h264_vaapi", "hevc_vaapi", "libx264", "libx265"})
+    assert capabilities.auto_encoder_choices(intel)["auto"] == "h264_vaapi"
+    # Intel can't keep a quality level under a cap, so Auto starts on the CPU then
+    assert capabilities.auto_encoder_choices(intel, capped=True)["auto"] == "libx264"
+    nvidia = frozenset({"h264_nvenc", "libx264"})
+    assert capabilities.auto_encoder_choices(nvidia, capped=True)["auto"] == "h264_nvenc"

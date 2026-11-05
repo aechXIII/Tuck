@@ -718,7 +718,8 @@ export function installEditorRuntime(
       library.noticeMissingTools();
       library.renderClips();
     },
-    setAvailableEncoders: (encoders, autoEncoders) => encoding.setAvailableEncoders(encoders, autoEncoders),
+    setAvailableEncoders: (encoders, autoEncoders, autoEncodersCapped) =>
+      encoding.setAvailableEncoders(encoders, autoEncoders, autoEncodersCapped),
     useProfile: (profileId) => encoding.useProfile(profileId),
     copyDiagnostics: () => queue.copyDiagnostics(),
     checkForUpdates: () => checkUpdatesFromSettings(),

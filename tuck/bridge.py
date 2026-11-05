@@ -1054,6 +1054,8 @@ class BridgeAPI:
             "ffprobe_available": is_ffprobe_available(),
             "available_encoders": sorted(_engine_available_encoders()),
             "auto_encoders": auto_encoder_choices(),
+            # where Auto starts once a Max bitrate is set, which only some encoders can keep
+            "auto_encoders_capped": auto_encoder_choices(capped=True),
             "encoder_capabilities": get_encoder_capabilities().to_dict(),
             "profiles": [profile_ui_dict(profile) for profile in profiles],
         }
@@ -1244,6 +1246,7 @@ class BridgeAPI:
             "ok": True,
             "available_encoders": sorted(encoders),
             "auto_encoders": auto_encoder_choices(encoders),
+            "auto_encoders_capped": auto_encoder_choices(encoders, capped=True),
         }
 
     def check_ten_bit(self, encoder: str) -> BridgeResult:

@@ -23,6 +23,7 @@ from ..models import (
 )
 from ..models.encoding_policy import (
     AMF_ENCODERS,
+    CAPPABLE_QUALITY_ENCODERS,
     CPU_ENCODERS,
     HEVC_ENCODERS,
     NVENC_ENCODERS,
@@ -471,14 +472,26 @@ def auto_encoder_candidates(
     return candidates or ("libx264",)
 
 
-def auto_encoder_choices(available: frozenset[str] | None = None) -> dict[str, str]:
-    """The encoder each Auto choice starts with, for showing it; the runner still falls back."""
+def capped_candidates(candidates: tuple[str, ...]) -> tuple[str, ...]:
+    """Auto's encoders that can hold a quality level under a Max bitrate, in Auto's order."""
+    return tuple(c for c in candidates if c in CAPPABLE_QUALITY_ENCODERS) or ("libx264",)
+
+
+def auto_encoder_choices(
+    available: frozenset[str] | None = None, *, capped: bool = False
+) -> dict[str, str]:
+    """The encoder each Auto choice starts with, for showing it; the runner still falls back.
+    With capped, the one it starts with when a Max bitrate is set."""
     detected = available if available is not None else get_available_encoders()
-    fastest = auto_encoder_candidates(available=detected)[0]
+
+    def first(fastest: bool) -> str:
+        candidates = auto_encoder_candidates(available=detected, fastest=fastest)
+        return (capped_candidates(candidates) if capped else candidates)[0]
+
     return {
-        ENCODER_AUTO: fastest,
-        ENCODER_AUTO_FAST: fastest,
-        ENCODER_AUTO_COMPRESSION: auto_encoder_candidates(available=detected, fastest=False)[0],
+        ENCODER_AUTO: first(True),
+        ENCODER_AUTO_FAST: first(True),
+        ENCODER_AUTO_COMPRESSION: first(False),
     }
 
 

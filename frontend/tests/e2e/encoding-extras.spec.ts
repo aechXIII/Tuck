@@ -164,3 +164,30 @@ test("the profile editor's fields show their whole placeholder and line up with 
     expect(await left(`[data-setting="${setting}"] .set-input`)).toBe(await left("#pe-keyframe-trigger"));
   }
 });
+
+test("with a cap the chips name the encoder Auto will really use", async ({ page }) => {
+  await page.setViewportSize({ width: 1240, height: 800 });
+  const fixture = healthyBackendFixture();
+  fixture.startup.files = ["C:\\videos\\Ranked match clutch.mp4"];
+  fixture.responses.probeFile = { ok: true, data: { duration: 65, width: 2560, height: 1440, fps: 60, has_audio: true, file_size: 480_000_000 } };
+  fixture.responses.getSettings = {
+    ...fixture.responses.getSettings as object,
+    available_encoders: ["h264_amf", "libx264"],
+    // AMD can't keep a quality level under a cap, so Auto starts on the CPU then
+    auto_encoders: { auto: "h264_amf", auto_fast: "h264_amf", auto_compression: "libx264" },
+    auto_encoders_capped: { auto: "libx264", auto_fast: "libx264", auto_compression: "libx264" },
+  };
+  await installFakeBackend(page, fixture);
+  await page.goto("/");
+  await expect(page.locator("#clips .clip")).toHaveCount(1);
+  await openAdvanced(page);
+  await chooseSelect(page, page.locator("#enc-sel-trigger"), "auto_fast");
+  await page.locator('[data-goal-col="quality"]').click();
+  await expect(page.locator("#enc-place")).toHaveText("GPU");
+  await page.locator("#max-bitrate").fill("8");
+  await page.locator("#max-bitrate").press("Tab");
+  await expect(page.locator("#enc-place")).toHaveText("CPU");
+  await page.locator("#max-bitrate").fill("");
+  await page.locator("#max-bitrate").press("Tab");
+  await expect(page.locator("#enc-place")).toHaveText("GPU");
+});

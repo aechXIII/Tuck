@@ -138,7 +138,11 @@ export interface EncodingControlsApi {
   syncResolutionToClip: (force?: boolean) => void;
   updateSizePresets: (value: number) => void;
   updateEncoderOptions: () => void;
-  setAvailableEncoders: (encoders: string[], autoEncoders?: Readonly<Record<string, string>>) => void;
+  setAvailableEncoders: (
+    encoders: string[],
+    autoEncoders?: Readonly<Record<string, string>>,
+    autoEncodersCapped?: Readonly<Record<string, string>>,
+  ) => void;
   snapProf: () => void;
   updateDirty: () => void;
   resetToProfile: () => void;
@@ -198,6 +202,8 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
   let goal: ExportGoal = "size";
   // which encoder each Auto choice starts with, so the chips can name it
   let autoEncoders: Record<string, string> = {};
+  // where Auto starts once a Max bitrate is set: it moves past encoders that can't keep one
+  let autoEncodersCapped: Record<string, string> = {};
   // the typed cap and the 10-bit choice wait out a goal or encoder that can't use them
   let maxBitrateMbps = 0;
   let tenBitWanted = false;
@@ -604,6 +610,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
        ...encodersForPlatform(toStringArray(s.available_encoders), platformCapabilities),
     );
     autoEncoders = autoEncoderChoices(s.auto_encoders);
+    autoEncodersCapped = autoEncoderChoices(s.auto_encoders_capped);
     session.allProfiles.splice(0, session.allProfiles.length, ...toArray(s.profiles));
     const def = typeof s.default_profile_id === "string" ? s.default_profile_id : "";
     if (!lastComp)
@@ -1191,20 +1198,25 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     el("adv-toggle").setAttribute("aria-expanded", String(open));
   }
 
+  // the encoder Auto will really use: with a cap it skips the ones that can't keep it
+  function autoChoices(): Readonly<Record<string, string>> {
+    return maxBitrateUsed() > 0 && Object.keys(autoEncodersCapped).length ? autoEncodersCapped : autoEncoders;
+  }
+
   function chipChoices(): string[] {
     return platformCapabilities ? encodersForPlatform(availEncoders(), platformCapabilities) : availEncoders();
   }
 
   function paintEncoderChips(): void {
     const current = select("enc-sel").value;
-    const now = resolvedEncoder(current, autoEncoders);
+    const now = resolvedEncoder(current, autoChoices());
     const codec = encoderCodec(now);
     const place = encoderPlace(now);
     const otherCodec = codec === "H.264" ? "H.265" : "H.264";
     const otherPlace = place === "CPU" ? "GPU" : "CPU";
     const paint = (id: string, chip: "codec" | "place", label: string, use: string, missing: string) => {
       const button = el<HTMLButtonElement>(id);
-      const target = chipEncoder(current, chip, chipChoices(), autoEncoders);
+      const target = chipEncoder(current, chip, chipChoices(), autoChoices());
       button.textContent = label;
       button.disabled = !target;
       button.title = target ? use : missing;
@@ -1216,7 +1228,7 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
 
   function onEncoderChip(chip: string): void {
     if (chip !== "codec" && chip !== "place") return;
-    const target = chipEncoder(select("enc-sel").value, chip, chipChoices(), autoEncoders);
+    const target = chipEncoder(select("enc-sel").value, chip, chipChoices(), autoChoices());
     if (!target) return;
     select("enc-sel").value = target;
     // the select's own change path repaints its trigger and runs onEncChange
@@ -2460,8 +2472,9 @@ export function installEncodingControls(deps: EncodingControlsDeps): EncodingCon
     syncResolutionToClip,
     updateSizePresets,
     updateEncoderOptions,
-    setAvailableEncoders: (encoders, autos) => {
+    setAvailableEncoders: (encoders, autos, autosCapped) => {
       if (autos) autoEncoders = { ...autos };
+      if (autosCapped) autoEncodersCapped = { ...autosCapped };
       session.availEncoders.splice(
         0,
         session.availEncoders.length,
