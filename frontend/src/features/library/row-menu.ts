@@ -31,6 +31,16 @@ export interface RowMenuHost {
   showInFolder: (path: string) => void;
   // the videos' own files on the clipboard, ready to paste
   copyFiles: (paths: readonly string[]) => void;
+  // the file's own name, in a dialog
+  rename?: (path: string) => void;
+  // out of the Library only, with Undo
+  remove?: (paths: readonly string[]) => void;
+  // the files to the Trash, or the Recycle Bin on Windows
+  moveToTrash?: (paths: readonly string[]) => void;
+  trashName?: () => string;
+  // why a video's file can't be renamed or moved now, or "" when it can
+  renameBusy?: (path: string) => string;
+  fileBusy?: (path: string) => string;
 }
 
 export interface RowMenuApi {
@@ -41,7 +51,7 @@ export interface RowMenuApi {
   close: (returnFocus?: boolean) => void;
 }
 
-type MenuAction = "copy" | "paste" | "paste-all" | "show-in-folder" | "copy-file";
+type MenuAction = "copy" | "paste" | "paste-all" | "show-in-folder" | "copy-file" | "rename" | "remove" | "trash";
 
 interface MenuItem {
   action: MenuAction;
@@ -50,6 +60,8 @@ interface MenuItem {
   keys?: string;
   ariaKeys?: string;
   disabled: boolean;
+  // why it is disabled, shown on hover
+  reason?: string;
   // a line above it starts a new group
   separated?: boolean;
 }
@@ -175,6 +187,33 @@ export function installRowMenu(host: RowMenuHost): RowMenuApi {
       { action: "show-in-folder", label: "Show in folder", disabled: false, separated: true },
       { action: "copy-file", label: targets.length > 1 ? `Copy ${targets.length} files` : "Copy file", disabled: false },
     );
+    if (host.rename) {
+      const reason = host.renameBusy?.(path) ?? "";
+      list.push({ action: "rename", label: "Rename…", keys: "F2", ariaKeys: "F2", disabled: !!reason, reason });
+    }
+    if (host.remove) {
+      list.push({
+        action: "remove",
+        label: "Remove from Library",
+        keys: "Delete",
+        ariaKeys: "Delete",
+        disabled: false,
+        separated: true,
+      });
+    }
+    if (host.moveToTrash) {
+      // several chosen videos move together; ones that are exporting stay
+      const reason = targets.every((target) => host.fileBusy?.(target)) ? host.fileBusy?.(path) ?? "" : "";
+      list.push({
+        action: "trash",
+        label: `Move to ${host.trashName?.() ?? "Trash"}`,
+        keys: "Shift+Delete",
+        ariaKeys: "Shift+Delete",
+        disabled: !!reason,
+        reason,
+        separated: !host.remove,
+      });
+    }
     return list;
   }
 
@@ -215,6 +254,9 @@ export function installRowMenu(host: RowMenuHost): RowMenuApi {
     else if (action === "paste") paste(pasteTargets(path));
     else if (action === "paste-all") paste(host.order());
     else if (action === "show-in-folder") host.showInFolder(path);
+    else if (action === "rename") host.rename?.(path);
+    else if (action === "remove") host.remove?.(pasteTargets(path));
+    else if (action === "trash") host.moveToTrash?.(pasteTargets(path));
     else host.copyFiles(pasteTargets(path));
   }
 
@@ -306,6 +348,7 @@ export function installRowMenu(host: RowMenuHost): RowMenuApi {
       button.setAttribute("aria-label", item.label);
       if (item.detail) button.setAttribute("aria-description", item.detail);
       if (item.disabled) button.setAttribute("aria-disabled", "true");
+      if (item.reason) button.title = item.reason;
       const text = doc.createElement("span");
       text.className = "row-menu-text";
       const label = doc.createElement("span");

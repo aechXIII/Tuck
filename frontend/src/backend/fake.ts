@@ -511,6 +511,18 @@ class DeterministicFakeBackend implements BackendClient {
     return this.#record("copyFile", [path], this.#responses.copyFile ?? notConfigured("File clipboard is not configured"));
   }
 
+  moveVideosToTrash(paths: readonly string[]) {
+    return this.#record(
+      "moveVideosToTrash",
+      [[...paths]],
+      this.#responses.moveVideosToTrash ?? notConfigured("The Trash is not configured"),
+    );
+  }
+
+  renameVideo(path: string, name: string) {
+    return this.#record("renameVideo", [path, name], this.#responses.renameVideo ?? notConfigured("Renaming is not configured"));
+  }
+
   copyFiles(paths: readonly string[]) {
     return this.#record("copyFiles", [[...paths]], this.#responses.copyFiles ?? notConfigured("File clipboard is not configured"));
   }

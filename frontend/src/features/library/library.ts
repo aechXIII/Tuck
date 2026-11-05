@@ -73,6 +73,9 @@ export interface LibraryEncodingHooks {
   openMediaSettings?: () => void;
   // the editor picks the player for a video before its preview loads
   choosePlayer?: (path: string) => void;
+  // the file itself: renamed in a dialog, or moved to the Trash
+  renameVideo?: (path: string) => void;
+  moveVideosToTrash?: (paths: readonly string[]) => void;
 }
 
 export interface LibraryAudioHooks {
@@ -86,6 +89,7 @@ export interface LibraryHistoryHooks {
   updateButtons?: () => void;
   detachClip?: (path: string) => DetachedHistory;
   restoreClip?: (detached: DetachedHistory) => void;
+  renameClip?: (from: string, to: string) => void;
   hasEdits?: (path: string) => boolean;
 }
 
@@ -109,6 +113,15 @@ export interface LibraryApi {
   addFiles(paths: unknown, rejected?: unknown): void;
   removeClip(path: string): void;
   removeAllClips(): void;
+  // the files went to the Trash, so the videos leave without an Undo that would bring back rows
+  // for files that aren't there
+  forgetClips(paths: readonly string[]): void;
+  // stops the preview of the video on the stage when it is one of these, so its file isn't held
+  // open; true when it was on the stage
+  releaseFiles(paths: readonly string[]): boolean;
+  // the file was renamed: the video keeps its place, edits and undo steps under the new path
+  renameClip(from: string, to: string): void;
+  focusRow(path: string): void;
   selectClip(path: string): void;
   // loads the selected video's preview again, as Retry does, such as for another player
   reloadPreview(): void;
@@ -885,6 +898,12 @@ export function createLibrary(host: LibraryHost): LibraryApi {
         host.togglePlay?.();
       },
       remove: removeClip,
+      rename: (renamePath) => host.renameVideo?.(renamePath),
+      moveToTrash: (trashPath) => {
+        // with several videos chosen, the key takes all of them
+        const chosen = selectedPaths();
+        host.moveVideosToTrash?.(chosen.length > 1 && chosen.includes(trashPath) ? chosen : [trashPath]);
+      },
       openResult: (resultPath) => {
         if (resultPath) void host.openResult?.(resultPath);
       },
@@ -1256,6 +1275,56 @@ export function createLibrary(host: LibraryHost): LibraryApi {
     offerUndo();
   }
 
+  function forgetClips(paths: readonly string[]): void {
+    const before = cardTops();
+    let removedSelected = false;
+    let removed = 0;
+    for (const path of paths) {
+      const taken = takeClip(path);
+      if (!taken) continue;
+      removed += 1;
+      removedSelected ||= taken.selected;
+      host.audio?.disposeClip?.(taken.clip);
+      void probe.dispose(path);
+    }
+    if (!removed) return;
+    // a video let go of before the move left the stage empty, so the next one takes it
+    afterRemoval(removedSelected || !session.selPath);
+    settleCards(before);
+  }
+
+  function releaseFiles(paths: readonly string[]): boolean {
+    const shown = session.selPath;
+    if (!shown || !paths.includes(shown)) return false;
+    const clip = session.clips[shown];
+    if (clip?.mediaToken && hasBackendClient()) {
+      void getBackendClient().releaseMediaToken(clip.mediaToken);
+      clip.mediaToken = null;
+    }
+    clearStage();
+    return true;
+  }
+
+  function renameClip(from: string, to: string): void {
+    const clip = session.clips[from];
+    if (!clip || from === to || session.clips[to]) return;
+    const selected = session.selPath === from;
+    if (clip.mediaToken && hasBackendClient()) {
+      void getBackendClient().releaseMediaToken(clip.mediaToken);
+      clip.mediaToken = null;
+    }
+    delete session.clips[from];
+    clip.path = to;
+    clip.name = to.split(/[\\/]/).pop() || to;
+    session.clips[to] = clip;
+    session.clipOrder = session.clipOrder.map((path) => (path === from ? to : path));
+    picked = new Set([...picked].map((path) => (path === from ? to : path)));
+    host.history?.renameClip?.(from, to);
+    void probe.dispose(from);
+    if (selected || !session.selPath) selectClip(to);
+    else renderClips();
+  }
+
   function doRemoveAllClips(): void {
     let removedSelected = false;
     for (const path of orderedClipKeys()) {
@@ -1387,6 +1456,10 @@ export function createLibrary(host: LibraryHost): LibraryApi {
   return {
     addFiles,
     removeClip,
+    forgetClips,
+    releaseFiles,
+    renameClip,
+    focusRow: focusCard,
     removeAllClips,
     selectClip,
     reloadPreview: () => {

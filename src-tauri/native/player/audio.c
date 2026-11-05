@@ -12,6 +12,7 @@
 
 #include "audio_output.h"
 #include "audio_reader.h"
+#include "input_file.h"
 #include "mix.h"
 #include "tempo.h"
 
@@ -379,12 +380,12 @@ int audio_track_set_mix(AudioTrack *t, const char *const *paths, const int *stre
 /* how many sound streams the file has; 0 when it has none or can't be read */
 static int sound_streams(const char *path) {
     AVFormatContext *format = NULL;
-    if (avformat_open_input(&format, path, NULL, NULL) < 0) return 0;
+    if (input_file_open(&format, path) < 0) return 0;
     int count = 0;
     if (avformat_find_stream_info(format, NULL) >= 0)
         for (unsigned i = 0; i < format->nb_streams; i++)
             count += format->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO;
-    avformat_close_input(&format);
+    input_file_close(&format);
     return count;
 }
 

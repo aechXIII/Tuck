@@ -144,6 +144,15 @@ export interface EncoderPayload extends JsonObject {
   readonly available_encoders: readonly JsonValue[];
 }
 
+export interface TrashResult extends JsonObject {
+  readonly path: string;
+  readonly outcome: "moved" | "no_trash" | "missing" | "failed";
+}
+
+export interface RenamedVideo extends JsonObject {
+  readonly path: string;
+}
+
 export interface TenBitPayload extends JsonObject {
   readonly ten_bit: boolean;
 }
@@ -271,6 +280,10 @@ export interface DomainBackendClient {
   copyFile(path: string): Promise<BackendResult<EmptyPayload>>;
   /** puts several files on the clipboard as one copy, so a single paste brings them all */
   copyFiles(paths: readonly string[]): Promise<BackendResult<EmptyPayload>>;
+  /** each video's outcome; a video that can't go to the Trash stays where it is, never deleted */
+  moveVideosToTrash(paths: readonly string[]): Promise<BackendResult<readonly TrashResult[]>>;
+  /** renames the video in its folder and gives back its new path */
+  renameVideo(path: string, name: string): Promise<BackendResult<RenamedVideo>>;
   /** opens a finished export in the system's default app; named by queue id, never by path */
   openExportFile(itemId: string): Promise<BackendResult<EmptyPayload>>;
   /** drags a finished export out of the window as a file; false when the press already ended */

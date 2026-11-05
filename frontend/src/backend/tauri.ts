@@ -23,7 +23,9 @@ import type {
   DownloadProgress,
   EmptyPayload,
   EncoderPayload,
+  RenamedVideo,
   TenBitPayload,
+  TrashResult,
   FileSelection,
   FolderVideos,
   HardwarePlayback,
@@ -258,6 +260,12 @@ function isDownloadProgress(value: unknown): value is DownloadProgress {
 
 function isEncoderPayload(value: unknown): value is EncoderPayload {
   return isJsonObject(value) && Array.isArray(value.available_encoders);
+}
+
+const TRASH_OUTCOMES = new Set(["moved", "no_trash", "missing", "failed"]);
+
+function isTrashResult(value: unknown): value is TrashResult {
+  return isJsonObject(value) && typeof value.path === "string" && typeof value.outcome === "string" && TRASH_OUTCOMES.has(value.outcome);
 }
 
 function isTenBitPayload(value: unknown): value is TenBitPayload {
@@ -834,6 +842,30 @@ class TauriTransport implements TauriBackendClient {
       return { ok: true, value: {} };
     } catch (error) {
       return this.#finish(isBackendError(error) ? { ok: false, error } : backendFailure("TAURI_INVOKE_FAILED", errorMessage(error, "Could not copy the files. Try again."), { method: "copyFiles" }));
+    }
+  }
+
+  async moveVideosToTrash(paths: readonly string[]): Promise<BackendResult<readonly TrashResult[]>> {
+    try {
+      const results = await this.#invoke("move_videos_to_trash", { paths: [...paths] });
+      if (!Array.isArray(results) || !results.every(isTrashResult)) {
+        return backendFailure("INVALID_RESPONSE", "Couldn't tell which videos moved. Check the Trash.", { method: "moveVideosToTrash" });
+      }
+      return { ok: true, value: results };
+    } catch (error) {
+      return this.#finish(isBackendError(error) ? { ok: false, error } : backendFailure("TAURI_INVOKE_FAILED", errorMessage(error, "Couldn't move the videos. Try again."), { method: "moveVideosToTrash" }));
+    }
+  }
+
+  async renameVideo(path: string, name: string): Promise<BackendResult<RenamedVideo>> {
+    try {
+      const renamed = await this.#invoke("rename_video", { path, name });
+      if (typeof renamed !== "string" || !renamed) {
+        return backendFailure("INVALID_RESPONSE", "Couldn't tell whether the video was renamed.", { method: "renameVideo" });
+      }
+      return { ok: true, value: { path: renamed } };
+    } catch (error) {
+      return this.#finish(isBackendError(error) ? { ok: false, error } : backendFailure("TAURI_INVOKE_FAILED", errorMessage(error, "Couldn't rename the video. Try again."), { method: "renameVideo" }));
     }
   }
 

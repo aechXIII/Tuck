@@ -1,6 +1,7 @@
 pub mod capabilities;
 pub mod file_clipboard;
 pub mod file_drag;
+pub mod file_ops;
 pub mod folder_videos;
 pub mod local_documents;
 pub mod opener;

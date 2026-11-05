@@ -25,6 +25,7 @@ import { installAddMenu } from "../library/add-menu.ts";
 import { addFolderVideos, FOLDER_READ_ERROR, importPaths, type ImportDeps } from "../library/folder-import.ts";
 import { installRowMenu } from "../library/row-menu.ts";
 import { installHoverPreview } from "../library/hover-preview.ts";
+import { fileBusyReason, installFileActions, renameBusyReason, type FileActionsApi, type TrashPlatform } from "../library/file-actions.ts";
 import { installJoin, type JoinApi } from "../library/join.ts";
 import { installPanels, type PanelsApi } from "../panels/panels.ts";
 import type { AudioClipRangeInfo } from "../panels/panels.ts";
@@ -457,10 +458,13 @@ export function installEditorRuntime(
   });
 
   let join: JoinApi | undefined;
+  let fileActions: FileActionsApi | undefined;
   library = createLibrary({
     session,
     documentRef: windowRef.document,
     choosePlayer,
+    renameVideo: (path) => fileActions?.rename(path),
+    moveVideosToTrash: (paths) => fileActions?.moveToTrash(paths),
     windowRef,
     audio,
     history,
@@ -515,6 +519,36 @@ export function installEditorRuntime(
   });
   join.sync(library.selectedPaths());
 
+  // the platform names the Trash; until it answers, Linux's word stands
+  let trashPlatform: TrashPlatform = null;
+  // originals already moved aren't offered again while their exports stay listed
+  const goneOriginals = new Set<string>();
+  fileActions = installFileActions({
+    client: () => (hasBackendClient() ? getBackendClient() : null),
+    platform: () => trashPlatform,
+    clips: () => session.clips,
+    selectedPath: () => session.selPath,
+    forgetClips: (paths) => {
+      for (const path of paths) goneOriginals.add(path);
+      library.forgetClips(paths);
+    },
+    releaseFiles: (paths) => library.releaseFiles(paths),
+    renameClip: (from, to) => library.renameClip(from, to),
+    selectClip: (path) => library.selectClip(path),
+    focusRow: (path) => library.focusRow(path),
+    confirm: confirmToast,
+    dialog: (html, options) => showMod(html, options),
+    closeDialog: closeMod,
+    toast,
+    showInFolder: (path) => {
+      if (!hasBackendClient()) return;
+      void getBackendClient().openOutputFolder(path).then((result) => {
+        if (!result.ok) toast(result.error.message, "err");
+      });
+    },
+    formatBytes,
+  });
+
   // Copy edits and Paste edits, from a Library row's menu or the keyboard
   installRowMenu({
     document: windowRef.document,
@@ -545,6 +579,14 @@ export function installEditorRuntime(
         else toast(paths.length === 1 ? "File copied to clipboard." : `${paths.length} files copied to clipboard.`, "ok");
       });
     },
+    rename: (path) => fileActions?.rename(path),
+    remove: (paths) => {
+      for (const path of paths) library.removeClip(path);
+    },
+    moveToTrash: (paths) => fileActions?.moveToTrash(paths),
+    trashName: () => fileActions?.trashName() ?? "Trash",
+    renameBusy: (path) => renameBusyReason(session.clips[path]),
+    fileBusy: (path) => fileBusyReason(session.clips[path]),
   });
 
   // resting the pointer on a Library row shows its video beside it
@@ -587,6 +629,9 @@ export function installEditorRuntime(
     editCount: (path) => history.editCount(path),
     onSendto: (data) => handleSendto(data),
     canDragOut: () => exportDragOut,
+    moveOriginals: (originals) => fileActions?.moveOriginals(originals),
+    trashName: () => fileActions?.trashName() ?? "Trash",
+    originalGone: (path) => goneOriginals.has(path),
     previewReport: async () => {
       if (!hasTauriInvoke(windowRef)) return null;
       const report = await readPlayerReport();
@@ -601,6 +646,7 @@ export function installEditorRuntime(
 
   // finished exports offer dragging out only where the desktop shell can start a file drag
   void fetchPlatformCapabilities().then((caps) => {
+    trashPlatform = caps.platform === "windows" || caps.platform === "linux" ? caps.platform : null;
     exportDragOut = supportsFileDragOut(caps);
     if (exportDragOut) library.renderClips();
   });
@@ -829,6 +875,7 @@ export function installEditorRuntime(
         "queue-stop-after-current": () => queue.stopAfterCurrent(),
         "queue-cancel-all": () => queue.cancelAll(),
         "queue-clear-finished": () => void queue.clearFinished(),
+        "queue-move-originals": () => queue.moveOriginals(),
         "queue-retry-all": () => void queue.retryAll(),
         "queue-resume": () => void queue.resumeExports(),
         // a click with no pointer behind it came from Enter or Space

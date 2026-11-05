@@ -11,6 +11,7 @@
 #include <libavformat/avformat.h>
 #include <libavutil/pixdesc.h>
 
+#include "input_file.h"
 #include "playback_state.h"
 #include "tuck_video.h"
 
@@ -454,7 +455,7 @@ Decoder *decoder_open(const char *path, const DecoderHooks *hooks, char *error, 
     d->format = avformat_alloc_context();
     if (!d->format) goto oom;
     d->format->interrupt_callback = (AVIOInterruptCB){interrupted, d};
-    if (avformat_open_input(&d->format, path, NULL, NULL) < 0) {
+    if (input_file_open(&d->format, path) < 0) {
         snprintf(error, error_size, "The video file could not be opened.");
         goto failed;
     }
@@ -500,7 +501,7 @@ void decoder_close(Decoder *d) {
     while (d->count) queue_drop_head(d);
     decoded_frame_clear(&d->candidate);
     avcodec_free_context(&d->codec);
-    avformat_close_input(&d->format);
+    input_file_close(&d->format);
     pthread_cond_destroy(&d->changed);
     pthread_mutex_destroy(&d->lock);
     free(d);

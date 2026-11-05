@@ -47,6 +47,11 @@ export interface QueueDeps {
   canDragOut?: () => boolean;
   /** the desktop shell's report on the preview, for the diagnostic report */
   previewReport?: () => Promise<JsonObject | null>;
+  /** asks once, then moves finished exports' originals to the Trash; their exports stay */
+  moveOriginals?: (originals: readonly { path: string; size: number }[]) => void;
+  trashName?: () => string;
+  /** an original already moved to the Trash isn't offered again */
+  originalGone?: (path: string) => boolean;
 }
 
 export interface QueueApi {
@@ -67,6 +72,7 @@ export interface QueueApi {
   cancelAll: () => void;
   // completed and canceled exports leave the list; failed ones stay for Retry
   clearFinished: () => Promise<void>;
+  moveOriginals: () => void;
   retryAll: () => Promise<void>;
   resumeExports: () => Promise<void>;
   copyDiagnostics: (itemId?: string) => Promise<void>;
@@ -167,9 +173,13 @@ export function installQueue(deps: QueueDeps): QueueApi {
     (row ?? byId("qstatus"))?.focus();
   }
 
+  // an original that left the Library, such as for the Trash, still counts toward what its export saved
+  const knownSourceSizes = new Map<string, number>();
   function sourceSize(path: string): number {
     const clip = session.clips[path] ?? Object.values(session.clips).find((item) => item?.probeData?.path === path);
-    return Number(clip?._fileSize) || 0;
+    const size = Number(clip?._fileSize) || 0;
+    if (size) knownSourceSizes.set(path, size);
+    return size || knownSourceSizes.get(path) || 0;
   }
 
   function thumbnailFor(path: string): string {
@@ -851,6 +861,7 @@ export function installQueue(deps: QueueDeps): QueueApi {
       setDisabled("btn-stop-after", queueView.stopAfterDisabled);
       setDisabled("btn-cancel", queueView.cancelDisabled);
       setDisabled("btn-clear", queueView.clearDisabled);
+      paintMoveOriginals(items);
       lastItems = items;
       barView = exportBarView(items, queueView, sourceSize);
       paintExportBar(barView);
@@ -1124,6 +1135,33 @@ export function installQueue(deps: QueueDeps): QueueApi {
     deps.renderClips();
   }
 
+  // each finished export's original once, unless it is exporting again or already gone
+  function finishedOriginals(items: readonly QueueItem[]): { path: string; size: number }[] {
+    const busy = new Set(items.filter((item) => isQueueActive(item.state)).map((item) => item.source_path));
+    const seen = new Set<string>();
+    const originals: { path: string; size: number }[] = [];
+    for (const item of items) {
+      const path = item.source_path;
+      if (item.state !== "completed" || !path || busy.has(path) || seen.has(path) || deps.originalGone?.(path)) continue;
+      seen.add(path);
+      originals.push({ path, size: sourceSize(path) });
+    }
+    return originals;
+  }
+
+  function paintMoveOriginals(items: readonly QueueItem[]): void {
+    const button = byId<HTMLButtonElement>("btn-move-originals");
+    if (!button) return;
+    button.hidden = !deps.moveOriginals;
+    button.textContent = `Move originals to ${deps.trashName?.() ?? "Trash"}`;
+    button.disabled = !finishedOriginals(items).length;
+  }
+
+  function moveOriginals(): void {
+    const originals = finishedOriginals(lastItems);
+    if (originals.length) deps.moveOriginals?.(originals);
+  }
+
   async function clearFinished(): Promise<void> {
     const r = await legacyBackendResult(client().clearFinished());
     if (!r.ok) {
@@ -1304,6 +1342,7 @@ export function installQueue(deps: QueueDeps): QueueApi {
     stopAfterCurrent,
     cancelAll,
     clearFinished,
+    moveOriginals,
     retryAll,
     resumeExports,
     copyDiagnostics,

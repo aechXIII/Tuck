@@ -158,6 +158,8 @@ export async function installFakeBackend(
       const api = {
         copyFile: (path: string) => respond("copyFile", [path]),
         copyFiles: (paths: readonly string[]) => respond("copyFiles", [[...paths]]),
+        moveVideosToTrash: (paths: readonly string[]) => respond("moveVideosToTrash", [[...paths]]),
+        renameVideo: (path: string, name: string) => respond("renameVideo", [path, name]),
         probeFile: (path: string) => respond("probeFile", [path]),
         probeAudioFile: (path: string) => respond("probeAudioFile", [path]),
         getWaveform: (path: string, track?: number) =>

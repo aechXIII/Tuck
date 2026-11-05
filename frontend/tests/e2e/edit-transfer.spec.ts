@@ -166,7 +166,8 @@ test("a Library row's menu shows the video in its folder and copies its file", a
 
   await row(page, "Sunset bridge.mp4").click({ button: "right" });
   const menu = page.getByRole("menu", { name: "Sunset bridge.mp4", exact: true });
-  await expect(menu.getByRole("separator")).toHaveCount(1);
+  // the edits, the file, and taking it out of the Library or to the Trash
+  await expect(menu.getByRole("separator")).toHaveCount(2);
   await menu.getByRole("menuitem", { name: "Show in folder" }).click();
   await expect(menu).toBeHidden();
   expect(await calls("openOutputFolder")).toEqual([[SHORT]]);

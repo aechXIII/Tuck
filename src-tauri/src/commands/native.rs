@@ -23,7 +23,7 @@ pub fn platform_capabilities() -> PlatformCapabilities {
 
 // the same lists as VIDEO_EXTENSIONS and AUDIO_EXTENSIONS in tuck/bridge_validation.py, which
 // decides what the preview may serve; a Python test keeps the two in agreement
-const VIDEO_EXTENSIONS: &[&str] = &[
+pub(crate) const VIDEO_EXTENSIONS: &[&str] = &[
     "mp4", "m4v", "mkv", "webm", "mov", "avi", "wmv", "asf", "flv", "f4v", "ts", "m2ts", "mts",
     "3gp", "3g2", "ogv", "mpg", "mpeg", "m2v", "vob", "mxf",
 ];
@@ -242,6 +242,32 @@ async fn copy_files(window: tauri::Window, paths: Vec<String>) -> Result<(), Pub
         })?;
     receiver.await.map_err(|_| {
         PublicBackendError::new("INTERNAL_ERROR", "Could not copy the file. Try again.")
+    })?
+}
+
+/// Moves Library videos to the Trash, or the Recycle Bin on Windows, and says what became of each.
+#[tauri::command]
+pub async fn move_videos_to_trash(
+    paths: Vec<String>,
+) -> Result<Vec<crate::platform::file_ops::TrashResult>, PublicBackendError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::platform::file_ops::trash_videos(&paths, VIDEO_EXTENSIONS)
+    })
+    .await
+    .map_err(|_| {
+        PublicBackendError::new("INTERNAL_ERROR", "Couldn't move the videos. Try again.")
+    })?
+}
+
+/// Renames a Library video in its folder and returns its new path.
+#[tauri::command]
+pub async fn rename_video(path: String, name: String) -> Result<String, PublicBackendError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::platform::file_ops::rename_video(&path, &name, VIDEO_EXTENSIONS)
+    })
+    .await
+    .map_err(|_| {
+        PublicBackendError::new("INTERNAL_ERROR", "Couldn't rename the video. Try again.")
     })?
 }
 

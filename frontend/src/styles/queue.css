@@ -710,6 +710,7 @@
 }
 .exports-foot {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   margin-top: 4px;
@@ -718,11 +719,16 @@
   color: var(--dim);
   font: 500 calc(11px * var(--text-scale)) var(--font);
 }
+#exports-saved {
+  white-space: nowrap;
+}
 #exports-saved b {
   color: var(--good);
   font-weight: 600;
 }
-.exports-foot .exports-btn {
+.exports-foot-actions {
+  display: flex;
+  gap: 2px;
   margin-left: auto;
 }
 

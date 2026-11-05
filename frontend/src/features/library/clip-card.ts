@@ -89,6 +89,9 @@ export interface ClipCardCallbacks {
   extendSelection?(path: string, delta: number): void;
   togglePlay(path: string): void;
   remove(path: string): void;
+  // F2 and Shift+Delete on a row: the file itself, not just the Library entry
+  rename?(path: string): void;
+  moveToTrash?(path: string): void;
   openResult(path: string): void;
   copyResult?(id: string): void;
   retry(id: string): void;
@@ -493,7 +496,13 @@ export function createClipCard<T extends ClipCardElement>(
       event.stopPropagation?.();
       callbacks.extendSelection(model.path, event.key === "ArrowUp" ? -1 : 1);
     }
-    if (event.key === "Delete" || event.key === "Backspace") {
+    if (event.key === "F2" && callbacks.rename) {
+      event.preventDefault?.();
+      callbacks.rename(model.path);
+    } else if (event.key === "Delete" && event.shiftKey && callbacks.moveToTrash) {
+      event.preventDefault?.();
+      callbacks.moveToTrash(model.path);
+    } else if (event.key === "Delete" || event.key === "Backspace") {
       event.preventDefault?.();
       callbacks.remove(model.path);
     }

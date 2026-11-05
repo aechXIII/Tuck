@@ -12,7 +12,14 @@
 #include "../mix.h"
 #include "../playback_state.h"
 #include "../seek_request.h"
+#include "../shared_file.h"
 #include "../view.h"
+
+#ifdef _WIN32
+#include <string.h>
+#include <wchar.h>
+#include <windows.h>
+#endif
 
 static int failures;
 
@@ -807,8 +814,51 @@ static void framebuffer_cache(void) {
     CHECK(framebuffer_cache_matches(&state, 3, 960, 640) && state.wraps == 2);
 }
 
+#ifdef _WIN32
+/* the player reads a video that Tuck or Explorer renames, moves to the Recycle Bin or deletes */
+static void shared_file(void) {
+    wchar_t folder[MAX_PATH], path[MAX_PATH + 64], renamed[MAX_PATH + 64];
+    CHECK(GetTempPathW(MAX_PATH, folder) > 0);
+    unsigned long id = GetCurrentProcessId();
+    swprintf(path, MAX_PATH + 64, L"%lstuck player ünïcode %lu.mp4", folder, id);
+    swprintf(renamed, MAX_PATH + 64, L"%lstuck player renamed %lu.mp4", folder, id);
+    HANDLE writer = CreateFileW(path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    CHECK(writer != INVALID_HANDLE_VALUE);
+    DWORD written = 0;
+    CHECK(WriteFile(writer, "0123456789", 10, &written, NULL) && written == 10);
+    CloseHandle(writer);
+    char utf8[4 * (MAX_PATH + 64)];
+    CHECK(WideCharToMultiByte(CP_UTF8, 0, path, -1, utf8, (int)sizeof(utf8), NULL, NULL) > 0);
+
+    void *file = shared_file_open(utf8);
+    CHECK(file != NULL);
+    if (!file) {
+        DeleteFileW(path);
+        return;
+    }
+    unsigned char bytes[4];
+    CHECK(shared_file_size(file) == 10);
+    CHECK(shared_file_read(file, bytes, 4) == 4 && memcmp(bytes, "0123", 4) == 0);
+    /* moving to the Recycle Bin is a rename too */
+    CHECK(MoveFileW(path, renamed));
+    CHECK(shared_file_seek(file, 6, SEEK_SET) == 6);
+    CHECK(shared_file_read(file, bytes, 4) == 4 && memcmp(bytes, "6789", 4) == 0);
+    CHECK(shared_file_read(file, bytes, 4) == 0);
+    CHECK(shared_file_seek(file, -3, SEEK_END) == 7);
+    CHECK(DeleteFileW(renamed));
+    shared_file_close(file);
+    CHECK(GetFileAttributesW(renamed) == INVALID_FILE_ATTRIBUTES);
+    CHECK(shared_file_open(utf8) == NULL);
+    DeleteFileW(path);
+    DeleteFileW(renamed);
+}
+#endif
+
 int tuck_player_test_failures(void) {
     failures = 0;
+#ifdef _WIN32
+    shared_file();
+#endif
     source_delta();
     pcm_queue();
     capacities();

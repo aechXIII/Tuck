@@ -11,6 +11,7 @@
 #include <libavutil/samplefmt.h>
 #include <libswresample/swresample.h>
 
+#include "input_file.h"
 #include "mix.h"
 
 /* broken packets in a row before the sound counts as undecodable */
@@ -53,7 +54,7 @@ void audio_reader_close(AudioReader *r) {
     free(r->converted);
     free(r->buffer);
     avcodec_free_context(&r->codec);
-    avformat_close_input(&r->format);
+    input_file_close(&r->format);
     free(r);
 }
 
@@ -82,7 +83,7 @@ AudioReader *audio_reader_open(const char *path, int stream, int (*interrupted)(
         goto failed;
     }
     if (interrupted) r->format->interrupt_callback = (AVIOInterruptCB){interrupted, opaque};
-    if (avformat_open_input(&r->format, path, NULL, NULL) < 0 || avformat_find_stream_info(r->format, NULL) < 0) {
+    if (input_file_open(&r->format, path) < 0 || avformat_find_stream_info(r->format, NULL) < 0) {
         snprintf(error, error_size, "The sound could not be read.");
         goto failed;
     }

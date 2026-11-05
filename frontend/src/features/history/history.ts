@@ -28,6 +28,8 @@ export interface HistoryApi {
   // a removed video takes its steps along, so bringing it back brings them back too
   detachClip: (path: string) => DetachedHistory;
   restoreClip: (detached: DetachedHistory) => void;
+  // a renamed video keeps its steps under its new path
+  renameClip: (from: string, to: string) => void;
   hasEdits: (path: string) => boolean;
   // goes up with every edit, undo and redo of the video, so a later change can be noticed
   editCount: (path: string) => number;
@@ -306,6 +308,19 @@ export function createHistory(host: HistoryHost): HistoryApi {
     updateButtons();
   }
 
+  function renameClip(from: string, to: string): void {
+    const moved = (entry: HistoryEntry): HistoryEntry => (entry.path === from ? { ...entry, path: to } : entry);
+    undoStack = undoStack.map(moved);
+    redoStack = redoStack.map(moved);
+    if (pending?.path === from) pending = { ...pending, path: to };
+    const count = editCounts.get(from);
+    if (count !== undefined) {
+      editCounts.delete(from);
+      editCounts.set(to, count);
+    }
+    updateButtons();
+  }
+
   function hasEdits(path: string): boolean {
     return undoStack.some((entry) => entry.path === path);
   }
@@ -326,6 +341,7 @@ export function createHistory(host: HistoryHost): HistoryApi {
     forgetClip,
     detachClip,
     restoreClip,
+    renameClip,
     hasEdits,
     editCount,
   };

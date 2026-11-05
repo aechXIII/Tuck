@@ -21,7 +21,7 @@ gcc -shared -fPIC -O2 -g -std=c11 -Wall -Wextra -Werror -fvisibility=hidden \
   $(pkg-config --cflags libavformat libavcodec libavfilter libavutil libswresample libplacebo) \
   "$source_dir/engine.c" "$source_dir/playback_state.c" "$source_dir/decoder.c" \
   "$source_dir/render_gl.c" "$source_dir/video.c" "$source_dir/audio.c" \
-  "$source_dir/audio_pipewire.c" "$source_dir/lut.c" "$source_dir/tempo.c" "$source_dir/mix.c" "$source_dir/audio_reader.c" \
+  "$source_dir/audio_pipewire.c" "$source_dir/lut.c" "$source_dir/tempo.c" "$source_dir/mix.c" "$source_dir/audio_reader.c" "$source_dir/input_file.c" \
   -o "$output_dir/libtuck_player.so" \
   -Wl,-soname,libtuck_player.so -Wl,--no-undefined -Wl,--exclude-libs,ALL -Wl,-Bsymbolic \
   -Wl,-z,relro -Wl,-z,now \
@@ -32,7 +32,7 @@ gcc -shared -fPIC -O2 -g -std=c11 -Wall -Wextra -Werror -fvisibility=hidden \
 gcc -O2 -g -std=c11 -Wall -Wextra -Werror -D_GNU_SOURCE \
   -I"$sdk/include" $(pkg-config --cflags libavformat libavcodec libavutil libswresample) \
   "$source_dir/tests/seek_check.c" "$source_dir/decoder.c" "$source_dir/playback_state.c" \
-  "$source_dir/audio_reader.c" \
+  "$source_dir/audio_reader.c" "$source_dir/input_file.c" \
   -o "$output_dir/tuck_player_seek_check" \
   $(pkg-config --static --libs libavformat libavcodec libavutil libswresample) -ldl -lpthread -lm
 objdump -p "$output_dir/libtuck_player.so" | sed -n 's/^ *NEEDED *//p' | sort > "$output_dir/libtuck_player-needed.txt"

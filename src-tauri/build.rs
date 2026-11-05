@@ -9,6 +9,7 @@ fn main() {
             "native/player/playback_state.c",
             "native/player/engine.c",
             "native/player/mix.c",
+            "native/player/shared_file.c",
         ])
         .compile("tuck_player");
     cc::Build::new()
@@ -31,6 +32,8 @@ fn main() {
             "pick_save_file",
             "copy_text",
             "copy_files_to_clipboard",
+            "move_videos_to_trash",
+            "rename_video",
             "open_output_folder",
             "open_export_file",
             "start_export_drag",
