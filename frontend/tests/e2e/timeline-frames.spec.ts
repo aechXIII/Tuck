@@ -5,6 +5,8 @@ import {
 } from "../fixtures/fake-backend";
 import type { JsonObject } from "../../src/backend/types.ts";
 
+declare global { interface Window { __keptTimeline?: Set<Element> } }
+
 const spriteUrl = "http://127.0.0.1:4173/timeline-test-sprite.svg";
 const sprite = `<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="84">${Array.from({ length: 16 }, (_, i) => `<rect x="${i * 150}" width="150" height="84" fill="${i % 2 ? "#ece5d8" : "#303a48"}"/><circle cx="${i * 150 + 75}" cy="42" r="19" fill="${i % 2 ? "#5f6b7a" : "#c6beb0"}"/>`).join("")}</svg>`;
 
@@ -378,4 +380,40 @@ test("a finished document request leaves focus on another control", async ({ pag
   await completeDocumentOpen(page);
   await expect(notices).toBeEnabled();
   await expect(license).toBeFocused();
+});
+
+test("a drag moves the segments and their pictures instead of making new ones", async ({ page }) => {
+  // WebKitGTK paints a newly made picture a frame or more late, so pictures made again on every
+  // move of a drag blinked; the elements themselves have to stay
+  await open(page);
+  await expect(page.locator(".tl-frame").first()).toBeVisible();
+  const ruler = (await page.locator("#sequence-ruler").boundingBox())!;
+  await page.mouse.click(ruler.x + ruler.width / 2, ruler.y + ruler.height / 2);
+  await page.locator("#btn-seq-split").click();
+  await expect(page.locator(".tl-segment")).toHaveCount(2);
+  await expect(page.locator(".tl-segment").nth(1).locator(".tl-frame").first()).toBeVisible();
+  await page.evaluate(() => {
+    window.__keptTimeline = new Set(document.querySelectorAll(".tl-segment, .tl-frame"));
+  });
+  const allKept = () => page.evaluate(() =>
+    [...document.querySelectorAll(".tl-segment, .tl-frame")].every((element) => window.__keptTimeline!.has(element)));
+
+  // trim the first segment's end in, checking while the edge is held
+  const edge = (await page.locator(".tl-segment").first().locator(".clip-edge.end").boundingBox())!;
+  await page.mouse.move(edge.x + edge.width / 2, edge.y + edge.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(edge.x - 120, edge.y + edge.height / 2, { steps: 8 });
+  expect(await allKept()).toBe(true);
+  await expect(page.locator(".tl-segment").first().locator(".clip-edge.end")).toHaveClass(/dragging/);
+  await page.mouse.up();
+
+  // then move the second segment into the room that made
+  const second = (await page.locator(".tl-segment").nth(1).boundingBox())!;
+  await page.mouse.move(second.x + second.width / 2, second.y + second.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(second.x + second.width / 2 - 60, second.y + second.height / 2, { steps: 8 });
+  expect(await allKept()).toBe(true);
+  await page.mouse.up();
+  await expect.poll(async () => (await page.locator(".tl-segment").nth(1).boundingBox())!.x).toBeLessThan(second.x - 30);
+  expect(await allKept()).toBe(true);
 });

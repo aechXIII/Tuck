@@ -85,13 +85,21 @@ export function frameLayout(view: FrameGeometry) {
 type SpriteEntry =
   { state: "pending" | "failed" } | { state: "ready"; sprite: FrameSprite };
 
+// pictures kept from before the spacing changed, at most this many sprites
+const MAX_STAND_INS = 24;
+
 export class FrameStripStore {
   private identity = "";
+  // the video and picture mode, without the spacing a resize or zoom changes
+  private source = "";
   private generation = 0;
   private active = 0;
   private view: FrameView | null = null;
   private entries = new Map<string, SpriteEntry>();
   private wanted = new Map<string, FrameRequest>();
+  // pictures from before a resize or zoom changed the spacing, newest first: shown in place of
+  // the new ones until those arrive, so the lane never goes empty while it changes size
+  private standIns: FrameSprite[] = [];
 
   constructor(
     private readonly host: {
@@ -103,6 +111,12 @@ export class FrameStripStore {
   ) {}
 
   clear(): void {
+    this.dropPictures();
+    this.dropStandIns();
+    this.source = "";
+  }
+
+  private dropPictures(): void {
     this.generation++;
     this.identity = "";
     this.view = null;
@@ -113,7 +127,18 @@ export class FrameStripStore {
     this.entries.clear();
   }
 
+  private dropStandIns(): void {
+    for (const sprite of this.standIns) this.host.release(sprite.token);
+    this.standIns = [];
+  }
+
+  private keepAsStandIns(sprites: FrameSprite[]): void {
+    this.standIns = [...sprites, ...this.standIns];
+    for (const sprite of this.standIns.splice(MAX_STAND_INS)) this.host.release(sprite.token);
+  }
+
   update(view: FrameView): void {
+    const source = JSON.stringify([view.path, view.duration, view.mode]);
     const identity = JSON.stringify([
       view.path,
       view.duration,
@@ -121,8 +146,21 @@ export class FrameStripStore {
       view.mode,
     ]);
     if (identity !== this.identity) {
-      this.clear();
+      if (source === this.source) {
+        // only the spacing changed: what is on screen stays until the new pictures are in
+        const ready: FrameSprite[] = [];
+        for (const [key, entry] of this.entries) {
+          if (entry.state !== "ready") continue;
+          ready.push(entry.sprite);
+          this.entries.delete(key);
+        }
+        this.keepAsStandIns(ready);
+      } else {
+        this.dropStandIns();
+      }
+      this.dropPictures();
       this.identity = identity;
+      this.source = source;
     }
     this.view = view;
     this.wanted.clear();
@@ -144,6 +182,26 @@ export class FrameStripStore {
     }
     this.prune();
     this.pump();
+  }
+
+  /** A kept picture of the moment `time` in seconds, and which tile of its sprite it is. */
+  standIn(time: number): { sprite: FrameSprite; tile: number } | null {
+    for (const sprite of this.standIns) {
+      const tile = Math.floor((time - sprite.start) / sprite.step + 0.000001);
+      if (tile >= 0 && tile < sprite.count) return { sprite, tile };
+    }
+    return null;
+  }
+
+  // once every part on screen has its new pictures, the old ones can go
+  private releaseCoveredStandIns(): void {
+    if (!this.standIns.length) return;
+    for (const key of this.wanted.keys()) {
+      if (key.endsWith(":true")) continue;
+      if (this.entries.get(key)?.state === "pending") return;
+      if (!this.entries.has(key)) return;
+    }
+    this.dropStandIns();
   }
 
   get(index: number): FrameSprite | null {
@@ -199,9 +257,17 @@ export class FrameStripStore {
     generation: number,
   ): Promise<void> {
     let sprite: FrameSprite | null = null;
+    const source = this.source;
     try {
       sprite = await this.host.request(request);
-      if (generation !== this.generation) return;
+      if (generation !== this.generation) {
+        // overtaken by another resize: its pictures still show the right moments
+        if (source !== this.source || !sprite?.token || !(await this.host.load(sprite)) || source !== this.source) return;
+        this.keepAsStandIns([sprite]);
+        sprite = null;
+        this.host.changed();
+        return;
+      }
       if (
         !sprite ||
         typeof sprite.token !== "string" ||
@@ -214,6 +280,7 @@ export class FrameStripStore {
       this.entries.set(key, { state: "ready", sprite });
       sprite = null;
       this.prune();
+      this.releaseCoveredStandIns();
       this.host.changed();
     } catch {
       if (generation === this.generation)

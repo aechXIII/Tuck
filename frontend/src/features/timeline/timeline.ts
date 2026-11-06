@@ -113,6 +113,29 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+// what each element was last given, so repaints during a drag write only what changed
+const writtenStyles = new WeakMap<HTMLElement, Map<string, string>>();
+
+function writeStyles(element: HTMLElement, styles: Record<string, string>): void {
+  let written = writtenStyles.get(element);
+  if (!written) writtenStyles.set(element, (written = new Map()));
+  for (const [name, value] of Object.entries(styles)) {
+    if (written.get(name) === value) continue;
+    written.set(name, value);
+    element.style.setProperty(name, value);
+  }
+}
+
+function writeAttributes(element: Element, attributes: Record<string, string>): void {
+  for (const [name, value] of Object.entries(attributes)) {
+    if (element.getAttribute(name) !== value) element.setAttribute(name, value);
+  }
+}
+
+function writeText(element: Element, text: string): void {
+  if (element.textContent !== text) element.textContent = text;
+}
+
 function selectedClip(session: EditorSession): EditorClip | null {
   return session.selPath ? session.clips[session.selPath] ?? null : null;
 }
@@ -170,12 +193,19 @@ let snapOn = true;
         image.onload = image.onerror = null;
         resolve(ok);
       }
-      image.onload = () => finish(image.naturalWidth > 0);
+      // decoded before it is shown: WebKitGTK otherwise paints a new strip a frame or two late,
+      // and the lane flashed empty as new pictures replaced the ones standing in
+      image.onload = () => {
+        if (!(image.naturalWidth > 0)) return finish(false);
+        image.decode().then(() => finish(true), () => finish(true));
+      };
       image.onerror = () => finish(false);
       image.src = sprite.url;
     });
   }
 
+  // a drag repaints every frame, and WebKitGTK paints a newly made picture a frame or more late,
+  // so the pictures stay the same elements and only what changed is written
   function paintFrameTiles(): void {
     const layer = byId("tl-segments");
     if (!layer) return;
@@ -183,31 +213,47 @@ let snapOn = true;
     for (const [segment, range] of ranges.entries()) {
       const surface = range.querySelector<HTMLElement>(".tl-segment-surface");
       if (!surface) continue;
-      surface.querySelector(".tl-frames")?.remove();
-      range.classList.remove("has-frames");
-      if (!frameView) continue;
-      const pictures = documentRef.createElement("span");
-      pictures.className = "tl-frames";
-      pictures.setAttribute("aria-hidden", "true");
-      for (const tile of frameView.tiles) {
-        if (tile.segment !== segment) continue;
-        const sprite = frameStore.get(tile.index);
+      let pictures = surface.querySelector<HTMLElement>(".tl-frames");
+      const old = new Map<string, HTMLElement>();
+      for (const picture of pictures ? Array.from(pictures.children) : []) {
+        if (picture instanceof HTMLElement) old.set(picture.dataset.frameIndex ?? "", picture);
+      }
+      let shown = 0;
+      for (const tile of frameView?.tiles ?? []) {
+        if (tile.segment !== segment || !frameView) continue;
+        const ready = frameStore.get(tile.index);
+        // until the new spacing's pictures are in, a kept one of the same moment stands in
+        const standIn = ready ? null : frameStore.standIn(tile.index * frameView.step);
+        const sprite = ready ?? standIn?.sprite;
         if (!sprite) continue;
-        const picture = documentRef.createElement("span");
-        picture.className = "tl-frame";
-        picture.dataset.frameIndex = String(tile.index);
-        picture.style.left = tile.left + "px";
-        picture.style.width = frameView.tileWidth + "px";
-        picture.style.backgroundImage = `url(${JSON.stringify(sprite.url)})`;
-        picture.style.backgroundSize = frameView.tileWidth * sprite.columns + "px 100%";
-        const position = Math.round(tile.index - sprite.start / sprite.step);
-        picture.style.backgroundPosition = -position * frameView.tileWidth + "px 0";
-        pictures.append(picture);
+        if (!pictures) {
+          pictures = documentRef.createElement("span");
+          pictures.className = "tl-frames";
+          pictures.setAttribute("aria-hidden", "true");
+          surface.prepend(pictures);
+        }
+        const key = String(tile.index);
+        let picture = old.get(key);
+        old.delete(key);
+        if (!picture) {
+          picture = documentRef.createElement("span");
+          picture.className = "tl-frame";
+          picture.dataset.frameIndex = key;
+          pictures.append(picture);
+        }
+        const position = standIn ? standIn.tile : Math.round(tile.index - sprite.start / sprite.step);
+        writeStyles(picture, {
+          left: tile.left + "px",
+          width: frameView.tileWidth + "px",
+          "background-image": `url(${JSON.stringify(sprite.url)})`,
+          "background-size": frameView.tileWidth * sprite.columns + "px 100%",
+          "background-position": -position * frameView.tileWidth + "px 0",
+        });
+        shown++;
       }
-      if (pictures.childElementCount) {
-        surface.prepend(pictures);
-        range.classList.add("has-frames");
-      }
+      for (const picture of old.values()) picture.remove();
+      if (!shown) pictures?.remove();
+      range.classList.toggle("has-frames", shown > 0);
     }
   }
 
@@ -601,7 +647,6 @@ function paintTrimChrome() {
   }
   byId("tl-corner-time")?.classList.toggle("hid", !ready);
   let segmentsLayer = byId("tl-segments");
-  if (segmentsLayer) segmentsLayer.replaceChildren();
   let timeline = byId("timeline");
   if (timeline) {
     timeline.setAttribute("aria-disabled", ready ? "false" : "true");
@@ -624,6 +669,7 @@ function paintTrimChrome() {
   let removeButton = byId("btn-segment-remove");
   let addButton = byId("btn-segment-add");
   if (!ready) {
+    segmentsLayer?.replaceChildren();
     refreshFrames();
     if (isButtonElement(resetButton)) {
       resetButton.disabled = true;
@@ -659,6 +705,7 @@ function paintTrimChrome() {
       : true;
   let bounds = segments[active];
   if (!bounds) {
+    segmentsLayer?.replaceChildren();
     return {
       full: 0,
       bounds: { start: 0, end: 0 },
@@ -670,30 +717,45 @@ function paintTrimChrome() {
   }
   let startPct = full > 0 ? (bounds.start / full) * 100 : 0;
   let endPct = full > 0 ? (bounds.end / full) * 100 : 100;
+  // the buttons stay the same elements from one paint to the next, so a drag moves them and the
+  // pictures in them instead of making new ones (see paintFrameTiles)
+  const ranges = segmentsLayer ? Array.from(segmentsLayer.children) : [];
+  for (const extra of ranges.splice(segments.length)) extra.remove();
   for (const [i, segment] of segments.entries()) {
     // a lossless cut keeps the source audio of every segment
     let segmentAudioMuted = !!segment.muted && !host.cutTask?.();
     let presentation = TimelineCore.segmentPresentationState(i, active);
-    let range = documentRef.createElement("button");
-    range.type = "button";
-    range.className = presentation.className;
+    const existing = ranges[i];
+    const range = isButtonElement(existing ?? null) ? (existing as HTMLButtonElement) : newSegmentButton();
+    if (range !== existing) {
+      if (existing) existing.replaceWith(range);
+      else segmentsLayer?.appendChild(range);
+    }
+    let touchesPrevious =
+      i > 0 && Math.abs((arrayItem(segments, i - 1)?.end ?? 0) - segment.start) < 0.001;
+    let touchesNext =
+      i + 1 < segments.length &&
+      Math.abs(segment.end - (arrayItem(segments, i + 1)?.start ?? full)) < 0.001;
+    const className = presentation.className +
+      (touchesPrevious ? " joins-previous" : "") +
+      (touchesNext ? " joins-next" : "") +
+      (range.classList.contains("has-frames") ? " has-frames" : "");
+    if (range.className !== className) range.className = className;
     range.dataset.segmentIndex = String(i);
-    range.style.setProperty("--segment-color", segmentColor(i));
-    range.style.setProperty(
-      "--clip-fill",
-      TimelineCore.clipFill(
+    writeStyles(range, {
+      "--segment-color": segmentColor(i),
+      "--clip-fill": TimelineCore.clipFill(
         "video",
         TimelineCore.videoSegmentSelected(i, active, sourceGroupSelected),
         false,
         segmentColor(i),
       ),
-    );
-    range.style.left = (segment.start / (full || 1)) * 100 + "%";
-    range.style.width =
-      ((segment.end - segment.start) / (full || 1)) * 100 + "%";
-    range.setAttribute(
-      "aria-label",
-      "Segment " +
+      left: (segment.start / (full || 1)) * 100 + "%",
+      width: ((segment.end - segment.start) / (full || 1)) * 100 + "%",
+    });
+    writeAttributes(range, {
+      "aria-label":
+        "Segment " +
         (i + 1) +
         ", " +
         formatSegmentTime(segment.start) +
@@ -704,64 +766,28 @@ function paintTrimChrome() {
         (session.appSettings.timeline_preserve_source === false
           ? ". Click to seek; drag to move and adjust source; Alt+drag to adjust source"
           : ". Click to seek; drag to move; Alt+drag to adjust source"),
-    );
-    range.dataset.tip = session.appSettings.timeline_preserve_source === false
-      ? "Drag to move and adjust source · Alt+drag to adjust source"
-      : "Drag to move · Alt+drag to adjust source";
-    range.setAttribute(
-      "aria-pressed",
-      i === active && sourceGroupSelected ? "true" : "false",
-    );
-    range.setAttribute("aria-keyshortcuts", "ArrowLeft ArrowRight");
-    let surface = documentRef.createElement("span");
-    surface.className = "tl-segment-surface";
-    let touchesPrevious =
-      i > 0 && Math.abs((arrayItem(segments, i - 1)?.end ?? 0) - segment.start) < 0.001;
-    let touchesNext =
-      i + 1 < segments.length &&
-      Math.abs(segment.end - (arrayItem(segments, i + 1)?.start ?? full)) < 0.001;
-    range.classList.toggle("joins-previous", touchesPrevious);
-    range.classList.toggle("joins-next", touchesNext);
-    let badgeLabel = documentRef.createElement("span");
-    badgeLabel.className = "tl-segment-badge";
-    badgeLabel.setAttribute("aria-hidden", "true");
-    badgeLabel.textContent = segment.badge ?? "";
-    let copy = documentRef.createElement("span");
-    copy.className = "tl-segment-copy";
-    let content = documentRef.createElement("span");
-    content.className = "tl-segment-content";
-    let labels = documentRef.createElement("span");
-    labels.className = "tl-segment-labels";
+      "data-tip": session.appSettings.timeline_preserve_source === false
+        ? "Drag to move and adjust source · Alt+drag to adjust source"
+        : "Drag to move · Alt+drag to adjust source",
+      "aria-pressed": i === active && sourceGroupSelected ? "true" : "false",
+    });
+    const badge = range.querySelector(".tl-segment-badge");
+    if (badge) writeText(badge, segment.badge ?? "");
     // every segment comes from the selected video, so the clip says how long it is rather than
     // repeating the file name; the full range is in the hover tip and the accessible name
-    let nameLabel = documentRef.createElement("span");
-    nameLabel.className = "tl-segment-label";
-    nameLabel.textContent = formatSelectedDuration(segment.end - segment.start);
-    let timeText =
-      (segment.sourceStart != null ? "Source " : "") + formatSegmentTime(segment.sourceStart ?? segment.start) +
-      "–" +
-      formatSegmentTime((segment.sourceStart ?? segment.start) + segment.end - segment.start) +
-      " · " +
-      formatSelectedDuration(segment.end - segment.start);
-    copy.append(nameLabel);
-    labels.append(badgeLabel, copy);
-    content.appendChild(labels);
-    range.append(surface, content);
-    let timeLabel = documentRef.createElement("span");
-    timeLabel.className = "tl-segment-time";
-    timeLabel.setAttribute("aria-hidden", "true");
-    timeLabel.textContent = timeText;
-    content.appendChild(timeLabel);
-    let edgeIn = documentRef.createElement("span");
-    edgeIn.className = "clip-edge start";
-    edgeIn.dataset.edge = "start";
-    let edgeOut = documentRef.createElement("span");
-    edgeOut.className = "clip-edge end";
-    edgeOut.dataset.edge = "end";
-    // the edges sit inside the segment, so they say what they do instead of showing its tooltip
-    edgeIn.dataset.tip = edgeOut.dataset.tip = "Drag to trim";
-    range.append(edgeIn, edgeOut);
-    segmentsLayer?.appendChild(range);
+    const nameLabel = range.querySelector(".tl-segment-label");
+    if (nameLabel) writeText(nameLabel, formatSelectedDuration(segment.end - segment.start));
+    const timeLabel = range.querySelector(".tl-segment-time");
+    if (timeLabel) {
+      writeText(
+        timeLabel,
+        (segment.sourceStart != null ? "Source " : "") + formatSegmentTime(segment.sourceStart ?? segment.start) +
+          "–" +
+          formatSegmentTime((segment.sourceStart ?? segment.start) + segment.end - segment.start) +
+          " · " +
+          formatSelectedDuration(segment.end - segment.start),
+      );
+    }
   }
   paintSelectionFrame(startPct, endPct, segmentColor(active));
   refreshFrames();
@@ -815,6 +841,43 @@ function paintTrimChrome() {
     active: active,
     status: view.status,
   };
+}
+
+function newSegmentButton(): HTMLButtonElement {
+  const range = documentRef.createElement("button");
+  range.type = "button";
+  range.setAttribute("aria-keyshortcuts", "ArrowLeft ArrowRight");
+  const surface = documentRef.createElement("span");
+  surface.className = "tl-segment-surface";
+  const badge = documentRef.createElement("span");
+  badge.className = "tl-segment-badge";
+  badge.setAttribute("aria-hidden", "true");
+  const copy = documentRef.createElement("span");
+  copy.className = "tl-segment-copy";
+  const content = documentRef.createElement("span");
+  content.className = "tl-segment-content";
+  const labels = documentRef.createElement("span");
+  labels.className = "tl-segment-labels";
+  const nameLabel = documentRef.createElement("span");
+  nameLabel.className = "tl-segment-label";
+  copy.append(nameLabel);
+  labels.append(badge, copy);
+  content.appendChild(labels);
+  range.append(surface, content);
+  const timeLabel = documentRef.createElement("span");
+  timeLabel.className = "tl-segment-time";
+  timeLabel.setAttribute("aria-hidden", "true");
+  content.appendChild(timeLabel);
+  const edgeIn = documentRef.createElement("span");
+  edgeIn.className = "clip-edge start";
+  edgeIn.dataset.edge = "start";
+  const edgeOut = documentRef.createElement("span");
+  edgeOut.className = "clip-edge end";
+  edgeOut.dataset.edge = "end";
+  // the edges sit inside the segment, so they say what they do instead of showing its tooltip
+  edgeIn.dataset.tip = edgeOut.dataset.tip = "Drag to trim";
+  range.append(edgeIn, edgeOut);
+  return range;
 }
 
 function paintSelectionFrame(startPct: number, endPct: number, color: string) {

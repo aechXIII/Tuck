@@ -238,3 +238,55 @@ test("source or crop changes release cached tokens and begin a new generation", 
   store.clear();
   assert.deepEqual(released, ["center", "whole"]);
 });
+
+function heldStore(released: string[]) {
+  const held: { request: FrameRequest; resolve: (value: FrameSprite) => void }[] = [];
+  const store = new FrameStripStore({
+    request: (request) => new Promise((resolve) => held.push({ request, resolve })),
+    release: (token) => released.push(token),
+    changed: () => {},
+    load: async () => true,
+  });
+  const view = (step: number, path = "a") => ({ path, duration: 20, step, mode: "center" as const, chunks: [0], exact: false });
+  return { store, held, view };
+}
+
+test("a resize keeps the old pictures standing in until the new spacing's pictures are in", async () => {
+  const released: string[] = [];
+  const { store, held, view } = heldStore(released);
+  store.update(view(1));
+  const first = held.shift()!;
+  first.resolve(sprite(first.request, "old"));
+  await settle();
+  assert.equal(store.get(5)?.token, "old");
+
+  // the timeline got taller, so the pictures are spaced 2 s apart now
+  store.update(view(2));
+  await settle();
+  assert.equal(store.get(2), null);
+  assert.equal(store.standIn(10.5)?.tile, 10);
+  assert.equal(store.standIn(10.5)?.sprite.token, "old");
+  assert.deepEqual(released, []);
+
+  const second = held.shift()!;
+  second.resolve(sprite(second.request, "new"));
+  await settle();
+  assert.equal(store.get(2)?.token, "new");
+  assert.equal(store.standIn(10.5), null);
+  assert.deepEqual(released, ["old"]);
+});
+
+test("pictures overtaken by another resize stand in, and another video drops them", async () => {
+  const released: string[] = [];
+  const { store, held, view } = heldStore(released);
+  store.update(view(1));
+  store.update(view(2));
+  // the first resize's pictures arrive after the second began
+  held.shift()!.resolve(sprite({ path: "a", start: 0, step: 1, count: 16, mode: "center", exact: false }, "overtaken"));
+  await settle();
+  assert.equal(store.standIn(3)?.sprite.token, "overtaken");
+  assert.deepEqual(released, []);
+  store.update(view(2, "b"));
+  assert.equal(store.standIn(3), null);
+  assert.deepEqual(released, ["overtaken"]);
+});
