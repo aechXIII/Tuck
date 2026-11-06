@@ -14,6 +14,8 @@ import * as TimelineCore from "./timeline-core.ts";
 import { withShortcut } from "../shortcuts/shortcuts.ts";
 import { frameLayout, FrameStripStore, type FrameSprite } from "./frames.ts";
 import { installMarkers, splitAtMarkers as splitSegmentsAtMarkers, type MarkerApi } from "./markers.ts";
+import { installEditMenu } from "./edit-menu.ts";
+import { takeOut } from "./ripple.ts";
 
 export interface TimelineHost {
   session: EditorSession;
@@ -40,9 +42,12 @@ export interface TimelineHost {
     paintSource?: () => void;
     paintMixer?: () => void;
     render: () => void;
-    splitSelected?: () => void;
+    splitSelected?: (time?: number) => void;
     hasSelection?: () => boolean;
     selectVideoTrack?: () => void;
+    selectClip?: (trackId: string, clipId: string | null | undefined) => void;
+    deleteSelected?: () => void;
+    toggleSegmentMute?: (index: number) => void;
   };
   History?: {
     begin?: (path: string | null, label?: string) => void;
@@ -981,12 +986,15 @@ function splitAtPlayhead() {
     host.AudioTimeline.splitSelected();
     return;
   }
+  let video = currentVideo();
+  // the playhead can be ahead of the video while a seek is still settling
+  splitSegmentsAt(host.getPreviewSec?.() ?? (video && Number.isFinite(video.currentTime) ? video.currentTime : 0));
+}
+
+function splitSegmentsAt(time: number) {
   const c = selectedClip(session);
   if (!c) return;
   let full = videoDuration() || c.probeData?.duration || 0;
-  let video = currentVideo();
-  // the playhead can be ahead of the video while a seek is still settling
-  let time = host.getPreviewSec?.() ?? (video && Number.isFinite(video.currentTime) ? video.currentTime : 0);
   let result = SegmentEditing.splitAt(clipSegments(c, full), time, full);
   if (!result) {
     notify("Move the playhead inside a video clip to split it.", "err");
@@ -1248,6 +1256,110 @@ function canRemoveActiveSegment() {
   if (!clip) return false;
   let full = videoDuration() || clip.probeData?.duration || 0;
   return clipSegments(clip, full).length > 1;
+}
+
+// takes a stretch out of the clip's timeline and closes it up; markers and added audio after it
+// slide with the picture. Null when nothing would be left
+function takeOutStretch(c: EditorClip, full: number, from: number, to: number, removesFootage: boolean) {
+  const result = takeOut(
+    { segments: clipSegments(c, full), markers: c.markers ?? [], audio: c.audioTimeline },
+    from, to, removesFootage, full,
+  );
+  if (!result) return null;
+  c.markers = result.parts.markers;
+  if (c.audioTimeline && result.parts.audio) c.audioTimeline.tracks = result.parts.audio.tracks;
+  return result;
+}
+
+// the segment that now starts where the stretch was is selected, unless the edit names one, and
+// the playhead goes there
+function finishStretchEdit(c: EditorClip, segments: SegmentLike[], at: number, selected?: number) {
+  const after = segments.findIndex((segment) => segment.start >= at - 0.000001);
+  setClipSegments(c, segments, selected ?? (after >= 0 ? after : segments.length - 1));
+  paintTrimChrome();
+  host.seekPreview?.(at);
+  host.renderClips?.();
+  host.reqPreview?.();
+  if (host.AudioTimeline) host.AudioTimeline.render();
+}
+
+function rippleDeleteSegment(index: number) {
+  const c = selectedClip(session);
+  const full = videoDuration();
+  if (!c || !(full > 0)) return;
+  const segments = clipSegments(c, full);
+  const segment = arrayItem(segments, index);
+  if (!segment) return;
+  if (segments.length <= 1) {
+    notify(KEEP_ONE_SEGMENT + ".", "err", undefined, { key: "segment-keep-one" });
+    return;
+  }
+  const result = takeOutStretch(c, full, segment.start, segment.end, true);
+  if (result) finishStretchEdit(c, result.parts.segments, result.at);
+}
+
+function rippleDeleteActiveSegment() {
+  const c = selectedClip(session);
+  if (!c) return;
+  rippleDeleteSegment(activeSegmentIndex(c, clipSegments(c, videoDuration())));
+}
+
+// from the playhead to the pointer; the segment after the cut is selected
+function cutOutStretch(from: number, to: number) {
+  const c = selectedClip(session);
+  const full = videoDuration();
+  if (!c || !(full > 0)) return;
+  const result = takeOutStretch(c, full, from, to, true);
+  if (result) finishStretchEdit(c, result.parts.segments, result.at);
+}
+
+// a trim from the menu takes out the stretch like Cut out, so nothing is left as black, and keeps
+// the trimmed segment selected: after a start trim it begins at the cut, after an end trim it ends there
+function trimStretch(from: number, to: number, side: "start" | "end") {
+  const c = selectedClip(session);
+  const full = videoDuration();
+  if (!c || !(full > 0)) return;
+  const result = takeOutStretch(c, full, from, to, true);
+  if (!result) return;
+  const segments = result.parts.segments;
+  let trimmed = -1;
+  segments.forEach((segment, index) => {
+    if (side === "start" ? trimmed < 0 && segment.start >= result.at - 0.000001 : segment.end <= result.at + 0.000001) trimmed = index;
+  });
+  finishStretchEdit(c, segments, result.at, trimmed >= 0 ? trimmed : undefined);
+}
+
+function closeGap(start: number, end: number) {
+  const c = selectedClip(session);
+  const full = videoDuration();
+  if (!c || !(full > 0)) return;
+  const result = takeOutStretch(c, full, start, end, false);
+  if (result) finishStretchEdit(c, result.parts.segments, result.at);
+}
+
+function closeAllGaps() {
+  const c = selectedClip(session);
+  const full = videoDuration();
+  if (!c || !(full > 0)) return;
+  const active = c.activeSegment;
+  // from the last gap back, so the earlier ones stay where they are while the later ones close
+  let gaps = SegmentEditing.timelineGaps(clipSegments(c, full), full);
+  while (gaps.length) {
+    const gap = gaps[gaps.length - 1]!;
+    const result = takeOutStretch(c, full, gap.start, gap.end, false);
+    if (!result) break;
+    setClipSegments(c, result.parts.segments, active);
+    const left = SegmentEditing.timelineGaps(clipSegments(c, full), full);
+    if (left.length >= gaps.length) break;
+    gaps = left;
+  }
+  const segments = clipSegments(c, full);
+  finishStretchEdit(c, segments, arrayItem(segments, active)?.start ?? 0);
+}
+
+function removeSegmentAt(index: number) {
+  selectSegment(index, false);
+  removeActiveSegment();
 }
 
 function removeActiveSegment() {
@@ -2004,6 +2116,65 @@ function initTimelineResizer() {
   });
   markerApi.paint();
   const markers = markerApi;
+  const markerTimes = markers.times;
+
+  installEditMenu({
+    document: documentRef,
+    window: windowRef,
+    duration: () => {
+      const clip = selectedClip(session);
+      return clip && probeStatus(clip) === "ready" ? videoDuration() : 0;
+    },
+    segments: () => clipSegments(selectedClip(session), videoDuration()),
+    markers: markerTimes,
+    audio: () => selectedClip(session)?.audioTimeline ?? null,
+    playhead: () => {
+      const video = currentVideo();
+      return host.getPreviewSec?.() ?? (video && Number.isFinite(video.currentTime) ? video.currentTime : 0);
+    },
+    timeAt: (clientX) => {
+      const track = byId("tl-track")?.getBoundingClientRect();
+      if (!track || !(track.width > 0)) return 0;
+      return Math.max(0, Math.min(1, (clientX - track.left) / track.width)) * videoDuration();
+    },
+    // a split from the menu snaps to markers and the playhead, as a dragged edge does
+    snap: (time) => {
+      if (!snapOn) return time;
+      const points = [...markerTimes()];
+      const playhead = host.getPreviewSec?.();
+      if (playhead != null) points.push(playhead);
+      return snapCandidateTime(time, points, timelinePxPerSecond());
+    },
+    formatTime: formatTimelineTime,
+    selectSegment: (index) => {
+      host.AudioTimeline?.selectVideoTrack?.();
+      selectSegment(index, false);
+    },
+    split: recorded("split", splitSegmentsAt),
+    trimStart: recorded("trim start", (from: number, to: number) => trimStretch(from, to, "start")),
+    trimEnd: recorded("trim end", (from: number, to: number) => trimStretch(from, to, "end")),
+    cutOut: recorded("cut out", cutOutStretch),
+    canAddMarker: (time) => markers.canAddAt(time),
+    addMarker: (time) => markers.addAt(time),
+    hasSound: () => !!selectedClip(session)?.probeData?.has_audio,
+    cutTask: () => !!host.cutTask?.(),
+    toggleSegmentMute: (index) => host.AudioTimeline?.toggleSegmentMute?.(index),
+    remove: recorded("remove segment", removeSegmentAt),
+    ripple: recorded("ripple delete", rippleDeleteSegment),
+    closeGap: recorded("close gap", closeGap),
+    closeAllGaps: recorded("close gaps", closeAllGaps),
+    selectAudioClip: (trackId, clipId) => host.AudioTimeline?.selectClip?.(trackId, clipId),
+    splitAudio: (time) => {
+      host.AudioTimeline?.splitSelected?.(time);
+      host.seekPreview?.(time);
+    },
+    removeAudio: () => host.AudioTimeline?.deleteSelected?.(),
+  });
+
+  host.TuckShortcuts?.registerAction("timeline.ripple-delete", {
+    enabled: () => canRemoveActiveSegment() && host.AudioTimeline?.isSourceGroupSelected?.() !== false,
+    execute: recorded("ripple delete", rippleDeleteActiveSegment),
+  });
 
   host.TuckShortcuts?.registerAction("timeline.add-marker", {
     enabled: markers.canAdd,

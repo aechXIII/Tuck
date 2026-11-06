@@ -2160,6 +2160,22 @@ export function installAudioTimeline(host: AudioTimelineHost) {
 
   const recorded = recordedCommandFor;
 
+  // the timeline menu's Mute segment: that segment's source sound, whatever else is selected
+  function setSegmentMuted(index: number, muted: boolean) {
+    const clip = selectedVideo();
+    if (!clip || cutTask() || !SegmentEditing) return;
+    const segs = SegmentEditing.segmentsForClip(clip, sourceDuration(clip));
+    const segment = arrayItem(segs, index);
+    if (!segment) return;
+    segment.muted = muted;
+    if (typeof host.setClipSegments === "function") host.setClipSegments(clip, segs, index);
+    if (typeof host.paintTrimChrome === "function") host.paintTrimChrome();
+    render();
+    setPlanDirty(clip);
+  }
+  const muteSegment = recorded("mute segment", (index: number) => setSegmentMuted(index, true));
+  const unmuteSegment = recorded("unmute segment", (index: number) => setSegmentMuted(index, false));
+
   const toggleFragmentMuted = recorded("mute audio clip", function () {
     let clip = selectedVideo();
     if (!clip || cutTask()) return;
@@ -2287,6 +2303,12 @@ export function installAudioTimeline(host: AudioTimelineHost) {
       if (selectedMute) return unmuteSelected();
       return toggleFragmentMuted();
     },
+    toggleSegmentMute: function (index: number) {
+      const clip = selectedVideo();
+      if (!clip || !SegmentEditing) return;
+      const segment = arrayItem(SegmentEditing.segmentsForClip(clip, sourceDuration(clip)), index);
+      if (segment) (segment.muted ? unmuteSegment : muteSegment)(index);
+    },
     selectTrack: function(trackId: string) {
       setTimelineSelection(trackId || "source", null);
       paintMixer(selectedVideo());
@@ -2387,10 +2409,11 @@ export function installAudioTimeline(host: AudioTimelineHost) {
         host.History?.commit?.();
       }, { title: "Remove audio track?", confirmLabel: "Remove", cancelLabel: "Keep track", danger: true });
     },
-    splitSelected: recorded("split audio", function () {
+    // at the playhead, or where the timeline's menu was opened
+    splitSelected: recorded("split audio", function (time?: number) {
       let videoClip = selectedVideo();
       if (!videoClip) return;
-      let at = sourceTime();
+      let at = typeof time === "number" ? time : sourceTime();
       let selected = findSelected(videoClip);
       if (!selected) return;
       let split = core.splitClip(selected.clip, at, nextId("audio"));

@@ -257,6 +257,83 @@ body.library-empty #timeline-row > * {
   pointer-events: none;
   z-index: 8;
 }
+/* what the lit item of the timeline's right-click menu will do; drawn only while it is lit, over
+   the playhead so its times aren't hidden under the playhead's cap */
+#seq-edit-preview {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--timeline-head-width) + 8px + var(--tl-inset));
+  width: calc(var(--tl-width, 100%) - var(--timeline-head-width) - 8px - 2 * var(--tl-inset));
+  pointer-events: none;
+  z-index: 9;
+}
+#seq-edit-preview > * {
+  position: absolute;
+  box-sizing: border-box;
+}
+/* footage or sound that goes: faint and grey, the way muted sound looks on the timeline, so the
+   frames underneath stay readable */
+.edit-preview-gone,
+.edit-preview-quiet {
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--sink) 74%, transparent);
+  -webkit-backdrop-filter: grayscale(1);
+  backdrop-filter: grayscale(1);
+}
+/* where the menu acts, while it is open */
+.edit-preview-here {
+  width: 0;
+  margin-left: -0.5px;
+  border-left: 1px solid var(--text);
+}
+/* what a deleted segment leaves in the export, in the label a black gap gets */
+.edit-preview-black {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  color: var(--muted);
+  font: 500 calc(11.5px * var(--text-scale)) / 1.2 var(--font);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* the marker Add marker here would make */
+.seq-marker.edit-preview-marker {
+  opacity: 0.7;
+}
+.edit-preview-marker .seq-marker-flag {
+  pointer-events: none;
+  cursor: default;
+}
+.edit-preview-cut,
+.edit-preview-land,
+.edit-preview-from {
+  width: 0;
+  margin-left: -1px;
+  border-left: 2px dashed var(--text);
+}
+/* the line everything slides to */
+.edit-preview-land {
+  border-left-color: var(--accent-light);
+}
+/* the playhead end of a cut out */
+.edit-preview-from {
+  border-left: 2px solid var(--accent-light);
+}
+.edit-preview-time {
+  transform: translateX(-50%);
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--text);
+  color: var(--bg);
+  font: 600 calc(11px * var(--text-scale)) / 1.4 var(--font);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.edit-preview-time.slide {
+  background: var(--accent-light);
+}
 /* markers sit under the playhead and over the segments; only the flags take the pointer */
 #seq-marker-layer {
   position: absolute;

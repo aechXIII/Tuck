@@ -1,4 +1,5 @@
 import type { EditorClip } from "../editor/types.ts";
+import { createContextMenu } from "./context-menu.ts";
 import { splitAt, type SegmentRange } from "./segments.ts";
 
 // two markers closer than this mark the same moment
@@ -84,6 +85,9 @@ export interface MarkerApi {
   paint: () => void;
   add: () => void;
   canAdd: () => boolean;
+  // the timeline's menu adds one where it was right-clicked
+  addAt: (time: number) => void;
+  canAddAt: (time: number) => boolean;
   times: () => number[];
   closeMenu: () => void;
 }
@@ -104,8 +108,7 @@ export function installMarkers(host: MarkerHost): MarkerApi {
   const layer = doc.getElementById("seq-marker-layer");
   let painted = "";
   let drag: MarkerDrag | null = null;
-  let menu: HTMLElement | null = null;
-  let menuIndex = -1;
+  const menu = createContextMenu(doc, host.window, "marker-menu");
   let pointerOpen = 0;
 
   function times(): number[] {
@@ -166,11 +169,20 @@ export function installMarkers(host: MarkerHost): MarkerApi {
     return !!host.clip() && host.duration() > 0;
   }
 
-  function add(): void {
-    const next = addMarker(times(), host.playhead(), host.duration());
+  function canAddAt(time: number): boolean {
+    return canAdd() && !!addMarker(times(), time, host.duration());
+  }
+
+  function addAt(time: number): void {
+    const next = addMarker(times(), time, host.duration());
     if (!next) return;
     record("add marker", () => setMarkers(next));
     paint();
+  }
+
+  // a shortcut passes its event, so the playhead is read here rather than taken as an argument
+  function add(): void {
+    addAt(host.playhead());
   }
 
   // after a marker goes, focus moves to the one that took its place, or back to the timeline
@@ -311,29 +323,8 @@ export function installMarkers(host: MarkerHost): MarkerApi {
     open(index, fromPointer ? { x: event.clientX, y: event.clientY } : undefined);
   });
 
-  function menuItems(): HTMLElement[] {
-    return menu ? Array.from(menu.querySelectorAll<HTMLElement>("[role='menuitem']")) : [];
-  }
-
-  function focusItem(index: number): void {
-    const list = menuItems();
-    if (!list.length) return;
-    list[(index + list.length) % list.length]?.focus();
-  }
-
-  function isOpen(): boolean {
-    return !!menu && !menu.hidden;
-  }
-
   function closeMenu(returnFocus = false): void {
-    if (!menu || !isOpen()) return;
-    if (typeof menu.hidePopover === "function" && menu.matches(":popover-open")) menu.hidePopover();
-    menu.hidden = true;
-    menu.replaceChildren();
-    const flag = flags()[menuIndex];
-    flag?.classList.remove("menu-target");
-    menuIndex = -1;
-    if (returnFocus) flag?.focus({ preventScroll: true });
+    menu.close(returnFocus);
   }
 
   function run(action: MenuAction, index: number): void {
@@ -342,119 +333,24 @@ export function installMarkers(host: MarkerHost): MarkerApi {
     else clear();
   }
 
-  function ensureMenu(): HTMLElement {
-    if (menu) return menu;
-    const element = doc.createElement("div");
-    element.id = "marker-menu";
-    element.className = "row-menu";
-    element.setAttribute("role", "menu");
-    element.setAttribute("popover", "manual");
-    element.tabIndex = -1;
-    element.hidden = true;
-    element.addEventListener("click", (event) => {
-      const item = (event.target as Element | null)?.closest<HTMLElement>("[data-marker-action]");
-      if (!item || item.getAttribute("aria-disabled") === "true") return;
-      const action = item.dataset.markerAction as MenuAction;
-      const index = menuIndex;
-      closeMenu(true);
-      run(action, index);
-    });
-    element.addEventListener("pointermove", (event) => {
-      const item = (event.target as Element | null)?.closest<HTMLElement>("[role='menuitem']");
-      if (item && doc.activeElement !== item) item.focus({ preventScroll: true });
-    });
-    element.addEventListener("keydown", (event) => {
-      const list = menuItems();
-      const current = list.indexOf(doc.activeElement as HTMLElement);
-      if (event.key === "ArrowDown") focusItem(current + 1);
-      else if (event.key === "ArrowUp") focusItem(current < 0 ? list.length - 1 : current - 1);
-      else if (event.key === "Home") focusItem(0);
-      else if (event.key === "End") focusItem(list.length - 1);
-      else if (event.key === "Escape" || event.key === "Tab") closeMenu(true);
-      else return;
-      event.preventDefault();
-      event.stopPropagation();
-    });
-    doc.body.appendChild(element);
-    menu = element;
-    return element;
-  }
-
-  function place(element: HTMLElement, flag: HTMLElement, at?: { x: number; y: number }): void {
-    const view = doc.documentElement;
-    const edge = 8;
-    element.style.left = "0px";
-    element.style.top = "0px";
-    element.classList.add("at-pointer");
-    const bounds = flag.getBoundingClientRect();
-    const size = element.getBoundingClientRect();
-    let left = at ? at.x : bounds.left;
-    let top = at ? at.y : bounds.bottom + 4;
-    if (top + size.height > view.clientHeight - edge) {
-      top = (at ? at.y : bounds.top - 4) - size.height;
-      element.classList.add("opens-up");
-    } else {
-      element.classList.remove("opens-up");
-    }
-    left = Math.max(edge, Math.min(left, view.clientWidth - size.width - edge));
-    element.style.left = Math.round(left) + "px";
-    element.style.top = Math.round(Math.max(edge, top)) + "px";
-  }
-
   function open(index: number, at?: { x: number; y: number }): void {
     const flag = flags()[index];
     if (!flag) return;
-    closeMenu(false);
-    const element = ensureMenu();
-    element.setAttribute("aria-label", flag.getAttribute("aria-label") ?? "Marker");
-    const items: { action: MenuAction; label: string; keys?: string; disabled: boolean }[] = [
-      { action: "split", label: "Split at all markers", disabled: !host.canSplit() },
-      { action: "remove", label: "Remove marker", keys: "Delete", disabled: false },
-      { action: "clear", label: "Clear markers", disabled: false },
-    ];
-    for (const item of items) {
-      const button = doc.createElement("button");
-      button.type = "button";
-      button.className = "row-menu-item";
-      button.setAttribute("role", "menuitem");
-      button.tabIndex = -1;
-      button.dataset.markerAction = item.action;
-      button.setAttribute("aria-label", item.label);
-      if (item.disabled) button.setAttribute("aria-disabled", "true");
-      const text = doc.createElement("span");
-      text.className = "row-menu-text";
-      const label = doc.createElement("span");
-      label.className = "row-menu-label";
-      label.textContent = item.label;
-      text.append(label);
-      button.append(text);
-      if (item.keys) {
-        const keys = doc.createElement("span");
-        keys.className = "row-menu-keys";
-        keys.textContent = item.keys;
-        button.append(keys);
-        button.setAttribute("aria-keyshortcuts", item.keys);
-      }
-      element.append(button);
-    }
-    menuIndex = index;
+    menu.open({
+      label: flag.getAttribute("aria-label") ?? "Marker",
+      anchor: flag,
+      at,
+      items: [
+        { action: "split", label: "Split at all markers", disabled: !host.canSplit() },
+        { action: "remove", label: "Remove marker", keys: "Delete" },
+        { action: "clear", label: "Clear markers" },
+      ],
+      run: (action) => run(action as MenuAction, index),
+      closed: () => flag.classList.remove("menu-target"),
+    });
+    // after opening, since opening closes the menu before it, which puts out the old target
     flag.classList.add("menu-target");
-    element.hidden = false;
-    if (typeof element.showPopover === "function" && !element.matches(":popover-open")) element.showPopover();
-    place(element, flag, at);
-    if (at) {
-      element.focus({ preventScroll: true });
-    } else {
-      const first = menuItems().findIndex((item) => item.getAttribute("aria-disabled") !== "true");
-      focusItem(Math.max(0, first));
-    }
   }
 
-  doc.addEventListener("pointerdown", (event) => {
-    if (menu && isOpen() && !(event.target instanceof Node && menu.contains(event.target))) closeMenu(false);
-  }, true);
-  host.window.addEventListener("blur", () => closeMenu(false));
-  host.window.addEventListener("resize", () => closeMenu(false));
-
-  return { paint, add, canAdd, times, closeMenu: () => closeMenu(false) };
+  return { paint, add, canAdd, addAt, canAddAt, times, closeMenu: () => closeMenu(false) };
 }

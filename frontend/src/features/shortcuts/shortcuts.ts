@@ -498,6 +498,15 @@ const COMMANDS: CommandDefinition[] = [
     context: "editor-no-text-entry",
   },
   {
+    id: "timeline.ripple-delete",
+    category: "Timeline & segments",
+    column: 1,
+    label: "Ripple delete segment",
+    guideNote: "Closes the gap it leaves.",
+    bindings: ["Shift+Delete"],
+    context: "editor-no-text-entry",
+  },
+  {
     // a mouse gesture the timeline handles itself; listed so the guide teaches it
     id: "timeline.slip-segment",
     category: "Timeline & segments",

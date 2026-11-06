@@ -351,6 +351,65 @@ export function removeSegment(
   return result;
 }
 
+/**
+ * The stretch from `from` to `to` as it is really taken out: an end that falls just inside a
+ * segment's edge takes the edge, so no sliver too short to be a segment is left behind.
+ */
+export function stretchBounds(
+  segments: readonly SegmentRange[],
+  from: number,
+  to: number,
+  duration: number,
+): [number, number] {
+  let start = Math.max(0, finiteNumber(from, "stretch start"));
+  let end = Math.min(duration, finiteNumber(to, "stretch end"));
+  for (const segment of segments) {
+    if (start > segment.start && start - segment.start < MIN_DURATION) start = segment.start;
+    if (end < segment.end && segment.end - end < MIN_DURATION) end = segment.end;
+  }
+  return [start, end];
+}
+
+/**
+ * The timeline without the stretch from `from` to `to`: the footage there goes, a segment across
+ * either edge keeps its other part, and everything after slides left to close it up. Segments
+ * keep their footage, so the result is a placed timeline, as a moved segment makes one.
+ */
+export function removeStretch(
+  segments: SegmentRange[],
+  from: number,
+  to: number,
+  duration: number,
+): SegmentRange[] {
+  const result = normalizeSegments(segments, duration);
+  const [start, end] = stretchBounds(result, from, to, duration);
+  const length = end - start;
+  if (!(length > 0)) return result;
+  for (const segment of result) segment.sourceStart ??= segment.start;
+  const kept: SegmentRange[] = [];
+  const slide = (segment: SegmentRange) => {
+    segment.start -= length;
+    segment.end -= length;
+    return segment;
+  };
+  for (const segment of result) {
+    if (segment.end <= start) kept.push(segment);
+    else if (segment.start >= end) kept.push(slide(segment));
+    else {
+      if (segment.start < start) kept.push(copySegment(segment, segment.start, start));
+      if (segment.end > end) kept.push(slide(copySegment(segment, end, segment.end)));
+    }
+  }
+  return kept.filter((segment) => segment.end - segment.start >= MIN_DURATION - 0.000001);
+}
+
+/** The empty stretches before and between segments; the end of the timeline isn't one. */
+export function timelineGaps(segments: SegmentRange[], duration: number): { start: number; end: number }[] {
+  return availableGaps(segments, duration)
+    .filter((gap) => gap.insertAt < segments.length)
+    .map((gap) => ({ start: gap.start, end: gap.end }));
+}
+
 export function cloneSegments(segments: SegmentRange[]): SegmentRange[] {
   return segments.map((segment) => copySegment(segment));
 }
