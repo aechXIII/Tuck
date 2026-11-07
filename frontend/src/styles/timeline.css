@@ -475,6 +475,49 @@ body.tl-segment-dragging * {
   position: absolute;
   inset: 0;
 }
+/* a gap the export fills with black says so in the middle, with Close gap under it; the lane stays
+   its own color, and only Close gap takes the pointer, so a gap still seeks and has its menu; the
+   layer sits over the segments' one, which covers the whole track */
+#tl-gaps {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+}
+.tl-gap {
+  position: absolute;
+  top: var(--tl-inset);
+  bottom: var(--tl-inset);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  overflow: hidden;
+  container-type: size;
+}
+.tl-gap-text {
+  color: var(--muted);
+  font: 500 calc(11.5px * var(--text-scale)) / 1.2 var(--font);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.tl-gap .tl-gap-close {
+  padding: 0;
+  line-height: 1.2;
+  pointer-events: auto;
+}
+/* where both lines don't fit, Close gap goes first and the length next; the menu still has it */
+@container (max-width: 104px) or (max-height: 32px) {
+  .tl-gap .tl-gap-close {
+    display: none;
+  }
+}
+@container (max-width: 96px) or (max-height: 16px) {
+  .tl-gap-text {
+    display: none;
+  }
+}
 .tl-segment {
   --segment-color: var(--accent);
   position: absolute;

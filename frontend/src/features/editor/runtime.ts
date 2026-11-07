@@ -364,6 +364,7 @@ export function installEditorRuntime(
       byId("stage")?.classList.toggle("timeline-gap", gap);
       const caption = byId("timeline-gap-caption");
       if (caption) caption.hidden = !gap;
+      timeline.syncGapCaption();
       frameExport?.sync();
     },
     loopPlayback: () => session.appSettings.loop_playback !== false,

@@ -295,7 +295,7 @@
           </div>
         </div>
         <div id="stage">
-          <div id="timeline-gap-caption" role="status" hidden>No video at the playhead</div>
+          <div id="timeline-gap-caption" hidden><span role="status">No video at the playhead</span><button type="button" class="inspector-reset" id="timeline-gap-close" hidden>Close gap</button></div>
           <div id="media-viewport">
             <video crossorigin="anonymous" id="vid" aria-label="Video preview"></video>
           </div>
@@ -1562,6 +1562,7 @@
                 <div class="kf-guides" id="kf-guides" aria-hidden="true" hidden></div>
                 <div class="tl-track" id="tl-track">
                   <div id="tl-segments"></div>
+                  <div id="tl-gaps"></div>
                 </div>
               </div>
               <div class="tl-cut-marks" id="tl-cut-marks"></div>

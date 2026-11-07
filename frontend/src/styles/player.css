@@ -89,12 +89,15 @@
   position: absolute;
   inset: 0;
   display: grid;
-  place-items: center;
+  place-content: center;
+  justify-items: center;
+  gap: 8px;
   color: var(--muted);
   background: #000;
   z-index: 1;
 }
 #timeline-gap-caption[hidden] { display: none; }
+#timeline-gap-caption .inspector-reset { padding: 0; font-size: calc(12px * var(--text-scale)); }
 #stage.timeline-gap :is(#media-viewport, #crop-ui, #lut-compare, .preview-status) { visibility: hidden; }
 
 /* covers only the shown picture, so the split and its labels line up with the frame; it sits

@@ -670,6 +670,7 @@ function paintTrimChrome() {
   let addButton = byId("btn-segment-add");
   if (!ready) {
     segmentsLayer?.replaceChildren();
+    paintBlackGaps([], 0);
     refreshFrames();
     if (isButtonElement(resetButton)) {
       resetButton.disabled = true;
@@ -706,6 +707,7 @@ function paintTrimChrome() {
   let bounds = segments[active];
   if (!bounds) {
     segmentsLayer?.replaceChildren();
+    paintBlackGaps([], 0);
     return {
       full: 0,
       bounds: { start: 0, end: 0 },
@@ -789,6 +791,7 @@ function paintTrimChrome() {
       );
     }
   }
+  paintBlackGaps(segments, full);
   paintSelectionFrame(startPct, endPct, segmentColor(active));
   refreshFrames();
   byId("tl-in")?.setAttribute(
@@ -1390,6 +1393,73 @@ function trimStretch(from: number, to: number, side: "start" | "end") {
     if (side === "start" ? trimmed < 0 && segment.start >= result.at - 0.000001 : segment.end <= result.at + 0.000001) trimmed = index;
   });
   finishStretchEdit(c, segments, result.at, trimmed >= 0 ? trimmed : undefined);
+}
+
+// a timeline that was never moved exports its segments back to back; once one is placed, every
+// gap before the last segment is black in the export, so those gaps say so
+function blackGaps(segments: readonly SegmentEditing.SegmentRange[], full: number): { start: number; end: number }[] {
+  if (!(full > 0) || host.cutTask?.() || !SegmentEditing.hasPlacement(segments)) return [];
+  return SegmentEditing.timelineGaps([...segments], full);
+}
+
+function blackGapAtPlayhead(): { start: number; end: number } | null {
+  const c = selectedClip(session);
+  const full = videoDuration();
+  const time = host.getPreviewSec?.() ?? null;
+  if (!c || !(full > 0) || time == null) return null;
+  return blackGaps(clipSegments(c, full), full).find((gap) => time >= gap.start - 0.001 && time < gap.end) ?? null;
+}
+
+function newGapMark(): HTMLElement {
+  const mark = documentRef.createElement("div");
+  mark.className = "tl-gap";
+  const text = documentRef.createElement("span");
+  text.className = "tl-gap-text";
+  const close = documentRef.createElement("button");
+  close.type = "button";
+  close.className = "inspector-reset tl-gap-close";
+  close.textContent = "Close gap";
+  mark.append(text, close);
+  return mark;
+}
+
+// like the segments, the marks stay the same elements while a segment is dragged
+function paintBlackGaps(segments: readonly SegmentEditing.SegmentRange[], full: number): void {
+  const layer = byId("tl-gaps");
+  if (layer) {
+    const gaps = blackGaps(segments, full);
+    const marks = Array.from(layer.children) as HTMLElement[];
+    for (const extra of marks.splice(gaps.length)) extra.remove();
+    for (const [i, gap] of gaps.entries()) {
+      let mark = marks[i];
+      if (!mark) {
+        mark = newGapMark();
+        layer.append(mark);
+      }
+      writeStyles(mark, {
+        left: (gap.start / full) * 100 + "%",
+        width: ((gap.end - gap.start) / full) * 100 + "%",
+      });
+      const length = formatSelectedDuration(gap.end - gap.start);
+      const text = mark.querySelector(".tl-gap-text");
+      if (text) writeText(text, `${length} of black`);
+      const close = mark.querySelector(".tl-gap-close");
+      if (close) {
+        writeAttributes(close, {
+          "aria-label": `Close the ${length} gap`,
+          "data-gap-start": String(gap.start),
+          "data-gap-end": String(gap.end),
+        });
+      }
+    }
+  }
+  syncGapCaption();
+}
+
+// the preview's "No video at the playhead" offers Close gap while that gap exports as black
+function syncGapCaption(): void {
+  const close = byId("timeline-gap-close");
+  if (close) close.hidden = !blackGapAtPlayhead();
 }
 
 function closeGap(start: number, end: number) {
@@ -2181,6 +2251,21 @@ function initTimelineResizer() {
   const markers = markerApi;
   const markerTimes = markers.times;
 
+  const closeGapStep = recorded("close gap", closeGap);
+  // pressing Close gap must not start a seek or a drag on the lane under it
+  byId("tl-gaps")?.addEventListener("pointerdown", (event) => {
+    if ((event.target as Element | null)?.closest(".tl-gap-close")) event.stopPropagation();
+  });
+  byId("tl-gaps")?.addEventListener("click", (event) => {
+    const close = (event.target as Element | null)?.closest<HTMLElement>(".tl-gap-close");
+    if (!close) return;
+    event.stopPropagation();
+    closeGapStep(Number(close.dataset.gapStart), Number(close.dataset.gapEnd));
+  });
+  byId("timeline-gap-close")?.addEventListener("click", () => {
+    const gap = blackGapAtPlayhead();
+    if (gap) closeGapStep(gap.start, gap.end);
+  });
   installEditMenu({
     document: documentRef,
     window: windowRef,
@@ -2224,7 +2309,7 @@ function initTimelineResizer() {
     toggleSegmentMute: (index) => host.AudioTimeline?.toggleSegmentMute?.(index),
     remove: recorded("remove segment", removeSegmentAt),
     ripple: recorded("ripple delete", rippleDeleteSegment),
-    closeGap: recorded("close gap", closeGap),
+    closeGap: closeGapStep,
     closeAllGaps: recorded("close gaps", closeAllGaps),
     selectAudioClip: (trackId, clipId) => host.AudioTimeline?.selectClip?.(trackId, clipId),
     splitAudio: (time) => {
@@ -2304,6 +2389,7 @@ function initTimelineResizer() {
     paintTrimChrome: paintTrimChrome,
     refreshFrames: refreshFrames,
     playbackSegments: playbackSegments,
+    syncGapCaption: syncGapCaption,
     removeActiveSegment: recorded("remove segment", removeActiveSegment),
     goToCutPoint: goToCutPoint,
     seekToKeyframe: seekToKeyframe,
