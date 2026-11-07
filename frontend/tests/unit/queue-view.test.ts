@@ -17,6 +17,7 @@ import {
   TASKBAR_IDLE,
   batchSummary,
   isQueueActive,
+  pathKey,
   queueItemState,
   queueItemsFromSnapshot,
   videosToRemoveAfterExport,
@@ -24,6 +25,16 @@ import {
   type QueueItem,
   type QueueViewState,
 } from "../../src/features/queue/queue-view.ts";
+
+test("pathKey matches a Windows path however the shell writes it, and leaves Linux paths exact", () => {
+  const key = pathKey("C:\\Videos\\Clip_tucked.mp4");
+  assert.equal(pathKey("c:/videos/clip_TUCKED.mp4"), key);
+  assert.equal(pathKey("\\\\?\\C:\\Videos\\Clip_tucked.mp4"), key);
+  assert.notEqual(pathKey("C:\\Videos\\Clip_tucked (2).mp4"), key);
+  // Linux tells files apart by case
+  assert.equal(pathKey("/home/a/Clip.mp4"), "/home/a/Clip.mp4");
+  assert.notEqual(pathKey("/home/a/clip.mp4"), pathKey("/home/a/Clip.mp4"));
+});
 
 test("formatEta pads minutes and seconds and adds hours when needed", () => {
   assert.equal(formatEta(null), "--");

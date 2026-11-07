@@ -97,7 +97,7 @@ pub(crate) fn file_uri(path: &str) -> String {
 
 // shell apps that read the file list don't all accept the \\?\ form canonicalize returns
 #[cfg(windows)]
-fn shell_path(path: &Path) -> Vec<u16> {
+pub(crate) fn shell_path(path: &Path) -> Vec<u16> {
     use std::os::windows::ffi::OsStrExt;
     let encoded: Vec<u16> = path.as_os_str().encode_wide().collect();
     let drive_prefix: Vec<u16> = r"\\?\".encode_utf16().collect();

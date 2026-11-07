@@ -7,10 +7,13 @@ use std::path::PathBuf;
 use crate::backend::protocol::PublicBackendError;
 
 /// Whether this build can drag a file out of the window. The page only offers dragging where it
-/// can; Windows needs its own OLE drag source first.
-pub const SUPPORTED: bool = cfg!(target_os = "linux");
+/// can.
+pub const SUPPORTED: bool = cfg!(any(target_os = "linux", windows));
 
-#[cfg(target_os = "linux")]
+/// Told when a drag that started is over, dropped or not; dropped unsent, it means the same.
+pub type DragEnded = tokio::sync::oneshot::Sender<()>;
+
+#[cfg(any(target_os = "linux", windows))]
 fn drag_error() -> PublicBackendError {
     PublicBackendError::new(
         "UNSUPPORTED_OPERATION",
@@ -36,12 +39,14 @@ fn clear_drag_handlers(window: &gtk::ApplicationWindow) {
 }
 
 /// Starts one drag carrying every file in `paths`. Must run on the main thread while the primary
-/// button is still held; returns `Ok(false)` without dragging once it has been let go.
+/// button is still held; returns `Ok(false)` without dragging once it has been let go. The drag
+/// goes on after this returns, and `ended` hears when it is over.
 #[cfg(target_os = "linux")]
 pub fn start(
     window: &tauri::WebviewWindow,
     webview: &tauri::webview::PlatformWebview,
     paths: &[PathBuf],
+    ended: DragEnded,
 ) -> Result<bool, PublicBackendError> {
     use gtk::gdk;
     use gtk::prelude::*;
@@ -79,9 +84,13 @@ pub fn start(
         let uris: Vec<&str> = uris.iter().map(String::as_str).collect();
         selection.set_uris(&uris);
     });
+    let ended = std::cell::Cell::new(Some(ended));
     let end = window.connect_drag_end(move |window, _| {
         clear_drag_handlers(window);
         end_press(&page);
+        if let Some(ended) = ended.take() {
+            let _ = ended.send(());
+        }
     });
     DRAG_HANDLERS.with(|handlers| handlers.borrow_mut().extend([data, end]));
 
@@ -157,11 +166,178 @@ fn button_event(
     event
 }
 
-#[cfg(not(target_os = "linux"))]
+/// Starts one drag carrying every file in `paths`, like the Linux one. The shell's drag runs its
+/// own loop until the drop, so this returns once the files have been dropped or the drag let go,
+/// and dropping `_ended` then says so.
+#[cfg(windows)]
+pub fn start(
+    window: &tauri::WebviewWindow,
+    _webview: &tauri::webview::PlatformWebview,
+    paths: &[PathBuf],
+    _ended: DragEnded,
+) -> Result<bool, PublicBackendError> {
+    windows_drag::start(window, paths)
+}
+
+#[cfg(windows)]
+mod windows_drag {
+    use std::path::PathBuf;
+
+    use windows::core::PCWSTR;
+    use windows::Win32::System::Com::IDataObject;
+    use windows::Win32::System::Ole::{
+        IDropSource, OleInitialize, OleUninitialize, DROPEFFECT_COPY,
+    };
+    use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON};
+    use windows::Win32::UI::Shell::Common::ITEMIDLIST;
+    use windows::Win32::UI::Shell::{
+        FOLDERID_Desktop, ILCreateFromPathW, ILFree, SHCreateDataObject, SHDoDragDrop,
+        SHGetKnownFolderIDList, KF_FLAG_DEFAULT,
+    };
+    use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_SWAPBUTTON};
+
+    use super::drag_error;
+    use crate::backend::protocol::PublicBackendError;
+    use crate::platform::file_clipboard::shell_path;
+
+    /// Item IDs the shell made for the dragged files, freed once the drag is over.
+    struct ItemIds(Vec<*mut ITEMIDLIST>);
+
+    impl Drop for ItemIds {
+        fn drop(&mut self) {
+            for id in self.0.drain(..) {
+                unsafe { ILFree(Some(id.cast_const())) };
+            }
+        }
+    }
+
+    fn primary_button_held() -> bool {
+        // GetAsyncKeyState reads the physical buttons, so with swapped buttons the primary one is
+        // the right
+        let swapped = unsafe { GetSystemMetrics(SM_SWAPBUTTON) } != 0;
+        let button = if swapped { VK_RBUTTON } else { VK_LBUTTON };
+        // the high bit, so a negative state, means the button is down now
+        let state = unsafe { GetAsyncKeyState(i32::from(button.0)) };
+        state < 0
+    }
+
+    /// The shell's data object for `paths`, which hands the files over the way Explorer does: as
+    /// item IDs, a file list and file contents. The item IDs stay alive with it until the drag
+    /// is over.
+    fn data_object(paths: &[PathBuf]) -> Result<(IDataObject, ItemIds), PublicBackendError> {
+        let mut ids = ItemIds(Vec::with_capacity(paths.len()));
+        for path in paths {
+            let wide: Vec<u16> = shell_path(path).into_iter().chain([0]).collect();
+            let id = unsafe { ILCreateFromPathW(PCWSTR(wide.as_ptr())) };
+            if id.is_null() {
+                return Err(drag_error());
+            }
+            ids.0.push(id);
+        }
+        let absolute: Vec<*const ITEMIDLIST> = ids.0.iter().map(|id| id.cast_const()).collect();
+        // full item IDs are relative to the desktop, so the desktop is their folder and the files
+        // need no common one. Given no folder at all, the shell makes an object with no formats,
+        // and every app refuses the drop
+        let desktop =
+            unsafe { SHGetKnownFolderIDList(&FOLDERID_Desktop, KF_FLAG_DEFAULT.0 as u32, None) }
+                .map_err(|_| drag_error())?;
+        let desktop = ItemIds(vec![desktop]);
+        let data: IDataObject = unsafe {
+            SHCreateDataObject(
+                Some(desktop.0[0].cast_const()),
+                Some(&absolute),
+                None::<&IDataObject>,
+            )
+        }
+        .map_err(|_| drag_error())?;
+        Ok((data, ids))
+    }
+
+    pub(super) fn start(
+        window: &tauri::WebviewWindow,
+        paths: &[PathBuf],
+    ) -> Result<bool, PublicBackendError> {
+        // the drag ends on the button's release; started after it, it would end at once
+        if !primary_button_held() {
+            return Ok(false);
+        }
+        let owner = window.hwnd().map_err(|_| drag_error())?;
+        let (data, _ids) = data_object(paths)?;
+        // OLE is usually set up on the window's thread already; this only counts one more use
+        let ole = unsafe { OleInitialize(None) }.is_ok();
+        // the shell's own drag source draws the files' pictures and ends the drag on release
+        let dropped =
+            unsafe { SHDoDragDrop(Some(owner), &data, None::<&IDropSource>, DROPEFFECT_COPY) };
+        if ole {
+            unsafe { OleUninitialize() };
+        }
+        dropped.map(|_| true).map_err(|_| drag_error())
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use std::os::windows::ffi::OsStringExt;
+        use std::path::PathBuf;
+
+        use windows::Win32::System::Com::{DVASPECT_CONTENT, FORMATETC, TYMED_HGLOBAL};
+        use windows::Win32::System::Ole::{OleInitialize, ReleaseStgMedium, CF_HDROP};
+        use windows::Win32::UI::Shell::{DragQueryFileW, HDROP};
+
+        use super::data_object;
+
+        #[test]
+        fn file_drag_windows_hands_over_a_file_list_from_any_folders() {
+            let root = std::env::temp_dir().join(format!("tuck-file-drag-{}", std::process::id()));
+            let other = root.join("Other folder");
+            std::fs::create_dir_all(&other).unwrap();
+            let paths = vec![root.join("Replay ünïcode 1.mp4"), other.join("Clip 2.mp4")];
+            for path in &paths {
+                std::fs::write(path, b"video").unwrap();
+            }
+
+            let _ = unsafe { OleInitialize(None) };
+            let (data, _ids) = data_object(&paths).unwrap();
+            let format = FORMATETC {
+                cfFormat: CF_HDROP.0,
+                ptd: std::ptr::null_mut(),
+                dwAspect: DVASPECT_CONTENT.0,
+                lindex: -1,
+                tymed: TYMED_HGLOBAL.0 as u32,
+            };
+            // browsers, chat apps and file managers take a drop by its file list
+            let mut medium = unsafe { data.GetData(&format) }.unwrap();
+            let files = HDROP(unsafe { medium.u.hGlobal.0 });
+            let count = unsafe { DragQueryFileW(files, u32::MAX, None) };
+            let mut dropped = Vec::new();
+            for index in 0..count {
+                let length = unsafe { DragQueryFileW(files, index, None) } as usize;
+                let mut name = vec![0_u16; length + 1];
+                let copied = unsafe { DragQueryFileW(files, index, Some(&mut name)) } as usize;
+                dropped.push(PathBuf::from(std::ffi::OsString::from_wide(
+                    &name[..copied],
+                )));
+            }
+            unsafe { ReleaseStgMedium(&mut medium) };
+
+            let canonical = |list: &[PathBuf]| -> Vec<PathBuf> {
+                list.iter()
+                    .map(|path| std::fs::canonicalize(path).unwrap())
+                    .collect()
+            };
+            let expected = canonical(&paths);
+            let got = canonical(&dropped);
+            std::fs::remove_dir_all(&root).unwrap();
+            assert_eq!(got, expected);
+        }
+    }
+}
+
+#[cfg(not(any(target_os = "linux", windows)))]
 pub fn start(
     _window: &tauri::WebviewWindow,
     _webview: &tauri::webview::PlatformWebview,
     _paths: &[PathBuf],
+    _ended: DragEnded,
 ) -> Result<bool, PublicBackendError> {
     Err(PublicBackendError::new(
         "UNSUPPORTED_OPERATION",

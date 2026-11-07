@@ -1145,8 +1145,10 @@ export function installEditorRuntime(
       Array.from(event.dataTransfer?.types ?? []).includes("Files");
     const overlay = byId("drag-overlay");
     const dropZone = byId("drop-z");
-    // armed enables the fade-out; see #drag-overlay.armed
-    const showOverlay = (): void => overlay?.classList.add("show", "armed");
+    // armed enables the fade-out; see #drag-overlay.armed. Tuck's own drag out offers nothing to add
+    const showOverlay = (): void => {
+      if (!queue?.isDraggingOut()) overlay?.classList.add("show", "armed");
+    };
     windowRef.document.body.addEventListener("dragenter", (event) => {
       if (!isFileDrag(event)) return;
       event.preventDefault();
@@ -1196,7 +1198,8 @@ export function installEditorRuntime(
             } else if (payload.type === "drop") {
               overlay?.classList.remove("show");
               dropZone?.classList.remove("over");
-              importFiles(payload.paths);
+              // letting go of an export over Tuck cancels its drag rather than adding the file
+              if (!queue?.isDraggingOut(payload.paths)) importFiles(payload.paths);
             }
           });
         } catch (error) {

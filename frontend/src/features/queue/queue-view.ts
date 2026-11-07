@@ -631,3 +631,10 @@ export function reduceQueueSnapshot(
     outputToOpen,
   };
 }
+
+/** A file path as the system compares it, so a dropped file can be matched to an export. Windows
+ * ignores case and slash direction, and the long-path prefix (`\\?\`) names the same file. */
+export function pathKey(path: string): string {
+  const plain = path.replace(/^\\\\\?\\/, "");
+  return /^[A-Za-z]:[\\/]/.test(plain) ? plain.replaceAll("/", "\\").toLowerCase() : plain;
+}

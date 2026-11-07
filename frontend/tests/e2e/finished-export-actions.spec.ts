@@ -151,6 +151,66 @@ test("dragging a finished export's picture starts a file drag; a press or anothe
   expect(await calls(page, "startExportDrag")).toEqual([["done"]]);
 });
 
+test("letting go of a dragged export over Tuck adds nothing, and the next drop adds its files", async ({ page }) => {
+  // a shell that hands the page its drag events, the way Tauri does while files are over the window
+  await page.addInitScript(() => {
+    const callbacks = new Map<number, (event: unknown) => void>();
+    const listeners: Record<string, number[]> = {};
+    let next = 1;
+    Reflect.set(window, "__TAURI_INTERNALS__", {
+      metadata: { currentWindow: { label: "main" }, currentWebview: { windowLabel: "main", label: "main" } },
+      transformCallback: (callback: (event: unknown) => void) => {
+        const id = next++;
+        callbacks.set(id, callback);
+        return id;
+      },
+      invoke: async (command: string, args: { event?: string; handler?: number }) => {
+        if (command === "platform_capabilities") {
+          return {
+            platform: "windows", architecture: "x86_64", customTitleBar: true, sendToIntegration: true, publicCli: true,
+            automaticUpdater: true, hardwareAcceleration: true, fileDragOut: true, packaged: false, nativePreview: "off",
+          };
+        }
+        if (command === "plugin:event|listen" && args.event && args.handler) (listeners[args.event] ??= []).push(args.handler);
+        return 1;
+      },
+    });
+    Reflect.set(window, "shellDragEvent", (event: string, payload: unknown) => {
+      for (const id of listeners[event] ?? []) callbacks.get(id)?.({ event, id: 1, payload });
+    });
+  });
+  await open(page, 1240, (fixture) => {
+    fixture.holdMethods = ["startExportDrag"];
+  });
+  const shell = (event: string, payload: unknown) =>
+    page.evaluate(([name, data]) => (Reflect.get(window, "shellDragEvent") as (event: string, payload: unknown) => void)(name, data), [event, payload] as const);
+  const position = { x: 400, y: 300 };
+
+  const picture = row(page, "Ranked match clutch.mp4").locator(".c-thumb");
+  await expect(picture).toHaveAttribute("data-drag-out", "1");
+  const box = (await picture.boundingBox())!;
+  await page.mouse.move(box.x + 10, box.y + 10);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 60, box.y + 10, { steps: 5 });
+  await page.mouse.up();
+  await expect.poll(() => calls(page, "startExportDrag")).toEqual([["done"]]);
+
+  // the shell's drag is still running: its own file comes back over the window and is let go there
+  await shell("tauri://drag-enter", { paths: [RESULT], position });
+  await shell("tauri://drag-over", { position });
+  await expect(page.locator("#drag-overlay")).not.toHaveClass(/\bshow\b/);
+  await shell("tauri://drag-drop", { paths: [RESULT], position });
+  await page.evaluate(() => (Reflect.get(window, "__tuckReleaseHeld") as (method: string, value: unknown) => void)("startExportDrag", { ok: true, started: true }));
+
+  const other = "C:\\videos\\Lobby warmup.mp4";
+  await shell("tauri://drag-enter", { paths: [other], position });
+  await expect(page.locator("#drag-overlay")).toHaveClass(/\bshow\b/);
+  await shell("tauri://drag-drop", { paths: [other], position });
+  await expect(page.locator("#clips .clip .c2")).toHaveText([
+    "Ranked match clutch.mp4", "Bike trail morning.mov", "Cat vs laser pointer.mp4", "Lobby warmup.mp4",
+  ]);
+});
+
 test("a drag that can't start says why", async ({ page }) => {
   await open(page, 1240, (fixture) => {
     fixture.responses.startExportDrag = { ok: false, error: "The export could not be found. It may have been moved or deleted." };

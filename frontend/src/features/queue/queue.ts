@@ -14,6 +14,7 @@ import {
   finishedNotification,
   formatQueueStatus,
   isQueueActive,
+  pathKey,
   queueItemsFromSnapshot,
   reduceQueueSnapshot,
   resultNote,
@@ -68,6 +69,9 @@ export interface QueueApi {
   openExportFile: (itemId: string) => Promise<void>;
   dragExportOut: (itemId: string) => Promise<void>;
   dragExportsOut: (itemIds: readonly string[]) => Promise<void>;
+  /** Whether Tuck is dragging these exports out right now, or any export without `paths`. A drop
+   * of them on Tuck is that drag let go, not files to add. */
+  isDraggingOut: (paths?: readonly string[]) => boolean;
   stopAfterCurrent: () => void;
   cancelAll: () => void;
   // completed and canceled exports leave the list; failed ones stay for Retry
@@ -971,13 +975,30 @@ export function installQueue(deps: QueueDeps): QueueApi {
     }
   }
 
+  // the files of each drag out still running; the shell answers a drag once it has ended
+  const dragsOut = new Set<ReadonlySet<string>>();
+
+  function startDraggingOut(itemIds: readonly string[]): ReadonlySet<string> {
+    const files = new Set(itemIds.map((id) => pathKey(finishedExport(id)?.result_path ?? "")));
+    dragsOut.add(files);
+    return files;
+  }
+
+  function isDraggingOut(paths?: readonly string[]): boolean {
+    if (!paths) return dragsOut.size > 0;
+    return paths.length > 0 && [...dragsOut].some((files) => paths.every((path) => files.has(pathKey(path))));
+  }
+
   async function dragExportOut(itemId: string): Promise<void> {
     if (!finishedExport(itemId)) return;
+    const files = startDraggingOut([itemId]);
     try {
       const result = await client().startExportDrag(itemId);
       if (!result.ok) toast(withReason("Couldn’t drag the export.", result.error.message, "Use Copy file instead."), "err");
     } catch {
       toast("Couldn’t drag the export. Use Copy file instead.", "err");
+    } finally {
+      dragsOut.delete(files);
     }
   }
 
@@ -987,11 +1008,14 @@ export function installQueue(deps: QueueDeps): QueueApi {
       if (finished[0]) await dragExportOut(finished[0]);
       return;
     }
+    const files = startDraggingOut(finished);
     try {
       const result = await client().startExportsDrag(finished);
       if (!result.ok) toast(withReason("Couldn’t drag the exports.", result.error.message, "Use Copy files instead."), "err");
     } catch {
       toast("Couldn’t drag the exports. Use Copy files instead.", "err");
+    } finally {
+      dragsOut.delete(files);
     }
   }
 
@@ -1343,6 +1367,7 @@ export function installQueue(deps: QueueDeps): QueueApi {
     openExportFile,
     dragExportOut,
     dragExportsOut,
+    isDraggingOut,
     stopAfterCurrent,
     cancelAll,
     clearFinished,

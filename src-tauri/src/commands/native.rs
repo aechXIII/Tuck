@@ -464,8 +464,9 @@ pub async fn open_export_file(
         .map_err(|_| PublicBackendError::new("INTERNAL_ERROR", "Could not open the export."))?
 }
 
-/// Starts dragging a finished export out of the window as a file. Returns false when the button
-/// was let go before the drag could start, so nothing was dragged.
+/// Drags a finished export out of the window as a file and answers once the drag is over, so the
+/// page knows a drop on itself is its own drag. Returns false when the button was let go before
+/// the drag could start, so nothing was dragged.
 #[tauri::command]
 pub async fn start_export_drag(
     window: tauri::WebviewWindow,
@@ -500,15 +501,21 @@ async fn drag_exports(
                 PublicBackendError::new("INTERNAL_ERROR", "Could not find the export.")
             })??;
     let (sender, receiver) = tokio::sync::oneshot::channel();
+    let (ended, drag_over) = tokio::sync::oneshot::channel();
     let target = window.clone();
     window
         .with_webview(move |webview| {
-            let _ = sender.send(file_drag::start(&target, &webview, &paths));
+            let _ = sender.send(file_drag::start(&target, &webview, &paths, ended));
         })
         .map_err(|_| PublicBackendError::new("INTERNAL_ERROR", "Could not drag the export."))?;
-    receiver
+    let started = receiver
         .await
-        .map_err(|_| PublicBackendError::new("INTERNAL_ERROR", "Could not drag the export."))?
+        .map_err(|_| PublicBackendError::new("INTERNAL_ERROR", "Could not drag the export."))??;
+    if started {
+        // Windows has finished the drag by now and dropped `ended`; Linux sends it as the drag ends
+        let _ = drag_over.await;
+    }
+    Ok(started)
 }
 
 #[tauri::command]

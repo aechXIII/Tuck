@@ -49,7 +49,8 @@ pub fn capabilities_for_target(platform: &str, packaged: bool) -> PlatformCapabi
         hardware_acceleration,
         custom_title_bar: platform == "windows",
         element_fullscreen: platform == "windows",
-        file_drag_out: platform == "linux" && crate::platform::file_drag::SUPPORTED,
+        file_drag_out: matches!(platform, "linux" | "windows")
+            && crate::platform::file_drag::SUPPORTED,
         packaged,
         native_preview: crate::player::PreviewMode::Off.as_str(),
     }
@@ -82,8 +83,7 @@ mod tests {
         assert!(caps.hardware_acceleration);
         assert!(caps.custom_title_bar);
         assert!(caps.element_fullscreen);
-        // Windows has no file drag source yet, so the page doesn't offer dragging there
-        assert!(!caps.file_drag_out);
+        assert_eq!(caps.file_drag_out, crate::platform::file_drag::SUPPORTED);
         assert!(!caps.packaged);
         // only the run switch turns the native preview on, never the target alone
         assert_eq!(caps.native_preview, "off");
@@ -100,7 +100,7 @@ mod tests {
         assert!(caps.hardware_acceleration);
         assert!(!caps.custom_title_bar);
         assert!(!caps.element_fullscreen);
-        assert_eq!(caps.file_drag_out, cfg!(target_os = "linux"));
+        assert_eq!(caps.file_drag_out, crate::platform::file_drag::SUPPORTED);
     }
 
     #[test]
