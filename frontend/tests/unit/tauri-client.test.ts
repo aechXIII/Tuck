@@ -633,3 +633,35 @@ test("Retry all, Resume and Clear finished are whole-queue commands that send no
   const malformed = createTauriBackendClient(async () => ({ item_ids: [3] }));
   assert.equal((await malformed.retryAllItems()).ok, false);
 });
+
+test("Save as GIF requests keep the newest preview and refuse a malformed one", async () => {
+  const calls: unknown[] = [];
+  const preview = {
+    url: "http://127.0.0.1:1/t/preview.gif", size_bytes: 2_500_000, width: 480, height: 270, fps: 15,
+    frames: 36, seconds: 2.4, lowered: false, fits: true, estimated: false,
+    start_width: 480, start_fps: 15, name: "clip_tucked.gif", _request_id: 7,
+  };
+  const client = createTauriBackendClient(async (_command, args) => {
+    calls.push(args);
+    return preview;
+  });
+  const request = { plan: { source: "clip.mp4" }, gif: {
+    width: 480, fps: 15, colors: 256, speed: 1, back_and_forth: false, plays: 0, size_limit: 0,
+    dither: "soft" as const, palette: "whole" as const, sharp_pixels: false, drop_repeated_frames: false,
+  }, _request_id: 7 };
+  assert.deepEqual(await client.makeGifPreview(request), { ok: true, value: preview });
+  assert.deepEqual(calls, [{ command: { command: "make_gif_preview", payload: { request } } }]);
+  for (const invalid of [{ ...preview, url: 3 }, { ...preview, frames: -1 }, { ...preview, name: null }]) {
+    assert.equal((await createTauriBackendClient(async () => invalid).makeGifPreview(request)).ok, false);
+  }
+  const cancelCalls: unknown[] = [];
+  const cancel = createTauriBackendClient(async (_command, args) => {
+    cancelCalls.push(args);
+    return { cancelled: true };
+  });
+  assert.deepEqual(await cancel.cancelGifPreview(), { ok: true, value: { cancelled: true } });
+  assert.deepEqual(cancelCalls, [{ command: { command: "cancel_gif_preview" } }]);
+  const queued = await createTauriBackendClient(async () => ({ item_id: "a1" })).enqueueGif(request);
+  assert.deepEqual(queued, { ok: true, value: { item_id: "a1" } });
+  assert.equal((await createTauriBackendClient(async () => ({})).enqueueGif(request)).ok, false);
+});

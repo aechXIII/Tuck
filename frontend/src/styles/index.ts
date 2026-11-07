@@ -11,4 +11,5 @@ import "./audio.css";
 import "./timeline.css";
 import "./queue.css";
 import "./transform.css";
+import "./gif.css";
 import "./startup.css";

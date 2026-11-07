@@ -31,6 +31,8 @@ export interface RowMenuHost {
   showInFolder: (path: string) => void;
   // the videos' own files on the clipboard, ready to paste
   copyFiles: (paths: readonly string[]) => void;
+  // Save as GIF for this video's timeline
+  saveGif?: (path: string) => void;
   // the file's own name, in a dialog
   rename?: (path: string) => void;
   // out of the Library only, with Undo
@@ -51,7 +53,7 @@ export interface RowMenuApi {
   close: (returnFocus?: boolean) => void;
 }
 
-type MenuAction = "copy" | "paste" | "paste-all" | "show-in-folder" | "copy-file" | "rename" | "remove" | "trash";
+type MenuAction = "copy" | "paste" | "paste-all" | "show-in-folder" | "copy-file" | "save-gif" | "rename" | "remove" | "trash";
 
 interface MenuItem {
   action: MenuAction;
@@ -187,6 +189,7 @@ export function installRowMenu(host: RowMenuHost): RowMenuApi {
       { action: "show-in-folder", label: "Show in folder", disabled: false, separated: true },
       { action: "copy-file", label: targets.length > 1 ? `Copy ${targets.length} files` : "Copy file", disabled: false },
     );
+    if (host.saveGif) list.push({ action: "save-gif", label: "Save as GIF…", disabled: !ready(path) });
     if (host.rename) {
       const reason = host.renameBusy?.(path) ?? "";
       list.push({ action: "rename", label: "Rename…", keys: "F2", ariaKeys: "F2", disabled: !!reason, reason });
@@ -254,6 +257,7 @@ export function installRowMenu(host: RowMenuHost): RowMenuApi {
     else if (action === "paste") paste(pasteTargets(path));
     else if (action === "paste-all") paste(host.order());
     else if (action === "show-in-folder") host.showInFolder(path);
+    else if (action === "save-gif") host.saveGif?.(path);
     else if (action === "rename") host.rename?.(path);
     else if (action === "remove") host.remove?.(pasteTargets(path));
     else if (action === "trash") host.moveToTrash?.(pasteTargets(path));

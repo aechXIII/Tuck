@@ -35,6 +35,8 @@ export type ExportBarView =
       readonly sourceSize: number;
       /** The size it aimed for, only when the file came out bigger than that. */
       readonly missedTarget: number;
+      /** Save as GIF: the bar gives its size without comparing it with the video's */
+      readonly gif: boolean;
     }
   | {
       readonly kind: "many";
@@ -133,6 +135,7 @@ export function exportBarView(
       resultSize: Number(only.result_size) || 0,
       sourceSize: only.source_path ? sourceSize(only.source_path) : 0,
       missedTarget: fit && !fit.fits ? fit.target : 0,
+      gif: only.gif === true,
     };
   }
   if (completed.length) {

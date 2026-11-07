@@ -365,6 +365,8 @@ export function installQueue(deps: QueueDeps): QueueApi {
       if (view.missedTarget) {
         second = `${formatBytes(view.resultSize)}, over the ${formatTarget(view.missedTarget)} target`;
         line.className = "warn";
+      } else if (view.gif) {
+        second = `${formatBytes(view.resultSize)} · GIF`;
       } else if (view.resultSize && view.sourceSize) {
         second = `${formatBytes(view.resultSize)} · was ${formatBytes(view.sourceSize)}`;
       } else {
@@ -525,6 +527,8 @@ export function installQueue(deps: QueueDeps): QueueApi {
         detail.append(` · saved ${Math.round((1 - row.sizes.to / row.sizes.from) * 100)}%`);
       }
       if (row.note) detail.append(` · ${row.note}`);
+    } else if (row.gifSize) {
+      detail.textContent = `${formatBytes(row.gifSize)} · GIF${row.note ? ` · ${row.note}` : ""}`;
     } else {
       detail.textContent = row.note && row.detail ? `${row.detail} · ${row.note}` : row.note || row.detail;
     }

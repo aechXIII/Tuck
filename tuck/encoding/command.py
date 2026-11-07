@@ -224,7 +224,7 @@ def _place_video(graph_parts: list[str], segments: list[Segment], fps: float) ->
     return result
 
 
-def _placed_source_video_graph(plan: EncodePlan, filters: list[str], fps: float) -> list[str]:
+def placed_source_video_graph(plan: EncodePlan, filters: list[str], fps: float) -> list[str]:
     parts = []
     labels = []
     cursor = 0
@@ -805,7 +805,7 @@ def build_base_cmd(
         graph_parts: list[str] = []
         combined_source_concat = False
         if positioned and not blending:
-            graph_parts.extend(_placed_source_video_graph(plan, video_filters, placement_fps))
+            graph_parts.extend(placed_source_video_graph(plan, video_filters, placement_fps))
         elif prepared_video is not None or streamed_video:
             info = plan.source_info
             ratio = info.sample_aspect_ratio if info else "1:1"

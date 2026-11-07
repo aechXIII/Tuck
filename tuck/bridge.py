@@ -53,12 +53,15 @@ from .encoding.runner import EncodeCancelled
 from .engine import cleanup_cache, is_ffmpeg_available
 from .engine import get_available_encoders as _engine_available_encoders
 from .frame_export import export_frame
+from .gif_preview import GifPreviews
 from .joining.plan import JoinError
 from .joining.service import JoinService
 from .media_libraries import load_media_libraries
 from .media_server import get_media_server
 from .media_tools import find_ffmpeg, find_ffprobe
 from .models import (
+    FPS_MODE_SOURCE,
+    RES_MODE_SOURCE,
     AudioInfo,
     EncodePlan,
     PlanRequest,
@@ -80,6 +83,7 @@ from .models.export_preferences import (
     normalize_output_location,
     normalize_output_subfolder,
 )
+from .models.gif import GifSettings
 from .models.ui_preferences import (
     CHOICE_PREFERENCES,
     DEFAULT_CUT_SUFFIX,
@@ -98,7 +102,7 @@ from .models.ui_preferences import (
     normalize_update_check,
 )
 from .output_paths import sweep_stale_outputs_later
-from .planner import plan
+from .planner import plan, plan_gif
 from .planner_options import CutOutputOptions, OutputOptions, output_options
 from .probe import (
     FFprobeMissing,
@@ -134,6 +138,10 @@ class BridgeAPI:
 
         self._probe_cache = ProbeCache(lambda path: probe_video(path))
         self._size_estimates = SizeEstimator(lambda: self._settings.cache_dir)
+        self._gif_previews = GifPreviews(lambda: self._settings.cache_dir)
+        # the preview the page shows: its file and media token go when a newer one replaces it
+        self._gif_shown: tuple[Path, str] | None = None
+        self._gif_lock = threading.Lock()
         self._audio_probe_cache = ProbeCache(lambda path: probe_audio(path))
         self._cut_analysis = CutAnalysisService()
         self._joins = JoinService()
@@ -616,6 +624,116 @@ class BridgeAPI:
     def cancel_size_estimate(self) -> BridgeResult:
         return {"ok": True, "cancelled": self._size_estimates.cancel()}
 
+    def _gif_plan(self, request: dict[str, Any]) -> EncodePlan:
+        raw_plan, raw_gif = request.get("plan"), request.get("gif")
+        if not isinstance(raw_plan, dict):
+            raise ValueError("Expected the timeline to save as a GIF")
+        settings = GifSettings.from_dict(raw_gif)
+        # the GIF sets its own size and frame rate and has no sound; the timeline, crop and
+        # colors come from the request as they would for a video
+        req = replace(
+            self._parse_plan_request(raw_plan),
+            target_size_bytes=None,
+            resolution_mode=RES_MODE_SOURCE,
+            fps_mode=FPS_MODE_SOURCE,
+            frame_blending=None,
+            audio_enabled=False,
+            audio_tracks=None,
+        )
+        profile = self._resolve_profile(req.profile_id)
+        if profile is None:
+            raise ValueError(f"Profile not found: {req.profile_id}")
+        options = self._planning_options()
+        base = self._build_plan(req, profile, options)
+        return plan_gif(
+            base,
+            settings,
+            output_dir=options["output_dir"],
+            output_subfolder=options["output_subfolder"],
+            compression_suffix=options["compression_suffix"],
+            replace_existing=options["replace_existing"],
+        )
+
+    def make_gif_preview(self, request: object) -> BridgeResult:
+        """Makes the GIF the dialog shows, so the size it gives is the file's."""
+        if not isinstance(request, dict):
+            return {"ok": False, "error": "Expected request object"}
+        req_id = request.get("_request_id", 0)
+        _, current, pending = self._queue.snapshot()
+        if current is not None or pending:
+            # making it would slow the export and be slowed by it
+            return {
+                "ok": False,
+                "code": "export_running",
+                "error": "Tuck makes the preview once the exports finish.",
+                "_request_id": req_id,
+            }
+        try:
+            preview = self._gif_previews.make(self._gif_plan(request))
+        except EncodeCancelled:
+            return {"ok": False, "code": "cancelled", "error": "Stopped", "_request_id": req_id}
+        except PlanValidationError as e:
+            return {"ok": False, "error": str(e), "field": e.field, "_request_id": req_id}
+        except Exception as e:
+            logger.warning("GIF preview failed", exc_info=True)
+            return {"ok": False, "code": "failed", "error": str(e), "_request_id": req_id}
+        token = self._media_server.register_file(str(preview.path))
+        with self._gif_lock:
+            older, self._gif_shown = self._gif_shown, (preview.path, token)
+        self._drop_gif_preview(older)
+        return {
+            "ok": True,
+            "_request_id": req_id,
+            "url": self._media_server.get_url(token),
+            "size_bytes": preview.size,
+            "width": preview.width,
+            "height": preview.height,
+            "fps": preview.fps,
+            "frames": preview.frames,
+            "seconds": preview.seconds,
+            "lowered": preview.lowered,
+            "fits": preview.fits,
+            "estimated": preview.estimated,
+            "start_width": preview.start_width,
+            "start_fps": preview.start_fps,
+            "name": preview.name,
+        }
+
+    def _drop_gif_preview(self, shown: tuple[Path, str] | None) -> None:
+        if shown is None:
+            return
+        path, token = shown
+        self._media_server.unregister_token(token)
+        path.unlink(missing_ok=True)
+
+    def cancel_gif_preview(self) -> BridgeResult:
+        """Stops the preview being made and removes the one shown: the dialog has closed."""
+        cancelled = self._gif_previews.cancel()
+        with self._gif_lock:
+            shown, self._gif_shown = self._gif_shown, None
+        self._drop_gif_preview(shown)
+        return {"ok": True, "cancelled": cancelled}
+
+    def enqueue_gif(self, request: object) -> BridgeResult:
+        if not isinstance(request, dict):
+            return {"ok": False, "error": "Expected request object"}
+        try:
+            item = self._queue.enqueue(self._gif_plan(request))
+        except PlanValidationError as e:
+            return {"ok": False, "error": str(e), "field": e.field}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+        # the dialog opens with these next time; the GIF is queued whether or not this saves
+        try:
+            with self._settings.lock:
+                self._settings.set_setting(
+                    "gif_settings", GifSettings.from_dict(request.get("gif")).to_dict()
+                )
+                self._settings.save()
+        except Exception:
+            logger.warning("Could not keep the GIF settings", exc_info=True)
+        return {"ok": True, "item_id": item.id}
+
     def enqueue_with_options(
         self, request: object, *, work: RequestWork | None = None
     ) -> BridgeResult:
@@ -1014,6 +1132,7 @@ class BridgeAPI:
             "upscale_suffix": getattr(s, "upscale_suffix", "_upscaled_{width}x{height}")
             or "_upscaled_{width}x{height}",
             "cut_suffix": s.cut_suffix,
+            "gif_settings": dict(s.gif_settings),
             "timeline_snap": s.timeline_snap,
             "timeline_keyframes": s.timeline_keyframes,
             "timeline_frames": s.timeline_frames,

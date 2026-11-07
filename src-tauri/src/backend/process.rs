@@ -817,6 +817,7 @@ impl BackendCommand {
             | Self::GetJoin { .. }
             | Self::CancelJoin { .. }
             | Self::CancelSizeEstimate
+            | Self::CancelGifPreview
             | Self::ListLuts
             | Self::ClearLutHistory
             | Self::GetQueueState
@@ -862,6 +863,8 @@ impl BackendCommand {
             | Self::ReleaseMediaToken { .. }
             | Self::CreatePlan { .. }
             | Self::EstimateSize { .. }
+            | Self::MakeGifPreview { .. }
+            | Self::EnqueueGif { .. }
             | Self::CheckTenBit { .. }
             | Self::JoinVideos { .. }
             | Self::CompilePreviewMix { .. }
@@ -962,6 +965,18 @@ mod launch_config_tests {
         assert_eq!(estimate.timeout(), MEDIA_REQUEST_TIMEOUT);
         assert_eq!(
             BackendCommand::CancelSizeEstimate.timeout(),
+            LIGHT_REQUEST_TIMEOUT
+        );
+    }
+
+    #[test]
+    fn gif_previews_get_time_to_encode_and_cancel_answers_quickly() {
+        let preview = BackendCommand::MakeGifPreview {
+            request: serde_json::json!({}),
+        };
+        assert_eq!(preview.timeout(), MEDIA_REQUEST_TIMEOUT);
+        assert_eq!(
+            BackendCommand::CancelGifPreview.timeout(),
             LIGHT_REQUEST_TIMEOUT
         );
     }

@@ -1,0 +1,348 @@
+/* Save as GIF: the GIF on the left, its settings as the Inspector's Transform rows on the right */
+.mod-box.gif-dialog {
+  box-sizing: border-box;
+  width: min(1120px, calc(100vw - 48px));
+  min-width: 0;
+  max-width: none;
+  max-height: calc(100vh - var(--chrome-top) - 32px);
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+  background: var(--panel);
+  border-radius: 14px;
+  color: var(--text);
+  font: 400 calc(13px * var(--text-scale)) / 1.4 var(--font);
+}
+.gif-dialog [hidden] {
+  display: none !important;
+}
+.gif-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 14px;
+  height: 56px;
+  padding: 0 14px 0 24px;
+}
+.mod-box .gif-head h2 {
+  flex: 1;
+  margin: 0;
+  color: var(--text);
+  font-size: calc(15px * var(--text-scale));
+  font-weight: 650;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.gif-close {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-ctl);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.gif-close:hover {
+  background: var(--raised);
+  color: var(--text);
+}
+.gif-close:focus-visible {
+  outline: 2px solid var(--accent-light);
+  outline-offset: -2px;
+}
+.gif-close svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+/* the picture takes what the settings leave; at 1440 wide it is 640 by 360 */
+.gif-body {
+  display: grid;
+  flex: 1 1 auto;
+  grid-template-columns: minmax(0, 1fr) clamp(344px, 30vw, 400px);
+  gap: 32px;
+  min-height: 0;
+  padding: 0 24px 22px;
+}
+.gif-view {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  min-height: 0;
+}
+/* 16:9 at least; where the settings are taller it grows, and the GIF keeps its own shape inside */
+.gif-stage {
+  position: relative;
+  flex: 1 0 auto;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--bg);
+}
+/* placed over the whole stage, so a tall GIF fits its height instead of filling the width */
+.gif-stage img {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.gif-stage.making img {
+  opacity: 0.55;
+}
+.gif-result {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 40px;
+}
+.gif-size {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.gif-n {
+  color: var(--text);
+  font: 500 calc(30px * var(--text-scale)) / 1 var(--mono);
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.gif-u {
+  color: var(--muted);
+  font: 500 calc(12px * var(--text-scale)) var(--mono);
+}
+.gif-about {
+  color: var(--muted);
+  font: 600 calc(12px * var(--text-scale)) var(--font);
+}
+.gif-size.warn .gif-n {
+  color: var(--warn);
+}
+.gif-state {
+  color: var(--muted);
+  font: 600 calc(12px * var(--text-scale)) var(--font);
+}
+.gif-facts {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  text-align: right;
+}
+.gif-from,
+.gif-detail {
+  overflow: hidden;
+  font-size: calc(12px * var(--text-scale));
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gif-from {
+  color: var(--text);
+  font-weight: 600;
+}
+.gif-detail {
+  color: var(--muted);
+}
+.gif-detail.warn {
+  color: var(--warn);
+}
+/* the picture's side sets the height; the groups spread over it, and scroll inside it once
+   Advanced opens */
+.gif-settings {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 12px;
+  height: 0;
+  min-height: 100%;
+  overflow-y: auto;
+  scrollbar-color: var(--raised-2) transparent;
+  scrollbar-width: thin;
+}
+.gif-group {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.mod-box .gif-group-head {
+  margin: 0;
+  color: var(--dim);
+  font: 600 calc(11px * var(--text-scale)) / 1.3 var(--font);
+  letter-spacing: 0;
+  text-transform: none;
+}
+.gif-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.gif-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.gif-label {
+  flex: 0 0 66px;
+  color: var(--muted);
+  font: 400 calc(11.5px * var(--text-scale)) var(--font);
+  white-space: nowrap;
+}
+.gif-cells {
+  display: grid;
+  flex: 1;
+  grid-template-columns: repeat(var(--cells), minmax(0, 1fr));
+  gap: 4px;
+  min-width: 0;
+}
+.gif-cells button,
+.gif-custom {
+  box-sizing: border-box;
+  height: var(--control-small-height);
+  min-width: 0;
+  border: 0;
+  border-radius: 5px;
+  background: var(--raised);
+  color: var(--dim);
+  font: 600 calc(10.5px * var(--text-scale)) var(--font);
+  white-space: nowrap;
+}
+.gif-cells button {
+  overflow: hidden;
+  padding: 0 4px;
+  cursor: pointer;
+  text-overflow: ellipsis;
+}
+.gif-cells button:hover,
+.gif-custom:hover {
+  background: var(--raised-2);
+  color: var(--text);
+}
+.gif-cells button.on,
+.gif-custom.on {
+  background: var(--raised-2);
+  color: var(--text);
+  font-weight: 700;
+}
+.gif-cells button:focus-visible {
+  outline: 2px solid var(--accent-light);
+  outline-offset: -2px;
+}
+/* the row's last cell is the field: "Custom" until a value no quick pick has is typed in */
+.gif-custom {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 0 6px;
+  cursor: text;
+}
+.gif-custom:focus-within {
+  outline: 2px solid var(--accent-light);
+  outline-offset: -2px;
+  color: var(--text);
+}
+.mod-box .gif-custom input {
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+  text-align: center;
+  outline: none;
+}
+.gif-custom input::placeholder {
+  color: var(--dim);
+  opacity: 1;
+}
+.gif-custom:has(input:placeholder-shown) .gif-unit {
+  display: none;
+}
+.mod-box .gif-custom:has(input:not(:placeholder-shown)) input {
+  font-family: var(--mono);
+  text-align: right;
+}
+.gif-unit {
+  flex: none;
+  color: var(--muted);
+  font-weight: 500;
+}
+.gif-custom.on .gif-unit {
+  color: var(--dim);
+}
+.gif-adv-toggle {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-top: 1px solid var(--hair);
+  background: none;
+  color: var(--dim);
+  font: 600 calc(11px * var(--text-scale)) var(--font);
+  cursor: pointer;
+}
+.gif-adv-toggle:hover {
+  color: var(--accent-light);
+}
+.gif-adv-toggle:focus-visible {
+  outline: 2px solid var(--accent-light);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.gif-adv-arrow {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.gif-adv-toggle[aria-expanded="true"] .gif-adv-arrow {
+  transform: rotate(180deg);
+}
+.gif-dialog label.gif-switch {
+  min-height: 26px;
+  margin: 0;
+  color: var(--muted);
+  font: 400 calc(11.5px * var(--text-scale)) var(--font);
+}
+.gif-foot {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  height: 60px;
+  padding: 0 24px;
+  border-top: 1px solid var(--hair);
+}
+.gif-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: calc(12px * var(--text-scale));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gif-foot .btn1,
+.gif-foot .btn2 {
+  width: auto;
+  min-width: 105px;
+}

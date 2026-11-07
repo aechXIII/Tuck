@@ -3,6 +3,7 @@ import type { FrameExportRequest, FrameExportResult } from "./frame-types.ts";
 import type { JoinCancellation, JoinStatus } from "./join-types.ts";
 import type { PreviewMixPayload } from "./preview-mix-types.ts";
 import type { SizeEstimateCancellation, SizeEstimatePayload } from "./size-estimate-types.ts";
+import type { GifPreviewCancellation, GifPreviewPayload, GifRequest } from "./gif-types.ts";
 import type { TimelineFramesPayload } from "./timeline-frame-types.ts";
 export type { FrameExportRequest, FrameExportResult, VideoTransformJSON, LutSettingsJSON } from "./frame-types.ts";
 
@@ -55,6 +56,8 @@ export interface Settings extends JsonObject {
   readonly profiles?: readonly Profile[];
   readonly cut_suffix?: string;
   readonly timeline_snap?: boolean;
+  /** the Save as GIF settings last saved with */
+  readonly gif_settings?: JsonObject;
   readonly timeline_keyframes?: boolean;
   readonly timeline_frames?: boolean;
   readonly timeline_preserve_source?: boolean;
@@ -236,6 +239,11 @@ export interface DomainBackendClient {
   /** encodes a few short pieces of a Quality export; a newer estimate or a cancel stops it */
   estimateSize(request: PlanRequest): Promise<BackendResult<SizeEstimatePayload>>;
   cancelSizeEstimate(): Promise<BackendResult<SizeEstimateCancellation>>;
+  /** Save as GIF: makes the GIF the dialog shows; a newer preview or a cancel stops it */
+  makeGifPreview(request: GifRequest): Promise<BackendResult<GifPreviewPayload>>;
+  /** stops the preview being made and removes the one shown, as the dialog closes */
+  cancelGifPreview(): Promise<BackendResult<GifPreviewCancellation>>;
+  enqueueGif(request: GifRequest): Promise<BackendResult<JsonObject>>;
   compilePreviewMix(request: PlanRequest): Promise<BackendResult<PreviewMixPayload>>;
   enqueueWithOptions(request: PlanRequest): Promise<BackendResult<JsonObject>>;
   enqueueBatch(requests: readonly PlanRequest[]): Promise<BackendResult<JsonObject>>;

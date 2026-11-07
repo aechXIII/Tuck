@@ -69,6 +69,7 @@ for ext, mime in [
     (".aiff", "audio/aiff"),
     (".jpg", "image/jpeg"),
     (".png", "image/png"),
+    (".gif", "image/gif"),
 ]:
     mimetypes.add_type(mime, ext)
 

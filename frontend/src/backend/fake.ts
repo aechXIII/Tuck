@@ -1,4 +1,5 @@
 import type { CutPlanPayload, CutPlanRequest, KeyframeCursor } from "./cutting-types.ts";
+import type { GifRequest } from "./gif-types.ts";
 import type {
   BackendCall,
   BackendClient,
@@ -213,6 +214,26 @@ class DeterministicFakeBackend implements BackendClient {
 
   cancelSizeEstimate() {
     return this.#record("cancelSizeEstimate", [], this.#responses.cancelSizeEstimate ?? success({ cancelled: false }));
+  }
+
+  makeGifPreview(request: GifRequest) {
+    return this.#record(
+      "makeGifPreview",
+      [request],
+      this.#responses.makeGifPreview ?? notConfigured("No GIF preview is configured."),
+    );
+  }
+
+  cancelGifPreview() {
+    return this.#record("cancelGifPreview", [], this.#responses.cancelGifPreview ?? success({ cancelled: false }));
+  }
+
+  enqueueGif(request: GifRequest) {
+    return this.#record(
+      "enqueueGif",
+      [request],
+      this.#responses.enqueueGif ?? notConfigured("No GIF export is configured."),
+    );
   }
 
   compilePreviewMix(request: PlanRequest) {

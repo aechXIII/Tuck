@@ -104,6 +104,13 @@ test("one finished export is the file, with its size and the source's", () => {
   assert.equal(over.kind === "one" && over.missedTarget, 10 * MB);
 });
 
+test("a finished GIF is the file and its own size, not a saving on the video", () => {
+  const view = viewOf([done("a", "C:\\v\\a.mp4", 2.4 * MB, { gif: true, output: "a_tucked.gif" })]);
+  assert.equal(view.kind === "one" && view.gif, true);
+  const video = viewOf([done("a", "C:\\v\\a.mp4", 9.8 * MB)]);
+  assert.equal(video.kind === "one" && video.gif, false);
+});
+
 test("several finished exports count, add up what they saved and stack the newest three", () => {
   const view = viewOf([
     done("a", "C:\\v\\a.mp4", 9.8 * MB, { target_size: 10 * MB }),

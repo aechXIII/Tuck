@@ -266,6 +266,8 @@ def queue_item_dict(item: QueueItem) -> dict[str, Any]:
         "restored": item.restored,
         # the size this export aimed for, in bytes; 0 when it had no target
         "target_size": int(plan.target_size) if plan is not None and plan.aims_for_size else 0,
+        # Save as GIF: the bar names the GIF's own size, not a video's saving
+        "gif": plan is not None and plan.gif is not None,
     }
 
 

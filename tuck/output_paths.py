@@ -94,6 +94,8 @@ OUTPUT_EXTENSIONS = frozenset(
     {".mp4", ".m4v", ".mov", ".3gp", ".mkv", ".webm"}
     | {".ts", ".m2ts", ".mts", ".avi", ".flv", ".ogv"}
 )
+# what Tuck writes, so a reservation for one of these left by a crash is Tuck's to sweep
+_RESERVED_EXTENSIONS = OUTPUT_EXTENSIONS | {".gif"}
 # scratch folders, their locks, and locks still being created; older versions named
 # their folders the same way through tempfile, so their leftovers match too
 _WORKSPACE_NAME = re.compile(r"\.tuck-[a-z0-9_]{8}")
@@ -275,7 +277,7 @@ def _is_tuck_reservation(entry: os.DirEntry[str]) -> bool:
     output = Path(name[: -len(RESERVATION_SUFFIX)])
     return (
         bool(output.stem)
-        and output.suffix.lower() in OUTPUT_EXTENSIONS
+        and output.suffix.lower() in _RESERVED_EXTENSIONS
         and _is_plain_empty_file(entry)
     )
 

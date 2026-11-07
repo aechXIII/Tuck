@@ -8,6 +8,8 @@ import type { JoinCancellation, JoinStatus } from "./join-types.ts";
 import { isPreviewMixPayload } from "./preview-mix-types.ts";
 import { isSizeEstimateCancellation, isSizeEstimatePayload } from "./size-estimate-types.ts";
 import type { SizeEstimateCancellation, SizeEstimatePayload } from "./size-estimate-types.ts";
+import { isGifPreviewCancellation, isGifPreviewPayload } from "./gif-types.ts";
+import type { GifPreviewCancellation, GifPreviewPayload, GifRequest } from "./gif-types.ts";
 import type { PreviewMixPayload } from "./preview-mix-types.ts";
 import type { FrameExportRequest, FrameExportResult } from "./frame-types.ts";
 import { isTimelineFramesPayload } from "./timeline-frame-types.ts";
@@ -89,6 +91,9 @@ type TauriBackendCommand =
   | { command: "create_plan"; payload: { request: PlanRequest } }
   | { command: "estimate_size"; payload: { request: PlanRequest } }
   | { command: "cancel_size_estimate" }
+  | { command: "make_gif_preview"; payload: { request: GifRequest } }
+  | { command: "cancel_gif_preview" }
+  | { command: "enqueue_gif"; payload: { request: GifRequest } }
   | { command: "compile_preview_mix"; payload: { request: PlanRequest } }
   | { command: "enqueue_with_options"; payload: { request: PlanRequest } }
   | { command: "enqueue_batch"; payload: { requests: readonly PlanRequest[] } }
@@ -571,6 +576,30 @@ class TauriTransport implements TauriBackendClient {
       "compilePreviewMix",
       { command: "compile_preview_mix", payload: { request } },
       isPreviewMixPayload,
+    );
+  }
+
+  makeGifPreview(request: GifRequest): Promise<BackendResult<GifPreviewPayload>> {
+    return this.#request(
+      "makeGifPreview",
+      { command: "make_gif_preview", payload: { request } },
+      isGifPreviewPayload,
+    );
+  }
+
+  cancelGifPreview(): Promise<BackendResult<GifPreviewCancellation>> {
+    return this.#request(
+      "cancelGifPreview",
+      { command: "cancel_gif_preview" },
+      isGifPreviewCancellation,
+    );
+  }
+
+  enqueueGif(request: GifRequest): Promise<BackendResult<JsonObject>> {
+    return this.#request(
+      "enqueueGif",
+      { command: "enqueue_gif", payload: { request } },
+      (value): value is JsonObject => isJsonObject(value) && typeof value.item_id === "string" && value.item_id.length > 0,
     );
   }
 

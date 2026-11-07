@@ -4,7 +4,7 @@ import { installSelectControls } from "../../ui/select.ts";
 import { selectGuidance } from "../export/select-guidance.ts";
 import { getBackendClient, hasBackendClient } from "../../backend/client.ts";
 import { hasTauriInvoke } from "../../backend/index.ts";
-import type { BackendClient } from "../../backend/types.ts";
+import type { BackendClient, JsonObject, PlanRequest } from "../../backend/types.ts";
 import {
   bindDelegatedEvents,
   type DelegatedHandlers,
@@ -27,6 +27,8 @@ import { installRowMenu } from "../library/row-menu.ts";
 import { installHoverPreview } from "../library/hover-preview.ts";
 import { fileBusyReason, installFileActions, renameBusyReason, type FileActionsApi, type TrashPlatform } from "../library/file-actions.ts";
 import { installJoin, type JoinApi } from "../library/join.ts";
+import { installGifDialog, type GifDialogApi } from "../export/gif-dialog.ts";
+import { isQueueActive } from "../queue/queue-view.ts";
 import { installPanels, type PanelsApi } from "../panels/panels.ts";
 import type { AudioClipRangeInfo } from "../panels/panels.ts";
 import { installPlayer, type PlayerApi, type PlayerHost } from "../player/player.ts";
@@ -458,6 +460,7 @@ export function installEditorRuntime(
   });
 
   let join: JoinApi | undefined;
+  let gifDialog: GifDialogApi | undefined;
   let fileActions: FileActionsApi | undefined;
   library = createLibrary({
     session,
@@ -520,6 +523,43 @@ export function installEditorRuntime(
   });
   join.sync(library.selectedPaths());
 
+  // Save as GIF, from the export arrow and a Library row's menu
+  gifDialog = installGifDialog({
+    document: windowRef.document,
+    client: getBackendClient,
+    planRequest: (path) => encoding.buildRequest(path) as PlanRequest,
+    savedSettings: () => session.appSettings.gif_settings as JsonObject | undefined,
+    rememberSettings: (settings) => {
+      session.appSettings.gif_settings = settings;
+    },
+    exportsRunning: () => Object.values(session.clips).some((clip) => isQueueActive(clip?._queueState)),
+    queued: (itemId) => {
+      queue?.watchSingleExport(itemId);
+      void queue?.pollQueue();
+    },
+    showDialog: (html, options) => showMod(html, options),
+    closeDialog: closeMod,
+  });
+
+  function saveAsGif(path: string | null): void {
+    const menu = windowRef.document.querySelector<HTMLDetailsElement>("#export-go .export-actions");
+    // the menu's button goes with the menu, so the dialog gives focus back to the arrow
+    if (menu?.contains(windowRef.document.activeElement)) menu.querySelector("summary")?.focus();
+    menu?.removeAttribute("open");
+    const clip = path ? session.clips[path] : undefined;
+    if (!clip) {
+      toast("Select a video first.", "err");
+      return;
+    }
+    if (!isProbeReady(clip)) {
+      toast(clip.error
+        ? `Tuck can’t read “${clip.name}”. Select Retry on it in the Library, then save it as a GIF.`
+        : `“${clip.name}” is still being read. Save it as a GIF once it’s ready.`, "err");
+      return;
+    }
+    gifDialog?.open(clip.path);
+  }
+
   // the platform names the Trash; until it answers, Linux's word stands
   let trashPlatform: TrashPlatform = null;
   // originals already moved aren't offered again while their exports stay listed
@@ -572,6 +612,7 @@ export function installEditorRuntime(
         if (!result.ok) toast(result.error.message, "err");
       });
     },
+    saveGif: (path) => saveAsGif(path),
     copyFiles: (paths) => {
       if (!hasBackendClient() || !paths.length) return;
       const client = getBackendClient();
@@ -666,7 +707,10 @@ export function installEditorRuntime(
     cropTransformForRequest: (clip) => transform.cropTransformForRequest(clip),
     restoreTimelineHeight: (value) => timeline.restoreTimelineHeight(value),
     orderedClipKeys: () => library.orderedClipKeys(),
-    actionButtonsChanged: () => join?.refresh(),
+    actionButtonsChanged: () => {
+      join?.refresh();
+      gifDialog?.queueChanged();
+    },
     singleExportQueued: (itemId) => queue?.watchSingleExport(itemId),
     audioRequestPayload: (clip) =>
       audio.requestPayload(clip) as Record<string, unknown>,
@@ -858,6 +902,7 @@ export function installEditorRuntime(
         "encoding-run-selected": () => void encoding.compressOne(),
         "encoding-run-all": () => void encoding.compressAll(),
         "encoding-run-copy": () => void encoding.compressCopy(),
+        "encoding-save-gif": () => saveAsGif(session.selPath),
         "playback-speed-reset": () => player.resetSpeed(),
         "timeline-add-segment": () => timeline.addSegment(),
         "timeline-keyframe": (target) => timeline.seekToKeyframe(numericValue(target) < 0 ? -1 : 1),

@@ -57,6 +57,7 @@ from .failures import describe_ffmpeg_failure, is_hardware_decode_failure, is_pr
 # load native array libraries before sidecar workers block on Windows stdio
 from .frame_blending import TmixBlend, prepare_blended_video, tmix_blend, weighted_yuv_blend
 from .frame_stream import FrameStream, can_stream_blend
+from .gif import GifResult, make_gif
 from .hardware_decoding import HardwareDecode, choose_hardware_decode
 from .progress import ProgressTracker
 from .target_size import (
@@ -315,6 +316,9 @@ class FFmpegEngine:
                     raise EncodeCancelled("Cutting cancelled by user") from exc
                 raise
         plan = copy.deepcopy(plan)
+        if plan.gif is not None:
+            self._last_stderr = ""
+            return self._encode_gif(plan, on_progress)
         ffmpeg_path = find_ffmpeg()
         if not ffmpeg_path:
             raise FileNotFoundError(
@@ -432,6 +436,70 @@ class FFmpegEngine:
             self._hardware_decode = None
             self._vaapi_device = None
             self._stream_plan = None
+
+    def make_gif(
+        self,
+        plan: EncodePlan,
+        output: Path,
+        on_progress: ProgressCallback | None = None,
+        *,
+        size_scale: float = 1.0,
+    ) -> GifResult:
+        """Writes the plan's GIF to `output`; a size limit may make it more than one run."""
+        ffmpeg_path = find_ffmpeg()
+        if not ffmpeg_path:
+            raise FileNotFoundError(
+                "FFmpeg not found. Install FFmpeg and ensure ffmpeg is on PATH "
+                "or set the path in settings."
+            )
+
+        def run(cmd: list[str], seconds: float) -> None:
+            self._run_pass(cmd, seconds, on_progress, 1)
+
+        return make_gif(ffmpeg_path, plan, output, run, size_scale=size_scale)
+
+    def _encode_gif(self, plan: EncodePlan, on_progress: ProgressCallback | None) -> Path:
+        _emit(
+            on_progress,
+            EncodeProgress(percent=0.0, stage=EncodeStage.PREPARING, message="Preparing"),
+        )
+        source = Path(plan.source)
+        self._validate_sources(plan, source)
+        total_duration = plan.effective_duration
+        try:
+            with OutputTransaction(Path(plan.output), replace=plan.replace_existing) as transaction:
+                plan.output = str(transaction.output)
+                result = self.make_gif(plan, transaction.workspace / "result.gif", on_progress)
+                if self._cancel_event.is_set():
+                    raise EncodeCancelled("Encoding cancelled by user")
+                _emit(
+                    on_progress,
+                    EncodeProgress(
+                        percent=99.0,
+                        stage=EncodeStage.SAVING,
+                        duration=total_duration,
+                        indeterminate=True,
+                    ),
+                )
+                output = transaction.publish(result.path)
+                if plan.keep_file_dates:
+                    copy_file_dates(source, output)
+                _emit(
+                    on_progress,
+                    EncodeProgress(
+                        percent=100.0,
+                        stage=EncodeStage.COMPLETED,
+                        duration=total_duration,
+                        message="Completed",
+                    ),
+                )
+                return output
+        except EncodeCancelled:
+            _emit(on_progress, EncodeProgress(stage=EncodeStage.CANCELLED, message="Canceled"))
+            raise
+        except Exception as exc:
+            _emit(on_progress, EncodeProgress(stage=EncodeStage.FAILED, message=str(exc)))
+            raise
 
     def _run_one_attempt(
         self,

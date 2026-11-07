@@ -104,6 +104,15 @@ pub enum BackendCommand {
         request: Value,
     },
     CancelSizeEstimate,
+    /// Save as GIF: makes the GIF the dialog shows; a newer one stops it
+    MakeGifPreview {
+        request: Value,
+    },
+    /// stops the preview being made and removes the one shown, as the dialog closes
+    CancelGifPreview,
+    EnqueueGif {
+        request: Value,
+    },
     /// the native player's preview mix for an export request
     CompilePreviewMix {
         request: Value,
@@ -304,6 +313,9 @@ impl BackendCommand {
             Self::CreatePlan { request } => ("create_plan", json!({ "request": request })),
             Self::EstimateSize { request } => ("estimate_size", json!({ "request": request })),
             Self::CancelSizeEstimate => ("cancel_size_estimate", json!({})),
+            Self::MakeGifPreview { request } => ("make_gif_preview", json!({ "request": request })),
+            Self::CancelGifPreview => ("cancel_gif_preview", json!({})),
+            Self::EnqueueGif { request } => ("enqueue_gif", json!({ "request": request })),
             Self::CompilePreviewMix { request } => {
                 ("compile_preview_mix", json!({ "request": request }))
             }
@@ -444,6 +456,28 @@ mod tests {
             serde_json::from_value(json!({ "command": "cancel_size_estimate" })).unwrap();
         let envelope = cancel.to_sidecar_request("estimate-2").unwrap();
         assert_eq!(envelope["method"], "cancel_size_estimate");
+        assert_eq!(envelope["params"], json!({}));
+    }
+
+    #[test]
+    fn gif_requests_reach_the_sidecar_and_cancel_takes_no_payload() {
+        let request = json!({ "plan": { "source": "clip.mp4" }, "gif": { "width": 480 } });
+        for (command, method) in [
+            ("make_gif_preview", "make_gif_preview"),
+            ("enqueue_gif", "enqueue_gif"),
+        ] {
+            let parsed: BackendCommand = serde_json::from_value(
+                json!({ "command": command, "payload": { "request": request } }),
+            )
+            .expect("GIF requests are allowlisted");
+            let envelope = parsed.to_sidecar_request("gif-1").unwrap();
+            assert_eq!(envelope["method"], method);
+            assert_eq!(envelope["params"]["request"], request);
+        }
+        let cancel: BackendCommand =
+            serde_json::from_value(json!({ "command": "cancel_gif_preview" })).unwrap();
+        let envelope = cancel.to_sidecar_request("gif-2").unwrap();
+        assert_eq!(envelope["method"], "cancel_gif_preview");
         assert_eq!(envelope["params"], json!({}));
     }
 

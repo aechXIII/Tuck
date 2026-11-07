@@ -58,6 +58,8 @@ from .models.encoding_policy import (
     WORKFLOW_COMPRESSION,
     short_side_name,
 )
+from .models.frame_blending import FrameBlending
+from .models.gif import GifSettings
 from .output_paths import export_directory, resolve_output_collision
 from .planner_options import resolve_plan_options
 
@@ -511,6 +513,53 @@ def plan(
     )
 
     return enc_plan
+
+
+def plan_gif(
+    base: EncodePlan,
+    settings: GifSettings,
+    *,
+    output_dir: str = "",
+    output_subfolder: str = "",
+    compression_suffix: str = "_tucked_{size}",
+    replace_existing: bool = False,
+) -> EncodePlan:
+    """Save as GIF: the timeline of a plan made at the source size and frame rate.
+
+    The GIF is never wider than that picture or faster than the video, so those settings are
+    lowered here; the size limit is met while the GIF is made, since only the file says its size.
+    """
+    if base.target_width <= 0 or base.target_height <= 0:
+        raise ValueError("The video's size is unknown")
+    source_fps = base.source_info.fps if base.source_info is not None else 0.0
+    settings = replace(
+        settings,
+        width=min(settings.width, base.target_width),
+        fps=min(settings.fps, source_fps) if source_fps > 0 else settings.fps,
+    )
+    source = Path(base.source)
+    # a GIF has no size or quality level to name, so those parts of the suffix are left out
+    name_suffix = (
+        compression_suffix.replace("{size}", "").replace("{width}", "").replace("{height}", "")
+    ).rstrip("_-. ")
+    output = (
+        export_directory(source, output_dir, output_subfolder) / f"{source.stem}{name_suffix}.gif"
+    )
+    ensure_output_differs_from_source(output, source)
+    if not replace_existing:
+        output = resolve_output_collision(output, respect_reservation=False)
+    return replace(
+        base,
+        output=str(output),
+        gif=settings,
+        audio_enabled=False,
+        audio_tracks=[],
+        frame_blending=FrameBlending(),
+        target_size=0,
+        estimated_size=0,
+        replace_existing=replace_existing,
+        warnings=[],
+    )
 
 
 def quality_level_name(rc_method: str, crf: int, cq: int, qp: int) -> str:

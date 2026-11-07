@@ -140,6 +140,9 @@ def _domain_code(method: str, field: object, code: object) -> str | None:
         return code.upper()
     if method == "retry_item" and code in RETRY_REFUSAL_CODES:
         return code.upper()
+    # the page waits for the exports, or drops a result a newer request stopped
+    if method in {"estimate_size", "make_gif_preview"} and code in {"export_running", "cancelled"}:
+        return code
     # a probe's message is plain words now, so a missing file says so with its code
     if method in {"probe_file", "probe_audio_file"} and code == "invalid_path":
         return "INVALID_PATH"
@@ -247,6 +250,19 @@ def _estimate_size(api: BridgeAPI, params: dict[str, object]) -> object:
 def _cancel_size_estimate(api: BridgeAPI, params: dict[str, object]) -> object:
     _empty(params)
     return api.cancel_size_estimate()
+
+
+def _make_gif_preview(api: BridgeAPI, params: dict[str, object]) -> object:
+    return api.make_gif_preview(_object(params, "request"))
+
+
+def _cancel_gif_preview(api: BridgeAPI, params: dict[str, object]) -> object:
+    _empty(params)
+    return api.cancel_gif_preview()
+
+
+def _enqueue_gif(api: BridgeAPI, params: dict[str, object]) -> object:
+    return api.enqueue_gif(_object(params, "request"))
 
 
 def _compile_preview_mix(api: BridgeAPI, params: dict[str, object]) -> object:
@@ -575,6 +591,9 @@ _HANDLERS: dict[str, Handler] = {
     "create_plan": _create_plan,
     "estimate_size": _estimate_size,
     "cancel_size_estimate": _cancel_size_estimate,
+    "make_gif_preview": _make_gif_preview,
+    "cancel_gif_preview": _cancel_gif_preview,
+    "enqueue_gif": _enqueue_gif,
     "compile_preview_mix": _compile_preview_mix,
     "cancel_item": _cancel_item,
     "remove_item": _remove_item,

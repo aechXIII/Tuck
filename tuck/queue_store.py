@@ -35,7 +35,8 @@ class SavedExport:
 def export_record(
     item_id: str, plan: EncodePlan | CutPlan, added_at: str, *, running: bool
 ) -> dict[str, object]:
-    kind = "cut" if isinstance(plan, CutPlan) else "encode"
+    # a GIF has its own kind, so a Tuck from before GIFs skips it instead of encoding a video
+    kind = "cut" if isinstance(plan, CutPlan) else "gif" if plan.gif is not None else "encode"
     return {
         "id": item_id,
         "kind": kind,
@@ -54,10 +55,12 @@ def _saved_export(raw: object) -> SavedExport:
     plan: EncodePlan | CutPlan
     if kind == "cut":
         plan = CutPlan.from_dict(plan_data)
-    elif kind == "encode":
+    elif kind in ("encode", "gif"):
         plan = EncodePlan.from_dict(plan_data)
         if not isinstance(plan.source, str) or not isinstance(plan.output, str):
             raise ValueError("expected source and output paths")
+        if (kind == "gif") != (plan.gif is not None):
+            raise ValueError("expected GIF settings only on a GIF export")
     else:
         raise ValueError(f"unknown export kind {kind!r}")
     item_id = raw.get("id")

@@ -63,6 +63,8 @@ export interface QueueItem {
   readonly encoder_fallback?: string;
   /** The size the export aimed for, in bytes; 0 when it had none. */
   readonly target_size?: number;
+  /** Save as GIF: its size is its own, not a saving on the video */
+  readonly gif?: boolean;
   /** Came back from before Tuck last closed, so no video in the Library stands for it. */
   readonly restored?: boolean;
   readonly [key: string]: unknown;
@@ -424,6 +426,8 @@ export interface ExportRow {
   readonly note: string;
   /** Source and result sizes, shown when both are known. */
   readonly sizes: { readonly from: number; readonly to: number } | null;
+  /** A finished GIF's size, which says nothing about the video it came from. */
+  readonly gifSize?: number;
   readonly progress: number | null;
   readonly action: "cancel" | "retry" | "show" | null;
   readonly resultPath: string;
@@ -471,6 +475,9 @@ export function exportRows(
       finished.push({...base, kind: "failed", detail: item.error ? `Failed: ${item.error}` : "Failed", sizes: null, progress: null, action: "retry"});
     } else if (item.state === "cancelled") {
       finished.push({...base, kind: "cancelled", detail: "Canceled", sizes: null, progress: null, action: "retry"});
+    } else if (item.state === "completed" && item.gif === true) {
+      const to = Number(item.result_size) || 0;
+      finished.push({...base, kind: "completed", detail: to ? "" : "Done", sizes: null, gifSize: to, progress: null, action: base.resultPath ? "show" : null});
     } else if (item.state === "completed") {
       const from = item.source_path ? sourceSize(item.source_path) : 0;
       const to = Number(item.result_size) || 0;

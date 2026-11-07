@@ -142,6 +142,7 @@ from .encoding_policy import (
 )
 from .export_preferences import DEFAULT_OUTPUT_SUBFOLDER, OUTPUT_LOCATION_SOURCE
 from .frame_blending import FrameBlending
+from .gif import GifSettings
 from .lut import LutSettings
 from .progress import EncodeProgress as EncodeProgress
 from .progress import EncodeStage as EncodeStage
@@ -1184,6 +1185,8 @@ class EncodePlan:
     tone_map_hdr: bool = False
     # plain sentences about what this export will change or leave out
     warnings: list[str] = field(default_factory=list)
+    # set for Save as GIF: the picture of this plan is written as a GIF with these settings
+    gif: GifSettings | None = None
 
     @property
     def effective_segments(self) -> list[Segment]:
@@ -1279,6 +1282,7 @@ class EncodePlan:
         source_audio_segments_data = data.pop("source_audio_segments", None)
         source_audio_tracks_data = data.pop("source_audio_tracks", None)
         audio_tracks_data = data.pop("audio_tracks", None)
+        gif_data = data.pop("gif", None)
         for field_name, default in [
             ("resolution_mode", RES_MODE_SOURCE),
             ("fps_mode", FPS_MODE_SOURCE),
@@ -1301,6 +1305,8 @@ class EncodePlan:
             if field_name not in data:
                 data[field_name] = default
         plan = cls(**{k: v for k, v in data.items() if k in _fields_for(cls)})
+        if gif_data is not None:
+            plan.gif = GifSettings.from_dict(gif_data)
         if transform_data is not None:
             if not isinstance(transform_data, dict):
                 raise ValueError("transform must be an object or null")
@@ -1643,6 +1649,8 @@ class AppSettings:
     background_exports: bool = False
     reopen_last_videos: bool = False
     last_session_files: list[str] = field(default_factory=list)
+    # the Save as GIF settings last saved with, which the dialog opens with
+    gif_settings: dict[str, Any] = field(default_factory=dict)
     loop_playback: bool = True
     timeline_style: str = "graphite"
     skip_seconds: str = "3"
