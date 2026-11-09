@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.7.2] - 2026-11-09
+
+### Save as GIF
+
+Tuck can now save videos as GIFs. You choose the width, frame rate, colors, speed and whether it loops.
+
+- Made from the timeline, so cuts, crop and rotation carry over
+- A size limit lowers the frame rate, then the width, until it fits
+
+### Added
+
+- Add markers with `M`
+- Trim, Cut out, Ripple delete and Close gap in the timeline's right-click menu
+- Gaps that export as black are marked on the timeline
+- Find and sort videos in the Library
+- Preview a video by hovering it in the Library
+- Rename and Move to Recycle Bin in the Library's right-click menu
+- Move originals to the Recycle Bin after exporting
+- Max bitrate, 10-bit color and keyframe spacing in Advanced encoding
+- Drag finished exports out on Windows too
+
+### Changed
+
+- Muting a segment is now `Shift+M`
+
+### Fixed
+
+- Windows saying a video is in use while Tuck shows it
+- Timeline frames flickering while editing on Linux
+- Wrong "picture can't be shown" message on Linux
+- Exports dragged back onto Tuck being added to the Library on Linux
+
 ## [0.7.1] - 2026-11-05
 
 ### Size or Quality

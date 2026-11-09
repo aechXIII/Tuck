@@ -46,7 +46,7 @@ If anything goes wrong, see the [install guide](https://tuck.video/guide/#instal
 
 ## What it does
 
-- Cut out what you don't want. The timeline shows thumbnails to help you find the right spot, and playback skips what you cut, so you see the result before you export.
+- Cut out what you don't want. The timeline shows thumbnails to help you find the right spot, and playback skips what you cut, so you see the result before you export. Press <kbd>M</kbd> to mark moments while you watch, then split at them.
 - If your recording has separate game and mic audio, each one gets its own row and volume. You can add music, even out the loudness, and export everything as one track or keep the tracks separate.
 - Crop by dragging on the video, or pick a ratio like 9:16 for TikTok or YouTube Shorts. You can also rotate, flip, and resize.
 - Tell Tuck a size, like 20 or 50 MB, and it picks the quality so the video fits under an upload limit. Or pick a quality level, and Tuck shows about how big the file will be.
@@ -55,10 +55,11 @@ If anything goes wrong, see the [install guide](https://tuck.video/guide/#instal
 - Upscale to 1440p, 4K, or any size you like.
 - Turn a 240 fps recording into smooth 60 fps video with motion blur.
 - Add a LUT (a `.cube` file) to change the look, and split the preview to see before and after.
-- Save any frame as a full-resolution PNG.
+- Save any frame as a full-resolution PNG, or turn a video into a GIF that fits a size limit.
 - Add a whole folder of videos at once, then compress all of them or just the ones you pick.
+- Find a video by name, or sort the Library by date, size, or length. After exporting, Tuck can move the originals to the trash to free up space.
 - Queue up several exports and retry any that fail. Exports you didn't finish come back the next time you open Tuck.
-- Copy finished files and paste them into a chat or a folder, or have Tuck copy a video as soon as it's exported. On Linux you can drag them out of Tuck, too.
+- Copy finished files and paste them into a chat or a folder, or have Tuck copy a video as soon as it's exported. You can also drag them straight out of Tuck.
 - Your graphics card plays the preview and can speed up exports: NVIDIA or AMD on Windows, and NVIDIA, Intel, or AMD on Linux. Tuck only offers what works on your computer.
 - Save your usual settings as a profile. On Windows, add it to File Explorer's **Send To** menu and send videos to it with a right-click.
 - On Windows, you can also compress from a terminal with `tuck compress clip.mp4 --size 25` or `--quality 23`. The [command line guide](https://tuck.video/guide/#command-line) shows the rest.
